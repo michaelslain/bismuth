@@ -725,6 +725,19 @@
 /* Column reorder feedback */
 .kanbanColDragging { opacity: 0.5; }
 .kanbanColReorder { box-shadow: 0 0 0 2px var(--bismuth-accent-border) inset; }
+/* Column drop-gap placeholder — a slim, full-height insertion bar marking the slot the dragged
+   column will land in (the horizontal analogue of .kanbanPlaceholderActive for cards). Stretches
+   to the board's height; the flex `gap` gives it breathing room. pointer-events:none so it never
+   steals elementFromPoint's column resolution mid-drag. */
+.kanbanColPlaceholder {
+  align-self: stretch;
+  flex: 0 0 5px;
+  min-height: 80px;
+  border-radius: 4px;
+  background: var(--bismuth-accent-border);
+  box-shadow: 0 0 0 3px var(--bismuth-accent-soft);
+  pointer-events: none;
+}
 
 /* Editable card face: title (renames the note) + meta chips (frontmatter properties) */
 .kbCardTitle {

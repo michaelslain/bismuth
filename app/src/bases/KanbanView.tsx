@@ -6,6 +6,8 @@ import { placeholderFile } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { api } from "../api";
 import { KanbanCard } from "./KanbanCard";
+import { appendOrder } from "./kanbanOrder";
+import { columnDropIndex, reorderColumnKeys } from "./kanbanColumnOrder";
 import { metaColumns, metaSource, writableKey } from "./kanbanMeta";
 import { declaredDefaults } from "../../../core/src/bases/properties";
 import { STATUS_COLOR } from "../ui/StatusDot";
@@ -100,12 +102,14 @@ export function KanbanView(props: {
   // Column (header) drag-reorder state — distinct from card drag above.
   const [colDrag, setColDrag] = createSignal<string | null>(null);
   const [colOver, setColOver] = createSignal<string | null>(null);
+  // Which half of the hovered column the cursor is in — drop AFTER it when true. Tracked live so
+  // the drop-gap placeholder (below) and the eventual drop resolve to the exact same slot.
+  const [colAfter, setColAfter] = createSignal(false);
 
   // UI popovers / composers, keyed by column key (only one open at a time).
   const [pickerCol, setPickerCol] = createSignal<string | null>(null);
   const [composerCol, setComposerCol] = createSignal<string | null>(null);
   const [draft, setDraft] = createSignal("");
-  const [busy, setBusy] = createSignal(false);
   // Paths minted this session, so two quick adds don't collide before a refetch lands.
   const created = new Set<string>();
 
@@ -263,6 +267,7 @@ export function KanbanView(props: {
       setFromCol(null);
       setColDrag(null);
       setColOver(null);
+      setColAfter(false);
     });
   }
 
@@ -299,6 +304,27 @@ export function KanbanView(props: {
     return out;
   };
   const groupByKey = (key: string): ResultGroup => displayGroups().find((g) => g.key === key) ?? { key, rows: [] };
+
+  // ── Column drop-gap placeholder ──
+  // While a COLUMN header is being dragged, show a slim insertion bar in the slot the column will
+  // land in — the horizontal analogue of the card `kanbanPlaceholder` gap (a card drag opens a gap;
+  // a column drag opens a between-columns gap). `columnDropIndex` (pure, unit-tested) resolves the
+  // insertion index among the OTHER columns from the hovered column + which half the cursor is in.
+  const colDropIndex = (): number | null => {
+    const from = colDrag();
+    const over = colOver();
+    if (from === null || over === null || over === from) return null;
+    return columnDropIndex(columnKeys(), from, over, colAfter());
+  };
+  // The placeholder renders BEFORE the column at the drop index (or trailing when it lands last),
+  // computed over the columns MINUS the dragged one so the index lines up with what's rendered.
+  const colGap = createMemo((): { before: string | null; trailing: boolean } => {
+    const idx = colDropIndex();
+    if (idx === null) return { before: null, trailing: false };
+    const others = columnKeys().filter((k) => k !== colDrag());
+    if (idx >= others.length) return { before: null, trailing: true };
+    return { before: others[idx], trailing: false };
+  });
 
   // Clear the optimistic column order once the server's column order matches it.
   createEffect(() => {
@@ -409,17 +435,22 @@ export function KanbanView(props: {
   }
   function resolveColTarget(x: number, y: number): void {
     const colEl = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>("[data-kbcol]");
-    if (colEl) setColOver(colEl.dataset.kbcol ?? null);
+    if (!colEl) return; // off the board — keep the last valid target so the placeholder holds
+    const r = colEl.getBoundingClientRect();
+    batch(() => {
+      setColOver(colEl.dataset.kbcol ?? null);
+      setColAfter(x > r.left + r.width / 2);
+    });
   }
-  function onPointerUp(e: PointerEvent): void {
+  function onPointerUp(): void {
     if (armMode === "card" && dragPath() !== null) {
       void dropCard();
     } else if (armMode === "col" && colDrag() !== null) {
+      // Drop where the placeholder is showing — reuse the live-tracked target/half (set by
+      // resolveColTarget on every move) so the column lands exactly in the gap the user saw.
       const from = colDrag();
-      const colEl = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>("[data-kbcol]");
-      const over = colEl ? colEl.dataset.kbcol ?? null : colOver();
-      const after = colEl ? e.clientX > colEl.getBoundingClientRect().left + colEl.getBoundingClientRect().width / 2 : false;
-      if (from !== null && over !== null) void reorderColumns(from, over, after);
+      const over = colOver();
+      if (from !== null && over !== null) void reorderColumns(from, over, colAfter());
     }
     endDrag();
   }
@@ -479,11 +510,7 @@ export function KanbanView(props: {
   // ── Column reorder — persist the full visible key order to `columns` (groupOrder). ──
   async function reorderColumns(from: string, over: string, after: boolean): Promise<void> {
     if (!props.basePath || from === over) return;
-    const keys = columnKeys().filter((k) => k !== from);
-    let ti = keys.indexOf(over);
-    if (ti < 0) ti = keys.length;
-    if (after) ti += 1;
-    keys.splice(ti, 0, from);
+    const keys = reorderColumnKeys(columnKeys(), from, over, after);
     // Optimistic: reorder instantly (FLIP the columns) so they don't snap back during the write's
     // refetch. The single `columns` write's SSE drives one refetch; the clear-effect then drops the
     // overlay (no props.onChange — a second refetch is unnecessary).
@@ -627,7 +654,7 @@ export function KanbanView(props: {
     const title = draft().trim();
     const gb = groupBy();
     const statusKey = gb ? writableKey(gb.property) : null;
-    if (!title || !statusKey || busy()) return;
+    if (!title || !statusKey) return;
     const folder = boardFolder();
 
     // Use an existing card's actual (typed) status value for this column when there is one, so a
@@ -636,33 +663,42 @@ export function KanbanView(props: {
     const sibling = props.result.groups.find((g) => g.key === colKey)?.rows[0];
     const statusValue = sibling ? (sibling.note as Record<string, unknown>)[statusKey] : colKey;
 
+    // Pin the new card to the BOTTOM of its column with an explicit `order` strictly after every
+    // current sort key (#93). Without it the card rendered at the bottom optimistically, then
+    // teleported into the middle once the refetch landed: the real row's indexOf fallback
+    // interleaved with the siblings' explicit drag-written orders. Computed over the DISPLAYED
+    // group (effOrder), so back-to-back adds stack in insertion order — each sees the previous
+    // optimistic card's order. (appendOrder is pure + unit-tested in kanbanOrder.test.ts.)
+    const grp = groupByKey(colKey);
+    const orderVal = appendOrder(grp.rows.map((r) => effOrder(r, grp)));
+
     // Declared property defaults (list-form `properties:`) seed first; frontmatter shared by
     // every existing card overrides them (a new card must keep matching the base's filter),
-    // and the clicked column's status value always wins.
+    // the clicked column's status value wins, and the appended `order` pins it to the bottom.
     const exclude = new Set([statusKey, ORDER_KEY]);
     const front: Record<string, unknown> = {
       ...declaredDefaults(props.config, exclude),
       ...constProps(exclude),
       [statusKey]: statusValue ?? colKey,
+      [ORDER_KEY]: orderVal,
     };
     const content = `---\n${yamlStringify(front)}---\n`;
     const path = dedupe(`${folder ? folder + "/" : ""}${safeFilename(title)}.md`, takenPaths());
     const name = safeFilename(title);
 
-    setBusy(true);
-    try {
-      // Show the card OPTIMISTICALLY so it appears the instant you hit Enter — then just write the
-      // file. No props.onChange(): a PUT /file doesn't bump the version, so an eager refetch would
-      // read stale rows; the file-watcher's debounced SSE refetch brings the real row and the
-      // clear-effect drops the optimistic one (path-keyed → the card never blinks).
-      const optimistic: Row = { file: placeholderFile(name, path), note: { ...front }, formula: {} };
-      created.add(path);
-      setDraft("");
-      setPendingAdds((prev) => [...prev, { row: optimistic, col: colKey }]);
-      await api.write(path, content);
-    } finally {
-      setBusy(false);
-    }
+    // Show the card OPTIMISTICALLY so it appears the instant you hit Enter — then just write the
+    // file. No props.onChange(): a PUT /file doesn't bump the version, so an eager refetch would
+    // read stale rows; the file-watcher's debounced SSE refetch brings the real row and the
+    // clear-effect drops the optimistic one (path-keyed → the card never blinks). Not gated on the
+    // write being in flight: draft is cleared synchronously (a double-Enter no-ops on the empty
+    // title) and `created` de-collides paths, so rapid successive adds each land instead of the
+    // next Enter being silently dropped while the previous PUT round-trips (#93). No await-return
+    // that would bounce the active tab — the file-watcher SSE, not a tab switch, brings the row in.
+    const optimistic: Row = { file: placeholderFile(name, path), note: { ...front }, formula: {} };
+    created.add(path);
+    setDraft("");
+    setPendingAdds((prev) => [...prev, { row: optimistic, col: colKey }]);
+    await api.write(path, content);
   }
 
   return (
@@ -686,6 +722,13 @@ export function KanbanView(props: {
             const group = () => groupByKey(key);
             const color = () => colColor(key);
             return (
+              <>
+              {/* Drop-gap placeholder: a slim insertion bar in the slot the dragged column lands in
+                  (the horizontal analogue of the card placeholder). Rendered BEFORE this column when
+                  it's the drop target's neighbour; a trailing one after the <For> handles last-slot. */}
+              <Show when={colGap().before === key}>
+                <div class={styles.kanbanColPlaceholder} />
+              </Show>
               <div
                 class={styles.kanbanColumn}
                 data-kbcol={key}
@@ -816,7 +859,12 @@ export function KanbanView(props: {
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
-                            void addCard(group().key).then(() => e.currentTarget.focus());
+                            // Capture the element NOW — after the await, `e.currentTarget` is null
+                            // (it only points at the handler's node during dispatch), so the old
+                            // `.then(() => e.currentTarget.focus())` threw instead of restoring
+                            // focus. Composer focus must survive every add for rapid entry (#93).
+                            const el = e.currentTarget;
+                            void addCard(group().key).then(() => el.focus());
                           } else if (e.key === "Escape") {
                             setComposerCol(null);
                             setDraft("");
@@ -828,9 +876,14 @@ export function KanbanView(props: {
                   </Show>
                 </div>
               </div>
+              </>
             );
           }}
         </For>
+        {/* Trailing drop-gap: the dragged column lands past the last column. */}
+        <Show when={colGap().trailing}>
+          <div class={styles.kanbanColPlaceholder} />
+        </Show>
       </div>
     </Show>
     <Show when={cardMenu()}>
