@@ -60,7 +60,6 @@ describe("toolbar setting", () => {
   it("seeds the default buttons", () => {
     expect(toolbar().default).toEqual([
       { command: "create-menu", icon: "Plus" },
-      { command: "emoji-library", icon: "Smile" },
       { command: "search", icon: "Search" },
       { command: "open-inbox", icon: "Inbox" },
     ]);

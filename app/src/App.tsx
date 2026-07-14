@@ -11,7 +11,7 @@ import { CommandPalette } from "./palette/CommandPalette";
 import { SwitcherBar } from "./palette/SwitcherBar";
 import { switcherMatchNodeIds } from "./palette/switcherMatches";
 import { TemplatePalette } from "./palette/TemplatePalette";
-import { bindCommands, resolveButtonCommands, ensureEmojiLibrary, type GraphMode } from "./commands";
+import { bindCommands, resolveButtonCommands, type GraphMode } from "./commands";
 import { BASE_VIEW_KINDS } from "./baseViews";
 import { settings } from "./settings";
 import { settingsToCssVars, setCssVars } from "./settingsCssVars";
@@ -427,7 +427,15 @@ export default function App() {
       openContextMenu(d.x, d.y, d.items, setEditorMenu);
     };
     window.addEventListener("bismuth-context-menu", onCtx);
-    onCleanup(() => window.removeEventListener("bismuth-context-menu", onCtx));
+    // The editor's right-click "Insert emoji" item can't reach openEmojiLibrary directly (it's a
+    // CodeMirror extension), so it dispatches this window event; we run the same picker that the
+    // command palette does, inserting at the focused (right-clicked) editor's caret (#67).
+    const onEmoji = () => { void openEmojiLibrary(); };
+    window.addEventListener("bismuth-open-emoji-library", onEmoji);
+    onCleanup(() => {
+      window.removeEventListener("bismuth-context-menu", onCtx);
+      window.removeEventListener("bismuth-open-emoji-library", onEmoji);
+    });
   });
 
   // Warm the lazy editor chunk (FileView → Editor → @codemirror/* + harper glue,
@@ -1962,11 +1970,7 @@ export default function App() {
     <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": settings.ui.verticalTabs }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
-          {/* ensureEmojiLibrary guarantees the emoji-library button is ALWAYS present (to the left
-              of the create "+" menu) even when the user set a custom `toolbar:` in .settings that
-              omits it — the prior #67 fix only seeded it into the DEFAULT toolbar, so custom-toolbar
-              users saw "not even visible". If their toolbar already has it, position is preserved. */}
-          <For each={ensureEmojiLibrary(settings.toolbar)}>{(btn) => <CommandButton btn={btn} />}</For>
+          <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} />}</For>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} startItemDrag={startItemDrag} dropHighlight={sidebarDropHighlight} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }} ref={sidebarSlot} />
