@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# board-dashboard.sh — the board-health dashboard generator (brainstorm idea P).
+# Reads the Bismuth Changes board + git and emits a self-contained HTML page:
+# per-column counts, what's waiting on you, bounce hotspots, shipped-today.
+# Print to stdout, or serve it:  board-dashboard.sh > <served-dir>/index.html
+# bash 3.2 compatible.
+set -u
+VAULT="${BISMUTH_VAULT:-/Users/michaelslain/Documents/library of alexandria}"
+DIR="$VAULT/thoughts/Bismuth Changes"
+[ -d "$DIR" ] || { echo "board dir not found: $DIR" >&2; exit 1; }
+fm(){ awk -v k="$2" '{ if($0 ~ "^"k":"){ sub(/^[^:]*: */,""); print; exit } }' "$1"; }
+esc(){ sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g'; }
+
+REPO="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)"
+today=$(cd "$REPO" 2>/dev/null && git log -1 --format=%cd --date=short 2>/dev/null)
+shipped_today=$(cd "$REPO" 2>/dev/null && git log --since="$today 00:00" --format='%s' 2>/dev/null | grep -c 'merge(bismuth-changes)')
+
+# gather cards → "status|type|bounces|name"
+cards=""
+while IFS= read -r -d '' f; do
+  st=$(fm "$f" status); ty=$(fm "$f" type); bo=$(fm "$f" bounces); nm=$(basename "$f" .md)
+  cards="$cards${st:-<none>}|${ty:-?}|${bo:-0}|$nm"$'\n'
+done < <(find "$DIR" -maxdepth 1 -name '*.md' -print0)
+
+count(){ printf '%s' "$cards" | awk -F'|' -v s="$1" '$1==s' | grep -c .; }
+
+col_cards(){ printf '%s' "$cards" | awk -F'|' -v s="$1" '$1==s{print}'; }
+
+emit_col(){ # $1 status  $2 css-class
+  local n; n=$(count "$1")
+  [ "$n" = 0 ] && return
+  echo "<section class=\"col $2\"><h2>$1 <span class=\"n\">$n</span></h2>"
+  col_cards "$1" | while IFS='|' read -r s t b nm; do
+    badge=""; [ -n "$t" ] && [ "$t" != "?" ] && badge="<span class=\"ty\">$t</span>"
+    bb=""; [ "${b:-0}" != 0 ] && [ -n "$b" ] && bb="<span class=\"bounce\" title=\"bounced ${b} time(s)\">&#8617;${b}</span>"
+    echo "<div class=\"card\">$(printf '%s' "$nm" | esc)$badge$bb</div>"
+  done
+  echo "</section>"
+}
+
+cat <<HTML
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Bismuth Changes — Board</title>
+<style>
+:root{--bg:#0d0f13;--panel:#161a21;--line:#272d38;--fg:#e7ecf3;--dim:#9aa6b6;--accent:#7aa2ff;--broke:#e5604d;--wait:#e6b34a;--done:#3fca7a;--mono:ui-monospace,Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+@media(prefers-color-scheme:light){:root{--bg:#f5f7fa;--panel:#fff;--line:#e2e7ee;--fg:#1a2029;--dim:#5c6672}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);padding:36px 22px 70px}
+.wrap{max-width:1100px;margin:0 auto}h1{font-size:24px;font-weight:650;margin:0 0 3px;letter-spacing:-.02em}
+.sub{color:var(--dim);font-size:13px;margin:0 0 22px}
+.tiles{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:26px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;min-width:120px}
+.tile .v{font-size:26px;font-weight:680;letter-spacing:-.02em}.tile .k{font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+.tile.wait .v{color:var(--wait)}.tile.broke .v{color:var(--broke)}.tile.done .v{color:var(--done)}
+.cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.col h2{font-size:13px;font-weight:600;margin:0 0 10px;display:flex;align-items:center;gap:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+.col .n{background:var(--line);color:var(--fg);border-radius:20px;padding:1px 9px;font-size:12px}
+.col.wait h2{color:var(--wait)}.col.broke h2{color:var(--broke)}
+.card{font-size:13.5px;padding:7px 0;border-top:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.card:first-of-type{border-top:none}
+.ty{font-family:var(--mono);font-size:10.5px;color:var(--dim);background:var(--bg);padding:1px 6px;border-radius:5px;margin-left:auto}
+.bounce{font-family:var(--mono);font-size:11px;color:var(--broke)}
+footer{margin-top:26px;color:var(--dim);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+</style></head><body><div class="wrap">
+<h1>Bismuth Changes — Board</h1>
+<p class="sub">Live board state · the kanban is the interface.</p>
+<div class="tiles">
+  <div class="tile wait"><div class="v">$(count "Awaiting Confirmation")</div><div class="k">Waiting on you</div></div>
+  <div class="tile broke"><div class="v">$(count "Done but Broken")</div><div class="k">Being re-fixed</div></div>
+  <div class="tile"><div class="v">$(($(count "Todo")+$(count "In Progress")))</div><div class="k">Queued / building</div></div>
+  <div class="tile done"><div class="v">$shipped_today</div><div class="k">Shipped today</div></div>
+</div>
+<div class="cols">
+$(emit_col "Awaiting Confirmation" wait)
+$(emit_col "Done but Broken" broke)
+$(emit_col "In Progress" "")
+$(emit_col "Todo" "")
+$(emit_col "Ideas" "")
+</div>
+<footer>Generated by scripts/board-dashboard.sh · ↩N = bounce count · regenerate each operator tick.</footer>
+</div></body></html>
+HTML
