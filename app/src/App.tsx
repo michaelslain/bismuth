@@ -11,7 +11,7 @@ import { CommandPalette } from "./palette/CommandPalette";
 import { SwitcherBar } from "./palette/SwitcherBar";
 import { switcherMatchNodeIds } from "./palette/switcherMatches";
 import { TemplatePalette } from "./palette/TemplatePalette";
-import { bindCommands, resolveButtonCommands, type GraphMode } from "./commands";
+import { bindCommands, resolveButtonCommands, ensureEmojiLibrary, type GraphMode } from "./commands";
 import { BASE_VIEW_KINDS } from "./baseViews";
 import { settings } from "./settings";
 import { settingsToCssVars, setCssVars } from "./settingsCssVars";
@@ -1957,7 +1957,11 @@ export default function App() {
     <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": settings.ui.verticalTabs }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
-          <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} />}</For>
+          {/* ensureEmojiLibrary guarantees the emoji-library button is ALWAYS present (to the left
+              of the create "+" menu) even when the user set a custom `toolbar:` in .settings that
+              omits it — the prior #67 fix only seeded it into the DEFAULT toolbar, so custom-toolbar
+              users saw "not even visible". If their toolbar already has it, position is preserved. */}
+          <For each={ensureEmojiLibrary(settings.toolbar)}>{(btn) => <CommandButton btn={btn} />}</For>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} startItemDrag={startItemDrag} dropHighlight={sidebarDropHighlight} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }} ref={sidebarSlot} />
