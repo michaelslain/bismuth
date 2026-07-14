@@ -139,6 +139,8 @@ export function BaseSettings(props: {
   // Flashcards: review every card both ways (front→back AND back→front), each direction
   // scheduled independently in `*Back` companion columns.
   const [bidi, setBidi] = createSignal<boolean>(!!view()?.bidirectional);
+  // Kanban (#105): hide each card's meta-row label captions, showing values only.
+  const [hideLabels, setHideLabels] = createSignal<boolean>(!!view()?.hideLabels);
 
   // --- record form (columns / sort / group) ---
   const seedCols = (): { col: string; visible: boolean }[] => {
@@ -201,6 +203,7 @@ export function BaseSettings(props: {
     setGroupDir("ASC");
     setAggregate(view()?.y ? "sum" : "count");
     setBin("day");
+    setHideLabels(false);
     setPropRows(seedPropertyRows(props.config));
   };
 
@@ -210,6 +213,7 @@ export function BaseSettings(props: {
         await api.setProperty(props.basePath, "order", cols().filter((c) => c.visible).map((c) => c.col));
         await api.setProperty(props.basePath, "sort", sortProp() ? [{ property: sortProp(), direction: sortDir() }] : []);
         await api.setProperty(props.basePath, "groupBy", groupProp() ? { property: groupProp(), direction: groupDir() } : null);
+        if (props.type === "kanban") await api.setProperty(props.basePath, "hideLabels", hideLabels());
       } else {
         for (const f of fields()) await api.setProperty(props.basePath, f.key, form()[f.key]);
         if (props.type === "flashcards") await api.setProperty(props.basePath, "bidirectional", bidi());
@@ -332,6 +336,13 @@ export function BaseSettings(props: {
               </div>
             </Show>
           </div>
+
+          <Show when={props.type === "kanban"}>
+            <div class="set-col" onClick={() => setHideLabels(!hideLabels())} style={{ "margin-top": "8px" }}>
+              <span class="set-col-name">Hide meta labels — show property values only</span>
+              <span class={"evm-toggle" + (hideLabels() ? " on" : "")}><i /></span>
+            </div>
+          </Show>
         </Show>
 
         {/* Properties: the base's OWN declared property set — base-level, shown for every

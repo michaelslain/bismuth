@@ -48,6 +48,8 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // writable target, so the composer is hidden rather than silently creating a mis-placed card.
   const canAdd = () => editable() && !!groupBy() && writableKey(groupBy()!.property) !== null;
   const groupColors = (): Record<string, string> => props.result.view.groupColors ?? {};
+  // #105: hide each meta row's label caption, showing values only.
+  const hideLabels = () => props.result.view.hideLabels === true;
 
   // A kanban card IS a note; its title is the note's filename (editing it renames the file).
   // Bound to file.name — NOT the base's first display column — so an explicit `order:` that puts
@@ -703,6 +705,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                                     metaCols={metaCols()}
                                     config={props.config}
                                     editable={editable()}
+                                    hideLabels={hideLabels()}
                                     onEditingChange={setEditing}
                                     onRename={(t) => void renameCard(r(), t)}
                                     onSetMeta={(id, v) => void setMetaProperty(r(), id, v)}

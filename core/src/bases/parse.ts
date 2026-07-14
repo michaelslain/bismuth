@@ -189,6 +189,7 @@ function normalizeView(raw: unknown): ViewConfig {
     imageAspectRatio: numOrUndef(o.imageAspectRatio),
     groupOrder,
     groupColors,
+    hideLabels: o.hideLabels === true ? true : undefined,
     descriptionField: strOrUndef(o.descriptionField),
     columnWidths,
     lat,
@@ -306,6 +307,8 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     // Kanban per-column colors (flat persistence via top-level `groupColors`).
     const gc = normalizeGroupColors(raw.groupColors);
     if (gc) config.views[0].groupColors = gc;
+    // Kanban: top-level `hideLabels` configures the default view (flat persistence, #105).
+    if (typeof raw.hideLabels === "boolean") config.views[0].hideLabels = raw.hideLabels;
     const s = normalizeSort(raw.sort);
     if (s) config.views[0].sort = s;
     const g = normalizeGroupBy(raw.groupBy);

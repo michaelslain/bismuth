@@ -36,6 +36,9 @@ export function KanbanCard(props: {
   metaCols: string[];
   config: BaseConfig;
   editable: boolean;
+  /** #105: the kanban view's `hideLabels` toggle — when true, meta rows show only the
+   *  value, no label caption above it. Tag rows already skip the label regardless. */
+  hideLabels?: boolean;
   onEditingChange: (editing: boolean) => void;
   onRename: (newTitle: string) => void;
   onSetMeta: (id: string, value: unknown) => void;
@@ -226,8 +229,9 @@ export function KanbanCard(props: {
               };
               return (
                 <div class={styles.kbMetaItem}>
-                  {/* #tags are self-describing — skip the label for tag columns. */}
-                  <Show when={!isTagColumn(id)}>
+                  {/* #tags are self-describing — skip the label for tag columns. The view's
+                      `hideLabels` toggle (#105) suppresses every OTHER label too. */}
+                  <Show when={!isTagColumn(id) && !props.hideLabels}>
                     <span class={styles.kbMetaLabel}>{columnLabel(id, props.config)}</span>
                   </Show>
                   <Show

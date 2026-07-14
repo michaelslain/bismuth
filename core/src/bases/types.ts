@@ -47,6 +47,9 @@ export interface ViewConfig {
   // known-status palette, then a distinct auto-assigned palette color. Set by the column
   // header's color picker; persisted via the top-level `groupColors` frontmatter key.
   groupColors?: Record<string, string>;
+  // Kanban (#105): when true, card meta rows show ONLY the value, no label caption above
+  // it. Default false (labels shown) so existing boards are unchanged.
+  hideLabels?: boolean;
   // DEPRECATED (#103): kanban no longer has a dedicated description slot — `description` is
   // just a normal (typically `type: markdown`) declared property, rendered/edited via the
   // same generic meta-property path as any other. Still parsed (parse.ts) for backward
