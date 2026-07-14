@@ -18,6 +18,32 @@ export function computeResizeWidth(startWidth: number, dx: number, min: number):
   return w < min ? min : w;
 }
 
+/** Signed horizontal auto-scroll nudge for a pointer at `clientX` over a scroller spanning
+ *  [`left`, `right`] with an `edge`-wide trigger zone at each end (#92, ∞ mode): 0 while the
+ *  pointer is between the zones, else the overshoot past the zone boundary (positive → scroll
+ *  right, negative → scroll left). Pure — the widget applies it to `scrollLeft` and accumulates
+ *  the REALIZED delta into the drag's width math. */
+export function autoScrollDelta(clientX: number, left: number, right: number, edge: number): number {
+  if (clientX > right - edge) return clientX - (right - edge);
+  if (clientX < left + edge) return clientX - (left + edge);
+  return 0;
+}
+
+/** Sum of a frozen column-width set, or null when ANY column has no numeric width (not frozen /
+ *  legacy-partial data) — the caller must then leave the table's own width alone. Pure. Backs the
+ *  ∞-mode DEFINITE table width (#92): `table-layout: fixed` under the ∞ stylesheet's
+ *  `width: max-content` has no definite width to lay out against, so engines fall back to
+ *  content-driven column sizing — a shrink drag updates the <col> style but the RENDERED column
+ *  floors at its nowrap content width, i.e. the resize visibly sticks. */
+export function frozenColumnsWidth(widths: number[]): number | null {
+  let sum = 0;
+  for (const w of widths) {
+    if (!Number.isFinite(w)) return null;
+    sum += w;
+  }
+  return sum;
+}
+
 /** A live resize drag: feed it pointer x as the pointer moves, `end()` it exactly once. */
 export interface ResizeDrag {
   /** Recompute + apply the width for the current pointer x. No-op once ended. */

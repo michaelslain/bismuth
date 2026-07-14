@@ -41,7 +41,7 @@ import {
   addMergeRegion,
   removeMergeAt,
 } from "./tableModel";
-import { createResizeDrag, type ResizeDrag } from "./tableResizeDrag";
+import { createResizeDrag, autoScrollDelta, frozenColumnsWidth, type ResizeDrag } from "./tableResizeDrag";
 // CodeMirror's document `Text` — aliased so it never shadows the DOM `Text` node type used by
 // the find-highlight text-node walk below.
 import type { Text as CMText } from "@codemirror/state";
@@ -963,6 +963,26 @@ export class TableWidget extends WidgetType {
     scroll.appendChild(table);
     root.appendChild(scroll);
 
+    // ∞-mode column resize needs a DEFINITE table width (#92). The ∞ stylesheet gives the table
+    // `width: max-content`, and once a resize freezes the layout to `table-layout: fixed` that
+    // intrinsic keyword leaves the fixed algorithm with no definite width to distribute — so
+    // engines fall back to content-driven sizing: Chrome floors every column at its nowrap
+    // content width (drag a column narrower and the <col> style changes but the RENDERED border
+    // never moves — the "resize gets stuck in infinity tables" report), and WKWebView (the
+    // packaged app) degrades to auto layout outright. Summing the frozen per-column widths into
+    // an inline pixel width makes fixed layout unambiguous in every engine (used width =
+    // max(specified, Σcols + borders) per CSS 2.1 §17.5.2, so columns render exactly as dragged).
+    // Cleared in normal (non-∞) mode — there the stylesheet's squash-to-page width is correct —
+    // and while no full width set is frozen. Called on freeze, every drag move, the ∞ toggle,
+    // and the stored-width reapply below.
+    const syncInfinityTableWidth = (): void => {
+      const sum =
+        infinity && table.style.tableLayout === "fixed"
+          ? frozenColumnsWidth(colEls.map((c) => parseFloat(c.style.width)))
+          : null;
+      table.style.width = sum != null ? `${sum}px` : "";
+    };
+
     // ── Merged cells: render spans in-place (#62) ──────────────────────────────────────────────
     // GFM can't express colspan/rowspan, so a merge is applied to the DOM without touching source:
     // the anchor cell gets colSpan/rowSpan, every covered cell is hidden (display:none removes it
@@ -1021,6 +1041,9 @@ export class TableWidget extends WidgetType {
         infinity = next;
         root.classList.toggle("cm-table-infinity", next);
         updateVisual(this.notePath, sizeKey(this.cells), { infinity: next });
+        // Frozen widths need the definite inline width in ∞ mode and must NOT keep it in normal
+        // mode (it would defeat the squash-to-page-width layout) — resync on every flip (#92).
+        syncInfinityTableWidth();
       }),
     );
     root.appendChild(toolbar);
@@ -1162,6 +1185,8 @@ export class TableWidget extends WidgetType {
       stored.cols.forEach((w, c) => {
         if (w != null && colEls[c]) colEls[c].style.width = `${w}px`;
       });
+      // Rebuilt ∞ table with frozen widths → re-establish the definite inline width (#92).
+      syncInfinityTableWidth();
     }
 
     const overlay = document.createElement("div");
@@ -1211,6 +1236,14 @@ export class TableWidget extends WidgetType {
       return b;
     };
 
+    // The handle whose column-resize drag is LIVE right now (null when idle). layout() must never
+    // hide or un-clamp THIS handle mid-drag (#92): in ∞ mode an auto-scrolling drag can widen the
+    // column past the whole viewport (its left border scrolls off-screen), which used to fail the
+    // straddle test and `display:none` the very handle being dragged — losing the visual affordance
+    // AND (WebKit) risking an implicit pointer-capture cancel on the hidden element, which ended
+    // the drag while the button was still held.
+    let activeResizeHandle: HTMLElement | null = null;
+
     // Re-place every COLUMN resize handle on its border + the drag grips. Called after attach, on
     // table resize, on horizontal SCROLL (∞ mode), and live mid-drag. Handles/grips whose border
     // has scrolled OUT of the visible scroller are hidden so a scrolled ∞ table never leaves a
@@ -1230,21 +1263,27 @@ export class TableWidget extends WidgetType {
       const inView = (px: number): boolean => px >= viewL - 0.5 && px <= viewR + 0.5;
       const base = xs[0] ?? 0;
       // Resize handles sit on the RIGHT border of each column. In ∞ mode the table can be wider than
-      // the scroller, so a column that STRADDLES the right edge (its left border is in view but its
-      // right border scrolled past) would have its handle hidden — you couldn't resize the widest /
-      // last visible column without first scrolling (#92). Keep such a handle GRABBABLE by clamping
-      // it just inside the visible right edge; dragging it auto-scrolls the table to follow
-      // (startColDrag). Handles for fully off-screen columns stay hidden.
+      // the scroller, so a column that STRADDLES the right edge (its left border is left of the
+      // visible right edge but its right border scrolled past) would have its handle hidden — you
+      // couldn't resize the widest / last visible column without first scrolling (#92). Keep such a
+      // handle GRABBABLE by clamping it just inside the visible right edge; dragging it auto-scrolls
+      // the table to follow (startColDrag). The straddle deliberately does NOT require the column's
+      // left border to be in view: a column wider than the whole viewport (easy to create while
+      // auto-scroll-widening) must keep its handle reachable too. Handles for fully off-screen
+      // columns stay hidden — except the one being DRAGGED, which is always kept visible and clamped
+      // into the viewport (see activeResizeHandle above).
       for (let c = 0; c < colHandles.length; c++) {
         const h = colHandles[c];
         if (!h) continue;
         const edge = xs[c + 1] ?? base;
         const leftEdge = xs[c] ?? base;
-        const straddlesRight = edge > viewR && leftEdge <= viewR && leftEdge >= viewL - 0.5;
-        h.style.left = `${straddlesRight ? viewR - 1 : edge}px`;
+        const straddlesRight = edge > viewR && leftEdge < viewR;
+        const dragged = h === activeResizeHandle;
+        const left = straddlesRight ? viewR - 1 : edge;
+        h.style.left = `${dragged ? Math.min(Math.max(left, viewL), viewR - 1) : left}px`;
         h.style.top = `${oy}px`;
         h.style.height = `${th}px`;
-        h.style.display = inView(edge) || straddlesRight ? "" : "none";
+        h.style.display = inView(edge) || straddlesRight || dragged ? "" : "none";
       }
       // Column drag grips: a tab centered over each column's header, just above the table.
       for (let c = 0; c < colGrips.length; c++) {
@@ -1280,13 +1319,26 @@ export class TableWidget extends WidgetType {
         }
       }
     };
-    const startReorder = (axis: "col" | "row", from: number, e: MouseEvent): void => {
+    // Same re-entrancy guard as the resize drag's `resizeActive`: one physical grab can fire both
+    // pointerdown and its compat mousedown — never start two reorder drags for it.
+    let reorderActive = false;
+    const startReorder = (axis: "col" | "row", from: number, e: PointerEvent | MouseEvent): void => {
       e.preventDefault();
       e.stopPropagation();
+      if (reorderActive) return;
+      reorderActive = true;
       root.classList.add("cm-table-reordering");
       document.body.style.cursor = "grabbing";
       document.body.style.userSelect = "none";
       markDragged(axis, from, true);
+      // Capture the pointer on the grip so a release ANYWHERE (even outside the window — WKWebView
+      // never delivers a window mouseup for that) still reaches onUp. Same guard rationale as the
+      // column-resize drag (#92): a compat MouseEvent has no pointerId; capture may be unavailable.
+      const grip = e.currentTarget as HTMLElement | null;
+      const pointerId = typeof (e as Partial<PointerEvent>).pointerId === "number" ? (e as PointerEvent).pointerId : null;
+      if (grip && pointerId != null && typeof grip.setPointerCapture === "function") {
+        try { grip.setPointerCapture(pointerId); } catch { /* not capturable — window listeners cover it */ }
+      }
       let slot = from;
       // Coalesce pointer moves into ONE per animation frame: the raw mousemove stream fires far
       // faster than the display refreshes, and each handler reads live layout (getBoundingClientRect)
@@ -1322,9 +1374,24 @@ export class TableWidget extends WidgetType {
         if (raf) return;
         raf = requestAnimationFrame(() => { raf = 0; if (pending) apply(pending); });
       };
+      // IDEMPOTENT end, wired to EVERY plausible end event below (pointerup / pointercancel /
+      // mouseup / window blur) — the same "always releases" hardening the column-resize drag got:
+      // a button released outside the window, an alt-tab, or a cancelled pointer used to leave the
+      // reorder stuck forever (grabbing cursor, dead text selection, leaked move listener).
+      let ended = false;
       const onUp = (): void => {
+        if (ended) return;
+        ended = true;
+        reorderActive = false;
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+        window.removeEventListener("blur", onUp);
+        if (grip && pointerId != null && typeof grip.releasePointerCapture === "function") {
+          try { grip.releasePointerCapture(pointerId); } catch { /* already released */ }
+        }
         if (raf) { cancelAnimationFrame(raf); raf = 0; }
         // Flush the final pointer position synchronously: a fast drag (or a background tab, where
         // rAF is throttled) can release the button before any throttled frame ran, which would leave
@@ -1360,8 +1427,15 @@ export class TableWidget extends WidgetType {
           }
         }
       };
+      // Both streams + cancel + blur, mirroring the resize drag: whichever end event the engine
+      // delivers first runs the one idempotent cleanup, the rest no-op (PointerEvent extends
+      // MouseEvent, so onMove serves both move streams).
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+      window.addEventListener("blur", onUp);
     };
 
     for (let c = 0; c < cols; c++) {
@@ -1370,6 +1444,7 @@ export class TableWidget extends WidgetType {
       grip.title = "Drag to reorder column";
       grip.innerHTML = GRIP_HORIZONTAL_SVG;
       grip.addEventListener("mousedown", (e) => startReorder("col", c, e as MouseEvent));
+      grip.addEventListener("pointerdown", (e) => startReorder("col", c, e as PointerEvent));
       overlay.appendChild(grip);
       colGrips.push(grip);
     }
@@ -1379,6 +1454,7 @@ export class TableWidget extends WidgetType {
       grip.title = "Drag to reorder row";
       grip.innerHTML = GRIP_VERTICAL_SVG;
       grip.addEventListener("mousedown", (e) => startReorder("row", r, e as MouseEvent));
+      grip.addEventListener("pointerdown", (e) => startReorder("row", r, e as PointerEvent));
       overlay.appendChild(grip);
       rowGrips[r] = grip;
     }
@@ -1441,10 +1517,12 @@ export class TableWidget extends WidgetType {
       if (resizeActive) return; // ignore the trailing compat event (pointerdown → mousedown, or vice-versa)
       resizeActive = true;
       const start = getStart();
-      // CONTENT-space origin (screen x + current scroll) so an ∞ table that auto-scrolls mid-drag
-      // keeps widening under a pointer pinned at the edge, instead of stalling (#92).
-      const origin = e.clientX + scroll.scrollLeft;
+      // Freezing may have just switched the table to fixed layout — give an ∞ table its definite
+      // inline width immediately so the very first move already lays out unambiguously (#92).
+      syncInfinityTableWidth();
+      const origin = e.clientX;
       const handle = e.currentTarget as HTMLElement | null;
+      activeResizeHandle = handle;
       handle?.classList.add("cm-col-resize--dragging");
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
@@ -1458,27 +1536,48 @@ export class TableWidget extends WidgetType {
       let drag: ResizeDrag;
       // Follow-scroll an ∞ table while resizing so the dragged border never sails off-screen and the
       // handle stays under the cursor (#92). When the cursor nears a scroller edge, nudge scrollLeft;
-      // width is tracked in CONTENT space (clientX + scrollLeft), so each nudge keeps the column
-      // growing even while the pointer sits pinned at the edge. No-op in normal mode (scrollLeft 0).
+      // each nudge that ACTUALLY scrolled is accumulated into `scrollAdj`, and the width tracks
+      // screen x + scrollAdj — so the column keeps growing while the pointer sits pinned at the
+      // edge. Deliberately NOT raw `clientX + scroll.scrollLeft`: while SHRINKING, the narrowing
+      // table lowers the max scroll and the browser clamps scrollLeft on its own — feeding that
+      // clamped value back into the width math shrank the column by the clamp on every move, a
+      // runaway feedback loop that collapsed the column to MIN long before the pointer got there.
+      // Only OUR realized auto-scroll enters the math, so browser-imposed clamps are inert.
+      // No-op in normal mode (autoScrollDelta is only consulted when ∞ is on).
       const EDGE = 28;
+      let scrollAdj = 0;
       const autoScroll = (clientX: number): void => {
         if (!infinity) return;
+        // Nothing to scroll (table fits the scroller; zero-size headless geometry) → no nudge.
+        const maxScroll = scroll.scrollWidth - scroll.clientWidth;
+        if (maxScroll <= 0) return;
         const s = scroll.getBoundingClientRect();
-        if (clientX > s.right - EDGE) scroll.scrollLeft += clientX - (s.right - EDGE);
-        else if (clientX < s.left + EDGE) scroll.scrollLeft -= s.left + EDGE - clientX;
+        // A scroller narrower than its two edge zones has no stable interior — EVERY pointer x
+        // would trigger a scroll (degenerate tiny pane). Skip.
+        if (s.right - s.left <= EDGE * 2) return;
+        const d = autoScrollDelta(clientX, s.left, s.right, EDGE);
+        if (d === 0) return;
+        const before = scroll.scrollLeft;
+        // Clamp the target OURSELVES rather than trusting the element to (headless DOMs store
+        // scrollLeft unclamped) — the realized-delta measurement below must never bank a phantom
+        // scroll that didn't visually happen.
+        scroll.scrollLeft = Math.min(Math.max(before + d, 0), maxScroll);
+        scrollAdj += scroll.scrollLeft - before; // realized part only
       };
-      const onMove = (me: MouseEvent): void => { autoScroll(me.clientX); drag.move(me.clientX + scroll.scrollLeft); };
-      const onPointerMove = (pe: PointerEvent): void => { autoScroll(pe.clientX); drag.move(pe.clientX + scroll.scrollLeft); };
+      // One handler for BOTH the mouse and pointer streams (PointerEvent extends MouseEvent) so the
+      // drag tracks regardless of which the engine delivers; real engines cancel the compat mouse
+      // stream when pointerdown is preventDefault'ed, so this never double-applies.
+      const onDragMove = (me: MouseEvent): void => { autoScroll(me.clientX); drag.move(me.clientX + scrollAdj); };
       const onEnd = (): void => drag.end();
       drag = createResizeDrag({
         originX: origin,
         startWidth: start,
         min: MIN_COL,
-        onWidth: (w) => { applyWidth(w); layout(); },
+        onWidth: (w) => { applyWidth(w); syncInfinityTableWidth(); layout(); },
         onEnd: () => {
-          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mousemove", onDragMove);
           window.removeEventListener("mouseup", onEnd);
-          window.removeEventListener("pointermove", onPointerMove);
+          window.removeEventListener("pointermove", onDragMove);
           window.removeEventListener("pointerup", onEnd);
           window.removeEventListener("pointercancel", onEnd);
           window.removeEventListener("blur", onEnd);
@@ -1488,6 +1587,7 @@ export class TableWidget extends WidgetType {
           document.body.style.cursor = "";
           document.body.style.userSelect = "";
           handle?.classList.remove("cm-col-resize--dragging");
+          activeResizeHandle = null;
           resizeActive = false;
           persist();
           layout();
@@ -1497,9 +1597,9 @@ export class TableWidget extends WidgetType {
       // which the engine delivers; `blur` releases if the pointer comes up while the window is
       // inactive (alt-tab / OS focus steal), where no up event arrives at all. `end()` is
       // idempotent, so whichever fires first wins and the rest no-op.
-      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mousemove", onDragMove);
       window.addEventListener("mouseup", onEnd);
-      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointermove", onDragMove);
       window.addEventListener("pointerup", onEnd);
       window.addEventListener("pointercancel", onEnd);
       window.addEventListener("blur", onEnd);

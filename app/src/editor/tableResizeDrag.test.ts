@@ -4,7 +4,7 @@
 // the width clamp, and — critically — that `end()` is idempotent so wiring it to several end events
 // (pointerup / pointercancel / mouseup / blur) runs the cleanup exactly once.
 import { test, expect, describe } from "bun:test";
-import { computeResizeWidth, createResizeDrag } from "./tableResizeDrag";
+import { computeResizeWidth, createResizeDrag, autoScrollDelta, frozenColumnsWidth } from "./tableResizeDrag";
 
 describe("computeResizeWidth", () => {
   test("adds the delta to the start width", () => {
@@ -48,5 +48,38 @@ describe("createResizeDrag", () => {
     drag.end();
     drag.move(999); // ignored — already ended
     expect(widths).toEqual([50]);
+  });
+});
+
+// ∞-mode auto-scroll nudge (#92): the drag follow-scrolls the horizontal scroller when the pointer
+// nears an edge. Scroller spans [100, 700] with a 28px trigger zone in these cases.
+describe("autoScrollDelta", () => {
+  test("no nudge while the pointer is between the edge zones", () => {
+    expect(autoScrollDelta(400, 100, 700, 28)).toBe(0);
+    expect(autoScrollDelta(128, 100, 700, 28)).toBe(0); // exactly on the left zone boundary
+    expect(autoScrollDelta(672, 100, 700, 28)).toBe(0); // exactly on the right zone boundary
+  });
+  test("past the right zone → positive nudge equal to the overshoot", () => {
+    expect(autoScrollDelta(680, 100, 700, 28)).toBe(8);
+    expect(autoScrollDelta(750, 100, 700, 28)).toBe(78); // pointer outside the window entirely
+  });
+  test("past the left zone → negative nudge equal to the overshoot", () => {
+    expect(autoScrollDelta(120, 100, 700, 28)).toBe(-8);
+    expect(autoScrollDelta(50, 100, 700, 28)).toBe(-78);
+  });
+});
+
+// ∞-mode definite table width (#92): the widget sums the frozen per-column widths into an inline
+// pixel width; a set with ANY unfrozen column yields null so the caller leaves the table alone.
+describe("frozenColumnsWidth", () => {
+  test("sums a fully frozen set", () => {
+    expect(frozenColumnsWidth([120, 80, 200])).toBe(400);
+    expect(frozenColumnsWidth([0, 100, 0])).toBe(100); // 0 is a real (headless-frozen) width
+  });
+  test("null when any column is unfrozen (NaN from an empty style)", () => {
+    expect(frozenColumnsWidth([120, NaN, 200])).toBeNull();
+  });
+  test("empty set sums to 0 (degenerate, no columns)", () => {
+    expect(frozenColumnsWidth([])).toBe(0);
   });
 });
