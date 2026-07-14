@@ -8,6 +8,7 @@ import { startFileWatch, stopFileWatch, stopAllFileWatches } from "./fileWatch.t
 import { heartbeatDevice, isOwner } from "../lib/owner.ts"
 import { loadEnabledVaults, loadAllVaults } from "../lib/registry.ts"
 import { daemonConfigPath, generateDaemonConfig, installDaemon, reloadDaemon } from "../lib/platform.ts"
+import { augmentPath } from "../lib/childEnv.ts"
 import { MACHINE_DIR, MACHINE_PID_FILE, MACHINE_LOGS_DIR, SHUTDOWN_TIMEOUT_MS, CRON_CHECK_INTERVAL_MS, LAUNCHD_LABEL, vaultPaths, type VaultContext } from "../lib/config.ts"
 
 // ONE machine process, many brains. Machine-level identity/runtime state lives in
@@ -218,7 +219,12 @@ async function ensureInstalled(): Promise<void> {
     programArgs: [bin],
     logsDir: MACHINE_LOGS_DIR,
     workDir: MACHINE_DIR,
-    envPath: process.env.PATH || "/usr/bin:/bin:/usr/local/bin",
+    // A Finder-launched GUI app inherits launchd's bare PATH (`/usr/bin:/bin:/usr/sbin:/sbin`) at
+    // install time; baking that straight into the plist starves the daemon (and every cron worker
+    // it spawns) of the CLI's install dirs. Augment it so the plist's PATH includes /usr/local/bin,
+    // /opt/homebrew/bin, and ~/.bismuth/bin — defense in depth alongside the per-worker env PATH in
+    // session.ts. See childEnv.ts (Bug #105).
+    envPath: augmentPath(process.env.PATH || "/usr/bin:/bin:/usr/sbin:/sbin"),
   })
   const res = existsSync(configPath) ? await reloadDaemon(configPath, config) : await installDaemon(configPath, config)
   if (!res.ok) { console.error(`[daemon] install failed: ${res.error}`); process.exit(1) }
