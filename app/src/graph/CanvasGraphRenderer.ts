@@ -50,6 +50,7 @@ export interface HoverNode {
 import { nodeVisualState } from "../../../core/src/daemonViz";
 import { computeAlwaysOnSet } from "./labelSelection";
 import { hashKey, intToHex, paletteColorInt } from "../themeColors";
+import { isUsableBox, finiteVec3, boundingRadius, fitScale } from "./graphFit";
 
 const FOV_DEG = 60; // matches the old PerspectiveCamera so framing carries over
 const FIT_FRACTION = 0.42; // graph's resting on-screen radius as a fraction of min(W,H)
@@ -229,6 +230,13 @@ export class CanvasGraphRenderer {
   // viewport geometry
   private W = 1; private H = 1; private cx = 0.5; private cy = 0.5; private P = 1; private worldScale = 1;
   private fitMargin = 1; private viewOffsetY = 0; // extra fit zoom-out + vertical offset (used by the intro graph)
+  // True once measure() has seen a real (non-degenerate) host box. The floating graph is re-placed
+  // across slots and re-sized twice (once immediately, once ~280ms after a pane transition settles);
+  // a measurement taken mid-layout at 0/1px is IGNORED (we keep the last good geometry) rather than
+  // fitted to — fitting to a ~0px box collapses every node onto a point ("spacing goes weird before
+  // it settles"). Until the first usable box arrives we also skip painting so no collapsed frame
+  // shows. See measure()/fit()/drawCanvas().
+  private boxReady = false;
 
   // camera: orbit (rx/ry) + zoom (translateZ px, >0 = toward viewer) + pan + look-at target (centered world units)
   private rx = -0.5; private ry = 0; private zoom = 0; private panX = 0; private panY = 0;
@@ -373,14 +381,19 @@ export class CanvasGraphRenderer {
     // initial p3/p2 centered on the cloud before any rescale runs (most visible in 3rd-brain, where
     // "you" isn't linked to the memory nodes and sits far from their centroid). Falls back to the
     // all-node centroid when there are no non-self nodes.
-    const c3 = this.centroid(g.nodes.filter((n) => n.kind !== "self").map((n) => n.position ?? [0, 0, 0]));
-    const c2 = this.centroid2(g.nodes.filter((n) => n.kind !== "self").map((n) => n.position2d ?? [0, 0]));
+    // Sanitize every coordinate to a finite triple first: a stray NaN/Infinity (stale localStorage
+    // cache, a node still awaiting layout, a diverged force tick) would otherwise poison the centroid
+    // and the fit radius, turning worldScale into NaN and blanking/exploding the whole cloud.
+    const c3 = this.centroid(g.nodes.filter((n) => n.kind !== "self").map((n) => finiteVec3(n.position)));
+    const c2 = this.centroid2(
+      g.nodes.filter((n) => n.kind !== "self").map((n) => { const v = finiteVec3(n.position2d); return [v[0], v[1]] as [number, number]; }),
+    );
 
     // hovered/highlight state is stale across modes
     this.hoveredId = null; this.highlightSet = null;
     const mkNode = (node: GraphNode): NodeView => {
-      const p = node.position ?? [0, 0, 0];
-      const p2 = node.position2d ?? [p[0], p[1]];
+      const p = finiteVec3(node.position);
+      const p2 = finiteVec3(node.position2d, [p[0], p[1], 0]);
       const d = deg.get(node.id) ?? 0;
       return {
         node, p3: [p[0] - c3[0], -(p[1] - c3[1]), p[2] - c3[2]], p2: [p2[0] - c2[0], -(p2[1] - c2[1]), 0],
@@ -411,12 +424,10 @@ export class CanvasGraphRenderer {
     // correct immediately. radius2 below is then recomputed from the settled p2 (not the seed).
     this.ensure2D();
 
-    let r3 = 1, r2 = 1;
-    for (const nv of this.nodes) {
-      r3 = Math.max(r3, Math.hypot(nv.p3[0], nv.p3[1], nv.p3[2]));
-      r2 = Math.max(r2, Math.hypot(nv.p2[0], nv.p2[1], nv.p2[2]));
-    }
-    this.radius3 = r3; this.radius2 = r2;
+    // Fit radius per view — floored at 1 and finite-guarded (boundingRadius) so a degenerate or
+    // non-finite cloud can never drive worldScale to 0/Infinity/NaN (collapse/explode/blank).
+    this.radius3 = boundingRadius(this.nodes.map((nv) => nv.p3));
+    this.radius2 = boundingRadius(this.nodes.map((nv) => nv.p2));
 
     this.alwaysOn = computeAlwaysOnSet(g.nodes, g.edges.map((e) => ({ source: e.from, target: e.to })), this.activeFile, this.cfg.graphLabelHubCount);
     this.glowCentroids = [...this.getCommunityCentroids().values()].sort((a, b) => b.count - a.count).slice(0, 3).map((c) => c.centroid);
@@ -483,10 +494,8 @@ export class CanvasGraphRenderer {
       const store = scaleToSpacing(this.nodes, 2);
       this.cachePut(this.p2Cache, this.sig, store);
     }
-    let r2 = 1;
-    for (const nv of this.nodes) r2 = Math.max(r2, Math.hypot(nv.p2[0], nv.p2[1], nv.p2[2]));
-    this.radius2 = r2;
-    this.scale2 = (Math.min(this.W, this.H) * FIT_FRACTION) / Math.max(1, this.radius2);
+    this.radius2 = boundingRadius(this.nodes.map((nv) => nv.p2));
+    this.scale2 = fitScale(Math.min(this.W, this.H) * FIT_FRACTION, this.radius2);
     this.dirty = true;
   }
 
@@ -689,6 +698,11 @@ export class CanvasGraphRenderer {
   private measure() {
     if (!this.host) return;
     const r = this.host.getBoundingClientRect();
+    // Ignore a degenerate mid-layout box: fitting to a ~0px box collapses the whole cloud onto a
+    // point until the real box arrives (the "weird spacing before it settles" transient). Keep the
+    // last good W/H/canvas instead; the ResizeObserver fires again with the real box moments later.
+    if (!isUsableBox(r.width, r.height)) { if (!this.boxReady) this.dirty = true; return; }
+    this.boxReady = true;
     this.W = Math.max(1, r.width); this.H = Math.max(1, r.height);
     this.cx = this.W / 2; this.cy = this.H / 2;
     this.P = (this.H / 2) / Math.tan((FOV_DEG * Math.PI) / 360);
@@ -703,10 +717,13 @@ export class CanvasGraphRenderer {
   }
 
   private fit() {
+    // Don't fit to a not-yet-measured (degenerate) host box — that would collapse the cloud onto a
+    // point. Once measure() has seen a real box the ResizeObserver re-runs fit() with it.
+    if (!this.boxReady) return;
     const fitPx = (Math.min(this.W, this.H) * FIT_FRACTION) / this.fitMargin;
     this.fitPx = fitPx; // node size derives from this (density-based), independent of layout radius
-    this.scale3 = fitPx / Math.max(1, this.radius3);
-    this.scale2 = fitPx / Math.max(1, this.radius2);
+    this.scale3 = fitScale(fitPx, this.radius3);
+    this.scale2 = fitScale(fitPx, this.radius2);
     this.worldScale = this.scale3 + (this.scale2 - this.scale3) * this.morph;
     this.zoom = 0; this.goalZoom = 0;
     this.target = [0, 0, 0]; this.goalTarget = [0, 0, 0];
@@ -778,6 +795,11 @@ export class CanvasGraphRenderer {
     if (!ctx) return;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.W, this.H);
+    // Hold the first paint until a real host box has been measured — a fit computed against a
+    // degenerate mid-layout box would draw a collapsed (all-nodes-on-a-point) frame. The cleared
+    // canvas shows the host background until then; the ResizeObserver triggers a real paint moments
+    // later once the box settles.
+    if (!this.boxReady) return;
     // edges — width scales with zoom: thin when zoomed out (declutters the hairball), thicker zoomed in
     ctx.strokeStyle = intToHex(this.cfg.edgeColor);
     const zoomScale = this.P / Math.max(1, this.P - this.zoom);
