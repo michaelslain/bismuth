@@ -49,6 +49,34 @@ export function buildQueue(
 }
 
 /**
+ * The session's fixed progress denominator — the number the header shows the
+ * graded count OUT OF. Captured ONCE at session start (see FlashcardsView) and
+ * then frozen, so nothing that happens DURING review can move it. This is the fix
+ * for the reported "total card count changes between cram mode and normal studying,
+ * and sometimes the card count goes up randomly".
+ *
+ * Semantics (deterministic for a given deck + mode):
+ * - cram: EVERY card in the deck. The cram queue never changes membership (cram
+ *   writes no scheduling and triggers no refetch), so the total is just `queueLen`
+ *   and is independent of how many have been graded.
+ * - normal: only the cards DUE when the session began. A persisted review's
+ *   due-only queue SHRINKS as graded cards schedule out (their due date is pushed
+ *   past today), so the original due count is reconstructed as
+ *   `already-graded + still-queued`. Anchoring on that also yields the correct
+ *   starting total when RESUMING mid-session (restored tally + remaining queue).
+ *
+ * The previous code computed `graded + queueLen` LIVE on every render for ALL
+ * modes. In cram (and any non-persisted review) the queue length is constant while
+ * `graded` climbs, so the displayed total grew by one per grade; in persisted
+ * normal mode it flickered up by one during each post-grade refetch. Freezing the
+ * anchored value removes both the growth and the flicker while keeping the intended
+ * cram-vs-normal difference (all cards vs due cards).
+ */
+export function progressTotal(queueLen: number, graded: number, cram: boolean): number {
+  return cram ? queueLen : graded + queueLen;
+}
+
+/**
  * Decide the next queue position after grading the card at `pos`.
  *
  * In cram mode the queue never changes membership, so step strictly
