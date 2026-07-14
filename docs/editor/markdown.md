@@ -491,12 +491,14 @@ Inline HTML is detected using the Lezer syntax tree (`HTMLTag` nodes via `syntax
 
 ```js
 {
-  USE_PROFILES: { html: true },  // standard HTML profile, no SVG/MathML islands
-  ADD_ATTR: ["target"],           // allow <a target="_blank">
+  USE_PROFILES: { html: true, mathMl: true, svg: true },  // HTML + inline MathML/SVG islands (KaTeX)
+  ADD_ATTR: ["target"],                                    // allow <a target="_blank">
 }
 ```
 
-DOMPurify strips: `<script>`, inline event handlers (`onclick=…`, `onerror=…`, etc.), `javascript:` URLs, and other XSS vectors, while **keeping** benign formatting elements: `<b>`, `<i>`, `<u>`, `<span>`, `<mark>`, `<sub>`, `<sup>`, `<div>`, `<details>`, `<img>`, `<a>`, `<table>`, etc., along with `style`, `align`, and `class` attributes.
+The MathML/SVG profiles are on so KaTeX's rendered `<math>`/`<svg>` output (path/circle geometry) survives sanitization; the plain HTML profile alone would strip those islands.
+
+DOMPurify strips: `<script>`, inline event handlers (`onclick=…`, `onerror=…`, etc.), `javascript:` URLs, and other XSS vectors, while **keeping** benign formatting elements: `<b>`, `<i>`, `<u>`, `<span>`, `<mark>`, `<sub>`, `<sup>`, `<div>`, `<details>`, `<img>`, `<a>`, `<table>`, etc., along with `style`, `align`, and `class` attributes. Note `<script>` is always stripped, which is why a live HTML artifact (`![[viz.html]]`) can only run inside a **sandboxed iframe** (`embedBlock.ts`), never inlined through this path — see [Vault Attachments & Embeds](../vault/attachments.md).
 
 **Headless fallback**: In Bun tests / SSR (no `window`), DOMPurify cannot sanitize (no DOM). `sanitizeHtml` detects this and passes through the input unchanged — this is safe because `innerHTML` is never called in a headless context.
 

@@ -1,6 +1,6 @@
 # Vault Attachments & Embeds
 
-This document covers everything about embedding and serving vault media in Bismuth: the two embed syntaxes (`![[file]]` and `![](url)`), how each media kind is rendered (image, PDF, audio, video, `.md` transclusion), the drag-resize mechanism and how the persisted `|WxH` size works, how the backend resolves asset filenames via `resolveAsset`, the `POST /asset` upload endpoint including size cap and collision-avoidance, and the `attachments` settings section that controls where new files land.
+This document covers everything about embedding and serving vault media in Bismuth: the two embed syntaxes (`![[file]]` and `![](url)`), how each media kind is rendered (image, PDF, audio, video, live HTML artifact, `.md` transclusion), the drag-resize mechanism and how the persisted `|WxH` size works, how the backend resolves asset filenames via `resolveAsset`, the `POST /asset` upload endpoint including size cap and collision-avoidance, and the `attachments` settings section that controls where new files land.
 
 ---
 
@@ -18,6 +18,8 @@ EMBED_RE = /!\[\[([^\]\n]+?)\]\]|!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
 - `![[report.pdf#page=3]]` — embed PDF, opening on page 3
 - `![[clip.mp4]]` — embed video
 - `![[sound.mp3]]` — embed audio
+- `![[viz.html]]` — embed a live, interactive HTML artifact in a sandboxed iframe
+- `![[viz.html#region=form]]` — same, deep-linked via the artifact's `location.hash`
 - `![[Other Note]]` — transclude a markdown note (any target without a recognised media extension is treated as a note)
 - `![[photo.png|300]]` — image constrained to 300 px wide (aspect-locked)
 - `![[photo.png|300x200]]` — image constrained to 300×200 px
@@ -55,6 +57,7 @@ Classification is done purely by file extension in `kindForTarget()`:
 | `pdf` | `pdf` |
 | `mp3 wav ogg m4a flac aac opus` | `audio` |
 | `mp4 webm mov m4v ogv mkv` | `video` |
+| `html htm` | `html` (live sandboxed iframe) |
 | anything else (no extension, or `.md`, `.txt`, etc.) | `note` (transclusion) |
 
 A bare `![[Note Name]]` with no extension always becomes a note transclusion. A `![[foo.xyz]]` with an unrecognised extension also falls through to note transclusion (and will fail to render if `foo.xyz` is not a markdown note).
@@ -82,6 +85,21 @@ frame.src = `${assetUrl}#${[page, "toolbar=0", "navpanes=0", "view=FitH"].filter
 ```
 
 Default size: `100%` wide, `520px` tall. If `|WxH` is set: `W`px wide, `H`px tall. Free-resize (not aspect-locked) via native CSS `resize: both`.
+
+### HTML Artifacts (live, interactive)
+
+`![[viz.html]]` (or `.htm`) renders the **live** HTML file in a sandboxed `<iframe class="cm-embed-html">` — its inline `<script>`s run, so a self-contained artifact (e.g. a force-directed SVG graph built entirely in JS, no network) stays fully interactive. An iframe is the **only** path: every other raw-HTML surface routes through `sanitizeHtml.ts` and DOMPurify strips `<script>`, which would kill the artifact. Modeled on the PDF branch (both `createElement("iframe")`, bypassing the sanitizer). Same chrome, default size, and free-resize as PDFs (`html` is in `RESIZABLE_KINDS`). A `#fragment` (`![[viz.html#region=form]]`) is appended to `frame.src` so the artifact can deep-link via `location.hash`.
+
+**Security — two required layers (see the comments in `embedBlock.ts` + `server.ts`):**
+
+1. **`sandbox="allow-scripts"` on the iframe, WITHOUT `allow-same-origin`.** The artifact's document gets an *opaque* origin, so it cannot script-read the app's DOM / `localStorage` / cookies. Adding `allow-same-origin` would hand it the app's real origin and full same-origin access — never do it.
+2. **A locked-down CSP on the served file.** Sandbox alone does **not** protect the vault: relative URLs inside the artifact resolve against the core server (its document URL), and the API is unauthenticated with `Access-Control-Allow-Origin: *` (`withCors`), so `fetch('/file?path=private.md')` from the artifact would succeed (`ACAO: *` matches the frame's null origin). `GET /asset` therefore stamps every `.html`/`.htm` response with:
+
+   ```
+   Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'
+   ```
+
+   `connect-src 'none'` kills `fetch`/XHR/WebSocket/EventSource; `form-action 'none'` blocks form POSTs; `default-src 'none'` + the narrow allowances block every external subresource. A self-contained artifact still runs fully (inline `<script>`/`<style>`, inline SVG, `data:`/`blob:` images). Both layers are load-bearing; neither is optional.
 
 ### Audio
 
@@ -115,7 +133,7 @@ This is handled in `decorationsFor()` by skipping the `Decoration.replace` for t
 
 ## Resize and `|WxH` Persistence
 
-Only `![[...]]` wikilink embeds of kind `image`, `pdf`, or `video` (`RESIZABLE_KINDS`) are resizable. `![](url)` embeds are not resizable.
+Only `![[...]]` wikilink embeds of kind `image`, `pdf`, `video`, or `html` (`RESIZABLE_KINDS`) are resizable. `![](url)` embeds are not resizable. (HTML uses the same free/`|WxH` resize as PDF/video.)
 
 ### Image resize (aspect-locked)
 
