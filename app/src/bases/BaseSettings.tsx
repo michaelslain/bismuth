@@ -1,13 +1,22 @@
 import { createSignal, createMemo, For, Show } from "solid-js";
 import { api } from "../api";
-import type { BaseConfig, Row, ViewType } from "../../../core/src/bases/types";
+import type { BaseConfig, BasePropertyKind, NumberFormat, Row, ViewType } from "../../../core/src/bases/types";
+import { BASE_PROPERTY_KINDS, NUMBER_FORMATS } from "../../../core/src/bases/types";
 import { fileBasename as noteLabel } from "../../../core/src/pathUtils";
 import { capitalize } from "./renderValue";
 import { columnLabel } from "./columnLabel";
 import { declaredPropertyKeys } from "../../../core/src/bases/properties";
+import {
+  blankPropertyRow,
+  buildPropertiesYaml,
+  moveRow,
+  seedPropertyRows,
+  type PropertyFormRow,
+} from "./basePropertiesForm";
 import { Modal } from "../ui/Modal";
 import { Icon } from "../icons/Icon";
 import { Select } from "../ui/Select";
+import { TextInput } from "../ui/TextInput";
 import { TextButton } from "../ui/TextButton";
 import { IconTextButton } from "../ui/IconTextButton";
 // Shares the calendar settings modal chrome (.evm-modal / .set-*).
@@ -77,6 +86,10 @@ const DIR_OPTS = [
   { value: "ASC", label: "Ascending" },
   { value: "DESC", label: "Descending" },
 ];
+
+// Properties section (#104): kind + number-format pickers.
+const KIND_OPTS = BASE_PROPERTY_KINDS.map((k) => ({ value: k, label: capitalize(k) }));
+const NUMBER_FORMAT_OPTS = NUMBER_FORMATS.map((f) => ({ value: f, label: capitalize(f) }));
 
 /**
  * Per-view settings as a modal overlay — same chrome as the calendar's
@@ -164,6 +177,21 @@ export function BaseSettings(props: {
     ...allCols().map((c) => ({ value: c, label: columnLabel(c, props.config) })),
   ]);
 
+  // --- properties form (#104: define the base's OWN declared property set) ---
+  // Base-level, not per-view — shown regardless of `props.type`. Seeded ONLY from an
+  // existing list-form declaration (`declaredProperties`); a base using classic map-form
+  // metadata (or no `properties:` at all) starts from an empty list so the panel never
+  // surfaces entries it can't losslessly round-trip as a list. `hadDeclared` is captured
+  // once (not reactive) so save() only rewrites `properties:` when there's something to
+  // write — either the base already declared a list, or the user added one here — instead
+  // of clobbering an untouched map-form base with an empty list on every unrelated save.
+  const hadDeclared = props.config.declaredProperties !== undefined;
+  const [propRows, setPropRows] = createSignal<PropertyFormRow[]>(seedPropertyRows(props.config));
+  const updateRow = (i: number, patch: Partial<PropertyFormRow>) =>
+    setPropRows(propRows().map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const addPropRow = () => setPropRows([...propRows(), blankPropertyRow(propRows().map((r) => r.name))]);
+  const removePropRow = (i: number) => setPropRows(propRows().filter((_, idx) => idx !== i));
+
   const reset = () => {
     setForm(Object.fromEntries(fields().map((f) => [f.key, f.def])));
     setCols(allCols().map((c) => ({ col: c, visible: true })));
@@ -173,6 +201,7 @@ export function BaseSettings(props: {
     setGroupDir("ASC");
     setAggregate(view()?.y ? "sum" : "count");
     setBin("day");
+    setPropRows(seedPropertyRows(props.config));
   };
 
   const save = async () => {
@@ -189,11 +218,12 @@ export function BaseSettings(props: {
           if (props.type !== "heatmap") await api.setProperty(props.basePath, "bin", bin());
         }
       }
+      if (hadDeclared || propRows().length > 0) {
+        await api.setProperty(props.basePath, "properties", buildPropertiesYaml(propRows()));
+      }
     }
     props.onSaved();
   };
-
-  const noSettings = () => !isRecord() && !isChart() && fields().length === 0;
 
   return (
     <Modal onClose={props.onClose} class="base-settings evm-modal">
@@ -304,9 +334,76 @@ export function BaseSettings(props: {
           </div>
         </Show>
 
-        <Show when={noSettings()}>
-          <div class="set-hint">No extra settings for this view type yet.</div>
+        {/* Properties: the base's OWN declared property set — base-level, shown for every
+            view type (#104). Each row: name, type, visibility, reorder, delete, plus an
+            optional second line of type-specific fields. */}
+        <div class="set-sect">Properties</div>
+        <div class="set-hint">
+          Declare this base's own fields — name, type, and whether it shows on cards/table. Order here drives card/table field order.
+        </div>
+        <Show when={propRows().length > 0}>
+          <div class="propset-group">
+            <For each={propRows()}>{(row, i) => (
+              <div class="propset-row">
+                <div class="propset-main">
+                  <TextInput class="propset-name" value={row.name} placeholder="Property name" onInput={(v) => updateRow(i(), { name: v })} />
+                  <Select class="propset-type" value={row.kind} options={KIND_OPTS} onChange={(v) => updateRow(i(), { kind: v as BasePropertyKind })} />
+                  <div
+                    class="propset-vis"
+                    title={row.hidden ? "Hidden from cards/table — click to show" : "Visible on cards/table — click to hide"}
+                    onClick={() => updateRow(i(), { hidden: !row.hidden })}
+                  >
+                    <span class="propset-vis-lab">{row.hidden ? "Hidden" : "Visible"}</span>
+                    <span class={"evm-toggle" + (row.hidden ? "" : " on")}><i /></span>
+                  </div>
+                  <button type="button" class="propset-btn" disabled={i() === 0} aria-label="Move up" onClick={() => setPropRows(moveRow(propRows(), i(), -1))}>
+                    <Icon value="ArrowUp" size={13} />
+                  </button>
+                  <button type="button" class="propset-btn" disabled={i() === propRows().length - 1} aria-label="Move down" onClick={() => setPropRows(moveRow(propRows(), i(), 1))}>
+                    <Icon value="ArrowDown" size={13} />
+                  </button>
+                  <button type="button" class="propset-btn del" aria-label={`Remove ${row.name || "property"}`} onClick={() => removePropRow(i())}>
+                    <Icon value="Trash2" size={13} />
+                  </button>
+                </div>
+
+                <Show when={row.kind === "select" || row.kind === "multiselect"}>
+                  <TextInput
+                    class="propset-extra propset-options"
+                    multiline
+                    value={row.optionsText}
+                    placeholder="Options — one per line or comma-separated (e.g. todo, doing, done)"
+                    onInput={(v) => updateRow(i(), { optionsText: v })}
+                  />
+                </Show>
+
+                <Show when={row.kind === "number"}>
+                  <div class="propset-extra propset-numrow">
+                    <Select value={row.number} options={NUMBER_FORMAT_OPTS} onChange={(v) => updateRow(i(), { number: v as NumberFormat })} />
+                    <Show when={row.number === "unit" || row.number === "currency"}>
+                      <TextInput
+                        value={row.unit}
+                        placeholder={row.number === "currency" ? "Currency code (e.g. USD)" : "Unit label (e.g. kg)"}
+                        onInput={(v) => updateRow(i(), { unit: v })}
+                      />
+                    </Show>
+                  </div>
+                </Show>
+
+                <Show when={row.kind === "formula"}>
+                  <TextInput class="propset-extra" value={row.expr} placeholder="Expression, e.g. note.qty * note.price" onInput={(v) => updateRow(i(), { expr: v })} />
+                </Show>
+
+                <Show when={row.kind !== "formula"}>
+                  <TextInput class="propset-extra" value={row.defaultText} placeholder="Default value (optional)" onInput={(v) => updateRow(i(), { defaultText: v })} />
+                </Show>
+              </div>
+            )}</For>
+          </div>
         </Show>
+        <div class="propset-add">
+          <IconTextButton icon="Plus" size="sm" onClick={addPropRow}>ADD PROPERTY</IconTextButton>
+        </div>
       </div>
 
       <div class="evm-foot">
