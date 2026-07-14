@@ -132,12 +132,13 @@
 
 /* ---------- cards view ---------- */
 .cards { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
-/* Pinterest/Google-Keep MASONRY via CSS multicol (same technique as .bodyGrid below): a
-   variable number of fields/meta per card means variable card heights, so a plain grid's
-   per-row uniform height leaves big gaps under shorter cards. Multicol packs each column
-   independently instead. `break-inside: avoid` + full-width `inline-block` keep each card
-   WHOLE within one column (no fragmenting the cover image or body across columns). */
-.cardGrid { column-width: var(--card-grid-min, 220px); column-gap: 14px; }
+/* Responsive card grid: as many equal columns as fit at >= --card-grid-min (the
+   ui.cardGridMinWidth setting), each column stretching to share the leftover space.
+   Row-major flow keeps cards in their sorted order — a CSS-multicol "masonry" reads
+   top-to-bottom DOWN each column first, which scrambles the reading order of sorted/
+   grouped cards (the #96 regression this replaces). `align-items: start` lets every
+   card keep its natural height instead of stretching to the tallest card in its row. */
+.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr)); gap: 14px; align-items: start; }
 .card {
   background: var(--surface-1, var(--panel));
   border: 1px solid var(--border-soft, var(--border));
@@ -147,14 +148,7 @@
   flex-direction: column;
 }
 /* Cards open their note on click — show it's interactive. */
-.cardGrid > .card {
-  cursor: pointer;
-  transition: transform 0.08s ease, box-shadow 0.08s ease, border-color 0.08s ease;
-  break-inside: avoid;
-  width: 100%;
-  display: inline-block;
-  margin: 0 0 14px;
-}
+.cardGrid > .card { cursor: pointer; transition: transform 0.08s ease, box-shadow 0.08s ease, border-color 0.08s ease; }
 .cardGrid > .card:hover { transform: translateY(-2px); border-color: var(--border, var(--border-soft)); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22); }
 /* Image cover: a clean framed image (no gradient/spine/texture), ratio set inline. */
 .cardCoverImg {
