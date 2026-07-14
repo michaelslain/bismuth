@@ -391,8 +391,10 @@ export const api = {
   // them (newest first); `chatSessionMessages` replays one as ChatFrames (in order) so the client can
   // rehydrate the transcript before resuming it over the WS.
   chatSessions: () => getJson<{ sessions: ChatSessionInfo[] }>("/chat/sessions").then((r) => r.sessions),
-  chatSessionMessages: (id: string) =>
-    getJson<{ frames: ChatFrame[] }>(`/chat/session-messages?id=${encodeURIComponent(id)}`).then((r) => r.frames),
+  chatSessionMessages: (id: string, provider?: string) =>
+    getJson<{ frames: ChatFrame[] }>(
+      `/chat/session-messages?id=${encodeURIComponent(id)}${provider ? `&provider=${encodeURIComponent(provider)}` : ""}`,
+    ).then((r) => r.frames),
   // Search past sessions by CONTENT (title + message text) — filters the SDK's own session data
   // server-side (no index). Returns matches newest-first, each with a snippet of where it matched.
   chatSearch: (query: string) =>

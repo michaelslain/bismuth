@@ -1,5 +1,7 @@
 # Visual Claude Code Chat
 
+> Chats can also run on **opencode** instead of Claude Code — see [Chat providers](providers.md) for the provider seam (`core/src/chatProviders/`), the header picker, and what degrades gracefully. This page documents the default Claude Code driver.
+
 Bismuth ships an in-app **chat** tab that is a visual front-end onto the user's own `claude` binary. Each chat is one long-lived [Claude Agent SDK](https://modelcontextprotocol.io) `query()` session, driven over a WebSocket at `/chat`, that runs the locally-installed Claude Code with the user's **machine-login auth** — there is **no API key by design**. The backend (`core/src/chat.ts`) translates the SDK's streaming message feed into a small `ChatFrame` wire union; the frontend (`app/src/ChatView.tsx`) renders those frames as a live transcript that mirrors the Claude Code TUI: streamed assistant prose (markdown), collapsible extended-thinking, labeled tool-call chips with their results, inline permission prompts, and a per-turn manifest (model / permission mode / slash commands / tools / MCP servers). Everything is data-driven off the SDK, so new Claude Code features light up with zero code changes here.
 
 ## No API key by design

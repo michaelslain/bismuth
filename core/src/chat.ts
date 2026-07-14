@@ -81,7 +81,7 @@ export type ChatFrame =
    *  Each model also carries the reasoning-effort levels IT supports (ModelInfo.supportedEffortLevels)
    *  so the header's Effort picker (FEATURE #63) offers exactly what the SELECTED model allows —
    *  never a hardcoded list. Empty for a model/CLI that doesn't expose effort → the picker hides. */
-  | { type: "models"; models: { value: string; label: string; description: string; effortLevels: string[] }[] }
+  | { type: "models"; models: { value: string; label: string; description: string; effortLevels: string[]; free?: boolean }[] }
   /** The session's conversation summary (Query store via getSessionInfo) — names the chat tab.
    *  Emitted once per session, retried each turn-end until a non-empty summary exists. */
   | { type: "title"; title: string }
@@ -92,9 +92,10 @@ export type ChatFrame =
   | { type: "session"; sessionId: string }
   /** Context-window usage after a completed turn (Query.getContextUsage) — the header pill. */
   | { type: "context"; percentage: number; totalTokens: number; maxTokens: number }
-  /** A fatal problem. `no-claude` = the CLI isn't installed (surface setup, never fall back to an
-   *  API); `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
-  | { type: "error"; code: "no-claude" | "spawn" | "exit" | "error"; message: string };
+  /** A fatal problem. `no-claude` = the `claude` CLI isn't installed (surface setup, never fall
+   *  back to an API); `no-opencode` = the `opencode` CLI isn't installed (the opencode provider —
+   *  see chatProviders/); `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
+  | { type: "error"; code: "no-claude" | "no-opencode" | "spawn" | "exit" | "error"; message: string };
 
 export type ChatSink = (frame: ChatFrame) => void;
 
@@ -1937,6 +1938,12 @@ export function detachSink(chatId: string): void {
 
 export function chatSessionCount(): number {
   return sessions.size;
+}
+
+/** Whether a live Claude session exists for this chatId — the chat-provider router
+ *  (core/src/chatProviders/index.ts) uses it to route verbs to the backend that owns the chat. */
+export function hasSession(chatId: string): boolean {
+  return sessions.has(chatId);
 }
 
 // Tear down every chat session (kills the spawned `claude` children) so headless runs don't outlive

@@ -77,3 +77,10 @@ export function rememberChatSession(chatId: string, sessionId: string): void {
 export function recallChatSession(chatId: string): string | null {
   return lookupSession(read(), chatId);
 }
+
+/** Drop a tab's remembered session (a provider switch orphans the old conversation — resuming a
+ *  Claude session id on opencode, or vice versa, could only error). */
+export function forgetChatSession(chatId: string): void {
+  if (!chatId) return;
+  write(read().filter((e) => e.chatId !== chatId));
+}
