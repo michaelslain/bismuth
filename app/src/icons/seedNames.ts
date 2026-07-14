@@ -17,7 +17,7 @@ export const SEED_ICON_NAMES: readonly string[] = [
   "Landmark", "LayoutList", "Link", "Lock", "Menu", "MessageSquare", "MessagesSquare", "Minus", "Network", "Notebook",
   "PanelBottom", "PanelLeft", "PanelRight", "Pen", "Pencil", "PenTool", "Pin", "PinOff", "Plus",
   "Redo2", "RefreshCw", "Regex", "Repeat", "Replace", "RotateCcw", "Search", "Send",
-  "Server", "Settings", "Settings2", "Share", "Share2", "Square", "SquarePlus",
+  "Server", "Settings", "Settings2", "Share", "Share2", "Smile", "Square", "SquarePlus",
   "SquareTerminal", "Star", "Table", "Tag", "Trash2", "Undo2", "Users", "Vote",
   "WholeWord", "Wrench", "X", "Zap", "ZoomIn", "ZoomOut",
 ];

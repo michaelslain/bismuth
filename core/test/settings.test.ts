@@ -368,6 +368,7 @@ describe("toolbar serialization", () => {
     const out = await serializeSettingsForFrontend(vault);
     expect(out.toolbar).toEqual([
       { command: "create-menu", icon: "Plus" },
+      { command: "emoji-library", icon: "Smile" },
       { command: "search", icon: "Search" },
       { command: "open-inbox", icon: "Inbox" },
     ]);

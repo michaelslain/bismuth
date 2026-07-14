@@ -69,6 +69,10 @@ export interface CommandHandlers {
   gcalSync: () => void | Promise<void>;
   // Disconnect Google Calendar (revoke + wipe stored tokens).
   gcalDisconnect: () => void | Promise<void>;
+  // Open the emoji library (the grid picker) and insert the chosen glyph at the focused editor's
+  // caret. The always-visible home for the full library, kept OUT of the `:emoji` completion popup
+  // so a real match (`:rocket` → 🚀) is always the top result (#67).
+  openEmojiLibrary: () => void | Promise<void>;
   // Open a fresh Claude Code chat session in its own tab.
   newClaudeChat: () => void;
   // Whole-app UI zoom (see app/src/zoom.ts) — step in/out or reset to 100%.
@@ -111,6 +115,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "archive-tasks": h.archiveTasks,
     "archive-all-tasks": h.archiveAllTasks,
     "detect-ai": h.detectAiActive,
+    "emoji-library": h.openEmojiLibrary,
     "terminal": h.openTerminal,
     "search": h.openSearch,
     "settings": h.openSettings,

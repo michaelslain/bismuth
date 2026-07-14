@@ -1,7 +1,7 @@
 // app/src/editor/autocomplete.ts
 import { autocompletion, startCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import { syntaxTree } from "@codemirror/language";
-import { completionDisplayConfig, completionTheme, type IconedCompletion } from "./completionDisplay";
+import { completionDisplayConfig, completionTheme } from "./completionDisplay";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { matchWikilinkPrefix, matchWikilinkHeadingPrefix, parseHeadings, resolveNotePath, buildInsert, type NoteCandidate } from "./wikilink";
@@ -17,14 +17,6 @@ import { querySource } from "./queryComplete";
 import { taskSource } from "./taskComplete";
 import { slashSource } from "./slashComplete";
 import { applyCompletion as applyInsert } from "./applyCompletion";
-// Set the Solid-free gallery-open flag synchronously when a gallery-opening completion is
-// accepted. The gallery's dynamic import is async — between the completion `apply` call and the
-// import resolving, CM finishes its completion lifecycle (closes the popup) which can blur the
-// cell editor. Without the flag, the table widget's `focusout` guard sees `isGalleryOpen() ===
-// false` and tears down the cell editor (leaveEdit) + commits the table — destroying the very
-// EditorView the gallery's deferred insert targets. Setting the flag here, synchronously, before
-// the import starts, closes that async gap (#67/#49).
-import { setGalleryOpen } from "../ui/gallery/galleryState";
 
 // Is the caret inside a code span / fenced block per the markdown syntax tree? `[[`,
 // `#tag` and `:emoji:` are prose features — they must NOT fire inside code, where those
@@ -354,7 +346,12 @@ function templateTokenSource(): CompletionSource {
 // hits (`:happy` → 😄), so we set `filter: false`, rank ourselves, and re-query each
 // keystroke (no `validFor`). `apply` inserts the raw glyph, replacing the `:query[:]`.
 // The dataset is a generated, committed JSON artifact (see scripts/gen-emoji.ts).
-function emojiSource(): CompletionSource {
+//
+// Exported so `emojiSource.test.ts` can pin the #67 contract directly against the assembled
+// options: `:rocket` → 🚀 is the FIRST, default-selected item and there is NO "Open emoji
+// gallery" row to outrank it. The note editor AND the in-cell table editor both consume this
+// exact source through `vaultCompletion()` (cellEditorExtensions.ts), so one test covers both.
+export function emojiSource(): CompletionSource {
   return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
     const textBefore = line.text.slice(0, context.pos - line.from);
@@ -372,46 +369,20 @@ function emojiSource(): CompletionSource {
 
     const from = line.from + match.from;
     const to = line.from + match.to;
-    // "Open emoji gallery" — always first, even when no emoji matches the query, so the
-    // grid is one click away. Picking from it replaces the same `:query[:]` range. The
-    // gallery + sources are dynamically imported (keeps lucide-solid out of this module's
-    // static graph). The body `:` gallery shows emoji ONLY (icons stay for icon fields).
-    const gallery: IconedCompletion = {
-      label: "Open emoji gallery",
-      type: "gallery",
-      lucideIcon: "Grip",
-      apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
-        // Set the gallery-open flag synchronously BEFORE the async dynamic import. CM finishes
-        // its completion lifecycle (closes the popup, may blur the cell editor) right after this
-        // function returns — if the flag isn't set yet, the table widget's focusout guard sees
-        // `isGalleryOpen() === false` and tears down the cell editor. openGallery() also sets
-        // this flag, but it only runs after the import resolves — too late.
-        setGalleryOpen(true);
-        void Promise.all([import("../ui/gallery/galleryStore"), import("../ui/gallery/sources")])
-          .then(([{ openGallery }, sources]) => openGallery({ source: sources.emojiSource }))
-          .then((char) => {
-            if (char) applyInsert(view, completion, applyFrom, applyTo, char, char.length);
-            view.focus();
-          })
-          .catch((err) => {
-            // Gallery failed to open — clear the flag so the next real blur commits normally.
-            setGalleryOpen(false);
-            console.error("Failed to open emoji gallery", err);
-          });
-      },
-    };
-    const emoji: Completion[] = searchEmoji(match.query).map((e) => ({
+    // EMOJI ONLY (#67): the popup is a pure, best-first list of emoji, so typing `:rocket`↵
+    // inserts 🚀 — the top, default-selected option — with nothing else able to outrank it. The
+    // "Open emoji gallery" row that USED to live at the end of this list (and, in the user's build,
+    // floated ABOVE the match) is gone: the full emoji library is now reached through the always-
+    // visible `emoji-library` toolbar command instead of being buried under the completion options.
+    // When nothing matches (e.g. `:zzzz`) we return null so no empty/stray popup appears.
+    // filter:false → keep our ranking + keyword matches; no validFor → re-query per keystroke.
+    const options: Completion[] = searchEmoji(match.query).map((e) => ({
       label: `${e.char}  :${e.name}:`,
       apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
         applyInsert(view, completion, applyFrom, applyTo, e.char, e.char.length);
       },
     }));
-    // MATCHING EMOJI FIRST (#67): when the query matches emoji, the top option must be the best
-    // matching glyph — typing `:rocket`↵ should insert 🚀, not open the gallery. The gallery drops
-    // to the BOTTOM (still one keystroke away). Only when NOTHING matches is the gallery the sole
-    // (and therefore top) option, so `:` alone still opens the grid.
-    // filter:false → keep our ranking + keyword matches; no validFor → re-query per keystroke.
-    const options = emoji.length ? [...emoji, gallery] : [gallery];
+    if (options.length === 0) return null;
     return { from, to, options, filter: false };
   };
 }
