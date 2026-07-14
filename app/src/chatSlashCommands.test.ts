@@ -1,6 +1,6 @@
 // app/src/chatSlashCommands.test.ts
 import { describe, it, expect } from "bun:test";
-import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, chromeToggleNote } from "./chatSlashCommands";
+import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, chromeToggleNote, computeChromeToggle } from "./chatSlashCommands";
 
 describe("parseChatSlashCommand", () => {
   it("parses `/rename <name>`", () => {
@@ -89,5 +89,32 @@ describe("chromeToggleNote (BUG #87 visible feedback)", () => {
   });
   it("never claims it only applies to NEW/future sessions (the old broken wording)", () => {
     expect(chromeToggleNote(true)).not.toContain("new sessions");
+  });
+});
+
+// BUG #87 RE-FIX: the toggle flip + its transcript note must stay in lockstep — turning --chrome ON
+// (from OFF) yields the ENABLED note AND the new state `true`; turning it OFF yields the disabled
+// note AND `false`. The message reflects the NEW state, never the pre-toggle one (the user's bounce:
+// `/chrome` to enable STILL reported "disabled"). computeChromeToggle is the single pure source the
+// slash command AND the Globe pill both go through so they can't drift.
+describe("computeChromeToggle (BUG #87 re-fix: new-state ⇄ message mapping)", () => {
+  it("toggling ON (from off) → enabled note + computerUse true", () => {
+    expect(computeChromeToggle(false)).toEqual({
+      next: true,
+      note: "Browser (--chrome) enabled for this chat — takes effect from your next message.",
+    });
+  });
+  it("toggling OFF (from on) → disabled note + computerUse false", () => {
+    expect(computeChromeToggle(true)).toEqual({
+      next: false,
+      note: "Browser (--chrome) disabled for this chat — takes effect from your next message.",
+    });
+  });
+  it("the note always agrees with the returned next state (never the old one)", () => {
+    for (const current of [true, false]) {
+      const { next, note } = computeChromeToggle(current);
+      expect(next).toBe(!current);
+      expect(note).toBe(chromeToggleNote(next));
+    }
   });
 });
