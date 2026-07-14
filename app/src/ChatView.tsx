@@ -36,7 +36,8 @@ import { chatPersonaName } from "./daemonIdentity";
 import { chatTitle, publishChatTitle, resolveChatHeaderTitle } from "./chatTitles";
 import { rememberChatSession, recallChatSession, forgetChatSession } from "./chatSessionStore";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
-import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, chromeToggleNote } from "./chatSlashCommands";
+import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, computeChromeToggle } from "./chatSlashCommands";
+import { chatComputerUse, setChatComputerUse } from "./chatComputerUse";
 import { resolveInitialModel } from "./chatModelResolution";
 import { CHAT_PROVIDER_OPTIONS, modelPriceBadge, modelStorageKeys, providerStorageKey, providerSupportsClaudeControls, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
 import { restoreQueuedComposerState } from "./chatQueueRestore";
@@ -51,7 +52,7 @@ import { classifyComposerKey } from "./chatComposerKeys";
 import { HISTORY_BOTTOM, buildHistoryEntries, historyUp, historyDown, type HistoryCursor } from "./chatHistory";
 import type { NoteCandidate } from "./editor/wikilink";
 import type { FileCandidate } from "./editor/atMention";
-import { settings, setSettings } from "./settings";
+import { settings } from "./settings";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -579,7 +580,7 @@ export function ChatView(props: {
     const m = msg as { type?: string; computerUse?: boolean };
     const out =
       m && (m.type === "open" || m.type === "user" || m.type === "resume") && m.computerUse === undefined
-        ? { ...m, computerUse: settings.chat.computerUse }
+        ? { ...m, computerUse: chatComputerUse(props.chatId) }
         : msg;
     ws.send(JSON.stringify(out));
     return true;
@@ -1019,17 +1020,22 @@ export function ChatView(props: {
 
   /** Toggle Claude's --chrome (browser/computer-use) capability — ONE path shared by the header
    *  Globe pill and the /chrome slash command so both behave identically (BUG #87). Persists the
-   *  choice (settings.chat.computerUse → carried on every subsequent turn + across reload), and
+   *  choice PER-CHAT (chatComputerUse — carried on every subsequent turn + across reload), and
    *  confirms in the transcript. --chrome is a spawn-fixed CLI flag, so the LIVE session picks it up
    *  by respawning on the next message: the client stamps the new value onto the next user/open/
    *  resume message (sendJson), and the server reconciles it against the running session and
    *  respawns query() with/without --chrome, resuming the same conversation (core/src/chat.ts
-   *  computerUseChange + respawnSession). Before this, the toggle only touched settings, so the
-   *  browser stayed disabled for the chat the user was actually in. */
+   *  computerUseChange + respawnSession). The re-fix moved the state off the GLOBAL setting (which
+   *  leaked across chats, so a chat could open already-on and `/chrome` reported "disabled" instead
+   *  of enabling) onto per-chat storage seeded from the global default. */
   const toggleComputerUse = () => {
-    const next = !settings.chat.computerUse;
-    setSettings("chat", "computerUse", next);
-    pushSystemNote(chromeToggleNote(next));
+    // Flip THIS chat's --chrome state (not the global setting — BUG #87 re-fix: the global leaked
+    // across chats/sessions, so a chat could open already-on and the user's `/chrome` to "enable" it
+    // flipped it OFF and reported "disabled"). computeChromeToggle keeps the new state + its note in
+    // lockstep, so the message always reflects the NEW state.
+    const { next, note } = computeChromeToggle(chatComputerUse(props.chatId));
+    setChatComputerUse(props.chatId, next);
+    pushSystemNote(note);
   };
 
   /** Apply a CLIENT-SIDE chat slash command (Row 75: `/rename`, `/color`, `/chrome`) intercepted in
@@ -1792,9 +1798,9 @@ export function ChatView(props: {
               the flag up on the next message via a respawn that resumes this conversation (BUG #87). */}
           <IconButton
             icon="Globe"
-            label={settings.chat.computerUse ? "Browser (--chrome) on" : "Browser (--chrome) off"}
-            title={settings.chat.computerUse ? "--chrome enabled — click to disable (applies from your next message)" : "Enable --chrome browser/computer-use (applies from your next message)"}
-            variant={settings.chat.computerUse ? "selected" : "normal"}
+            label={chatComputerUse(props.chatId) ? "Browser (--chrome) on" : "Browser (--chrome) off"}
+            title={chatComputerUse(props.chatId) ? "--chrome enabled — click to disable (applies from your next message)" : "Enable --chrome browser/computer-use (applies from your next message)"}
+            variant={chatComputerUse(props.chatId) ? "selected" : "normal"}
             onClick={toggleComputerUse}
           />
           {/* Permission mode: rendered from the START (not gated on the manifest) so the header is
