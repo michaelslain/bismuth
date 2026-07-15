@@ -1028,10 +1028,12 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         // plugin, so the relay's terminal-tab UserPromptSubmit recall hook never fires here — the
         // app's PRIMARY Claude surface saw none of the 3rd brain. Mirror that hook in-process: when
         // this vault's daemon is enabled (session.memoryDir is set), on every user turn recall the
-        // memory relevant to the prompt and inject it as `additionalContext`. Read session.memoryDir
-        // via the closure so a respawnSession respawn keeps recall wired. captureToMemory already
-        // strips the injected `# Memories` block (stripInjectedBlocks) before collecting, so recall
-        // never amplifies through the recall→collect→recall loop. recallMemory is budgeted + never
+        // memory relevant to the prompt and inject it as `additionalContext`. recallMemory wraps the
+        // block in a `<bismuth-memory>` envelope that demarcates the vault's 3rd brain from Claude's
+        // OWN memory, so an in-app chat never conflates the two stores. Read session.memoryDir via the
+        // closure so a respawnSession respawn keeps recall wired. captureToMemory already strips that
+        // injected `<bismuth-memory>` block (stripInjectedBlocks) before collecting, so recall never
+        // amplifies through the recall→collect→recall loop. recallMemory is budgeted + never
         // throws, so a bloated/slow graph degrades to "no recall" rather than stalling the turn.
         ...(session.memoryDir
           ? {

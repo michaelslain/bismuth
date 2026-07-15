@@ -9,6 +9,7 @@
 // ONE `## Turn N` block with **You:** / **Claude:** sides, so dreaming sees prompt+response as
 // a unit and can attribute facts correctly. All mechanical string work — collection never
 // spends a single LLM token.
+import { MEMORY_BLOCK_TAG } from "./recall";
 
 export interface TranscriptEntry {
   type?: string;
@@ -45,12 +46,21 @@ export function extractText(message: TranscriptEntry["message"]): string {
     .trim();
 }
 
+/** The demarcated 3rd-brain recall envelope produced by formatRecall (recall.ts). Stripped from a
+ *  transcript before collection so the injected memory is never re-collected into memory (no
+ *  recall→collect→recall amplification) AND never bleeds into the model's own memory store. */
+const MEMORY_BLOCK_RE = new RegExp(`<${MEMORY_BLOCK_TAG}>[\\s\\S]*?<\\/${MEMORY_BLOCK_TAG}>`, "g");
+
 /** Strip the machine-injected context blocks the relay/app prepend to wire prompts (memories,
  *  editor context, system reminders) so only what the human actually typed survives. */
 export function stripInjectedBlocks(text: string): string {
   return text
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
     .replace(/<editor-context>[\s\S]*?<\/editor-context>/g, "")
+    .replace(MEMORY_BLOCK_RE, "")
+    // Back-compat: a transcript captured before the <bismuth-memory> envelope carries a BARE
+    // `# Memories` block (no wrapping tag) — keep dropping that legacy shape so an in-flight or
+    // already-recorded session doesn't re-collect it.
     .replace(/^# Memories\n[\s\S]*?(?=\n[^#\s])/m, "")
     .trim();
 }
