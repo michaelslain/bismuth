@@ -86,6 +86,23 @@ test("buildPtyEnv strips undefined base values", () => {
   expect("NOPE" in env).toBe(false);
 });
 
+test("buildPtyEnv neutralizes the host's Claude-Code workflow provenance (Bug #107)", () => {
+  // If Bismuth is launched from inside a Claude session, CLAUDE_JOB_DIR / CLAUDE_WORKFLOW_ID are in
+  // the parent env. They MUST NOT reach a terminal tab, or the relay's SubagentStart hook
+  // (workflowId()) mis-tags every ordinary subagent with the app's phantom workflow, garbling the
+  // agents graph. They're overridden with "" (not deleted): bun-pty merges the C-level environ under
+  // this object, so only an explicit empty value actually clears the parent's — the relay reads ""
+  // as "no workflow".
+  const env = buildPtyEnv({
+    ...ENV_BASE,
+    base: { PATH: "/usr/bin", CLAUDE_JOB_DIR: "/Users/x/.claude/jobs/abcd1234", CLAUDE_WORKFLOW_ID: "wf-9" },
+    realClaude: null,
+  });
+  expect(env.CLAUDE_JOB_DIR).toBe("");
+  expect(env.CLAUDE_WORKFLOW_ID).toBe("");
+  expect(env.PATH).toBe("/usr/bin"); // unrelated base vars are untouched
+});
+
 test("createTerminalSession spawns a shell that echoes stdin to stdout", async () => {
   const cwd = tmp();
   const s = createTerminalSession({ cwd, shell: "/bin/sh", cols: 80, rows: 24 });
