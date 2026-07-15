@@ -85,6 +85,8 @@ import {
   sync as gcalSync,
 } from "./gcal";
 import type { ConflictPolicy } from "./gcal/sync";
+import { resolveGcalConfig, type LegacyGcalConfig } from "./gcal/config";
+import { listGcalSyncTargets } from "./gcal/discover";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -137,18 +139,24 @@ function gcalCallbackHtml(message: string, success: boolean): Response {
   return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
-/** The arguments for a gcal sync, derived from settings (one place for the manual route + the
- *  auto-sync ticker). `basePathOverride` lets a manual "Sync now" target a specific calendar
- *  without waiting for the debounced settings write to land in appConfig. */
-function gcalSyncArgs(appConfig: AppConfig, basePathOverride?: string) {
+/** The CONNECTION-LEVEL gcal sync args, shared by every synced calendar: conflict policy,
+ *  naive-event timezone, and the active theme (for the `accent` category color). The
+ *  per-calendar linkage (which base ↔ which Google calendar, and whether sync is on) is NOT
+ *  here — it lives on each calendar base's frontmatter (see gcal/config.ts). */
+function gcalConnectionArgs(appConfig: AppConfig) {
   const gc = appConfig.googleCalendar;
   return {
-    basePath: (basePathOverride && basePathOverride.trim()) || gc?.basePath || "",
-    calendarId: gc?.calendarId || "primary",
     policy: (gc?.conflictPolicy ?? "lastWriteWins") as ConflictPolicy,
     timeZone: gc?.timeZone ?? "",
     theme: (appConfig.appearance as { theme?: string } | undefined)?.theme,
   };
+}
+
+/** The LEGACY global googleCalendar.{enabled,calendarId,basePath} — the migration source a
+ *  per-base resolve falls back to for the one base the old single mapping named. */
+function legacyGcalConfig(appConfig: AppConfig): LegacyGcalConfig {
+  const gc = appConfig.googleCalendar;
+  return { enabled: gc?.enabled, calendarId: gc?.calendarId, basePath: gc?.basePath };
 }
 
 export function cliArg(name: string): string | undefined {
@@ -1277,19 +1285,25 @@ export function createServer(cfg: CoreConfig) {
     // cache-invalidate + SSE re-render of the open calendar. Config from appConfig.googleCalendar.
     "POST /gcal/sync": mutatingHandler(
       async (req) => {
-        // A manual sync may pass an explicit basePath (the per-calendar modal does) so it
-        // targets the right calendar immediately, without waiting for the debounced settings
-        // write to round-trip into appConfig.
+        // The calendar to sync is PER-BASE now: the client passes the base path (the calendar
+        // whose settings/tab it came from); the Google calendarId is resolved from THAT base's
+        // frontmatter (falling back to the legacy global mapping for the base it named).
         const body = (await req.json().catch(() => ({}))) as { basePath?: string };
-        const { basePath, calendarId, policy, timeZone, theme } = gcalSyncArgs(appConfig, body.basePath);
-        if (!basePath) return error("set googleCalendar.basePath to the calendar base you want to sync", 400);
+        const legacy = legacyGcalConfig(appConfig);
+        const basePath = (body.basePath && body.basePath.trim()) || legacy.basePath || "";
+        if (!basePath) return error("no calendar base to sync — turn on Google sync in a calendar's settings first", 400);
+        const raw = await readNoteOrNull(cfg.vault, basePath);
+        if (raw === null) return error(`calendar base not found: ${basePath}`, 404);
+        const { config } = parseBaseFile(raw, { name: fileBasename(basePath), path: basePath });
+        const { calendarId } = resolveGcalConfig(config.views[0], basePath, legacy);
+        const { policy, timeZone, theme } = gcalConnectionArgs(appConfig);
         try {
           return ok(await gcalSync(cfg.vault, basePath, calendarId, policy, timeZone, theme));
         } catch (e) {
           return error((e as Error).message, 400);
         }
       },
-      () => appConfig.googleCalendar?.basePath || undefined,
+      (b) => (b?.basePath && String(b.basePath).trim()) || appConfig.googleCalendar?.basePath || undefined,
     ),
 
     "POST /set-property": mutatingHandler(
@@ -1997,25 +2011,30 @@ export function createServer(cfg: CoreConfig) {
     /* pre-warm is best-effort */
   }
 
-  // Background Google Calendar auto-sync: when enabled + connected + a base is configured,
-  // run a two-way sync every `syncIntervalMinutes`. The base-file write is picked up by the
-  // vault watcher (cache-invalidate + SSE) so the open calendar refreshes. Best-effort +
+  // Background Google Calendar auto-sync (PER-CALENDAR): every `syncIntervalMinutes`, when an
+  // account is connected, reconcile EVERY calendar base that has Google sync enabled — each
+  // against its OWN Google calendar (resolved from that base's frontmatter, with the legacy
+  // global mapping as a migration fallback). Each base-file write is picked up by the vault
+  // watcher (cache-invalidate + SSE) so the open calendar refreshes. Best-effort +
   // error-tolerant; the 60s ticker is unref'd so it never keeps the process alive, and is a
-  // no-op in tests (googleCalendar.enabled defaults to false). A run-guard prevents overlap.
+  // no-op until an account is connected (fresh test vaults never are). A run-guard prevents overlap.
   let gcalAutoSyncAt = 0;
   let gcalAutoSyncRunning = false;
   setInterval(() => {
-    const gc = appConfig.googleCalendar;
-    if (!gc?.enabled || !gc.basePath || gcalAutoSyncRunning) return;
-    if (!gcalStatus().connected) return;
-    const everyMs = Math.max(1, gc.syncIntervalMinutes || 15) * 60_000;
+    if (gcalAutoSyncRunning || !gcalStatus().connected) return;
+    const everyMs = Math.max(1, appConfig.googleCalendar?.syncIntervalMinutes || 15) * 60_000;
     if (Date.now() - gcalAutoSyncAt < everyMs) return;
     gcalAutoSyncAt = Date.now();
     gcalAutoSyncRunning = true;
-    const { basePath, calendarId, policy, timeZone, theme } = gcalSyncArgs(appConfig);
-    void gcalSync(cfg.vault, basePath, calendarId, policy, timeZone, theme)
-      .catch((e) => console.error(`[gcal] auto-sync failed: ${(e as Error).message}`))
-      .finally(() => { gcalAutoSyncRunning = false; });
+    const { policy, timeZone, theme } = gcalConnectionArgs(appConfig);
+    const legacy = legacyGcalConfig(appConfig);
+    void (async () => {
+      const targets = await listGcalSyncTargets(cfg.vault, legacy);
+      for (const t of targets) {
+        await gcalSync(cfg.vault, t.basePath, t.calendarId, policy, timeZone, theme)
+          .catch((e) => console.error(`[gcal] auto-sync failed for ${t.basePath}: ${(e as Error).message}`));
+      }
+    })().finally(() => { gcalAutoSyncRunning = false; });
   }, 60_000).unref();
 
   return server;

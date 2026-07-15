@@ -203,6 +203,9 @@ function normalizeView(raw: unknown): ViewConfig {
     endTimeField: strOrUndef(o.endTimeField),
     recurrenceField: strOrUndef(o.recurrenceField),
     categoryField: strOrUndef(o.categoryField),
+    // per-calendar Google Calendar sync bindings
+    googleCalendarId: strOrUndef(o.googleCalendarId),
+    googleCalendarSync: o.googleCalendarSync === true ? true : o.googleCalendarSync === false ? false : undefined,
     // flashcards field bindings
     frontField: strOrUndef(o.frontField),
     backField: strOrUndef(o.backField),
@@ -296,6 +299,7 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     const FIELD_KEYS = [
       "frontField", "backField", "dueField", "easeField", "intervalField",
       "dateField", "startTimeField", "endTimeField", "recurrenceField", "categoryField",
+      "googleCalendarId",
       "x", "y", "image", "descriptionField",
     ] as const;
     for (const k of FIELD_KEYS) {
@@ -328,6 +332,10 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     if (BIN_VALUES.includes(raw.bin as string)) config.views[0].bin = raw.bin as ViewConfig["bin"];
     // flashcards: top-level `bidirectional` configures the default view (flat persistence).
     if (typeof raw.bidirectional === "boolean") config.views[0].bidirectional = raw.bidirectional;
+    // per-calendar Google Calendar sync: top-level `googleCalendarSync` toggle (the `googleCalendarId`
+    // string is folded via FIELD_KEYS above), so the calendar settings UI persists both with a flat
+    // setProperty — no nested `views:` editing.
+    if (typeof raw.googleCalendarSync === "boolean") config.views[0].googleCalendarSync = raw.googleCalendarSync;
   }
 
   const rows = parseRows(body, meta);

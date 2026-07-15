@@ -202,27 +202,38 @@ calendar:
 
 ## `googleCalendar`
 
-Two-way Google Calendar sync. Connect via the "Connect Google Calendar…" command; the single OAuth scope is `calendar.events` (read+write events only — no Gmail/Drive/contacts access). When `enabled`, Bismuth periodically syncs the calendar base at `basePath` against the Google calendar named by `calendarId`, reconciling double-edited events per `conflictPolicy`.
+Two-way Google Calendar sync — **connection-level** config, shared by every synced calendar. Connect via the "Connect Google Calendar…" command; the single OAuth scope is `calendar.events` (read+write events only — no Gmail/Drive/contacts access).
+
+**Which calendar base syncs with which Google calendar is now PER-CALENDAR**, declared on each calendar base's own frontmatter (not here): `googleCalendarSync: true` turns sync on for that base, and `googleCalendarId` (default `primary`) picks the Google calendar. Set both from the calendar's settings panel (or hand-edit the base frontmatter). A vault can have several calendars, each synced with a different Google calendar. See `docs/gcal/overview.md`.
 
 | Key | Type | Default | Bounds / Values | Doc |
 |-----|------|---------|-----------------|-----|
-| `enabled` | boolean | `false` | — | Enable two-way Google Calendar sync. |
-| `calendarId` | string | `primary` | — | Which Google calendar to sync with (`'primary'` = your main calendar). |
-| `basePath` | string | `""` (empty) | — | Vault path to the calendar base (a `type: base` note with `view: calendar`) to sync. |
-| `conflictPolicy` | enum | `lastWriteWins` | `lastWriteWins`, `googleWins`, `bismuthWins` | How to resolve an event changed on BOTH sides since the last sync: `lastWriteWins` (newest edit wins) · `googleWins` · `bismuthWins`. |
-| `syncIntervalMinutes` | number | `15` | min `1`, max `1440` | Auto-sync cadence in minutes (manual sync is always available). |
+| `conflictPolicy` | enum | `lastWriteWins` | `lastWriteWins`, `googleWins`, `bismuthWins` | How to resolve an event changed on BOTH sides since the last sync: `lastWriteWins` (newest edit wins) · `googleWins` · `bismuthWins`. Applies to every synced calendar. |
+| `syncIntervalMinutes` | number | `15` | min `1`, max `1440` | Auto-sync cadence in minutes for every synced calendar (manual sync is always available). |
 | `timeZone` | string | `""` (empty) | — | IANA timezone applied to naive (untimed) events when pushing to Google (blank = system timezone). |
+| `enabled` | boolean | `false` | — | **LEGACY** (now per-calendar). Old global on/off switch; honored only as a migration fallback for the base named by `basePath`. New calendars use each base's `googleCalendarSync` frontmatter key. |
+| `calendarId` | string | `primary` | — | **LEGACY** (now per-calendar). Old global calendar id; honored only for the base named by `basePath`. New calendars set `googleCalendarId` in their own frontmatter. |
+| `basePath` | string | `""` (empty) | — | **LEGACY** (now per-calendar). Old global "which calendar base to sync"; kept as a migration pointer. New setups enable sync per calendar in that calendar's settings. |
 
-Example:
+Example — connection-level `.settings`:
 
 ```yaml
 googleCalendar:
-  enabled: true
-  calendarId: primary
-  basePath: Calendar/My Calendar.md
   conflictPolicy: googleWins
   syncIntervalMinutes: 30
   timeZone: America/New_York
+```
+
+Per-calendar linkage, in a calendar base's own frontmatter:
+
+```yaml
+---
+type: base
+views:
+  - type: calendar
+googleCalendarSync: true
+googleCalendarId: primary        # or another calendar's ID
+---
 ```
 
 ---

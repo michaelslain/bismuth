@@ -145,20 +145,26 @@ export const SETTINGS_SCHEMA: Schema = {
     timeGutterWidth: { type: "number", default: 50, min: 40, max: 80, doc: "Width of the hour-label gutter in week/day views (px)." },
     defaultCategoryColor: { type: "string", default: "#4a90e2", doc: "Default color for a newly created event category (hex)." },
   }),
-  // Two-way Google Calendar sync. NON-SECRET operational config only — the OAuth client
-  // credentials + tokens live OUTSIDE the vault (~/.bismuth/gcal), never in settings.yaml
-  // or git. Connect via the "Connect Google Calendar…" command. The single OAuth scope is
-  // calendar.events (read+write events only; no Gmail/Drive/contacts access).
+  // Two-way Google Calendar sync — CONNECTION-LEVEL config shared by every synced calendar.
+  // NON-SECRET operational config only — the OAuth client credentials + tokens live OUTSIDE
+  // the vault (~/.bismuth/gcal), never in settings.yaml or git. Connect via the "Connect
+  // Google Calendar…" command; the single OAuth scope is calendar.events (read+write events
+  // only; no Gmail/Drive/contacts access). WHICH calendar base syncs with WHICH Google
+  // calendar is now PER-CALENDAR: each calendar base declares `googleCalendarSync` +
+  // `googleCalendarId` in its own frontmatter (set from the calendar's settings panel), so a
+  // vault can have several calendars each synced with a different Google calendar. The
+  // `enabled`/`calendarId`/`basePath` keys below are LEGACY — kept only so an existing single
+  // mapping keeps working and migrates onto its base's per-calendar keys.
   googleCalendar: object({
-    enabled: { type: "boolean", default: false, doc: "Enable two-way Google Calendar sync." },
-    calendarId: { type: "string", default: "primary", doc: "Which Google calendar to sync with ('primary' = your main calendar)." },
-    basePath: { type: "string", default: "", doc: "Vault path to the calendar base (a type: base note with view: calendar) to sync." },
+    enabled: { type: "boolean", default: false, doc: "LEGACY (now per-calendar): the old global on/off switch. Still honored as a migration fallback for the base named by `basePath` — new calendars use each base's own `googleCalendarSync` frontmatter key." },
+    calendarId: { type: "string", default: "primary", doc: "LEGACY (now per-calendar): the old global Google calendar id. Still honored for the base named by `basePath`; new calendars set `googleCalendarId` in their own frontmatter." },
+    basePath: { type: "string", default: "", doc: "LEGACY (now per-calendar): the old global 'which calendar base to sync'. Kept as a migration pointer; new setups enable sync per calendar in that calendar's settings instead." },
     conflictPolicy: {
       type: enumType(["lastWriteWins", "googleWins", "bismuthWins"]),
       default: "lastWriteWins",
-      doc: "How to resolve an event changed on BOTH sides since the last sync: lastWriteWins (newest edit wins) · googleWins · bismuthWins.",
+      doc: "How to resolve an event changed on BOTH sides since the last sync: lastWriteWins (newest edit wins) · googleWins · bismuthWins. Applies to every synced calendar.",
     },
-    syncIntervalMinutes: { type: "number", default: 15, min: 1, max: 1440, doc: "Auto-sync cadence in minutes (manual sync is always available)." },
+    syncIntervalMinutes: { type: "number", default: 15, min: 1, max: 1440, doc: "Auto-sync cadence in minutes for every synced calendar (manual sync is always available)." },
     timeZone: { type: "string", default: "", doc: "IANA timezone applied to naive (untimed) events when pushing to Google (blank = system timezone)." },
   }),
   ui: object({

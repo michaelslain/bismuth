@@ -9,6 +9,10 @@
 // Mirrors BismuthInstallModal; reuses the shared Modal + FolderPrompt chrome. Only the
 // non-secret Client ID/Secret are entered here — they're persisted outside the vault and
 // never touch settings.yaml/git. The single scope requested is calendar.events.
+//
+// The Google ACCOUNT connection is one per machine (OAuth is account-level), but sync is
+// PER-CALENDAR: when opened from a calendar's settings, `basePath` is the currently-open
+// calendar — on a successful connect we turn ON sync for THAT base, and "Sync now" targets it.
 import { createSignal, onMount, onCleanup, Show } from "solid-js";
 import { Modal } from "./ui/Modal";
 import { TextButton } from "./ui/TextButton";
@@ -18,7 +22,7 @@ import { openExternalUrl } from "./appWindow";
 import type { GcalStatus } from "../../core/src/gcal";
 import "./FolderPrompt.css";
 
-export function GcalConnectModal(props: { onClose: () => void }) {
+export function GcalConnectModal(props: { onClose: () => void; basePath?: string }) {
   const [status, setStatus] = createSignal<GcalStatus | null>(null);
   const [clientId, setClientId] = createSignal("");
   const [clientSecret, setClientSecret] = createSignal("");
@@ -49,6 +53,11 @@ export function GcalConnectModal(props: { onClose: () => void }) {
         const s = await api.gcalStatus();
         setStatus(s);
         if (s.connected) {
+          // Connecting from a calendar's settings → turn ON sync for THAT calendar base
+          // (per-calendar linkage), so the account connect immediately wires up this calendar.
+          if (props.basePath) {
+            try { await api.setProperty(props.basePath, "googleCalendarSync", true); } catch { /* non-fatal */ }
+          }
           pushToast(`Connected to Google Calendar${s.account ? ` as ${s.account}` : ""}`);
           return;
         }
@@ -101,7 +110,7 @@ export function GcalConnectModal(props: { onClose: () => void }) {
     if (busy()) return;
     setBusy(true);
     try {
-      pushToast(summarizeSync(await api.gcalSync()));
+      pushToast(summarizeSync(await api.gcalSync(props.basePath)));
     } catch (e) {
       pushToast(`Sync failed: ${(e as Error).message}`);
     } finally {
