@@ -691,6 +691,14 @@
 .kanbanCards .card:hover { background: var(--surface-2); transform: translateY(-1px); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28); }
 .kanbanCards .card:active { cursor: grabbing; }
 
+/* Image-drop target: an OS image file dragged over this card. A solid accent ring + soft accent
+   wash signals "drop the image here to attach it" (the analogue of the column drop highlight). */
+.kanbanCards .card.kbCardDropTarget {
+  border-color: var(--accent);
+  background: var(--bismuth-accent-soft);
+  box-shadow: 0 0 0 2px var(--bismuth-accent-border) inset, 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
 /* Drop placeholder — collapsed by default, expands to the DRAGGED card's height (via --kb-drag-h)
    when a card hovers this column. Spacing comes purely from the column's flex `gap` (plus the
    column's top padding), so the placeholder sits with the same margins as a real card in any
