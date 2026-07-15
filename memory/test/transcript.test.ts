@@ -60,6 +60,38 @@ describe("extractTurns", () => {
     ]);
     expect(turns[0].user).toBe("real question");
   });
+
+  test("strips the demarcated <bismuth-memory> recall envelope (isolation: 3rd brain never re-collected)", () => {
+    const injected = [
+      "<bismuth-memory>",
+      "The notes below are recalled from THIS VAULT'S Bismuth memory — a store SEPARATE from your own.",
+      "",
+      "# Memories",
+      "",
+      "## auth (fact) [security]",
+      "JWT tokens expire in 15 minutes.",
+      "</bismuth-memory>",
+      "",
+      "what expiry should I use?",
+    ].join("\n");
+    const turns = extractTurns([user(injected), assistant("15 minutes, per the note.")]);
+    // Only the human's real prompt survives — no wrapper, no recalled memory content.
+    expect(turns[0].user).toBe("what expiry should I use?");
+    expect(turns[0].user).not.toContain("bismuth-memory");
+    expect(turns[0].user).not.toContain("JWT tokens");
+  });
+
+  test("back-compat: still fires the legacy BARE '# Memories' guard (best-effort, pre-envelope transcripts)", () => {
+    // The legacy bare-block guard is inherently PARTIAL — a pre-envelope `# Memories` block had no
+    // closing delimiter, so there's no robust way to tell where recalled memory ends and the user's
+    // prompt begins (exactly the ambiguity the <bismuth-memory> envelope now removes). We keep the
+    // guard for transcripts recorded before this change: it still drops the `# Memories` marker and
+    // preserves the human's real prompt. New sessions use the envelope, fully stripped above.
+    const legacy = "# Memories\n\n## n (fact) []\nold recalled fact\n\nthe actual question";
+    const turns = extractTurns([user(legacy), assistant("ok")]);
+    expect(turns[0].user).not.toContain("# Memories");
+    expect(turns[0].user).toContain("the actual question");
+  });
 });
 
 describe("trimToBudget", () => {

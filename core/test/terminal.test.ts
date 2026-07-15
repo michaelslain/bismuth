@@ -37,6 +37,22 @@ test("buildPtyEnv injects BISMUTH_MEMORY_DIR only when a memoryDir is given (the
     .toBe("/vault/.daemon/memory");
 });
 
+test("buildPtyEnv keeps Bismuth's 3rd-brain memory ISOLATED from Claude's own memory store", () => {
+  // Bismuth scopes memory ONLY through its own BISMUTH_MEMORY_DIR var. It must never redirect
+  // Claude Code's native memory/config store (CLAUDE_CONFIG_DIR → ~/.claude), or the two stores
+  // would collide — a session opened in Bismuth would read/write the wrong brain.
+  const base = { HOME: "/Users/x", CLAUDE_CONFIG_DIR: "/Users/x/.claude", PATH: "/usr/bin" };
+  const env = buildPtyEnv({ ...ENV_BASE, base, realClaude: null, memoryDir: "/vault/.daemon/memory" });
+  // Injects its OWN var...
+  expect(env.BISMUTH_MEMORY_DIR).toBe("/vault/.daemon/memory");
+  // ...and leaves Claude's native config/memory dir exactly as inherited — never repointed at the vault.
+  expect(env.CLAUDE_CONFIG_DIR).toBe("/Users/x/.claude");
+  expect(env.CLAUDE_CONFIG_DIR).not.toBe(env.BISMUTH_MEMORY_DIR);
+  // Bismuth sets no other CLAUDE_* memory var beyond relay provenance (URL + terminal id).
+  const claudeVars = Object.keys(env).filter((k) => k.startsWith("CLAUDE_")).sort();
+  expect(claudeVars).toEqual(["CLAUDE_CONFIG_DIR", "CLAUDE_RELAY_URL", "CLAUDE_TERMINAL_ID"]);
+});
+
 test("buildPtyEnv prepends the shim to PATH + sets BISMUTH_REAL_CLAUDE when claude resolves", () => {
   const env = buildPtyEnv({ ...ENV_BASE, realClaude: "/usr/local/bin/claude" });
   expect(env.BISMUTH_REAL_CLAUDE).toBe("/usr/local/bin/claude");

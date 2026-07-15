@@ -4,7 +4,8 @@ import { tmpdir } from "os";
 import { randomBytes } from "crypto";
 import { rm } from "fs/promises";
 import { writeNote, type MemoryNote } from "../src/graph.ts";
-import { recallMemory, formatRecall } from "../src/recall.ts";
+import { recallMemory, formatRecall, MEMORY_BLOCK_TAG } from "../src/recall.ts";
+import { stripInjectedBlocks } from "../src/transcript.ts";
 
 function makeTempDir(): string {
   return join(tmpdir(), `bismuth-recall-test-${randomBytes(8).toString("hex")}`);
@@ -13,7 +14,7 @@ function makeTempDir(): string {
 const today = "2026-01-01";
 
 describe("formatRecall", () => {
-  test("produces the load-bearing '# Memories' header + per-note block", () => {
+  test("wraps the '# Memories' block + per-note content in the demarcated envelope", () => {
     const note: MemoryNote = {
       name: "auth-project",
       frontmatter: { type: "project", tags: ["authentication", "login"], created: today, updated: today },
@@ -21,9 +22,26 @@ describe("formatRecall", () => {
       backlinks: [],
     };
     const out = formatRecall([note]);
-    expect(out.startsWith("# Memories\n")).toBe(true);
+    // ISOLATION: the recalled block is wrapped so a session opened in Bismuth can tell the vault's
+    // 3rd brain apart from the host model's OWN native memory.
+    expect(out.startsWith(`<${MEMORY_BLOCK_TAG}>`)).toBe(true);
+    expect(out.trimEnd().endsWith(`</${MEMORY_BLOCK_TAG}>`)).toBe(true);
+    // The `# Memories` content still lives INSIDE the envelope.
+    expect(out).toContain("# Memories");
     expect(out).toContain("## auth-project (project) [authentication, login]");
     expect(out).toContain("JWT tokens with a 15 minute expiry.");
+  });
+
+  test("the banner names it as a store SEPARATE from the model's own memory (no cross-write)", () => {
+    const out = formatRecall([{
+      name: "n", frontmatter: { type: "fact", tags: [], created: today, updated: today },
+      content: "body", backlinks: [],
+    }]);
+    // The demarcation must explicitly tell the model this is NOT its own memory and must not be
+    // copied into it — the isolation guarantee at the injection layer.
+    expect(out.toLowerCase()).toContain("separate from your own");
+    expect(out).toContain("3rd brain");
+    expect(out.toLowerCase()).toContain("do not copy it");
   });
 
   test("emits a Links line only when the note has backlinks", () => {
@@ -36,16 +54,22 @@ describe("formatRecall", () => {
     expect(formatRecall([noLinks])).not.toContain("Links:");
   });
 
-  test("leads with the exact '# Memories\\n' marker (in lockstep with stripInjectedBlocks)", () => {
-    // The block is injected as a separate hook_additional_context transcript attachment, which
-    // buildAutoNoteBody ignores — so it never re-collects (no recall→collect amplification).
-    // stripInjectedBlocks keys on this leading marker as a belt-and-suspenders guard, so keep the
-    // header verbatim.
+  test("round-trips with stripInjectedBlocks — the injected 3rd brain never survives into a note", () => {
+    // ISOLATION (the recall→collect direction): whatever formatRecall injects as additionalContext
+    // must be fully removed by stripInjectedBlocks before a transcript is collected, so Bismuth's
+    // recalled memory can neither amplify back into Bismuth memory NOR bleed into the model's own.
     const block = formatRecall([{
       name: "pref", frontmatter: { type: "preference", tags: ["style"], created: today, updated: today },
       content: "Be direct.", backlinks: [],
     }]);
-    expect(block.startsWith("# Memories\n")).toBe(true);
+    // formatRecall keys the strip on the <bismuth-memory> envelope, in lockstep with transcript.ts.
+    expect(block).toContain(`<${MEMORY_BLOCK_TAG}>`);
+    const userPrompt = "how should I structure the auth module?";
+    // The injected block is prepended to the user's real prompt in the recorded turn; stripping it
+    // must leave ONLY what the human typed — no memory content leaks through.
+    expect(stripInjectedBlocks(`${block}\n\n${userPrompt}`)).toBe(userPrompt);
+    // And nothing from the recalled note survives.
+    expect(stripInjectedBlocks(`${block}\n\n${userPrompt}`)).not.toContain("Be direct.");
   });
 });
 

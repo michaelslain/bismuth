@@ -106,7 +106,7 @@ const tools = [
 const memoryTools = [
   {
     name: "remember",
-    description: "Save a note to this vault's memory graph (the 3rd brain). Overwrites by name.",
+    description: "Save a note to THIS VAULT'S Bismuth memory graph (the '3rd brain') — a store SEPARATE from your own native memory. Overwrites by name.",
     inputSchema: {
       type: "object",
       properties: {
@@ -121,7 +121,7 @@ const memoryTools = [
   },
   {
     name: "recall",
-    description: "Search this vault's memory graph (supports tag:, type:, keyword:, link:, after:, before: filters).",
+    description: "Search THIS VAULT'S Bismuth memory graph (the '3rd brain'), a store separate from your own native memory (supports tag:, type:, keyword:, link:, after:, before: filters).",
     inputSchema: {
       type: "object",
       properties: {
@@ -133,7 +133,7 @@ const memoryTools = [
   },
   {
     name: "forget",
-    description: "Remove a note from this vault's memory graph. Accepts folder-prefixed names (e.g. 'moltbook/foo').",
+    description: "Remove a note from THIS VAULT'S Bismuth memory graph (the '3rd brain'), a store separate from your own native memory. Accepts folder-prefixed names (e.g. 'moltbook/foo').",
     inputSchema: {
       type: "object",
       properties: {
