@@ -110,6 +110,20 @@ export interface PtyEnvParams {
 export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(p.base)) if (v !== undefined) env[k] = v;
+  // Neutralize the HOST's Claude-Code workflow provenance so it never leaks into a terminal tab.
+  // When Bismuth is itself launched from inside a Claude Code session (the standard dev flow:
+  // `bun run dev` in a Claude terminal), the parent env carries CLAUDE_JOB_DIR / CLAUDE_WORKFLOW_ID.
+  // These reach the tab's Claude session and get read by the relay's SubagentStart hook
+  // (report.ts `workflowId()`), which then tags EVERY ordinary subagent spawned in the tab with the
+  // app's phantom workflow key — so instead of clean per-session `you → session → subagent` children,
+  // the agents graph lumps all subagents into a bogus cross-session workflow lane (Bug #107).
+  // We must OVERRIDE with "" rather than `delete` these keys: bun-pty MERGES the process's C-level
+  // `environ` UNDER this object, so a deleted key still leaks the parent's value — an explicit empty
+  // value is what actually clears it (and the relay treats an empty key as "no workflow"). A tab's
+  // Claude session is NOT part of the host's workflow; a real workflow orchestration run INSIDE the
+  // tab exports these itself after spawn, so it is unaffected.
+  env.CLAUDE_JOB_DIR = "";
+  env.CLAUDE_WORKFLOW_ID = "";
   env.TERM = "xterm-256color";
   // Suppress oh-my-zsh's blocking "Would you like to update? [Y/n]" prompt — an embedded
   // app terminal shouldn't nag at startup, and the prompt eats the first keystrokes.

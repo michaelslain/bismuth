@@ -49,6 +49,39 @@ test("subagent hangs off its parent session with a message edge", () => {
   expect(g.edges).toEqual([{ from: "agent:sess:s1", to: "agent:sub:a1", kind: "message" }]);
 });
 
+test("Bug #107: a live session with subagents yields the full you → session → subagent chain", () => {
+  // Regression guard for "subagents don't show in the agents view". Given a live terminal
+  // session that spawned two subagents, buildAgentGraph must emit BOTH subagent nodes as
+  // depth-1 children of the session, each with a session → subagent "message" edge — and the
+  // session itself must be a ROOT (no parent) so the frontend's `you` hub wires to it
+  // (`agentLayout.ts` adds the you → session "open" edge off every parent-less agent node).
+  const g = buildAgentGraph(
+    snap({
+      sessions: [{ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", lastSeen: TWO_MIN_AGO }],
+      subagents: [
+        { agentId: "a1", parentSessionId: "s1", agentType: "Explore", startedAt: TWO_MIN_AGO, done: false },
+        { agentId: "a2", parentSessionId: "s1", agentType: "code-review", startedAt: TWO_MIN_AGO, done: false },
+      ],
+    }),
+    new Set(["tab-1"]),
+    NOW,
+  );
+  // The session node is a root the "you" hub attaches to.
+  const session = g.nodes.find((n) => n.id === "agent:sess:s1");
+  expect(session).toMatchObject({ kind: "agent" });
+  expect(session!.parent).toBeUndefined();
+  // BOTH subagents appear, parented to the session.
+  const subs = g.nodes.filter((n) => n.parent === "agent:sess:s1");
+  expect(subs.map((n) => n.id).sort()).toEqual(["agent:sub:a1", "agent:sub:a2"]);
+  expect(subs.every((n) => n.kind === "agent")).toBe(true);
+  // …with a session → subagent edge for each (the depth-1 tree), and no phantom workflow key on
+  // an ordinary subagent (Bug #107's root cause was ordinary subagents being mis-tagged workflow).
+  expect(g.edges).toContainEqual({ from: "agent:sess:s1", to: "agent:sub:a1", kind: "message" });
+  expect(g.edges).toContainEqual({ from: "agent:sess:s1", to: "agent:sub:a2", kind: "message" });
+  expect(g.edges.every((e) => !("workflow" in e))).toBe(true);
+  expect(subs.every((n) => n.workflow === undefined)).toBe(true);
+});
+
 test("a subagent whose parent session is closed is dropped (no orphan)", () => {
   const g = buildAgentGraph(
     snap({
