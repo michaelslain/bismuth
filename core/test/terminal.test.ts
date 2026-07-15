@@ -48,9 +48,11 @@ test("buildPtyEnv keeps Bismuth's 3rd-brain memory ISOLATED from Claude's own me
   // ...and leaves Claude's native config/memory dir exactly as inherited — never repointed at the vault.
   expect(env.CLAUDE_CONFIG_DIR).toBe("/Users/x/.claude");
   expect(env.CLAUDE_CONFIG_DIR).not.toBe(env.BISMUTH_MEMORY_DIR);
-  // Bismuth sets no other CLAUDE_* memory var beyond relay provenance (URL + terminal id).
+  // Bismuth sets no other CLAUDE_* memory var beyond relay provenance (URL + terminal id) and the
+  // two host-workflow-provenance vars it EMPTIES (#107: CLAUDE_JOB_DIR/CLAUDE_WORKFLOW_ID → "" so a
+  // tab's Claude isn't tagged with the app's own workflow key). It still never repoints the memory store.
   const claudeVars = Object.keys(env).filter((k) => k.startsWith("CLAUDE_")).sort();
-  expect(claudeVars).toEqual(["CLAUDE_CONFIG_DIR", "CLAUDE_RELAY_URL", "CLAUDE_TERMINAL_ID"]);
+  expect(claudeVars).toEqual(["CLAUDE_CONFIG_DIR", "CLAUDE_JOB_DIR", "CLAUDE_RELAY_URL", "CLAUDE_TERMINAL_ID", "CLAUDE_WORKFLOW_ID"]);
 });
 
 test("buildPtyEnv prepends the shim to PATH + sets BISMUTH_REAL_CLAUDE when claude resolves", () => {
