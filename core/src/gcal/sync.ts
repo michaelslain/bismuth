@@ -37,7 +37,7 @@ const readBid = (ev: GEvent): string | undefined => ev.extendedProperties?.priva
 function stamped(body: Record<string, unknown>, bid: string): Record<string, unknown> {
   return { ...body, extendedProperties: { private: { [BID_PROP]: bid } } };
 }
-import { readManifest, writeManifest, type SyncManifest } from "./manifest";
+import { readManifest, writeManifest, baseSyncOf, type SyncManifest, type BaseSync } from "./manifest";
 
 export type ConflictPolicy = "lastWriteWins" | "googleWins" | "bismuthWins";
 
@@ -124,16 +124,18 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
   const { rows, config } = parseBaseFile(text, meta);
   const colorMap = categoryColorMap(text, theme); // category name → Google colorId (for pushed events)
   const manifest: SyncManifest = readManifest(manifestHome);
+  // PER-CALENDAR: this base's own sync state (link map + token + target). Keying by base path
+  // means two synced calendars never share links — no cross-base retarget guard needed.
+  const bs: BaseSync = baseSyncOf(manifest, basePath);
 
-  // Bind the manifest to this base. If it was built for a DIFFERENT base (the synced calendar
-  // was retargeted), start fresh for the new one — NEVER reconcile/delete the old base's remote
-  // events against this base (Phase C would otherwise mass-delete the real calendar). The old
-  // base's events linger on Google and re-link by their bismuthId stamp if you switch back.
-  if (manifest.basePath && manifest.basePath !== basePath) {
-    manifest.links = {};
-    delete manifest.syncToken;
+  // If this base was pointed at a DIFFERENT Google calendar than last time, its old links +
+  // sync token belong to the old calendar — drop them and full-resync against the new target.
+  // (The old calendar's events are left untouched; Phase C's deletes are idempotent 404/410s.)
+  if (bs.calendarId && bs.calendarId !== calendarId) {
+    bs.links = {};
+    delete bs.syncToken;
   }
-  manifest.basePath = basePath;
+  bs.calendarId = calendarId;
 
   const byBid = new Map<string, Row>();
   rows.forEach((r) => { if (r.note.id != null) byBid.set(String(r.note.id), r); });
@@ -143,12 +145,12 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
   const now = Date.now();
   const fullWindow = { timeMin: new Date(now - 90 * DAY_MS).toISOString(), timeMax: new Date(now + 365 * DAY_MS).toISOString(), showDeleted: true };
   let listed: ListResult;
-  if (manifest.syncToken) {
+  if (bs.syncToken) {
     try {
-      listed = await listEvents(accessToken, calendarId, { syncToken: manifest.syncToken });
+      listed = await listEvents(accessToken, calendarId, { syncToken: bs.syncToken });
     } catch (e) {
       if (!(e instanceof SyncTokenExpired)) throw e;
-      delete manifest.syncToken;
+      delete bs.syncToken;
       listed = await listEvents(accessToken, calendarId, fullWindow);
     }
   } else {
@@ -167,11 +169,11 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
 
   // ---- Phase A: reconcile remote → local ----
   for (const ev of events) {
-    let link = manifest.links[ev.id];
+    let link = bs.links[ev.id];
     if (ev.status === "cancelled") {
       if (link) {
         if (byBid.has(link.bismuthId)) { deleteBids.add(link.bismuthId); res.deletedLocal++; }
-        delete manifest.links[ev.id];
+        delete bs.links[ev.id];
       }
       continue;
     }
@@ -184,7 +186,7 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
       const bid = readBid(ev);
       if (bid && byBid.has(bid)) {
         link = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: sigOfNote(byBid.get(bid)!.note) };
-        manifest.links[ev.id] = link;
+        bs.links[ev.id] = link;
         res.relinked++;
         continue;
       }
@@ -194,7 +196,7 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
       const row: Row = { file: baseFile, note: buildNote(bid, mapped, ev.updated), formula: {} };
       newRows.push(row);
       byBid.set(bid, row);
-      manifest.links[ev.id] = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: signature(mapped) };
+      bs.links[ev.id] = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: signature(mapped) };
       toStamp.push({ gcalId: ev.id, bid }); // tag the remote event so the self-heal can re-link it
       res.pulledNew++;
       continue;
@@ -210,16 +212,16 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
         applyRemoteToNote(row.note, ev);
         // sig from the WRITTEN note (not `mapped`) so the next sync's sigOfNote matches and
         // doesn't mis-read a preserved category / applied recurrence as a fresh local edit.
-        manifest.links[ev.id] = { bismuthId: link.bismuthId, etag: ev.etag, updated: ev.updated, sig: sigOfNote(row.note) };
+        bs.links[ev.id] = { bismuthId: link.bismuthId, etag: ev.etag, updated: ev.updated, sig: sigOfNote(row.note) };
         res.pulledUpdate++;
       } else {
         // Local wins → keep the row; refresh the etag/updated so Phase B patches cleanly
         // (no 412), but keep the OLD sig so Phase B still recognizes the pending local edit.
-        manifest.links[ev.id] = { bismuthId: link.bismuthId, etag: ev.etag, updated: ev.updated, sig: link.sig };
+        bs.links[ev.id] = { bismuthId: link.bismuthId, etag: ev.etag, updated: ev.updated, sig: link.sig };
       }
     } else if (remoteChanged) {
       applyRemoteToNote(row.note, ev);
-      manifest.links[ev.id] = { bismuthId: link.bismuthId, etag: ev.etag, updated: ev.updated, sig: sigOfNote(row.note) };
+      bs.links[ev.id] = { bismuthId: link.bismuthId, etag: ev.etag, updated: ev.updated, sig: sigOfNote(row.note) };
       res.pulledUpdate++;
     }
     // else: only-local or no change → Phase B decides whether to push.
@@ -227,7 +229,7 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
 
   // ---- Phase B: push local → remote ----
   const bidToEntry = new Map<string, { gcalId: string; etag?: string; sig?: string }>();
-  for (const [gcalId, link] of Object.entries(manifest.links)) {
+  for (const [gcalId, link] of Object.entries(bs.links)) {
     bidToEntry.set(link.bismuthId, { gcalId, etag: link.etag, sig: link.sig });
   }
   for (const row of rows) {
@@ -243,13 +245,13 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
         // Google (lost link / crash), Google returns 409 → re-link instead of duplicating.
         try {
           const ev = await insertEvent(accessToken, calendarId, stamped(toGoogle(fields, timeZone, colorMap), bid), googleEventId(bid));
-          manifest.links[ev.id] = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: signature(fields) };
+          bs.links[ev.id] = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: signature(fields) };
           res.pushedNew++;
         } catch (e) {
           if (!(e instanceof DuplicateId)) throw e;
           const gid = googleEventId(bid);
           const ev = await getEvent(accessToken, calendarId, gid);
-          manifest.links[gid] = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: sigOfNote(row.note) };
+          bs.links[gid] = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: sigOfNote(row.note) };
           res.relinked++;
         }
         continue;
@@ -257,7 +259,7 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
       if (sigOfNote(row.note) === entry.sig) continue; // unchanged (or already pulled-over)
       try {
         const ev = await patchEvent(accessToken, calendarId, entry.gcalId, stamped(toGoogle(fields, timeZone, colorMap), bid), entry.etag);
-        manifest.links[entry.gcalId] = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: signature(fields) };
+        bs.links[entry.gcalId] = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: signature(fields) };
         res.pushedUpdate++;
       } catch (e) {
         if (!(e instanceof PreconditionFailed)) throw e;
@@ -267,11 +269,11 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
         const winner = resolveConflict(policy, localUpdatedOf(row.note), fresh.updated ?? "");
         if (winner === "local") {
           const ev = await patchEvent(accessToken, calendarId, entry.gcalId, stamped(toGoogle(fields, timeZone, colorMap), bid), fresh.etag);
-          manifest.links[entry.gcalId] = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: signature(fields) };
+          bs.links[entry.gcalId] = { bismuthId: bid, etag: ev.etag, updated: ev.updated, sig: signature(fields) };
           res.pushedUpdate++;
         } else {
           applyRemoteToNote(row.note, fresh);
-          manifest.links[entry.gcalId] = {
+          bs.links[entry.gcalId] = {
             bismuthId: bid, etag: fresh.etag, updated: fresh.updated, sig: sigOfNote(row.note),
           };
           res.pulledUpdate++;
@@ -287,11 +289,11 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
   const currentBids = new Set<string>();
   for (const row of rows) if (!deleteBids.has(String(row.note.id ?? ""))) currentBids.add(String(row.note.id ?? ""));
   for (const row of newRows) currentBids.add(String(row.note.id ?? ""));
-  for (const [gcalId, link] of Object.entries(manifest.links)) {
+  for (const [gcalId, link] of Object.entries(bs.links)) {
     if (currentBids.has(link.bismuthId)) continue;
     try {
       await deleteEvent(accessToken, calendarId, gcalId, link.etag);
-      delete manifest.links[gcalId];
+      delete bs.links[gcalId];
       res.deletedRemote++;
     } catch (e) {
       // Precondition failure → remote changed; leave it for the next sync. Any other error
@@ -308,7 +310,7 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
   // would be re-duplicated after a lost manifest.) Best effort — a failure only weakens the
   // self-heal for that event, no correctness loss.
   for (const { gcalId, bid } of toStamp) {
-    const link = manifest.links[gcalId];
+    const link = bs.links[gcalId];
     if (!link) continue;
     try {
       const ev = await patchEvent(accessToken, calendarId, gcalId, { extendedProperties: { private: { [BID_PROP]: bid } } }, link.etag);
@@ -326,8 +328,8 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
     const finalRows = rows.filter((r) => !deleteBids.has(String(r.note.id ?? ""))).concat(newRows);
     await writeNote(vault, basePath, reassemble(text, finalRows, config));
   }
-  if (listed.nextSyncToken) manifest.syncToken = listed.nextSyncToken; // enable next incremental sync
-  manifest.lastSyncAt = new Date().toISOString();
+  if (listed.nextSyncToken) bs.syncToken = listed.nextSyncToken; // enable next incremental sync
+  bs.lastSyncAt = new Date().toISOString();
   writeManifest(manifest, manifestHome);
   return res;
 }
