@@ -115,7 +115,14 @@ body { background: var(--bg); color: var(--fg); }
 /* The vertical tab rail (ui.verticalTabs) is a third grid track on the RIGHT. It stays at
    its COLLAPSED width even while hovered — the hover-expansion overflows leftward as an
    overlay (see .tab-rail-inner) so the editor never reflows. 0 unless `.has-rail`. */
-.layout { display: grid; --sidebar-w: var(--sidebar-width, 280px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100vh; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1), --rail-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+/* height:100% (NOT 100vh): `.layout` is the top-level element under #root, and
+   `html, body, #root` are all `height:100%`, so 100% here tracks the webview's ACTUAL
+   client area. The `vh` viewport unit does NOT — in the macOS WKWebView it fails to track
+   the usable height across the windowed↔native-fullscreen transition (in fullscreen `100vh`
+   resolves TALLER than the real webview area, since the native title-bar band drops out of the
+   frame but the viewport unit keeps counting it / lags the resize), so the grid overflowed
+   past the bottom of the screen and the bottom of the content was clipped in full-screen. */
+.layout { display: grid; --sidebar-w: var(--sidebar-width, 280px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100%; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1), --rail-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
 .layout.has-rail { --rail-w: 48px; }
 /* BUG #40: the Cmd+O quick switcher takeover already collapses the LEFT sidebar via
    `.sidebar-hidden` below (`!sidebarVisible() || switcherOpen()`) — the right-edge vertical tab
