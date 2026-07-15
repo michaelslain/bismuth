@@ -89,9 +89,13 @@ export interface Settings {
     defaultCategoryColor: string; // hex
   };
   googleCalendar: {
-    enabled: boolean;        // master switch for two-way sync
-    calendarId: string;      // which Google calendar ('primary' = main)
-    basePath: string;        // vault path to the calendar base to sync
+    // LEGACY (now per-calendar): the linkage lives on each calendar base's frontmatter
+    // (googleCalendarSync / googleCalendarId). These three are kept only as a migration
+    // fallback for the single base the old global mapping named.
+    enabled: boolean;        // legacy global on/off (migration fallback)
+    calendarId: string;      // legacy global calendar id (migration fallback)
+    basePath: string;        // legacy global 'which base' pointer (migration fallback)
+    // Connection-level, shared by every synced calendar:
     conflictPolicy: "lastWriteWins" | "googleWins" | "bismuthWins";
     syncIntervalMinutes: number; // auto-sync cadence
     timeZone: string;        // IANA tz for naive events ("" = system)

@@ -333,6 +333,17 @@ These keys configure the first view in the `views` array (via `parseBaseFile` in
 
 The dropdown for each field lists: the standard columns (`date`, `startTime`, `endTime`, `recurrence`, `category`, `title`, `location`, `link`), plus any columns actually present in the existing event rows.
 
+### Google Calendar sync (per-calendar)
+
+The same settings panel (`GcalSyncPanel.tsx`) also carries the **per-calendar** Google sync linkage, persisted as two more top-level frontmatter keys (folded into `config.views[0]` like the field bindings above):
+
+| Key | Default | Description |
+|---|---|---|
+| `googleCalendarSync` | `false` (absent) | Whether two-way Google Calendar sync is enabled for THIS calendar base. |
+| `googleCalendarId` | `primary` | Which Google calendar this base syncs with (`primary` = main; or paste another calendar's ID). |
+
+A vault can have several calendar bases, each synced with a different Google calendar. Connection-level config (conflict policy, cadence, timezone) lives in the global `googleCalendar` settings; see [Google Calendar sync](../../gcal/overview.md).
+
 ---
 
 ## Storage Backend

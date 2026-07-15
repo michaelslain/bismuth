@@ -143,8 +143,8 @@ test("pull: remote events create local rows; no writes back to Google", async ()
   expect(g.calls.insert + g.calls.delete).toBe(0);
   expect(g.calls.patch).toBe(2);
   expect(readRows().map((n) => n.title).sort()).toEqual(["Alpha", "Beta"]);
-  // A sync token is captured for the next incremental sync.
-  expect(readManifest(home).syncToken).toBeTruthy();
+  // A sync token is captured for the next incremental sync (in the per-base manifest entry).
+  expect(readManifest(home).bases["cal.md"].syncToken).toBeTruthy();
 });
 
 test("push: a new local event is inserted to Google", async () => {
@@ -246,20 +246,25 @@ test("recurring pull → local recurrence; idempotent despite local-only seriesI
 
 // ---- Regression tests for the code-review fixes ----
 
-test("retarget guard: syncing a DIFFERENT base never mass-deletes the first base's events", async () => {
+test("per-base isolation: syncing a DIFFERENT base never mass-deletes the first base's events", async () => {
   writeBase([{ id: "a1", title: "A", date: "2026-06-24", startTime: "09:00", localUpdated: at(10) }]);
   await run();
   expect(g.events.size).toBe(1);
   const idA = [...g.events.keys()][0];
-  expect(readManifest(home).basePath).toBe("cal.md");
+  // The manifest now keeps a SEPARATE entry per base path (no single bound base).
+  expect(Object.keys(readManifest(home).bases["cal.md"].links)).toHaveLength(1);
 
-  // The global manifest was built for cal.md. Reconciling it against a DIFFERENT base must
-  // NOT treat cal.md's events as local deletions (Phase C would wipe the real calendar).
+  // A second, empty base against the SAME (shared, in this fake) calendar must NOT treat
+  // cal.md's events as local deletions of cal2.md — cal2.md has its own (empty) link map,
+  // so Phase C walks only cal2.md's links (none) and deletes nothing.
   writeFileSync(join(vault, "cal2.md"), CAL_BASE);
   const r = await runBase("cal2.md");
   expect(r.deletedRemote).toBe(0);
   expect(g.events.has(idA)).toBe(true); // first base's event survives on Google
-  expect(readManifest(home).basePath).toBe("cal2.md"); // manifest rebound to the new base
+  // Both bases keep independent manifest entries; cal.md's link map is untouched.
+  const m = readManifest(home);
+  expect(Object.keys(m.bases["cal.md"].links)).toHaveLength(1);
+  expect(m.bases["cal2.md"]).toBeDefined();
 });
 
 test("remote recurrence change is applied locally and not reverted/re-pushed", async () => {
@@ -359,11 +364,11 @@ test("410 (expired token) → engine drops it and recovers with a full resync", 
   await run();
   // Force a stale token; the fake returns 410 for it.
   const m = readManifest(home);
-  m.syncToken = "STALE";
+  m.bases["cal.md"].syncToken = "STALE";
   writeManifest(m, home);
   g.touch("g-a", { summary: "Alpha after expiry" });
   const r = await run(); // must not throw; full resync reconciles the change
   expect(r.pulledUpdate).toBe(1);
   expect(readRows()[0].title).toBe("Alpha after expiry");
-  expect(readManifest(home).syncToken).not.toBe("STALE"); // re-baselined
+  expect(readManifest(home).bases["cal.md"].syncToken).not.toBe("STALE"); // re-baselined
 });

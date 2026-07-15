@@ -72,6 +72,13 @@ export interface ViewConfig {
   endTimeField?: string;       // default "endTime"
   recurrenceField?: string;    // default "recurrence"
   categoryField?: string;      // default "category"
+  // Calendar view: PER-CALENDAR Google Calendar sync (replaces the old GLOBAL
+  // googleCalendar.{basePath,calendarId,enabled} settings). Each calendar base declares
+  // which Google calendar it syncs with + whether sync is on, so a vault can hold several
+  // calendars each two-way-synced with a DIFFERENT Google calendar. Persisted as flat
+  // top-level frontmatter keys folded into this default view (like `dateField`).
+  googleCalendarId?: string;    // which Google calendar to sync with (default "primary")
+  googleCalendarSync?: boolean; // whether two-way sync is enabled for THIS calendar base
   // Flashcards view: which columns carry the card fields + SM-2 scheduling state.
   frontField?: string;         // default "front"
   backField?: string;          // default "back"

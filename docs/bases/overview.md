@@ -282,6 +282,8 @@ Which columns carry the calendar's date/time/recurrence/category fields. Each is
 | `endTimeField` | `"endTime"` | Event end time. |
 | `recurrenceField` | `"recurrence"` | Recurrence rule. |
 | `categoryField` | `"category"` | Category/status. |
+| `googleCalendarSync` | `false` | Enable per-calendar Google Calendar two-way sync for this base ([gcal](../gcal/overview.md)). |
+| `googleCalendarId` | `"primary"` | Which Google calendar this base syncs with. |
 
 ### Flashcards-specific (field bindings + SM-2 state)
 
@@ -330,7 +332,8 @@ parses to `config.views[0].type === "calendar"`.
 
 So the settings UI can persist view fields with a flat `setProperty` (no nested `views:` editing), `parseBaseFile` folds these **top-level** frontmatter keys into the default (first) view:
 
-- Field bindings: `frontField`, `backField`, `dueField`, `dateField`, `startTimeField`, `endTimeField`, `recurrenceField`, `categoryField`, `x`, `y`, `image` (any string).
+- Field bindings: `frontField`, `backField`, `dueField`, `dateField`, `startTimeField`, `endTimeField`, `recurrenceField`, `categoryField`, `googleCalendarId`, `x`, `y`, `image` (any string).
+- Per-calendar Google sync: `googleCalendarSync` (boolean).
 - View shaping: `order` (array), `columns` (array), `sort`, `groupBy`, `columnWidths`.
 - Cards: `cardContent` (`body`/`properties`), `imageFit` (`cover`/`contain`), `imageAspectRatio`.
 - Charts: `aggregate`, `bin`.
