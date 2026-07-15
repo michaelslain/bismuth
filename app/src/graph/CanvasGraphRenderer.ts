@@ -51,6 +51,7 @@ import { nodeVisualState } from "../../../core/src/daemonViz";
 import { computeAlwaysOnSet } from "./labelSelection";
 import { hashKey, intToHex, paletteColorInt } from "../themeColors";
 import { isUsableBox, finiteVec3, boundingRadius, fitScale } from "./graphFit";
+import { structuralGraphSig, shouldResetView } from "./graphStability";
 
 const FOV_DEG = 60; // matches the old PerspectiveCamera so framing carries over
 const FIT_FRACTION = 0.42; // graph's resting on-screen radius as a fraction of min(W,H)
@@ -217,10 +218,10 @@ export class CanvasGraphRenderer {
   private edgeBands: EdgeView[][] = [[], [], [], [], [], []]; // persistent scratch: 3D no-hover depth-band buckets (size = BANDS)
   private selfNode: NodeView | null = null; // cached "you" node — this.nodes only changes in build()
   private adjacency = new Map<string, Set<string>>();
-  private sig = "";
+  private sig = ""; // STRUCTURAL signature (structuralGraphSig): node set + edges + daemon state, NO positions
   private colorSig = ""; // gate node recolouring so mode toggles don't rewrite 2k colours
-  private p3Cache = new Map<string, Map<string, Vec3>>(); // settled 3D positions per graph signature
-  private p2Cache = new Map<string, Map<string, Vec3>>(); // settled 2D positions per graph signature
+  private p3Cache = new Map<string, Map<string, Vec3>>(); // settled 3D positions per structural signature
+  private p2Cache = new Map<string, Map<string, Vec3>>(); // settled 2D positions per structural signature
   private radius3 = 1; private radius2 = 1; // layout extent per view
   private scale3 = 1; private scale2 = 1;   // world-units -> px fit per view
   private fitPx = 1;                          // on-screen fit radius (px); node size derives from DENSITY, not layout scale
@@ -333,37 +334,27 @@ export class CanvasGraphRenderer {
 
   render(g: GraphData) {
     if (!this.host) return;
-    const nextSig = this.signature(g);
-    if (nextSig === this.sig && this.nodes.length) { this.restyle(); return; }
-    this.sig = nextSig;
-    this.build(g);
+    // Key the render decision on the graph's STRUCTURE ONLY (nodes + edges + daemon state), NOT its
+    // coordinates (structuralGraphSig). When the structure is unchanged, keep the shape + camera we
+    // already settled even if the backend handed back different position numbers — the async
+    // 2nd/3rd-brain view layout replacing the full-graph fallback, a boot localStorage→server
+    // reconcile, or a warm re-settle that nudged a node a few px. This is the stability guarantee:
+    // the same graph never spontaneously re-shapes (nor snaps the camera to overview) on a
+    // re-fetch/resize/content-edit. Only styling is refreshed. (Positions were previously folded in
+    // here, which made every one of those benign re-fetches a jarring rebuild.)
+    const struct = structuralGraphSig(g);
+    if (struct === this.sig && this.nodes.length) { this.restyle(); return; }
+    // A genuinely new/changed graph. Reset the camera back to the whole-graph overview ONLY when the
+    // visible node set changed substantially (a mode switch, or the first-ever graph) — an
+    // incremental edit to the graph you're already looking at (add/remove a note, open a tab so the
+    // "you" hub gains an "open" edge) preserves the user's current zoom/pan/orbit instead of yanking
+    // it. `this.byId` still holds the PREVIOUS node set here (build() replaces it below).
+    const resetCamera = shouldResetView(new Set(this.byId.keys()), g.nodes);
+    this.sig = struct;
+    this.build(g, resetCamera);
   }
 
-  private signature(g: GraphData): string {
-    let h = 0;
-    for (const e of g.edges) {
-      let x = 2166136261; const s = e.from + "\0" + e.to;
-      for (let i = 0; i < s.length; i++) x = Math.imul(x ^ s.charCodeAt(i), 16777619);
-      h = (h + (x >>> 0)) >>> 0;
-    }
-    // Fold node positions into the signature too. The renderer now uses the backend layout directly
-    // (no client re-settle), so a positions-ONLY change — most importantly the 2nd/3rd-brain VIEW
-    // layout arriving async after the structure (same nodes + edges, new coords) — must trigger a
-    // rebuild, or the view would keep the stale fallback positions. O(n), only on graph updates.
-    let ph = 2166136261;
-    for (const n of g.nodes) {
-      const p = n.position, q = n.position2d;
-      ph = Math.imul(ph ^ (p ? p[0] | 0 : 0), 16777619);
-      ph = Math.imul(ph ^ (p ? p[1] | 0 : 0), 16777619);
-      ph = Math.imul(ph ^ (p ? p[2] | 0 : 0), 16777619);
-      ph = Math.imul(ph ^ (q ? q[0] | 0 : 0), 16777619);
-      ph = Math.imul(ph ^ (q ? q[1] | 0 : 0), 16777619);
-    }
-    const ds = g.nodes.map((n) => (n.daemon ? `${n.id}:${n.daemon.enabled ? 1 : 0}${n.daemon.running ? 1 : 0}` : n.id)).join(",");
-    return `${g.nodes.length}|${g.edges.length}|${h}|${ph >>> 0}|${ds}`;
-  }
-
-  private build(g: GraphData) {
+  private build(g: GraphData, resetCamera = false) {
     this.measure();
     // adjacency + degree
     this.adjacency.clear();
@@ -432,7 +423,7 @@ export class CanvasGraphRenderer {
     this.alwaysOn = computeAlwaysOnSet(g.nodes, g.edges.map((e) => ({ source: e.from, target: e.to })), this.activeFile, this.cfg.graphLabelHubCount);
     this.glowCentroids = [...this.getCommunityCentroids().values()].sort((a, b) => b.count - a.count).slice(0, 3).map((c) => c.centroid);
     this.restyle();
-    this.fit();
+    this.fit(resetCamera);
     this.dirty = true;
   }
 
@@ -716,7 +707,11 @@ export class CanvasGraphRenderer {
     this.dirty = true;
   }
 
-  private fit() {
+  /** Recompute the world→px fit for the current box + layout extent. `resetCamera` (only a genuinely
+   *  new graph — first load / mode switch) also snaps the camera back to the whole-graph overview.
+   *  A resize or an incremental rebuild passes false, so the user's zoom/pan/orbit is PRESERVED
+   *  (positions just rescale to the new box) instead of yanked back to overview on every edit. */
+  private fit(resetCamera = false) {
     // Don't fit to a not-yet-measured (degenerate) host box — that would collapse the cloud onto a
     // point. Once measure() has seen a real box the ResizeObserver re-runs fit() with it.
     if (!this.boxReady) return;
@@ -725,9 +720,11 @@ export class CanvasGraphRenderer {
     this.scale3 = fitScale(fitPx, this.radius3);
     this.scale2 = fitScale(fitPx, this.radius2);
     this.worldScale = this.scale3 + (this.scale2 - this.scale3) * this.morph;
-    this.zoom = 0; this.goalZoom = 0;
-    this.target = [0, 0, 0]; this.goalTarget = [0, 0, 0];
-    this.panX = 0; this.panY = 0; this.goalPanX = 0; this.goalPanY = 0; this.userTook = false;
+    if (resetCamera) {
+      this.zoom = 0; this.goalZoom = 0;
+      this.target = [0, 0, 0]; this.goalTarget = [0, 0, 0];
+      this.panX = 0; this.panY = 0; this.goalPanX = 0; this.goalPanY = 0; this.userTook = false;
+    }
     this.computeBaseDiameters();
     this.dirty = true;
   }
