@@ -1,6 +1,5 @@
 import { mkdir, writeFile, unlink } from "node:fs/promises"
 import { existsSync, readFileSync } from "node:fs"
-import { sendMessage } from "./session.ts"
 import { reconcileSeeds } from "./seeds.ts"
 import { startCronScheduler, stopCronScheduler, recoverInterruptedCrons, waitForRunningJobs } from "./cron.ts"
 import { startProcesses, stopProcesses, stopProcessesForVault, reapOrphans, startProcessTriggers, stopProcessTriggers, stopProcessTriggersForVault } from "./process.ts"
@@ -18,9 +17,6 @@ import { MACHINE_DIR, MACHINE_PID_FILE, MACHINE_LOGS_DIR, SHUTDOWN_TIMEOUT_MS, C
 // vault roots whose brain is currently live.
 const activeVaults = new Set<string>()
 let reconcileInterval: ReturnType<typeof setInterval> | null = null
-
-const DAEMON_BOOT_PROMPT =
-  "You are now running as a background daemon for this vault. Check memory for prior context."
 
 function log(message: string): void {
   const timestamp = new Date().toISOString()
@@ -78,13 +74,15 @@ async function shutdown(signal: string): Promise<void> {
 /**
  * Bring one vault's brain online: ensure dirs, (re)start its processes + trigger
  * loop, recover interrupted crons. On daemon `boot` it also reaps orphans from a
- * previous daemon instance and (when owner) wakes the persistent session; a vault
- * enabled at runtime (reconcile) skips both — spawnProcess does its own per-def
- * defensive reap, and the session is created lazily on the first cron/message.
- * (A cross-vault reapOrphans at reconcile time could kill a sibling vault's
- * identical-argv process, so it is intentionally boot-only.)
+ * previous daemon instance; a vault enabled at runtime (reconcile) skips that —
+ * spawnProcess does its own per-def defensive reap. (A cross-vault reapOrphans at
+ * reconcile time could kill a sibling vault's identical-argv process, so it is
+ * intentionally boot-only.)
+ *
+ * Sessions are NOT started here — they are minted on demand by whatever fires
+ * (cron/page/message), and gated on ownership by sendMessage itself.
  */
-async function startVault(ctx: VaultContext, opts: { owner: boolean; boot: boolean }): Promise<void> {
+async function startVault(ctx: VaultContext, opts: { boot: boolean }): Promise<void> {
   await ensureVaultDirs(ctx)
 
   // Reap orphans from a previous daemon instance BEFORE starting fresh children.
@@ -110,17 +108,11 @@ async function startVault(ctx: VaultContext, opts: { owner: boolean; boot: boole
   // covers overdue jobs anyway, making recovery redundant once running.
   if (opts.boot) await recoverInterruptedCrons(ctx)
 
-  // Only the owner device keeps the persistent bot session alive, and only on
-  // boot. A non-owner daemon idles (still heartbeats via the cron tick); a vault
-  // enabled at runtime wakes its session lazily. Unclaimed => isOwner true.
-  if (opts.boot && opts.owner) {
-    try {
-      await sendMessage(DAEMON_BOOT_PROMPT, ctx, { newSession: true })
-      log(`Bot session initialized for ${ctx.name} (${ctx.root})`)
-    } catch (err) {
-      log(`Warning: failed to initialize session for ${ctx.name} (${ctx.root}): ${err}`)
-    }
-  }
+  // NO persistent session is woken here. Booting one used to mint a whole conversation per daemon
+  // start ("You are now running as a background daemon…"), which surfaced on the user's chat page
+  // and reappeared on every relaunch — while serving no purpose: nothing resumes it. Every real
+  // caller (fireJob, pages, dream) passes `newSession: true` and mints its own thread on demand.
+  // The daemon still runs chats when its crons fire; it just no longer keeps an idle one open.
 
   activeVaults.add(ctx.root)
 }
@@ -148,7 +140,6 @@ async function reconcileVaults(): Promise<void> {
     return
   }
 
-  const owner = await isOwner()
   const seen = new Set<string>()
 
   for (const { ctx, enabled } of all) {
@@ -156,7 +147,7 @@ async function reconcileVaults(): Promise<void> {
     const active = activeVaults.has(ctx.root)
     if (enabled && !active) {
       log(`Reconcile: vault enabled, starting brain for ${ctx.name} (${ctx.root})`)
-      await startVault(ctx, { owner, boot: false })
+      await startVault(ctx, { boot: false })
     } else if (!enabled && active) {
       log(`Reconcile: vault disabled, pausing brain for ${ctx.name} (${ctx.root})`)
       await stopVault(ctx)
@@ -179,14 +170,14 @@ async function main(): Promise<void> {
   log(`Daemon starting (PID ${process.pid})`)
 
   // Heartbeat this device immediately so it's selectable before the first tick,
-  // then resolve ownership once for this boot pass.
+  // then report ownership once for this boot pass. The gate itself lives in
+  // sendMessage (a non-owner's crons still tick, but every session call throws).
   await heartbeatDevice()
-  const owner = await isOwner()
-  if (!owner) log("Not the owner device — idling (heartbeating only, no sessions)")
+  if (!(await isOwner())) log("Not the owner device — idling (heartbeating only, no sessions)")
 
   // Boot every enabled vault's brain.
   for (const ctx of await loadEnabledVaults()) {
-    await startVault(ctx, { owner, boot: true })
+    await startVault(ctx, { boot: true })
     log(`Vault brain started: ${ctx.name} (${ctx.root})`)
   }
 

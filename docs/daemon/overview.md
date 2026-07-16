@@ -22,7 +22,7 @@ Each per-call operation is fully vault-scoped so concurrent vault sessions never
 
 The MCP wiring (last bullet) is what gives a daemon session the `bismuth` docs/CLI + `remember`/`recall`/`forget` tools. It's **explicit**, not inherited: unlike an interactive session (which gets the MCP from the machine-wide `claude mcp add -s user` registration), the daemon is a launchd/systemd process, so `buildQueryOptions` sets `mcpServers` per call and `settingSources: []` so it never picks up a human's ambient config. `BISMUTH_VAULT` in the MCP server's own env closes the vault-targeting gap for `bismuth_cli` regardless of cwd. The absolute `~/.bismuth/bin/bismuth-mcp` path (resolved by `daemon/src/lib/bismuthPaths.ts`, `existsSync`-gated so a machine without the installed tools degrades to no-MCP) works under launchd's minimal PATH. See [mcp/overview.md](../mcp/overview.md). (Note the SDK version skew — core resolves `@anthropic-ai/claude-agent-sdk` 0.3.186, the daemon 0.2.141 — both expose `mcpServers`/`settingSources`/`McpStdioServerConfig.env`.)
 
-Three entry points converge on `sendMessage()` per vault: a cron firing (`daemon/src/daemon/cron.ts`), a background process loop (`daemon/src/daemon/process.ts`), and the boot prompt that wakes the session. The default model is `haiku`, pointed at the user's own installed `claude` binary (machine-login auth, no API key).
+Entry points converge on `sendMessage()` per vault: a cron firing (`daemon/src/daemon/cron.ts`), a background process loop (`daemon/src/daemon/process.ts`), and a daemon page. Each mints its OWN session (`newSession: true`) — there is no persistent always-on daemon chat. The default model is `haiku`, pointed at the user's own installed `claude` binary (machine-login auth, no API key).
 
 ---
 
@@ -44,7 +44,7 @@ Resolved by `MACHINE_DIR` (`daemon/src/lib/config.ts`) = `BISMUTH_DAEMON_DIR` en
 | `vaults.json` | `VAULTS_FILE` — JSON array of vault roots the daemon knows about (written by Bismuth core) |
 | `.claude-bot-migrated` | one-time legacy-migration marker (see Migration) |
 
-Ownership gates the persistent session: a non-owner device still heartbeats but stays idle (`daemon/src/lib/owner.ts` `isOwner` — absent `owner.json` ⇒ unclaimed ⇒ `true`, so a single-device install just works).
+Ownership gates sessions: `sendMessage` throws on a non-owner device, which still heartbeats but never runs a session (`daemon/src/lib/owner.ts` `isOwner` — absent `owner.json` ⇒ unclaimed ⇒ `true`, so a single-device install just works).
 
 ### Per-vault brain — `<vault>/.daemon`
 
@@ -56,7 +56,8 @@ Ownership gates the persistent session: a non-owner device still heartbeats but 
 | `memory/` | this vault's 3rd-brain memory graph (`BISMUTH_MEMORY_DIR`) |
 | `crons/<name>.md` | cron definitions; `crons/.last-fired.json`, `crons/.running.json`, `crons/.triggers/` |
 | `processes/<name>.md` | background-process definitions; `processes/.triggers/` |
-| `session-id` | this vault's resumable conversation session id |
+| `session-id` | this vault's latest session id — a MOVING POINTER, overwritten on each new session |
+| `session-ids` | the durable, append-only SET of every session id this vault's daemon minted (provenance) |
 | `logs/` | per-vault logs |
 
 Disabling a vault's daemon **pauses** its brain — it never deletes on-disk state (`stopVault`).

@@ -18,6 +18,9 @@ import {
   daemonMachineDir,
   migrateDaemonState,
   registerVaultRoot,
+  readDaemonSessionIds,
+  vaultSessionIdsFile,
+  parseSessionIds,
 } from "../src/daemon";
 import { daemonSnapshot } from "../src/daemonGraph";
 
@@ -380,4 +383,71 @@ test("registerVaultRoot keeps throwaway (temp) vaults out of a persistent regist
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+// ── readDaemonSessionIds: the daemon-session membership test ────────────────────────────────
+//
+// The READ half of the shared contract written by daemon/src/daemon/sessionIds.ts. It answers
+// "did the daemon mint this session?" for EVERY session the daemon ever minted — the property the
+// prior, refuted mechanism lacked (it compared against `<vault>/.daemon/session-id`, a moving
+// pointer that names only the latest run, so every earlier cron session looked like a user chat).
+
+/** A temp vault whose `.daemon/session-ids` holds `body`. */
+function makeVaultWithSessionIds(body: string | null): string {
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-sessids-"));
+  created.push(vault);
+  mkdirSync(join(vault, ".daemon"), { recursive: true });
+  if (body !== null) writeFileSync(join(vault, ".daemon", "session-ids"), body);
+  return vault;
+}
+
+test("readDaemonSessionIds returns every recorded id — not just the latest (the refuted mechanism's bug)", () => {
+  const vault = makeVaultWithSessionIds("s1\ns2\ns3\n");
+  const ids = readDaemonSessionIds(vault);
+  // A pointer-based check would have recognized only s3.
+  expect(ids.has("s1")).toBe(true);
+  expect(ids.has("s2")).toBe(true);
+  expect(ids.has("s3")).toBe(true);
+  expect(ids.size).toBe(3);
+});
+
+test("readDaemonSessionIds: a session the daemon never minted is NOT a member", () => {
+  const vault = makeVaultWithSessionIds("s1\ns2\n");
+  expect(readDaemonSessionIds(vault).has("a-chat-the-user-started")).toBe(false);
+});
+
+test("readDaemonSessionIds ignores the session-id POINTER — only the durable set counts", () => {
+  const vault = makeVaultWithSessionIds("s1\n");
+  // The pointer names a different (newer) session; it is not the set's business.
+  writeFileSync(join(vault, ".daemon", "session-id"), "s-latest");
+  const ids = readDaemonSessionIds(vault);
+  expect(ids.has("s1")).toBe(true);
+  expect(ids.has("s-latest")).toBe(false);
+});
+
+test("readDaemonSessionIds tolerates blank lines / whitespace / duplicates", () => {
+  const vault = makeVaultWithSessionIds("\n s1 \n\ns2\ns1\n\n");
+  expect([...readDaemonSessionIds(vault)].sort()).toEqual(["s1", "s2"]);
+});
+
+test("readDaemonSessionIds never throws: no file, no .daemon, no vault → empty set", () => {
+  expect(readDaemonSessionIds(makeVaultWithSessionIds(null)).size).toBe(0);
+  const bare = mkdtempSync(join(tmpdir(), "bismuth-sessids-bare-"));
+  created.push(bare);
+  expect(readDaemonSessionIds(bare).size).toBe(0);
+  expect(readDaemonSessionIds(join(bare, "does-not-exist")).size).toBe(0);
+});
+
+test("readDaemonSessionIds: empty file → empty set (never a set containing '')", () => {
+  expect(readDaemonSessionIds(makeVaultWithSessionIds("")).size).toBe(0);
+  expect(readDaemonSessionIds(makeVaultWithSessionIds("\n\n")).size).toBe(0);
+});
+
+test("vaultSessionIdsFile points at <vault>/.daemon/session-ids", () => {
+  expect(vaultSessionIdsFile("/v")).toBe(join("/v", ".daemon", "session-ids"));
+});
+
+test("parseSessionIds matches the daemon writer's format (order preserved, deduped)", () => {
+  expect(parseSessionIds("a\nb\na\n")).toEqual(["a", "b"]);
+  expect(parseSessionIds("")).toEqual([]);
 });
