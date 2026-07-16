@@ -443,13 +443,20 @@ Returns the current `RelaySnapshot` (sessions + subagents arrays). Also runs the
 
 Clears all state. Tests only.
 
-### Done-subagent TTL
+### Subagent lifetimes
 
 ```ts
-const DONE_SUBAGENT_TTL_MS = 60_000; // 60 seconds
+const DONE_SUBAGENT_TTL_MS = 8_000;                 // brief linger once finished
+const RUNNING_SUBAGENT_MAX_MS = 2 * 60 * 60 * 1000; // backstop for a never-reported stop
 ```
 
-A subagent that has been marked `done` lingers for 60 seconds before `snapshot`/`prune` removes it, so brief subagents remain visible in the graph for a beat after they complete.
+A subagent that has been marked `done` lingers for 8 seconds before `snapshot`/`prune` removes it, so a subagent that starts and finishes between two 2 s agent-graph polls is still seen for a beat.
+
+A subagent has a **second** exit, because its normal one — `SubagentStop` → `stopSubagent` — is a single best-effort report (2 s timeout, errors swallowed, no retry) that Claude Code can itself fail to deliver (it logs `[runAgent] SubagentStop on interrupted query failed`). If that report is lost, `done` never flips, so the done-TTL never applies and the only other sweep (the orphan prune) needs the **parent session** to die — the node would render `awake` forever under a still-open tab. So a subagent that never reports a stop is presumed finished past `RUNNING_SUBAGENT_MAX_MS`.
+
+That backstop is deliberately far beyond any real subagent rather than a tight guess, because nothing cheaply proves a subagent is still alive: the parent's `Stop` hook is **not** a turn boundary for subagents (verified against claude 2.1.211 — an async/background subagent outlives several parent `Stop`s, so finishing subagents on `Stop` would reap live ones), and a tool-call heartbeat fails too (a subagent sitting in one long `Bash` call emits nothing for its whole duration). It only guarantees that no node is immortal; `SubagentStop` remains the path that makes a finished subagent leave promptly.
+
+`core/src/chat.ts` sweeps a visual chat's Task-tool subagents on these same two exits, importing both constants so the paths can't drift.
 
 ---
 

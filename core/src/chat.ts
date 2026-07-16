@@ -19,6 +19,9 @@ import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writ
 import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet, type DenyEntry } from "./visibility";
 import { readDaemonSessionIds } from "./daemon";
 import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
+// One source of truth for how long a subagent lives in the agents graph, so the chat and relay
+// paths can't drift apart (they render as the same thing in the same view).
+import { DONE_SUBAGENT_TTL_MS, RUNNING_SUBAGENT_MAX_MS } from "./relay";
 
 /**
  * Visual Claude Code driver for the in-app chat surface. Each chat is ONE long-lived Agent-SDK
@@ -406,9 +409,10 @@ interface ChatSession {
    *  chat node's awake/idle state in the agents graph, like a relay session's lastSeen. */
   lastActivityAt: number;
   /** Subagents spawned via the SDK Task tool this session, keyed by the Task tool_use id. Populated
-   *  in the drain loop (tool-use → add, tool-result → mark done); done ones linger a TTL then sweep,
-   *  mirroring the relay's DONE_SUBAGENT_TTL. Surfaced as depth-1 children in the agents graph. */
-  chatSubagents: Map<string, { agentId: string; agentType: string; done: boolean; doneAt?: number }>;
+   *  in the drain loop (tool-use → add, tool-result → mark done); swept on the relay's shared
+   *  lifetimes (brief linger once done, backstop age if the result never came — see
+   *  sweepDoneChatSubagents). Surfaced as depth-1 children in the agents graph. */
+  chatSubagents: Map<string, { agentId: string; agentType: string; startedAt: number; done: boolean; doneAt?: number }>;
   /** Latch so a grace-timeout close after an explicit close can't write the note twice. */
   captured?: boolean;
   /** Set by abortTurn() right before interrupt(), cleared when the NEXT `result` message is
@@ -1442,9 +1446,6 @@ function maybeEmitTitle(session: ChatSession): void {
 
 /** The Claude Code tool that spawns a subagent — its tool_use starts one, its tool_result ends it. */
 const TASK_TOOL = "Task";
-/** How long a finished chat subagent lingers in the snapshot before being swept (mirrors the
- *  relay's DONE_SUBAGENT_TTL_MS) so brief subagents stay visible for a beat after they complete. */
-const DONE_CHAT_SUBAGENT_TTL_MS = 60_000;
 
 /**
  * Track the SDK Task-tool subagent lifecycle off the drain loop's frames so a visual chat's
@@ -1459,7 +1460,7 @@ function trackChatSubagent(session: ChatSession, frame: ChatFrame): void {
       (typeof input.subagent_type === "string" && input.subagent_type) ||
       (typeof input.description === "string" && input.description) ||
       "subagent";
-    session.chatSubagents.set(frame.id, { agentId: frame.id, agentType, done: false });
+    session.chatSubagents.set(frame.id, { agentId: frame.id, agentType, startedAt: Date.now(), done: false });
   } else if (frame.type === "tool-result") {
     const sub = session.chatSubagents.get(frame.id);
     if (sub && !sub.done) {
@@ -1469,12 +1470,18 @@ function trackChatSubagent(session: ChatSession, frame: ChatFrame): void {
   }
 }
 
-/** Drop finished chat subagents past their done-TTL (called at snapshot time). */
+/**
+ * Drop chat subagents that are no longer worth showing (called at snapshot time). Same two exits
+ * — and the same lifetimes — as the relay's registry (see relay.ts sweepDoneSubagents): a
+ * finished one leaves after its brief linger, and one that never got its `tool-result` (an
+ * interrupted/aborted turn drops it, exactly like a lost SubagentStop) is presumed finished past
+ * the backstop age instead of pinning an "awake" node in the agents graph forever.
+ */
 function sweepDoneChatSubagents(session: ChatSession, now: number): void {
   for (const [id, sub] of session.chatSubagents) {
-    if (sub.done && sub.doneAt !== undefined && now - sub.doneAt > DONE_CHAT_SUBAGENT_TTL_MS) {
-      session.chatSubagents.delete(id);
-    }
+    const finished = sub.done && sub.doneAt !== undefined && now - sub.doneAt > DONE_SUBAGENT_TTL_MS;
+    const abandoned = !sub.done && now - sub.startedAt > RUNNING_SUBAGENT_MAX_MS;
+    if (finished || abandoned) session.chatSubagents.delete(id);
   }
 }
 
