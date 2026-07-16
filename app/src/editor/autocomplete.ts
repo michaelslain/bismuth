@@ -1,10 +1,11 @@
 // app/src/editor/autocomplete.ts
-import { autocompletion, startCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
+import { autocompletion, startCompletion, closeCompletion, completionStatus, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import { syntaxTree } from "@codemirror/language";
 import { completionDisplayConfig, completionTheme } from "./completionDisplay";
-import type { Extension } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { Prec, type Extension } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
 import { matchWikilinkPrefix, matchWikilinkHeadingPrefix, parseHeadings, resolveNotePath, buildInsert, type NoteCandidate } from "./wikilink";
+import { matchMemoryRefPrefix, buildMemoryRefInsert, isSrsSeparatorLine, type MemoryCandidate } from "../../../core/src/memoryRef";
 import { matchAtMentionPrefix, rankFileCandidates, type FileCandidate } from "./atMention";
 import { matchTagPrefix } from "./tag";
 import { matchEmojiPrefix, searchEmoji } from "./emoji";
@@ -172,6 +173,56 @@ function tagSource(getTags: () => string[]): CompletionSource {
     validFor: /^[\w/-]*$/,
   });
 }
+
+// `??slug` MEMORY REFERENCE completion — the 3rd-brain twin of the `[[wikilink]]` note picker,
+// available in BOTH the note editor and the chat composer (both mount `markdownEditingExtensions`,
+// so wiring it here lights up both at once). Picking a memory note inserts its bare slug after the
+// already-typed `??`, so the saved markdown keeps the `??slug` reference verbatim.
+//
+// DAEMON-GATED FOR FREE: memory only exists when `settings.daemon.enabled` is on — the server then
+// builds `<vault>/.daemon/memory` into the graph as `mem:` nodes, which is where `getMemories`
+// reads from (App.tsx). Daemon off → zero candidates → `prefixSource` yields an empty option list
+// and the popup never opens. No crash, no broken picker, no separate gate to keep in sync.
+//
+// Exported so `memoryRefSource.test.ts` can pin the contract against the assembled options (same
+// idiom as `emojiSource`). The note editor and the chat composer consume this EXACT source through
+// `vaultCompletion()`, so one test covers both surfaces.
+export function memoryRefSource(getMemories: () => MemoryCandidate[]): CompletionSource {
+  return prefixSource<MemoryCandidate>({
+    match: matchMemoryRefPrefix,
+    items: getMemories,
+    toOption: (m) => ({
+      label: m.label,
+      // Show the full rel path as detail only when it differs from the label (a subfoldered
+      // memory note) — for the flat, common case the label already says everything.
+      ...(m.slug === m.label ? {} : { detail: m.slug }),
+      type: "keyword",
+      apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
+        const { insert, cursorOffset } = buildMemoryRefInsert(m.slug);
+        applyInsert(view, completion, applyFrom, applyTo, insert, cursorOffset);
+      },
+    }),
+    validFor: /^[\w/-]*$/,
+  });
+}
+
+// A line that is exactly `??` is the SRS multi-reversed flashcard separator (core/src/srs/parser.ts
+// matches `l.trim() === "??"`). Typing `??`↵ is how you AUTHOR one — but our picker opens on the
+// bare `??`, and CodeMirror's completionKeymap binds Enter to `acceptCompletion` at Prec.highest,
+// so Enter would silently insert a memory slug instead of the newline the user wanted, breaking an
+// existing feature. This guard runs first (Prec.highest, registered BEFORE `autocompletion()` so it
+// wins the tie), closes the popup, and returns FALSE so Enter falls through to its normal handler
+// and still inserts the newline. Any other line (`??alp`↵) is a real pick and is left alone.
+const srsSeparatorEnterGuard = Prec.highest(keymap.of([{
+  key: "Enter",
+  run: (view: EditorView) => {
+    if (completionStatus(view.state) !== "active") return false;
+    const line = view.state.doc.lineAt(view.state.selection.main.head);
+    if (!isSrsSeparatorLine(line.text)) return false;
+    closeCompletion(view);
+    return false; // not handled — let the newline through
+  },
+}]));
 
 // `@file` mention completion (Row 79a) — composer-only, wired in ONLY when `getFiles` is supplied
 // (the note editor never passes it, so this source is simply absent there). Fuzzy-matches EVERY
@@ -414,10 +465,11 @@ const wikilinkAutoTrigger = EditorView.updateListener.of((update) => {
   const pos = update.state.selection.main.head;
   const line = update.state.doc.lineAt(pos);
   const textBefore = line.text.slice(0, pos - line.from);
-  // `[[` and `@` both open with punctuation, which CM's activateOnTyping (word chars only) misses —
-  // force the popup open. startCompletion no-ops when no source returns options (e.g. `@` in a note
-  // editor, where the composer-only at-mention source isn't wired), so firing on either is safe.
-  if (matchWikilinkPrefix(textBefore) || matchAtMentionPrefix(textBefore)) {
+  // `[[`, `@` and `??` all open with punctuation, which CM's activateOnTyping (word chars only)
+  // misses — force the popup open. startCompletion no-ops when no source returns options (e.g. `@`
+  // in a note editor, where the composer-only at-mention source isn't wired, or `??` when the
+  // daemon is off and there are no memory notes), so firing on any of them is safe.
+  if (matchWikilinkPrefix(textBefore) || matchAtMentionPrefix(textBefore) || matchMemoryRefPrefix(textBefore)) {
     const view = update.view;
     queueMicrotask(() => startCompletion(view));
   }
@@ -427,6 +479,9 @@ const wikilinkAutoTrigger = EditorView.updateListener.of((update) => {
 // single override array.
 export function vaultCompletion(opts: {
   getNotes: () => NoteCandidate[];
+  /** The 3rd brain's memory notes, powering the `??slug` reference picker. Empty (or absent) when
+   *  the vault's daemon is disabled — then the `??` popup simply never opens. */
+  getMemories?: () => MemoryCandidate[];
   getTags: () => string[];
   getSchema: () => Schema;
   getIconNames: () => string[];
@@ -440,7 +495,12 @@ export function vaultCompletion(opts: {
   getFiles?: () => FileCandidate[];
   onFileMention?: (path: string) => void;
 }): Extension {
-  return [autocompletion({
+  const getMemories = opts.getMemories;
+  return [
+    // BEFORE autocompletion(): both keymaps sit at Prec.highest, so extension order breaks the
+    // tie and this guard must be consulted before CM's Enter→acceptCompletion binding.
+    ...(getMemories ? [srsSeparatorEnterGuard] : []),
+    autocompletion({
     ...completionDisplayConfig,
     override: [
       // frontmatter-position sources (gated by inFrontmatter)
@@ -459,8 +519,12 @@ export function vaultCompletion(opts: {
       // one owns the popup (it's also async, so ordering keeps the sync note source from racing it).
       wikilinkHeadingSource(opts.getNotes, opts.readNote),
       wikilinkSource(opts.getNotes),
+      // `??slug` memory reference — wired only when the host supplies the memory list.
+      ...(getMemories ? [memoryRefSource(getMemories)] : []),
       tagSource(opts.getTags),
       emojiSource(),
     ],
-  }), wikilinkAutoTrigger];
+    }),
+    wikilinkAutoTrigger,
+  ];
 }
