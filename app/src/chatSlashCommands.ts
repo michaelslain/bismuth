@@ -1,23 +1,27 @@
 // app/src/chatSlashCommands.ts
 // Pure parser for the chat composer's CLIENT-SIDE slash commands (Row 75): `/rename <name>`,
-// `/color <swatch|hex|clear>`, and `/chrome`. These are intercepted in ChatView BEFORE the turn is
-// sent to Claude — they act on the chat TAB (rename / pane tint) or the chat's --chrome capability
-// (persists the setting AND retargets the LIVE session, which respawns on the next message — BUG
-// #87), never reach the model as a prompt. Kept pure + DOM-free so it's unit-testable headlessly.
+// `/color <swatch|hex|clear>`, and `/chrome [on|off]`. These are intercepted in ChatView BEFORE the
+// turn is sent to Claude — they act on the chat TAB (rename / pane tint) or the chat's --chrome
+// capability (persists the choice AND retargets the LIVE conversation, which respawns on the next
+// message — BUG #87), never reach the model as a prompt. Kept pure + DOM-free so it's unit-testable
+// headlessly.
 
 export type ChatSlashCommand =
   | { kind: "rename"; name: string }
   // `arg` is the RAW color token as typed; the caller resolves it via resolveChatColorArg (so an
   // unknown token can be reported rather than silently ignored).
   | { kind: "color"; arg: string }
-  // `/chrome` toggles `settings.chat.computerUse` (--chrome browser/computer-use capability).
-  | { kind: "chrome" };
+  // `/chrome [on|off]` sets this chat's --chrome (browser/computer-use) capability. `arg` is the RAW
+  // token as typed ("" for a bare `/chrome`); the caller resolves it via computeChromeCommand so an
+  // unknown token is reported rather than silently doing the opposite of what was asked.
+  | { kind: "chrome"; arg: string };
 
 /** Parse a composer draft as a client-side chat command, or null when it isn't one — then the draft
  *  flows on normally (a real Claude slash command, or plain prose). Only a LEADING
  *  `/rename`/`/color`/`/chrome` (case-insensitive) is intercepted; the rest of the line is the
  *  argument (trimmed). An empty `/rename` arg is kept (the caller reverts the tab to its auto
- *  label, like clearing an inline rename); an empty `/color` arg means "clear the tint". */
+ *  label, like clearing an inline rename); an empty `/color` arg means "clear the tint"; an empty
+ *  `/chrome` arg means "turn it ON" (see computeChromeCommand). */
 export function parseChatSlashCommand(input: string): ChatSlashCommand | null {
   const trimmed = input.trim();
   if (!trimmed.startsWith("/")) return null;
@@ -26,7 +30,7 @@ export function parseChatSlashCommand(input: string): ChatSlashCommand | null {
   const arg = sp === -1 ? "" : trimmed.slice(sp + 1).trim();
   if (cmd === "rename") return { kind: "rename", name: arg };
   if (cmd === "color" || cmd === "colour") return { kind: "color", arg };
-  if (cmd === "chrome") return { kind: "chrome" };
+  if (cmd === "chrome") return { kind: "chrome", arg };
   return null;
 }
 
@@ -41,28 +45,60 @@ export function parseChatSlashCommand(input: string): ChatSlashCommand | null {
 export const CLIENT_SLASH_COMMANDS: { name: string; detail: string }[] = [
   { name: "rename", detail: "Rename this chat tab" },
   { name: "color", detail: "Tint this chat's pane (swatch name, hex, or \"clear\")" },
-  { name: "chrome", detail: "Toggle Claude's browser access (--chrome) for this chat" },
+  { name: "chrome", detail: "Give Claude browser access (--chrome) for this chat (\"/chrome off\" to remove it)" },
 ];
 
-/** The transcript confirmation for a /chrome (or header Globe pill) toggle — the visible-feedback
- *  half of BUG #87. --chrome is a spawn-fixed CLI flag, so the toggle can't flip a running turn; it
- *  takes effect when the session (re)spawns, which happens on the user's very next message (the
- *  client carries the new choice, the server respawns query() with/without --chrome, resuming the
- *  same conversation). The wording is load-bearing (it must state the new state AND that it lands on
- *  the next message, never falsely claiming the current in-flight turn changed), so it's pure +
- *  unit-tested. */
+/** The transcript confirmation for a --chrome CHANGE — the visible-feedback half of BUG #87.
+ *  --chrome is a spawn-fixed CLI flag, so a change can't flip a running turn; it takes effect when
+ *  the session (re)spawns, which happens on the user's very next message (the client carries the new
+ *  choice, the server respawns query() with/without --chrome, RESUMING THE SAME CONVERSATION — so it
+ *  is the live chat that gains/loses the browser, not a fresh one). The wording is load-bearing (it
+ *  must state the new state AND that it lands on the next message, never falsely claiming the
+ *  current in-flight turn changed), so it's pure + unit-tested. */
 export function chromeToggleNote(enabled: boolean): string {
   return `Browser (--chrome) ${enabled ? "enabled" : "disabled"} for this chat — takes effect from your next message.`;
 }
 
-/** Pure toggle mapping shared by the `/chrome` slash command AND the header Globe pill (BUG #87
- *  re-fix): given the chat's CURRENT --chrome state, return the NEW state to persist plus the
- *  transcript note that describes it. Keeping the flip + the message in ONE pure function guarantees
- *  they can never drift apart (the re-fix's core requirement: the note reflects the NEW state, and
- *  turning it ON from OFF always yields `{ next: true, note: "…enabled…" }`). Unit-tested. */
+/** The transcript confirmation when a `/chrome [on|off]` asked for the state the chat is ALREADY in.
+ *  Nothing changes and nothing respawns, so it must NOT claim "takes effect from your next message"
+ *  (there is no effect to take) — it just confirms the standing state. BUG #87 (bounce 3): `/chrome`
+ *  is an ENABLE verb, so running it on an already-enabled chat has to keep reading "enabled". */
+export function chromeAlreadyNote(enabled: boolean): string {
+  return `Browser (--chrome) is already ${enabled ? "enabled" : "disabled"} for this chat.`;
+}
+
+/** Pure toggle mapping for the header Globe PILL: given the chat's CURRENT --chrome state, return
+ *  the NEW state to persist plus the transcript note that describes it. Keeping the flip + the
+ *  message in ONE pure function guarantees they can never drift apart (the note always reflects the
+ *  NEW state). A pill is a stateful on/off control that RENDERS what it's about to flip, so toggle
+ *  semantics are correct HERE — unlike the `/chrome` command (see computeChromeCommand). */
 export function computeChromeToggle(current: boolean): { next: boolean; note: string } {
   const next = !current;
   return { next, note: chromeToggleNote(next) };
+}
+
+/** BUG #87, bounce 3 — the actual root cause. `/chrome` USED to be a blind toggle (`next = !current`)
+ *  while everything about it — its name, the `--chrome` CLI flag it mirrors, its own card ("/chrome
+ *  turns on browser/computer-use") — presents it as an ENABLE verb. A blind toggle's output depends
+ *  on hidden prior state, so whenever the chat was ALREADY on (a vault with `chat.computerUse: true`,
+ *  or simply having enabled it once before — the state a user who WANTS the browser is normally in)
+ *  typing `/chrome` silently turned the browser OFF and answered "Browser (--chrome) disabled for
+ *  this chat". Two earlier fixes only argued about which state the toggle should START from; that
+ *  cannot work, because for ANY starting default there is a reachable state in which this ENABLE
+ *  verb disables. So the command no longer toggles:
+ *    - `/chrome` / `/chrome on`  → ON  (idempotent — already-on stays on and still reads "enabled")
+ *    - `/chrome off`             → OFF (the ONLY way the command can report "disabled" — you asked)
+ *  Returns undefined for an unrecognized argument so the caller can report it (like `/color`) rather
+ *  than guess a direction. Pure + unit-tested in BOTH directions. */
+export function computeChromeCommand(
+  current: boolean,
+  arg: string,
+): { next: boolean; note: string } | undefined {
+  const a = arg.trim().toLowerCase();
+  const next = a === "" || a === "on" || a === "enable" ? true : a === "off" || a === "disable" ? false : undefined;
+  if (next === undefined) return undefined;
+  // Asking for the state you're already in changes nothing — confirm it without promising an effect.
+  return { next, note: next === current ? chromeAlreadyNote(next) : chromeToggleNote(next) };
 }
 
 /** Merge the client-side commands into a manifest's own slash-command names for the "/" autocomplete
