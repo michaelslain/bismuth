@@ -18,6 +18,7 @@ import { StateField, StateEffect, type EditorState, type Extension } from "@code
 import { mountSolid, disposeSolid } from "./solidWidget";
 import { EmbeddedGraph } from "../graph/EmbeddedGraph";
 import { numberedLine, codeLineNumberTheme } from "./codeLineNumbers";
+import { locateBlockIndex } from "./blockLocate";
 
 const GRAPH_FENCE = /^```graph[ \t]*\n([\s\S]*?)\n```/gm;
 
@@ -90,14 +91,19 @@ class GraphBlockWidget extends WidgetType {
   /** This block's CURRENT range AND document-order index, located by DOM position (robust
    *  to edits above). Both come from ONE graphRanges() call: the array is rebuilt with
    *  fresh object literals every call, so an index recovered by identity (`indexOf`)
-   *  against a second array can never match. Same shape as queryBlock.ts's reveal(). */
+   *  against a second array can never match.
+   *
+   *  The position→index rule itself is locateBlockIndex() (blockLocate.ts), shared with
+   *  queryBlock.ts and unit-tested there. It must never resolve one block to a NEIGHBOUR:
+   *  write() rewrites whatever range this returns, so an off-by-one here silently rewrites
+   *  a fence the user did not touch. */
   private locate(): GraphLocation | null {
     const view = this.view, dom = this.dom;
     if (!view || !dom) return null;
     let pos: number;
     try { pos = view.posAtDOM(dom); } catch { return null; }
     const ranges = graphRanges(view.state);
-    const index = ranges.findIndex((r) => pos >= r.from && pos <= r.to + 1);
+    const index = locateBlockIndex(ranges, pos);
     return index < 0 ? null : { range: ranges[index], index };
   }
 

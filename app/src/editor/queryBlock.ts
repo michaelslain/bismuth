@@ -4,6 +4,7 @@ import { mountSolid, disposeSolid } from "./solidWidget";
 import { BaseView } from "../bases/BaseView";
 import { parseQueryBlock } from "../../../core/src/bases/queryBlock";
 import { numberedLine, codeLineNumberTheme } from "./codeLineNumbers";
+import { locateBlockIndex } from "./blockLocate";
 
 // The ONE embedded block: ```query — the view INTO a base/notes. There is no ```base,
 // ```view, or ```tasks block; everything that reads into a base/notes is a query (a
@@ -78,14 +79,17 @@ class QueryBlockWidget extends WidgetType {
   }
 
   // Reveal THIS block's raw fence for inline editing: find its current index by DOM
-  // position (robust to edits above) and drop the caret into its body.
+  // position (robust to edits above) and drop the caret into its body. The position→index
+  // rule is shared with graphBlock.ts (blockLocate.ts): it used to carry a `to + 1`
+  // tolerance that made adjacent fences overlap, so of two ```query blocks separated by a
+  // single newline, SOURCE on the second revealed the FIRST.
   private reveal = () => {
     const view = this.view, dom = this.dom;
     if (!view || !dom) return;
     let pos: number;
     try { pos = view.posAtDOM(dom); } catch { return; }
     const ranges = queryRanges(view.state);
-    const idx = ranges.findIndex((r) => pos >= r.from && pos <= r.to + 1);
+    const idx = locateBlockIndex(ranges, pos);
     if (idx < 0) return;
     view.dispatch({ effects: toggleQuerySource.of(idx), selection: { anchor: ranges[idx].bodyFrom } });
     view.focus();

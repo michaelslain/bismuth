@@ -99,6 +99,10 @@ const IN_NOTE = "intro\n\n```graph\na -> b\n```\n";
 // Two blocks with DIFFERENT bodies, plus prose around/between them: the second block's
 // range only lines up if the widget locates itself rather than assuming index 0.
 const TWO = "intro\n\n```graph\na -> b\n```\n\nmiddle\n\n```graph\nz\n```\n\noutro\n";
+// Two fences separated by a SINGLE newline — no blank line, no prose. This is the spacing
+// TWO's blank lines hid: block 0 is [0,14] and block 1 starts at 15, so any locate()
+// tolerance of even one character past `to` makes block 0's range swallow block 1's start.
+const ADJACENT = "```graph\na\n```\n```graph\nb\n```";
 
 describe("the extension mounts one widget per fence", () => {
   test("each ```graph fence renders a widget over its own body", () => {
@@ -176,6 +180,40 @@ describe("a graph edit writes back to the RIGHT fence", () => {
     const before = view.state.doc.toString();
     mounted[0].onChange("a -> b");
     expect(view.state.doc.toString()).toBe(before);
+  });
+});
+
+// Blocker: two fences separated by a SINGLE newline overlapped, so the second widget
+// located itself as the FIRST and wrote its body into the first block's fence — the user
+// edits graph #2 and graph #1 silently changes underneath them. Data loss in their note,
+// with no error and nothing on screen to attribute it to.
+//
+// Why it survived every earlier suite: TWO separates its fences with a blank line, which
+// pads the ranges just far enough apart that the off-by-one tolerance never reaches. The
+// bug needed the tightest legal spacing to show, and nothing tested that spacing.
+describe("adjacent fences never write into each other (the cross-block corruption)", () => {
+  test("editing the SECOND block leaves the FIRST byte-identical", () => {
+    const view = mount(ADJACENT);
+    const firstBefore = view.state.doc.toString().slice(0, 14); // "```graph\na\n```"
+
+    mounted[1].onChange("q -> r");
+
+    const doc = view.state.doc.toString();
+    expect(doc.slice(0, 14)).toBe(firstBefore); // block 1 untouched, byte for byte
+    expect(doc).toBe("```graph\na\n```\n```graph\nq -> r\n```"); // and block 2 is the one that changed
+  });
+
+  test("editing the FIRST block leaves the SECOND untouched", () => {
+    const view = mount(ADJACENT);
+    mounted[0].onChange("x -> y");
+    expect(view.state.doc.toString()).toBe("```graph\nx -> y\n```\n```graph\nb\n```");
+  });
+
+  test("the second adjacent block reveals ITS OWN source, not the first's", () => {
+    const view = mount(ADJACENT);
+    mounted[1].onReveal();
+    expect([...revealedGraphBlocks(view.state)]).toEqual([1]);
+    expect(view.state.selection.main.head).toBe(view.state.doc.toString().indexOf("\nb\n") + 1);
   });
 });
 
