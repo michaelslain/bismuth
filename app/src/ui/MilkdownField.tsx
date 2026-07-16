@@ -32,6 +32,11 @@ export function MilkdownField(props: {
   onBlur?: () => void;
   /** Focus + place the caret at the end once the (async) surface mounts. */
   autofocus?: boolean;
+  /** Handed the live editor handle once the (async) surface mounts, and `null` on teardown —
+   *  so a host can drive the surface imperatively (e.g. `insertMarkdown` for a dropped image).
+   *  The handle is NOT available synchronously: the Milkdown chunk is code-split, so a host must
+   *  tolerate a null handle for the first frames. */
+  onReady?: (handle: DocEditorHandle | null) => void;
   class?: string;
 }) {
   let root!: HTMLDivElement;
@@ -53,6 +58,7 @@ export function MilkdownField(props: {
           return;
         }
         handle = h;
+        props.onReady?.(h);
         if (props.autofocus) h.focus("end");
       });
     });
@@ -60,6 +66,7 @@ export function MilkdownField(props: {
 
   onCleanup(() => {
     disposed = true;
+    props.onReady?.(null);
     handle?.destroy();
     handle = null;
   });

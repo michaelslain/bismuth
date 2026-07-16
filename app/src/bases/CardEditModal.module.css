@@ -117,6 +117,26 @@
 }
 .mdField:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
+/* Drop zone wrapping the rich description surface: an image dragged over it highlights the whole
+   field, so it's obvious the picture will land IN the description (and not "attach" invisibly). */
+.mdDropZone { display: block; border-radius: 9px; }
+.mdDropActive .mdField {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: var(--accent-soft);
+}
+
+/* An image embedded in the description renders inline as the real picture (inlineNodes.ts draws
+   image embeds as <img>). Cap it to the field so a big photo can't blow out the modal. */
+.mdField :global(.bismuth-embed-image) { display: inline-block; max-width: 100%; vertical-align: top; }
+.mdField :global(.bismuth-embed-img) {
+  max-width: 100%;
+  max-height: 260px;
+  height: auto;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
 /* Prose styling for the ProseMirror editable (Milkdown ships no CSS). The `attributes.class`
    createDocEditor sets ("bismuth-doc-milkdown") lands on the contenteditable itself. */
 .mdField :global(.bismuth-doc-milkdown) {

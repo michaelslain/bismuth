@@ -5,23 +5,25 @@ import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src
 import { placeholderFile } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { api } from "../api";
-import { settings } from "../settings";
 import { KanbanCard } from "./KanbanCard";
 import { appendOrder } from "./kanbanOrder";
 import { columnDropIndex, reorderColumnKeys } from "./kanbanColumnOrder";
 import { metaColumns, metaSource, writableKey } from "./kanbanMeta";
+import { appendEmbedToValue, markdownDropTarget, isImagePath } from "./kanbanImageDrop";
 import {
-  attachmentTarget,
-  appendEmbedToNote,
-  imageEmbed,
-  baseName,
-  isImagePath,
-  isImageFile,
-} from "./kanbanImageDrop";
+  isFileDrag,
+  nativeDropPoint,
+  uploadImageEmbeds,
+  uploadsFromFiles,
+  uploadsFromNativePaths,
+  type ImageUpload,
+} from "./cardImageDrop";
+import { propertyEditKind, type PropertyEditKind } from "./propertyEdit";
+import { propertyType } from "../../../core/src/bases/properties";
+import { propertyRegistry } from "../propertyRegistry";
 import { markDeleted, unmarkDeleted, pruneDeleted } from "./kanbanDelete";
 import { type NativeDragDetail } from "../nativeDrop";
-import { nativeDropScale, claimNativeDrop } from "../nativeDropRouting";
-import { isTauri } from "../nativeMenu";
+import { claimNativeDrop } from "../nativeDropRouting";
 import { declaredDefaults } from "../../../core/src/bases/properties";
 import { STATUS_COLOR } from "../ui/StatusDot";
 import { ContextMenu, type MenuItem } from "../ContextMenu";
@@ -742,92 +744,71 @@ export function KanbanView(props: {
 
   // ── Image drop onto a card ───────────────────────────────────────────────────────────────────
   // Dragging an image FILE (from Finder/desktop, or any OS file drag) onto a card copies it into the
-  // vault's attachment folder and appends an `![[basename]]` embed to that card note's BODY — the
-  // same copy-into-attachments + `![[...]]` convention notes/tables use. Two intake paths, exactly
-  // like Editor.tsx: the packaged app's WKWebView suppresses the HTML5 `drop` for external OS files,
-  // so a real drop arrives ONLY via Tauri's `bismuth-native-drag` CustomEvent (which carries the REAL
-  // on-disk paths); in a plain browser (dev / claude-in-chrome) that event never fires and the HTML5
-  // `dataTransfer.files` path serves instead. (Pure path/embed/append logic → kanbanImageDrop.ts.)
+  // vault's attachment folder and embeds `![[basename]]` in the card's DESCRIPTION — the property
+  // both the card face and the edit modal already render, so the picture is VISIBLE the moment it
+  // lands. (It used to be appended to the card note's BODY, which neither surface shows: the image
+  // was on disk but nowhere on screen.) The two OS-file intake paths + the upload live in
+  // cardImageDrop.ts, shared with the modal's description field; the pure append/target logic is in
+  // kanbanImageDrop.ts.
 
-  /** The card note path under (x, y), scoped to THIS board's DOM (so a drop in one split pane's
-   *  kanban can't land in another's). Null when the cursor isn't over a card of this board. */
-  function cardPathAtPoint(x: number, y: number): string | null {
+  /** A property's edit KIND, resolved exactly the way the card face + edit modal resolve it
+   *  (declared `type:` → vault property registry → the bare-`description`-is-markdown default), so
+   *  a drop targets the SAME field the modal shows as the rich description editor. The value +
+   *  siblings only steer the non-markdown fallbacks (select-from-known-values), which this
+   *  "is it the markdown field?" question doesn't care about — hence the empty stand-ins. */
+  function kindOfProperty(id: string): PropertyEditKind {
+    return propertyEditKind(id, null, propertyRegistry(), [], propertyType(props.config, id));
+  }
+
+  /** The card row under (x, y), scoped to THIS board's DOM (so a drop in one split pane's kanban
+   *  can't land in another's). Null when the cursor isn't over a card of this board. */
+  function cardAtPoint(x: number, y: number): { path: string; row: Row } | null {
     const el = document.elementFromPoint(x, y) as HTMLElement | null;
     const card = el?.closest<HTMLElement>("[data-kbcard][data-path]");
     if (!card || !rootEl || !rootEl.contains(card)) return null;
-    return card.getAttribute("data-path");
+    const path = card.getAttribute("data-path");
+    if (!path) return null;
+    const row = props.result.groups.flatMap((g) => g.rows).find((r) => r.file.path === path);
+    return row ? { path, row } : null;
   }
 
-  /** Read the card note, append the (already `\n`-joined) embed block to its body, and write it back
-   *  via the same PUT /file path notes use. Toasts on success/failure. */
-  async function appendEmbedsToCardBody(cardPath: string, embeds: string[]): Promise<void> {
+  /** Upload each image, then append its embed to the card's description property — the same
+   *  property (and the same value shape) the modal's Milkdown field writes. Shared by the native +
+   *  HTML5 intake paths. Toasts on every outcome, including "this board has no description", so a
+   *  drop never silently vanishes. */
+  async function embedImagesInCard(cardPath: string, row: Row, uploads: ImageUpload[]): Promise<void> {
+    if (uploads.length === 0) return;
+    const id = markdownDropTarget(metaCols(), kindOfProperty, (i) => writableKey(i) !== null);
+    if (!id) {
+      pushToast("No description property on this board to drop an image into");
+      return;
+    }
+    const embeds = await uploadImageEmbeds(uploads, cardPath);
     if (embeds.length === 0) return;
     try {
-      const content = await api.read(cardPath);
-      await api.write(cardPath, appendEmbedToNote(content, embeds.join("\n")));
+      const current = resolveProperty(id, row);
+      const next = appendEmbedToValue(current == null ? "" : String(current), embeds.join("\n"));
+      await setMetaProperty(row, id, next);
       const label = cardPath.split("/").pop()?.replace(/\.md$/, "") ?? cardPath;
-      pushToast(`Attached ${embeds.length === 1 ? "image" : `${embeds.length} images`} to "${label}"`);
+      pushToast(`Added ${embeds.length === 1 ? "image" : `${embeds.length} images`} to "${label}"`);
     } catch (e) {
-      pushToast(`Couldn't attach image: ${(e as Error).message}`);
+      pushToast(`Couldn't add image: ${(e as Error).message}`);
     }
-  }
-
-  /** Upload each image's bytes into the attachment folder, then embed the resulting basenames into
-   *  the card note's body. Shared by the native + HTML5 intake paths. */
-  async function embedImagesInCard(cardPath: string, uploads: Array<{ name: string; bytes: ArrayBuffer }>): Promise<void> {
-    const names: string[] = [];
-    for (const u of uploads) {
-      try {
-        const finalPath = await api.uploadAsset(attachmentTarget(settings.attachments.folder, u.name, cardPath), u.bytes);
-        names.push(baseName(finalPath));
-      } catch (e) {
-        pushToast(`Couldn't save image: ${(e as Error).message}`);
-      }
-    }
-    await appendEmbedsToCardBody(cardPath, names.map(imageEmbed));
   }
 
   /** Native (Tauri) OS image drop — resolve the card under the cursor, read each file's real bytes
    *  (fs plugin), upload, and embed. Coordinates are corrected for a WebKit page-zoom / DPR mismatch
-   *  (nativeDropScale), same as the editor's native-drop handler. Desktop-only (the event never
+   *  (nativeDropPoint), same as the editor's native-drop handler. Desktop-only (the event never
    *  fires in a browser); `claimNativeDrop` ensures exactly one surface/board processes the drop. */
   async function handleNativeCardDrop(d: NativeDragDetail): Promise<void> {
     if (!editable()) return;
-    const images = d.paths.filter(isImagePath);
-    if (images.length === 0) { setDropCardPath(null); return; }
-    let f = 1;
-    try {
-      if (isTauri()) {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        const size = await getCurrentWindow().innerSize();
-        f = nativeDropScale(window.devicePixelRatio || 1, window.innerWidth, size.width);
-      }
-    } catch {
-      f = 1;
-    }
-    const cardPath = cardPathAtPoint(d.x * f, d.y * f);
+    if (!d.paths.some(isImagePath)) { setDropCardPath(null); return; }
+    const pt = await nativeDropPoint(d);
+    const hit = cardAtPoint(pt.x, pt.y);
     setDropCardPath(null);
-    if (!cardPath) return; // not dropped on a card of this board — let another surface handle it
+    if (!hit) return; // not dropped on a card of this board — let another surface handle it
     if (!claimNativeDrop(d)) return; // a duplicated listener already owns this drop
-    let readFile: (p: string) => Promise<Uint8Array>;
-    try {
-      ({ readFile } = await import("@tauri-apps/plugin-fs"));
-    } catch (e) {
-      pushToast("Couldn't read dropped image — see console");
-      console.error("fs plugin import failed", e);
-      return;
-    }
-    const uploads: Array<{ name: string; bytes: ArrayBuffer }> = [];
-    for (const p of images) {
-      try {
-        const bytes = await readFile(p);
-        uploads.push({ name: baseName(p), bytes: await new Blob([bytes as BlobPart]).arrayBuffer() });
-      } catch (e) {
-        pushToast(`Couldn't read ${baseName(p)}`);
-        console.error("native drop read failed", e);
-      }
-    }
-    await embedImagesInCard(cardPath, uploads);
+    await embedImagesInCard(hit.path, hit.row, await uploadsFromNativePaths(d.paths));
   }
 
   // Window-level native drag listener: highlight the hovered card on enter/over, clear on leave, and
@@ -841,15 +822,14 @@ export function KanbanView(props: {
       if (d.type === "leave") { setDropCardPath(null); return; }
       // enter/over — raw coords are fine for a card-sized target (the small zoom/DPR residual the
       // drop corrects for can't cross a whole card); highlight whatever card is under the cursor.
-      setDropCardPath(cardPathAtPoint(d.x, d.y));
+      setDropCardPath(cardAtPoint(d.x, d.y)?.path ?? null);
     };
     window.addEventListener("bismuth-native-drag", onNativeDrag);
     onCleanup(() => window.removeEventListener("bismuth-native-drag", onNativeDrag));
   });
 
   // HTML5 file-drag intake (plain browser / dev only — see the section header). Does the drag carry
-  // OS FILES (not an internal reorder)? Only then do we claim it as an image-attach target.
-  const isFileDrag = (dt: DataTransfer | null): boolean => !!dt && Array.from(dt.types).includes("Files");
+  // OS FILES (not an internal reorder)? Only then do we claim it as an image-drop target.
   function onCardFileDragOver(e: DragEvent, path: string): void {
     if (!editable() || !isFileDrag(e.dataTransfer)) return;
     e.preventDefault(); // required for the drop to fire
@@ -864,16 +844,12 @@ export function KanbanView(props: {
     if (to && card.contains(to)) return;
     if (dropCardPath() === path) setDropCardPath(null);
   }
-  async function onCardFileDrop(e: DragEvent, path: string): Promise<void> {
+  async function onCardFileDrop(e: DragEvent, path: string, row: Row): Promise<void> {
     if (!editable() || !isFileDrag(e.dataTransfer)) return;
     e.preventDefault();
     e.stopPropagation();
     setDropCardPath(null);
-    const files = Array.from(e.dataTransfer!.files).filter(isImageFile);
-    if (files.length === 0) return;
-    const uploads: Array<{ name: string; bytes: ArrayBuffer }> = [];
-    for (const file of files) uploads.push({ name: file.name, bytes: await file.arrayBuffer() });
-    await embedImagesInCard(path, uploads);
+    await embedImagesInCard(path, row, await uploadsFromFiles(e.dataTransfer!.files));
   }
 
   return (
@@ -982,7 +958,7 @@ export function KanbanView(props: {
                                 onDragEnter={(e) => onCardFileDragOver(e, path)}
                                 onDragOver={(e) => onCardFileDragOver(e, path)}
                                 onDragLeave={(e) => onCardFileDragLeave(e, path)}
-                                onDrop={(e) => void onCardFileDrop(e, path)}
+                                onDrop={(e) => void onCardFileDrop(e, path, r())}
                               >
                                 <div class={styles.cardBodyInner}>
                                   <KanbanCard
