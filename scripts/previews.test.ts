@@ -8,7 +8,7 @@
 // dispatches nothing. Fixtures are real git repos + real symlink layouts, because
 // both bugs were about what git and bun ACTUALLY do, not what they were assumed to.
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -183,6 +183,73 @@ describe("ensure_deps — never fires on a healthy tree, never deletes", () => {
     expect(r.stderr).toContain("does not resolve inside");
     // node_modules must SURVIVE a failed repair — deleting it is what nearly ate main's
     expect(existsSync(join(wt, "node_modules"))).toBe(true);
+  });
+});
+
+describe("port ownership — a live port is not proof the preview is ours", () => {
+  // Caught by running the real thing end-to-end: a hand-launched vite from
+  // .claude/worktrees/fix-96-cards-masonry had held 1440 since Jul 13, so our own vite
+  // died with EADDRINUSE ("Port 1440 is already in use") and our core died with
+  // EADDRINUSE too — yet `start` printed "live: http://localhost:1440" and wrote that
+  // stranger's URL to the card. wait_live only asked "is something listening and does
+  // /version answer", which a stranger satisfies. Same "user tests a lie" class as
+  // handing back main. Ownership is now proven from the listener's own command line.
+  const VITE = 45217;
+  const CORE = VITE + 2900;
+  let stranger: ChildProcess;
+  let OURS: string;
+  let THEIRS: string;
+
+  beforeAll(async () => {
+    OURS = join(TMP, "wt-ours");
+    THEIRS = join(TMP, "wt-theirs");
+    mkdirSync(OURS, { recursive: true });
+    mkdirSync(THEIRS, { recursive: true });
+    // a stranger that looks exactly like a healthy preview: holds BOTH ports and
+    // answers /version — indistinguishable from ours to the old check.
+    writeFileSync(
+      join(THEIRS, "serve.js"),
+      `const h = () => new Response(JSON.stringify({version:1}));\n` +
+        `Bun.serve({ port: ${VITE}, fetch: h });\nBun.serve({ port: ${CORE}, fetch: h });\n` +
+        `setInterval(() => {}, 1000);\n`,
+    );
+    stranger = spawn("bun", [join(THEIRS, "serve.js")], { stdio: "ignore" });
+    for (let i = 0; i < 100; i++) {
+      try {
+        await fetch(`http://localhost:${CORE}/version`);
+        break;
+      } catch {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+  });
+
+  afterAll(() => stranger?.kill("SIGKILL"));
+
+  test("the stranger really is live and answering /version", () => {
+    // i.e. the old, weaker condition genuinely passes — this is why it lied
+    expect(sh(`port_listening ${VITE} && core_alive ${CORE} && echo LIVE`).stdout.trim()).toBe("LIVE");
+  });
+
+  test("preview_live is FALSE for a stranger on our card's ports", () => {
+    expect(sh(`preview_live ${VITE} ${CORE} "${OURS}" && echo YES || echo NO`).stdout.trim()).toBe("NO");
+  });
+
+  test("preview_live is TRUE for the worktree that really launched it", () => {
+    expect(sh(`preview_live ${VITE} ${CORE} "${THEIRS}" && echo YES || echo NO`).stdout.trim()).toBe("YES");
+  });
+
+  test("ports_free_or_ours refuses a pair a stranger is squatting", () => {
+    expect(sh(`ports_free_or_ours ${VITE} ${CORE} "${OURS}" && echo YES || echo NO`).stdout.trim()).toBe("NO");
+  });
+
+  test("ports_free_or_ours allows a genuinely free pair", () => {
+    expect(sh(`ports_free_or_ours 45999 48899 "${OURS}" && echo YES || echo NO`).stdout.trim()).toBe("YES");
+  });
+
+  test("a worktree name that merely prefixes another is not a match", () => {
+    // guards the trailing slash: …/wt-theirs must not be claimed by …/wt-thei
+    expect(sh(`port_from_worktree ${VITE} "${THEIRS.slice(0, -2)}" && echo YES || echo NO`).stdout.trim()).toBe("NO");
   });
 });
 

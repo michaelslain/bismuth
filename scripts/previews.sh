@@ -60,6 +60,52 @@ vite_port_of(){ printf '%s' "$1" | sed -nE 's#^https?://[^:/]+:([0-9]+)/?$#\1#p'
 port_listening(){ lsof -ti tcp:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 core_alive(){ curl -fsS -m 2 "http://localhost:$1/version" >/dev/null 2>&1; }
 
+# 0 iff the process LISTENING on port $1 was launched out of worktree $2.
+#
+# "Something is listening and answers /version" is NOT proof the preview is ours —
+# it is only proof that SOMEBODY is there. Caught live: a hand-launched vite from
+# .claude/worktrees/fix-96-cards-masonry had been holding 1440 since Jul 13, so our
+# own vite died with EADDRINUSE while wait_live happily saw the port up and reported
+# "live", writing that stranger's URL to the card. Same "user tests a lie" outcome as
+# reusing main, just through a different door.
+#
+# We launch core as `bun run <wt>/core/src/server.ts` and vite out of <wt>/app, so the
+# worktree path is in the listener's own command line. Trailing slash so a worktree
+# name that prefixes another (…-895-3 vs …-895-33) can't match.
+port_from_worktree(){
+  local port="$1" wt="$2" pids p cmd
+  pids=$(lsof -ti tcp:"$port" -sTCP:LISTEN 2>/dev/null)
+  [ -n "$pids" ] || return 1
+  for p in $pids; do
+    cmd=$(ps -o command= -p "$p" 2>/dev/null)
+    case "$cmd" in *"$wt/"*) return 0 ;; esac
+  done
+  return 1
+}
+
+# 0 iff a REAL, ours-and-answering preview for worktree $3 is on the pair $1/$2
+preview_live(){
+  local vite="$1" core="$2" wt="$3"
+  port_from_worktree "$vite" "$wt" && port_from_worktree "$core" "$wt" && core_alive "$core"
+}
+
+# 0 iff each port is free or already ours — i.e. nobody else is squatting the pair
+ports_free_or_ours(){
+  local vite="$1" core="$2" wt="$3" p
+  for p in "$vite" "$core"; do
+    port_listening "$p" || continue
+    port_from_worktree "$p" "$wt" || return 1
+  done
+  return 0
+}
+
+# describes whoever holds $1, for a refusal message the user can act on
+port_holder(){
+  local pids p
+  pids=$(lsof -ti tcp:"$1" -sTCP:LISTEN 2>/dev/null)
+  for p in $pids; do printf 'pid %s: %s\n' "$p" "$(ps -o command= -p "$p" 2>/dev/null | cut -c1-110)"; done
+}
+
 # prints "vite core" and returns 0 iff the card's recorded preview is actually live
 card_live_ports(){
   local pv v c
@@ -197,10 +243,11 @@ launch_servers(){
       >"$LOGDIR/$slug.vite.log" 2>&1 </dev/null & )
 }
 
+# waits for OUR servers — a stranger already on the port can no longer satisfy this
 wait_live(){
-  local vite="$1" core="$2" tries=30
+  local vite="$1" core="$2" wt="$3" tries=30
   while [ "$tries" -gt 0 ]; do
-    if port_listening "$vite" && port_listening "$core" && core_alive "$core"; then return 0; fi
+    preview_live "$vite" "$core" "$wt" && return 0
     sleep 1; tries=$((tries - 1))
   done
   return 1
@@ -232,12 +279,9 @@ cmd_start(){
   name=$(basename "$card" .md)
   slug=$(slugify "$name")
 
-  ports=$(card_live_ports "$card")
-  if [ -n "$ports" ]; then
-    v=${ports%% *}
-    echo "already live: $name -> http://localhost:$v"
-    exit 0
-  fi
+  # NB: the "already live?" question can only be answered once we know which worktree
+  # this card's preview must run from — see the ownership check below. Asking it before
+  # that (as this used to) means "somebody is on the port" gets mistaken for "we are".
 
   target=$(resolve_target_sha "$card") || {
     echo "REFUSE — $name has no usable landed^2 or worktree branch. Not guessing." >&2
@@ -258,10 +302,27 @@ cmd_start(){
   ports=$(assign_ports "$card") || { echo "no free preview ports left" >&2; exit 1; }
   v=${ports%% *}; c=${ports##* }
 
+  # Already up AND actually ours -> idempotent no-op.
+  if preview_live "$v" "$c" "$wt_path"; then
+    "$BOARD_WRITE" "$card" preview "http://localhost:$v" >/dev/null
+    echo "already live: $name -> http://localhost:$v"
+    exit 0
+  fi
+
+  # Someone ELSE holds this card's pair. Refuse: launching now would fail on
+  # --strictPort/EADDRINUSE while the stranger keeps answering, and we would write
+  # THEIR url to the card. Never adopt a server we did not start.
+  if ! ports_free_or_ours "$v" "$c" "$wt_path"; then
+    echo "REFUSE — $name's ports ($v/$c) are held by something that is not its preview:" >&2
+    { port_holder "$v"; port_holder "$c"; } | sed 's/^/  /' >&2
+    echo "  stop that process (or previews.sh gc --run if it is an orphan), then retry." >&2
+    exit 1
+  fi
+
   echo "launching core:$c vite:$v (logs: $LOGDIR/$slug.{core,vite}.log)"
   launch_servers "$wt_path" "$v" "$c" "$slug"
 
-  if wait_live "$v" "$c"; then
+  if wait_live "$v" "$c" "$wt_path"; then
     "$BOARD_WRITE" "$card" preview "http://localhost:$v" >/dev/null
     echo "live: http://localhost:$v"
   else
@@ -273,20 +334,37 @@ cmd_start(){
 }
 
 cmd_stop(){
-  local raw="${1:-}" card name pv v c p pids
+  local raw="${1:-}" card name pv v c p pids pid cmd target wt_path killed
   [ -n "$raw" ] || { echo "usage: previews.sh stop <card>" >&2; exit 2; }
   card=$(resolve_card "$raw")
   [ -f "$card" ] || { echo "no such card: $card" >&2; exit 1; }
   name=$(basename "$card" .md)
   pv=$(fm "$card" preview); v=$(vite_port_of "$pv")
-  if [ -n "$v" ]; then
-    c=$((v + 2900))
-    for p in "$v" "$c"; do
-      pids=$(lsof -ti tcp:"$p" -sTCP:LISTEN 2>/dev/null || true)
-      if [ -n "$pids" ]; then kill $pids 2>/dev/null; echo "  killed port $p"; fi
-    done
-  else
+  if [ -z "$v" ]; then
     echo "  no preview recorded for: $name"
+  else
+    c=$((v + 2900))
+    # Kill ONLY processes launched out of this card's worktree. A recorded port is not
+    # a licence to kill whoever happens to hold it now — that could be the user's own
+    # dev server or another card's preview that legitimately took the port later.
+    target=$(resolve_target_sha "$card") && wt_path=$(find_existing_worktree "$target") || wt_path=""
+    if [ -z "$wt_path" ]; then
+      echo "  can't resolve $name's worktree — not killing anything on $v/$c." >&2
+      echo "  (if those are orphans, previews.sh gc --run is the tool for that.)" >&2
+    else
+      killed=0
+      for p in "$v" "$c"; do
+        pids=$(lsof -ti tcp:"$p" -sTCP:LISTEN 2>/dev/null || true)
+        for pid in $pids; do
+          cmd=$(ps -o command= -p "$pid" 2>/dev/null)
+          case "$cmd" in
+            *"$wt_path/"*) kill "$pid" 2>/dev/null; echo "  killed pid $pid on port $p"; killed=1 ;;
+            *) echo "  left pid $pid on port $p alone — not $name's preview" >&2 ;;
+          esac
+        done
+      done
+      [ "$killed" = 0 ] && echo "  nothing of $name's was running"
+    fi
   fi
   "$BOARD_WRITE" "$card" preview "" >/dev/null
   echo "stopped: $name"
