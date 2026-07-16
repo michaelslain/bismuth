@@ -42,6 +42,11 @@ terse shorthand (edges implying their endpoints); it simply re-serializes more e
 Parse errors are reported per-line in the widget, which disables graph editing (so a
 write-back can never drop lines it didn't understand) until the source is fixed.
 
+**Recovering from a parse error**: the edit tools hide, but **SOURCE stays available** — it
+is the way back. Press it to reveal the raw fence, fix the flagged line, then move the caret
+out of the block; it collapses back to a working graph. (Covered end to end by
+`app/src/editor/graphBlock.test.ts`.)
+
 ## The widget
 
 - **SELECT** — click a node, then rename its id / set its label / delete it in the edit row.
@@ -52,7 +57,9 @@ write-back can never drop lines it didn't understand) until the source is fixed.
 - **2D / 3D** — flat vs orbit layout. Drag orbits/pans; **Mod+scroll** (or trackpad
   pinch) zooms — plain scroll passes through to the note so the block never hijacks it.
 - **SOURCE** (`</>`): reveals the raw fence for hand-editing, exactly like the
-  ` ```query ` block — it collapses back to the rendered graph when the caret leaves.
+  ` ```query ` block — it collapses back to the rendered graph when the caret leaves. Shown
+  in every state, including a block with parse errors (see **Recovering from a parse
+  error** above).
 
 Layout is **computed, not stored**: node positions come from the same deterministic
 layout as the knowledge graph (`core/src/layout.ts`), so the same markdown always draws

@@ -23,7 +23,12 @@ const GRAPH_FENCE = /^```graph[ \t]*\n([\s\S]*?)\n```/gm;
 
 interface GraphRange { from: number; to: number; bodyFrom: number; body: string }
 
-/** All ```graph fences in the document, in order. */
+/** A located block: its range AND its document-order index — which MUST be read off the
+ *  same `graphRanges()` array (see `locate()`). */
+interface GraphLocation { range: GraphRange; index: number }
+
+/** All ```graph fences in the document, in order. Allocates a FRESH array of fresh
+ *  objects on every call — never compare results across two calls by identity. */
 function graphRanges(state: EditorState): GraphRange[] {
   const text = state.doc.toString();
   const out: GraphRange[] = [];
@@ -64,6 +69,12 @@ const revealedField = StateField.define<Set<number>>({
   },
 });
 
+/** Document-order indices of the graph blocks currently revealed as raw source. Read-only
+ *  window onto `revealedField` for tests (the SOURCE button's observable outcome). */
+export function revealedGraphBlocks(state: EditorState): ReadonlySet<number> {
+  return state.field(revealedField);
+}
+
 class GraphBlockWidget extends WidgetType {
   private view?: EditorView;
   private dom?: HTMLElement;
@@ -76,24 +87,28 @@ class GraphBlockWidget extends WidgetType {
     return other.source === this.source;
   }
 
-  /** This block's CURRENT range, located by DOM position (robust to edits above). */
-  private myRange(): GraphRange | null {
+  /** This block's CURRENT range AND document-order index, located by DOM position (robust
+   *  to edits above). Both come from ONE graphRanges() call: the array is rebuilt with
+   *  fresh object literals every call, so an index recovered by identity (`indexOf`)
+   *  against a second array can never match. Same shape as queryBlock.ts's reveal(). */
+  private locate(): GraphLocation | null {
     const view = this.view, dom = this.dom;
     if (!view || !dom) return null;
     let pos: number;
     try { pos = view.posAtDOM(dom); } catch { return null; }
-    return graphRanges(view.state).find((r) => pos >= r.from && pos <= r.to + 1) ?? null;
+    const ranges = graphRanges(view.state);
+    const index = ranges.findIndex((r) => pos >= r.from && pos <= r.to + 1);
+    return index < 0 ? null : { range: ranges[index], index };
   }
 
   // Reveal THIS block's raw fence for inline text editing and drop the caret into it.
+  // Stays available while the source has parse errors — it is the ONLY way to fix them.
   private reveal = () => {
     const view = this.view;
     if (!view) return;
-    const ranges = graphRanges(view.state);
-    const r = this.myRange();
-    const idx = r ? ranges.indexOf(r) : -1;
-    if (idx < 0) return;
-    view.dispatch({ effects: toggleGraphSource.of(idx), selection: { anchor: ranges[idx].bodyFrom } });
+    const loc = this.locate();
+    if (!loc) return;
+    view.dispatch({ effects: toggleGraphSource.of(loc.index), selection: { anchor: loc.range.bodyFrom } });
     view.focus();
   };
 
@@ -102,10 +117,10 @@ class GraphBlockWidget extends WidgetType {
   private write = (newBody: string) => {
     const view = this.view;
     if (!view) return;
-    const r = this.myRange();
-    if (!r || newBody === r.body) return;
-    const bodyTo = r.bodyFrom + r.body.length;
-    view.dispatch({ changes: { from: r.bodyFrom, to: bodyTo, insert: newBody } });
+    const loc = this.locate();
+    if (!loc || newBody === loc.range.body) return;
+    const { bodyFrom, body } = loc.range;
+    view.dispatch({ changes: { from: bodyFrom, to: bodyFrom + body.length, insert: newBody } });
   };
 
   toDOM(view: EditorView): HTMLElement {
