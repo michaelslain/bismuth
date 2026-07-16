@@ -25,7 +25,9 @@
 # review.json is the lane's adversarial review, and MUST identify what it reviewed:
 #   { "branch": "<branch>", "commit": "<reviewed tip sha>",
 #     "isReal": bool, "blocking": [...], "verdict": "<one-line summary>" }
-# Missing/malformed/refuted/unbound/stale review => refuse. No review flag => refuse.
+# `commit` must be a SHA, never a ref: a ref moves, so "commit":"<branch>"/"HEAD"
+# would compare the tip to itself and pass the staleness gate unconditionally.
+# Missing/malformed/refuted/unbound/unpinned/stale review => refuse. No flag => refuse.
 # Exit 0 = merged and GREEN (still unpushed — push + set landed yourself).
 set -u
 cd "$(git rev-parse --show-toplevel)" || exit 2
@@ -79,6 +81,22 @@ if [ -z "$r_branch" ] || [ -z "$r_commit" ]; then
   echo "REFUSED — review does not say what it reviewed (branch=${r_branch:-<missing>} commit=${r_commit:-<missing>})." >&2
   echo "          A review must be bound to its subject. Required schema:" >&2
   echo '          { "branch": "<branch>", "commit": "<reviewed tip sha>", "isReal": bool, "blocking": [], "verdict": "<summary>" }' >&2
+  exit 1
+fi
+
+# commit must be an object NAME (hex sha), not just any revision git can resolve.
+# A ref MOVES: "commit":"lane-b" (or "HEAD") makes gate 1c compare the tip against
+# itself, so it passes unconditionally and the gate cheerfully prints "bound to
+# lane-b@<tip>" — the unbound hole, reopened through the front door. A sha names one
+# immutable commit; that is the whole point of binding. (Short shas are fine: they
+# still name a fixed object.)
+sha_shaped=1
+case "$r_commit" in *[!0-9a-fA-F]*) sha_shaped=0;; esac
+[ ${#r_commit} -ge 7 ] || sha_shaped=0
+if [ "$sha_shaped" = 0 ]; then
+  echo "REFUSED — review.commit '$r_commit' is not a commit sha." >&2
+  echo "          A branch/ref moves, so it binds the review to nothing — record the sha" >&2
+  echo "          the reviewer actually read: git rev-parse $r_branch" >&2
   exit 1
 fi
 
