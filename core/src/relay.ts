@@ -37,7 +37,8 @@ export interface RelaySubagent {
    *  this key; a plain Agent-tool subagent leaves it undefined (ordinary rendering). */
   workflowId?: string;
   startedAt: number;
-  /** Flipped true on SubagentStop; done subagents linger briefly then are pruned. */
+  /** Flipped true on SubagentStop. Done subagents linger briefly then are pruned; one that never
+   *  reports a stop is swept on age instead (see RUNNING_SUBAGENT_MAX_MS). */
   done: boolean;
   doneAt?: number;
   /** SubagentStop last_assistant_message (the subagent's final output), if any. */
@@ -49,9 +50,36 @@ export interface RelaySnapshot {
   subagents: RelaySubagent[];
 }
 
-/** How long a finished subagent stays in the snapshot before being pruned, so brief
- *  subagents are still visible for a beat after they complete. */
-const DONE_SUBAGENT_TTL_MS = 60_000;
+/** How long a finished subagent stays in the snapshot before being pruned, so brief subagents
+ *  are still visible for a beat after they complete. A *beat* — long enough to register at the
+ *  2s agent-graph poll, short enough that the view reflects what is actually running. This was
+ *  60s, which read as "finished subagents never leave": a whole minute of dead nodes, and with
+ *  agents starting continuously the view was mostly corpses. */
+export const DONE_SUBAGENT_TTL_MS = 8_000;
+
+/**
+ * Backstop age after which a subagent that never reported a stop is presumed finished.
+ *
+ * A subagent's normal exit is its SubagentStop (→ {@link stopSubagent}), reported by a
+ * best-effort hook: 2s timeout, all errors swallowed, no retry — and Claude Code itself can fail
+ * to deliver it ("[runAgent] SubagentStop on interrupted query failed" when a query is
+ * interrupted). That was the ONLY exit for a subagent under a live session: `done` never
+ * flipped, so DONE_SUBAGENT_TTL_MS never applied, and the sole remaining sweep (orphan prune)
+ * needs the PARENT SESSION to die. One dropped packet therefore pinned an "awake" node in the
+ * graph forever. Nothing may hinge on a single lossy signal, so running subagents get an age
+ * bound too.
+ *
+ * Deliberately far beyond any real subagent rather than a tight guess, because there is NO
+ * cheap signal that proves one is still alive:
+ * - the parent's Stop hook is NOT a turn boundary for subagents — verified against claude
+ *   2.1.211: an async/background subagent outlives several parent Stops, so finishing subagents
+ *   on Stop would reap live ones;
+ * - a tool-call heartbeat can't work either — a subagent sitting in one long Bash call emits
+ *   nothing for its whole duration.
+ * So this only guarantees "no node is immortal"; SubagentStop remains the path that makes a
+ * finished subagent leave promptly.
+ */
+export const RUNNING_SUBAGENT_MAX_MS = 2 * 60 * 60 * 1000;
 
 const sessions = new Map<string, RelaySession>();
 const subagents = new Map<string, RelaySubagent>();
@@ -118,12 +146,19 @@ export function stopSubagent(s: { agentId: string; lastMessage?: string }, now =
  * without this, closed-tab sessions and never-stopped subagents would leak forever (there
  * is no terminal-close hook; cleanup happens here at read time).
  */
-/** Drop finished subagents whose done-TTL has elapsed. Shared by prune() and snapshot(). */
+/**
+ * Drop subagents that are no longer worth showing. Shared by prune() and snapshot().
+ *
+ * Two exits, because a subagent must never depend on a single signal to leave:
+ * - it reported a stop and its brief linger has elapsed (the normal path); or
+ * - it never reported one and is older than the backstop age, so its stop was lost
+ *   (see RUNNING_SUBAGENT_MAX_MS) — without this a dropped SubagentStop pinned the node forever.
+ */
 function sweepDoneSubagents(now: number): void {
   for (const [agentId, sub] of subagents) {
-    if (sub.done && sub.doneAt !== undefined && now - sub.doneAt > DONE_SUBAGENT_TTL_MS) {
-      subagents.delete(agentId);
-    }
+    const finished = sub.done && sub.doneAt !== undefined && now - sub.doneAt > DONE_SUBAGENT_TTL_MS;
+    const abandoned = !sub.done && now - sub.startedAt > RUNNING_SUBAGENT_MAX_MS;
+    if (finished || abandoned) subagents.delete(agentId);
   }
 }
 
