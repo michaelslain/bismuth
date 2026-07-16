@@ -48,6 +48,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Markdown & live preview](editor/markdown.md) — every rendered block/inline kind
 - [Block editor (WYSIWYG)](editor/blocks.md) — the Milkdown true-WYSIWYG surface + `editor.defaultMode`
 - [Tables](editor/tables.md) — editable GFM pipe tables
+- [The ` ```graph ` block](editor/graph-block.md) — embedded editable graph (markdown ⇄ graph round-trip)
 - [Autocomplete](editor/autocomplete.md) — wikilink/tag/task/query/settings completion
 - [Note ink](editor/ink.md) — draw-anywhere mode: freehand strokes over any note (Mod+Shift+I)
 

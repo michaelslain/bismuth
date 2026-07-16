@@ -178,3 +178,15 @@ describe("```query fences are excluded (owned by queryBlock.ts, not the code-blo
     expect(real.close).toBe(7);
   });
 });
+
+describe("```graph fences are excluded (owned by graphBlock.ts, not the code-block card)", () => {
+  test("a graph fence never appears in codeBlockByLine", () => {
+    const t = doc(["```graph", "a -> b", "```", "", "```ts", "real();", "```"].join("\n"));
+    const regions = computeBlockRegions(t);
+    expect(regions.codeBlockByLine.has(1)).toBe(false);
+    expect(regions.codeBlockByLine.has(3)).toBe(false);
+    const real = regions.codeBlockByLine.get(5)!;
+    expect(real.open).toBe(5);
+    expect(real.close).toBe(7);
+  });
+});

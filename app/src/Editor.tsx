@@ -19,6 +19,7 @@ import { requestRelint } from "./editor/relint";
 import { notePathFacet, noteNamesFacet, tagNamesFacet } from "./editor/tableState";
 import { foldBlocks } from "./editor/foldBlocks";
 import { queryBlock, queryScrollPinActive } from "./editor/queryBlock";
+import { graphBlock } from "./editor/graphBlock";
 import { taskFold, reorderAroundLine } from "./editor/taskFold";
 import { embedBlock } from "./editor/embedBlock";
 import { completionTheme } from "./editor/completionDisplay";
@@ -1018,6 +1019,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
             livePreview: ed.livePreview,
           }),
           queryBlock(() => path),
+          graphBlock(),
           embedBlock(props.noteNames),
           yamlSchema({
             getSchema: propertyRegistry,

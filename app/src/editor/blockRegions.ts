@@ -115,11 +115,13 @@ export function computeBlockRegions(doc: Text): BlockRegions {
           j++;
         }
         if (j <= doc.lines) {
-          // ```query is owned by queryBlock.ts, which replaces the whole fence with the
-          // rendered view. Skip it here so livePreview doesn't ALSO render it as a code
-          // block (which would collide with that block replace and leak the raw query).
-          // Still advance past its lines so the body isn't re-processed as markdown.
-          if (m[1].trim() === "query") {
+          // ```query is owned by queryBlock.ts and ```graph by graphBlock.ts — each
+          // replaces its whole fence with the rendered view. Skip them here so
+          // livePreview doesn't ALSO render them as code blocks (which would collide
+          // with that block replace and leak the raw source).
+          // Still advance past their lines so the body isn't re-processed as markdown.
+          const lang = m[1].trim();
+          if (lang === "query" || lang === "graph") {
             i = j + 1;
             continue;
           }

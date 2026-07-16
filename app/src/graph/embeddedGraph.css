@@ -1,0 +1,74 @@
+/* app/src/graph/embeddedGraph.css
+ * The ```graph note block's card (EmbeddedGraph.tsx): toolbar + canvas + edit row +
+ * footer. The canvas itself is the shared CanvasGraphRenderer (graphCanvas.css); its
+ * .graph-viewport mounts position:absolute inside .graph-block-canvas.
+ */
+
+.bismuth-graph-block { padding: 4px 0; }
+
+.graph-block-root {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.graph-block-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-wrap: wrap;
+}
+
+.graph-block-spacer { flex: 1; }
+
+.graph-block-canvas {
+  position: relative;
+  height: 320px;
+  /* The renderer paints on a transparent canvas; --bg is stamped on this host by
+     applyHostVars from the theme's background token. */
+  background: var(--bg);
+}
+
+.graph-block-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border-soft);
+  flex-wrap: wrap;
+}
+
+.graph-block-edit-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.graph-block-input {
+  height: 24px;
+  font-size: 12px;
+  width: 140px;
+}
+
+.graph-block-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-soft);
+  flex-wrap: wrap;
+}
+
+.graph-block-errors {
+  padding: 8px 12px;
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--danger, #e5534b);
+  border-bottom: 1px solid var(--border-soft);
+}
