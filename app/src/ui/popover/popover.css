@@ -67,6 +67,31 @@
   margin: 4px 2px;
 }
 
+/* Quick-action rail (#67) — a small icon strip hanging off a context menu's LEFT edge for
+   actions that must survive a long option list (the emoji library). Reuses .bismuth-popover
+   chrome so it reads as part of the same menu; only the list-shaped bits are overridden.
+   Geometry is mirrored by RAIL_WIDTH in ContextMenu.tsx — keep the two in sync. */
+.bismuth-popover-rail {
+  min-width: 0; /* the popover min-width (170px) is for lists; the rail is icon-width */
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bismuth-popover-rail-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--popover-row-radius);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.bismuth-popover-rail-btn:hover { background: var(--popover-selected-bg); }
+
 /* When an .bismuth-popover is hosted inside a CodeMirror hover tooltip (the YAML
    quick-fix on hover), strip CM's default tooltip chrome so the border/background
    isn't doubled — the .bismuth-popover supplies its own. */

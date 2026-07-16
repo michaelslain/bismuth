@@ -3,7 +3,8 @@
 // Pins the #67 contract of the `:emoji` completion source: the BEST-MATCHING EMOJI is the FIRST
 // (default-selected) option, and there is NO "Open emoji gallery" row in the popup at all — so
 // typing `:rocket`↵ inserts 🚀 and nothing can float above it. The full emoji library lives behind
-// the always-visible `emoji-library` toolbar command now, not inside this list.
+// the command palette + the quick-action rail beside the right-click menu now (see
+// emojiQuickAction.test.ts), not inside this list.
 //
 // The user-facing failure this guards: "if i type :rocket the first result should be rocket not
 // emoji gallery." The BOTH-CONTEXTS requirement is satisfied by one test because the note editor
