@@ -1,6 +1,6 @@
 # The Daemon Supervisor & Lifecycle
 
-The daemon is Bismuth's always-on background runtime — the in-repo `@bismuth/daemon` workspace (`daemon/src/**`). It is **one machine process that multiplexes many per-vault "brains"**: launched by launchd (macOS) or systemd (Linux), it stays resident and, for **every vault whose `settings.daemon.enabled` is on**, supervises that vault's background processes, runs its crons, recovers interrupted work after a crash, and (on the owner device) holds a persistent conversation session. Machine-level identity (device-id, owner, devices, pid, logs) lives in one place; each vault's brain (crons, processes, memory, session-id, identity) lives under `<vault>/.daemon`.
+The daemon is Bismuth's always-on background runtime — the in-repo `@bismuth/daemon` workspace (`daemon/src/**`). It is **one machine process that multiplexes many per-vault "brains"**: launched by launchd (macOS) or systemd (Linux), it stays resident and, for **every vault whose `settings.daemon.enabled` is on**, supervises that vault's background processes, runs its crons, and recovers interrupted work after a crash. It holds **no** persistent conversation session — sessions are minted on demand when a cron/page fires (and only on the owner device, gated in `sendMessage`). Machine-level identity (device-id, owner, devices, pid, logs) lives in one place; each vault's brain (crons, processes, memory, session-id, identity) lives under `<vault>/.daemon`.
 
 This page documents the process lifecycle (`daemon/src/daemon/index.ts`), the per-vault session funnel (`daemon/src/daemon/session.ts`), the single-owner device gating it leans on (`daemon/src/lib/owner.ts`), and the install/service glue (`core/src/daemonInstall.ts` + `daemon/src/lib/platform.ts`).
 
@@ -13,7 +13,7 @@ Cross-links: [overview.md](overview.md) (Bismuth's read window onto the daemon),
 The daemon is a single OS service, but the state it manages is split across two scopes:
 
 - **Machine scope** — `MACHINE_DIR` (`daemon/src/lib/config.ts`), resolved as `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`. Holds the per-machine identity + runtime state that has nothing to do with any one vault: `device-id`, `devices.json`, `owner.json`, `daemon.pid` (`MACHINE_PID_FILE`), `logs/`, and `vaults.json` (`VAULTS_FILE` — the registry of known vault roots, written by Bismuth core).
-- **Vault scope** — `<vault>/.daemon` for each enabled vault, resolved by `vaultPaths(root, name)` into a `VaultContext` carrying every path the runtime touches for that vault: `crons/`, `processes/`, `memory/`, `logs/`, `identity.md`, `session-id`, plus the cron bookkeeping files (`.last-fired.json`, `.running.json`, `.triggers/`).
+- **Vault scope** — `<vault>/.daemon` for each enabled vault, resolved by `vaultPaths(root, name)` into a `VaultContext` carrying every path the runtime touches for that vault: `crons/`, `processes/`, `memory/`, `logs/`, `identity.md`, `session-id`, `session-ids`, plus the cron bookkeeping files (`.last-fired.json`, `.running.json`, `.triggers/`).
 
 The session, cron, and process modules are all threaded a `VaultContext`, so concurrent vault brains never collide on a process-global anything.
 
@@ -43,13 +43,13 @@ The boot sequence is **load-bearing** — each step depends on the side effects 
 2. **`writePid()`** — write `daemon.pid` so liveness checks (and Bismuth core) can find this process.
 3. Log `Daemon starting (PID …)`.
 4. **`heartbeatDevice()`** — upsert this device's `devices.json` entry immediately, so the device is selectable as owner before any other step.
-5. **`isOwner()`** — resolve ownership **once** for this boot pass. A non-owner logs `"Not the owner device — idling (heartbeating only, no sessions)"` and still proceeds (it supervises processes + heartbeats, just never holds a session).
-6. **Per enabled vault — `startVault(ctx, { owner, boot: true })`** — for each `ctx` from `loadEnabledVaults()`, bring that vault's brain fully online (reap → processes → triggers → cron recovery → owner session; detailed below).
+5. **`isOwner()`** — report ownership **once** for this boot pass. A non-owner logs `"Not the owner device — idling (heartbeating only, no sessions)"` and still proceeds (it supervises processes + heartbeats). The gate itself lives in `sendMessage`, which throws on a non-owner device — so ownership is enforced per session call rather than plumbed through `startVault`.
+6. **Per enabled vault — `startVault(ctx, { boot: true })`** — for each `ctx` from `loadEnabledVaults()`, bring that vault's brain fully online (reap → processes → triggers → cron recovery; detailed below).
 7. **`startCronScheduler()`** — start the single 60s tick loop (`CRON_CHECK_INTERVAL_MS`). The scheduler **self-multiplexes**: it re-reads `loadEnabledVaults()` each tick and fans out across every enabled vault, so a newly enabled vault's crons fire without a restart.
 8. **Reconcile loop** — `setInterval(reconcileVaults, CRON_CHECK_INTERVAL_MS)` so the set of running brains tracks `settings.daemon.enabled` across all vaults at runtime (detailed below).
 9. **Signal handlers** — bind `SIGTERM` and `SIGINT` to `shutdown(signal)`.
 
-### Bringing a vault's brain online (`startVault(ctx, { owner, boot })`)
+### Bringing a vault's brain online (`startVault(ctx, { boot })`)
 
 1. **`ensureVaultDirs(ctx)`** — create the vault's brain dirs and seed any missing defaults.
 2. **`reapOrphans(ctx)`** — *boot only.* Kill leftover child processes from a *previous* daemon instance **before** spawning fresh ones; otherwise survivors accumulate as duplicates on every restart. Skipped at runtime-enable because a cross-vault reap could kill a sibling vault's identical-argv process (`spawnProcess` does its own per-def defensive reap instead).
@@ -57,18 +57,15 @@ The boot sequence is **load-bearing** — each step depends on the side effects 
 4. **`startProcessTriggers(ctx)`** — begin the per-vault trigger watcher (external programs flip a process's frontmatter + drop a trigger file; the loop reconciles runtime ↔ disk).
 5. **`startFileWatch(ctx)`** — start the vault's ONE recursive `fs.watch` (`daemon/src/daemon/fileWatch.ts`), debounced (default 2s) and fanned out across every enabled `on: file-change` cron on each batch. No-ops if this vault already has a live watcher. See [crons-and-processes.md](crons-and-processes.md#file-change-crons).
 6. **`recoverInterruptedCrons(ctx)`** — *boot only.* Re-fire crons that were mid-run when the daemon last died, **before** the scheduler ticks. Safe before session init because cron fires use `newSession: true`. Skipped at runtime-enable: the scheduler is already ticking, so recovery could observe a job the live tick just fired and wrongly `markDone()` it (corrupting `.running.json`) — and the scheduler's own catch-up covers overdue jobs anyway.
-7. **Owner-only session init** — *boot + owner only.* `sendMessage(DAEMON_BOOT_PROMPT, ctx, { newSession: true })` wakes the persistent session. On failure it logs a warning and **continues** (the session is created lazily on the first cron/message anyway). A vault enabled at runtime skips this and wakes its session lazily.
-8. Add `ctx.root` to the in-memory `activeVaults` set.
+7. Add `ctx.root` to the in-memory `activeVaults` set.
 
-The boot prompt (`DAEMON_BOOT_PROMPT`) is:
-
-> You are now running as a background daemon for this vault. Check memory for prior context.
+**No session is started here.** Booting one used to mint a whole conversation per daemon start (a `DAEMON_BOOT_PROMPT` sent with `newSession: true`), which surfaced on the user's chat page and reappeared on every relaunch — while serving no purpose, since nothing resumes it: every real caller (`fireJob`, pages, dream) passes `newSession: true` and mints its own thread on demand. There is now **no persistent daemon chat**; the daemon still runs sessions when its crons fire.
 
 ### The reconcile loop (`reconcileVaults()`)
 
 Runs every `CRON_CHECK_INTERVAL_MS`. It diffs the registry (`loadAllVaults()`, each `{ ctx, enabled }`) against the live `activeVaults` set so a vault that opted **in** to or **out** of the daemon takes effect without a restart:
 
-- `enabled && !active` → `startVault(ctx, { owner, boot: false })` (the runtime-enable path: no reap, no recovery, lazy session).
+- `enabled && !active` → `startVault(ctx, { boot: false })` (the runtime-enable path: no reap, no recovery).
 - `!enabled && active` → `stopVault(ctx)` — tear down that vault's trigger loop, file watcher, + managed children. **Never deletes on-disk state — disable = pause.**
 - A vault dropped from the registry entirely (not just disabled) won't appear in `loadAllVaults()`, so any still-`active` root not `seen` this pass is also paused (via `vaultPaths(root)`), so its processes don't leak.
 

@@ -7,6 +7,7 @@ import { whichClaude } from "../lib/claudeWhich.ts"
 import { augmentPath } from "../lib/childEnv.ts"
 import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, type DenyEntry } from "../lib/visibility.ts"
 import { mcpBin, cliBin, docsDir } from "../lib/bismuthPaths.ts"
+import { recordDaemonSessionId } from "./sessionIds.ts"
 
 // The compiled daemon binary doesn't bundle the Agent SDK's native CLI, and runs under launchd with
 // a minimal PATH, so the SDK can't find `claude` on its own — resolve the user's real binary once
@@ -36,7 +37,24 @@ export async function getSessionId(ctx: VaultContext): Promise<string | undefine
   }
 }
 
+/** Persist a freshly minted session id for this vault: the `session-id` POINTER (this vault's
+ *  current thread) plus an append to the `session-ids` DURABLE SET.
+ *
+ *  The two are not redundant. The pointer is overwritten on every new session, so it answers only
+ *  "what is the daemon's latest session?"; the set answers "did the daemon mint THIS session?" for
+ *  every session it ever minted. Bismuth's chat page needs the latter to keep the daemon's cron
+ *  sessions off the user's History (core/src/chat.ts), and a future daemon-sessions surface needs
+ *  it to find them — see sessionIds.ts for the on-disk contract.
+ *
+ *  The set write is best-effort: provenance bookkeeping must never fail the daemon's real work. */
 async function saveSessionId(ctx: VaultContext, id: string): Promise<void> {
+  // Record BEFORE overwriting the pointer — the first-write backfill in recordDaemonSessionId
+  // reads the pointer's OLD value to recover the one pre-existing daemon session still nameable.
+  try {
+    await recordDaemonSessionId(ctx, id)
+  } catch (err) {
+    console.error(`[session:${ctx.name}] Failed to record daemon session id:`, err)
+  }
   await mkdir(ctx.daemonDir, { recursive: true })
   await writeFile(ctx.sessionFile, id, "utf-8")
 }

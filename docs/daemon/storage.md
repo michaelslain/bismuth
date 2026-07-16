@@ -91,7 +91,8 @@ On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/inde
 ```
 <vault>/.daemon/                         # vaultPaths(root).daemonDir
 ├── identity.md                          # name (frontmatter) + personality (body) — user-editable, SEEDED
-├── session-id                           # this vault's persistent SDK session id
+├── session-id                           # this vault's latest SDK session id (a moving pointer)
+├── session-ids                          # durable append-only SET of daemon-minted session ids
 ├── memory/                              # 3rd-brain markdown notes (single-level folders allowed)
 │   └── <name>.md
 ├── logs/                                # per-process stdout/stderr for THIS vault's processes
@@ -117,7 +118,8 @@ On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/inde
 | --- | --- | --- | --- |
 | `<vault>/.daemon/` | dir | `lib/config.ts` (`vaultPaths`) | `ensureVaultDirs` (`daemon/index.ts`) |
 | `identity.md` | markdown: `name:` frontmatter + personality body | `daemon/seeds.ts`, read by `session.ts` + `lib/registry.ts` | Seeded with `name: daemon` + `DEFAULT_DAEMON_IDENTITY` when absent (`reconcileSeeds`). The `name:` drives the sidebar label + daemon-graph hub (`daemonIdentityName()` in core, `readDaemonSettings()` in the daemon); the body is the bot's system prompt, read fresh per session via `buildSystemPrompt` (`You are <name>.\n\n<body>`). User-editable; never clobbered. See [memory.md](memory.md) |
-| `session-id` | plain text SDK session id | `daemon/session.ts` | `saveSessionId(ctx, id)` / `getSessionId(ctx)` — per-vault, so the one runtime `resume`s the right thread for each concurrent vault |
+| `session-id` | plain text SDK session id | `daemon/session.ts` | `saveSessionId(ctx, id)` / `getSessionId(ctx)` — per-vault, so the one runtime `resume`s the right thread for each concurrent vault. A **moving pointer**: overwritten on every new session, so it names only the daemon's LATEST run |
+| `session-ids` | newline-delimited session ids, oldest first, deduped, capped at 2000 | `daemon/sessionIds.ts` | `recordDaemonSessionId(ctx, id)` — the **durable set** of every session the daemon minted, appended from `saveSessionId`. Read by core (`readDaemonSessionIds`, `core/src/daemon.ts`) so the chat page lists only the user's own chats and a future surface can find the daemon's. Answers "did the daemon mint this session?" for ALL of them — which `session-id` cannot |
 | `memory/<name>.md` | markdown note: frontmatter `{ type, tags, created, updated }` + body with `[[backlinks]]`; single-level folders allowed | `@bismuth/memory` (`memory/src/graph.ts`) | The 3rd brain. Written by the daemon's bot, the relay collect hook, and the MCP `remember` tool — all against `<vault>/.daemon/memory` via `BISMUTH_MEMORY_DIR`. Full note format: [memory.md](memory.md) |
 | `crons/<name>.md` | cron def frontmatter, EITHER `{ name?, schedule, catchup?(default true) }` (time-based, the default) OR `{ name?, on: file-change, watch }` (fires on a vault file/glob change instead) — both share `{ enabled?(default true), notify?, model?, effort?, timeout?, waitFor? }` + body (= prompt) | `daemon/cron.ts` | `daemon/cron.ts` CRUD; the two defaults (`dream`, `vault-review`) are seeded, both schedule-based. Full model incl. file-change crons: [crons-and-processes.md](crons-and-processes.md#file-change-crons) |
 | `crons/.last-fired.json` | `{ "<name>": { timestamp: ISO, result: "success"\|"failed"\|"unknown"\|"killed" } }`, keyed by job name | `daemon/cron.ts` | `updateLastFired` (unique-tmp atomic write under a per-file serial queue). `loadLastFired` migrates a legacy plain-string value to `{ timestamp, result: "success" }` |

@@ -40,6 +40,62 @@ export function vaultDaemonDir(vault: string): string {
   return join(vault, ".daemon");
 }
 
+// ── Daemon session provenance ───────────────────────────────────────────────────────────────
+//
+// The daemon and the user's in-app chats share ONE session store (the Claude Code SDK's, keyed by
+// cwd — and the daemon's cwd IS the vault root). So "who minted this session?" cannot be answered
+// from the store; it has to be recorded when the session is minted. The daemon does that, in an
+// append-only set:
+//
+//   <vault>/.daemon/session-ids — newline-delimited session ids, OLDEST FIRST, deduped; blank
+//                                 lines ignored. Absent = no daemon sessions on record.
+//
+// Written by daemon/src/daemon/sessionIds.ts (see that file for the cap + concurrency rules) —
+// this is the READ half of that shared contract, so the two must stay in sync.
+//
+// NOT to be confused with the sibling `<vault>/.daemon/session-id` (singular): that is a MOVING
+// POINTER at the daemon's latest thread, overwritten on every new session. Testing membership
+// against the pointer identifies only the most recent daemon run and mislabels every earlier one
+// as a user chat — the exact bug this set exists to fix.
+
+/** `<vault>/.daemon/session-ids` — the durable set of daemon-minted session ids. */
+export function vaultSessionIdsFile(vault: string): string {
+  return join(vaultDaemonDir(vault), "session-ids");
+}
+
+/** Parse the session-ids file format → ids in file order, deduped, blanks dropped. Pure + total.
+ *  Mirrors parseSessionIds in daemon/src/daemon/sessionIds.ts (the write half). */
+export function parseSessionIds(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const line of text.split("\n")) {
+    const id = line.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/**
+ * The session ids this vault's daemon minted — the membership test behind "is this a daemon
+ * session, or one the user started?".
+ *
+ * Answers BOTH directions: core/src/chat.ts subtracts this set so the chat page lists only the
+ * user's own chats, and a surface for the daemon's own cron sessions can intersect with it to find
+ * exactly those. Never throws (no daemon / never run / unreadable → empty set, i.e. "nothing is
+ * known to be the daemon's", which degrades to today's unfiltered behavior rather than hiding a
+ * user's chats). Read fresh per call: it changes whenever a cron fires, and callers are
+ * user-initiated (opening History, searching), not hot.
+ */
+export function readDaemonSessionIds(vault: string): Set<string> {
+  try {
+    return new Set(parseSessionIds(readFileSync(vaultSessionIdsFile(vault), "utf-8")));
+  } catch {
+    return new Set();
+  }
+}
+
 /**
  * Register this vault's absolute root in the machine-level `vaults.json` registry — the
  * list the daemon's `loadEnabledVaults()` (daemon/src/lib/registry.ts) iterates every cron
