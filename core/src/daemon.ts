@@ -63,6 +63,21 @@ export function vaultSessionIdsFile(vault: string): string {
   return join(vaultDaemonDir(vault), "session-ids");
 }
 
+/**
+ * `<vault>/.daemon/session-ids-legacy` — the durable set's BACKFILL: daemon sessions that were
+ * minted before `session-ids` existed, recovered once by scanning the store (see
+ * chatDaemonLegacy.ts). Same format, read as part of the same set.
+ *
+ * Deliberately a SECOND FILE rather than more lines in `session-ids`, because the two have
+ * different writers in different OS PROCESSES: `session-ids` is the daemon's (its in-process lock
+ * serializes the cron fan-out), and this one is Bismuth core's. Giving each file a single writing
+ * process keeps that lock sufficient — one shared file would need cross-process locking to avoid a
+ * lost update. Frozen once written: it describes history, which does not change.
+ */
+export function vaultLegacySessionIdsFile(vault: string): string {
+  return join(vaultDaemonDir(vault), "session-ids-legacy");
+}
+
 /** Parse the session-ids file format → ids in file order, deduped, blanks dropped. Pure + total.
  *  Mirrors parseSessionIds in daemon/src/daemon/sessionIds.ts (the write half). */
 export function parseSessionIds(text: string): string[] {
@@ -81,6 +96,12 @@ export function parseSessionIds(text: string): string[] {
  * The session ids this vault's daemon minted — the membership test behind "is this a daemon
  * session, or one the user started?".
  *
+ * The UNION of both halves: what the daemon has recorded since the durable set shipped
+ * (`session-ids`) plus what the one-time backfill recovered from before it (`session-ids-legacy`).
+ * A vault that predates the set has ALL of its daemon history in the second file and none in the
+ * first, so reading only one would answer this question wrongly for the machines that have the
+ * problem.
+ *
  * Answers BOTH directions: core/src/chat.ts subtracts this set so the chat page lists only the
  * user's own chats, and a surface for the daemon's own cron sessions can intersect with it to find
  * exactly those. Never throws (no daemon / never run / unreadable → empty set, i.e. "nothing is
@@ -89,11 +110,16 @@ export function parseSessionIds(text: string): string[] {
  * user-initiated (opening History, searching), not hot.
  */
 export function readDaemonSessionIds(vault: string): Set<string> {
-  try {
-    return new Set(parseSessionIds(readFileSync(vaultSessionIdsFile(vault), "utf-8")));
-  } catch {
-    return new Set();
+  const ids = new Set<string>();
+  for (const file of [vaultSessionIdsFile(vault), vaultLegacySessionIdsFile(vault)]) {
+    try {
+      for (const id of parseSessionIds(readFileSync(file, "utf-8"))) ids.add(id);
+    } catch {
+      // Absent/unreadable half → contributes nothing. Never throws: an unreadable file must
+      // degrade to "not known to be the daemon's", never to hiding the user's chats.
+    }
   }
+  return ids;
 }
 
 /**

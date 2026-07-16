@@ -104,14 +104,17 @@ async function writeAtomic(file: string, content: string): Promise<void> {
  * Record `id` as daemon-minted for this vault. Called from saveSessionId, so EVERY session the
  * daemon mints lands here — the property the chat-page filter depends on.
  *
- * BACKFILL (one-time, per vault): daemon sessions minted before this file existed have no record,
- * and nothing on disk distinguishes them from a user's chat — so they are NOT recoverable in
- * general, and any content heuristic would be exactly the kind of fragile signal this mechanism
- * replaces. What IS recoverable is the single most recent one: the pointer file still names it.
- * So on the first write for a vault we seed the set from the pointer (read BEFORE saveSessionId
- * overwrites it), capturing the daemon session most likely to be sitting at the top of the user's
- * History right now. Older pre-existing daemon sessions stay listed and age out of the picker as
- * the session store rotates past them.
+ * BACKFILL (one-time, per vault): daemon sessions minted before this file existed have no record
+ * here. On the first write for a vault we seed the set from the pointer file (read BEFORE
+ * saveSessionId overwrites it), which names the most recent such session.
+ *
+ * That covers exactly ONE session, which is nowhere near the problem on a vault with real history —
+ * the reporting machine had 888 of them. The bulk is recovered separately and independently, by
+ * Bismuth core (core/src/chatDaemonLegacy.ts), which scans the store once and identifies daemon
+ * sessions by the prompts the daemon itself composed, into a sibling `session-ids-legacy` file that
+ * readDaemonSessionIds unions with this one. That is a different file on purpose: it has a
+ * different writing PROCESS, so this module's in-process lock stays sufficient for this file. Do
+ * not fold the two together without adding cross-process locking.
  *
  * Best-effort: a failure here must never break the daemon's actual work (the caller ignores it).
  */

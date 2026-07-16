@@ -18,6 +18,7 @@ import { whichClaude } from "./claudeWhich";
 import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
 import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet, type DenyEntry } from "./visibility";
 import { readDaemonSessionIds } from "./daemon";
+import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
 
 /**
  * Visual Claude Code driver for the in-app chat surface. Each chat is ONE long-lived Agent-SDK
@@ -1159,6 +1160,11 @@ const SESSION_SCAN_CAP = 2000;
  * the daemon existed, bounded by SESSION_SCAN_CAP.
  */
 async function listUserSessions(cwd: string, want: number): Promise<Awaited<ReturnType<typeof listSessions>>> {
+  // Recover provenance for daemon sessions minted before the durable set existed — once per vault,
+  // ever (see chatDaemonLegacy.ts). Without this the set is EMPTY on exactly the machines that have
+  // the problem, and every pre-existing daemon chat stays listed; with it, the first History open
+  // pays one bounded scan (~1.3s for ~1000 transcripts) and the picker is correct from then on.
+  await backfillLegacyDaemonSessions(cwd);
   const daemonIds = readDaemonSessionIds(cwd);
   const out: Awaited<ReturnType<typeof listSessions>> = [];
   for (let offset = 0; out.length < want && offset < SESSION_SCAN_CAP; ) {
