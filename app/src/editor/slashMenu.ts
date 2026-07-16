@@ -98,6 +98,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   { id: "table", label: "Table", icon: "Table", info: "Markdown table.", keywords: ["table", "grid", "tbl"], snippet: "| $0 |  |\n| --- | --- |\n|  |  |" },
   { id: "code", label: "Code block", icon: "Code", info: "Fenced code block.", keywords: ["code", "fence", "codeblock", "snippet"], snippet: "```\n$0\n```" },
   { id: "query", label: "Query block", icon: "Database", info: "Embedded base / query block.", keywords: ["query", "base", "view", "dataview", "db"], snippet: "```query\n$0\n```", reTrigger: true },
+  { id: "graph", label: "Graph block", icon: "Share2", info: "Embedded editable graph (nodes + edges).", keywords: ["graph", "diagram", "nodes", "edges", "network", "mindmap"], snippet: "```graph\n$0\n```" },
   { id: "math", label: "Math block", icon: "Sigma", info: "Block LaTeX equation.", keywords: ["math", "latex", "equation", "tex", "formula"], snippet: "$$\n$0\n$$" },
   // Leading "\n" so the rule is preceded by a blank line — a "---" directly under a non-blank
   // paragraph is a SETEXT H2 underline in CommonMark/GFM (it would turn that paragraph into a
