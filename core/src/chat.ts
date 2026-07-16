@@ -17,6 +17,8 @@ import {
 import { whichClaude } from "./claudeWhich";
 import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
 import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet, type DenyEntry } from "./visibility";
+import { readDaemonSessionIds } from "./daemon";
+import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
 
 /**
  * Visual Claude Code driver for the in-app chat surface. Each chat is ONE long-lived Agent-SDK
@@ -1126,17 +1128,70 @@ async function respawnSession(session: ChatSession): Promise<void> {
 
 // --- Session history (the resume picker) ----------------------------------------------------
 
+// The chat page is the USER's surface: it lists only chats the user started. The vault's daemon
+// mints its own sessions into the SAME store (its cwd is the vault root), one per cron fire — so
+// without a filter the user's History fills with "chats" they never opened, and every daemon
+// relaunch adds more. Those sessions still exist on disk (crons need them, and a future surface
+// will read them via readDaemonSessionIds); they are simply not the chat page's business.
+
+/** Pure: drop the sessions the vault's daemon minted. Empty `daemonIds` (no daemon, or a daemon
+ *  that has never run) → everything is the user's, which is the pre-daemon behavior. */
+export function excludeDaemonSessions<T extends { sessionId: string }>(
+  sessions: readonly T[],
+  daemonIds: ReadonlySet<string>,
+): T[] {
+  if (daemonIds.size === 0) return [...sessions];
+  return sessions.filter((s) => !daemonIds.has(s.sessionId));
+}
+
+/** How many sessions one page of the store scan pulls. */
+const SESSION_PAGE = 100;
+/** Hard ceiling on sessions scanned in one call, so a store dominated by daemon sessions can't
+ *  turn one History open into an unbounded read. */
+const SESSION_SCAN_CAP = 2000;
+
+/**
+ * Collect up to `want` of the USER's newest sessions for `cwd`, skipping the daemon's.
+ *
+ * Paginates rather than filtering one fixed page: the daemon mints a session per cron fire (~50/day
+ * for the seeded crons), so the newest N sessions can be ALL daemon — filtering a single page would
+ * hand the user an empty History while their chats sat just past the cutoff. Walking pages until
+ * `want` USER sessions are found keeps "the newest 50 chats" meaning the same thing it did before
+ * the daemon existed, bounded by SESSION_SCAN_CAP.
+ */
+async function listUserSessions(cwd: string, want: number): Promise<Awaited<ReturnType<typeof listSessions>>> {
+  // Recover provenance for daemon sessions minted before the durable set existed — once per vault,
+  // ever (see chatDaemonLegacy.ts). Without this the set is EMPTY on exactly the machines that have
+  // the problem, and every pre-existing daemon chat stays listed; with it, the first History open
+  // pays one bounded scan (~1.3s for ~1000 transcripts) and the picker is correct from then on.
+  await backfillLegacyDaemonSessions(cwd);
+  const daemonIds = readDaemonSessionIds(cwd);
+  const out: Awaited<ReturnType<typeof listSessions>> = [];
+  for (let offset = 0; out.length < want && offset < SESSION_SCAN_CAP; ) {
+    const page = await listSessions({ dir: cwd, limit: SESSION_PAGE, offset });
+    if (page.length === 0) break;
+    offset += page.length;
+    for (const s of excludeDaemonSessions(page, daemonIds)) {
+      out.push(s);
+      if (out.length >= want) break;
+    }
+    if (page.length < SESSION_PAGE) break; // short page = store exhausted
+  }
+  return out.slice(0, want);
+}
+
 /**
  * List the user's existing Claude Code sessions for a cwd — BOTH their terminal Claude Code sessions
  * and in-app chat sessions for that dir (one unified store, newest-first). Powers the chat's history
- * picker. Tolerant: returns [] if the SDK can't read the store.
+ * picker. Sessions minted by the vault's daemon are excluded (see above). Tolerant: returns [] if
+ * the SDK can't read the store.
  */
 export async function listChatSessions(
   cwd: string,
   limit = 50,
 ): Promise<{ sessionId: string; summary: string; lastModified: number }[]> {
   try {
-    const sessions = await listSessions({ dir: cwd, limit });
+    const sessions = await listUserSessions(cwd, limit);
     return sessions.map((s) => ({
       sessionId: s.sessionId,
       summary: s.summary,
@@ -1275,13 +1330,17 @@ async function buildSearchDoc(
  * is matched (see matchChatSession); hits come back newest-first with a snippet of where they
  * matched. Tolerant: returns [] if the store can't be read. `limit` caps how many (newest) sessions
  * are scanned so a huge history can't make one search read unbounded transcripts.
+ *
+ * Scans the user's OWN sessions only — the vault daemon's cron sessions are skipped, so searching
+ * the chat page can never surface one, and their transcripts are never read (the scan budget goes
+ * entirely to the user's chats).
  */
 export async function searchChatSessions(cwd: string, query: string, limit = 100): Promise<ChatSearchHit[]> {
   const q = query.trim();
   if (!q) return [];
   let sessionList: Awaited<ReturnType<typeof listSessions>>;
   try {
-    sessionList = await listSessions({ dir: cwd, limit });
+    sessionList = await listUserSessions(cwd, limit);
   } catch {
     return [];
   }
