@@ -73,7 +73,7 @@ Frontmatter is detected by `extractFrontmatterBoundary` (in `frontmatterUtils.ts
 
 A fenced code block is a pair of ` ``` ` lines (optionally with a language info string after the opening fence). Unclosed fences (no matching close in the document) are treated as ordinary lines.
 
-**Special case**: ` ```query ` blocks are **excluded** from code-block rendering here. They are owned by `queryBlock.ts`, which replaces the entire fence with a rendered base/task view. `computeBlockRegions` advances past query blocks without recording them, so livePreview does not double-render them.
+**Special case**: ` ```query ` and ` ```graph ` blocks are **excluded** from code-block rendering here. They are owned by `queryBlock.ts` / `graphBlock.ts` respectively, which replace the entire fence with a rendered view (a base/task view; an [interactive embedded graph](graph-block.md)). `computeBlockRegions` advances past these blocks without recording them, so livePreview does not double-render them.
 
 Like frontmatter, the whole block ALWAYS renders as one homogeneous container (bug #10, 5th round) — `cm-block-top` on the opening fence, `cm-block-mid` on every body line (uniform tint + continuous accent left line), `cm-block-bottom` on the closing fence (the fence rows being the darker grey bands with grey left-line segments) — regardless of cursor state, so the container never flickers as the cursor enters/leaves. See [YAML Frontmatter](#yaml-frontmatter) above for the shared class design.
 
