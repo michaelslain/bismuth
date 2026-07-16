@@ -375,7 +375,7 @@ For zsh shells, `ZDOTDIR` is pointed at this directory instead of prepending to 
 
 ### 7.5 Relay Registry (In-Process)
 
-The relay registry (`core/src/relay.ts`) is **purely in-memory** — there is no on-disk state. Sessions and subagents are pruned when their PTY closes (at `GET /agent-graph` read time). Finished subagents linger for 60 seconds (`DONE_SUBAGENT_TTL_MS = 60_000`) before being pruned so brief subagents remain visible for a beat.
+The relay registry (`core/src/relay.ts`) is **purely in-memory** — there is no on-disk state. Sessions and subagents are pruned when their PTY closes (at `GET /agent-graph` read time). Finished subagents linger for 8 seconds (`DONE_SUBAGENT_TTL_MS = 8_000`) before being pruned so brief subagents remain visible for a beat; one that never reports a stop is presumed finished past `RUNNING_SUBAGENT_MAX_MS` (2 h) so a lost `SubagentStop` can't pin a node forever.
 
 ---
 

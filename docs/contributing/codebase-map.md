@@ -323,7 +323,7 @@ In-process registry of Claude Code sessions running in Bismuth terminal tabs. Po
 - `registerSession(s)` — register or heartbeat a session; drops any previous session for the same `terminalId`.
 - `endSession(sessionId)` — drop session + subagents.
 - `startSubagent(s)` / `stopSubagent(s)` — add/mark-done a subagent.
-- `prune(liveTerminalIds)` — drop sessions whose terminal is closed, orphaned subagents, and done subagents past `DONE_SUBAGENT_TTL_MS` (60 s). Called at GET /agent-graph time.
+- `prune(liveTerminalIds)` — drop sessions whose terminal is closed, orphaned subagents, done subagents past `DONE_SUBAGENT_TTL_MS` (8 s), and never-stopped subagents past `RUNNING_SUBAGENT_MAX_MS` (2 h — a lost `SubagentStop` must not pin a node forever). Called at GET /agent-graph time.
 - `snapshot(now?)` → `RelaySnapshot { sessions, subagents }`.
 - `resetRelay()` — test-only cleanup.
 

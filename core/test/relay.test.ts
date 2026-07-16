@@ -66,9 +66,52 @@ test("finished subagents are pruned after the TTL", () => {
   startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Explore" }, 1100);
   stopSubagent({ agentId: "a1" }, 1200);
   // Within TTL → still present.
-  expect(snapshot(1200 + 30_000).subagents).toHaveLength(1);
+  expect(snapshot(1200 + 4_000).subagents).toHaveLength(1);
   // Past TTL → pruned.
-  expect(snapshot(1200 + 61_000).subagents).toHaveLength(0);
+  expect(snapshot(1200 + 9_000).subagents).toHaveLength(0);
+});
+
+// The linger must be a BEAT, not a minute. It exists so a subagent that starts and finishes
+// between two 2s polls is still seen; at 60s the agents view was a wall of finished agents and
+// read as "they never get removed". Guards the intent, since the constant is otherwise invisible.
+test("a finished subagent's linger is brief — gone within ~10s, not a minute", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Explore" }, 1100);
+  stopSubagent({ agentId: "a1" }, 1200);
+  // Survives a couple of poll intervals (a brief, intentional linger)...
+  expect(snapshot(1200 + 3_000).subagents).toHaveLength(1);
+  // ...and is gone well inside 10s. The parent tab never closed.
+  const live = new Set(["tab-1"]);
+  prune(live, 1200 + 10_000);
+  expect(snapshot(1200 + 10_000).subagents).toHaveLength(0);
+  expect(snapshot(1200 + 10_000).sessions.map((s) => s.sessionId)).toEqual(["s1"]);
+});
+
+// The root cause of the stale nodes: a subagent's ONLY exit under a live session was its own
+// SubagentStop — a best-effort, 2s-timeout, errors-swallowed, no-retry POST that Claude Code can
+// itself fail to deliver ("[runAgent] SubagentStop on interrupted query failed"). Lose that one
+// packet and `done` never flipped, so the done-TTL never applied, and the only other sweep
+// (orphan prune) needs the PARENT SESSION to die. The node stayed "awake" forever.
+test("a subagent whose stop was lost is eventually pruned, while a running one is kept — parent tab open throughout", () => {
+  const t0 = 1_000_000;
+  // tab-1: finishes, but its SubagentStop never lands (interrupt / dropped POST).
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x" }, t0);
+  startSubagent({ parentSessionId: "s1", agentId: "lost", agentType: "Explore" }, t0);
+  const live = new Set(["tab-1"]);
+
+  // Long-lived subagents are legitimate, so it must still be there an hour in.
+  prune(live, t0 + 60 * 60_000);
+  expect(snapshot(t0 + 60 * 60_000).subagents.map((s) => s.agentId)).toEqual(["lost"]);
+
+  // Past the backstop it's presumed finished — and a subagent that started later is untouched,
+  // so "still running" work survives the same sweep.
+  const late = t0 + 2 * 60 * 60_000 + 1;
+  startSubagent({ parentSessionId: "s1", agentId: "running", agentType: "Plan" }, late - 1000);
+  prune(live, late);
+  const after = snapshot(late);
+  expect(after.subagents.map((s) => s.agentId)).toEqual(["running"]);
+  // Closing the parent was never required — the tab (and its session) is still open.
+  expect(after.sessions.map((s) => s.sessionId)).toEqual(["s1"]);
 });
 
 test("prune drops sessions whose terminal tab has closed, plus their subagents", () => {
