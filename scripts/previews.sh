@@ -17,10 +17,15 @@
 #                                  sync's job is narrower: clear it if the server died)
 #
 # Port convention: core 433x / vite 143x, same x, so core = vite + 2900. x starts at 2
-# (1432/4332 — never 1430/4330) to preserve the four hand-launched previews:
+# (1432/4332 — never 1430/4330) to stay clear of the user's own dev pair (1420/4321).
+#
+# THE BOARD IS THE PORT LEDGER. A card's `preview` property IS the state — assignment
+# reads the board and nothing else, so the same board always yields the same answer.
+# Deliberately NOT "lowest port free per lsof right now": that made a card's port a
+# function of whatever happened to be running at the time, so the same card could get
+# a different URL on every start. Reading the board also preserves the hand-launched
+# previews for free, because they are recorded on their own cards:
 #   1432=#87 chat chrome, 1433=#107 subagents, 1434=cards-view/masonry, 1435=daemon chats.
-# A card's own `preview` property IS the state — no separate port ledger. First-time
-# assignment picks the lowest x whose pair is currently free (checked live, via lsof).
 #
 # bash 3.2 compatible (macOS system bash) — no associative arrays.
 set -u
@@ -30,7 +35,13 @@ REPO="$(git rev-parse --show-toplevel 2>/dev/null)"
 [ -n "$REPO" ] || { echo "not inside a git repo" >&2; exit 2; }
 cd "$REPO" || exit 2
 [ -d "$DIR" ] || { echo "board dir not found: $DIR" >&2; exit 1; }
-LOGDIR="$REPO/.claude/preview-logs"
+
+# The MAIN checkout — git ALWAYS lists it first. Everything preview-related is
+# anchored to it (not to $REPO, which is the lane itself when run from a worktree)
+# so a preview provisioned from anywhere lands in, and is reusable from, one place.
+MAIN_WT="$(git worktree list --porcelain | awk '/^worktree /{print substr($0,10); exit}')"
+WT_DIR="$MAIN_WT/.claude/worktrees"
+LOGDIR="$MAIN_WT/.claude/preview-logs"
 BOARD_WRITE="$REPO/scripts/board-write.sh"
 
 fm(){ awk -v k="$2" '{ if($0 ~ "^"k":"){ sub(/^[^:]*: */,""); print; exit } }' "$1"; }
@@ -59,13 +70,32 @@ card_live_ports(){
   printf '%s %s\n' "$v" "$c"
 }
 
-# lowest free x (>=2) whose 143x/433x pair is both currently unbound
-next_free_ports(){
-  local x=2 v c
+# every vite port the BOARD has already handed out, one per line, skipping card $1
+board_claimed_ports(){
+  local skip="${1:-}" skip_b f pv v
+  skip_b=$([ -n "$skip" ] && basename "$skip" || echo "")
+  while IFS= read -r -d '' f; do
+    [ -n "$skip_b" ] && [ "$(basename "$f")" = "$skip_b" ] && continue
+    pv=$(fm "$f" preview); v=$(vite_port_of "$pv")
+    [ -n "$v" ] && printf '%s\n' "$v"
+  done < <(find "$DIR" -maxdepth 1 -name '*.md' -print0)
+}
+
+# prints "vite core" for card $1: its OWN recorded port if it has one, else the lowest
+# x>=2 whose 143x no OTHER card claims. Pure function of the board — the same board
+# always yields the same ports, so a card's URL is stable across restarts and does not
+# depend on what happened to be listening when start ran. Preserving a card's recorded
+# port is what keeps the hand-assigned 1432/#87, 1433/#107, 1435/daemon-chats alive.
+assign_ports(){
+  local card="$1" pv v claimed x
+  pv=$(fm "$card" preview); v=$(vite_port_of "$pv")
+  if [ -n "$v" ]; then printf '%s %s\n' "$v" "$((v + 2900))"; return 0; fi
+  claimed=$(board_claimed_ports "$card")
+  x=2
   while [ "$x" -le 97 ]; do
-    v=$((1430 + x)); c=$((4330 + x))
-    if ! port_listening "$v" && ! port_listening "$c"; then
-      printf '%s %s\n' "$v" "$c"; return 0
+    v=$((1430 + x))
+    if ! printf '%s\n' "$claimed" | grep -qx "$v"; then
+      printf '%s %s\n' "$v" "$((v + 2900))"; return 0
     fi
     x=$((x + 1))
   done
@@ -86,44 +116,75 @@ resolve_target_sha(){
   return 1
 }
 
-# prints the path of an EXISTING worktree whose HEAD == $1, if any (read-only —
-# does not create). Handles both "reuse the lane's original worktree" and
-# "reuse a preview worktree we made earlier".
+# prints the path of an EXISTING, REUSABLE worktree whose HEAD == $1, if any
+# (read-only — does not create). Handles both "reuse the lane's original worktree"
+# and "reuse a preview worktree we made earlier". Prints nothing when the only
+# thing at that sha is the main checkout — cmd_start then provisions a fresh one.
+#
+# ONLY worktrees under $WT_DIR are reusable. The main checkout is deliberately
+# excluded: lane branches routinely sit at main's tip, and `git worktree list` puts
+# main FIRST, so a naive head -1 hands back the user's own checkout whenever the
+# target sha == main's HEAD. That would serve MAIN's code at the URL we then write
+# to the card — the user "confirms" a change they never actually saw. This function
+# existing at all is what keeps that from being reachable.
 find_existing_worktree(){
-  local target="$1" matches pick
-  matches=$(git worktree list --porcelain | awk -v t="$target" '
-    /^worktree /{p=substr($0,10)}
-    /^HEAD /{h=substr($0,6); if (h==t) print p}
-  ')
-  [ -z "$matches" ] && return 0
+  local target="$1" line p="" h cand="" pick
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) p=${line#worktree } ;;
+      "HEAD "*)
+        h=${line#HEAD }
+        if [ "$h" = "$target" ]; then
+          case "$p" in "$WT_DIR"/*) cand="$cand$p
+" ;; esac
+        fi ;;
+    esac
+  done < <(git worktree list --porcelain)
+  [ -z "$cand" ] && return 0
   # several worktrees can share a HEAD (e.g. a dead lane + our own preview-* copy) —
   # prefer one already named preview-*, else take the first, but always exactly one.
-  pick=$(printf '%s\n' "$matches" | grep '/preview-' | head -1)
-  [ -z "$pick" ] && pick=$(printf '%s\n' "$matches" | head -1)
+  pick=$(printf '%s' "$cand" | grep '/preview-' | head -1)
+  [ -z "$pick" ] && pick=$(printf '%s' "$cand" | head -1)
   printf '%s\n' "$pick"
 }
 
-# bun install in $1 if node_modules is missing, or if @bismuth/core resolves
-# OUTSIDE this worktree (the "root node_modules symlinks back to MAIN" trap).
+# Is $1 (an absolute, symlink-resolved worktree path) dependency-healthy?
+#
+# The link that actually matters is core/node_modules/@bismuth/memory. core/src/server.ts
+# -> chat.ts does `import "@bismuth/memory"`, so a worktree whose core can't resolve it
+# does not boot (verified against the stale ios-app worktree, whose install predates the
+# memory workspace), and one resolving OUTSIDE the worktree would be running MAIN's code
+# behind the card's URL. bun links workspaces RELATIVELY
+# (core/node_modules/@bismuth/memory -> ../../../memory), so a healthy worktree always
+# resolves inside itself — checked against all 30 worktrees.
+#
+# The predecessor tested $wt/node_modules/@bismuth/core, which exists in NO node_modules
+# in this repo and never will: bun only materialises a workspace link where a package.json
+# DECLARES the dep, and only cli declares @bismuth/core (app/core import core by relative
+# path). The guard was therefore always false, so every start "repaired" a healthy tree.
+deps_ok(){
+  local wt_abs="$1" link resolved
+  [ -d "$wt_abs/node_modules" ] || return 1
+  link="$wt_abs/core/node_modules/@bismuth/memory"
+  [ -e "$link" ] || return 1
+  resolved=$(cd "$link" 2>/dev/null && pwd -P) || return 1
+  case "$resolved" in "$wt_abs"/*) return 0 ;; *) return 1 ;; esac
+}
+
+# Repair deps by INSTALLING, never by deleting. `bun install` is idempotent and relinks
+# workspaces in place, so there is nothing rm -rf buys us — and a wrong guard in front of
+# an `rm -rf node_modules` is how this script nearly deleted main's 1.6G node_modules out
+# from under the user's own running vite. Re-check after installing so a repair that
+# didn't work fails LOUDLY instead of silently "succeeding" every single start.
 ensure_deps(){
-  local wt="$1" wt_abs resolved
-  wt_abs=$(cd "$wt" && pwd -P)
-  if [ ! -d "$wt/node_modules" ]; then
-    echo "  bun install (fresh) in $wt"
-    (cd "$wt" && bun install) || return 1
-    return 0
-  fi
-  if [ -d "$wt/node_modules/@bismuth/core" ]; then
-    resolved=$(cd "$wt/node_modules/@bismuth/core" 2>/dev/null && pwd -P)
-    case "$resolved" in
-      "$wt_abs"/*) return 0 ;;
-      *) echo "  node_modules/@bismuth/core resolves OUTSIDE this worktree ($resolved) — reinstalling" ;;
-    esac
-  else
-    echo "  node_modules/@bismuth/core missing — reinstalling"
-  fi
-  rm -rf "$wt/node_modules"
-  (cd "$wt" && bun install) || return 1
+  local wt="$1" wt_abs
+  wt_abs=$(cd "$wt" 2>/dev/null && pwd -P) || { echo "no such worktree: $wt" >&2; return 1; }
+  deps_ok "$wt_abs" && return 0
+  echo "  bun install in $wt (workspace links incomplete)"
+  (cd "$wt_abs" && bun install) || return 1
+  deps_ok "$wt_abs" && return 0
+  echo "  bun install ran but @bismuth/memory still does not resolve inside $wt" >&2
+  return 1
 }
 
 launch_servers(){
@@ -182,26 +243,20 @@ cmd_start(){
     echo "REFUSE — $name has no usable landed^2 or worktree branch. Not guessing." >&2
     exit 1
   }
+  # never the main checkout — see find_existing_worktree
   wt_path=$(find_existing_worktree "$target")
   if [ -z "$wt_path" ]; then
-    wt_path="$REPO/.claude/worktrees/preview-$slug"
+    wt_path="$WT_DIR/preview-$slug"
     echo "provisioning worktree at $wt_path ($target)"
     git worktree add --detach "$wt_path" "$target" || exit 1
   else
     echo "reusing existing worktree: $wt_path"
   fi
 
-  ensure_deps "$wt_path" || { echo "bun install failed in $wt_path" >&2; exit 1; }
+  ensure_deps "$wt_path" || { echo "deps unusable in $wt_path" >&2; exit 1; }
 
-  # best-effort: reuse this card's OWN previously-recorded port pair if it's free again
-  local pv old_v old_c
-  pv=$(fm "$card" preview); old_v=$(vite_port_of "$pv")
-  if [ -n "$old_v" ] && ! port_listening "$old_v" && ! port_listening "$((old_v + 2900))"; then
-    v="$old_v"; c=$((old_v + 2900))
-  else
-    ports=$(next_free_ports) || { echo "no free preview ports left" >&2; exit 1; }
-    v=${ports%% *}; c=${ports##* }
-  fi
+  ports=$(assign_ports "$card") || { echo "no free preview ports left" >&2; exit 1; }
+  v=${ports%% *}; c=${ports##* }
 
   echo "launching core:$c vite:$v (logs: $LOGDIR/$slug.{core,vite}.log)"
   launch_servers "$wt_path" "$v" "$c" "$slug"
@@ -309,6 +364,10 @@ cmd_gc(){
   echo
   echo "junk=$n_junk orphan=$n_orphan  $([ "$RUN" = 1 ] && echo '(REMOVED)' || echo '(dry-run — pass --run to apply)')"
 }
+
+# Sourced with PREVIEWS_LIB=1 (scripts/previews.test.ts) -> expose the functions above
+# and run no command. Executed normally -> dispatch.
+[ "${PREVIEWS_LIB:-0}" = "1" ] && return 0
 
 case "${1:-}" in
   status) cmd_status ;;
