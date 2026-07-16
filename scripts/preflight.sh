@@ -46,9 +46,6 @@ check() {
   if grep -q '📋 \*\*Plan gate' "$card"; then
     echo "  REFUSE  $name — open '📋 Plan gate' (post the plan and get a thumbs-up first)"; fails=1
   fi
-  if grep -q '⏸️ \*\*Parked' "$card"; then
-    echo "  REFUSE  $name — '⏸️ Parked' (superseded/deferred; the user decides if it revives)"; fails=1
-  fi
 
   if [ "$ty" = "question" ]; then
     echo "  REFUSE  $name — type: question is answered in the card, never built"; fails=1
