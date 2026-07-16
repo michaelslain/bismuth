@@ -79,30 +79,63 @@ describe("memoryRefSource — daemon disabled", () => {
 // Mounted-view proof of the SRS flashcard guard.
 // ---------------------------------------------------------------------------------------------
 
-const win = new GlobalWindow();
-const DOM_KEYS = ["document", "window", "navigator", "Node", "Element", "HTMLElement", "Text", "Range", "Event", "KeyboardEvent", "MutationObserver", "getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame", "DOMRect"] as const;
-const saved: Record<string, unknown> = {};
+// Same install/restore discipline as tableWidget.test.ts / graphBlock.test.ts: install ONLY the
+// globals that are missing, remember exactly which, and DELETE exactly those afterwards. Two rules
+// matter, because every `bun test app` file shares one process:
+//   • install-if-absent — never clobber a global another file installed;
+//   • delete (not "restore to undefined") — assigning undefined leaves the key PRESENT, which makes
+//     the other DOM test files' own `!(key in globalThis)` guard skip their install and then blow up
+//     on `document.createElement`. That is a real regression this file caused before it followed the
+//     house pattern.
+// The window is built inside beforeAll (never at module scope) so importing this file has no side
+// effect on the intentionally-headless test files.
+const DOM_GLOBALS = [
+  "document", "window", "navigator", "Node", "Element", "HTMLElement", "Text",
+  "DocumentFragment", "MutationObserver", "Range", "NodeFilter", "DOMParser",
+  "HTMLDivElement", "HTMLSpanElement", "DOMRect", "ResizeObserver", "getComputedStyle",
+  "requestAnimationFrame", "cancelAnimationFrame", "getSelection", "Selection",
+];
+// happy-dom's dispatchEvent instanceof-checks against ITS OWN Event class, so the Enter keydown we
+// construct must be happy-dom's, not bun's built-in. Force the family for this file, saving +
+// restoring the originals so we don't pollute other files.
+const EVENT_CLASSES = ["Event", "CustomEvent", "KeyboardEvent"];
+const installed: string[] = [];
+const savedEventClasses: Record<string, unknown> = {};
+let win: GlobalWindow;
 
 beforeAll(() => {
-  for (const k of DOM_KEYS) {
-    saved[k] = (globalThis as Record<string, unknown>)[k];
-    (globalThis as Record<string, unknown>)[k] = (win as unknown as Record<string, unknown>)[k];
+  win = new GlobalWindow();
+  for (const key of DOM_GLOBALS) {
+    if (!(key in globalThis) && key in win) {
+      (globalThis as Record<string, unknown>)[key] = (win as unknown as Record<string, unknown>)[key];
+      installed.push(key);
+    }
+  }
+  for (const k of EVENT_CLASSES) {
+    if (k in win) {
+      savedEventClasses[k] = (globalThis as Record<string, unknown>)[k];
+      (globalThis as Record<string, unknown>)[k] = (win as unknown as Record<string, unknown>)[k];
+    }
   }
 });
+
 afterAll(() => {
-  for (const k of DOM_KEYS) (globalThis as Record<string, unknown>)[k] = saved[k];
+  for (const k of installed) delete (globalThis as Record<string, unknown>)[k];
+  for (const k of Object.keys(savedEventClasses)) {
+    if (savedEventClasses[k] === undefined) delete (globalThis as Record<string, unknown>)[k];
+    else (globalThis as Record<string, unknown>)[k] = savedEventClasses[k];
+  }
 });
 
 describe("SRS flashcard separator survives the `??` picker", () => {
   // Lazily imported AFTER the DOM globals are installed — EditorView touches `document` at import.
   async function mount(doc: string) {
-    const { EditorView } = await import("@codemirror/view");
-    const { keymap } = await import("@codemirror/view");
+    const { EditorView, keymap } = await import("@codemirror/view");
     const { insertNewlineAndIndent } = await import("@codemirror/commands");
-    const parent = win.document.createElement("div");
-    win.document.body.appendChild(parent);
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
     const view = new EditorView({
-      parent: parent as unknown as HTMLElement,
+      parent,
       state: EditorState.create({
         doc,
         selection: { anchor: doc.length },
@@ -128,7 +161,7 @@ describe("SRS flashcard separator survives the `??` picker", () => {
   /** Dispatch a real Enter keydown at the contentDOM, the way CodeMirror's keymap receives it. */
   const pressEnter = (view: { contentDOM: HTMLElement }) =>
     view.contentDOM.dispatchEvent(
-      new win.KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }) as unknown as KeyboardEvent,
+      new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }),
     );
 
   /** Open the picker and BLOCK until it is really `active` AND accepting input. Two real CodeMirror

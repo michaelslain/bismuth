@@ -396,6 +396,7 @@ details.callout > summary::-webkit-details-marker {
   padding: 0 1px;
   text-decoration: none;
 }
+.block-rich .bismuth-memory-ref { color: var(--violet); }
 .block-rich .bismuth-wikilink:hover {
   text-decoration: underline;
   text-underline-offset: 2px;

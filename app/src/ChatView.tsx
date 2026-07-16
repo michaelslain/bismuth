@@ -51,6 +51,7 @@ import { ChatComposer, type ComposerHandle } from "./ChatComposer";
 import { classifyComposerKey } from "./chatComposerKeys";
 import { HISTORY_BOTTOM, buildHistoryEntries, historyUp, historyDown, type HistoryCursor } from "./chatHistory";
 import type { NoteCandidate } from "./editor/wikilink";
+import type { MemoryCandidate } from "../../core/src/memoryRef";
 import type { FileCandidate } from "./editor/atMention";
 import { settings } from "./settings";
 
@@ -347,6 +348,7 @@ export function ChatView(props: {
   /** The owning tab's user-set name, if any — keeps the pane header in sync with the tab chip. */
   tabName?: () => string | undefined;
   noteNames: () => NoteCandidate[];
+  memoryNames: () => MemoryCandidate[];
   tagNames: () => string[];
 }) {
   const [transcript, setTranscript] = createStore<TurnItem[]>([]);
@@ -2053,6 +2055,7 @@ export function ChatView(props: {
                 onPaste={onComposerPaste}
                 onReady={(h) => { composer = h; }}
                 getNotes={props.noteNames}
+                getMemories={props.memoryNames}
                 getTags={props.tagNames}
                 getFiles={fileCandidates}
                 onFileMention={(p) => addChatReference(props.chatId, p)}

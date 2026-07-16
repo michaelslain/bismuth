@@ -172,3 +172,47 @@ describe("renderNoteBody — wikilinks/tags vs code", () => {
     expect(html.match(/bismuth-wikilink/g)?.length).toBe(1);
   });
 });
+
+// ── `??slug` memory references ────────────────────────────────────────────────────────────────
+// The 3rd-brain twin of a `[[wikilink]]`: `??slug` PERSISTS in the saved markdown and must resolve
+// to a clickable anchor pointing at the memory note's real vault path. The anchor deliberately
+// carries `bismuth-wikilink` too, so every existing `a.bismuth-wikilink[data-href]` click host (the
+// chat bubble's delegated handler, the reader) navigates it with no new wiring.
+describe("renderNoteBody — `??slug` memory references", () => {
+  test("a `??slug` becomes an anchor pointing at the memory note's real path", () => {
+    const html = renderNoteBody("see ??cron-run-preference for context");
+    expect(html).toContain('data-href=".daemon/memory/cron-run-preference.md"');
+    expect(html).toContain("bismuth-memory-ref");
+    // Reuses the wikilink class → the existing navigation hosts pick it up for free.
+    expect(html).toContain("bismuth-wikilink");
+    expect(html).not.toContain("??cron-run-preference"); // the raw syntax is consumed
+  });
+
+  test("`??` glued to a word stays literal prose — `really??` is punctuation, not a ref", () => {
+    const html = renderNoteBody("really?? that seems odd");
+    expect(html).not.toContain("bismuth-memory-ref");
+    expect(html).toContain("really??");
+  });
+
+  test("a BARE `??` line stays literal (it is the SRS reverse-card separator)", () => {
+    const html = renderNoteBody("front\n\n??\n\nback");
+    expect(html).not.toContain("bismuth-memory-ref");
+  });
+
+  test("a `??slug` inside a code span / fence stays LITERAL", () => {
+    expect(renderNoteBody("`??alpha`")).not.toContain("bismuth-memory-ref");
+    expect(renderNoteBody("```\n??alpha\n```")).not.toContain("bismuth-memory-ref");
+  });
+
+  test("a wikilink and a memory ref coexist on one line", () => {
+    const html = renderNoteBody("[[Some Note]] and ??alpha-beta");
+    expect(html).toContain('data-href="Some Note.md"');
+    expect(html).toContain('data-href=".daemon/memory/alpha-beta.md"');
+  });
+
+  test("the slug is escaped into the href/label (no HTML injection)", () => {
+    // The grammar can't match `<`/`"` anyway; assert the anchor is well-formed + sanitized.
+    const html = renderNoteBody("??a-b_c/d");
+    expect(html).toContain('data-href=".daemon/memory/a-b_c/d.md"');
+  });
+});
