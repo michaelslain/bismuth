@@ -623,6 +623,7 @@ export function blockTypeForSlashItem(id: string): BlockType {
       return "table";
     case "code":
     case "query":
+    case "graph": // the ```graph fence renders via CodeMirror only; the block editor shows it as code
       return "code";
     case "math":
       return "mathBlock";
