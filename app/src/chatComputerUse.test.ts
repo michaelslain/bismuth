@@ -6,6 +6,7 @@ import {
   setChatComputerUse,
   type ChatChromeEntry,
 } from "./chatComputerUse";
+import { settings } from "./settings";
 
 /** Minimal in-memory Storage stub (Bun test env has no localStorage). */
 function installMemoryStorage(): Map<string, string> {
@@ -49,18 +50,18 @@ describe("lookupChrome (pure)", () => {
   });
 });
 
-// BUG #87 re-fix: --chrome is now PER-CHAT. Two independent chats must not leak state into each
-// other — enabling it in chat A leaves chat B on its own default, so B's first `/chrome` still
-// reliably ENABLES (the exact bounce: opening a chat "already on" and `/chrome` reporting disabled).
+// BUG #87: --chrome is PER-CHAT. Two independent chats must not leak state into each other —
+// enabling it in chat A must leave chat B on the vault's default, not on A's choice.
 describe("chatComputerUse / setChatComputerUse (per-chat, no cross-chat leak)", () => {
   beforeEach(() => {
     installMemoryStorage();
   });
-  it("defaults to off for a fresh chat, then reflects each chat's own toggle", () => {
-    expect(chatComputerUse("chatA")).toBe(false); // global default (schema false)
+  it("defaults to the vault setting for a fresh chat, then reflects each chat's own choice", () => {
+    // settings.chat.computerUse is false by default (schema), and no chat has chosen yet.
+    expect(chatComputerUse("chatA")).toBe(false);
     setChatComputerUse("chatA", true);
     expect(chatComputerUse("chatA")).toBe(true);
-    // A DIFFERENT chat is unaffected — it still reads the default, so ITS first /chrome enables.
+    // A DIFFERENT chat is unaffected — it still reads the vault default.
     expect(chatComputerUse("chatB")).toBe(false);
     setChatComputerUse("chatB", true);
     expect(chatComputerUse("chatB")).toBe(true);
@@ -72,5 +73,30 @@ describe("chatComputerUse / setChatComputerUse (per-chat, no cross-chat leak)", 
   it("ignores an empty chat id (no-op)", () => {
     setChatComputerUse("", true);
     expect(chatComputerUse("")).toBe(false);
+  });
+});
+
+// BUG #87 bounce 3, second defect: a vault that opts in with `chat: computerUse: true` must actually
+// get the browser. ChatView stamps chatComputerUse() onto every open/user/resume message, and the
+// server only falls back to appConfig.chat.computerUse when the client sends NOTHING — so hardcoding
+// this default to `false` (the previous fix) silently overrode the user's explicit opt-in and spawned
+// every session without --chrome. A chat that has made no choice of its own must read the setting.
+describe("chatComputerUse honors the vault's chat.computerUse default (setting must not be dead)", () => {
+  beforeEach(() => {
+    installMemoryStorage();
+  });
+  it("a chat with no choice of its own follows the vault setting in BOTH directions", () => {
+    settings.chat.computerUse = true; // the user's real .settings: opted in
+    expect(chatComputerUse("fresh")).toBe(true); // ← was false before the fix: opt-in ignored
+    settings.chat.computerUse = false;
+    expect(chatComputerUse("fresh")).toBe(false);
+  });
+  it("a chat's OWN choice always wins over the vault default (both ways)", () => {
+    settings.chat.computerUse = true;
+    setChatComputerUse("optedOut", false); // e.g. `/chrome off` in this one chat
+    expect(chatComputerUse("optedOut")).toBe(false);
+    settings.chat.computerUse = false;
+    setChatComputerUse("optedIn", true); // e.g. `/chrome` in this one chat
+    expect(chatComputerUse("optedIn")).toBe(true);
   });
 });

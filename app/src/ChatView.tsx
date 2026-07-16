@@ -36,7 +36,7 @@ import { chatPersonaName } from "./daemonIdentity";
 import { chatTitle, publishChatTitle, resolveChatHeaderTitle } from "./chatTitles";
 import { rememberChatSession, recallChatSession, forgetChatSession } from "./chatSessionStore";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
-import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, computeChromeToggle } from "./chatSlashCommands";
+import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, computeChromeToggle, computeChromeCommand } from "./chatSlashCommands";
 import { chatComputerUse, setChatComputerUse } from "./chatComputerUse";
 import { resolveInitialModel } from "./chatModelResolution";
 import { CHAT_PROVIDER_OPTIONS, modelPriceBadge, modelStorageKeys, opencodeAuthSummary, OPENCODE_LOGIN_COMMAND, providerStorageKey, providerSupportsClaudeControls, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
@@ -1028,21 +1028,22 @@ export function ChatView(props: {
     scrollToBottom();
   };
 
-  /** Toggle Claude's --chrome (browser/computer-use) capability — ONE path shared by the header
-   *  Globe pill and the /chrome slash command so both behave identically (BUG #87). Persists the
-   *  choice PER-CHAT (chatComputerUse — carried on every subsequent turn + across reload), and
-   *  confirms in the transcript. --chrome is a spawn-fixed CLI flag, so the LIVE session picks it up
-   *  by respawning on the next message: the client stamps the new value onto the next user/open/
-   *  resume message (sendJson), and the server reconciles it against the running session and
-   *  respawns query() with/without --chrome, resuming the same conversation (core/src/chat.ts
-   *  computerUseChange + respawnSession). The re-fix moved the state off the GLOBAL setting (which
-   *  leaked across chats, so a chat could open already-on and `/chrome` reported "disabled" instead
-   *  of enabling) onto per-chat storage seeded from the global default. */
+  /** FLIP Claude's --chrome (browser/computer-use) capability — the header Globe PILL's action. A
+   *  pill renders the current state and flips it, so toggle semantics belong here; the `/chrome`
+   *  COMMAND deliberately does not toggle (it's an enable verb — see applyLocalCommand /
+   *  computeChromeCommand, BUG #87 bounce 3). Both write the same per-chat state, so the pill and
+   *  the command always agree about what's on.
+   *
+   *  Persists the choice PER-CHAT (chatComputerUse — carried on every subsequent turn + across
+   *  reload), and confirms in the transcript. --chrome is a spawn-fixed CLI flag, so the LIVE
+   *  conversation picks it up by respawning on the next message: the client stamps the new value onto
+   *  the next user/open/resume message (sendJson), and the server reconciles it against the running
+   *  session and respawns query() with/without --chrome, RESUMING the same conversation
+   *  (core/src/chat.ts computerUseChange + respawnSession) — the chat keeps its history, so the flag
+   *  lands on the live chat rather than a fresh one. */
   const toggleComputerUse = () => {
-    // Flip THIS chat's --chrome state (not the global setting — BUG #87 re-fix: the global leaked
-    // across chats/sessions, so a chat could open already-on and the user's `/chrome` to "enable" it
-    // flipped it OFF and reported "disabled"). computeChromeToggle keeps the new state + its note in
-    // lockstep, so the message always reflects the NEW state.
+    // computeChromeToggle keeps the new state + its note in lockstep, so the message always reflects
+    // the NEW state (never the pre-flip one).
     const { next, note } = computeChromeToggle(chatComputerUse(props.chatId));
     setChatComputerUse(props.chatId, next);
     pushSystemNote(note);
@@ -1063,11 +1064,22 @@ export function ChatView(props: {
       return true;
     }
     if (cmd.kind === "chrome") {
-      // Toggle --chrome (browser/computer-use) for THIS chat — not just future ones (BUG #87's real
-      // gap: --chrome is spawn-fixed, so the old settings-only toggle silently did nothing for the
-      // session the user typed /chrome into and the browser kept reading disabled). toggleComputerUse
-      // persists the setting AND makes the live session respawn with the new flag on the next message.
-      toggleComputerUse();
+      // `/chrome [on|off]` SETS --chrome (browser/computer-use) for THIS chat; it does NOT toggle.
+      // BUG #87 bounce 3: a bare `/chrome` used to flip whatever the state happened to be, so on an
+      // already-enabled chat (a vault with chat.computerUse:true, or one previous enable) this
+      // ENABLE verb turned the browser off and answered "disabled" — the user's exact report. Now
+      // `/chrome`/`/chrome on` always end enabled (idempotent) and only an explicit `/chrome off`
+      // disables. computeChromeCommand keeps the new state + its note in lockstep; undefined = an
+      // argument we won't guess at.
+      const outcome = computeChromeCommand(chatComputerUse(props.chatId), cmd.arg);
+      if (!outcome) {
+        setTurnError(`Unknown /chrome option "${cmd.arg}" — use "/chrome" (or "/chrome on") to enable it, "/chrome off" to disable it.`);
+        return false; // keep the draft so the user can correct it
+      }
+      // Persists the choice AND (when it changed) makes the live conversation respawn with the new
+      // flag on the next message — --chrome is spawn-fixed, so a respawn is the only way it lands.
+      setChatComputerUse(props.chatId, outcome.next);
+      pushSystemNote(outcome.note);
       setTurnError(null);
       return true;
     }

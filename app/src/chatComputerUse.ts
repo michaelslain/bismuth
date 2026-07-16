@@ -3,14 +3,23 @@
 // content id's suffix — the durable identity that survives a close/reopen), PERSISTED in
 // localStorage. Mirrors chatColors.ts / chatSessionStore.ts.
 //
-// BUG #87 re-fix: --chrome was a single GLOBAL setting (settings.chat.computerUse), yet the toggle
-// is presented as "for this chat". Enabling it in one chat (or a value persisted from a prior
-// session) left it true EVERYWHERE, so the user's next chat opened with it already on — and typing
-// `/chrome` to "turn it on" instead flipped it OFF and (correctly, but confusingly) reported
-// "disabled". Making the state per-chat — DEFAULTING un-toggled chats to OFF (not the possibly-stale
-// global) — means each chat's first `/chrome` reliably ENABLES, exactly matching the "for this chat"
-// wording, and toggling a chat no longer mutates any global.
+// BUG #87: --chrome was a single GLOBAL setting (settings.chat.computerUse), yet the control is
+// presented as "for this chat" — so flipping it in one chat flipped it everywhere. The state is now
+// PER-CHAT, and `settings.chat.computerUse` is what it always documented itself to be: the DEFAULT
+// for a chat that hasn't made its own choice.
+//
+// Bounce-3 note — why the seed is read here again: the previous fix removed this fallback (hardcoding
+// the default to `false`) to stop a bare `/chrome` from reporting "disabled" on a vault whose global
+// was true. That aimed at the wrong layer and cost the setting its meaning: ChatView stamps this
+// value onto every open/user/resume message, and the server only falls back to appConfig when the
+// client sends nothing — so a hardcoded `false` here silently OVERRODE an explicit
+// `chat.computerUse: true` and spawned every session WITHOUT --chrome. The "disabled" report was
+// never about the seed; it came from `/chrome` being a blind toggle, and is fixed at that layer
+// (computeChromeCommand: `/chrome` ENABLES, idempotently). With an enable verb, seeding from the
+// user's own setting is safe in every direction: the chat opens in the state they asked for, and
+// `/chrome` still reads "enabled".
 import { createSignal } from "solid-js";
+import { settings } from "./settings";
 
 const KEY = "bismuth-chat-chrome-v1";
 const CAP = 200;
@@ -73,11 +82,12 @@ function persist(list: ChatChromeEntry[]): void {
 }
 
 /** Whether --chrome is enabled for a chat tab id. REACTIVE — read it inside a ChatView binding so
- *  the pill updates the instant the toggle flips. Defaults to OFF ("for this chat" semantics) for a
- *  chat that hasn't been toggled yet, so the FIRST /chrome in ANY chat reliably ENABLES — regardless
- *  of any stale global `settings.chat.computerUse` left true by earlier testing (BUG #87 re-fix). */
+ *  the pill updates the instant the state changes. A chat that has made its OWN choice (via the pill
+ *  or `/chrome`) keeps it; otherwise it falls back to the vault's documented default,
+ *  `settings.chat.computerUse` — which ChatView stamps onto the session's spawn, so setting it true
+ *  really does open chats with the browser on. */
 export function chatComputerUse(chatId: string): boolean {
-  return lookupChrome(chrome(), chatId) ?? false;
+  return lookupChrome(chrome(), chatId) ?? settings.chat.computerUse;
 }
 
 /** Set a chat tab's --chrome state. Persists + updates the live signal. */
