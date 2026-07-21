@@ -12,11 +12,17 @@ import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { THEMES, THEME_NAMES, resolveTheme, type ColorTokens } from "./themes";
+import {
+  THEMES, THEME_NAMES, resolveTheme, type ColorTokens,
+  ACCENT_RAMP, CATEGORY_SWATCHES, SEMANTIC_DARK, SEMANTIC_LIGHT,
+} from "./themes";
 import { settingsToCssVars } from "./settingsCssVars";
 import { DEFAULTS } from "./settings";
 
 const APP_SRC = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(APP_SRC, "..", "..");
+const APP_CSS = join(APP_SRC, "App.css");
+const TOKENS = join(ROOT, "core", "src", "theme", "tokens.ts");
 
 /** ColorTokens fields every theme MUST define (the base palette). */
 const REQUIRED_TOKEN_FIELDS: (keyof ColorTokens)[] = [
@@ -59,6 +65,25 @@ function walkCss(dir: string, out: string[] = []): string[] {
     else if (e.endsWith(".css")) out.push(p);
   }
   return out;
+}
+
+/** All non-test source files (.ts/.tsx/.css) under app/src + core/src. */
+function walkSource(dir: string, out: string[] = []): string[] {
+  for (const e of readdirSync(dir)) {
+    if (e === "node_modules" || e === "dist") continue;
+    const p = join(dir, e);
+    const s = statSync(p);
+    if (s.isDirectory()) walkSource(p, out);
+    else if (/\.(ts|tsx|css)$/.test(e) && !/\.test\.tsx?$/.test(e)) out.push(p);
+  }
+  return out;
+}
+
+/** Files that contain `hex` (case-insensitive) as a raw literal. */
+function filesContaining(hex: string): string[] {
+  const files = [...walkSource(join(ROOT, "app", "src")), ...walkSource(join(ROOT, "core", "src"))];
+  const needle = hex.toLowerCase();
+  return files.filter((f) => readFileSync(f, "utf8").toLowerCase().includes(needle));
 }
 
 describe("theme guard — every theme yields every token", () => {
@@ -117,6 +142,45 @@ describe("theme guard — semantic + elevation tokens re-theme (light ≠ dark)"
     for (const key of ["--shadow-menu", "--shadow-popup", "--shadow-card", "--shadow-modal"]) {
       expect(light[key], `${key} light differs`).not.toBe(dark[key]);
       expect(light[key], `${key} light not pure-black`).not.toContain("rgba(0, 0, 0");
+    }
+  });
+});
+
+describe("theme guard — centralized colors never re-duplicate (anti-drift lint)", () => {
+  // Step 8: a raw hex for a CENTRALIZED value may live ONLY in the sanctioned sources —
+  // core/src/theme/tokens.ts (the source of truth) and, for the dark first-paint fallbacks,
+  // App.css :root. If one reappears anywhere else the 5-copies-that-drift problem is back.
+  // (A blanket "no hex anywhere" ban is intentionally NOT used: issue/row refs like #100 or
+  // #70a and fixed external palettes — Google event colors, xterm ANSI — are false positives.
+  // The deliberate exceptions the task names, the FPS meter + chat swatches, are non-centralized
+  // hues that never appear in this tracked set, so they need no allowlist here.)
+
+  it("the category swatch ramp lives only in tokens.ts + App.css :root fallbacks", () => {
+    for (const hex of ACCENT_RAMP) {
+      const stray = filesContaining(hex).filter((f) => f !== TOKENS && f !== APP_CSS);
+      expect(stray.map((f) => f.slice(ROOT.length + 1)), `ramp ${hex}`).toEqual([]);
+    }
+  });
+
+  it("dark semantic status colors live only in tokens.ts + App.css :root fallbacks", () => {
+    for (const hex of [SEMANTIC_DARK.danger, SEMANTIC_DARK.success, SEMANTIC_DARK.warning]) {
+      const stray = filesContaining(hex).filter((f) => f !== TOKENS && f !== APP_CSS);
+      expect(stray.map((f) => f.slice(ROOT.length + 1)), `semantic ${hex}`).toEqual([]);
+    }
+  });
+
+  it("light semantic status colors live only in tokens.ts (no App.css mirror needed)", () => {
+    for (const hex of [SEMANTIC_LIGHT.danger, SEMANTIC_LIGHT.success, SEMANTIC_LIGHT.warning]) {
+      const stray = filesContaining(hex).filter((f) => f !== TOKENS);
+      expect(stray.map((f) => f.slice(ROOT.length + 1)), `light semantic ${hex}`).toEqual([]);
+    }
+  });
+
+  it("App.css :root fallbacks byte-mirror the tokens source (ramp + dark semantics)", () => {
+    const css = readFileSync(APP_CSS, "utf8").toLowerCase();
+    for (const hex of Object.values(CATEGORY_SWATCHES)) expect(css, `App.css has ${hex}`).toContain(hex.toLowerCase());
+    for (const hex of [SEMANTIC_DARK.danger, SEMANTIC_DARK.success, SEMANTIC_DARK.warning]) {
+      expect(css, `App.css has ${hex}`).toContain(hex.toLowerCase());
     }
   });
 });

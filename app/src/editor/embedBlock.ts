@@ -402,7 +402,7 @@ const embedTheme = EditorView.theme({
   },
   ".cm-embed-error": {
     "font-family": MONO_FONT, "font-size": "0.85em",
-    color: "#e5847d", opacity: "0.85",
+    color: "var(--danger)", opacity: "0.85",
   },
   // PDF/video: free resize via the native bottom-right corner (no visible grip — see below).
   // `overflow: hidden` is required for the resize affordance; max-width keeps it in the editor.
