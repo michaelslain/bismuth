@@ -21,6 +21,7 @@ const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.E
 // Lazy: the daemon inbox is only visited when the daemon is enabled; keep it off the entry bundle.
 const InboxView = lazy(() => import("./InboxView").then((m) => ({ default: m.InboxView })));
 import type { NoteCandidate } from "./editor/wikilink";
+import type { MemoryCandidate } from "../../core/src/memoryRef";
 import { GRAPH_TAB, INBOX_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, CHAT_PREFIX, ANNOTATE_PREFIX, isSentinel } from "./tabIds";
 import { isPreviewPath } from "./preview/previewKind";
 
@@ -30,6 +31,7 @@ export function PaneContent(props: {
   onOpen: (path: string) => void;
   onNewTerminal: () => void;
   noteNames: () => NoteCandidate[];
+  memoryNames: () => MemoryCandidate[];
   tagNames: () => string[];
 }) {
   return (
@@ -43,6 +45,7 @@ export function PaneContent(props: {
             onSaved={props.onSaved}
             onOpen={props.onOpen}
             noteNames={props.noteNames}
+            memoryNames={props.memoryNames}
             tagNames={props.tagNames}
           />
         </Suspense>

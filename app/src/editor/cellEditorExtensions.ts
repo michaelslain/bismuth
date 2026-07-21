@@ -31,6 +31,7 @@ import { vaultCompletion } from "./autocomplete";
 import { completionTheme } from "./completionDisplay";
 import { codeHighlightStyle } from "./codeHighlight";
 import type { NoteCandidate } from "./wikilink";
+import type { MemoryCandidate } from "../../../core/src/memoryRef";
 import type { FileCandidate } from "./atMention";
 import type { Schema } from "../../../core/src/schema/types";
 
@@ -39,6 +40,10 @@ import type { Schema } from "../../../core/src/schema/types";
  *  facets). Identical shape either way, so the popup is byte-for-byte the same (#49). */
 export interface CellCompletionOptions {
   getNotes: () => NoteCandidate[];
+  /** The 3rd brain's memory notes, powering the `??slug` reference picker. Supplied by the note
+   *  editor + the chat composer; absent in a table cell. Empty when the daemon is disabled — then
+   *  the `??` popup simply never opens. */
+  getMemories?: () => MemoryCandidate[];
   getTags: () => string[];
   getSchema: () => Schema;
   getIconNames: () => string[];

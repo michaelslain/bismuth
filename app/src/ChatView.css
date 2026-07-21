@@ -521,6 +521,8 @@
 }
 .chat-bubble a:hover { border-bottom-color: currentColor; }
 .chat-bubble a.bismuth-wikilink { cursor: pointer; }
+/* `??slug` memory refs: a link to the THIRD brain — violet, vs blue for a vault wikilink. */
+.chat-bubble a.bismuth-memory-ref { color: var(--violet); border-bottom-color: color-mix(in srgb, var(--violet) 22%, transparent); }
 /* Inline code + fences: the shared renderer's verbatim rgba(140,140,140,x) fill — matches
    .cardMd / livePreview token-for-token. Do not "fix" to a token; it would desync Chat. */
 .chat-bubble code {

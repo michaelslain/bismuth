@@ -255,6 +255,10 @@
   text-decoration: none;
   border-bottom: 1px solid var(--accent-soft);
 }
+.cm-editor .cm-td a.bismuth-memory-ref {
+  color: var(--violet);
+  border-bottom-color: color-mix(in srgb, var(--violet) 14%, transparent);
+}
 .cm-editor .cm-td .bismuth-tag {
   color: var(--teal);
   font-family: "Monaspace Xenon", ui-monospace, monospace;

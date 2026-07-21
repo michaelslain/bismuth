@@ -11,6 +11,7 @@ import type { DragState } from "./dnd/viewDrag";
 import { isChatReferenceDrop } from "./dnd/noteRef";
 import { nearestEdge, type Zone } from "./dnd/geometry";
 import type { NoteCandidate } from "./editor/wikilink";
+import type { MemoryCandidate } from "../../core/src/memoryRef";
 import "./PaneTree.css";
 
 type PaneTreeProps = {
@@ -28,6 +29,7 @@ type PaneTreeProps = {
   onOpen: (path: string) => void;
   onNewTerminal: (leafId: string) => void;
   noteNames: () => NoteCandidate[];
+  memoryNames: () => MemoryCandidate[];
   tagNames: () => string[];
   terminalLabel?: (content: string) => string;
 };
@@ -135,6 +137,7 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
           onOpen={props.onOpen}
           onNewTerminal={() => props.onNewTerminal(props.node.id)}
           noteNames={props.noteNames}
+          memoryNames={props.memoryNames}
           tagNames={props.tagNames}
         />
       </div>

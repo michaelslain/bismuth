@@ -9,6 +9,7 @@ import { Loading } from "./ui/EmptyState";
 import { settings } from "./settings";
 import { isConfigBuffer } from "./editor/settingsBuffer";
 import type { NoteCandidate } from "./editor/wikilink";
+import type { MemoryCandidate } from "../../core/src/memoryRef";
 
 /**
  * Routes a `.md` file to the right view: a `type: base` file renders as a BaseView,
@@ -28,6 +29,7 @@ export function FileView(props: {
   onSaved: () => void;
   onOpen: (path: string) => void;
   noteNames: () => NoteCandidate[];
+  memoryNames: () => MemoryCandidate[];
   tagNames: () => string[];
 }) {
   const [body] = createResource(
@@ -64,13 +66,13 @@ export function FileView(props: {
           <BaseView path={props.path} body={body()} onOpen={props.onOpen} />
         </Match>
         <Match when={isDaemonPage()}>
-          <InboxPageView path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
+          <InboxPageView path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
         </Match>
         <Match when={!isBase() && !isDaemonPage()}>
           <Show
             when={visualMode()}
             fallback={
-              <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
+              <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
             }
           >
             <BlockEditor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />

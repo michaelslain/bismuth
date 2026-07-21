@@ -36,6 +36,7 @@ import { InkOverlay } from "./editor/ink/InkOverlay";
 import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
 import { parseWikilink, resolveNotePath, findHeadingLineIndex, wikilinkOpenPath, type NoteCandidate } from "./editor/wikilink";
+import { MEMORY_REF_RE, memoryRefPath, resolveMemorySlug, type MemoryCandidate } from "../../core/src/memoryRef";
 import { takePendingAnchor, clearPendingAnchor } from "./pendingAnchor";
 import { pointInDropRect, type NativeDragDetail } from "./nativeDrop";
 import { nativeDropScale, claimNativeDrop } from "./nativeDropRouting";
@@ -389,7 +390,7 @@ function revealHeading(view: EditorView, heading: string): boolean {
   return true;
 }
 
-export function Editor(props: { path: string | null; initialText?: string; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
+export function Editor(props: { path: string | null; initialText?: string; onSaved: () => void; noteNames: () => NoteCandidate[]; memoryNames: () => MemoryCandidate[]; tagNames: () => string[] }) {
   let host!: HTMLDivElement;
   let wrapper!: HTMLDivElement;
   let view: EditorView | undefined;
@@ -1009,6 +1010,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
           ...markdownEditingExtensions({
             completion: {
               getNotes: props.noteNames,
+              getMemories: props.memoryNames,
               getTags: props.tagNames,
               getSchema: propertyRegistry,
               getIconNames: iconNames,
@@ -1176,6 +1178,20 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
                   // previewable attachment (e.g. `[[Screenshot ….png]]`) opens as-is instead of
                   // routing to a blank nonexistent note (#38).
                   window.dispatchEvent(new CustomEvent("bismuth-open", { detail: { path: wikilinkOpenPath(target, resolved), heading } }));
+                  return true;
+                }
+              }
+              // `??slug` memory references — open the memory note the slug names. Placed after the
+              // wikilink scan (the two grammars can't overlap: a slug has no `[`) and before the
+              // markdown-link scan. Resolve against the known memory notes so a subfoldered note
+              // opens by basename too, exactly like a wikilink; an unresolved slug still opens its
+              // canonical path (`.daemon/memory/<slug>.md`) rather than doing nothing.
+              for (const m of line.text.matchAll(new RegExp(MEMORY_REF_RE.source, "g"))) {
+                const s2 = line.from + (m.index ?? 0) + m[1].length;
+                const en = s2 + 2 + m[2].length;
+                if (pos >= s2 && pos <= en) {
+                  const resolved = resolveMemorySlug(m[2], props.memoryNames());
+                  window.dispatchEvent(new CustomEvent("bismuth-open", { detail: { path: memoryRefPath(resolved ?? m[2]) } }));
                   return true;
                 }
               }
