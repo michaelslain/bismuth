@@ -10,6 +10,7 @@
 #
 #   board-write.sh <card> <key> <value>   set ONE frontmatter key (creates it if absent)
 #   board-write.sh <card> --append        append a body block from stdin (prefix-verified)
+#   board-write.sh <card> --resolve-gate  close an OPEN plan/needs-input gate (user replied)
 #   board-write.sh <card> --show          print the card as it is on disk right now
 #
 # <card> is a card title without .md ("Centralize the color system") or a full path.
@@ -19,7 +20,7 @@ VAULT="${BISMUTH_VAULT:-/Users/michaelslain/Documents/library of alexandria}"
 DIR="$VAULT/thoughts/Bismuth Changes"
 
 usage() {
-  sed -n '5,14p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '5,15p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -38,6 +39,23 @@ head -1 "$orig" | grep -qx -- '---' || { echo "refused — no frontmatter: $card
 case "${1:-}" in
   --show)
     cat "$orig"; exit 0;;
+
+  --resolve-gate)
+    # Close an OPEN gate the card was WAITING ON THE USER for. The user has replied
+    # (in chat), so the '📋 Plan gate' / '❓ Needs input' marker preflight keys on must
+    # become an answered marker — the skill's "answering a gate REPLACES the block".
+    # Touches ONLY the marker token on its own line; the plan/question text below it
+    # (a useful record) and everything else must survive byte-identically. Refuses if
+    # there is no open gate, or if the swap would move any other content.
+    sed -e 's/📋 \*\*Plan gate\*\*/💬 **Answered (plan approved)**/g' \
+        -e 's/❓ \*\*Needs input\*\*/💬 **Answered**/g' "$orig" > "$tmp"
+    grep -qE '💬 \*\*Answered' "$tmp" || { echo "refused — no open '📋 Plan gate' / '❓ Needs input' marker to resolve" >&2; exit 1; }
+    bad=$(diff "$orig" "$tmp" | grep -E '^[<>]' | grep -vE '(Plan gate|Needs input|Answered)' || true)
+    if [ -n "$bad" ]; then
+      echo "refused — resolve-gate would touch more than the marker line:" >&2
+      echo "$bad" >&2; exit 1
+    fi
+    ;;
 
   --append)
     cat "$orig" > "$tmp"
