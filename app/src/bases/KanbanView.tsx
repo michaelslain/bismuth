@@ -24,8 +24,6 @@ import { nativeDropScale, claimNativeDrop } from "../nativeDropRouting";
 import { isTauri } from "../nativeMenu";
 import { declaredDefaults } from "../../../core/src/bases/properties";
 import { STATUS_COLOR } from "../ui/StatusDot";
-import { ContextMenu, type MenuItem } from "../ContextMenu";
-import { openContextMenu } from "../nativeMenu";
 import { pushToast } from "../Toast";
 import styles from "./BaseView.module.css";
 
@@ -62,8 +60,8 @@ export function KanbanView(props: {
   basePath?: string;
   viewIndex?: number;
   onChange: () => void;
-  /** Open the card's note in a tab (from the right-click menu's "Open"). Same plumbing as
-   *  MapView's marker-click open — omitted (no menu row) when the host doesn't wire it. */
+  /** Open the card's note in a tab. Same plumbing as MapView's marker-click open; unused by
+   *  KanbanView itself today (no host currently wires it in) — kept for prop-shape parity. */
   onOpen?: (path: string) => void;
 }) {
   const groupBy = () => props.result.view.groupBy;
@@ -607,28 +605,13 @@ export function KanbanView(props: {
     }
     return out;
   }
-  // ── Right-click card menu: Delete (trash + undo toast, mirrors FileTree) + optional Open. ──
-  const [cardMenu, setCardMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  // ── Delete (trash + undo toast, mirrors FileTree) ──
+  // Lives ONLY inside the card's edit modal (CardEditModal) — no separate right-click menu, so
+  // there's exactly one delete affordance per card.
   // Paths deleted this session but not yet confirmed gone by a refetch — hidden from every
   // column immediately (like FileTree's optimisticRemove) so the card vanishes without waiting
   // on the round-trip. Reverted on failure; a successful Undo also drops its entry.
   const [deletedPaths, setDeletedPaths] = createSignal<Set<string>>(new Set());
-
-  function buildCardMenuItems(row: Row): MenuItem[] {
-    const items: MenuItem[] = [];
-    if (editable()) {
-      items.push({ label: "Delete", icon: "Trash2", danger: true, onSelect: () => void deleteCard(row) });
-    }
-    return items;
-  }
-
-  function openCardMenu(e: MouseEvent, row: Row): void {
-    e.preventDefault();
-    const items = buildCardMenuItems(row);
-    if (items.length === 0) return;
-    e.stopPropagation();
-    openContextMenu(e.clientX, e.clientY, items, setCardMenu);
-  }
 
   async function deleteCard(row: Row): Promise<void> {
     if (!editable()) return;
@@ -877,7 +860,6 @@ export function KanbanView(props: {
   }
 
   return (
-    <>
     <Show
       when={groupBy()}
       fallback={
@@ -978,7 +960,6 @@ export function KanbanView(props: {
                                 data-kbcard=""
                                 data-path={path}
                                 onPointerDown={(e) => { if (!editing()) startCardDrag(e, path, group().key); }}
-                                onContextMenu={(e) => { if (!editing()) openCardMenu(e, r()); }}
                                 onDragEnter={(e) => onCardFileDragOver(e, path)}
                                 onDragOver={(e) => onCardFileDragOver(e, path)}
                                 onDragLeave={(e) => onCardFileDragLeave(e, path)}
@@ -995,6 +976,7 @@ export function KanbanView(props: {
                                     onEditingChange={setEditing}
                                     onRename={(t) => void renameCard(r(), t)}
                                     onSetMeta={(id, v) => void setMetaProperty(r(), id, v)}
+                                    onDelete={() => void deleteCard(r())}
                                     siblingValues={siblingValuesFor}
                                   />
                                 </div>
@@ -1066,9 +1048,5 @@ export function KanbanView(props: {
         </Show>
       </div>
     </Show>
-    <Show when={cardMenu()}>
-      {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setCardMenu(null)} />}
-    </Show>
-    </>
   );
 }
