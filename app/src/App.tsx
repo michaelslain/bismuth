@@ -51,6 +51,7 @@ import { withYouNode } from "./graph/youNode";
 import { agentGraphSig } from "./graph/agentGraphSig";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
+import { memorySlugFromNodeId, type MemoryCandidate } from "../../core/src/memoryRef";
 import { TERMINAL_PREFIX, GRAPH_TAB, INBOX_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider } from "./tabIds";
 import { tabRailVisible } from "./tabRailVisibility";
 import { daemonName, refreshDaemonIdentity } from "./daemonIdentity";
@@ -563,6 +564,17 @@ export default function App() {
 
   const tagCandidates = createMemo<string[]>(() =>
     graph().nodes.filter((n) => n.kind === "tag").map((n) => n.label.replace(/^#/, "")),
+  );
+
+  // The 3rd brain's notes, powering the `??slug` memory-reference picker (memoryRef.ts) in both the
+  // note editor and the chat composer. This is ALSO the feature's daemon gate, for free: memory is
+  // only a graph source while `settings.daemon.enabled` is on (server.ts only points at
+  // <vault>/.daemon/memory when it is), so with the daemon off there are no `memory` nodes → no
+  // candidates → the `??` popup never opens.
+  const memoryCandidates = createMemo<MemoryCandidate[]>(() =>
+    graph().nodes
+      .filter((n) => n.kind === "memory")
+      .map((n) => ({ label: n.label, slug: memorySlugFromNodeId(n.id) })),
   );
 
   // Append a brand-new tab showing `content` and make it active. The "new" branch of
@@ -2094,6 +2106,7 @@ export default function App() {
                 onOpen={openFile}
                 onNewTerminal={openTerminalInLeaf}
                 noteNames={noteCandidates}
+                memoryNames={memoryCandidates}
                 tagNames={tagCandidates}
                 terminalLabel={(content) => contentLabel(content, terminalContentIndex().get(content))}
                 // A ::graph pane renders just a `data-graph-host` placeholder; the single
@@ -2159,6 +2172,7 @@ export default function App() {
                       chatId={id.slice(CHAT_PREFIX.length)}
                       tabName={() => tabNameForContent(id)}
                       noteNames={noteCandidates}
+                      memoryNames={memoryCandidates}
                       tagNames={tagCandidates}
                     />
                   </Suspense>

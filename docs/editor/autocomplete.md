@@ -26,8 +26,9 @@ Sources are listed in the `override` array in the following order (first match w
 6. `taskSource` — on a `- [ ]` task line
 7. `templateTokenSource` — `{{token}}` in body or frontmatter
 8. `wikilinkSource` — `[[wikilink]]`
-9. `tagSource` — `#tag`
-10. `emojiSource` — `:emoji:`
+9. `memoryRefSource` — `??memory-ref` (only when the host supplies `getMemories`)
+10. `tagSource` — `#tag`
+11. `emojiSource` — `:emoji:`
 
 ---
 
@@ -46,6 +47,52 @@ Sources are listed in the `override` array in the following order (first match w
 **Example:** Typing `[[Proj` opens a popup listing all notes; picking "Project Alpha" inserts `[[Project Alpha]]` with the cursor after `]]`.
 
 **Note resolution:** `resolveNotePath` in `wikilink.ts` matches exact vault paths first, then basenames. `[[My Note]]` matches `reading/My Note.md` by basename. Ambiguous matches are undefined.
+
+---
+
+## Memory Reference Completion (`??slug`)
+
+**File:** `app/src/editor/autocomplete.ts` → `memoryRefSource`, grammar in `core/src/memoryRef.ts`
+
+A memory reference is to a **3rd-brain memory note** exactly what a `[[wikilink]]` is to a vault
+note: a plain reference. `??slug` is the **syntax, not just a trigger** — it persists verbatim in the
+saved markdown and is re-resolved every time the file is read.
+
+**Trigger:** `??` preceded by start-of-line or whitespace, followed by zero or more slug chars
+(regex `/(?:^|\s)\?\?([\w/-]*)$/`). Fires as soon as `??` is typed, like `[[`. The
+start-of-line/whitespace rule keeps prose punctuation (`really??`) literal.
+
+**Surfaces:** the note editor **and** the chat composer — both mount `markdownEditingExtensions`,
+so the one source lights up both. Not wired into table cells (no `getMemories` supplied there).
+
+**Behavior:**
+- `getMemories()` is read lazily per popup open; candidates come from the graph's `memory` nodes
+  (`App.tsx` → `memoryCandidates`, `mem:` prefix stripped via `memorySlugFromNodeId`).
+- Each option shows the memory note's basename as `label`; a subfoldered note also shows its
+  relative slug as `detail`.
+- `apply` inserts the bare slug after the already-typed `??`, so the text becomes `??slug`.
+- `validFor: /^[\w/-]*$/`.
+
+**Example:** Typing `??cron` lists `cron-run-preference`; picking it leaves `??cron-run-preference`
+in the document — and in the file on disk.
+
+**Resolution:** `resolveMemorySlug` matches the exact slug first, then the basename (mirroring
+`resolveNotePath`). A ref points at `.daemon/memory/<slug>.md` (`memoryRefPath`), a real vault path,
+so clicking one opens it like any note. Rendering: `??slug` becomes an
+`a.bismuth-wikilink.bismuth-memory-ref[data-href]` anchor (`app/src/bases/markdown.ts`) — it reuses
+the wikilink class so every existing `bismuth-open` click host navigates it; in-editor it is colored
+by `.cm-memory-ref` (violet — a link to the *third* brain) without hiding anything, because `??slug`
+is the persisted text.
+
+**Daemon gating:** memory only exists while `settings.daemon.enabled` is on — the server only builds
+`<vault>/.daemon/memory` into the graph then. With the daemon off there are no `memory` nodes → no
+candidates → the popup never opens. There is no separate gate to keep in sync.
+
+**SRS interaction:** a line that is exactly `??` is the multi-reversed flashcard separator
+(`core/src/srs/parser.ts`). A ref requires at least one slug char, so a bare `??` can never parse as
+one; and because CodeMirror binds Enter to `acceptCompletion`, `srsSeparatorEnterGuard` (Prec.highest,
+registered before `autocompletion()`) closes the popup and lets Enter through as a newline on such a
+line. Authoring a flashcard with `??`↵ is unaffected.
 
 ---
 

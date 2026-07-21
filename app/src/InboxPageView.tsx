@@ -17,6 +17,7 @@ import { TextButton } from "./ui/TextButton";
 import { relTimeISO } from "./relTime";
 import { inboxPages, refreshDaemonPages } from "./daemonInbox";
 import type { NoteCandidate } from "./editor/wikilink";
+import type { MemoryCandidate } from "../../core/src/memoryRef";
 import "./InboxPageView.css";
 
 // A page reading "working" for longer than this is presumed stuck (the daemon process itself
@@ -28,6 +29,7 @@ export function InboxPageView(props: {
   initialText?: string;
   onSaved: () => void;
   noteNames: () => NoteCandidate[];
+  memoryNames: () => MemoryCandidate[];
   tagNames: () => string[];
 }) {
   // The live page record (actions/status) comes from the shared poll (daemonInbox.ts), which
@@ -145,7 +147,7 @@ export function InboxPageView(props: {
         <Show
           when={visualMode()}
           fallback={
-            <Editor path={props.path} initialText={props.initialText} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
+            <Editor path={props.path} initialText={props.initialText} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
           }
         >
           <BlockEditor path={props.path} initialText={props.initialText} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />

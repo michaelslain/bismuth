@@ -8,6 +8,7 @@ import { renderMath, onMathReady } from "./katexLoader";
 import { latexTokenDecorations, mathSrcMark } from "./latexHighlight";
 import { mathField } from "./mathBlock";
 import { wikilinkVisibleRange } from "./wikilink";
+import { MEMORY_REF_RE } from "../../../core/src/memoryRef";
 import { findBareUrls } from "./urls";
 import { TaskCheckbox, charToStatus, type TaskStatus } from "./TaskCheckbox";
 import { reorderAroundLine } from "./taskFold";
@@ -62,6 +63,9 @@ const code = Decoration.mark({ class: "cm-inline-code" });
 const link = Decoration.mark({ class: "cm-link" });
 const wikilink = Decoration.mark({ class: "cm-wikilink" });
 const tag = Decoration.mark({ class: "cm-tag" });
+// `??slug` memory references — the 3rd-brain twin of `.cm-wikilink`. Carries BOTH classes so the
+// Editor.tsx mousedown navigation gate (`.cm-link, .cm-wikilink`) opens it with no extra branch.
+const memoryRef = Decoration.mark({ class: "cm-wikilink cm-memory-ref" });
 // Every whole-word "bismuth" in prose gets the iridescent bismuth-crystal gradient
 // (styled by `.cm-bismuth` in App.css, shared with the reading-mode `.bismuth-word`).
 const bismuthWord = Decoration.mark({ class: "cm-bismuth" });
@@ -131,6 +135,9 @@ const FM_KEY_RE = /^(\s*)([A-Za-z0-9_$.-]+)\s*:/;
 const WIKILINK_RE = /(?<!!)\[\[([^\]]+?)\]\]/g;
 const MD_LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g;
 const TAG_RE = /(^|\s)(#[\p{L}\d/_-]+)/gu;
+// Fresh instance: MEMORY_REF_RE is module-level + global, so scanning it directly here would share
+// `lastIndex` with the renderer's passes.
+const MEMORY_REF_LINE_RE = new RegExp(MEMORY_REF_RE.source, "g");
 // Fenced-code-fence detection (FENCE_RE) is imported from ./blockRegions, shared with
 // computeBlockRegions() (open + close) there and findCodeBlock() below.
 
@@ -394,6 +401,19 @@ function pushTags(deco: Range<Decoration>[], text: string, lineFrom: number) {
   for (const m of text.matchAll(TAG_RE)) {
     const tagStart = lineFrom + (m.index ?? 0) + m[1].length;
     deco.push(tag.range(tagStart, tagStart + m[2].length));
+  }
+}
+
+/** Style each `??slug` MEMORY REFERENCE on a line — the 3rd-brain twin of a `[[wikilink]]`. Unlike a
+ *  wikilink there is no bracket syntax to hide: `??slug` IS the persisted text (that is the whole
+ *  point), so like `pushTags` this only COLORS the token and hides nothing — the source reads the
+ *  same whether or not the caret is on it. Click handling lives in Editor.tsx. */
+function pushMemoryRefs(deco: Range<Decoration>[], text: string, lineFrom: number) {
+  for (const m of text.matchAll(MEMORY_REF_LINE_RE)) {
+    // m[1] is the required boundary char (start-of-line/whitespace/`(`) — the ref itself starts
+    // after it and spans `??` + the slug.
+    const start = lineFrom + (m.index ?? 0) + m[1].length;
+    deco.push(memoryRef.range(start, start + 2 + m[2].length));
   }
 }
 
@@ -799,6 +819,9 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // wikilinks [[target#heading|alias]] — reveal only the basename (or alias).
       pushWikilinks(deco, text, line.from, revealsRange);
 
+      // `??slug` memory references — the 3rd brain's `[[wikilink]]`.
+      pushMemoryRefs(deco, text, line.from);
+
       // body #hashtags — tint TEAL. Skipped on heading lines so heading "#"s
       // are never tinted (frontmatter/code/table lines already `continue` above).
       if (!hm) pushTags(deco, text, line.from);
@@ -1170,6 +1193,11 @@ export const livePreview = [
     ".cm-wikilink": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
     // Body #hashtags read teal (design §1: prose tags use --teal).
     ".cm-tag": { color: "var(--teal)", "font-family": MONO_FONT },
+    // `??slug` memory refs read VIOLET: they are links (they navigate, so they keep .cm-wikilink's
+    // pointer + soft underline) but they point at the THIRD brain, not a vault note — blue stays
+    // "vault link", teal stays "tag". Declared after .cm-wikilink so the hue override wins on
+    // source order (both are single-class selectors).
+    ".cm-memory-ref": { color: "var(--violet)", "border-bottom-color": "color-mix(in srgb, var(--violet) 14%, transparent)" },
     // Revealed heading `#`s: mono accent (matches the inline note-title hash),
     // weight 500, so the syntax never renders in the serif heading face.
     // Revealed markdown delimiters (heading `#`, `**`, `*`, `` ` ``, `>`, link/

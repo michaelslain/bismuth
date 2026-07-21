@@ -23,6 +23,7 @@ import { wrapSelection } from "./editor/wrapSelection";
 import { settings } from "./settings";
 import { api } from "./api";
 import type { NoteCandidate } from "./editor/wikilink";
+import type { MemoryCandidate } from "../../core/src/memoryRef";
 import type { FileCandidate } from "./editor/atMention";
 
 /** Imperative handle ChatView drives the composer through — mirrors the old `ta?.focus()` /
@@ -62,6 +63,7 @@ export interface ChatComposerProps {
   onInput: (value: string) => void;
   placeholder: () => string;
   getNotes: () => NoteCandidate[];
+  getMemories: () => MemoryCandidate[];
   getTags: () => string[];
   /** Row 79a: every vault file, powering the `@file` mention switcher, and a callback fired with the
    *  picked file's PATH so ChatView wires it into the chat context. Composer-only. */
@@ -136,6 +138,7 @@ export function ChatComposer(props: ChatComposerProps) {
           ...markdownEditingExtensions({
             completion: {
               getNotes: props.getNotes,
+              getMemories: props.getMemories,
               getTags: props.getTags,
               getSchema: () => ({}),
               getIconNames: () => [],
