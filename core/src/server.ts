@@ -51,6 +51,7 @@ import {
 import {
   listChatSessions,
   searchChatSessions,
+  parseChatScope,
   invalidateChatVisibility,
   chatAgentSnapshot,
 } from "./chat";
@@ -521,8 +522,13 @@ export function createServer(cfg: CoreConfig) {
 
     // The chat history picker. Both reads operate against the vault (cfg.vault) — the SDK's session
     // store unifies the user's terminal Claude Code sessions AND in-app chat sessions for that cwd.
-    "GET /chat/sessions": async (_, __) => {
-      return ok({ sessions: await listChatSessions(cfg.vault) });
+    //
+    // `scope` (user|daemon|all) is the picker's filter, resolved HERE rather than client-side: the
+    // scan pages the store until it has `limit` sessions of that scope, which a client filtering a
+    // fetched page cannot do (see core/src/chat.ts). Absent/unknown → "user", the default, so an old
+    // client or a hand-typed URL gets exactly the pre-filter behavior.
+    "GET /chat/sessions": async (_, url) => {
+      return ok({ sessions: await listChatSessions(cfg.vault, undefined, parseChatScope(url.searchParams.get("scope"))) });
     },
 
     // Replay one past session as ChatFrames (in order) so the client can rehydrate the transcript
@@ -537,10 +543,11 @@ export function createServer(cfg: CoreConfig) {
     // Search past sessions (terminal + in-app) by CONTENT — filters the SDK's own session data
     // (title + message text) and returns matches with a snippet (the SDK has no native session
     // search). Read-only despite POST (the body carries the query), so it lives in routes, not
-    // mutatingRoutes — no cache-invalidate / SSE. Empty query → no hits.
+    // mutatingRoutes — no cache-invalidate / SSE. Empty query → no hits. `scope` mirrors
+    // GET /chat/sessions so search always searches the list the picker is showing.
     "POST /chat/search": async (req, __) => {
-      const { query } = (await req.json()) as { query?: string };
-      return ok({ hits: await searchChatSessions(cfg.vault, query ?? "") });
+      const { query, scope } = (await req.json()) as { query?: string; scope?: string };
+      return ok({ hits: await searchChatSessions(cfg.vault, query ?? "", undefined, parseChatScope(scope)) });
     },
 
     "GET /events": (_, __) => {

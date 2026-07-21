@@ -15,11 +15,12 @@
 import { createSignal, onMount, onCleanup, For, Show, createEffect, createMemo } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import "./ChatView.css";
-import { apiBase, api, type ChatSessionInfo, type ChatSearchHit } from "./api";
+import { apiBase, api, type ChatSessionInfo, type ChatSearchHit, type ChatScope } from "./api";
 import { renderNoteBody } from "./bases/markdown";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { Select } from "./ui/Select";
 import { TextInput } from "./ui/TextInput";
+import { SegmentedToggle, type SegmentedOption } from "./ui/SegmentedToggle";
 import { TextButton } from "./ui/TextButton";
 import { IconButton } from "./ui/IconButton";
 import { EmptyState } from "./ui/EmptyState";
@@ -35,6 +36,7 @@ import { buildEditorContextText } from "./chatEditorContext";
 import { chatPersonaName } from "./daemonIdentity";
 import { chatTitle, publishChatTitle, resolveChatHeaderTitle } from "./chatTitles";
 import { rememberChatSession, recallChatSession, forgetChatSession } from "./chatSessionStore";
+import { chatOrigin, publishChatOrigin, chatOriginIcon } from "./chatOrigin";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
 import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, computeChromeToggle, computeChromeCommand } from "./chatSlashCommands";
 import { chatComputerUse, setChatComputerUse } from "./chatComputerUse";
@@ -505,6 +507,14 @@ export function ChatView(props: {
   const [historyOpen, setHistoryOpen] = createSignal(false);
   const [historyLoading, setHistoryLoading] = createSignal(false);
   const [sessions, setSessions] = createSignal<ChatSessionInfo[]>([]);
+  // The picker's user/daemon/all filter — the dedicated place to access daemon chats (card row B).
+  // ONE list with a switch, not a second surface: `user` (the default — today's behavior for anyone
+  // who never touches it) hides the vault daemon's cron sessions, `daemon` shows exactly those so
+  // dream/vault-review are readable, and `all` shows both with the daemon's marked by their glyph
+  // (card row A). Resolved server-side (api.chatSessions(scope)) — the scan pages the store until it
+  // has a full page OF THE SCOPE, which filtering this array afterwards could not do. Per-view
+  // state, reset to the default on each open (below) so History always opens on the user's own chats.
+  const [historyScope, setHistoryScope] = createSignal<ChatScope>("user");
   // Content search across past sessions (FEATURE #34): filters the SDK's OWN session data
   // server-side (title + message text — see core/src/chat.ts searchChatSessions), NOT a parallel
   // index. Empty query → the plain "resume" list; a non-empty query → matching sessions with a
@@ -518,6 +528,7 @@ export function ChatView(props: {
   createEffect(() => {
     const open = historyOpen();
     const q = historyQuery().trim();
+    const scope = historyScope(); // tracked: flipping the filter re-searches within the new scope
     clearTimeout(searchTimer);
     if (!open || !q) {
       setSearchHits([]);
@@ -528,7 +539,7 @@ export function ChatView(props: {
     searchTimer = setTimeout(() => {
       void (async () => {
         try {
-          setSearchHits(await api.chatSearch(q));
+          setSearchHits(await api.chatSearch(q, scope));
         } catch {
           setSearchHits([]);
         } finally {
@@ -804,6 +815,10 @@ export function ChatView(props: {
         // tab id — NOT activeChatId, which "New"/resume swaps internally). Reopening the tab
         // (Cmd+Shift+T) resumes THIS conversation from here (see onMount). Persisted across relaunch.
         rememberChatSession(props.chatId, frame.sessionId);
+        // Publish the tab's resolved origin (daemon vs user — decided server-side by membership in
+        // the vault's durable daemon set) so the tab strip / pane header glyph matches the
+        // conversation this tab is bound to, e.g. after resuming a cron chat from History.
+        publishChatOrigin(props.chatId, frame.origin);
         break;
       case "context":
         setContext({ percentage: frame.percentage, totalTokens: frame.totalTokens, maxTokens: frame.maxTokens });
@@ -1323,6 +1338,10 @@ export function ChatView(props: {
     // The conversation this tab was named after is gone — revert the tab label to the persona
     // fallback until the new/resumed session publishes its own title frame.
     publishChatTitle(props.chatId, "");
+    // Likewise the tab's origin: clear it back to "unknown" (which reads as user-started) so a tab
+    // that was showing a resumed DAEMON chat can't keep its Bot glyph over the fresh session, until
+    // the new/resumed session's own `session` frame republishes it.
+    publishChatOrigin(props.chatId, null);
   };
 
   /** Tear the current WS down (clean close — backend ends that session immediately) and reconnect
@@ -1365,20 +1384,36 @@ export function ChatView(props: {
     focusComposer();
   };
 
-  /** Open the history panel and (re)fetch the user's existing sessions for the vault. */
-  const openHistory = async () => {
-    const next = !historyOpen();
-    setHistoryOpen(next);
-    if (!next) return;
-    setHistoryQuery(""); // fresh search each open (the effect clears hits when the query empties)
+  /** (Re)fetch the sessions for the current scope. Shared by opening the panel and flipping the
+   *  filter — the scope goes to the SERVER (it pages the store until it has a full page of that
+   *  scope), so a flip is a refetch, never a client-side re-filter of what we already have. */
+  const loadSessions = async () => {
     setHistoryLoading(true);
     try {
-      setSessions(await api.chatSessions());
+      setSessions(await api.chatSessions(historyScope()));
     } catch {
       setSessions([]);
     } finally {
       setHistoryLoading(false);
     }
+  };
+
+  /** Flip the user/daemon/all filter and reload the list in that scope. */
+  const selectHistoryScope = (scope: ChatScope) => {
+    if (scope === historyScope()) return;
+    setHistoryScope(scope);
+    setSessions([]); // drop the old scope's rows so they can't flash under the new filter
+    void loadSessions();
+  };
+
+  /** Open the history panel and (re)fetch the existing sessions for the vault. */
+  const openHistory = async () => {
+    const next = !historyOpen();
+    setHistoryOpen(next);
+    if (!next) return;
+    setHistoryQuery(""); // fresh search each open (the effect clears hits when the query empties)
+    setHistoryScope("user"); // and the default scope: History always opens on the user's own chats
+    await loadSessions();
   };
 
   /** Resume a past session: tear the current socket + its in-flight turn down FIRST (a clean
@@ -1742,7 +1777,10 @@ export function ChatView(props: {
       onDrop={onHostDrop}
     >
       <ViewBar>
-        <Crumb icon="MessageSquare">{headerTitle()}</Crumb>
+        {/* Daemon-vs-user glyph (card A). The PANE header only shows when the tab is split, so this
+            crumb is the primary at-a-glance "which kind of chat am I reading" mark in the common
+            unsplit case. Mirrors the tab strip's icon — both read chatOrigin(props.chatId). */}
+        <Crumb icon={chatOriginIcon(chatOrigin(props.chatId))}>{headerTitle()}</Crumb>
         {/* Provider (card #90): which CLI drives this chat — Claude Code or opencode. Persisted
             per tab (like the model); switching starts a FRESH session on the other driver (a
             conversation can't hop providers), so it acts like "New chat" on the new provider. */}
@@ -2184,11 +2222,27 @@ export function ChatView(props: {
     const rows = createMemo<PopoverRow[]>(() =>
       sessions().map((s) => ({
         label: s.summary?.trim() || "Untitled session",
-        icon: "MessageSquare",
+        icon: chatOriginIcon(s.origin), // Bot for the daemon's cron chats, MessageSquare for the user's
         detail: relativeTime(s.lastModified),
       })),
     );
     const searching = () => historyQuery().trim().length > 0;
+    /** The filter's segments (card B: the dedicated place to access daemon chats). `user` first +
+     *  default so the control reads as a narrowing of the familiar list rather than a mode the user
+     *  must choose. */
+    const scopeOptions: SegmentedOption<ChatScope>[] = [
+      { id: "user", label: "You", title: "Chats you started" },
+      { id: "daemon", label: "Daemon", title: "Chats the daemon's crons started (dream, vault-review)" },
+      { id: "all", label: "All", title: "Both, with the daemon's marked" },
+    ];
+    /** Empty-list copy per scope — an empty daemon list is a real, explainable state (the daemon has
+     *  never run, or isn't enabled), not an error. */
+    const emptyText = () =>
+      historyScope() === "daemon"
+        ? "No daemon conversations yet."
+        : historyScope() === "all"
+          ? "No conversations yet."
+          : "No past conversations yet.";
     const onDocPointerDown = (e: PointerEvent) => {
       const t = e.target as Node;
       // Ignore clicks inside the panel OR on the History button (which toggles it itself).
@@ -2219,16 +2273,18 @@ export function ChatView(props: {
             autofocus
           />
         </div>
+        {/* The user/daemon/all filter (card B). Applies to BOTH the list and the search below it,
+            so search always searches the list you're looking at. */}
+        <div class="chat-history-scope">
+          <SegmentedToggle options={scopeOptions} value={historyScope()} onChange={selectHistoryScope} size="sm" />
+        </div>
         <Show
           when={searching()}
           fallback={
             <>
               <div class="chat-history-title">Resume a conversation</div>
               <Show when={!historyLoading()} fallback={<div class="chat-history-state">Loading…</div>}>
-                <Show
-                  when={sessions().length > 0}
-                  fallback={<div class="chat-history-state">No past conversations yet.</div>}
-                >
+                <Show when={sessions().length > 0} fallback={<div class="chat-history-state">{emptyText()}</div>}>
                   <div class="chat-history-scroll">
                     <PopoverList
                       class="chat-history-list"
@@ -2256,7 +2312,7 @@ export function ChatView(props: {
                     {(hit) => (
                       <button class="chat-history-hit" onClick={() => void resumeSession(hit.sessionId)}>
                         <div class="chat-history-hit-head">
-                          <Icon value="MessageSquare" size={13} class="chat-history-hit-icon" />
+                          <Icon value={chatOriginIcon(hit.origin)} size={13} class="chat-history-hit-icon" />
                           <span class="chat-history-hit-title">{hit.summary?.trim() || "Untitled session"}</span>
                           <span class="chat-history-hit-time">{relativeTime(hit.lastModified)}</span>
                         </div>
