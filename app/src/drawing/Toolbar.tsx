@@ -6,6 +6,7 @@ import { ZOOM_MIN, ZOOM_MAX } from "./DrawingPage";
 import { Button } from "../ui/Button";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Icon } from "../icons/Icon";
+import { ACCENT_RAMP, THEMES, DEFAULT_THEME } from "../themes";
 
 const TOOLS: { id: ToolState["tool"]; icon: string; title: string }[] = [
   { id: "pen", icon: "Pen", title: "Pen" },
@@ -62,10 +63,11 @@ export function Toolbar(props: {
   onImportImage?: () => void;
 }) {
   const t = props.tools;
-  // Fixed 7-swatch Bismuth ink palette. The first swatch ("fg") is the theme
-  // default ink, mapped to the Bismuth default ink color (#E7E8F2).
-  const colors = () => ["fg", "#22C6D6", "#5C7BEE", "#8B6CF0", "#43D49A", "#F2C53D", "#F0509B"];
-  const swatchColor = (c: string) => (c === "fg" ? "#E7E8F2" : c);
+  // Fixed 7-swatch Bismuth ink palette = the "fg" default ink + the one category swatch
+  // ramp (teal→rose), both sourced from the color source of truth (themes.ts) so this bar
+  // can't drift from the App.css / export / gcal copies.
+  const colors = () => ["fg", ...ACCENT_RAMP];
+  const swatchColor = (c: string) => (c === "fg" ? THEMES[DEFAULT_THEME].foreground : c);
 
   const toolOpts = TOOLS.map((x) => ({ id: x.id, label: <Icon value={x.icon} size={17} />, title: x.title }));
   // Colors render as filled rounded-square swatches drawn in the SAME 22×16 box as the

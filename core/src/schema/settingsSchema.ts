@@ -7,17 +7,13 @@
 import type { Schema, SchemaEntry, PropertyType } from "./types";
 import { COMMAND_IDS } from "../commands";
 import { KEYBINDING_CATALOG } from "../keybindings";
+import { THEME_NAMES as THEME_NAME_TUPLE } from "../theme/tokens";
 
 // Kept in lockstep with app/src/settings.ts EDITOR_FONTS.
 const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
-// Kept in lockstep with app/src/themes.ts THEME_NAMES (oxide-duotone is the default,
-// first) and app/scripts/logoMarks.ts MARK_NAMES.
-const THEME_NAMES = [
-  "oxide-duotone", "gunmetal-teal", "rose-gold",
-  "indigo-oxide", "forest-oxide", "full-sheen",
-  "oxide-duotone-light", "gunmetal-teal-light", "rose-gold-light",
-  "indigo-oxide-light", "forest-oxide-light", "full-sheen-light",
-];
+// The theme enum is sourced directly from the color source of truth
+// (core/src/theme/tokens.ts) — no hand-maintained copy to drift from THEMES.
+const THEME_NAMES = [...THEME_NAME_TUPLE];
 const ICON_NAMES = [
   "hopper-crystal", "node-b", "square-funnel", "nested-diamonds",
   "pinwheel", "node-crystal", "lattice", "diamond-bloom",
