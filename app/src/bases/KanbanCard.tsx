@@ -44,6 +44,9 @@ export function KanbanCard(props: {
   onEditingChange: (editing: boolean) => void;
   onRename: (newTitle: string) => void;
   onSetMeta: (id: string, value: unknown) => void;
+  /** Delete this card's note (trash + undo toast) — the SOLE delete affordance for a kanban card,
+   *  offered as a control inside the edit modal (no separate right-click menu). */
+  onDelete: () => void;
   /** Every OTHER row's raw value for a property id, across the whole board — feeds the
    *  modal editor's "select from known values" fallback. */
   siblingValues: (id: string) => unknown[];
@@ -111,6 +114,11 @@ export function KanbanCard(props: {
   function closeEdit(): void {
     setEdit(null);
     props.onEditingChange(false);
+  }
+  /** Delete from the modal, then close it (the card is gone — nothing left to edit). */
+  function commitDelete(): void {
+    closeEdit();
+    props.onDelete();
   }
   /** Rename from the modal's title field — optimistic mirror + persist (KanbanView.renameCard). */
   function commitRename(next: string): void {
@@ -239,6 +247,7 @@ export function KanbanCard(props: {
             siblingValues={props.siblingValues}
             onRename={commitRename}
             onSetMeta={(id, v, opts) => commitMeta(id, v, opts)}
+            onDelete={commitDelete}
             onClose={closeEdit}
           />
         )}

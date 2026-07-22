@@ -16,7 +16,8 @@ import { resolveProperty } from "../../../core/src/bases/query";
 import { propertyType } from "../../../core/src/bases/properties";
 import { Modal } from "../ui/Modal";
 import { Chip } from "../ui/Chip";
-import { Icon } from "../icons/Icon";
+import { IconButton } from "../ui/IconButton";
+import { TextButton } from "../ui/TextButton";
 import { MilkdownField } from "../ui/MilkdownField";
 import { PropertyValueEditor } from "./PropertyValueEditor";
 import { propertyEditKind, type PropertyEditKind } from "./propertyEdit";
@@ -45,6 +46,9 @@ export function CardEditModal(props: {
   siblingValues: (id: string) => unknown[];
   onRename: (newTitle: string) => void;
   onSetMeta: (id: string, value: unknown, opts?: { keepOpen?: boolean }) => void;
+  /** Delete this card's note — the SOLE delete affordance for a kanban card (no separate
+   *  right-click context-menu path; see KanbanView/KanbanCard). */
+  onDelete: () => void;
   onClose: () => void;
 }) {
   let titleRef: HTMLInputElement | undefined;
@@ -146,9 +150,7 @@ export function CardEditModal(props: {
     <Modal onClose={close} class={styles.panel}>
       <div class={styles.header}>
         <div class={styles.headTitle}>Edit card</div>
-        <button type="button" class={styles.close} aria-label="Close" onClick={close}>
-          <Icon value="X" size={16} />
-        </button>
+        <IconButton icon="X" label="Close" onClick={close} />
       </div>
 
       <div class={styles.body}>
@@ -183,7 +185,9 @@ export function CardEditModal(props: {
       </div>
 
       <div class={styles.footer}>
-        <button type="button" class={styles.doneBtn} onClick={close}>Done</button>
+        <TextButton danger onClick={props.onDelete}>DELETE</TextButton>
+        <div class={styles.footerSpacer} />
+        <TextButton variant="selected" onClick={close}>DONE</TextButton>
       </div>
     </Modal>
   );
