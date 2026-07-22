@@ -131,9 +131,9 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Response:** the property registry parsed from `.settings`'s `properties:` block (`getVaultSchema`), for note validation + autocomplete. Read fresh on demand — editing `.settings` (via `PUT /file`) refreshes this without a restart. Example: `{ due: { type: "date" }, rating: { type: "number" } }`.
 
 ### `GET /chat/sessions`
-- **Params:** none.
-- **Action:** `listChatSessions(cfg.vault)`. The SDK's session store unifies the user's **terminal Claude Code sessions AND in-app chat sessions** for the vault cwd — so this picker surfaces both.
-- **Response:** `{ sessions: [...] }` — the past Claude Code sessions for this vault, for the chat history picker (the client resumes one by sending `{type:"resume",sessionId}` over the `/chat` WS).
+- **Params:** `?scope=<user|daemon|all>` (optional; absent/unknown → `user`, via `parseChatScope`).
+- **Action:** `listChatSessions(cfg.vault, undefined, scope)`. The SDK's session store unifies the user's **terminal Claude Code sessions AND in-app chat sessions** for the vault cwd — so this picker surfaces both. `scope` filters out (or, for `daemon`, filters IN) the sessions the vault's daemon minted — the dedicated place to access daemon chats.
+- **Response:** `{ sessions: [...] }` — each row `{ sessionId, summary, lastModified, origin }` (`origin: "user" | "daemon"`), for the chat history picker (the client resumes one by sending `{type:"resume",sessionId}` over the `/chat` WS).
 - **Cache/SSE:** none.
 
 ### `GET /chat/session-messages`

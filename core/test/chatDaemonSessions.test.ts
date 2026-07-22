@@ -15,7 +15,14 @@ import { test, expect, describe, beforeAll, afterAll, beforeEach } from "bun:tes
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, utimesSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listChatSessions, searchChatSessions, excludeDaemonSessions } from "../src/chat";
+import {
+  listChatSessions,
+  searchChatSessions,
+  excludeDaemonSessions,
+  filterSessionsByScope,
+  resolveChatOrigin,
+  parseChatScope,
+} from "../src/chat";
 import { isDaemonPrompt, firstUserMessageText } from "../src/chatDaemonLegacy";
 
 const created: string[] = [];
@@ -352,6 +359,53 @@ describe("listChatSessions — the History/resume picker lists only the user's c
     const got = await listChatSessions(vault, 2);
     expect(labels(got.map((s) => s.sessionId))).toEqual(["user-0", "user-1"]);
   });
+
+  test("every row is tagged origin \"user\" in the default scope", async () => {
+    writeSession("user-1", "my chat", 0);
+    writeSession("daemon-1", "cron run", 1);
+    recordDaemonSessions("daemon-1");
+
+    const rows = await listChatSessions(vault);
+    expect(rows.map((s) => s.origin)).toEqual(["user"]);
+  });
+});
+
+// ACCEPTANCE (card B): a dedicated place/filter to access the daemon's own chats — the `scope`
+// param on the SAME listChatSessions the History picker calls, not a second endpoint.
+describe("listChatSessions(scope: \"daemon\") — the dedicated place to access daemon chats", () => {
+  test("scope daemon returns exactly the daemon's sessions, each tagged origin \"daemon\"", async () => {
+    writeSession("user-1", "my own chat", 0);
+    writeSession("daemon-1", "dream cron consolidating memory", 1);
+    writeSession("daemon-2", "vault-review cron", 2);
+    recordDaemonSessions("daemon-1", "daemon-2");
+
+    const rows = await listChatSessions(vault, 50, "daemon");
+    expect(labels(rows.map((s) => s.sessionId)).sort()).toEqual(["daemon-1", "daemon-2"]);
+    expect(rows.every((s) => s.origin === "daemon")).toBe(true);
+  });
+
+  test("scope daemon on a vault whose daemon never ran is an empty list, not the user's chats", async () => {
+    writeSession("user-1", "my own chat", 0);
+    expect(await listChatSessions(vault, 50, "daemon")).toEqual([]);
+  });
+
+  test("scope all returns both, each correctly tagged — the mixed list the icon distinguishes", async () => {
+    writeSession("user-1", "my own chat", 0);
+    writeSession("daemon-1", "dream cron consolidating memory", 1);
+    recordDaemonSessions("daemon-1");
+
+    const rows = await listChatSessions(vault, 50, "all");
+    const origins = new Map(labels(rows.map((s) => s.sessionId)).map((label, i) => [label, rows[i]!.origin]));
+    expect(origins.get("user-1")).toBe("user");
+    expect(origins.get("daemon-1")).toBe("daemon");
+  });
+
+  test("an invalid scope falls back to the safe default (user) rather than leaking daemon chats", () => {
+    expect(parseChatScope("bogus")).toBe("user");
+    expect(parseChatScope(undefined)).toBe("user");
+    expect(parseChatScope("daemon")).toBe("daemon");
+    expect(parseChatScope("all")).toBe("all");
+  });
 });
 
 describe("searchChatSessions — chat content search never surfaces a daemon session", () => {
@@ -376,6 +430,22 @@ describe("searchChatSessions — chat content search never surfaces a daemon ses
     writeSession("user-1", "the vault refactor", 0);
     const hits = await searchChatSessions(vault, "vault refactor");
     expect(labels(hits.map((h) => h.sessionId))).toEqual(["user-1"]);
+  });
+
+  test("scope daemon/all reach the daemon's transcripts that the default scope skips", async () => {
+    writeSession("user-1", "unrelated chat", 0);
+    writeSession("daemon-1", "dream consolidation pass over the memory graph", 1);
+    recordDaemonSessions("daemon-1");
+
+    // Default scope ("user") never finds it — same as the describe block above.
+    expect(await searchChatSessions(vault, "dream consolidation")).toEqual([]);
+
+    const viaDaemon = await searchChatSessions(vault, "dream consolidation", 100, "daemon");
+    expect(labels(viaDaemon.map((h) => h.sessionId))).toEqual(["daemon-1"]);
+    expect(viaDaemon[0]!.origin).toBe("daemon");
+
+    const viaAll = await searchChatSessions(vault, "dream consolidation", 100, "all");
+    expect(labels(viaAll.map((h) => h.sessionId))).toEqual(["daemon-1"]);
   });
 });
 
@@ -517,6 +587,48 @@ describe("excludeDaemonSessions (the pure membership filter)", () => {
   test("does not mutate its input", () => {
     const input = [{ sessionId: "a" }, { sessionId: "b" }];
     excludeDaemonSessions(input, new Set(["a"]));
+    expect(input).toEqual([{ sessionId: "a" }, { sessionId: "b" }]);
+  });
+});
+
+describe("resolveChatOrigin (the pure origin classifier)", () => {
+  test("a session id in the daemon's set is \"daemon\"", () => {
+    expect(resolveChatOrigin("a", new Set(["a", "b"]))).toBe("daemon");
+  });
+
+  test("a session id absent from the set is \"user\"", () => {
+    expect(resolveChatOrigin("z", new Set(["a", "b"]))).toBe("user");
+  });
+
+  test("an empty set (no daemon / never run / unreadable) makes everything the user's", () => {
+    expect(resolveChatOrigin("anything", new Set())).toBe("user");
+  });
+});
+
+describe("filterSessionsByScope (the pure scope filter powering the History picker's filter)", () => {
+  const sessions = [{ sessionId: "a" }, { sessionId: "b" }, { sessionId: "c" }];
+  const daemonIds = new Set(["b"]);
+
+  test("\"user\" keeps everything but the daemon's, exactly like excludeDaemonSessions", () => {
+    expect(filterSessionsByScope(sessions, daemonIds, "user")).toEqual([{ sessionId: "a" }, { sessionId: "c" }]);
+  });
+
+  test("\"daemon\" keeps exactly the daemon's", () => {
+    expect(filterSessionsByScope(sessions, daemonIds, "daemon")).toEqual([{ sessionId: "b" }]);
+  });
+
+  test("\"all\" keeps everything, unfiltered", () => {
+    expect(filterSessionsByScope(sessions, daemonIds, "all")).toEqual(sessions);
+  });
+
+  test("an empty daemon set: \"user\" keeps everything, \"daemon\" keeps nothing (never invert the safety direction)", () => {
+    expect(filterSessionsByScope(sessions, new Set(), "user")).toEqual(sessions);
+    expect(filterSessionsByScope(sessions, new Set(), "daemon")).toEqual([]);
+  });
+
+  test("does not mutate its input", () => {
+    const input = [{ sessionId: "a" }, { sessionId: "b" }];
+    filterSessionsByScope(input, daemonIds, "all");
     expect(input).toEqual([{ sessionId: "a" }, { sessionId: "b" }]);
   });
 });

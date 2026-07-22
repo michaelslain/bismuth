@@ -46,6 +46,16 @@ export function setChatLabelProvider(fn: (content: string) => string | null): vo
   chatLabelProvider = fn;
 }
 
+// Chat tabs also get an injected ICON provider (same seam/reasoning as the label provider above):
+// App wires it to the tab's resolved daemon-vs-user origin (app/src/chatOrigin.ts), so the tab bar +
+// pane header show a distinct glyph for a chat bound to a DAEMON session (a cron chat opened from
+// History's daemon scope) vs one the user started. Falls back to the plain chat icon when unset/null
+// (a brand-new tab, or before App has wired it).
+let chatIconProvider: ((content: string) => string | null) | null = null;
+export function setChatIconProvider(fn: (content: string) => string | null): void {
+  chatIconProvider = fn;
+}
+
 // Bare note name from a vault path ("a/b/c.md" -> "c"). Config buffers (.yaml/.yml) and
 // app docs (.draw/.sheet) drop their extension too, so a tab reads as a name, not a file.
 function noteName(path: string): string {
@@ -74,7 +84,7 @@ export function contentIcon(content: string): string | undefined {
   if (content === GRAPH_TAB) return "Share2";
   if (content === INBOX_TAB) return "Inbox";
   if (content.startsWith(EXPORT_PREFIX)) return "Download";
-  if (content.startsWith(CHAT_PREFIX)) return "MessageSquare";
+  if (content.startsWith(CHAT_PREFIX)) return chatIconProvider?.(content) ?? "MessageSquare";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";
   if (content.startsWith(ANNOTATE_PREFIX)) return "PenTool"; // markup surface
   if (isSettingsFile(content)) return "Settings";

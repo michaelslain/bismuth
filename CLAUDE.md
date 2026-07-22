@@ -202,7 +202,7 @@ app/src/
   App.tsx panes.ts PaneTree.tsx PaneContent.tsx tabIds.ts   # root, pure pane-tree model, routing
   Editor.tsx editor/   # CodeMirror wrapper + extensions (livePreview, autocomplete, foldBlocks, queryBlock, wikilink, tag, markdownFormat, settingsComplete…)
   BlockEditor.tsx blocks/   # Milkdown WYSIWYG surface (blockModel, milkdownEditor, inlineNodes, FormatBar); closedSession.ts/navType.ts (app-wide tab-restore)
-  ChatView.tsx ChatComposer.tsx chat*.ts   # visual Claude chat (NOT in blocks/): ChatView + ChatComposer + ~12 pure unit-tested modules — chatContext/chatEditorContext (editor-tab context), chatHistory, chatModelResolution, chatEffort, chatPermissionMode, chatSlashCommands, chatQueueRestore, chatSessionStore, chatTitles, chatColors, chatComposerKeys
+  ChatView.tsx ChatComposer.tsx chat*.ts   # visual Claude chat (NOT in blocks/): ChatView + ChatComposer + ~13 pure unit-tested modules — chatContext/chatEditorContext (editor-tab context), chatHistory, chatModelResolution, chatEffort, chatPermissionMode, chatSlashCommands, chatQueueRestore, chatSessionStore, chatTitles, chatOrigin (daemon-vs-user icon + tab-origin store), chatColors, chatComposerKeys
   mobile/   # iPad/iOS boot: bootMobile.ts (swaps FileAccess+Transport before App import), inProcessTransport.ts (dispatch→Response, optimistic read-compare-write), tauriFileAccess.ts (tauri-plugin-fs IO) — see Mobile / iPad
   FileTree.tsx fileTreeOps.ts ContextMenu.tsx nativeMenu.ts FolderPrompt.tsx EmptyPane.tsx
   GraphView.tsx GraphSearch.tsx ClusterLegend.tsx graph/   # graph shell + Canvas2D CanvasGraphRenderer, AgentsGraph overlay, GraphAtmosphere (shared glow/vignette), youNode, agentGraphSig, collide, labelSelection

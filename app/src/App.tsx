@@ -52,10 +52,11 @@ import { agentGraphSig } from "./graph/agentGraphSig";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { memorySlugFromNodeId, type MemoryCandidate } from "../../core/src/memoryRef";
-import { TERMINAL_PREFIX, GRAPH_TAB, INBOX_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider } from "./tabIds";
+import { TERMINAL_PREFIX, GRAPH_TAB, INBOX_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider, setChatIconProvider } from "./tabIds";
 import { tabRailVisible } from "./tabRailVisibility";
 import { daemonName, refreshDaemonIdentity } from "./daemonIdentity";
 import { chatTitle } from "./chatTitles";
+import { chatOrigin, chatOriginIcon } from "./chatOrigin";
 import { isExportable } from "./export/formats";
 import { publishEditorTabs } from "./chatContext";
 import { connectUiControl, type UiControlHandle, type UiTabsSnapshot } from "./uiControlClient";
@@ -133,6 +134,12 @@ export default function App() {
   // still wins — Leaf.name overrides the auto label upstream of contentLabel. Also (re)fetch
   // the daemon identity whenever the flag flips on.
   setChatLabelProvider((content) => chatTitle(content.slice(CHAT_PREFIX.length)) ?? (settings.daemon.enabled ? daemonName() : null));
+  // Chat tab ICON: a distinct glyph for a tab bound to a DAEMON session (a cron chat opened from
+  // History's daemon scope) vs a chat the user started. Same seam as the label provider above —
+  // tabIds stays framework-free, and this closure reads the reactive origin store (published by
+  // ChatView from the backend's `session` frame), so the tab bar + pane header icon stay live as a
+  // tab's bound session changes.
+  setChatIconProvider((content) => chatOriginIcon(chatOrigin(content.slice(CHAT_PREFIX.length))));
   createEffect(() => {
     if (settings.daemon.enabled) void refreshDaemonIdentity();
   });

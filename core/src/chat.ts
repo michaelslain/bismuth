@@ -97,8 +97,12 @@ export type ChatFrame =
   /** The SDK session_id this chat is bound to, emitted the moment it's first learned (and again if
    *  it ever changes — e.g. after a resume). The client persists it keyed by the chat TAB id so a
    *  reopened tab (Cmd+Shift+T) can RESUME the same conversation instead of spawning a blank one —
-   *  the session_id is the durable, on-disk identity of the conversation (app/src/chatSessionStore.ts). */
-  | { type: "session"; sessionId: string }
+   *  the session_id is the durable, on-disk identity of the conversation (app/src/chatSessionStore.ts).
+   *  `origin` says whether that conversation is one the vault's DAEMON minted (a cron chat opened
+   *  from the History picker's daemon scope) or the user's own, so the tab strip / pane header can
+   *  show the matching glyph (see resolveChatOrigin below). Re-read per emit — a resume can bind
+   *  this tab to a different conversation entirely. */
+  | { type: "session"; sessionId: string; origin: ChatOrigin }
   /** Context-window usage after a completed turn (Query.getContextUsage) — the header pill. */
   | { type: "context"; percentage: number; totalTokens: number; maxTokens: number }
   /** Provider credential state (opencode-only today — `opencode auth list`, re-fetched per session
@@ -1132,14 +1136,56 @@ async function respawnSession(session: ChatSession): Promise<void> {
 
 // --- Session history (the resume picker) ----------------------------------------------------
 
-// The chat page is the USER's surface: it lists only chats the user started. The vault's daemon
-// mints its own sessions into the SAME store (its cwd is the vault root), one per cron fire — so
-// without a filter the user's History fills with "chats" they never opened, and every daemon
-// relaunch adds more. Those sessions still exist on disk (crons need them, and a future surface
-// will read them via readDaemonSessionIds); they are simply not the chat page's business.
+// The chat page defaults to the USER's surface: it lists the chats the user started. The vault's
+// daemon mints its own sessions into the SAME store (its cwd is the vault root), one per cron fire
+// — so unfiltered, the user's History fills with "chats" they never opened, and every daemon
+// relaunch adds more. Those sessions always keep EXISTING on disk (the crons need them); the
+// question is only which ones this picker shows.
+//
+// Which ones is the SCOPE, a user-facing filter on the picker (user | daemon | all): `user` is the
+// default and the pre-daemon meaning of History, `daemon` makes the cron chats (dream,
+// vault-review) READABLE — the dedicated place to access them (card row) — and `all` shows both
+// together, where the ORIGIN below is what tells them apart visually (the icon, same card row).
+//
+// Scope is resolved SERVER-SIDE, not by filtering a fetched page client-side, because the pager
+// below walks the store until it has `limit` sessions OF THAT SCOPE. The daemon mints ~50/day, so
+// any fixed page is easily all-daemon (or, inverted, all-user): a client-side filter would hand
+// back a near-empty list while the matching sessions sat just past the cutoff.
+
+/** Who minted a chat session. The membership set (`<vault>/.daemon/session-ids` ∪ its legacy
+ *  backfill, see daemon.ts readDaemonSessionIds) is the ONE signal behind this — never a content
+ *  heuristic, and never the `session-id` POINTER (which names only the newest daemon run and so
+ *  mislabels every earlier one). */
+export type ChatOrigin = "user" | "daemon";
+
+/** Which sessions the History picker is asking for. */
+export type ChatScope = "user" | "daemon" | "all";
+
+/** Every valid scope, and the one a caller that says nothing gets. `user` is the default so that
+ *  someone who never touches the filter sees exactly today's behavior. */
+export const CHAT_SCOPES = ["user", "daemon", "all"] as const;
+export const DEFAULT_CHAT_SCOPE: ChatScope = "user";
+
+/** Pure: coerce an untrusted scope (a query param / request body field) to a real one. Anything
+ *  absent, misspelled or hostile falls back to the default rather than erroring — a bad scope must
+ *  never be able to turn History into something OTHER than the user's own chats. */
+export function parseChatScope(raw: unknown): ChatScope {
+  return typeof raw === "string" && (CHAT_SCOPES as readonly string[]).includes(raw)
+    ? (raw as ChatScope)
+    : DEFAULT_CHAT_SCOPE;
+}
+
+/** Pure: who minted this session? Membership in the daemon's durable set, and nothing else.
+ *  An id absent from the set is the user's — so an empty set (no daemon, a daemon that never ran,
+ *  or an unreadable file) makes EVERYTHING the user's, which is the pre-daemon behavior. */
+export function resolveChatOrigin(sessionId: string, daemonIds: ReadonlySet<string>): ChatOrigin {
+  return daemonIds.has(sessionId) ? "daemon" : "user";
+}
 
 /** Pure: drop the sessions the vault's daemon minted. Empty `daemonIds` (no daemon, or a daemon
- *  that has never run) → everything is the user's, which is the pre-daemon behavior. */
+ *  that has never run) → everything is the user's, which is the pre-daemon behavior. Kept as the
+ *  simple two-way filter (the `user`-scope case of filterSessionsByScope below); still exported and
+ *  tested standalone since it is the historical, minimal membership test. */
 export function excludeDaemonSessions<T extends { sessionId: string }>(
   sessions: readonly T[],
   daemonIds: ReadonlySet<string>,
@@ -1148,35 +1194,61 @@ export function excludeDaemonSessions<T extends { sessionId: string }>(
   return sessions.filter((s) => !daemonIds.has(s.sessionId));
 }
 
+/**
+ * Pure: keep the sessions `scope` asks for.
+ *
+ * Note the asymmetry when `daemonIds` is empty (no daemon / never run / unreadable set — every
+ * failure mode of the read degrades to this): `user` keeps everything and `daemon` keeps nothing.
+ * That direction is deliberate and load-bearing. "Nothing is known to be the daemon's" must never
+ * HIDE a chat the user started; the cost is an empty daemon tab on a vault whose daemon has never
+ * run, which is the truth anyway.
+ */
+export function filterSessionsByScope<T extends { sessionId: string }>(
+  sessions: readonly T[],
+  daemonIds: ReadonlySet<string>,
+  scope: ChatScope,
+): T[] {
+  if (scope === "all") return [...sessions];
+  if (scope === "daemon") return sessions.filter((s) => daemonIds.has(s.sessionId));
+  return excludeDaemonSessions(sessions, daemonIds);
+}
+
 /** How many sessions one page of the store scan pulls. */
 const SESSION_PAGE = 100;
 /** Hard ceiling on sessions scanned in one call, so a store dominated by daemon sessions can't
  *  turn one History open into an unbounded read. */
 const SESSION_SCAN_CAP = 2000;
 
+/** A store session plus the provenance the picker needs to filter and to pick its icon. */
+type ScopedSession = Awaited<ReturnType<typeof listSessions>>[number] & { origin: ChatOrigin };
+
 /**
- * Collect up to `want` of the USER's newest sessions for `cwd`, skipping the daemon's.
+ * Collect up to `want` of the newest sessions for `cwd` that belong to `scope`, each tagged with
+ * its origin.
  *
  * Paginates rather than filtering one fixed page: the daemon mints a session per cron fire (~50/day
  * for the seeded crons), so the newest N sessions can be ALL daemon — filtering a single page would
  * hand the user an empty History while their chats sat just past the cutoff. Walking pages until
- * `want` USER sessions are found keeps "the newest 50 chats" meaning the same thing it did before
- * the daemon existed, bounded by SESSION_SCAN_CAP.
+ * `want` sessions OF THE SCOPE are found keeps "the newest 50 chats" meaning the same thing it did
+ * before the daemon existed, and makes the `daemon` scope reachable at all on a store where the
+ * user's own chats happen to be newest. Bounded by SESSION_SCAN_CAP either way.
  */
-async function listUserSessions(cwd: string, want: number): Promise<Awaited<ReturnType<typeof listSessions>>> {
+async function listScopedSessions(cwd: string, want: number, scope: ChatScope): Promise<ScopedSession[]> {
   // Recover provenance for daemon sessions minted before the durable set existed — once per vault,
   // ever (see chatDaemonLegacy.ts). Without this the set is EMPTY on exactly the machines that have
   // the problem, and every pre-existing daemon chat stays listed; with it, the first History open
-  // pays one bounded scan (~1.3s for ~1000 transcripts) and the picker is correct from then on.
+  // pays one bounded scan (~1.3s for ~1000 transcripts) and the picker is correct from then on. Every
+  // scope needs it: it is what makes those sessions filterable AND, for `daemon`/`all`, findable and
+  // correctly iconed.
   await backfillLegacyDaemonSessions(cwd);
   const daemonIds = readDaemonSessionIds(cwd);
-  const out: Awaited<ReturnType<typeof listSessions>> = [];
+  const out: ScopedSession[] = [];
   for (let offset = 0; out.length < want && offset < SESSION_SCAN_CAP; ) {
     const page = await listSessions({ dir: cwd, limit: SESSION_PAGE, offset });
     if (page.length === 0) break;
     offset += page.length;
-    for (const s of excludeDaemonSessions(page, daemonIds)) {
-      out.push(s);
+    for (const s of filterSessionsByScope(page, daemonIds, scope)) {
+      out.push({ ...s, origin: resolveChatOrigin(s.sessionId, daemonIds) });
       if (out.length >= want) break;
     }
     if (page.length < SESSION_PAGE) break; // short page = store exhausted
@@ -1185,21 +1257,26 @@ async function listUserSessions(cwd: string, want: number): Promise<Awaited<Retu
 }
 
 /**
- * List the user's existing Claude Code sessions for a cwd — BOTH their terminal Claude Code sessions
- * and in-app chat sessions for that dir (one unified store, newest-first). Powers the chat's history
- * picker. Sessions minted by the vault's daemon are excluded (see above). Tolerant: returns [] if
- * the SDK can't read the store.
+ * List existing Claude Code sessions for a cwd — BOTH terminal Claude Code sessions and in-app chat
+ * sessions for that dir (one unified store, newest-first). Powers the chat's history picker.
+ *
+ * `scope` picks which (see ChatScope): the default `user` excludes the sessions the vault's daemon
+ * minted, `daemon` returns exactly those (the dedicated place to access daemon chats), `all` returns
+ * both. Each row carries its `origin` so a mixed list can mark the daemon's visibly. Tolerant:
+ * returns [] if the SDK can't read the store.
  */
 export async function listChatSessions(
   cwd: string,
   limit = 50,
-): Promise<{ sessionId: string; summary: string; lastModified: number }[]> {
+  scope: ChatScope = DEFAULT_CHAT_SCOPE,
+): Promise<{ sessionId: string; summary: string; lastModified: number; origin: ChatOrigin }[]> {
   try {
-    const sessions = await listUserSessions(cwd, limit);
+    const sessions = await listScopedSessions(cwd, limit, scope);
     return sessions.map((s) => ({
       sessionId: s.sessionId,
       summary: s.summary,
       lastModified: s.lastModified,
+      origin: s.origin,
     }));
   } catch {
     return [];
@@ -1262,6 +1339,8 @@ export interface ChatSearchHit {
   snippet: string;
   /** True when the match was in the session's title/summary rather than its message body. */
   inTitle: boolean;
+  /** Who minted the session — so a hit row shows the same daemon-vs-user glyph the list rows do. */
+  origin: ChatOrigin;
 }
 
 /** The searchable projection of one session: its title + every human-readable message text. */
@@ -1270,6 +1349,7 @@ export interface ChatSearchDoc {
   summary: string;
   lastModified: number;
   texts: string[];
+  origin: ChatOrigin;
 }
 
 /** Split a query into lowercased, non-empty whitespace tokens. */
@@ -1291,7 +1371,7 @@ export function matchChatSession(doc: ChatSearchDoc, query: string): ChatSearchH
   // never straddle the "\n" join boundary — a token that passes therefore lives within one field.
   const combined = [doc.summary, ...doc.texts].join("\n").toLowerCase();
   if (!tokens.every((t) => combined.includes(t))) return null;
-  const meta = { sessionId: doc.sessionId, summary: doc.summary, lastModified: doc.lastModified };
+  const meta = { sessionId: doc.sessionId, summary: doc.summary, lastModified: doc.lastModified, origin: doc.origin };
   const first = tokens[0]!;
   const titleSnip = chatSnippet(doc.summary, first);
   if (titleSnip) return { ...meta, snippet: titleSnip, inTitle: true };
@@ -1309,7 +1389,7 @@ export function matchChatSession(doc: ChatSearchDoc, query: string): ChatSearchH
  *  by stripInjectedBlocks, so search matches what the human actually wrote/read). Tolerant — an
  *  unreadable session yields an empty text list (title-only search still works). */
 async function buildSearchDoc(
-  session: { sessionId: string; summary: string; lastModified: number },
+  session: { sessionId: string; summary: string; lastModified: number; origin: ChatOrigin },
   cwd: string,
 ): Promise<ChatSearchDoc> {
   let messages: SessionMessage[] = [];
@@ -1324,27 +1404,40 @@ async function buildSearchDoc(
     const text = stripInjectedBlocks(extractText((msg as { message?: TranscriptEntry["message"] }).message));
     if (text) texts.push(text);
   }
-  return { sessionId: session.sessionId, summary: session.summary, lastModified: session.lastModified, texts };
+  return {
+    sessionId: session.sessionId,
+    summary: session.summary,
+    lastModified: session.lastModified,
+    texts,
+    origin: session.origin,
+  };
 }
 
 /**
- * Search the user's past Claude Code sessions (terminal + in-app, one unified store) for `cwd` by
- * CONTENT. The SDK has no native session search, so this filters the SDK's OWN session data
- * (listSessions + getSessionMessages) — never a parallel index. Each session's title + message text
- * is matched (see matchChatSession); hits come back newest-first with a snippet of where they
- * matched. Tolerant: returns [] if the store can't be read. `limit` caps how many (newest) sessions
- * are scanned so a huge history can't make one search read unbounded transcripts.
+ * Search past Claude Code sessions (terminal + in-app, one unified store) for `cwd` by CONTENT. The
+ * SDK has no native session search, so this filters the SDK's OWN session data (listSessions +
+ * getSessionMessages) — never a parallel index. Each session's title + message text is matched (see
+ * matchChatSession); hits come back newest-first with a snippet of where they matched. Tolerant:
+ * returns [] if the store can't be read. `limit` caps how many (newest) sessions are scanned so a
+ * huge history can't make one search read unbounded transcripts.
  *
- * Scans the user's OWN sessions only — the vault daemon's cron sessions are skipped, so searching
- * the chat page can never surface one, and their transcripts are never read (the scan budget goes
- * entirely to the user's chats).
+ * Scoped exactly like listChatSessions and by the SAME picker control, so search always searches the
+ * list you're looking at: the default `user` scans the user's own sessions only (a daemon cron chat
+ * can never surface, and its transcript is never read — the whole scan budget goes to the user's
+ * chats), while `daemon`/`all` reach the daemon's so its crons are searchable once you ask for them.
+ * Each hit carries its origin for the row's glyph.
  */
-export async function searchChatSessions(cwd: string, query: string, limit = 100): Promise<ChatSearchHit[]> {
+export async function searchChatSessions(
+  cwd: string,
+  query: string,
+  limit = 100,
+  scope: ChatScope = DEFAULT_CHAT_SCOPE,
+): Promise<ChatSearchHit[]> {
   const q = query.trim();
   if (!q) return [];
-  let sessionList: Awaited<ReturnType<typeof listSessions>>;
+  let sessionList: ScopedSession[];
   try {
-    sessionList = await listUserSessions(cwd, limit);
+    sessionList = await listScopedSessions(cwd, limit, scope);
   } catch {
     return [];
   }
@@ -1352,7 +1445,10 @@ export async function searchChatSessions(cwd: string, query: string, limit = 100
   // Read each session's transcript on demand and filter — the SDK's own data, no index.
   await Promise.all(
     sessionList.map(async (s) => {
-      const doc = await buildSearchDoc({ sessionId: s.sessionId, summary: s.summary, lastModified: s.lastModified }, cwd);
+      const doc = await buildSearchDoc(
+        { sessionId: s.sessionId, summary: s.summary, lastModified: s.lastModified, origin: s.origin },
+        cwd,
+      );
       const hit = matchChatSession(doc, q);
       if (hit) hits.push(hit);
     }),
@@ -1550,7 +1646,14 @@ async function drain(session: ChatSession): Promise<void> {
         // the chat TAB (chatSessionStore.ts) — reopening the tab then resumes THIS conversation.
         if (anyMsg.session_id !== sentSessionId) {
           sentSessionId = anyMsg.session_id;
-          emit(session, { type: "session", sessionId: anyMsg.session_id });
+          // Tag it daemon-vs-user off the durable membership set (session.cwd IS the vault root, the
+          // same dir the daemon writes its set under) so the tab's icon matches the conversation it
+          // is actually bound to — e.g. after resuming a cron chat from History's daemon scope.
+          emit(session, {
+            type: "session",
+            sessionId: anyMsg.session_id,
+            origin: resolveChatOrigin(anyMsg.session_id, readDaemonSessionIds(session.cwd)),
+          });
         }
       }
 

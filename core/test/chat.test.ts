@@ -729,6 +729,7 @@ describe("matchChatSession (content-search filter)", () => {
     summary: "Planning the auth refactor",
     lastModified: 1000,
     texts: ["We should move the login flow to OAuth", "Then wire the token refresh"],
+    origin: "user",
     ...over,
   });
 

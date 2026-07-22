@@ -42,8 +42,8 @@ import type { GcalStatus } from "../../core/src/gcal";
 import type { SyncResult } from "../../core/src/gcal/sync";
 import { serializeDoc, type DrawingDoc } from "../../core/src/drawing/model";
 import { serializeInkDoc, inkPathFor, type InkDoc } from "../../core/src/drawing/ink";
-import type { ChatFrame, ChatSearchHit } from "../../core/src/chat";
-export type { ChatSearchHit };
+import type { ChatFrame, ChatSearchHit, ChatOrigin, ChatScope } from "../../core/src/chat";
+export type { ChatSearchHit, ChatOrigin, ChatScope };
 
 /** One row in the chat history picker — a past Claude Code session (terminal OR in-app) for the
  *  vault. Mirrors the `GET /chat/sessions` shape; newest first (the SDK store sorts it). */
@@ -51,6 +51,9 @@ export interface ChatSessionInfo {
   sessionId: string;
   summary: string;
   lastModified: number; // ms epoch
+  /** Who minted it — the vault's daemon (a cron chat) or the user (see core/src/chat.ts
+   *  resolveChatOrigin). Lets the History picker mark the daemon's rows visibly. */
+  origin: ChatOrigin;
 }
 
 // --- Transport seam -------------------------------------------------------
@@ -390,15 +393,23 @@ export const api = {
   // unifies the user's terminal Claude Code sessions AND in-app chat sessions). `chatSessions` lists
   // them (newest first); `chatSessionMessages` replays one as ChatFrames (in order) so the client can
   // rehydrate the transcript before resuming it over the WS.
-  chatSessions: () => getJson<{ sessions: ChatSessionInfo[] }>("/chat/sessions").then((r) => r.sessions),
+  // `scope` (user|daemon|all) is the picker's filter — the dedicated place to access daemon chats.
+  // Sent to the SERVER, not applied to the response, because the scan pages the store until it has
+  // a full page OF THAT SCOPE — see core/src/chat.ts. Omitted → the server's default, "user".
+  chatSessions: (scope?: ChatScope) =>
+    getJson<{ sessions: ChatSessionInfo[] }>(
+      `/chat/sessions${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`,
+    ).then((r) => r.sessions),
   chatSessionMessages: (id: string, provider?: string) =>
     getJson<{ frames: ChatFrame[] }>(
       `/chat/session-messages?id=${encodeURIComponent(id)}${provider ? `&provider=${encodeURIComponent(provider)}` : ""}`,
     ).then((r) => r.frames),
   // Search past sessions by CONTENT (title + message text) — filters the SDK's own session data
   // server-side (no index). Returns matches newest-first, each with a snippet of where it matched.
-  chatSearch: (query: string) =>
-    postJson<{ hits: ChatSearchHit[] }>("/chat/search", { query }).then((r) => r.hits),
+  // Scoped by the same picker control as chatSessions, so search always searches the list you're
+  // looking at.
+  chatSearch: (query: string, scope?: ChatScope) =>
+    postJson<{ hits: ChatSearchHit[] }>("/chat/search", { query, scope }).then((r) => r.hits),
 };
 
 /** Concise one-line summary of a sync result for a toast. */

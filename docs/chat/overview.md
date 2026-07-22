@@ -97,9 +97,9 @@ A background **drain loop** (`drain(session)`) iterates the `query()` generator 
 
 The Agent SDK keeps **one session store per cwd**. Because the chat driver runs `claude` with `cwd: cfg.vault`, the user's *terminal* Claude Code sessions (run from the vault) and their *in-app chat* sessions land in the same store. Two read-only endpoints expose it:
 
-- **`GET /chat/sessions`** → `listChatSessions(cfg.vault)` → the SDK's `listSessions({ dir: cwd, … })`. Returns `{ sessionId, summary, lastModified }[]`, newest first (the SDK sorts it). Tolerant: returns `[]` if the store can't be read.
+- **`GET /chat/sessions?scope=<user|daemon|all>`** → `listChatSessions(cfg.vault, limit, scope)` → the SDK's `listSessions({ dir: cwd, … })`. Returns `{ sessionId, summary, lastModified, origin }[]`, newest first (the SDK sorts it). Tolerant: returns `[]` if the store can't be read.
 
-  **Only the USER's chats.** The vault's daemon runs Claude sessions when its crons fire, with `cwd` = the vault root — so they land in this *same* store and used to fill the History picker with conversations the user never opened. `listChatSessions` subtracts the daemon's own sessions, identified by `readDaemonSessionIds` (`core/src/daemon.ts`). They are only *hidden here* — never deleted; the crons need them, and a later surface will read the same set to show them. Note this is a **membership test against every id the daemon ever minted**, not a comparison against the sibling `session-id` pointer (which names only the daemon's latest run, and so would leave every earlier cron session looking like a user chat).
+  **`scope` picks whose chats.** The vault's daemon runs Claude sessions when its crons fire, with `cwd` = the vault root — so they land in this *same* store and used to (unconditionally) fill the History picker with conversations the user never opened. `scope` defaults to `user` (`parseChatScope` coerces anything absent/unknown to it, never erroring): it subtracts the daemon's own sessions, identified by `readDaemonSessionIds` (`core/src/daemon.ts`) — the pre-daemon behavior. `scope=daemon` is the **dedicated place to access daemon chats**: it returns exactly the sessions the daemon minted (readable in the History picker's own filter, not a second surface). `scope=all` returns both, and every row's `origin` (`"user" | "daemon"`, from `resolveChatOrigin`) is what lets the client mark the daemon's visibly — the `Bot` vs `MessageSquare` icon in `app/src/chatOrigin.ts` `chatOriginIcon`. Note origin/scope are a **membership test against every id the daemon ever minted**, not a comparison against the sibling `session-id` pointer (which names only the daemon's latest run, and so would leave every earlier cron session looking like a user chat).
 
   That set is the **union of two files**, because the two halves of "every id the daemon ever minted" have different origins:
 
@@ -112,11 +112,11 @@ The Agent SDK keeps **one session store per cwd**. Because the chat driver runs 
 
   The asymmetry that drives every rule there: a false positive **hides the user's own conversation**, which is far worse than leaving a daemon chat listed. So anything unjudgeable — an assistant-first transcript, an unreadable file, a user merely *discussing* crons — is treated as the user's.
 
-  Because the daemon can mint far more sessions than the user (one per cron fire), the scan **paginates** the store until it has `limit` *user* sessions (bounded by a scan cap) — filtering a single fixed page would return an empty History whenever the newest page happened to be all daemon.
+  Because the daemon can mint far more sessions than the user (one per cron fire), the scan **paginates** the store until it has `limit` sessions *of the requested scope* (bounded by a scan cap) — filtering a single fixed page would return an empty picker whenever the newest page happened to be entirely the other scope (e.g. `daemon` on a store where the user's chats are all newest).
 
   ```ts
-  "GET /chat/sessions": async (_, __) => {
-    return ok({ sessions: await listChatSessions(cfg.vault) });
+  "GET /chat/sessions": async (_, url) => {
+    return ok({ sessions: await listChatSessions(cfg.vault, undefined, parseChatScope(url.searchParams.get("scope"))) });
   },
   ```
 
@@ -233,7 +233,7 @@ In the header `ViewBar`, `ChatView` shows the model (a live picker once the `mod
 
 ## Session history picker
 
-The header's **Past conversations** button (a `MessagesSquare` icon) opens a popover (`HistoryPanel`) listing the user's existing Claude Code sessions for the vault — terminal *and* in-app, newest-first — fetched via `api.chatSessions()`. The vault daemon's own cron sessions are excluded (see [Unification with terminal sessions](#unification-with-terminal-sessions)): the chat page is the user's surface, so it lists only chats the user started. Each row shows the session summary (ellipsized, falling back to "Untitled session") plus a relative time ("just now", "5m ago", "2h ago", "3d ago", then a short date). Picking a row calls `resumeSession(sessionId)`, which:
+The header's **Past conversations** button (a `MessagesSquare` icon) opens a popover (`HistoryPanel`) listing existing Claude Code sessions for the vault — terminal *and* in-app, newest-first — fetched via `api.chatSessions(scope)`. A **You / Daemon / All** `SegmentedToggle` (`historyScope`, default `You`) is the dedicated place to access the daemon's cron chats: flipping it re-fetches that scope from the server (see [Unification with terminal sessions](#unification-with-terminal-sessions)) rather than re-filtering the already-fetched list, and resets to `You` each time the panel opens. Each row shows a **daemon-vs-user icon** (`chatOriginIcon(s.origin)` — `app/src/chatOrigin.ts`: `Bot` for a daemon session, `MessageSquare` for the user's), the session summary (ellipsized, falling back to "Untitled session"), and a relative time ("just now", "5m ago", "2h ago", "3d ago", then a short date). The same icon mirrors onto the chat's own tab/pane-header glyph once a session frame binds this tab to a conversation (`chatOrigin`/`publishChatOrigin`, wired into `tabIds.ts`'s chat icon provider by `App.tsx`). Picking a row calls `resumeSession(sessionId)`, which:
 
 1. clears the transcript (`resetTranscript`),
 2. rehydrates the past turns by fetching `api.chatSessionMessages(sessionId)` and feeding every replayed frame through the **same** `onFrame` that handles live frames, then
@@ -318,4 +318,4 @@ Its default keybinding is **`Mod+Shift+C`** (`core/src/keybindings.ts`, id `new-
 
 ---
 
-Source: `core/src/chat.ts`, `core/src/server.ts` (`/chat` WS + `GET /chat/sessions` + `GET /chat/session-messages`), `core/src/schema/settingsSchema.ts` (`chat.computerUse`), `app/src/ChatView.tsx`, `app/src/ChatComposer.tsx`, `app/src/chatContext.ts`, `app/src/chatEditorContext.ts`, `app/src/chatComposerKeys.ts`, `app/src/chatHistory.ts`, `app/src/chatQueueRestore.ts`, `app/src/chatSlashCommands.ts`, `app/src/chatModelResolution.ts`, `app/src/chatPermissionMode.ts`, `app/src/chatEffort.ts`, `app/src/chatSessionStore.ts`, `app/src/chatColors.ts`, `app/src/chatTitles.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`, `app/src/App.tsx`, `app/src/commands.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`.
+Source: `core/src/chat.ts`, `core/src/server.ts` (`/chat` WS + `GET /chat/sessions` + `GET /chat/session-messages`), `core/src/schema/settingsSchema.ts` (`chat.computerUse`), `app/src/ChatView.tsx`, `app/src/ChatComposer.tsx`, `app/src/chatContext.ts`, `app/src/chatEditorContext.ts`, `app/src/chatComposerKeys.ts`, `app/src/chatHistory.ts`, `app/src/chatQueueRestore.ts`, `app/src/chatSlashCommands.ts`, `app/src/chatModelResolution.ts`, `app/src/chatPermissionMode.ts`, `app/src/chatEffort.ts`, `app/src/chatSessionStore.ts`, `app/src/chatColors.ts`, `app/src/chatTitles.ts`, `app/src/chatOrigin.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`, `app/src/App.tsx`, `app/src/commands.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`.

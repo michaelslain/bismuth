@@ -271,6 +271,20 @@
   box-shadow: none;
 }
 
+/* The user/daemon/all scope filter (card B: a dedicated place to access daemon chats) — sits
+   between the search box and the list/hits so it visibly scopes both. */
+.chat-history-scope {
+  display: flex;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--chat-border-soft);
+}
+.chat-history-scope .segmented {
+  width: 100%;
+}
+.chat-history-scope .segmented button {
+  flex: 1 1 0;
+}
+
 /* Content-search result rows (FEATURE #34): a two-line hit — title + when, then a match snippet. */
 .chat-history-hits {
   display: flex;
