@@ -168,7 +168,10 @@ function manifestFrame(s: OpencodeSession): ChatFrame {
 function emitOpenFrames(s: OpencodeSession): void {
   const hadCommands = commandsCache !== null;
   emit(s, manifestFrame(s));
-  if (s.sessionId) emit(s, { type: "session", sessionId: s.sessionId });
+  // origin "user", always: the daemon runs on the Claude Code SDK and records ITS session ids in
+  // <vault>/.daemon/session-ids. An opencode session id comes from a different store in a different
+  // id namespace, so it can never be the daemon's — no membership test to make.
+  if (s.sessionId) emit(s, { type: "session", sessionId: s.sessionId, origin: "user" });
   void ensureOpenInfo(s.bin, s.cwd).then(async () => {
     if (sessions.get(s.id) !== s) return;
     if (!hadCommands && commandsCache?.length) emit(s, manifestFrame(s));
@@ -280,7 +283,7 @@ async function runTurn(s: OpencodeSession, text: string): Promise<void> {
         // (chatSessionStore) so a reopened tab resumes THIS conversation.
         if (state.sessionId && state.sessionId !== before && state.sessionId !== s.sessionId) {
           s.sessionId = state.sessionId;
-          emit(s, { type: "session", sessionId: state.sessionId });
+          emit(s, { type: "session", sessionId: state.sessionId, origin: "user" }); // never the daemon's — see emitOpenFrames
         }
       }
     }
