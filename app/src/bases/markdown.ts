@@ -6,6 +6,8 @@ import { renderMath, onMathReady } from "../editor/katexLoader";
 import { parseCalloutHeader, renderCalloutHtml, type CalloutHeader } from "../editor/callout";
 import { BISMUTH_SCAN_RE, bismuthWrapSource } from "../editor/bismuthWord";
 import { renderCellListHtml } from "../editor/cellList";
+import { specForWikiEmbed } from "../editor/embedSpec";
+import { api } from "../api";
 
 // GFM + single-newline line breaks. marked passes raw HTML in the markdown
 // straight through (Obsidian-style passthrough), so the result is sanitized
@@ -206,9 +208,47 @@ function pageBreaksToDivs(src: string): string {
   return unmaskCode(masked.replace(PAGEBREAK_RE, '\n\n<div class="bismuth-page-break"></div>\n\n'), codes);
 }
 
+// ── Image embeds: `![[picture.png]]` → a real <img> ──────────────────────────────────────────
+// `![[…]]` is Obsidian syntax marked knows nothing about, so WITHOUT this pass an image embed
+// reaches the browser as literal `![[picture.png]]` text (renderMarkdown) or — once
+// wikilinksToAnchors had rewritten the inner `[[…]]` — as a stray `!` followed by a broken
+// `<a>` (renderNoteBody). Either way the picture is stored in the vault but VISIBLE NOWHERE,
+// which is exactly why an image dropped onto a kanban card's `description` showed up as
+// nothing. Convert the embed to an `<img>` pointing at the backend's `/asset` route on the raw
+// source BEFORE marked parses it (marked passes injected HTML through, and the result is
+// sanitized like every other rendered surface).
+//
+// Reuses the editor's OWN embed resolver (`specForWikiEmbed` + `api.assetUrl`), so a card face
+// resolves `![[x]]` byte-identically to the note editor's embedBlock widget — one rule for what
+// an embed means, including the `|WIDTH` / `|WxH` size alias. NON-image embeds (`![[Note]]`
+// transclusion, pdf/audio/video) are deliberately left as raw source: a card face / table cell
+// is no place to mount an iframe or a media player, and returning the match unchanged keeps
+// their existing behavior exactly as it was.
+const IMAGE_EMBED_RE = /!\[\[([^\]\n]+?)\]\]/g;
+function imageEmbedsToImgs(src: string): string {
+  return src.replace(IMAGE_EMBED_RE, (raw, inner: string) => {
+    const spec = specForWikiEmbed(inner, api.assetUrl);
+    if (!spec || spec.kind !== "image" || !spec.src) return raw; // not an image → leave source as-is
+    const size = (spec.width ? `width:${spec.width}px;` : "") + (spec.height ? `height:${spec.height}px;` : "");
+    return (
+      `<img class="bismuth-embed-img" src="${escapeAttr(spec.src)}" alt="${escapeAttr(spec.alt ?? "")}"` +
+      `${size ? ` style="${escapeAttr(size)}"` : ""} />`
+    );
+  });
+}
+
+/** Resolve `![[image.png]]` embeds to `<img>` while leaving code spans/fences untouched — a
+ *  literal `![[x]]` inside backticks stays literal, exactly like the wikilink/tag passes. */
+function imagesOutsideCode(src: string): string {
+  const { masked, codes } = maskCode(src);
+  return unmaskCode(imageEmbedsToImgs(masked), codes);
+}
+
 /** Render a markdown string to sanitized HTML (synchronous). */
 export function renderMarkdown(src: string): string {
-  return sanitizeHtml(marked.parse(iridescentBismuth(pageBreaksToDivs(src ?? "")), { async: false }) as string);
+  return sanitizeHtml(
+    marked.parse(iridescentBismuth(imagesOutsideCode(pageBreaksToDivs(src ?? ""))), { async: false }) as string,
+  );
 }
 
 // Obsidian `[[wikilinks]]` aren't standard markdown, so `marked` would emit them
@@ -217,7 +257,11 @@ export function renderMarkdown(src: string): string {
 // same in-app navigation ListView uses. Done on the raw source, BEFORE marked, so
 // the surrounding markdown (lists, headings, links) still renders normally and the
 // anchor passes through marked's raw-HTML passthrough.
-const WIKILINK_RE = /\[\[([^\]\n]+?)\]\]/g;
+// The `(?<!!)` guard leaves an EMBED (`![[picture.png]]`) alone: its `[[…]]` is not a link to
+// rewrite, it's the target of an embed that imageEmbedsToImgs renders as an <img> (or leaves as
+// raw source for a non-image). Without the guard this pass ate the brackets first and emitted a
+// stray `!` + a broken anchor, so an embedded image could never render.
+const WIKILINK_RE = /(?<!!)\[\[([^\]\n]+?)\]\]/g;
 function wikilinksToAnchors(src: string): string {
   return src.replace(WIKILINK_RE, (_m, inner: string) => {
     const [rawTarget, alias] = inner.split("|");
@@ -297,7 +341,15 @@ export function renderNoteBody(src: string): string {
  *  the same markdown as the rest of the app. `marked.parseInline` runs the inline math
  *  extension above but not the block one, so `$$…$$` stays literal (correct for a cell). */
 export function renderInline(src: string): string {
-  return sanitizeHtml(marked.parseInline(iridescentBismuth(tagsToSpans(memoryRefsToAnchors(wikilinksToAnchors(src ?? "")))), { async: false }) as string);
+  // imagesOutsideCode runs INNERMOST so an `![[shot.png]]` in a cell renders as a real <img>
+  // (the table-cell image drop) rather than as literal text, and so it is resolved before
+  // wikilinksToAnchors sees the inner `[[…]]`. memoryRefsToAnchors stays in the chain (main) so
+  // `??slug` refs still resolve in cells.
+  return sanitizeHtml(
+    marked.parseInline(iridescentBismuth(tagsToSpans(memoryRefsToAnchors(wikilinksToAnchors(imagesOutsideCode(src ?? ""))))), {
+      async: false,
+    }) as string,
+  );
 }
 
 // Cheap gate: only run the markdown renderer on strings that actually carry inline markup

@@ -216,3 +216,54 @@ describe("renderNoteBody — `??slug` memory references", () => {
     expect(html).toContain('data-href=".daemon/memory/a-b_c/d.md"');
   });
 });
+
+// ── Image embeds ─────────────────────────────────────────────────────────────
+// THE BUG THIS PINS: a picture dropped onto a kanban card was stored in the vault but appeared
+// NOWHERE ("the image is invisibly attached"). One half of the cause was here — `![[shot.png]]`
+// had no renderer, so renderMarkdown emitted it as literal text and renderNoteBody's wikilink
+// pass ate the inner `[[…]]` and left a stray `!` + a broken anchor. Neither is an image.
+describe("image embeds", () => {
+  test("renderMarkdown turns ![[shot.png]] into a real <img> on the /asset route", () => {
+    const html = renderMarkdown("![[shot.png]]");
+    expect(html).toContain("<img");
+    expect(html).toContain("/asset?path=shot.png");
+    expect(html).toContain('alt="shot.png"');
+    // The literal source must be GONE — that leftover text was the visible symptom.
+    expect(html).not.toContain("![[");
+  });
+
+  test("renderNoteBody renders the image instead of a stray '!' + broken wikilink", () => {
+    const html = renderNoteBody("![[shot.png]]");
+    expect(html).toContain("<img");
+    // The old output linkified the embed's target as a NOTE ("shot.png.md") behind a stray "!".
+    expect(html).not.toContain("shot.png.md");
+    expect(html).not.toContain("bismuth-wikilink");
+  });
+
+  test("an embed's |WIDTH size alias is honored (same rule as the note editor)", () => {
+    const html = renderMarkdown("![[shot.png|300]]");
+    expect(html).toContain("width:300px");
+  });
+
+  test("a real [[wikilink]] still linkifies — the `!` guard only spares embeds", () => {
+    const html = renderNoteBody("[[Some Note]] and ![[shot.png]]");
+    expect(html).toContain('data-href="Some Note.md"');
+    expect(html).toContain("<img");
+  });
+
+  test("a NON-image embed is left alone (a card face is no place for an iframe/player)", () => {
+    // `![[Note]]` transclusion + pdf keep their prior behavior — no <img>, no crash.
+    expect(renderMarkdown("![[Some Note]]")).not.toContain("<img");
+    expect(renderMarkdown("![[paper.pdf]]")).not.toContain("<img");
+  });
+
+  test("an embed inside code stays literal (masking still applies)", () => {
+    const html = renderMarkdown("`![[shot.png]]`");
+    expect(html).not.toContain("<img");
+    expect(html).toContain("![[shot.png]]");
+  });
+
+  test("image extension matching is case-insensitive", () => {
+    expect(renderMarkdown("![[Photo.JPG]]")).toContain("<img");
+  });
+});

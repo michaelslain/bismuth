@@ -10,7 +10,7 @@
 // Commits route back through the SAME `onRename`/`onSetMeta` (KanbanCard's optimistic
 // commitTitle/commitMeta) the inline editors used, so nothing about persistence changes — only
 // where you edit.
-import { createSignal, createMemo, For, Show, untrack, type JSX } from "solid-js";
+import { createSignal, createMemo, For, Show, untrack, onMount, onCleanup, type JSX } from "solid-js";
 import type { Row, BaseConfig } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { propertyType } from "../../../core/src/bases/properties";
@@ -24,6 +24,18 @@ import { propertyEditKind, type PropertyEditKind } from "./propertyEdit";
 import { propertyRegistry } from "../propertyRegistry";
 import { columnLabel } from "./columnLabel";
 import { writableKey } from "./kanbanMeta";
+import { appendEmbedToValue, isImagePath } from "./kanbanImageDrop";
+import {
+  isFileDrag,
+  nativeDropPoint,
+  uploadImageEmbeds,
+  uploadsFromFiles,
+  uploadsFromNativePaths,
+  type ImageUpload,
+} from "./cardImageDrop";
+import { pointInDropRect, type NativeDragDetail } from "../nativeDrop";
+import { claimNativeDrop } from "../nativeDropRouting";
+import type { DocEditorHandle } from "../blocks/milkdownEditor";
 import styles from "./CardEditModal.module.css";
 
 /** Plain-string title for a card (the display/first column value, falling back to the filename). */
@@ -99,6 +111,107 @@ export function CardEditModal(props: {
     rowEl.querySelector<HTMLElement>("input, textarea, .ui-select-trigger, button")?.focus();
   });
 
+  // ── Image drop onto the description ─────────────────────────────────────────────────────────
+  // Drag an image file onto a markdown property (the `description`) and the picture is appended to
+  // the text as an ordinary `![[basename]]` embed over a real vault attachment — then renders as
+  // the actual image in this very field (inlineNodes.ts draws image embeds as <img>) AND on the
+  // card face (renderMarkdown does the same). It commits through the SAME mdDrafts/commitMarkdown
+  // path typing already uses, so a dropped image and a typed edit can never disagree.
+  //
+  // Two intake paths, because an OS file drop is not an in-app pointer drag and we can't choose how
+  // the platform delivers it: the packaged WKWebView routes it through Tauri's native handler
+  // (`bismuth-native-drag`, real on-disk paths — the path that works in the real app), while a
+  // plain browser fires HTML5 `drop` with `dataTransfer.files`. Both live in cardImageDrop.ts,
+  // shared with the board's card-face drop.
+
+  // The live Milkdown handle + drop zone per markdown field id (the surface mounts async).
+  const fields = new Map<string, { handle: DocEditorHandle | null; zone: HTMLElement }>();
+  const [dropField, setDropField] = createSignal<string | null>(null);
+
+  function registerField(id: string, handle: DocEditorHandle | null, zone: HTMLElement): void {
+    fields.set(id, { handle, zone });
+  }
+
+  /** Append each uploaded image's embed to the field's markdown, refresh the live surface so the
+   *  picture appears at once, and COMMIT immediately — a drop is a deliberate act, so it shouldn't
+   *  wait for a blur to reach disk.
+   *
+   *  The new value comes from the same pure `appendEmbedToValue` the board's card-face drop uses,
+   *  so an image dropped here and one dropped on the card produce byte-identical markdown (an
+   *  earlier cut inserted at the drop point via ProseMirror and glued the embed onto the end of
+   *  the preceding sentence — `description: text.![[img.png]]`). Reading the CURRENT markdown off
+   *  the live surface (not the row) keeps un-blurred typing in the same commit; a surface that
+   *  hasn't mounted yet (the Milkdown chunk is code-split) falls back to the draft/row value, so a
+   *  fast drop is never lost. */
+  async function insertImages(id: string, uploads: ImageUpload[]): Promise<void> {
+    if (uploads.length === 0) return;
+    const embeds = await uploadImageEmbeds(uploads, props.row.file.path);
+    if (embeds.length === 0) return;
+    const handle = fields.get(id)?.handle;
+    const current = handle ? handle.getMarkdown() : (mdDrafts[id] ?? String(untrack(() => value(id)) ?? ""));
+    const next = appendEmbedToValue(current, embeds.join("\n"));
+    mdDrafts[id] = next;
+    handle?.setMarkdown(next); // programmatic set → no onChange, hence the explicit draft write above
+    commitMarkdown(id);
+  }
+
+  function onFieldDragOver(e: DragEvent, id: string): void {
+    if (!isFileDrag(e.dataTransfer)) return;
+    e.preventDefault(); // required for the drop to fire
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    setDropField(id);
+  }
+  function onFieldDragLeave(e: DragEvent, id: string): void {
+    // dragleave also fires moving between the zone's own children — ignore those.
+    const zone = e.currentTarget as HTMLElement;
+    const to = e.relatedTarget as Node | null;
+    if (to && zone.contains(to)) return;
+    if (dropField() === id) setDropField(null);
+  }
+  async function onFieldDrop(e: DragEvent, id: string): Promise<void> {
+    if (!isFileDrag(e.dataTransfer)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDropField(null);
+    await insertImages(id, await uploadsFromFiles(e.dataTransfer!.files));
+  }
+
+  /** The markdown field whose drop zone contains (x, y) in page CSS px, or null. */
+  function fieldAt(x: number, y: number): string | null {
+    return [...fields.entries()].find(([, f]) => pointInDropRect(f.zone.getBoundingClientRect(), x, y))?.[0] ?? null;
+  }
+
+  // Native (Tauri) OS drop: a WINDOW event EVERY surface sees, so hit-test our OWN field rects and
+  // only claim it when the cursor is inside one. The modal sits ABOVE the board, so a drop on an
+  // open modal's description resolves here while the board's card-face handler finds no card under
+  // the (modal-covered) point; `claimNativeDrop` backstops any overlap.
+  onMount(() => {
+    const onNativeDrag = (ev: Event): void => {
+      const d = (ev as CustomEvent<NativeDragDetail>).detail;
+      if (!d) return;
+      if (d.type === "leave") { setDropField(null); return; }
+      if (d.type !== "drop") {
+        // enter/over — raw coords, deliberately NOT zoom-corrected: the correction costs an async
+        // Tauri IPC round-trip and `over` fires continuously through a drag. It only shifts the
+        // point by a zoom residual, which can't cross a whole field, so the highlight is right and
+        // the DROP (below) still gets the exact correction. Mirrors KanbanView's card highlight.
+        setDropField(fieldAt(d.x, d.y));
+        return;
+      }
+      void (async () => {
+        setDropField(null);
+        if (!d.paths.some(isImagePath)) return;
+        const pt = await nativeDropPoint(d);
+        const id = fieldAt(pt.x, pt.y);
+        if (!id) return; // not dropped on a description — let another surface handle it
+        if (!claimNativeDrop(d)) return; // another surface already owns this drop
+        await insertImages(id, await uploadsFromNativePaths(d.paths));
+      })();
+    };
+    window.addEventListener("bismuth-native-drag", onNativeDrag);
+    onCleanup(() => window.removeEventListener("bismuth-native-drag", onNativeDrag));
+  });
+
   // Build a field's control ONCE. The control TYPE (kind) is fixed for a modal session, so we read
   // it untracked — otherwise `{renderControl(id)}` would become a memo that re-runs (and remounts
   // the editor, losing the Milkdown surface / caret) every time an optimistic commit changes the
@@ -111,14 +224,28 @@ export function CardEditModal(props: {
     const k = untrack(() => kindOf(id));
     if (k.kind === "markdown") {
       const initial = untrack(() => String(value(id) ?? ""));
+      // Wrap the rich surface in its own drop zone: dragging an image onto the description drops
+      // the picture INTO the text (see the "Image drop onto the description" section).
+      let zone!: HTMLDivElement;
       return (
-        <MilkdownField
-          class={styles.mdField}
-          value={initial}
-          autofocus={props.focusTarget === id}
-          onChange={(md) => { mdDrafts[id] = md; }}
-          onBlur={() => commitMarkdown(id)}
-        />
+        <div
+          ref={zone}
+          class={styles.mdDropZone}
+          classList={{ [styles.mdDropActive]: dropField() === id }}
+          onDragEnter={(e) => onFieldDragOver(e, id)}
+          onDragOver={(e) => onFieldDragOver(e, id)}
+          onDragLeave={(e) => onFieldDragLeave(e, id)}
+          onDrop={(e) => void onFieldDrop(e, id)}
+        >
+          <MilkdownField
+            class={styles.mdField}
+            value={initial}
+            autofocus={props.focusTarget === id}
+            onReady={(h) => { registerField(id, h, zone); }}
+            onChange={(md) => { mdDrafts[id] = md; }}
+            onBlur={() => commitMarkdown(id)}
+          />
+        </div>
       );
     }
     if (k.kind === "boolean") {
