@@ -23,6 +23,7 @@ import { createSignal, createMemo, createEffect, For, Show, onMount, onCleanup }
 import { Icon } from "../icons/Icon";
 import { SearchBar } from "../ui/SearchBar";
 import { createMenuNav } from "../ui/popover/createMenuNav";
+import { createPointerGuard, resetActiveOnChange, scrollSelectedIntoView } from "./paletteNav";
 import { Highlight } from "./PaletteModal";
 import { rankItems, type Match } from "./rankItems";
 import { vaultFileItems } from "./vaultFileItems";
@@ -167,19 +168,11 @@ export function SwitcherBar(props: Props) {
 
   // Reset the highlighted row to the top when the query changes or the AI phase flips
   // (AI results arriving / clearing restart the walk from the first row).
-  createEffect(() => {
-    query();
-    aiPhase();
-    nav.setActive(0);
-  });
+  resetActiveOnChange(() => { query(); aiPhase(); }, () => nav.setActive(0));
 
   // Keep the highlighted row scrolled into view (file rows and result cards both mark
   // themselves with `.selected`).
-  createEffect(() => {
-    selected();
-    navCount();
-    listRef?.querySelector<HTMLElement>(".selected")?.scrollIntoView({ block: "nearest" });
-  });
+  scrollSelectedIntoView(() => { selected(); navCount(); }, () => listRef, ".selected");
 
   // Report the visible result set up so the backdrop graph lights up EVERY matching note:
   // file + content rows while idle, the AI's picks after a turn. Blank query → nothing (don't
@@ -215,14 +208,8 @@ export function SwitcherBar(props: Props) {
     nav.onKeyDown(e);
   };
 
-  // Same stationary-pointer guard as the palette: don't let a mouseenter under a still
-  // cursor steal the keyboard default; only a real mousemove reselects.
-  let lastPointer: { x: number; y: number } | undefined;
-  const onRowPointerMove = (i: number, e: MouseEvent) => {
-    if (lastPointer && lastPointer.x === e.clientX && lastPointer.y === e.clientY) return;
-    lastPointer = { x: e.clientX, y: e.clientY };
-    nav.setActive(i);
-  };
+  // Same stationary-pointer guard as the palette — see createPointerGuard.
+  const onRowPointerMove = createPointerGuard(nav.setActive);
 
   onMount(() => inputRef?.focus());
 

@@ -6,8 +6,8 @@
 // fallback for unknown strings). StatusText: status (required) — dot + label, both
 // tinted.
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import type { JSX } from "solid-js";
 import { StatusDot, StatusText } from "./StatusDot";
+import { Row } from "./_storyKit";
 
 const meta = {
   title: "UI/StatusDot",
@@ -20,23 +20,10 @@ type Story = StoryObj<typeof meta>;
 
 const STATUSES = ["Reading", "To Read", "Finished", "Abandoned"];
 
-function Row(props: { label?: string; children: JSX.Element }) {
-  return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
-      {props.label && (
-        <span style={{ "font-family": "var(--ui-font-stack)", "font-size": "11px", color: "var(--text-muted)", "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
-          {props.label}
-        </span>
-      )}
-      <div style={{ display: "flex", "flex-direction": "column", gap: "10px" }}>{props.children}</div>
-    </div>
-  );
-}
-
 /** Every known status, dot only. */
 export const Dots: Story = {
   render: () => (
-    <Row label="dot only">
+    <Row label="dot only" column gap="10px">
       {STATUSES.map((s) => (
         <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
           <StatusDot status={s} />
@@ -60,7 +47,7 @@ export const ExplicitColor: Story = {
 /** <StatusText> — dot + label together, both tinted to the status color. */
 export const TextVariant: Story = {
   render: () => (
-    <Row label="dot + label">
+    <Row label="dot + label" column gap="10px">
       {STATUSES.map((s) => <StatusText status={s} />)}
     </Row>
   ),

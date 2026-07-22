@@ -11,8 +11,9 @@
 import { Resvg } from "@resvg/resvg-js";
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const here = dirname(new URL(import.meta.url).pathname);
+const here = dirname(fileURLToPath(import.meta.url));
 const logosDir = join(here, "..", "public", "logos");
 const outDir = join(here, "..", "src-tauri", "icons", "marks");
 mkdirSync(outDir, { recursive: true });

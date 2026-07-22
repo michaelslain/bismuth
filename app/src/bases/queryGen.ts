@@ -363,11 +363,11 @@ function applyTaskLeaf(leaf: string, tf: TaskFilters): boolean {
     tf.due = "today";
     return true;
   }
-  if (/^due before in \d+ days?$/.test(lc)) {
+  if (lc === "due before in 7 days") {
     tf.due = "week";
     return true;
   }
-  if (/^due after \d{4}-\d{2}-\d{2}$/.test(lc)) {
+  if (lc === "due after 1900-01-01") {
     tf.due = "has";
     return true;
   }

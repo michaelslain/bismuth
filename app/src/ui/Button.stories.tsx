@@ -9,6 +9,7 @@ import type { Meta, StoryObj } from "storybook-solidjs-vite";
 import type { JSX } from "solid-js";
 import { Button } from "./Button";
 import { Icon } from "../icons/Icon";
+import { Row } from "./_storyKit";
 
 const meta = {
   title: "UI/Button",
@@ -36,18 +37,6 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 // ── layout helpers (stories only) ──────────────────────────────────────────────
-function Row(props: { children: JSX.Element; label?: string }) {
-  return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
-      {props.label && (
-        <span style={{ "font-family": "var(--ui-font-stack)", "font-size": "11px", color: "var(--text-muted)", "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
-          {props.label}
-        </span>
-      )}
-      <div style={{ display: "flex", "align-items": "center", gap: "14px", "flex-wrap": "wrap" }}>{props.children}</div>
-    </div>
-  );
-}
 function Stack(props: { children: JSX.Element }) {
   return <div style={{ display: "flex", "flex-direction": "column", gap: "22px" }}>{props.children}</div>;
 }

@@ -43,6 +43,7 @@ export function PopoverList(props: {
             <MenuRow
               label={item.label}
               icon={item.icon}
+              prefix={item.prefix}
               detail={item.detail}
               danger={item.danger}
               disabled={item.disabled}

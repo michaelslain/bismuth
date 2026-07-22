@@ -1,21 +1,15 @@
 {
+  // Shared strict/bundler/noEmit + `types: ["bun", "node"]` come from ../tsconfig.base.json.
+  // The daemon keeps a stricter, Preserve-module posture of its own on top of the base.
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ESNext"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "types": ["bun", "node"]
+    "noImplicitOverride": true
   },
   "include": ["src"]
 }

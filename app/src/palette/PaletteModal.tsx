@@ -3,11 +3,12 @@
 // a fuzzy-filtered, keyboard-navigable list. Knows nothing about commands or files —
 // callers pass `items` and an `onSelect`. See CommandPalette.tsx (the in-window Cmd+O
 // switcher is SwitcherBar.tsx, which reuses the shared ranking + Highlight from here).
-import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
+import { createSignal, createMemo, For, Show, onMount } from "solid-js";
 import { Icon } from "../icons/Icon";
 import { Modal } from "../ui/Modal";
 import { SearchBar } from "../ui/SearchBar";
 import { createMenuNav } from "../ui/popover/createMenuNav";
+import { createPointerGuard, resetActiveOnChange, scrollSelectedIntoView } from "./paletteNav";
 import { rankItems, toSegments, type Match, type PaletteItem } from "./rankItems";
 import "./palette.css";
 
@@ -57,32 +58,15 @@ export function PaletteModal(props: Props) {
   });
   const selected = nav.active;
 
-  // Hover must not steal the selection from the keyboard default until the
-  // cursor genuinely moves: the palette often opens (or scrolls during Up/Down
-  // nav) under a stationary pointer, and the browser fires mouseenter on
-  // whatever row sits beneath it. We listen on mousemove — which doesn't fire on
-  // open or on wheel-scroll under a still cursor — and ignore events whose
-  // coordinates haven't changed, so the top result lingers until the user
-  // actually moves the mouse.
-  let lastPointer: { x: number; y: number } | undefined;
-  const onRowPointerMove = (i: number, e: MouseEvent) => {
-    if (lastPointer && lastPointer.x === e.clientX && lastPointer.y === e.clientY) return;
-    lastPointer = { x: e.clientX, y: e.clientY };
-    nav.setActive(i);
-  };
+  // Hover must not steal the selection from the keyboard default until the cursor genuinely
+  // moves (see createPointerGuard).
+  const onRowPointerMove = createPointerGuard(nav.setActive);
 
   // Reset the highlighted row to the top whenever the query changes.
-  createEffect(() => {
-    query();
-    nav.setActive(0);
-  });
+  resetActiveOnChange(() => { query(); }, () => nav.setActive(0));
 
   // Keep the highlighted row scrolled into view.
-  createEffect(() => {
-    selected();
-    results();
-    listRef?.querySelector<HTMLElement>(".palette-row.selected")?.scrollIntoView({ block: "nearest" });
-  });
+  scrollSelectedIntoView(() => { selected(); results(); }, () => listRef, ".palette-row.selected");
 
   onMount(() => inputRef?.focus());
 

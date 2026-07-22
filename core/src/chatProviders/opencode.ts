@@ -26,6 +26,7 @@
 // synthetic `done`, process-exit teardown) mirror core/src/chat.ts so the server's WS handler
 // treats both providers identically.
 import type { ChatFrame, ChatImage, ChatSink } from "../chat";
+import { emit, rebindSessionSink, scheduleSessionClose } from "./sessionSink";
 import { claudeLookupPath, claudeSpawnEnv } from "../claudeWhich";
 import {
   newOpencodeTurnState,
@@ -80,17 +81,11 @@ interface OpencodeSession {
   lastActivityAt: number;
 }
 
-const MAX_BUFFERED_FRAMES = 2000;
+// Frame buffering + reconnect lifecycle (emit / rebindSessionSink / scheduleSessionClose) is
+// transport-agnostic and shared with the Claude provider — see ./sessionSink. OpencodeSession
+// satisfies its SessionSink shape structurally.
 
 const sessions = new Map<string, OpencodeSession>();
-
-function emit(s: OpencodeSession, frame: ChatFrame): void {
-  if (s.detached) {
-    if (s.buffer.length < MAX_BUFFERED_FRAMES) s.buffer.push(frame);
-    return;
-  }
-  s.sink(frame);
-}
 
 export function hasSession(chatId: string): boolean {
   return sessions.has(chatId);
@@ -429,8 +424,7 @@ export function closeChat(chatId: string): void {
 export function scheduleClose(chatId: string, ms: number): void {
   const s = sessions.get(chatId);
   if (!s) return;
-  if (s.closeTimer) clearTimeout(s.closeTimer);
-  s.closeTimer = setTimeout(() => closeChat(chatId), ms);
+  scheduleSessionClose(s, ms, () => closeChat(chatId));
 }
 
 /** Re-point a live session's sink at a reconnected socket, flushing frames buffered while
@@ -439,30 +433,7 @@ export function scheduleClose(chatId: string, ms: number): void {
 export function rebindSink(chatId: string, sink: ChatSink): boolean {
   const s = sessions.get(chatId);
   if (!s) return false;
-  if (s.closeTimer) {
-    clearTimeout(s.closeTimer);
-    s.closeTimer = undefined;
-  }
-  s.sink = sink;
-  if (s.buffer.length) {
-    const buffered = s.buffer;
-    s.buffer = [];
-    for (const f of buffered) {
-      try {
-        sink(f);
-      } catch {
-        break;
-      }
-    }
-  }
-  s.detached = false;
-  if (!s.turnActive) {
-    try {
-      sink({ type: "done" });
-    } catch {
-      /* */
-    }
-  }
+  rebindSessionSink(s, sink);
   return true;
 }
 

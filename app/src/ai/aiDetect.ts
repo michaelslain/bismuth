@@ -111,9 +111,9 @@ export async function detectAiScore(text: string, onProgress?: (p: AiProgress) =
   const classify = await getPipeline((pct) => onProgress?.({ phase: "load", pct }));
   const probs: number[] = [];
   for (let i = 0; i < chunks.length; i++) {
-    onProgress?.({ phase: "analyze", done: i + 1, total: chunks.length });
     const out = await classify(chunks[i], { top_k: 2 });
     probs.push(aiProb(out));
+    onProgress?.({ phase: "analyze", done: i + 1, total: chunks.length });
   }
   const score = probs.reduce((a, b) => a + b, 0) / probs.length;
   return { score, peak: Math.max(...probs), chunks: probs.length };

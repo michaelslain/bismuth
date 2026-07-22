@@ -332,6 +332,33 @@ describe("review fixes — task sort, date_within, builder-representable", () =>
     expect(buildQueryBlockBody(parseQueryBlockBody(once))).toBe(once);
   });
 
+  // A hand-edited `due before in N days` with N != 7 must NOT be collapsed to the "week" preset (which
+  // re-emits "due before in 7 days") — only the exact 7-day form maps to `week`; any other N survives
+  // verbatim in rawWhere so the round-trip is lossless.
+  test("hand-edited 'due before in 30 days' round-trips unchanged (not collapsed to 7)", () => {
+    const s = parseQueryBlockBody("tasks: not done AND due before in 30 days");
+    expect(s.tasks.due).toBe("any");
+    expect(s.tasks.rawWhere).toBe("due before in 30 days");
+    const back = buildQueryBlockBody(s);
+    expect(back).toContain("due before in 30 days");
+    expect(back).not.toContain("due before in 7 days");
+    // full build->parse->build idempotence
+    expect(buildQueryBlockBody(parseQueryBlockBody(back))).toBe(back);
+  });
+
+  // Same class as above for the `has`-a-due-date sentinel: the builder emits the exact
+  // "due after 1900-01-01"; only that exact string maps to `has`. A hand-edited real date
+  // must survive verbatim in rawWhere, not be collapsed to `has` and re-emitted as 1900-01-01.
+  test("hand-edited 'due after 2030-01-01' round-trips unchanged (not collapsed to the has-sentinel)", () => {
+    const s = parseQueryBlockBody("tasks: not done AND due after 2030-01-01");
+    expect(s.tasks.due).toBe("any");
+    expect(s.tasks.rawWhere).toBe("due after 2030-01-01");
+    const back = buildQueryBlockBody(s);
+    expect(back).toContain("due after 2030-01-01");
+    expect(back).not.toContain("due after 1900-01-01");
+    expect(buildQueryBlockBody(parseQueryBlockBody(back))).toBe(back);
+  });
+
   // #4: the builder's own output is always representable; a richer hand-authored config is NOT (so
   // the Pencil is hidden and the block isn't clobbered).
   test("isBuilderRepresentable gates rich configs", () => {

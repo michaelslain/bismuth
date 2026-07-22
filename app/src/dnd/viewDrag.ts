@@ -180,6 +180,7 @@ export function createViewDrag(
 
   function arm(e: PointerEvent, descriptor: DragDescriptor, rect: DOMRect, onTap?: () => void): void {
     if (e.button !== 0) return; // primary button only
+    if (pending) return; // already armed — a second pointerdown (multi-touch) must not clobber in-flight state
     origin = { x: e.clientX, y: e.clientY };
     grab = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
     pending = descriptor;

@@ -13,8 +13,9 @@
 //   (or the `prebundle:relay` package.json script).
 import { cpSync, rmSync, existsSync } from "node:fs";
 import { dirname, join, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const here = dirname(new URL(import.meta.url).pathname);
+const here = dirname(fileURLToPath(import.meta.url));
 const appDir = join(here, ".."); // app/
 const relayDir = join(appDir, "..", "relay"); // repo/relay
 const memoryDir = join(appDir, "..", "memory"); // repo/memory (@bismuth/memory)

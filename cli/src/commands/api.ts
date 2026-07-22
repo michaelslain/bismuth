@@ -5,37 +5,21 @@
 // don't. API base: --api <url> → BISMUTH_API env → http://localhost:4321.
 import type { CommandMap } from "../types";
 import { flag, positionals, fail, out } from "../args";
+import { call } from "../http";
 
 function apiBase(args: string[]): string {
   return flag(args, "api") ?? process.env.BISMUTH_API ?? "http://localhost:4321";
 }
 
-async function call(base: string, method: string, path: string, body?: unknown): Promise<unknown> {
-  const url = `${base}${path.startsWith("/") ? "" : "/"}${path}`;
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method,
-      headers: body !== undefined ? { "content-type": "application/json" } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    return fail(`could not reach a running server at ${base} — start one with \`bismuth serve\` (or pass --api <url>)`);
-  }
-  const text = await res.text();
-  if (!res.ok) fail(`${method} ${path} → ${res.status}: ${text.slice(0, 200)}`);
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
+/** Wording shown when no server is reachable at `base`. */
+const unreachable = (base: string) =>
+  `could not reach a running server at ${base} — start one with \`bismuth serve\` (or pass --api <url>)`;
 
 export const commands: CommandMap = {
   "agent-graph": {
     summary: "Live agents graph (terminal sessions + subagents) from a running server",
     usage: "[--api <url>]",
-    run: async (args) => out(await call(apiBase(args), "GET", "/agent-graph"), args),
+    run: async (args) => out(await call(apiBase(args), "GET", "/agent-graph", undefined, unreachable), args),
   },
   "api": {
     summary: "Call any server route directly (for in-memory/server-only capabilities)",
@@ -52,7 +36,7 @@ export const commands: CommandMap = {
           fail(`--json is not valid JSON: ${raw}`);
         }
       }
-      out(await call(apiBase(args), method.toUpperCase(), path, body), args);
+      out(await call(apiBase(args), method.toUpperCase(), path, body, unreachable), args);
     },
   },
 };

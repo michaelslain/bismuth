@@ -4,8 +4,8 @@
 // | "unselected"), danger, size, plus native <button> attributes. Labels must be
 // UPPERCASE (dev warns otherwise — same rule as TextButton).
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import type { JSX } from "solid-js";
 import { IconTextButton } from "./IconTextButton";
+import { Row } from "./_storyKit";
 
 const meta = {
   title: "UI/IconTextButton",
@@ -30,19 +30,6 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-function Row(props: { label?: string; children: JSX.Element }) {
-  return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
-      {props.label && (
-        <span style={{ "font-family": "var(--ui-font-stack)", "font-size": "11px", color: "var(--text-muted)", "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
-          {props.label}
-        </span>
-      )}
-      <div style={{ display: "flex", "align-items": "center", gap: "14px", "flex-wrap": "wrap" }}>{props.children}</div>
-    </div>
-  );
-}
 
 /** Fully controllable single button. */
 export const Playground: Story = {};

@@ -10,6 +10,7 @@
 // is used (none → 404, several → 409, both benign "expected" outcomes, not retry conditions).
 import type { CommandMap } from "../types";
 import { flag, positionals, bool, fail, out } from "../args";
+import { call } from "../http";
 import { resolveRunRegistryBase } from "../../../core/src/runRegistry";
 import { uiControlAllowedIds } from "../../../core/src/commands";
 
@@ -23,32 +24,14 @@ export function resolveCore(args: string[]): string {
   return "http://localhost:4321";
 }
 
-async function call(base: string, method: string, path: string, body?: unknown): Promise<unknown> {
-  const url = `${base}${path.startsWith("/") ? "" : "/"}${path}`;
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method,
-      headers: body !== undefined ? { "content-type": "application/json" } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    return fail(`could not reach a running Bismuth app at ${base} — open the app, or pass --api <url>`);
-  }
-  const text = await res.text();
-  if (!res.ok) fail(`${method} ${path} → ${res.status}: ${text.slice(0, 200)}`);
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
+/** Wording shown when no running app is reachable at `base`. */
+const unreachable = (base: string) => `could not reach a running Bismuth app at ${base} — open the app, or pass --api <url>`;
 
 /** Send one /ui/command and return its reply.result, or fail with reply.error. `--window` targets a
  *  specific window (else the single open one). */
 async function command(args: string[], action: string, cmdArgs: Record<string, unknown>): Promise<unknown> {
   const windowId = flag(args, "window");
-  const reply = (await call(resolveCore(args), "POST", "/ui/command", { windowId, action, args: cmdArgs })) as {
+  const reply = (await call(resolveCore(args), "POST", "/ui/command", { windowId, action, args: cmdArgs }, unreachable)) as {
     ok?: boolean;
     result?: unknown;
     error?: string;
@@ -61,7 +44,7 @@ export const commands: CommandMap = {
   "app windows": {
     summary: "List open Bismuth windows (id, label, active tab, tab count) from a running app",
     usage: "[--api <url>] [--pretty]",
-    run: async (args) => out(await call(resolveCore(args), "GET", "/ui/windows"), args),
+    run: async (args) => out(await call(resolveCore(args), "GET", "/ui/windows", undefined, unreachable), args),
   },
   "app tabs": {
     summary: "List the open tabs + panes in a window",

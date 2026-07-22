@@ -86,7 +86,8 @@ async function htmlToCanvas(
     // canvas. Drop the scale so the scaled height stays under the cap (lower-res but valid)
     // — matters most for PNG, which is one image with no page slicing.
     const MAX_CANVAS_PX = 32000;
-    const scale = Math.max(1, Math.min(2, Math.floor(MAX_CANVAS_PX / Math.max(1, doc.body.scrollHeight))));
+    const ratio = MAX_CANVAS_PX / Math.max(1, doc.body.scrollHeight);
+    const scale = ratio >= 1 ? Math.min(2, Math.floor(ratio)) : ratio;
     // Explicit page-break markers (bases/markdown.ts `<div class="bismuth-page-break">`): their
     // post-layout Y offset, scaled into canvas pixels. The PDF slicer cuts a new page at each.
     // Measured here (after layout has settled) while the iframe doc is still live. A marker before

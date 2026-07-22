@@ -8,8 +8,9 @@
 // appearance for `accent` (default) and `teal`. The other five (blue/violet/green/gold/
 // rose) fall through to the accent selected style. The Tones story makes this visible.
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { createSignal, For, type JSX } from "solid-js";
+import { createSignal, For } from "solid-js";
 import { Chip, type ChipTone } from "./Chip";
+import { Row } from "./_storyKit";
 
 const meta = {
   title: "UI/Chip",
@@ -36,26 +37,13 @@ type Story = StoryObj<typeof meta>;
 
 const ALL_TONES: ChipTone[] = ["accent", "teal", "blue", "violet", "green", "gold", "rose"];
 
-function Row(props: { label?: string; children: JSX.Element }) {
-  return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
-      {props.label && (
-        <span style={{ "font-family": "var(--ui-font-stack)", "font-size": "11px", color: "var(--text-muted)", "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
-          {props.label}
-        </span>
-      )}
-      <div style={{ display: "flex", "align-items": "center", gap: "10px", "flex-wrap": "wrap" }}>{props.children}</div>
-    </div>
-  );
-}
-
 /** Fully controllable single chip. */
 export const Playground: Story = {};
 
 /** Unselected vs selected (default accent tone). */
 export const States: Story = {
   render: () => (
-    <Row label="accent · off / on">
+    <Row label="accent · off / on" gap="10px">
       <Chip>Unselected</Chip>
       <Chip selected>Selected</Chip>
     </Row>
@@ -65,7 +53,7 @@ export const States: Story = {
 /** Chip with a leading icon, and an icon-only chip. */
 export const WithIcon: Story = {
   render: () => (
-    <Row label="with icon">
+    <Row label="with icon" gap="10px">
       <Chip icon="Search">Match case</Chip>
       <Chip icon="Check" selected>Whole word</Chip>
       <Chip icon="Regex" title="Regex" />
@@ -78,10 +66,10 @@ export const WithIcon: Story = {
 export const Tones: Story = {
   render: () => (
     <div style={{ display: "flex", "flex-direction": "column", gap: "16px" }}>
-      <Row label="unselected">
+      <Row label="unselected" gap="10px">
         <For each={ALL_TONES}>{(tone) => <Chip tone={tone}>{tone}</Chip>}</For>
       </Row>
-      <Row label="selected">
+      <Row label="selected" gap="10px">
         <For each={ALL_TONES}>{(tone) => <Chip tone={tone} selected>{tone}</Chip>}</For>
       </Row>
     </div>
