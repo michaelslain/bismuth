@@ -1,0 +1,48 @@
+# Bismuth Changes — Shipped
+
+_Auto-generated from `merge(bismuth-changes)` commits on main. Newest first._
+
+- **2026-07-14** · `a17f408` — fix bottom clipping in macOS fullscreen (.layout height 100vh → 100%)
+- **2026-07-14** · `b79a1bf` — #107 subagents show in agent view — stop leaking host workflow provenance into tab sessions
+- **2026-07-14** · `4e86aca` — Google Calendar sync is per-calendar (each base declares its own calendarId), not one global mapping
+- **2026-07-14** · `98fb304` — kanban — drag images onto cards + smooth (transition) card delete
+- **2026-07-14** · `4a5592c` — stop the graph randomly re-shaping — structural signature ignores positions, camera stays put
+- **2026-07-14** · `f5ffed8` — isolate Bismuth 3rd-brain memory from the model's own (labeled <bismuth-memory> envelope)
+- **2026-07-14** · `213dd06` — edit cards in a focused modal + rich Milkdown description editor
+- **2026-07-14** · `4425541` — embed interactive HTML artifacts via ![[file.html]] (sandboxed iframe + locked-down CSP)
+- **2026-07-14** · `f8bd592` — #67 re-fix — emoji library in the right-click context menu, toolbar Smile removed
+- **2026-07-14** · `aebe5f7` — #105 daemon cron workers get bismuth on PATH (spawn env + plist)
+- **2026-07-14** · `ded46f7` — #90 re-fix — opencode auth + slash commands + free-model rotation
+- **2026-07-14** · `1779abe` — #87 re-fix — /chrome per-chat, defaults OFF so first toggle enables
+- **2026-07-14** · `809f8b4` — #67 re-fix — emoji library always visible even with a custom toolbar
+- **2026-07-14** · `60eb05a` — fix cards view — revert #96 multicol to responsive grid (row-major order restored)
+- **2026-07-13** · `3304867` — flashcard count stable across cram/normal (freeze the progress denominator per session)
+- **2026-07-13** · `1e28286` — #90 opencode as a first-class chat provider (picker, free/paid model badges, graceful gating, verified end-to-end)
+- **2026-07-13** · `fb94388` — #87 chat /chrome actually enables computer-use on the live session (no more false 'disabled')
+- **2026-07-13** · `76ee0e8` — #67 emoji: :rocket top-result in cells (remove gallery row) + always-on emoji-library toolbar command
+- **2026-07-13** · `05fc193` — #93 add-card ordering reconciled onto main + kanban column-drag ghost placeholder
+- **2026-07-13** · `aed512c` — flashcards: Easy grade, tab-switch progress persistence, markdown overflow, single-advance guard (4 todos)
+- **2026-07-10** · `9ca5cab` — #67 emoji-first autocomplete, #92 infinity-table resize (grabbable handle + auto-scroll)
+- **2026-07-09** · `18cd3ef` — #62 edit/display line-height parity, #67 emoji gallery insert timing, resize-stuck pointer-capture release
+- **2026-07-09** · `5bb1397` — #87 /chrome in slash menu + transcript feedback, #89 per-chat model precedence fix
+- **2026-07-09** · `caf9521` — #62/#67 table fixes, #75 chat polish, #86/#88 vertical tabs, #87 chat --chrome, #89 model saving, #90 compact tables, #91 todo auto-sort, #85 calendar MCP
+- **2026-07-08** · `f958a93` — #75 chat title in the pane toolbar
+- **2026-07-08** · `f2810b9` — #76 PDF 1in margin + selectable font size
+- **2026-07-08** · `7e2140b` — #62/#67 table WebKit fixes + #69 column-width-carry + #70 infinity resize
+- **2026-07-08** · `49722a9` — #84 arrow-key draft history in the chat composer
+- **2026-07-08** · `2891b46` — #82 MCP memory tools resolve vault outside the embedded terminal
+- **2026-07-08** · `2b58b7e` — #83 chat Stop restores queued messages to the composer
+- **2026-07-08** · `b0d8e2d` — #81 show visual chats in the agents graph
+- **2026-07-08** · `3188b99` — #80 calendar multi-category gradient
+- **2026-07-08** · `f8085a8` — #76 PDF always paginates
+- **2026-07-08** · `3ba56f4` — #67 emoji picker default
+- **2026-07-08** · `a23e139` — chat #74/#75/#79 + @-file refs
+- **2026-07-08** · `05b3538` — tables #62/#69/#70/#71 fixes
+- **2026-07-08** · `61d3647` — #78 visualize workflows in the agents graph — dashed lane per workflow
+- **2026-07-08** · `6607fb0` — #77 markdown live-preview in the chat composer (shared editor stack)
+- **2026-07-08** · `36fab57` — #76 PDF export US-Letter pages + 1in margins
+- **2026-07-08** · `032d4f8` — #73 sidebar drag-into-folder + #74 drag notes into chats/notes as wikilinks
+- **2026-07-08** · `e605d34` — #66 reopen-resume regression tests + #75 chat-tab color & rename
+- **2026-07-07** · `05e4530` — #62 reshape fix + table features (drag/infinity/compact/merge)
+- **2026-07-07** · `b91dce2` — #daemon identity overrides stale claude-bot memory guidance
+- **2026-07-07** · `1ab16b5` — #emoji picker defaults to top search result
