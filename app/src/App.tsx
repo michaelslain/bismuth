@@ -75,7 +75,7 @@ import { createViewDrag, type DragDescriptor, type DropTarget, type DropPoint } 
 import type { Zone as DropZone } from "./dnd/geometry";
 import { descriptorMovePath, descriptorNotePath, descriptorChatRefPath, isMarkdown, wikilinkFor } from "./dnd/noteRef";
 import { insertTextAtCoords, insertIntoFocusedEditor } from "./editorRegistry";
-import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { ContextMenu, type MenuItem, type QuickAction } from "./ContextMenu";
 import { openContextMenu, isTauri } from "./nativeMenu";
 import "./App.css";
 import "./ui/popover/popover.css";
@@ -426,19 +426,22 @@ export default function App() {
   // Right-click menu for an editor mark (spelling / grammar / property suggestions),
   // emitted by editor/contextMenu.ts as an 'bismuth-context-menu' event. Rendered with the
   // SAME <ContextMenu> component as the pane menu — one menu style across the app.
-  const [editorMenu, setEditorMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [editorMenu, setEditorMenu] = createSignal<{ x: number; y: number; items: MenuItem[]; quickActions?: QuickAction[] } | null>(null);
   // The "+" toolbar create-chooser menu (same <ContextMenu> surface as the others).
   const [createMenu, setCreateMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
   onMount(() => {
     const onCtx = (e: Event) => {
-      const d = (e as CustomEvent<{ x: number; y: number; items: MenuItem[] }>).detail;
-      openContextMenu(d.x, d.y, d.items, setEditorMenu);
+      const d = (e as CustomEvent<{ x: number; y: number; items: MenuItem[]; quickActions?: QuickAction[] }>).detail;
+      openContextMenu(d.x, d.y, d.items, setEditorMenu, d.quickActions);
     };
     window.addEventListener("bismuth-context-menu", onCtx);
-    // The editor's right-click "Insert emoji" item can't reach openEmojiLibrary directly (it's a
-    // CodeMirror extension), so it dispatches this window event; we run the same picker that the
-    // command palette does, inserting at the focused (right-clicked) editor's caret (#67).
-    const onEmoji = () => { void openEmojiLibrary(); };
+    // The editor's emoji rail button can't reach the picker directly (it's a CodeMirror extension),
+    // so it dispatches this window event; we run the same picker the command palette does. A table
+    // cell passes its own `insert` — its nested editor isn't the focused note view (#67).
+    const onEmoji = (e: Event) => {
+      const insert = (e as CustomEvent<{ insert?: (char: string) => boolean } | undefined>).detail?.insert;
+      void runEmojiLibrary(insert);
+    };
     window.addEventListener("bismuth-open-emoji-library", onEmoji);
     onCleanup(() => {
       window.removeEventListener("bismuth-context-menu", onCtx);
@@ -717,21 +720,28 @@ export default function App() {
     }
   };
   // Emoji library: pop the grid picker (the SAME gallery the icon-field completion uses, sourced to
-  // emoji only) and insert the chosen glyph at the last-focused editor's caret. The always-visible
-  // home for the full library — it lives here, on a toolbar button + in the palette, instead of as a
-  // buried "Open emoji gallery" row in the `:emoji` completion popup (which outranked real matches
-  // like `:rocket`, #67). Dynamically imported so lucide-solid / the gallery stay off the entry
-  // chunk. No focused note → a toast, since there's nowhere to insert.
-  const openEmojiLibrary = async () => {
+  // emoji only) and insert the chosen glyph. The always-visible home for the full library — reached
+  // from the command palette and from the quick-action RAIL beside any editor / table-cell context
+  // menu (#67), instead of a buried "Open emoji gallery" row in the `:emoji` completion popup (which
+  // outranked real matches like `:rocket`). Dynamically imported so lucide-solid / the gallery stay
+  // off the entry chunk.
+  //
+  // `insert` overrides WHERE the glyph lands. Default = the last-focused note editor's caret; a
+  // table cell passes its own, since its nested editor never becomes the focused view. Returning
+  // false (nothing to insert into) → a toast.
+  const runEmojiLibrary = async (insert?: (char: string) => boolean) => {
     const [{ openGallery }, sources] = await Promise.all([
       import("./ui/gallery/galleryStore"),
       import("./ui/gallery/sources"),
     ]);
     const char = await openGallery({ source: sources.emojiSource, title: "Emoji" });
-    if (char && !insertIntoFocusedEditor(char, char.length)) {
-      pushToast("Open a note to insert an emoji");
-    }
+    if (!char) return;
+    const placed = insert ? insert(char) : insertIntoFocusedEditor(char, char.length);
+    if (!placed) pushToast("Open a note to insert an emoji");
   };
+  // The palette/command binding. Kept ARG-LESS on purpose: command actions are invoked from click
+  // handlers that would otherwise pass a MouseEvent straight into `insert`.
+  const openEmojiLibrary = () => { void runEmojiLibrary(); };
   // New window: reopen the CURRENT folder/backend in a new window, pinned to this
   // window's backend via ?api= (so it survives even if this window later opens a
   // different folder). A clean URL (only ?api=) — no other query state carries over.
@@ -2317,7 +2327,7 @@ export default function App() {
         )}
       </Show>
       <Show when={editorMenu()}>
-        {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setEditorMenu(null)} />}
+        {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} quickActions={m().quickActions} onClose={() => setEditorMenu(null)} />}
       </Show>
       <Show when={createMenu()}>
         {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setCreateMenu(null)} />}

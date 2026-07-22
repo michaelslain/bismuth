@@ -2,16 +2,20 @@
 // ONE context-menu path for the note editor. A right-click ANYWHERE in the editor
 // pops the shared <ContextMenu> (via the `bismuth-context-menu` event App listens
 // for) with: any spelling/grammar/property fix actions for the mark under the
-// cursor, an always-present "Insert emoji" item, and standard Copy / Cut / Paste —
-// so replacing the native menu loses nothing. Right-clicking a task checkbox still
-// defers to the checkbox status menu.
+// cursor, and standard Copy / Cut / Paste — so replacing the native menu loses
+// nothing. Right-clicking a task checkbox still defers to the checkbox status menu.
+//
+// The emoji library is NOT one of those rows: it rides the menu's QUICK-ACTION RAIL
+// (`quickActions`, drawn beside the menu to its left) so it can't get buried under the
+// options — see editor/emojiQuickAction.ts for the full #67 rationale.
 import { forEachDiagnostic, type Action } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { requestRelint } from "./relint";
+import { emojiQuickAction, type QuickActionSpec } from "./emojiQuickAction";
 
 export type EditorMenuItem = { label: string; onSelect: () => void; disabled?: boolean; icon?: string; separatorBefore?: boolean };
-export type EditorMenuEvent = { x: number; y: number; items: EditorMenuItem[] };
+export type EditorMenuEvent = { x: number; y: number; items: EditorMenuItem[]; quickActions?: QuickActionSpec[] };
 
 export function editorContextMenu(): Extension {
   return EditorView.domEventHandlers({
@@ -38,7 +42,7 @@ export function editorContextMenu(): Extension {
       event.stopPropagation(); // don't also pop the pane's onContextMenu menu
 
       // Move the caret to where they clicked, but only when there's no active selection —
-      // so Insert emoji / Paste land at the click point, while a right-click on a
+      // so the emoji / Paste land at the click point, while a right-click on a
       // deliberately-selected range (to Copy/Cut it) keeps that selection intact.
       const hadSelection = !view.state.selection.main.empty;
       if (!hadSelection && pos != null) view.dispatch({ selection: { anchor: pos } });
@@ -69,24 +73,11 @@ export function editorContextMenu(): Extension {
         if (!hit.actions.length) items.push({ label: hit.message, onSelect: () => {}, disabled: true });
       }
 
-      // 2) Insert emoji — ALWAYS present. The extension can't reach App's openEmojiLibrary
-      //    directly, so it re-focuses this (right-clicked) editor and fires a window event
-      //    App listens for; the picker then inserts at this editor's caret (#67).
-      items.push({
-        label: "Insert emoji",
-        icon: "Smile",
-        separatorBefore: items.length > 0,
-        onSelect: () => {
-          view.focus();
-          window.dispatchEvent(new CustomEvent("bismuth-open-emoji-library"));
-        },
-      });
-
-      // 3) Standard clipboard actions, so replacing the native menu loses nothing.
+      // 2) Standard clipboard actions, so replacing the native menu loses nothing.
       items.push({
         label: "Copy",
         icon: "Copy",
-        separatorBefore: true,
+        separatorBefore: items.length > 0,
         disabled: !hadSelection,
         onSelect: () => {
           const { from, to } = view.state.selection.main;
@@ -122,7 +113,12 @@ export function editorContextMenu(): Extension {
         },
       });
 
-      window.dispatchEvent(new CustomEvent<EditorMenuEvent>("bismuth-context-menu", { detail: { x: event.clientX, y: event.clientY, items } }));
+      window.dispatchEvent(
+        new CustomEvent<EditorMenuEvent>("bismuth-context-menu", {
+          // No `insert` — App's default (the last-focused note editor's caret) is this view.
+          detail: { x: event.clientX, y: event.clientY, items, quickActions: [emojiQuickAction({ focus: () => view.focus() })] },
+        }),
+      );
       return true;
     },
   });
