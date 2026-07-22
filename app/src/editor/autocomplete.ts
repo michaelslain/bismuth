@@ -423,8 +423,8 @@ export function emojiSource(): CompletionSource {
     // EMOJI ONLY (#67): the popup is a pure, best-first list of emoji, so typing `:rocket`↵
     // inserts 🚀 — the top, default-selected option — with nothing else able to outrank it. The
     // "Open emoji gallery" row that USED to live at the end of this list (and, in the user's build,
-    // floated ABOVE the match) is gone: the full emoji library is now reached through the always-
-    // visible `emoji-library` toolbar command instead of being buried under the completion options.
+    // floated ABOVE the match) is gone: the full emoji library is now reached from the command
+    // palette + the quick-action rail beside the right-click menu, not from inside this list.
     // When nothing matches (e.g. `:zzzz`) we return null so no empty/stray popup appears.
     // filter:false → keep our ranking + keyword matches; no validFor → re-query per keystroke.
     const options: Completion[] = searchEmoji(match.query).map((e) => ({

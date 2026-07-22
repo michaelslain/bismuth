@@ -56,6 +56,7 @@ import { parseWikilink, resolveNotePath, wikilinkOpenPath } from "./wikilink";
 // CodeMirror — we DEFER the blur teardown (both leaveEdit + the root commit) while a gallery is up so
 // the gallery's deferred applyInsert has a live editor to write into + refocus (#49).
 import { isGalleryOpen } from "../ui/gallery/galleryState";
+import { emojiQuickAction, type QuickActionSpec } from "./emojiQuickAction";
 // The nested in-cell CodeMirror editor (#15/#49) is imported DYNAMICALLY (see loadCellEditor below):
 // its extension stack pulls in `livePreview`'s Solid `.tsx`, which bun's headless test transform
 // can't compile, so it must stay OUT of this module's static import graph (the widget's own tests
@@ -234,10 +235,12 @@ function edgeBar(cls: string, label: string, onTrigger: () => void): HTMLButtonE
 // A cell element carrying its live in-cell CodeMirror editor (mounted while the cell is focused).
 type CellHost = HTMLElement & { _cellCM?: CellEditorView };
 // The nested EditorView's minimal surface the widget touches — kept structural so this module never
-// statically imports @codemirror/view's EditorView beyond what it already uses.
+// statically imports @codemirror/view's EditorView beyond what it already uses. `selection`/`dispatch`
+// are here for the emoji rail's insert-into-this-cell (#67); both match EditorView's real shape.
 interface CellEditorView {
-  state: { doc: { toString(): string } };
+  state: { doc: { toString(): string }; selection: { main: { from: number; to: number } } };
   contentDOM: HTMLElement;
+  dispatch(spec: { changes: { from: number; to: number; insert: string }; selection: { anchor: number } }): void;
   destroy(): void;
 }
 
@@ -1158,16 +1161,39 @@ export class TableWidget extends WidgetType {
       return out;
     };
 
+    // The emoji-library rail action for a cell (#67). Unlike the note editor's, it MUST carry its
+    // own `insert`: the picked glyph has to land in THIS cell's nested editor. CM's outer selection
+    // never tracks a cell edit (see `commit`), so App's default target — the last-focused note
+    // editor's caret — would drop the emoji at a stale position elsewhere in the note.
+    //
+    // `enterEdit` mounts + focuses that nested editor before the gallery opens; the gallery then
+    // steals focus, but the cell's `focusout` guard defers teardown while `isGalleryOpen()` (#49),
+    // and galleryStore keeps that flag up until after this insert has run (#67) — so `_cellCM` is
+    // still alive here. Returning false (cold chunk → not yet mounted) makes App toast instead of
+    // inserting into the wrong place.
+    const cellEmojiAction = (cell: CellHost, r: number, c: number): QuickActionSpec =>
+      emojiQuickAction({
+        focus: () => enterEdit(cell, r, c),
+        insert: (char) => {
+          const cm = cell._cellCM;
+          if (!cm) return false;
+          const { from, to } = cm.state.selection.main;
+          cm.dispatch({ changes: { from, to, insert: char }, selection: { anchor: from + char.length } });
+          cm.contentDOM.focus({ preventScroll: true });
+          return true;
+        },
+      });
+
     // Right-click a cell → a table-specific menu (insert/delete row & column, merge/unmerge, edit
     // source), dispatched to App's shared <ContextMenu> via the `bismuth-context-menu` event.
     table.addEventListener("contextmenu", (e) => {
-      const td = (e.target as HTMLElement).closest("[data-cell]");
+      const td = (e.target as HTMLElement).closest("[data-cell]") as CellHost | null;
       if (!td) return;
       e.preventDefault();
       e.stopPropagation();
       const r = Number(td.getAttribute("data-r"));
       const c = Number(td.getAttribute("data-c"));
-      this.openCellMenu(view, root, e as MouseEvent, r, c, mergeMenuItems(r, c));
+      this.openCellMenu(view, root, e as MouseEvent, r, c, mergeMenuItems(r, c), [cellEmojiAction(td, r, c)]);
     });
 
     // ---- Drag-to-resize: COLUMN WIDTHS ONLY ----------------------------------
@@ -1713,7 +1739,15 @@ export class TableWidget extends WidgetType {
 
   // Build + dispatch the right-click menu for the cell at (r, c). Insert/delete act on
   // the grid read fresh from the DOM at apply time, then commit to the markdown source.
-  private openCellMenu(view: EditorView, root: HTMLElement, e: MouseEvent, r: number, c: number, extraItems: TableMenuItem[] = []): void {
+  private openCellMenu(
+    view: EditorView,
+    root: HTMLElement,
+    e: MouseEvent,
+    r: number,
+    c: number,
+    extraItems: TableMenuItem[] = [],
+    quickActions: QuickActionSpec[] = [],
+  ): void {
     const cols = this.cells[0]?.length ?? 0;
     const rowCount = this.cells.length;
     // Each action re-reads the grid fresh from the DOM (in `commit`) and returns a NEW
@@ -1809,7 +1843,16 @@ export class TableWidget extends WidgetType {
     // App listens for `bismuth-context-menu` (editor/contextMenu.ts + App.tsx onMount) and
     // renders these items with the shared <ContextMenu>. (The old `oa-` name predated the
     // app rename and silently dropped the menu — the root cause of "can't right-click a table".)
-    window.dispatchEvent(new CustomEvent("bismuth-context-menu", { detail: { x: e.clientX, y: e.clientY, items } }));
+    //
+    // `quickActions` puts the emoji library on the rail BESIDE this menu rather than in it
+    // (#67). This menu is the long list the rail exists for: insert/delete row, insert/delete
+    // column, merge/unmerge, Edit source. On the rail it's one always-visible click, however
+    // many table ops the list grows. Built by the caller (toDOM), which owns `enterEdit`.
+    window.dispatchEvent(
+      new CustomEvent("bismuth-context-menu", {
+        detail: { x: e.clientX, y: e.clientY, items, quickActions },
+      }),
+    );
   }
 
   // Let CodeMirror ignore events originating inside the widget — the contenteditable
