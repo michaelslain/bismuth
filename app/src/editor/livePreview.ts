@@ -1589,8 +1589,8 @@ export const livePreview = [
     ".cm-html-block": { margin: "0.4em 0", "line-height": "1.55" },
     ".cm-html-inline img, .cm-html-block img": { "max-width": "100%", height: "auto" },
     ".cm-html-inline a, .cm-html-block a": { color: "var(--accent)", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
-    ".cm-diagnostic-error": { "border-left": "3px solid #e5484d" },
-    ".cm-diagnostic-warning": { "border-left": "3px solid #f5a623" },
+    ".cm-diagnostic-error": { "border-left": "3px solid var(--danger)" },
+    ".cm-diagnostic-warning": { "border-left": "3px solid var(--warning)" },
     // Squiggles are colored by CATEGORY (via each diagnostic's markClass), not by
     // severity — so the severity-based cm-lintRange backgrounds are neutralized and
     // the smooth pastel sine wave is drawn per mark: red=spelling, blue=grammar,

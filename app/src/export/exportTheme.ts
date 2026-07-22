@@ -7,11 +7,13 @@
 // (resolvePalette.ts) and passed in via ExportOptions; DEFAULT_PALETTE is the headless
 // (CLI) fallback and mirrors the default "Oxide" theme from App.css.
 import type { ExportTheme, ThemePalette, PaletteToken } from "./types";
+import { CATEGORY_SWATCHES } from "../themes";
 
-// Default 7-token palette (App.css "Oxide" defaults) — the headless fallback.
+// Default 7-token palette — the headless fallback. accent is the App.css :root default
+// (#3F6BF0); the teal→rose category ramp is sourced from the one source (themes.ts
+// CATEGORY_SWATCHES) so it can't drift from the drawing toolbar / gcal / App.css copies.
 const DEFAULT_TOKENS: Record<PaletteToken, string> = {
-  accent: "#3F6BF0", teal: "#22C6D6", blue: "#5C7BEE", violet: "#8B6CF0",
-  green: "#43D49A", gold: "#F2C53D", rose: "#F0509B",
+  accent: "#3F6BF0", ...CATEGORY_SWATCHES,
 };
 
 const DEFAULT_FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';

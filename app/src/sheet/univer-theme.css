@@ -29,10 +29,10 @@
   --univer-primary-900: color-mix(in srgb, var(--accent) 28%, transparent);
 
   /* Danger ramp → the app danger color. */
-  --univer-red-300: var(--danger, #e5534b);
-  --univer-red-400: var(--danger, #e5534b);
-  --univer-red-500: var(--danger, #e5534b);
-  --univer-red-600: var(--danger, #e5534b);
+  --univer-red-300: var(--danger);
+  --univer-red-400: var(--danger);
+  --univer-red-500: var(--danger);
+  --univer-red-600: var(--danger);
 }
 
 /* Ribbon tabs (Start / Formulas / Data) → the app's SegmentedToggle look — the

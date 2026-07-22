@@ -131,11 +131,17 @@ export function renderCalloutHtml(header: CalloutHeader, bodyHtml: string, title
   const content = bodyHtml.trim() ? `<div class="callout-content">${bodyHtml}</div>` : "";
   const cls = `callout callout-${header.type}`;
   const data = escapeAttr(header.type);
+  // Emit the per-type accent as an inline `--callout-color` custom property so THIS module is
+  // the single source of the color for every in-app rendered surface (cards / transclusion /
+  // live-preview widget): the CSS reads var(--callout-color) generically, with no per-type hex
+  // list to keep in sync. `meta.color` is a controlled hex from CALLOUT_TYPES. (The standalone
+  // export doc still carries its own concrete per-type rules via htmlTemplate.ts, unaffected.)
+  const style = ` style="--callout-color:${meta.color}"`;
   if (header.foldable) {
     const open = header.collapsed ? "" : " open";
-    return `<details class="${cls}" data-callout="${data}"${open}><summary class="callout-title">${titleHtmlBlock}</summary>${content}</details>`;
+    return `<details class="${cls}" data-callout="${data}"${style}${open}><summary class="callout-title">${titleHtmlBlock}</summary>${content}</details>`;
   }
-  return `<div class="${cls}" data-callout="${data}"><div class="callout-title">${titleHtmlBlock}</div>${content}</div>`;
+  return `<div class="${cls}" data-callout="${data}"${style}><div class="callout-title">${titleHtmlBlock}</div>${content}</div>`;
 }
 
 // ── Scanning (for the CodeMirror live-preview surface) ───────────────────────────────────────

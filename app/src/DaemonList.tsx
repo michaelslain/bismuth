@@ -70,7 +70,7 @@ function nodeStatus(node: GraphNode): StatusKey {
 
 const STATUS_DOT: Record<StatusKey, string> = {
   running: "var(--accent)",
-  failed: "#e06c75",
+  failed: "var(--danger)",
   idle: "var(--text-muted)",
   disabled: "var(--text-muted)",
 };
@@ -136,7 +136,7 @@ function CronRow(props: {
             status() === "running"
               ? "var(--accent)"
               : status() === "failed"
-                ? "#e06c75"
+                ? "var(--danger)"
                 : "var(--text-muted)",
           "white-space": "nowrap",
           "flex-shrink": 0,

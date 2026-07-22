@@ -45,9 +45,11 @@
   --rose: #F0509B;
   --editor-font: 'Lora', serif;
   --editor-font-size: 16px;
-  /* Semantic tokens not part of the central palette (status colors / shadows). */
+  /* Semantic status colors + shadows — first-paint DARK fallbacks; settingsCssVars.ts
+     projects the per-theme (light/dark) values at runtime from core/src/theme/tokens.ts. */
   --danger: #e5534b;
   --success: #98c379;
+  --warning: #e0a53f;
   --shadow-menu: 0 4px 16px rgba(0, 0, 0, 0.3);
   --shadow-popup: 0 8px 24px rgba(0, 0, 0, 0.25);
   /* Design elevation shadows (cards/popovers vs modals). */
@@ -867,7 +869,7 @@ html.view-dragging .graph-floater { pointer-events: none; }
 /* Drop-to-reference cue (Row 74): a full-pane wash + centered "Drop to reference" pill, shown over a
    chat pane when a file/folder is dragged onto it — a mention, NOT a split (no quadrant highlight). */
 .pane-drop-reference { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px dashed var(--accent); border-radius: 4px; }
-.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: var(--accent); color: var(--accent-fg, #fff); font-size: 13px; font-weight: 600; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); }
+.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 600; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); }
 .pane-divider { flex: 0 0 var(--pane-divider-width, 5px); background: var(--border); cursor: col-resize; }
 .pane-divider.col { cursor: row-resize; }
 .pane-divider:hover { background: var(--accent); }

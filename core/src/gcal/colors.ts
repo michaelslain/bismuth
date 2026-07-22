@@ -1,9 +1,12 @@
 // core/src/gcal/colors.ts
 // Map a Bismuth category color → the nearest Google Calendar EVENT color. A category color
 // is a THEME TOKEN ("accent"/"teal"/"blue"/"violet"/"green"/"gold"/"rose") or a custom hex
-// (app/src/calendar/categoryColor.ts). We resolve tokens to their hex (swatches are fixed in
-// App.css; `accent` is per-theme) then snap to the nearest of Google's 11 event colors — which
-// works with the calendar.events scope (colorId is just an event field). Pure + unit-tested.
+// (app/src/calendar/categoryColor.ts). We resolve tokens to their hex (the fixed category
+// swatch ramp; `accent` is per-theme) then snap to the nearest of Google's 11 event colors —
+// which works with the calendar.events scope (colorId is just an event field). Pure + tested.
+// The swatch ramp + per-theme accents are sourced from core/src/theme/tokens.ts (the single
+// source) instead of hand-mirrored here where they used to drift.
+import { CATEGORY_SWATCHES, THEME_ACCENTS, DEFAULT_THEME } from "../theme/tokens";
 
 // Google's 11 event colors: colorId → background hex (the classic event palette).
 const EVENT_COLORS: Record<string, string> = {
@@ -11,19 +14,12 @@ const EVENT_COLORS: Record<string, string> = {
   "6": "#ffb878", "7": "#46d6db", "8": "#e1e1e1", "9": "#5484ed", "10": "#51b749", "11": "#dc2127",
 };
 
-// Fixed Bismuth swatch tokens → hex (App.css :root). `accent` is per-theme (below).
-const SWATCH_HEX: Record<string, string> = {
-  teal: "#22C6D6", blue: "#5C7BEE", violet: "#8B6CF0", green: "#43D49A", gold: "#F2C53D", rose: "#F0509B",
-};
+// Fixed Bismuth category swatch tokens → hex. Sourced from tokens.ts. `accent` is per-theme.
+const SWATCH_HEX: Record<string, string> = { ...CATEGORY_SWATCHES };
 
-// Per-theme `--accent` hex (app/src/themes.ts). Used to resolve the `accent` category token.
-const THEME_ACCENT: Record<string, string> = {
-  "oxide-duotone": "#5E8DE6", "gunmetal-teal": "#27C2D1", "rose-gold": "#E1748F",
-  "indigo-oxide": "#5C6CF2", "forest-oxide": "#3FB87C", "full-sheen": "#27C2D1",
-  "oxide-duotone-light": "#7A86DE", "gunmetal-teal-light": "#1FA6B4", "rose-gold-light": "#D06A86",
-  "indigo-oxide-light": "#5360E0", "forest-oxide-light": "#2FA86C", "full-sheen-light": "#1FA6B4",
-};
-const DEFAULT_ACCENT = THEME_ACCENT["oxide-duotone"];
+// Per-theme `--accent` hex, derived from THEMES (tokens.ts). Resolves the `accent` category token.
+const THEME_ACCENT: Record<string, string> = THEME_ACCENTS;
+const DEFAULT_ACCENT = THEME_ACCENTS[DEFAULT_THEME];
 
 function hexToRgb(hex: string): [number, number, number] | null {
   const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());

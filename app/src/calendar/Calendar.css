@@ -12,7 +12,10 @@
   --background-modifier-border: var(--border);
   --background-modifier-hover: color-mix(in srgb, var(--fg) 10%, transparent);
   --interactive-accent: var(--accent);
-  --text-on-accent: #fff;
+  /* Obsidian-compat alias for the ONE projected "text on a solid accent fill" token
+     (settingsCssVars --on-accent): near-black on dark themes, white on light — no
+     longer a hardcoded #fff that was illegible-by-luck on the dark accents. */
+  --text-on-accent: var(--on-accent);
   --text-normal: var(--fg);
   --text-muted: color-mix(in srgb, var(--fg) 60%, transparent);
   --text-faint: color-mix(in srgb, var(--fg) 40%, transparent);

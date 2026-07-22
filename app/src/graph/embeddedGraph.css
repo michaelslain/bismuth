@@ -69,6 +69,6 @@
   padding: 8px 12px;
   font-family: "Monaspace Xenon", ui-monospace, monospace;
   font-size: 11.5px;
-  color: var(--danger, #e5534b);
+  color: var(--danger);
   border-bottom: 1px solid var(--border-soft);
 }

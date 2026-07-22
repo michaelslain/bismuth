@@ -5,7 +5,7 @@
 // reference them via var(--name, <fallback>). Adding a CSS-driven setting means
 // adding one line to settingsToCssVars + one var() reference in the stylesheet.
 import { FONT_STACKS, DEFAULT_ACCENT_PALETTE, type Settings } from "./settings";
-import { resolveAppearance } from "./themes";
+import { resolveAppearance, semanticTokens, shadowTokens } from "./themes";
 
 /** Pure: the full `{ "--var": "value" }` map for the given settings. DOM-free + testable.
  *  The color tokens (--bg/--fg/--border/--panel/--text-muted/surfaces/etc.) all come from
@@ -27,6 +27,11 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
   const teal = palette[0] ?? a.accent;
   const blue = palette[2] ?? palette[1] ?? a.accent;
   const violet = palette[3] ?? palette[2] ?? a.accent;
+  // Semantic status colors + elevation shadows, tuned per light/dark (source of truth:
+  // core/src/theme/tokens.ts). Projected so components read var(--danger)/var(--shadow-card)
+  // instead of hardcoding reds/greens or dark-only near-black shadows.
+  const sem = semanticTokens(a);
+  const shadow = shadowTokens(a);
   return {
     "--bg": a.background,
     "--fg": a.foreground,
@@ -110,6 +115,17 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--green": a.categoryGreen ?? (palette[1] ?? a.accent),
     "--gold": a.categoryGold ?? (palette[4] ?? palette[3] ?? a.accent),
     "--rose": a.categoryRose ?? (palette[3] ?? a.accent),
+    // Semantic status colors (SEMANTIC — distinct from the categorical --green/--rose above).
+    // Destructive/success/caution affordances everywhere read these; light themes get their
+    // own accessible values instead of inheriting the dark-tuned olive/red.
+    "--danger": sem.danger,
+    "--success": sem.success,
+    "--warning": sem.warning,
+    // Elevation shadows (light themes get lighter, smaller-blur shadows, not near-black).
+    "--shadow-menu": shadow.menu,
+    "--shadow-popup": shadow.popup,
+    "--shadow-card": shadow.card,
+    "--shadow-modal": shadow.modal,
     "--editor-font": FONT_STACKS[s.appearance.editorFont] ?? s.appearance.editorFont,
     "--editor-font-size": s.appearance.editorFontSize + "px",
     "--sidebar-width": s.appearance.sidebarWidth + "px",
