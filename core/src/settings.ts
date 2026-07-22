@@ -313,6 +313,25 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
   return out;
 }
 
+/** Shared skeleton for the array-typed settings deserializers (`toolbar`/`tabBar`/`dailyNotes`):
+ *  a missing/non-array value falls back to a fresh clone of the seeded default; otherwise each
+ *  object item is passed through `mapItem` (non-objects dropped) and kept when it returns a value. */
+function readListFrom<T>(
+  data: Record<string, unknown>,
+  key: string,
+  mapItem: (o: Record<string, unknown>) => T | null,
+): T[] {
+  const raw = data[key];
+  if (!Array.isArray(raw)) return structuredClone((DEFAULTS as any)[key]) as T[];
+  const out: T[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const entry = mapItem(item as Record<string, unknown>);
+    if (entry) out.push(entry);
+  }
+  return out;
+}
+
 /** A serialized toolbar button: a single `command` OR a `commands` list, plus icon. */
 type ToolbarItem = { command?: string; commands?: string[]; icon: string; tooltip?: string };
 
@@ -327,25 +346,19 @@ type ToolbarItem = { command?: string; commands?: string[]; icon: string; toolti
  *  default — that padding was the [+][💬][💬] bug where removing one button left the default's
  *  trailing button duplicated). A missing/non-array value falls back to the seeded default. */
 function readButtonListFrom(data: Record<string, unknown>, section: "toolbar" | "tabBar"): ToolbarItem[] {
-  const raw = data[section];
-  if (!Array.isArray(raw)) return structuredClone((DEFAULTS as any)[section]) as ToolbarItem[];
-  const out: ToolbarItem[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const o = item as Record<string, unknown>;
-    if (typeof o.icon !== "string" || o.icon.length === 0) continue;
+  return readListFrom<ToolbarItem>(data, section, (o) => {
+    if (typeof o.icon !== "string" || o.icon.length === 0) return null;
     const commands = Array.isArray(o.commands)
       ? o.commands.filter((c): c is string => typeof c === "string" && c.length > 0)
       : [];
     const hasCommand = typeof o.command === "string" && o.command.length > 0;
-    if (commands.length === 0 && !hasCommand) continue;
+    if (commands.length === 0 && !hasCommand) return null;
     const entry: ToolbarItem = commands.length > 0
       ? { commands, icon: o.icon }
       : { command: o.command as string, icon: o.icon };
     if (typeof o.tooltip === "string" && o.tooltip.length > 0) entry.tooltip = o.tooltip;
-    out.push(entry);
-  }
-  return out;
+    return entry;
+  });
 }
 
 /** Pull a clean dailyNotes list out of parsed settings data. Each item needs a
@@ -354,37 +367,44 @@ function readButtonListFrom(data: Record<string, unknown>, section: "toolbar" | 
  *  empty array is honored; a missing/non-array value falls back to the seeded default.
  *  Mirrors readToolbarFrom. */
 function readDailyNotesFrom(data: Record<string, unknown>): DailyNoteConfig[] {
-  const raw = data.dailyNotes;
-  if (!Array.isArray(raw)) return structuredClone((DEFAULTS as any).dailyNotes) as DailyNoteConfig[];
-  const out: DailyNoteConfig[] = [];
   const str = (v: unknown) => (typeof v === "string" ? v : "");
-  for (const item of raw) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const o = item as Record<string, unknown>;
-    if (typeof o.id !== "string" || o.id.length === 0) continue;
-    if (typeof o.fileName !== "string" || o.fileName.length === 0) continue;
-    out.push({
+  return readListFrom<DailyNoteConfig>(data, "dailyNotes", (o) => {
+    if (typeof o.id !== "string" || o.id.length === 0) return null;
+    if (typeof o.fileName !== "string" || o.fileName.length === 0) return null;
+    return {
       id: o.id,
       label: str(o.label) || o.id,
       icon: str(o.icon) || "CalendarDays",
       folder: str(o.folder),
       fileName: o.fileName,
       template: str(o.template),
-    });
+    };
+  });
+}
+
+/** Shared skeleton for the string-map settings deserializers (`folderIcons`/`folderVisibility`):
+ *  a non-array object value is walked entry-by-entry through `accept`, which returns the
+ *  `[key, value]` pair to keep (allowing key normalization) or `null` to drop it; anything else → {}. */
+function readStringMapFrom<V extends string>(
+  data: Record<string, unknown>,
+  key: string,
+  accept: (k: string, v: unknown) => [string, V] | null,
+): Record<string, V> {
+  const raw = data[key];
+  const out: Record<string, V> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      const entry = accept(k, v);
+      if (entry) out[entry[0]] = entry[1];
+    }
   }
   return out;
 }
 
 /** Pull a clean `{folderPath: iconName}` string map out of parsed settings data. */
 function readFolderIconsFrom(data: Record<string, unknown>): Record<string, string> {
-  const raw = data.folderIcons;
-  const out: Record<string, string> = {};
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof v === "string" && v.length > 0) out[k] = v;
-    }
-  }
-  return out;
+  return readStringMapFrom<string>(data, "folderIcons", (k, v) =>
+    typeof v === "string" && v.length > 0 ? [k, v] : null);
 }
 
 /** Read the per-folder icon map from settings.yaml. Absent file / section → {}. */
@@ -404,14 +424,8 @@ function normalizeFolderKey(k: string): string {
 }
 
 function readFolderVisibilityFrom(data: Record<string, unknown>): Record<string, "chat-only" | "hidden"> {
-  const raw = data.folderVisibility;
-  const out: Record<string, "chat-only" | "hidden"> = {};
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (v === "chat-only" || v === "hidden") out[normalizeFolderKey(k)] = v;
-    }
-  }
-  return out;
+  return readStringMapFrom<"chat-only" | "hidden">(data, "folderVisibility", (k, v) =>
+    v === "chat-only" || v === "hidden" ? [normalizeFolderKey(k), v] : null);
 }
 
 /** Read the per-folder visibility map from settings.yaml. Absent file / section → {}. */

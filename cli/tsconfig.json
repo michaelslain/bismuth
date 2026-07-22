@@ -1,22 +1,16 @@
 {
+  // Shared strict/bundler/noEmit + `types: ["bun", "node"]` come from ../tsconfig.base.json.
+  // The `export` command reuses the app's exporter (app/src/export/*), which transitively pulls
+  // Solid JSX + Vite-resolved CSS modules — so cli's program must carry the same JSX + vite/client
+  // ambient setup the app uses (see the `include` of app/src/vite-env.d.ts), or it can't
+  // type-check that bridge.
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
-    "noEmit": true,
-    // The `export` command reuses the app's exporter (app/src/export/*), which transitively
-    // pulls Solid JSX + Vite-resolved CSS modules — so cli's program must carry the same JSX +
-    // vite/client ambient setup the app uses, or it can't type-check that bridge.
-    "types": ["bun", "node"],
     "jsx": "preserve",
-    "jsxImportSource": "solid-js",
-    "skipLibCheck": true,
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "jsxImportSource": "solid-js"
   },
   "include": ["src", "test", "../core/src/d3-force-3d.d.ts", "../app/src/vite-env.d.ts"]
 }

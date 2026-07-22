@@ -2,6 +2,7 @@
 // Pure, DOM-free helpers for wikilink autocomplete. NO CodeMirror imports here, so
 // these run under `bun test` without a browser environment.
 import { previewKind } from "../preview/previewKind";
+import { matchTriggerPrefix } from "./prefixMatch";
 
 // `label` is the basename (what gets inserted + shown in autocomplete); `path` is the
 // note's real vault path (the graph node id), needed to resolve a clicked wikilink to
@@ -16,10 +17,9 @@ const OPEN = /\[\[([^\]\n]*)$/;
 export function matchWikilinkPrefix(
   textBefore: string,
 ): { from: number; query: string } | null {
-  const m = textBefore.match(OPEN);
-  if (!m) return null;
-  // m.index points at the `[[`; the query starts two characters later.
-  return { from: (m.index ?? 0) + 2, query: m[1] };
+  // `[[` precedes the captured query, so matchTriggerPrefix reports `from` two chars
+  // past `m.index` — the query start, just inside the brackets.
+  return matchTriggerPrefix(textBefore, OPEN);
 }
 
 // Parse the inside of a `[[…]]` token (the text between the brackets) into its parts.

@@ -4,8 +4,8 @@
 // variant ("normal" default | "selected" | "unselected"), danger, size, iconSize, plus any
 // native <button> attribute (disabled, onClick, …).
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import type { JSX } from "solid-js";
 import { IconButton } from "./IconButton";
+import { Row } from "./_storyKit";
 
 const meta = {
   title: "UI/IconButton",
@@ -32,26 +32,13 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-function Row(props: { label?: string; children: JSX.Element }) {
-  return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
-      {props.label && (
-        <span style={{ "font-family": "var(--ui-font-stack)", "font-size": "11px", color: "var(--text-muted)", "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
-          {props.label}
-        </span>
-      )}
-      <div style={{ display: "flex", "align-items": "center", gap: "14px" }}>{props.children}</div>
-    </div>
-  );
-}
-
 /** Fully controllable single icon button. */
 export const Playground: Story = {};
 
 /** The three selection states, plus danger + disabled. */
 export const States: Story = {
   render: () => (
-    <Row>
+    <Row wrap={false}>
       <IconButton icon="Star" label="Star (normal)" variant="normal" />
       <IconButton icon="Star" label="Star (unselected)" variant="unselected" />
       <IconButton icon="Star" label="Star (selected)" variant="selected" />
@@ -64,7 +51,7 @@ export const States: Story = {
 /** Sizes (shares Button's sm/md/lg scale). */
 export const Sizes: Story = {
   render: () => (
-    <Row>
+    <Row wrap={false}>
       <IconButton icon="Search" label="Search (sm)" size="sm" />
       <IconButton icon="Search" label="Search (md)" size="md" />
       <IconButton icon="Search" label="Search (lg)" size="lg" />
@@ -75,7 +62,7 @@ export const Sizes: Story = {
 /** Custom icon pixel size (default 16). */
 export const IconSize: Story = {
   render: () => (
-    <Row>
+    <Row wrap={false}>
       <IconButton icon="Settings" label="Settings (12px)" iconSize={12} />
       <IconButton icon="Settings" label="Settings (16px)" iconSize={16} />
       <IconButton icon="Settings" label="Settings (24px)" iconSize={24} />
@@ -86,7 +73,7 @@ export const IconSize: Story = {
 /** A row of icon buttons as used in a view-bar / toolbar (e.g. BaseView's Source toggle). */
 export const ToolbarGroup: Story = {
   render: () => (
-    <Row label="typical toolbar group">
+    <Row label="typical toolbar group" wrap={false}>
       <IconButton icon="Code" label="Source" />
       <IconButton icon="Settings" label="Settings" variant="selected" />
       <IconButton icon="X" label="Close" />

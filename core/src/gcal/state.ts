@@ -4,9 +4,9 @@
 // vault's settings.yaml holds only non-secret operational config (see settingsSchema
 // `googleCalendar`); every secret (client secret, refresh token) lives only here.
 // Reads never throw — a missing/corrupt file degrades to {}.
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync, existsSync } from "node:fs";
+import { gcalDir } from "./manifest";
 
 export interface GcalState {
   /** OAuth "Desktop app" client id (not secret, but kept with the secret for simplicity). */
@@ -23,9 +23,6 @@ export interface GcalState {
   connectedAt?: string;
 }
 
-function gcalDir(home: string = homedir()): string {
-  return join(home, ".bismuth", "gcal");
-}
 function statePath(home?: string): string {
   return join(gcalDir(home), "state.json");
 }

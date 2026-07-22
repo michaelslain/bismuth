@@ -1,0 +1,16 @@
+{
+  // Shared compiler options every workspace tsconfig extends. Options that are identical
+  // across all 7 workspaces (core/app/cli/mcp/memory/daemon/relay) live here; each workspace
+  // keeps only its own divergent bits (target/module/lib/jsx/include/etc.) in its tsconfig.
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "types": ["bun", "node"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}

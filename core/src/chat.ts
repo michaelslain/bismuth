@@ -20,6 +20,7 @@ import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writ
 import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet, type DenyEntry } from "./visibility";
 import { readDaemonSessionIds } from "./daemon";
 import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
+import { emit, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
 // One source of truth for how long a subagent lives in the agents graph, so the chat and relay
 // paths can't drift apart (they render as the same thing in the same view).
 import { DONE_SUBAGENT_TTL_MS, RUNNING_SUBAGENT_MAX_MS } from "./relay";
@@ -430,20 +431,9 @@ interface ChatSession {
   aborting?: boolean;
 }
 
-/** Cap on frames buffered while detached — enough for any realistic turn's tail; a runaway turn
- *  during a long outage drops the middle rather than growing unbounded (the terminal frames that
- *  matter for UI consistency — result/done/permission — are tiny and near the end). */
-const MAX_BUFFERED_FRAMES = 2000;
-
-/** Route a frame to the session's sink, or into the reconnect buffer while detached. Every frame
- *  producer (drain loop, canUseTool, teardown notices) funnels through this. */
-function emit(session: ChatSession, frame: ChatFrame): void {
-  if (session.detached) {
-    if (session.buffer.length < MAX_BUFFERED_FRAMES) session.buffer.push(frame);
-    return;
-  }
-  session.sink(frame);
-}
+// Frame buffering + reconnect lifecycle (MAX_BUFFERED_FRAMES / emit / rebindSessionSink /
+// scheduleSessionClose) is transport-agnostic and shared with the opencode provider — see
+// chatProviders/sessionSink.ts. ChatSession satisfies its SessionSink shape structurally.
 
 const sessions = new Map<string, ChatSession>();
 // createSession is async (it awaits the visibility deny-list build), so a chatId with no
@@ -2120,8 +2110,7 @@ export function closeChat(chatId: string): void {
 export function scheduleClose(chatId: string, ms: number): void {
   const s = sessions.get(chatId);
   if (!s) return;
-  if (s.closeTimer) clearTimeout(s.closeTimer);
-  s.closeTimer = setTimeout(() => closeChat(chatId), ms);
+  scheduleSessionClose(s, ms, () => closeChat(chatId));
 }
 
 /** Re-point a live session's frame sink at a freshly-reconnected socket (and cancel any pending
@@ -2132,37 +2121,7 @@ export function scheduleClose(chatId: string, ms: number): void {
 export function rebindSink(chatId: string, sink: ChatSink): boolean {
   const s = sessions.get(chatId);
   if (!s) return false;
-  if (s.closeTimer) {
-    clearTimeout(s.closeTimer);
-    s.closeTimer = undefined;
-  }
-  s.sink = sink;
-  // Replay everything emitted while the socket was down (detachSink buffered it) — the chat
-  // analogue of terminal.ts's attachSink flush — so mid-turn deltas, tool results, and
-  // permission prompts lost to the gap reach the reconnected client in order.
-  if (s.buffer.length) {
-    const buffered = s.buffer;
-    s.buffer = [];
-    for (const f of buffered) {
-      try {
-        sink(f);
-      } catch {
-        break; // the new socket died mid-flush — the next rebind gets whatever's next
-      }
-    }
-  }
-  s.detached = false;
-  // Reconcile turn state: if NO turn is in flight, the terminating result/done may have been
-  // fired into the dying socket BEFORE the close was even detected (nothing buffers that
-  // window), which would wedge the client's streaming spinner forever. A synthetic `done` is
-  // idempotent client-side, so push one whenever the session is between turns.
-  if (!s.turnActive) {
-    try {
-      sink({ type: "done" });
-    } catch {
-      /* */
-    }
-  }
+  rebindSessionSink(s, sink);
   return true;
 }
 

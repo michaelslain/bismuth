@@ -1,13 +1,10 @@
 /* app/src/intro/marks.tsx — first-run intro visuals (Solid port of the mock).
    The brand lockup + crystal hero reuse the REAL logo marks shipped in
-   /logos/*.svg (spun via CSS); the knowledge-graph hero is a seeded point cloud;
-   the daemon/claude heroes are static terminal panels. Every color comes from the
+   /logos/*.svg (spun via CSS); the daemon/claude heroes are static terminal
+   panels. Every color comes from the
    theme CSS vars (--bg/--fg/--accent/--grad/--graph-0..4/…) so the intro's theme
    picker re-themes all of it live. */
 import { For, type JSX } from "solid-js";
-
-/** Palette pulled from CSS vars so swatches track the chosen theme. */
-const NODE_COLS = ["var(--graph-0)", "var(--graph-1)", "var(--graph-2)", "var(--graph-3)", "var(--graph-4)"];
 
 // ---- small persistent brand lockup (logo mark only — no wordmark) ------
 export function Lockup(props: { icon: string }) {
@@ -29,89 +26,6 @@ export function CrystalStage(props: { icon: string; size?: number }) {
       <div class="vi-crystal-ring" />
       <div class="vi-crystal-spin">
         <img src={`/logos/${props.icon}.svg`} width={size() * 0.82} height={size() * 0.82} alt="" />
-      </div>
-    </div>
-  );
-}
-
-// ---- seeded knowledge-graph point cloud --------------------------------
-// Deterministic LCG so every render is identical (no Math.random).
-export type Cloud = {
-  nodes: { x: number; y: number; hot: boolean; col: string; r: number }[];
-  edges: [number, number][];
-  w: number;
-  h: number;
-};
-export function makeCloud(opts: { N?: number; w?: number; h?: number; seed?: number; rad?: number; hotRate?: number } = {}): Cloud {
-  const N = opts.N ?? 240;
-  const w = opts.w ?? 540;
-  const h = opts.h ?? 430;
-  const rad = opts.rad ?? Math.min(w, h) * 0.44;
-  const hotRate = opts.hotRate ?? 0.11;
-  let s = opts.seed ?? 11;
-  const rnd = () => {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return s / 0x7fffffff;
-  };
-  const cx = w / 2;
-  const cy = h / 2;
-  const nodes: Cloud["nodes"] = [];
-  for (let i = 0; i < N; i++) {
-    const a = rnd() * Math.PI * 2;
-    const r = (0.18 + 0.82 * Math.sqrt(rnd())) * rad;
-    const hot = rnd() < hotRate;
-    nodes.push({
-      x: cx + Math.cos(a) * r,
-      y: cy + Math.sin(a) * r * 0.84,
-      hot,
-      col: NODE_COLS[i % NODE_COLS.length],
-      r: hot ? 1.6 + rnd() * 1.8 : 0.8 + rnd() * 0.9,
-    });
-  }
-  const edges: [number, number][] = [];
-  for (let i = 0; i < N; i++) {
-    let best = -1;
-    let bd = 1e9;
-    for (let j = 0; j < N; j++) {
-      if (i === j) continue;
-      const dx = nodes[i].x - nodes[j].x;
-      const dy = nodes[i].y - nodes[j].y;
-      const d = dx * dx + dy * dy;
-      if (d < bd) {
-        bd = d;
-        best = j;
-      }
-    }
-    if (best > i) edges.push([i, best]);
-  }
-  return { nodes, edges, w, h };
-}
-
-export function GraphStage(props: { w?: number; h?: number }) {
-  const w = () => props.w ?? 540;
-  const h = () => props.h ?? 430;
-  const g = makeCloud({ w: w(), h: h(), seed: 11 });
-  return (
-    <div class="vi-graph" style={{ width: `${w()}px`, height: `${h()}px` }}>
-      <div class="vi-graph-glow" />
-      <div class="vi-graph-drift">
-        <svg viewBox={`0 0 ${g.w} ${g.h}`} preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%" }}>
-          <g stroke="var(--graph-edge)" stroke-width={0.5} opacity={0.45}>
-            <For each={g.edges}>
-              {([a, b]) => (
-                <line x1={g.nodes[a].x.toFixed(1)} y1={g.nodes[a].y.toFixed(1)} x2={g.nodes[b].x.toFixed(1)} y2={g.nodes[b].y.toFixed(1)} />
-              )}
-            </For>
-          </g>
-          <For each={g.nodes}>
-            {(n) => (
-              <circle cx={n.x.toFixed(1)} cy={n.y.toFixed(1)} r={n.r.toFixed(1)} fill={n.hot ? n.col : "var(--node-cold)"} opacity={n.hot ? 1 : 0.75} />
-            )}
-          </For>
-        </svg>
-      </div>
-      <div class="vi-you">
-        <span>You</span>
       </div>
     </div>
   );

@@ -15,9 +15,10 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync, cpSync, existsSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { assertBuiltBinary } from "./buildUtils";
 
-const here = dirname(new URL(import.meta.url).pathname);
+const here = dirname(fileURLToPath(import.meta.url));
 const appDir = join(here, ".."); // app/
 const repoRoot = join(appDir, ".."); // repo root
 const outDir = join(appDir, "src-tauri", "resources", "bismuth-tools");

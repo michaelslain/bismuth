@@ -10,6 +10,7 @@
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
 import { createSignal, type JSX } from "solid-js";
 import { Select, type SelectOption } from "./Select";
+import { Label } from "./_storyKit";
 
 const meta = {
   title: "UI/Select",
@@ -41,9 +42,7 @@ function Controlled(props: { options: SelectOption[]; initial?: string; placehol
 function Field(props: { label: string; children: JSX.Element }) {
   return (
     <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
-      <span style={{ "font-family": "var(--ui-font-stack)", "font-size": "11px", color: "var(--text-muted)", "text-transform": "uppercase", "letter-spacing": "0.05em" }}>
-        {props.label}
-      </span>
+      <Label>{props.label}</Label>
       {props.children}
     </div>
   );

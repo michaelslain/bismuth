@@ -7,6 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 if (process.platform !== "darwin") process.exit(0);
 
@@ -25,7 +26,7 @@ for (const v of volumes) {
 }
 
 // Remove leftover read-write scratch images from a prior failed bundle.
-const here = dirname(new URL(import.meta.url).pathname);
+const here = dirname(fileURLToPath(import.meta.url));
 const macosDir = join(here, "..", "src-tauri", "target", "release", "bundle", "macos");
 try {
   for (const f of readdirSync(macosDir)) {

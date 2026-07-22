@@ -4,5 +4,5 @@
   "type": "module",
   "bin": { "bismuth": "src/index.ts" },
   "dependencies": { "@bismuth/core": "workspace:*" },
-  "devDependencies": { "@types/bun": "latest" }
+  "devDependencies": { "@types/bun": "latest", "@types/node": "^25" }
 }

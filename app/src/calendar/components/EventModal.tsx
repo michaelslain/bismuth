@@ -70,7 +70,7 @@ export function EventModal(props: { store: EventStore }) {
     return {
       title: title(),
       date: date(),
-      ...(allDay() || !startTime() ? {} : { startTime: startTime(), ...(endTime() ? { endTime: endTime() } : {}) }),
+      ...(allDay() || !startTime() ? {} : { startTime: startTime(), ...(endTime() && endTime() > startTime() ? { endTime: endTime() } : {}) }),
       ...(location() ? { location: location() } : {}),
       ...(link() ? { link: link() } : {}),
       ...(description() ? { description: description() } : {}),
