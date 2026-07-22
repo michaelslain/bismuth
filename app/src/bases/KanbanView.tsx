@@ -25,6 +25,7 @@ import { isTauri } from "../nativeMenu";
 import { declaredDefaults } from "../../../core/src/bases/properties";
 import { STATUS_COLOR } from "../ui/StatusDot";
 import { pushToast } from "../Toast";
+import { suppressCardContextMenu } from "./kanbanCardMenu";
 import styles from "./BaseView.module.css";
 
 // Frontmatter key used to persist manual within-column ordering.
@@ -960,6 +961,7 @@ export function KanbanView(props: {
                                 data-kbcard=""
                                 data-path={path}
                                 onPointerDown={(e) => { if (!editing()) startCardDrag(e, path, group().key); }}
+                                onContextMenu={suppressCardContextMenu}
                                 onDragEnter={(e) => onCardFileDragOver(e, path)}
                                 onDragOver={(e) => onCardFileDragOver(e, path)}
                                 onDragLeave={(e) => onCardFileDragLeave(e, path)}
