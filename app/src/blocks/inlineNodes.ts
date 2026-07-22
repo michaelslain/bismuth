@@ -26,6 +26,8 @@ import type { MarkdownNode } from "@milkdown/transformer";
 import { escapeAttr } from "../htmlEscape";
 import { renderMath, onMathReady } from "../editor/katexLoader";
 import { sanitizeHtml } from "../sanitizeHtml";
+import { specForWikiEmbed } from "../editor/embedSpec";
+import { api } from "../api";
 
 // ---------------------------------------------------------------------------------------
 // Generic atom factory
@@ -225,15 +227,41 @@ const wikilink = makeAtom({
   },
 });
 
-// `![[Embed Note]]` / `![[image.png]]` / `![](https://…)` — a transclusion / image embed,
-// rendered as an opaque chip (no live render in the surface; the source round-trips). MUST be
-// tested before the wikilink/markdown-image patterns since `![[` starts with `!`.
+// `![[Embed Note]]` / `![[image.png]]` / `![](https://…)` — a transclusion / image embed. MUST
+// be tested before the wikilink/markdown-image patterns since `![[` starts with `!`.
+//
+// An IMAGE embed renders as the ACTUAL PICTURE (inline, `<img>` against the backend's `/asset`
+// route) — a "▦ shot.png" chip made a dropped image look like nothing had happened, which is
+// what "the image is invisibly attached" was describing. Every other embed (note transclusion,
+// pdf/audio/video) keeps the opaque chip: those are heavy surfaces that don't belong inline in
+// a property field. The atom's `raw` attr is unchanged either way, so toMarkdown still re-emits
+// the source verbatim and the round-trip stays byte-stable (milkdownSerialize.test.ts).
 const EMBED_WIKI_RE = /!\[\[([^\]\n]+)\]\]/;
 const embedWiki = makeAtom({
   id: "bismuthEmbedWiki",
   pattern: EMBED_WIKI_RE,
   dom: (m) => {
     const inner = m[1] ?? "";
+    const spec = specForWikiEmbed(inner, api.assetUrl);
+    if (spec && spec.kind === "image" && spec.src) {
+      const span = document.createElement("span");
+      span.className = "bismuth-embed-image";
+      span.title = m[0];
+      const img = document.createElement("img");
+      img.className = "bismuth-embed-img";
+      img.src = spec.src;
+      img.alt = spec.alt ?? "";
+      if (spec.width) img.style.width = `${spec.width}px`;
+      if (spec.height) img.style.height = `${spec.height}px`;
+      // A missing/unreadable target must not render as a blank gap — fall back to the chip so
+      // the user still sees WHICH embed is broken (mirrors embedBlock's error affordance).
+      img.addEventListener("error", () => {
+        span.replaceChildren(document.createTextNode("▦ " + (spec.alt || inner)));
+        span.className = "bismuth-embed";
+      });
+      span.appendChild(img);
+      return span;
+    }
     const span = chip("bismuth-embed", "▦ " + (inner.split("|")[0].split("#")[0] || inner));
     span.title = m[0];
     return span;

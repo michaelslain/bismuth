@@ -5,7 +5,8 @@ import {
   isImageFile,
   imageEmbed,
   attachmentTarget,
-  appendEmbedToNote,
+  appendEmbedToValue,
+  markdownDropTarget,
 } from "./kanbanImageDrop";
 
 describe("baseName", () => {
@@ -64,25 +65,54 @@ describe("attachmentTarget", () => {
   });
 });
 
-describe("appendEmbedToNote", () => {
-  test("appends after frontmatter+body with a blank-line boundary", () => {
-    const note = "---\ntitle: Card\n---\nSome body text.";
-    expect(appendEmbedToNote(note, "![[photo.png]]")).toBe(
-      "---\ntitle: Card\n---\nSome body text.\n\n![[photo.png]]\n",
+describe("appendEmbedToValue", () => {
+  test("appends to existing description prose with a blank-line boundary", () => {
+    expect(appendEmbedToValue("Some description text.", "![[photo.png]]")).toBe(
+      "Some description text.\n\n![[photo.png]]",
     );
   });
-  test("frontmatter-only note", () => {
-    const note = "---\nstatus: todo\n---\n";
-    expect(appendEmbedToNote(note, "![[a.png]]")).toBe("---\nstatus: todo\n---\n\n![[a.png]]\n");
-  });
-  test("empty note gets just the embed", () => {
-    expect(appendEmbedToNote("", "![[a.png]]")).toBe("![[a.png]]\n");
-    expect(appendEmbedToNote("   \n\n", "![[a.png]]")).toBe("![[a.png]]\n");
+  test("empty description becomes just the embed", () => {
+    expect(appendEmbedToValue("", "![[a.png]]")).toBe("![[a.png]]");
+    expect(appendEmbedToValue("   \n\n", "![[a.png]]")).toBe("![[a.png]]");
   });
   test("multi-embed block stays on consecutive lines", () => {
-    expect(appendEmbedToNote("body", "![[a.png]]\n![[b.png]]")).toBe("body\n\n![[a.png]]\n![[b.png]]\n");
+    expect(appendEmbedToValue("body", "![[a.png]]\n![[b.png]]")).toBe("body\n\n![[a.png]]\n![[b.png]]");
   });
   test("collapses pre-existing trailing whitespace to one blank line", () => {
-    expect(appendEmbedToNote("body\n\n\n", "![[a.png]]")).toBe("body\n\n![[a.png]]\n");
+    expect(appendEmbedToValue("body\n\n\n", "![[a.png]]")).toBe("body\n\n![[a.png]]");
+  });
+  // The value is written into YAML frontmatter and must match what the modal's Milkdown surface
+  // serializes (createDocEditor.normalizeTrailing strips trailing newlines) — otherwise a card's
+  // description would differ depending on WHERE the image was dropped.
+  test("never emits a trailing newline (frontmatter round-trip parity)", () => {
+    expect(appendEmbedToValue("body", "![[a.png]]").endsWith("\n")).toBe(false);
+    expect(appendEmbedToValue("", "![[a.png]]").endsWith("\n")).toBe(false);
+  });
+  test("tolerates a nullish value (an unset description property)", () => {
+    expect(appendEmbedToValue(undefined as unknown as string, "![[a.png]]")).toBe("![[a.png]]");
+  });
+});
+
+describe("markdownDropTarget", () => {
+  const writable = (id: string) => !id.startsWith("file.");
+  const kinds: Record<string, { kind: string }> = {
+    "file.name": { kind: "text" },
+    status: { kind: "select" },
+    description: { kind: "markdown" },
+    notes: { kind: "markdown" },
+  };
+  const kindOf = (id: string) => kinds[id] ?? { kind: "text" };
+
+  test("picks the first writable markdown property", () => {
+    expect(markdownDropTarget(["status", "description", "notes"], kindOf, writable)).toBe("description");
+  });
+  test("skips non-markdown properties", () => {
+    expect(markdownDropTarget(["status"], kindOf, writable)).toBe(null);
+  });
+  test("skips a read-only (file./formula.) column even if markdown-kind", () => {
+    expect(markdownDropTarget(["file.name"], () => ({ kind: "markdown" }), writable)).toBe(null);
+  });
+  test("no columns at all → nowhere visible to drop", () => {
+    expect(markdownDropTarget([], kindOf, writable)).toBe(null);
   });
 });

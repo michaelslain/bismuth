@@ -802,6 +802,18 @@
 .kbMetaMarkdown :global(p) { margin: 0 0 3px; }
 .kbMetaMarkdown :global(p):last-child { margin-bottom: 0; }
 .kbMetaMarkdown :global(ul), .kbMetaMarkdown :global(ol) { margin: 2px 0; padding-left: 16px; }
+/* An image embedded in a card's description (drag an image onto the card / its description) —
+   renderMarkdown emits a real <img>. Fit it to the card: full width, aspect preserved, capped so
+   a tall photo can't turn one card into a whole column. */
+.kbMetaMarkdown :global(.bismuth-embed-img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: 5px;
+  margin: 4px 0;
+}
 .kbMetaMarkdownArea {
   width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
   background: var(--surface-2, var(--panel)); border-radius: 5px; padding: 4px 6px;
