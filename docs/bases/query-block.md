@@ -433,4 +433,4 @@ Key-skeleton inserts (from `KEY_SPECS`):
 
 See also: [bases overview](./overview.md), [sources & composition](./sources.md), [views](./overview.md), [tasks](../tasks/syntax.md).
 
-Source: app/src/editor/queryBlock.ts, app/src/editor/queryComplete.ts, app/src/editor/queryComplete.test.ts, core/src/bases/queryBlock.ts, core/test/bases/queryBlock.test.ts, core/src/bases/parse.ts, core/src/bases/sourceSpec.ts, core/src/bases/types.ts, app/src/bases/BaseView.tsx
+Source: `app/src/editor/queryBlock.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/queryComplete.test.ts`, `core/src/bases/queryBlock.ts`, `core/test/bases/queryBlock.test.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/types.ts`, `app/src/bases/BaseView.tsx`

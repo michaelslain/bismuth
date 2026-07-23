@@ -383,4 +383,4 @@ This is the symmetric counterpart of cron triggers but with **different semantic
 - [communication.md](communication.md) — sessions, identity, and the MCP/relay surface.
 - [../README.md](../README.md) — the docs root.
 
-Source: daemon/src/daemon/cron.ts, daemon/src/daemon/fileWatch.ts, daemon/src/daemon/process.ts, daemon/src/daemon/defaultCrons.ts, daemon/src/daemon/seeds.ts, daemon/src/daemon/session.ts, daemon/src/daemon/index.ts, daemon/src/lib/config.ts, daemon/src/lib/registry.ts, daemon/src/lib/frontmatter.ts
+Source: `daemon/src/daemon/cron.ts`, `daemon/src/daemon/fileWatch.ts`, `daemon/src/daemon/process.ts`, `daemon/src/daemon/defaultCrons.ts`, `daemon/src/daemon/seeds.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/index.ts`, `daemon/src/lib/config.ts`, `daemon/src/lib/registry.ts`, `daemon/src/lib/frontmatter.ts`

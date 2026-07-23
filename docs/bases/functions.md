@@ -484,4 +484,4 @@ price >= this.minPrice  // host-note value in an embedded base
 - **`duration()` returns ms (a number)**, not a Date — compose with `+`/`-` to shift dates.
 - **`&&`/`||` return operand values, not booleans** (JS semantics): `missing || "default"` → `"default"`, `price && "yes"` → `"yes"`. `truthy()` re-coerces at the filter boundary.
 
-Source: core/src/bases/functions.ts, core/src/bases/values.ts, core/src/bases/query.ts, core/src/bases/evaluate.ts, core/src/bases/types.ts, core/test/bases/functions.test.ts, core/test/bases/evaluate.test.ts, core/test/bases/query.test.ts, core/test/bases/parse.test.ts
+Source: `core/src/bases/functions.ts`, `core/src/bases/values.ts`, `core/src/bases/query.ts`, `core/src/bases/evaluate.ts`, `core/src/bases/types.ts`, `core/test/bases/functions.test.ts`, `core/test/bases/evaluate.test.ts`, `core/test/bases/query.test.ts`, `core/test/bases/parse.test.ts`

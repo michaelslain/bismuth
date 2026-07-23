@@ -224,6 +224,6 @@ Bismuth core reads `MACHINE_DIR/daemon.pid` and does a `process.kill(pid, 0)` li
 
 ---
 
-Source: daemon/src/daemon/{index,session,seeds,defaultCrons}.ts, daemon/src/lib/{config,owner,device,platform}.ts, core/src/{daemon,daemonInstall}.ts
+Source: `daemon/src/daemon/{index`, `session`, `seeds`, `defaultCrons}.ts`, `daemon/src/lib/{config`, `owner`, `device`, `platform}.ts`, `core/src/{daemon`, `daemonInstall}.ts`
 </content>
 </invoke>

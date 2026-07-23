@@ -332,4 +332,4 @@ So a missing/blank `template`, or a `template` path that doesn't exist, yields a
 - [Settings schema](../settings/reference.md) — the `templates.folder` and `dailyNotes` schema entries.
 - [Commands & toolbar](../settings/toolbar-commands.md) — how `daily-note:<id>` commands surface on the toolbar.
 
-Source: core/src/templates.ts, core/src/dailyNote.ts, core/src/files.ts, core/test/templates.test.ts, core/test/dailyNote.test.ts, core/src/server.ts, core/src/settings.ts, core/src/schema/settingsSchema.ts, app/src/palette/TemplatePalette.tsx, app/src/editor/autocomplete.ts
+Source: `core/src/templates.ts`, `core/src/dailyNote.ts`, `core/src/files.ts`, `core/test/templates.test.ts`, `core/test/dailyNote.test.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `app/src/palette/TemplatePalette.tsx`, `app/src/editor/autocomplete.ts`

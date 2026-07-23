@@ -34,7 +34,7 @@ Every key's `type` is one of the `PropertyType` kinds (`core/src/schema/types.ts
 
 ## `appearance`
 
-Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-color keys** (`background`, `foreground`, `neutral`, `accent`, `accentPalette` are intentionally absent) — the theme is the single source of color. `app/src/themes.ts` holds the token values, and `settingsCssVars.ts` projects them to CSS vars. The app is dark-by-default but ships matching `-light` themes.
+Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-color keys** (`background`, `foreground`, `neutral`, `accent`, `accentPalette` are intentionally absent) — the theme is the single source of color. `core/src/theme/tokens.ts` holds the token values (re-exported by `app/src/themes.ts`), and `settingsCssVars.ts` projects them to CSS vars. The app is dark-by-default but ships matching `-light` themes.
 
 | Key | Type | Default | Bounds / Values | Doc |
 |-----|------|---------|-----------------|-----|
@@ -654,4 +654,4 @@ The schema is the single source of truth and defaults must equal the current har
 
 See also: [bases overview](../bases/overview.md), [commands & toolbar](../settings/toolbar-commands.md), [keybindings](../settings/keybindings.md).
 
-Source: core/src/schema/settingsSchema.ts, core/src/schema/types.ts, core/src/keybindings.ts, core/src/commands.ts, core/test/schema/settingsSchema.test.ts
+Source: `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/keybindings.ts`, `core/src/commands.ts`, `core/test/schema/settingsSchema.test.ts`

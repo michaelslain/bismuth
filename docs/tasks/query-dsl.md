@@ -445,4 +445,4 @@ group by … | limit … | hide … | show … | short mode | full mode | explai
 - [Tasks overview](./syntax.md) — how tasks are extracted and where the DSL is invoked
 - [Bases overview](../bases/overview.md) — `source: tasks` and the ` ```query ` block (`tasks: <dsl>`)
 
-Source: core/src/tasks-query.ts, core/test/tasks-query.test.ts, core/src/tasks.ts, core/src/dates.ts
+Source: `core/src/tasks-query.ts`, `core/test/tasks-query.test.ts`, `core/src/tasks.ts`, `core/src/dates.ts`

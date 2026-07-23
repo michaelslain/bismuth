@@ -676,4 +676,4 @@ load).
 - **`POST /rows` is read-only despite being POST** — no cache invalidation, no
   SSE broadcast; it lives in the read route table.
 
-Source: core/src/bases/sourceSpec.ts, core/src/bases/source.ts, core/src/bases/rows.ts, core/src/bases/types.ts, core/src/bases/parse.ts, core/src/server.ts, core/src/api.ts (app/src/api.ts), app/src/bases/BaseView.tsx, app/src/bases/rowCache.ts, core/test/bases/source.test.ts, core/test/bases/sourceSpec.test.ts, core/test/bases/rows.test.ts, core/test/bases/queryBlock.test.ts
+Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/source.ts`, `core/src/bases/rows.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/server.ts`, `core/src/api.ts (app/src/api.ts)`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`, `core/test/bases/queryBlock.test.ts`

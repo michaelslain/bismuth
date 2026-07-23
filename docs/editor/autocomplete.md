@@ -210,6 +210,8 @@ Each option has an `info` tooltip with its documentation string.
 
 **Gotcha:** Queries with no letter/digit characters (`:_`, `:-`) return an empty list.
 
+**Right-click quick-action rail (#67).** Besides `:emoji:` autocomplete and the `emoji-library` toolbar command, the emoji gallery is reachable from a **rail hanging off the left edge of the right-click context menu** — always visible on every right-click, outside the option list (not buried among Cut/Copy/Paste/fix actions), one click. `app/src/editor/emojiQuickAction.ts` `emojiQuickAction({ focus, insert? })` builds the shared `QuickActionSpec` (a `Smile`-icon "Emoji library" action) used by both the note-editor menu (`editor/contextMenu.ts`) and the in-cell table menu (`editor/tableWidget.ts`). It re-focuses the surface, then dispatches the `bismuth-open-emoji-library` window event that `App.tsx` listens for to pop the gallery and insert the glyph. The module is deliberately dependency-free (no `@codemirror/*`, no Solid) so `tableWidget.ts`'s headless unit tests stay import-light. The note editor omits `insert` (App's default targets the last-focused editor caret); a **table cell passes its own `insert`** because CodeMirror's outer selection never tracks a cell edit (the cell is a contenteditable island), so the default would drop the glyph at a stale position elsewhere in the note.
+
 ---
 
 ## Task Metadata Completion
@@ -494,4 +496,4 @@ Inside the `properties:` section the key completion is suppressed (property name
 - Keybinding catalog: `core/src/keybindings.ts`
 - Template expansion: `core/src/templates.ts`
 
-Source: app/src/editor/autocomplete.ts, app/src/editor/applyCompletion.ts, app/src/editor/taskComplete.ts, app/src/editor/queryComplete.ts, app/src/editor/settingsComplete.ts, app/src/editor/settingsBuffer.ts, app/src/tabIds.ts, app/src/Editor.tsx, app/src/editor/wikilink.ts, app/src/editor/tag.ts, app/src/editor/emoji.ts, app/src/editor/templateToken.ts, app/src/editor/completionDisplay.ts, app/src/keybindings.ts, core/src/templates.ts, core/src/schema/types.ts, core/src/schema/suggest.ts, core/src/schema/settingsSchema.ts, core/src/bases/types.ts
+Source: `app/src/editor/autocomplete.ts`, `app/src/editor/applyCompletion.ts`, `app/src/editor/taskComplete.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/settingsComplete.ts`, `app/src/editor/settingsBuffer.ts`, `app/src/tabIds.ts`, `app/src/Editor.tsx`, `app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`, `app/src/editor/emoji.ts`, `app/src/editor/templateToken.ts`, `app/src/editor/completionDisplay.ts`, `app/src/keybindings.ts`, `core/src/templates.ts`, `core/src/schema/types.ts`, `core/src/schema/suggest.ts`, `core/src/schema/settingsSchema.ts`, `core/src/bases/types.ts`

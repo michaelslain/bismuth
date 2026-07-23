@@ -308,4 +308,4 @@ Note: `columns` on a `ViewConfig` for non-kanban views like `list` and `bullets`
 
 ---
 
-Source: /Users/michaelslain/Documents/dev/bismuth/app/src/bases/ListView.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BulletsView.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/ui/StatusDot.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/renderValue.tsx, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.module.css, /Users/michaelslain/Documents/dev/bismuth/core/test/bases/query.test.ts, /Users/michaelslain/Documents/dev/bismuth/core/test/bases/queryBlock.test.ts, /Users/michaelslain/Documents/dev/bismuth/core/test/bases/parseBaseFile.test.ts
+Source: `app/src/bases/ListView.tsx`, `app/src/bases/BulletsView.tsx`, `app/src/ui/StatusDot.tsx`, `app/src/bases/renderValue.tsx`, `core/src/bases/types.ts`, `app/src/bases/BaseView.module.css`, `core/test/bases/query.test.ts`, `core/test/bases/queryBlock.test.ts`, `core/test/bases/parseBaseFile.test.ts`

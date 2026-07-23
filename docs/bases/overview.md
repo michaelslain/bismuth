@@ -485,4 +485,4 @@ This base has two views (Table + Cards), a notes source scoped to `#book`, a glo
 - [Embedded query block](./query-block.md) — the ` ```query ` block (a view into a base inside a note).
 - [View docs](./views/) — one doc per `ViewType`.
 
-Source: core/src/bases/types.ts, core/src/bases/parse.ts, core/src/bases/sourceSpec.ts, core/src/bases/rows.ts, app/src/bases/BaseView.tsx, app/src/bases/rowCache.ts, app/src/bases/changeRelevance.ts, app/src/bases/reconcileRows.ts, app/src/FileView.tsx, core/test/bases/parse.test.ts, core/test/bases/parseBaseFile.test.ts, core/test/bases/sourceSpec.test.ts, core/test/bases/queryBlock.test.ts
+Source: `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/rows.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/changeRelevance.ts`, `app/src/bases/reconcileRows.ts`, `app/src/FileView.tsx`, `core/test/bases/parse.test.ts`, `core/test/bases/parseBaseFile.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/queryBlock.test.ts`

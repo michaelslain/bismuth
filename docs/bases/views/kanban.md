@@ -6,11 +6,11 @@ Each card is a note. On a board backed by a real base file (`props.basePath` set
 
 - **Drag cards** between/within columns — writes the new group value + a within-column sort index to the note's frontmatter (`POST /set-property`).
 - **Drag column headers** to reorder columns — persists the new order to the view's `columns` (`groupOrder`).
-- **Edit a card in place** — tap its title to rename the note; tap any meta property chip to edit it through a control matched to its type (text/number/date/select/multiselect/tags, a markdown property opens a multiline textarea, a boolean toggles instantly). See [properties](../properties.md) for how a property's type is determined.
+- **Edit a card** — tapping anywhere on a card opens a focused **edit modal** (`CardEditModal`): its title field renames the note, and every meta property gets a control matched to its type (text/number/date/select/multiselect/tags, a `markdown` property in a rich Milkdown surface, a boolean as an instant Yes/No toggle). Delete lives inside that modal. See [Editable Cards](#editable-cards), and [properties](../properties.md) for how a property's type is determined.
 - **Recolor a column** — click its header dot to pick a color from the theme palette; persists to the view's `groupColors`.
 - **Add a card** — a compact "+" button (Lucide `Plus`) at the bottom of each column opens a composer that creates a note in the board's folder with that column's value set.
 
-The card face shows the note's **title**, then every other property the view's `order:` lists, rendered as **editable meta chips**. `description` is NOT special-cased (#103) — a board that declares it (or lists it in `order:`) shows it exactly like any other property: rendered through its type (a `type: markdown` property renders block markdown and opens a multiline editor on click; see [`order`](#order) below for the default when it's left undeclared). The card deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it.
+The card face shows the note's **title**, then every other property the view's `order:` lists, rendered as **read-only meta chips** — tapping the card opens the [edit modal](#editable-cards). `description` is NOT special-cased (#103) — a board that declares it (or lists it in `order:`) shows it exactly like any other property: rendered through its type (a `type: markdown` property renders block markdown; see [`order`](#order) below for the default when it's left undeclared). The card deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it.
 
 ---
 
@@ -173,7 +173,7 @@ The following standard fields apply to kanban as they do to other view types. Se
 Each card (`app/src/bases/KanbanCard.tsx`) shows:
 
 1. **Title** — the note's filename (`file.name`). Bound to `file.name` specifically (not the base's first display column) so that editing the title is always a **rename** of the note, never a rewrite of some property value. Tap it to edit (see [Editable Cards](#editable-cards)).
-2. **Meta** — every other property the view's `order:` lists (everything except the title column), each shown as a chip, its label stacked **above** its value. On an editable board, tapping a chip swaps in a control matched to the property's type (text/number/date/select/multiselect/tags; a declared `markdown` property — `description` included, since #103 dropped its dedicated slot — opens a multiline auto-growing textarea; a boolean toggles instantly with no popover). Tag columns render as teal `#tags` with no label; other columns get a small uppercase label (`columnLabel`) above the value — unless the view's [`hideLabels`](#hidelabels) is `true`, which suppresses every non-tag label and shows values only. Empty values are skipped entirely (except a declared/runtime-boolean property, which always shows so its chip stays reachable). Embedded ```` ```query ```` kanbans render the same meta section, read-only (no `basePath` to write back to).
+2. **Meta** — every other property the view's `order:` lists (everything except the title column), each shown as a **read-only** chip, its label stacked **above** its value, rendered through the property's resolved type (a declared/`type: markdown` property — `description` included, since #103 dropped its dedicated slot — renders as **block markdown**; a `number` through its format; a `boolean`/`multiselect` as chips; everything else via the heuristic `renderCell`). Tapping the card opens the [edit modal](#editable-cards), focused on the tapped property. Tag columns render as teal `#tags` with no label; other columns get a small uppercase label (`columnLabel`) above the value — unless the view's [`hideLabels`](#hidelabels) is `true`, which suppresses every non-tag label and shows values only. Empty values are skipped entirely (except a declared/runtime-boolean property, which always shows so its chip stays reachable). Embedded ```` ```query ```` kanbans render the same meta section, read-only (no `basePath`, so no modal opens).
 
 The card intentionally does **not** render the `groupBy` value or a generic field dump — the column already conveys the status, and only the properties the view's config explicitly lists appear on the card.
 
@@ -181,11 +181,11 @@ The card intentionally does **not** render the `groupBy` value or a generic fiel
 
 ## Column Colors
 
-Each column's color is resolved by `colColor(key, index)` in `KanbanView.tsx`, in priority order:
+Each column's color is resolved by `colColor(key)` in `KanbanView.tsx`, in priority order:
 
 1. **Explicit override** — `groupColors[key]` from the view config (set via the header dot's color picker).
 2. **Known-status palette** — `STATUS_COLOR[key]` from `app/src/ui/StatusDot.tsx` for semantic statuses (`reading`→teal, `done`/`finished`/`complete`→green, `abandoned`/`dropped`→rose, `to read`→blue).
-3. **Theme graph palette** — otherwise the column gets a distinct color from the active theme's `accentPalette` ramp (`--graph-0` … `--graph-4`, cycled by column index). This is the theme's designed set of distinguishable-yet-cohesive colors (a rainbow on `oxide-duotone`, a green family on a forest theme), so custom columns vary out of the box instead of all sharing one accent.
+3. **Theme graph palette** — otherwise the column gets a distinct color from the active theme's `accentPalette` ramp (the `PALETTE` constant: `--graph-0` … `--graph-4`), the slot chosen by a **stable hash of the column key** (not its position), so reordering columns never recolors them. This is the theme's designed set of distinguishable-yet-cohesive colors (a rainbow on `oxide-duotone`, a green family on a forest theme), so custom columns vary out of the box instead of all sharing one accent.
 
 The resolved color is applied to the column header's dot, a subtle header background tint, and the header's bottom border (all via a `--kb-col-color` CSS variable on the column). The column title text stays `var(--fg)`.
 
@@ -200,22 +200,22 @@ The resolved color is applied to the column header's dot, a subtle header backgr
 Drag a card by clicking and holding anywhere on its surface (the cursor shows `grab`; changes to `grabbing` while dragging). While dragging over a column:
 
 - The target column highlights with an accent border and slightly elevated background.
-- An animated placeholder shows where the card will land on drop. The placeholder height animates to `46px` at the insertion point.
+- An animated placeholder shows where the card will land on drop. The placeholder height animates open to the **dragged card's own height** (projected onto the board as the `--kb-drag-h` CSS variable; `46px` is only the fallback) at the insertion point.
 - Other cards in the column animate to their new positions using FLIP (First-Last-Invert-Play) with a `180ms cubic-bezier(.2,.7,.2,1)` transition, so the surrounding cards slide aside smoothly like Trello.
 
 Drop the card at any position in a target column. If you drag outside all columns and release, the drag is cancelled via a `window` `dragend` handler, and no writes occur.
 
 ### Write behavior on drop
 
-Dropping a card triggers sequential writes to the note's frontmatter via `POST /set-property` (`api.setProperty`):
+Dropping a card sends **one batched request** — `POST /set-properties` (`api.setProperties`) — carrying a `writes` array of every frontmatter write the move implies, so the whole move is a single cache invalidation + single refetch (earlier per-key writes stormed the view). The array is assembled in `dropCard` in this order:
 
-1. **Status write** (cross-column moves only): if the card was dragged to a different column than it started in, `POST /set-property` sets the `groupBy` property to the target column's key. This is skipped for reorders within the same column.
+1. **Status write** (cross-column moves only): if the card was dragged to a different column than it started in *and* the `groupBy` key is writable, a write sets the `groupBy` property (`writableKey(gb.property)`) to the target column's key. Skipped for reorders within the same column and for a non-writable groupBy.
 
-2. **Order write**: `POST /set-property` sets the `order` key to the integer insertion index `i` (0-based, `Math.max(0, Math.min(insertAt, others.length))`).
+2. **Order write**: a write sets the `order` key to the integer insertion index `i` (0-based, `Math.max(0, Math.min(insertAt, others.length))`).
 
-3. **Reindex side-writes**: for every other card in the target column whose current `order` value differs from its new position `k`, a parallel `POST /set-property` sets `order: k`. These run concurrently via `Promise.all`.
+3. **Reindex side-writes**: for every other card in the target column whose current `order` value differs from its new position `k`, a write sets `order: k`.
 
-After all writes complete, `props.onChange()` is called to trigger a data refetch in the parent `BaseView`.
+All of these land in the single `writes` array passed to `api.setProperties`. There is **no** explicit `props.onChange()` after a drop — the drop applies an optimistic overlay (`pending`) immediately, and the mutating `/set-properties` route's SSE broadcast drives the reconciling refetch in the parent `BaseView`.
 
 **Optimistic + flicker-free.** The drop applies the whole new order to a local overlay (`pending`) *before* the writes, so a moved card never snaps back to its origin during the round-trip. Each overlay entry clears itself once the resolved server row matches it exactly. Cards are rendered **keyed by note path** (a stable primitive) rather than by Row object, so an `order`-only change — which `reconcileRows` treats as a fresh identity — *moves* the card's DOM (FLIP-animated) instead of unmounting/remounting it. Together these remove the "whole board reloads/flickers" feel: only a genuinely column-changed card re-mounts, and it does so once, in place.
 
@@ -223,7 +223,7 @@ The `order` key is always the bare string `"order"` — it is hardcoded in `Kanb
 
 ### Writable keys
 
-The property used for `groupBy` must be writable for a cross-column status update to occur. The `writableKey` function in `KanbanView.tsx` determines what frontmatter key to write:
+The property used for `groupBy` must be writable for a cross-column status update to occur. The `writableKey` function in `kanbanMeta.ts` (imported by `KanbanView` and `KanbanCard`) determines what frontmatter key to write:
 
 | `groupBy.property` value | Frontmatter key written | Status update occurs? |
 |---|---|---|
@@ -250,14 +250,56 @@ On drop, the full current column-key order (with the dragged key moved) is persi
 
 ## Editable Cards
 
-On editable boards, the card face edits in place (`KanbanCard.tsx`):
+On editable boards the card face itself is **read-only display** (`KanbanCard.tsx`) — the title plus the meta chips it already has a value for. Tapping the card opens a focused **edit modal** (`CardEditModal.tsx`); every write happens there. Embedded ```` ```query ```` kanbans have no `basePath`, so they stay non-editable and no modal opens.
 
-- **Title → rename.** Tapping the title opens an input seeded with the current filename (text pre-selected). Enter (or blur) commits: if the name changed, the note is renamed via `POST /move` to `<same-folder>/<new-title>.md` (filename-sanitized, de-collided against sibling cards). Escape reverts.
-- **Meta chip → type-aware editor.** Tapping a writable chip swaps in the control its resolved kind calls for (see [Card Face](#card-face)); a `markdown`-kind chip (e.g. `description`) opens an auto-growing textarea. Blur (or Enter, for single-line kinds) commits: a non-empty value is written to the property's frontmatter key (`POST /set-property`); an emptied value **deletes** the key (`POST /delete-property`). Escape reverts. Only one editor — the title input or a single meta chip — is ever open at a time.
+### Opening the modal
 
-**Tap vs drag.** Because the whole card is `draggable`, a plain `click` is unreliable (the browser's drag machinery can swallow it). Editing is therefore triggered by a pointer **tap detector**: `pointerup` within ~6px of `pointerdown` counts as a tap (edit); more movement is a drag and is left to the card's native drag-and-drop. While a field is being edited, the card's `draggable` is turned off so text selection/caret placement work normally. This also makes touch editing work on iPad.
+Because the whole card is a pointer-drag handle (see [Drag-and-Drop](#drag-and-drop)), a plain `click` is unreliable — the drag machinery can swallow it. `KanbanCard` detects a **tap** itself: a `pointerup` within ~6px of `pointerdown` opens the modal; more movement is a drag and is left to the card's pointer-drag (`KanbanView.startCardDrag`). The tap is routed to a field via a `data-edit-target` attribute: tapping the **title** opens the modal focused on the title input, tapping a specific **meta chip** focuses THAT property's editor, and tapping bare card body focuses the first field. Tap-to-edit works on touch/iPad too.
 
-Local signal mirrors paint the committed value instantly (optimistic) and are re-seeded from the row only when the row's own values change on refetch — `mode` is read untracked so committing doesn't flash the stale pre-write value.
+### What the modal edits
+
+The modal (title "Edit card", with an X close and a footer) lists the card's **title** plus **every property in the view's meta columns** (`metaCols` minus the title) — empty or not, unlike the read-only face, which drops empties. This is why a brand-new card's empty `description` is finally editable. Each property gets a control matched to its resolved type (`propertyEditKind`, `app/src/bases/propertyEdit.ts`):
+
+- **`markdown`** (e.g. a bare `description`) → a true-WYSIWYG **Milkdown** surface (`MilkdownField`) — the SAME rich editor notes use, NOT a plain textarea. Its draft commits on blur and on modal close.
+- **`boolean`** → an instant Yes/No **`Chip`** toggle (commits immediately).
+- **everything else** (text/number/date/select/multiselect/tags) → the shared `PropertyValueEditor`, which commits on its own blur.
+
+A non-writable id (`file.`/`formula.`/`this.`) renders as read-only text.
+
+The **title** field renames the note: a non-empty change routes through `KanbanCard`'s optimistic `commitRename` → `KanbanView.renameCard` → `POST /move` to `<same-folder>/<new-title>.md` (filename-sanitized, de-collided against sibling cards); Enter blurs/commits, Escape reverts the draft. Meta commits route through `commitMeta` → `onSetMeta` → `POST /set-property` for a non-empty value, or `POST /delete-property` when the value is cleared (a `null`/empty value clears the key); a declared property's value is coerced through its type first (#100). Optimistic local mirrors paint the committed value instantly and are re-seeded from the row only when the row's own values change on refetch. A board that declares no editable properties shows a "This board declares no editable properties." note under the title.
+
+### Delete
+
+The modal footer has a **DELETE** button beside **DONE** — the **sole** delete affordance for a kanban card (there is no separate inline control and no right-click menu). It trashes the note with an Undo toast (`KanbanView.deleteCard` → `api.del` / `POST /delete`, mirroring FileTree's trash + undo; Undo → `api.restore`) and closes the modal.
+
+### No card context menu
+
+Right-clicking a card shows **nothing** (`kanbanCardMenu.ts`, commit `9cccd11`). There is no custom card menu (delete moved into the modal), and the card must ALSO not fall through to the split-pane context menu — the `.pane-leaf` ancestor (`PaneTree.tsx`) opens that menu on `contextmenu`, so a card that ignored the event would let the pane menu appear underneath it (the reported regression). The card's `onContextMenu` therefore calls `suppressCardContextMenu`, which `preventDefault()`s the native/default menu and `stopPropagation()`s to keep it from bubbling to the pane leaf. No menu UI is opened.
+
+---
+
+## Card Image Drop
+
+Dropping an **OS image file** (from Finder/desktop, or any external file drag) onto a card **face** OR onto the **edit modal's description field** copies the image into the vault's attachment folder and embeds it into the card's description, where it renders inline (#67). This is the same image-drop the note editor provides, reused for cards. It is **not** the in-app pointer drag that moves cards between columns (that's `dnd/viewDrag.ts`, pointer-driven precisely because WKWebView's HTML5 DnD is broken for internal drags) — this is a genuine OS file coming in from outside the app.
+
+**Accepted extensions** (`isImagePath` / `isImageFile` in `kanbanImageDrop.ts`): `png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `avif`, `bmp`, `ico`. A browser drop checks the `File`'s MIME type first (`image/*`), falling back to the extension; a native OS drop carries only a path, so it matches by extension. Non-image files are ignored.
+
+**Where it lands.** The embed targets the **first writable markdown-kind property** among the card's meta columns — conventionally `description`, which `propertyEditKind` types as markdown even when the base declares nothing (`markdownDropTarget` picks it). Each image's bytes are copied into the vault's attachment folder — honoring `settings.attachments.folder`, resolved **relative to the card's note** (`attachmentTarget`) — and an `![[basename]]` wikilink embed (`imageEmbed`) is appended to that property's value on its own line (`appendEmbedToValue`, which keeps existing prose intact and adds no trailing newline so a drop on the face and a drop in the modal serialize byte-identically). Because both the card face and the modal render markdown (`renderMarkdown` turns `![[basename]]` into a real `<img>`), the picture is visible the moment it lands. If the board has **no** writable markdown property to drop into, the drop toasts "No description property on this board to drop an image into" rather than writing the image somewhere invisible. See [Attachments & embeds](../../vault/attachments.md) for the underlying copy-into-attachments convention (the `attachments.folder` resolution, `attachmentTarget`).
+
+### Dual intake path
+
+An OS file drop is delivered by the platform and can't be synthesized from pointer events, so there are two intake paths — mirroring the note editor's image drop exactly:
+
+- **Packaged app (WKWebView + Tauri):** Tauri's native drag-drop handler suppresses the HTML5 `drop` for external files, so the drop arrives only as a `bismuth-native-drag` **CustomEvent** carrying **real on-disk paths**, read via the `@tauri-apps/plugin-fs` fs plugin (`uploadsFromNativePaths`). This is the path that matters in the real app; the forwarded cursor point is zoom/DPR-corrected (`nativeDropPoint`) before the card/field under it is resolved.
+- **Plain browser (dev / claude-in-chrome):** that native event never fires; the HTML5 `dataTransfer.files` path serves instead (`uploadsFromFiles`), gated on the drag actually carrying files (`isFileDrag`).
+
+Both intake paths + the upload live in `cardImageDrop.ts` (shared by the card face and the modal); the pure, DOM-free embed helpers — `markdownDropTarget`, `appendEmbedToValue`, `imageEmbed`, `attachmentTarget`, `baseName`, `isImagePath` / `isImageFile` — live in `kanbanImageDrop.ts`.
+
+**Coordination.** The native `bismuth-native-drag` event is a WINDOW event every surface sees, so `claimNativeDrop()` ensures exactly one surface/board processes a given drop — the card face and an open edit modal don't both handle the same native drop (the modal sits above the board, so a drop on its description resolves in the modal while the board's card handler finds no card under the modal-covered point). The **modal commits the embed immediately on drop** (a drop is a deliberate act — it doesn't wait for a blur to reach disk). While a file is dragged over a valid target the target **highlights** (a card face gets the `kbCardDropTarget` class; the modal field gets `mdDropActive`).
+
+### Scope
+
+Image drop is wired into the **kanban card face** (`KanbanView.tsx`) and the shared **`CardEditModal`** (`CardEditModal.tsx`) only. The generic **Cards view** (`CardsView.tsx`) neither wires it in nor opens `CardEditModal`, so it has no image-drop.
 
 ---
 
@@ -289,7 +331,7 @@ If a card has no `order` frontmatter value (or a non-numeric one), it falls back
 
 ## Backend: `POST /set-property`
 
-The endpoint that kanban drag-drop writes to. From `core/src/server.ts`:
+The endpoint kanban per-property writes go to — card meta edits (`api.setProperty`), column reorder and column colors (`api.setViewProperty`). A card **drag-drop** instead batches its writes into the sibling `POST /set-properties` (`{ writes: [{ path, key, value }, …] }`, same per-write shape) so the whole move is one invalidation; both are mutating routes in `core/src/server.ts`. From `core/src/server.ts`:
 
 ```
 POST /set-property
@@ -329,7 +371,7 @@ To customize column widths, override the CSS variables on the host element or gl
 }
 ```
 
-The column card area (`styles.kanbanCards`) has `padding: 0 10px 12px` and `gap: 9px` between cards.
+The column card area (`styles.kanbanCards`) has `padding: 9px 10px 12px` and `gap: 9px` between cards.
 
 ---
 
@@ -380,10 +422,10 @@ This board will:
 - **Rename mid-edit**: a title rename changes the note's path, so the refetch remounts the card (its identity genuinely changed). Editing is single-mode, so there's no open meta-chip edit to lose in the normal flow; only a value typed into the same card during the brief in-flight window of a just-committed rename would be dropped — a narrow, no-existing-data-loss race.
 - **`description` migration (#103)**: pre-#103 boards that relied on the built-in description slot (via a bare `description`/`note.description` in `order:`, or an explicit `descriptionField:`) keep working with no config changes — `description` still appears, still opens a multiline markdown editor by click, and still persists to the same frontmatter key. The differences are cosmetic: it's no longer visually pinned directly under the title (it renders wherever it falls in `order:`, like any other listed property) and there's no "Add a description…" placeholder affordance for an empty value (an empty meta property simply renders no row until it has one). `descriptionField:` itself is now ignored — see [`descriptionField`](#descriptionfield-deprecated--no-op).
 - **Overwrite scope**: new-card filenames and rename targets are de-collided against the board's visible notes + this session's fresh adds, but not against a same-named note the board's *filter* hides (there's no reliable client-side disk-existence probe). For the common folder-scoped board every note is a visible row, so this doesn't arise.
-- **Concurrent edits**: kanban does sequential writes (status then order); the order write for the dragged card comes after the status write, and reindex writes for other cards run concurrently. A vault SSE event fires after each write, so the view may refetch mid-sequence. The `props.onChange()` call at the end triggers a final refetch to reconcile.
+- **Concurrent edits**: a drop's status write, the dragged card's order write, and every sibling reindex are folded into **one** `POST /set-properties` batch, so a single SSE event fires and the view refetches once (no mid-sequence storm). The optimistic `pending` overlay holds the moved card in place until that reconciling refetch lands; there is no trailing `props.onChange()`.
 - **`order` column hidden by default**: the `order` frontmatter key is an internal persistence detail. Unless the view config explicitly lists `order` or `note.order` in `order:`, it is filtered out of the card body display.
 - **FLIP animation requires the DOM**: the FLIP rect-snapshot + playback runs synchronously in `onColumnDragOver`/`requestAnimationFrame`. If the drag moves very fast (multiple columns per frame), only the last stable state is animated.
 - **Drag cleanup on unmount**: a `window` `dragend` listener cleans up drag state if the card's DOM node unmounts mid-drag (e.g. a vault SSE refetch during a drag). This prevents phantom drag state.
 - **`columns` empty vs absent**: an explicit empty list (`columns: []` → `groupOrder: []`) is treated the same as absent — `query.ts` gates on `view.groupOrder && view.groupOrder.length`, so an empty list falls through to value-ordered groups. Note also that the `hasExplicitOrder` check in `KanbanView` reads `props.result.view.order` (the card-body property list), not `groupOrder` — column ordering (`columns:` → `groupOrder`) and card-body property visibility (`order:` → `order`) are separate config fields.
 
-Source: /Users/michaelslain/Documents/dev/bismuth/app/src/bases/KanbanView.tsx, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/parse.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/query.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/CardBody.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/ui/StatusDot.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.module.css, /Users/michaelslain/Documents/dev/bismuth/app/src/api.ts
+Source: `app/src/bases/KanbanView.tsx`, `app/src/bases/KanbanCard.tsx`, `app/src/bases/CardEditModal.tsx`, `app/src/bases/cardImageDrop.ts`, `app/src/bases/kanbanImageDrop.ts`, `app/src/bases/kanbanCardMenu.ts`, `app/src/bases/kanbanMeta.ts`, `app/src/bases/markdown.ts`, `core/src/server.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/query.ts`, `app/src/bases/CardBody.tsx`, `app/src/ui/StatusDot.tsx`, `app/src/bases/BaseView.module.css`, `app/src/api.ts`

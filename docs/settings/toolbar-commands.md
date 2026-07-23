@@ -465,4 +465,4 @@ toolbar:
 - [Daily notes & templates](../templates/syntax.md) — the `dailyNotes:` config that registers `daily-note:<id>` commands.
 - [Keybindings](./keybindings.md) — the parallel split-data system for keyboard shortcuts (`KEYBINDING_CATALOG` + `matchesKeybinding`).
 
-Source: core/src/commands.ts, app/src/commands.ts, app/src/baseViews.ts, app/src/ai/aiDetect.ts, core/src/daemonInstall.ts, core/src/schema/settingsSchema.ts, core/src/schema/types.ts, core/src/schema/validate.ts, core/test/commands.test.ts, app/src/commands.test.ts, app/src/App.tsx, app/src/editor/settingsComplete.ts
+Source: `core/src/commands.ts`, `app/src/commands.ts`, `app/src/baseViews.ts`, `app/src/ai/aiDetect.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/schema/validate.ts`, `core/test/commands.test.ts`, `app/src/commands.test.ts`, `app/src/App.tsx`, `app/src/editor/settingsComplete.ts`
