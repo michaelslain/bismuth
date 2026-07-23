@@ -1,6 +1,6 @@
 # Themes & Palette System
 
-This document covers every named Bismuth theme, how the `appearance` settings section maps to CSS custom properties on `:root`, the graph accent palette, and the editor font choices. The theme system is the **single source of color** for the entire app: selecting a theme recolors the canvas, surfaces, border, text, accent, graph nodes, terminal, and category swatches from one place, with no per-color overrides. All logic lives in `app/src/themes.ts` (token definitions) and `app/src/settingsCssVars.ts` (CSS projection).
+This document covers every named Bismuth theme, how the `appearance` settings section maps to CSS custom properties on `:root`, the graph accent palette, and the editor font choices. The theme system is the **single source of color** for the entire app: selecting a theme recolors the canvas, surfaces, border, text, accent, graph nodes, terminal, and category swatches from one place, with no per-color overrides. The **single source of truth** is `core/src/theme/tokens.ts` (token definitions). It lives in `core` — not `app` — because the dependency runs app → core: core consumers (gcal event-color mapping, drawing paper/ink, the settings-schema theme enum) must be able to `import` the tokens, and core cannot import app. `app/src/themes.ts` is a **thin, byte-identical re-export** of that module so the frontend keeps its `"./themes"` import path. `app/src/settingsCssVars.ts` still does the CSS projection.
 
 ---
 
@@ -18,24 +18,24 @@ appearance:
 | Setting value | Display name |
 |---|---|
 | `oxide-duotone` | Oxide Duotone *(default)* |
-| `gunmetal-teal` | Gunmetal · Teal |
-| `rose-gold` | Rose-Gold Metal |
+| `gunmetal-teal` | Gunmetal Teal |
+| `rose-gold` | Rose Gold |
 | `indigo-oxide` | Indigo Oxide |
 | `forest-oxide` | Forest Oxide |
-| `full-sheen` | Gunmetal · Full Sheen |
+| `full-sheen` | Full Sheen |
 
 ### Light Themes
 
 | Setting value | Display name |
 |---|---|
-| `oxide-duotone-light` | Oxide Duotone · Light |
-| `gunmetal-teal-light` | Gunmetal · Teal · Light |
-| `rose-gold-light` | Rose-Gold · Light |
-| `indigo-oxide-light` | Indigo Oxide · Light |
-| `forest-oxide-light` | Forest Oxide · Light |
-| `full-sheen-light` | Gunmetal · Full Sheen · Light |
+| `oxide-duotone-light` | Oxide Duotone Light |
+| `gunmetal-teal-light` | Gunmetal Teal Light |
+| `rose-gold-light` | Rose Gold Light |
+| `indigo-oxide-light` | Indigo Oxide Light |
+| `forest-oxide-light` | Forest Oxide Light |
+| `full-sheen-light` | Full Sheen Light |
 
-The `THEME_NAMES` array in `themes.ts` is the ordered authoritative list; the first entry (`oxide-duotone`) is both the schema default and the `DEFAULT_THEME` constant used by `resolveTheme()` when an unknown name is provided.
+The `THEME_NAMES` array in `core/src/theme/tokens.ts` is the ordered authoritative list; the first entry (`oxide-duotone`) is both the schema default and the `DEFAULT_THEME` constant used by `resolveTheme()` when an unknown name is provided. The display names above are the authoritative `THEME_LABELS` map in the same file (no decorative separators). (`app/src/themes.ts` re-exports `THEME_NAMES`, `THEME_LABELS`, and `DEFAULT_THEME`, so the frontend's `"./themes"` import path is unchanged.)
 
 ---
 
@@ -288,7 +288,7 @@ The terminal deliberately stays dark in both light and dark modes:
 
 ### Graph Ramp Variables
 
-The `accentPalette` array is exposed positionally as `--graph-0` through `--graph-4` (always 5 slots; if the palette has fewer, the last valid entry is repeated):
+`settingsCssVars` exposes exactly `--graph-0` through `--graph-4` (5 slots). Each slot maps positionally to `accentPalette[i]`; a missing index falls back to the theme's **accent** (`palette[i] ?? a.accent`), not to the last valid entry. Because only `--graph-0..4` exist, `full-sheen`'s six-entry palette has its 6th hue unexposed as a `--graph` var (the renderer still reads the full array directly):
 
 | CSS var | Source |
 |---|---|
@@ -332,6 +332,59 @@ Bases offline map surfaces:
 | `--map-land` | `surface` |
 | `--map-coast` | `color-mix(accent 45%, surface)` |
 | `--map-grid` | `color-mix(fg 12%, transparent)` |
+
+---
+
+## Semantic Status Tokens
+
+Beyond the palette, `core/src/theme/tokens.ts` defines a **semantic status trio** — `danger` / `success` / `warning` — invariant across a theme's hue but tuned **separately per light vs dark** for accessibility. `settingsCssVars` selects the set via `semanticTokens(tokens)` and projects it as `--danger` / `--success` / `--warning`, so components read `var(--danger)` instead of hardcoding reds and greens.
+
+The dark values match the historical `App.css` `:root` literals (danger/success; `warning` is new); the light values are chosen to stay accessible on a near-white ground (the dark-tuned olive success and red were illegible there).
+
+| Token | CSS var | Dark (`SEMANTIC_DARK`) | Light (`SEMANTIC_LIGHT`) |
+|---|---|---|---|
+| `danger` | `--danger` | `#e5534b` | `#d92d20` |
+| `success` | `--success` | `#98c379` | `#067647` |
+| `warning` | `--warning` | `#e0a53f` | `#b54708` |
+
+These are **semantic**, distinct from the categorical `--green`/`--rose` swatches above — so destructive/success affordances are never re-tinted by a theme's category hues.
+
+---
+
+## Elevation Shadows
+
+`tokens.ts` also owns the elevation shadow set — `menu` / `popup` / `card` / `modal` — selected by `shadowTokens(tokens)` and projected as `--shadow-menu` / `--shadow-popup` / `--shadow-card` / `--shadow-modal`. The dark values are byte-identical to the historical `App.css` `:root` literals; the light values are lighter and smaller-blur, so light themes don't wear the dark themes' heavy near-black drop shadows.
+
+| CSS var | Dark (`SHADOW_DARK`) | Light (`SHADOW_LIGHT`) |
+|---|---|---|
+| `--shadow-menu` | `0 4px 16px rgba(0, 0, 0, 0.3)` | `0 4px 12px rgba(16, 24, 40, 0.10)` |
+| `--shadow-popup` | `0 8px 24px rgba(0, 0, 0, 0.25)` | `0 8px 20px rgba(16, 24, 40, 0.12)` |
+| `--shadow-card` | `0 16px 44px rgba(0, 0, 0, 0.45)` | `0 12px 32px rgba(16, 24, 40, 0.12)` |
+| `--shadow-modal` | `0 40px 110px rgba(0, 0, 0, 0.6)` | `0 24px 64px rgba(16, 24, 40, 0.14)` |
+
+---
+
+## Category Swatches & Accent Ramp (centralization)
+
+`tokens.ts` fixes the six named category hues in one place — `CATEGORY_SWATCHES` — so every consumer sources the same values:
+
+| Token | Hex |
+|---|---|
+| `teal` | `#22C6D6` |
+| `blue` | `#5C7BEE` |
+| `violet` | `#8B6CF0` |
+| `green` | `#43D49A` |
+| `gold` | `#F2C53D` |
+| `rose` | `#F0509B` |
+
+`ACCENT_RAMP` is those six hexes in canonical order (teal → blue → violet → green → gold → rose). `THEME_ACCENTS` is the per-theme `--accent` hex, derived from `THEMES` (`Object.fromEntries(THEME_NAMES.map(n => [n, THEMES[n].accent]))`) so it can **never drift** from the theme definitions.
+
+This is the **one ramp** that used to be hand-copied — and had drifted — into four places; all now source from `tokens.ts`:
+
+- **Drawing toolbar** (`core/src/drawing/theme.ts`): `themeColors()` reads `THEMES[…]` / `DEFAULT_THEME` for a drawing's paper + default ink (dark → `oxide-duotone`, light → `oxide-duotone-light`).
+- **Export theme** (`app/src/export/exportTheme.ts`): `DEFAULT_TOKENS` spreads `CATEGORY_SWATCHES` for the headless-fallback teal→rose ramp (`accent` stays the App.css default `#3F6BF0`).
+- **gcal color map** (`core/src/gcal/colors.ts`): resolves category tokens via `CATEGORY_SWATCHES` and the `accent` token via `THEME_ACCENTS` before snapping to the nearest Google event color.
+- **App.css `:root` fallbacks**: the first-paint literal values mirror these swatches (documented in `tokens.ts`).
 
 ---
 
@@ -426,7 +479,7 @@ The 2D/3D graph dimension and graph simulation settings are **not** affected by 
 
 ---
 
-## resolveTheme / resolveAppearance
+## resolveTheme / resolveAppearance / semanticTokens / shadowTokens
 
 ```ts
 // Resolve a theme name string to its ColorTokens.
@@ -436,9 +489,17 @@ resolveTheme(name: string): ColorTokens
 // Resolve from the appearance sub-object in settings.
 // Currently identical to resolveTheme(a.theme); no per-color overrides exist yet.
 resolveAppearance(a: { theme: string }): ColorTokens
+
+// The semantic status trio (danger/success/warning) for a resolved theme —
+// SEMANTIC_LIGHT when t.isLight, else SEMANTIC_DARK.
+semanticTokens(t: ColorTokens): SemanticTokens
+
+// The elevation shadow set (menu/popup/card/modal) for a resolved theme —
+// SHADOW_LIGHT when t.isLight, else SHADOW_DARK.
+shadowTokens(t: ColorTokens): ShadowTokens
 ```
 
-Both functions are DOM-free and safe to call from tests, the graph renderer, the terminal palette builder, or any non-browser context.
+All four live in `core/src/theme/tokens.ts` and are **DOM-free + dependency-free** (pure data + pure functions), so they're safe to call from tests, the graph renderer, the terminal palette builder, the backend, the CLI, or any non-browser context.
 
 ---
 
@@ -447,12 +508,11 @@ Both functions are DOM-free and safe to call from tests, the graph renderer, the
 `app/src/settings.ts` exports `DEFAULT_ACCENT_PALETTE` as a six-color fallback used by `settingsToCssVars` when `a.accentPalette` is empty:
 
 ```ts
-export const DEFAULT_ACCENT_PALETTE = [
-  "#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"
-];
+// Single-sourced from SHEEN so the values can't drift.
+export const DEFAULT_ACCENT_PALETTE = SHEEN;
 ```
 
-This is the same as the `full-sheen` / `SHEEN` constant in `themes.ts`. In practice every theme provides its own palette, so this fallback is defensive only.
+`SHEEN` is defined in `core/src/theme/tokens.ts` (re-exported through `app/src/themes.ts`) and holds `["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"]` — the `full-sheen` theme's graph ramp. In practice every theme provides its own palette, so this fallback is defensive only.
 
 ---
 
@@ -470,9 +530,9 @@ octagon-bloom · spin-cross · tri-bloom · radial-graph · node-rings
 
 ## Adding a New Theme
 
-1. Add the theme name to `THEME_NAMES` in `app/src/themes.ts` (and to the copy in `core/src/schema/settingsSchema.ts` — they must stay in sync).
-2. Add a `THEME_LABELS` entry for the display name.
-3. Add the `ColorTokens` object to `THEMES`.
+1. Add the theme name to `THEME_NAMES` in `core/src/theme/tokens.ts`. There is **no copy to keep in sync**: `settingsSchema.ts` imports the tuple (`import { THEME_NAMES as THEME_NAME_TUPLE } from "../theme/tokens"; const THEME_NAMES = [...THEME_NAME_TUPLE];`), so the schema enum updates automatically.
+2. Add a `THEME_LABELS` entry for the display name in `tokens.ts`.
+3. Add the `ColorTokens` object to `THEMES` in `tokens.ts`.
 4. Set `isLight: true` if it is a light theme.
 5. Light themes can optionally provide `categoryGreen`/`categoryGold`/`categoryRose` to pin specific category hues that suit the palette; otherwise the defaults from the ramp apply.
 6. No changes to `settingsCssVars.ts` are needed: all derivations are generic over the tokens.
@@ -485,4 +545,4 @@ Per the architecture: one schema entry in `settingsSchema.ts` + one line in `set
 
 ---
 
-Source: `app/src/themes.ts`, `app/src/settingsCssVars.ts`, `core/src/schema/settingsSchema.ts`, `app/src/settings.ts`
+Source: `core/src/theme/tokens.ts`, `app/src/themes.ts` (re-export), `app/src/settingsCssVars.ts`, `core/src/schema/settingsSchema.ts`, `app/src/settings.ts`, `core/src/gcal/colors.ts`, `core/src/drawing/theme.ts`, `app/src/export/exportTheme.ts`

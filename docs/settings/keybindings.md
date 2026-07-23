@@ -336,4 +336,4 @@ Because both the catalog (ids + defaults) and the matcher are pure, both are uni
 - [Settings overview](./overview.md) — `.settings` lifecycle, schema, `POST /set-setting`.
 - [Commands & toolbar](./toolbar-commands.md) — the parallel split-data pattern for commands (`COMMAND_CATALOG` + `bindCommands`).
 
-Source: core/src/keybindings.ts, app/src/keybindings.ts, app/src/keybindings.test.ts, core/src/schema/settingsSchema.ts, core/src/schema/types.ts, app/src/editor/settingsComplete.ts, app/src/App.tsx
+Source: `core/src/keybindings.ts`, `app/src/keybindings.ts`, `app/src/keybindings.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `app/src/editor/settingsComplete.ts`, `app/src/App.tsx`

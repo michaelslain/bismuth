@@ -123,6 +123,6 @@ When this device is not the owner, `sendMessage()` throws immediately (`"This de
 
 See the rest of the daemon docs: [overview.md](overview.md), [lifecycle.md](lifecycle.md), [storage.md](storage.md), [crons-and-processes.md](crons-and-processes.md), [memory.md](memory.md), and the docs root [../README.md](../README.md).
 
-Source: relay/bin/recall-hook.ts, relay/bin/session-end-hook.ts, relay/lib/memory.ts, relay/lib/report.ts, daemon/src/daemon/session.ts, daemon/src/daemon/cron.ts, daemon/src/lib/owner.ts, daemon/src/lib/device.ts, daemon/src/lib/config.ts, memory/src/search.ts, memory/src/index.ts, mcp/src/memory.ts, mcp/src/server.ts
+Source: `relay/bin/recall-hook.ts`, `relay/bin/session-end-hook.ts`, `relay/lib/memory.ts`, `relay/lib/report.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/cron.ts`, `daemon/src/lib/owner.ts`, `daemon/src/lib/device.ts`, `daemon/src/lib/config.ts`, `memory/src/search.ts`, `memory/src/index.ts`, `mcp/src/memory.ts`, `mcp/src/server.ts`
 </content>
 </invoke>

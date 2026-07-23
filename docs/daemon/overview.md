@@ -153,4 +153,4 @@ See also [the docs index](../README.md).
 
 ---
 
-Source: daemon/src/index.ts, daemon/src/daemon/{index,cron,process,session,seeds,defaultCrons}.ts, daemon/src/lib/{config,owner,device,platform}.ts, daemon/src/memory/dream.ts, core/src/{daemon,daemonState,daemonInstall,daemonGraph,daemonViz,fsPaths}.ts, core/src/schema/settingsSchema.ts, memory/src/{index,graph,query,search}.ts, mcp/src/{server,memory}.ts, relay/bin/{recall-hook,session-end-hook}.ts, relay/lib/memory.ts
+Source: `daemon/src/index.ts`, `daemon/src/daemon/{index`, `cron`, `process`, `session`, `seeds`, `defaultCrons}.ts`, `daemon/src/lib/{config`, `owner`, `device`, `platform}.ts`, `daemon/src/memory/dream.ts`, `core/src/{daemon`, `daemonState`, `daemonInstall`, `daemonGraph`, `daemonViz`, `fsPaths}.ts`, `core/src/schema/settingsSchema.ts`, `memory/src/{index`, `graph`, `query`, `search}.ts`, `mcp/src/{server`, `memory}.ts`, `relay/bin/{recall-hook`, `session-end-hook}.ts`, `relay/lib/memory.ts`

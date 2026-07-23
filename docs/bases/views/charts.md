@@ -397,4 +397,4 @@ Week and month bin keys are ISO date strings representing the start of the inter
 - `core/src/bases/query.ts` — `resolveProperty` (property id namespacing)
 - `core/src/bases/values.ts` — `toNumber` (value coercion)
 
-Source: app/src/bases/BarView.tsx, app/src/bases/LineView.tsx, app/src/bases/StatView.tsx, app/src/bases/HeatmapView.tsx, core/src/bases/chart.ts, core/src/bases/types.ts, core/src/dates.ts, core/test/bases/chart.test.ts
+Source: `app/src/bases/BarView.tsx`, `app/src/bases/LineView.tsx`, `app/src/bases/StatView.tsx`, `app/src/bases/HeatmapView.tsx`, `core/src/bases/chart.ts`, `core/src/bases/types.ts`, `core/src/dates.ts`, `core/test/bases/chart.test.ts`

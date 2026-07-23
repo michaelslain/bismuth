@@ -305,6 +305,6 @@ The three tools are **conditionally registered**: `mcp/src/server.ts` only appen
 - **Folders** are single-level, sanitized, AND-scoped in queries, hard boundaries during dreaming, and transparent to backlinks (which match by bare name across all folders).
 - **The frontmatter parser is hand-rolled and lenient** — first-colon splits, bracket-array tags, today-defaults for missing fields — not a YAML library.
 
-Source: memory/src/{index,graph,query,search,recall}.ts, daemon/src/memory/dream.ts, daemon/src/lib/config.ts, daemon/src/daemon/{seeds,defaultCrons}.ts, mcp/src/{server,memory}.ts, relay/lib/memory.ts, relay/bin/{recall-hook,session-end-hook}.ts, core/src/chat.ts
+Source: `memory/src/{index`, `graph`, `query`, `search`, `recall}.ts`, `daemon/src/memory/dream.ts`, `daemon/src/lib/config.ts`, `daemon/src/daemon/{seeds`, `defaultCrons}.ts`, `mcp/src/{server`, `memory}.ts`, `relay/lib/memory.ts`, `relay/bin/{recall-hook`, `session-end-hook}.ts`, `core/src/chat.ts`
 </content>
 </invoke>

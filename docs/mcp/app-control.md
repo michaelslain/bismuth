@@ -67,4 +67,4 @@ bismuth app <verb>  ──HTTP──▶  core /ui/command  ──WebSocket──
 
 `run-command` refuses `core/src/commands.ts`'s `UI_CONTROL_BLOCKLIST` — heavyweight/system verbs an unattended caller shouldn't fire blindly, plus opening a chat: `new-window`, `open-folder`, `update-app`, `update-daemon`, `new-claude-chat`. Enforced authoritatively by `POST /ui/command` and mirrored in the frontend dispatch (`app/src/uiControlClient.ts`). `bismuth app commands` lists what remains.
 
-Source: core/src/uiControl.ts, core/src/runRegistry.ts, core/src/daemonPages.ts, app/src/uiControlClient.ts, cli/src/commands/app.ts, cli/src/commands/page.ts, core/src/server.ts, core/src/commands.ts
+Source: `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `app/src/uiControlClient.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `core/src/server.ts`, `core/src/commands.ts`

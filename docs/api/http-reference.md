@@ -607,4 +607,4 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/terminal` | (WS upgrade) | n/a |
 | GET | `/chat` | (WS upgrade) | n/a |
 
-Source: core/src/server.ts, core/src/sse.ts, core/test/server.test.ts, core/src/graph.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/search.ts, core/src/files.ts, core/src/tasks.ts, core/src/fsPaths.ts, core/src/selfUpdate.ts, core/src/backup.ts, core/src/terminal.ts, core/src/chat.ts, core/src/gcal/index.ts, core/src/gcal/sync.ts
+Source: `core/src/server.ts`, `core/src/sse.ts`, `core/test/server.test.ts`, `core/src/graph.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/search.ts`, `core/src/files.ts`, `core/src/tasks.ts`, `core/src/fsPaths.ts`, `core/src/selfUpdate.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/chat.ts`, `core/src/gcal/index.ts`, `core/src/gcal/sync.ts`

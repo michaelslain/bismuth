@@ -635,4 +635,4 @@ three schedulable dates advanced to the next weekday plus the completed line:
 - [x] submit report #work #q3 🔺 🔁 every weekday 📅 2026-06-10 ⏳ 2026-06-08 🛫 2026-06-05 ✅ 2026-06-10
 ```
 
-Source: core/src/tasks.ts, core/src/taskReorder.ts, app/src/editor/taskFold.ts, app/src/editor/livePreview.ts, app/src/editor/taskComplete.ts, core/src/commands.ts, app/src/commands.ts, app/src/api.ts, core/test/tasks.test.ts, app/src/editor/taskComplete.test.ts, core/src/dates.ts
+Source: `core/src/tasks.ts`, `core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/livePreview.ts`, `app/src/editor/taskComplete.ts`, `core/src/commands.ts`, `app/src/commands.ts`, `app/src/api.ts`, `core/test/tasks.test.ts`, `app/src/editor/taskComplete.test.ts`, `core/src/dates.ts`

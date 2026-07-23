@@ -466,4 +466,4 @@ Merges `.settings` over `DEFAULTS` with a per-key `typeof` check — a stored va
 - [Tags extraction](../vault/wikilinks-tags.md) — how `file.tags` is built from frontmatter + body
 - [Settings schema](../settings/reference.md) — full `SETTINGS_SCHEMA` documentation
 
-Source: core/src/frontmatter.ts, core/src/settings.ts, core/src/schema/settingsSchema.ts, core/src/schema/registry.ts, core/src/schema/types.ts, core/src/schema/validate.ts, core/src/schema/coerce.ts, core/src/schema/suggest.ts, core/src/basesData.ts, core/src/bases/types.ts, core/test/frontmatter.test.ts, core/test/schema/validate-document.test.ts, core/test/schema/integration.test.ts, core/test/schema/types.test.ts
+Source: `core/src/frontmatter.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/registry.ts`, `core/src/schema/types.ts`, `core/src/schema/validate.ts`, `core/src/schema/coerce.ts`, `core/src/schema/suggest.ts`, `core/src/basesData.ts`, `core/src/bases/types.ts`, `core/test/frontmatter.test.ts`, `core/test/schema/validate-document.test.ts`, `core/test/schema/integration.test.ts`, `core/test/schema/types.test.ts`

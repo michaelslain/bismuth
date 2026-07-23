@@ -228,4 +228,4 @@ The frontend invokes it once `phase:"ready"`; the app exits, the detached relaun
 - [HTTP API reference](../api/http-reference.md) — exact shapes of `/update/status`, `/update/apply`, `/update/progress`, `/bismuth/install`.
 - [Install & run](install.md) — building the bundled app from source.
 
-Source: core/src/selfUpdate.ts, app/src/updateCheck.ts, app/src/UpdateBanner.tsx, app/src-tauri/src/lib.rs, app/scripts/build-bismuth-tools.ts, core/src/server.ts, core/src/daemonInstall.ts, core/src/schema/settingsSchema.ts, app/src/api.ts
+Source: `core/src/selfUpdate.ts`, `app/src/updateCheck.ts`, `app/src/UpdateBanner.tsx`, `app/src-tauri/src/lib.rs`, `app/scripts/build-bismuth-tools.ts`, `core/src/server.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `app/src/api.ts`

@@ -355,4 +355,4 @@ views:
 
 ---
 
-Source: `/Users/michaelslain/Documents/dev/bismuth/app/src/bases/TableView.tsx`, `/Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseSettings.tsx`, `/Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/src/bases/parse.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.tsx`, `/Users/michaelslain/Documents/dev/bismuth/core/src/bases/query.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/bases/renderValue.tsx`, `/Users/michaelslain/Documents/dev/bismuth/app/src/bases/columnLabel.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/src/schema/settingsSchema.ts`
+Source: `app/src/bases/TableView.tsx`, `app/src/bases/BaseSettings.tsx`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `app/src/bases/BaseView.tsx`, `core/src/bases/query.ts`, `app/src/bases/renderValue.tsx`, `app/src/bases/columnLabel.ts`, `core/src/schema/settingsSchema.ts`

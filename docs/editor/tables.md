@@ -356,6 +356,8 @@ Right-clicking a cell dispatches a `CustomEvent("bismuth-context-menu")` with `{
 
 A separator appears before "Insert column left" and before "Edit source". Every structural item calls a pure `tableModel` op (see [Structural Row/Column Ops](#structural-rowcolumn-ops)) that returns a new grid, so the serialized markdown stays valid after each edit.
 
+> **Emoji-library quick action (#67).** The cell menu also carries the shared **emoji-library rail action** (a `Smile`-icon "Emoji library" on the context menu's left-edge rail, not a row in the list above) — the same `emojiQuickAction()` the note-editor menu uses (`app/src/editor/emojiQuickAction.ts`; see [emoji autocomplete](autocomplete.md#emoji--special-character-completion-emoji)). The table cell passes its **own `insert` callback** (`tableWidget.ts`), because CodeMirror's outer selection never tracks a cell edit (the cell is a contenteditable island) — so the picked glyph lands in the cell, not at a stale note position. While the gallery is open the widget defers the cell's blur so the edit stays live.
+
 > **Event name.** The menu is delivered via `CustomEvent("bismuth-context-menu")`, the same event `editor/contextMenu.ts` uses and that `App.tsx` listens for. (An earlier build dispatched the pre-rename `oa-context-menu`, which nothing listened for — so right-click did nothing; fixed to `bismuth-context-menu`.)
 
 All row/column operations read the **live DOM grid** at the time `onSelect` fires (not a stale copy), so any in-flight cell edit is captured before the structural change commits. Each operation calls `this.commit(view, root, transform)`.
