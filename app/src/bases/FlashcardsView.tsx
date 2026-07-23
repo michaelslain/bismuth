@@ -19,6 +19,9 @@ import { todayISO } from "../../../core/src/dates";
 import {
   buildQueue,
   nextPosAfterGrade,
+  nextCramPos,
+  reindexRetiredAfterDelete,
+  itemKey,
   canGrade,
   progressTotal,
   loadSession,
@@ -90,8 +93,14 @@ export function FlashcardsView(props: {
   const [goodCount, setGoodCount] = createSignal(restored.good);
   const [easyCount, setEasyCount] = createSignal(restored.easy);
 
+  // Cram-until-easy pool: the itemKey()s of cards already rated "easy" this cram
+  // session. In cram mode a card graded good/hard stays IN the pool and resurfaces
+  // until it's finally easy; only "easy" retires it (see nextCramPos). Empty in
+  // normal mode. A new Set is assigned on each change so the signal stays reactive.
+  const [retired, setRetired] = createSignal<Set<string>>(new Set(restored.retired));
+
   // Persist the session on every state change so a tab switch (unmount) leaves the
-  // latest position + tally in the module store for the next mount to restore.
+  // latest position, tally, and cram pool in the module store for the next mount.
   createEffect(() => {
     saveSession(props.basePath, {
       cram: cram(),
@@ -99,11 +108,15 @@ export function FlashcardsView(props: {
       good: goodCount(),
       hard: hardCount(),
       easy: easyCount(),
+      retired: [...retired()],
     });
   });
 
   const current = () => (pos() < queue().length ? queue()[pos()] : null);
   const graded = () => hardCount() + goodCount() + easyCount();
+  // Distinct cards mastered (rated "easy") this cram session — the cram progress
+  // numerator, since re-reviews make the raw grade count (`graded`) exceed the deck.
+  const mastered = () => retired().size;
 
   // The progress denominator is ANCHORED ONCE per session and then frozen, so the
   // displayed total can never drift as you review. Computing it live (the old
@@ -121,9 +134,13 @@ export function FlashcardsView(props: {
     }
   });
   const total = () => sessionTotal() ?? progressTotal(queue().length, graded(), cram());
+  // Progress numerator: normal mode counts grades (each due card is graded once);
+  // cram counts MASTERED (easy) cards, since cards loop until easy and the grade
+  // count would otherwise blow past the deck size / 100%.
+  const progressCount = () => (cram() ? mastered() : graded());
   const progressPct = () => {
     const t = total();
-    return t === 0 ? 0 : (graded() / t) * 100;
+    return t === 0 ? 0 : (progressCount() / t) * 100;
   };
 
   // Prompt = the side being asked; answer = the side revealed. For a reverse card the
@@ -154,14 +171,26 @@ export function FlashcardsView(props: {
     // Cram mode never writes scheduling — it's practice, not review.
     const persisted = !cram() && !!props.basePath;
     try {
-      // Track the card by its stable row index (c.index), not the positional queue
-      // offset: reviewCardRow pushes the card's due date forward so it drops out of
-      // the due-only queue on the onReviewed refetch. The shorter queue shifts the
-      // next card into the current pos, so we stay put (mirrors deleteCurrent)
-      // rather than incrementing into a queue whose membership just changed.
-      if (persisted) await api.reviewCardRow(props.basePath!, c.index, response, scheduleFields(c.dir));
-      setPos(nextPosAfterGrade(pos(), { cram: cram(), persisted }));
-      if (!cram()) props.onReviewed();
+      if (cram()) {
+        // Cram-until-easy: only an "easy" grade retires the card from the pool; a
+        // good/hard grade leaves it in so it resurfaces on a later wrap. nextCramPos
+        // scans forward (wrapping) for the next still-unmastered card, or -1 when
+        // every card is easy → out-of-range pos shows the "Cram complete" screen.
+        const pool = new Set(retired());
+        if (response === "easy") pool.add(itemKey(c));
+        setRetired(pool);
+        const np = nextCramPos(queue(), pos(), pool);
+        setPos(np === -1 ? queue().length : np);
+      } else {
+        // Track the card by its stable row index (c.index), not the positional queue
+        // offset: reviewCardRow pushes the card's due date forward so it drops out of
+        // the due-only queue on the onReviewed refetch. The shorter queue shifts the
+        // next card into the current pos, so we stay put (mirrors deleteCurrent)
+        // rather than incrementing into a queue whose membership just changed.
+        if (persisted) await api.reviewCardRow(props.basePath!, c.index, response, scheduleFields(c.dir));
+        setPos(nextPosAfterGrade(pos(), { cram: false, persisted }));
+        props.onReviewed();
+      }
     } finally {
       setGrading(false);
     }
@@ -173,6 +202,9 @@ export function FlashcardsView(props: {
     setHardCount(0);
     setGoodCount(0);
     setEasyCount(0);
+    // Empty the cram-until-easy pool so a restarted / re-toggled session re-masters
+    // every card from scratch.
+    setRetired(new Set<string>());
     // Drop the frozen denominator so the next queue (new mode / restarted session)
     // re-anchors the total from scratch.
     setSessionTotal(null);
@@ -215,10 +247,38 @@ export function FlashcardsView(props: {
   // Delete the current card and advance: rowDelete drops it from the base, the
   // onReviewed refetch shrinks the queue, and the next card shifts into this pos
   // (so we stay put — same as grading a card out of the due queue).
+  //
+  // In cram the positional "stay put" isn't enough: the refetch reindexes every
+  // higher row, and our cram bookkeeping (the index-keyed `retired` pool, the
+  // frozen deck-size total, and `pos`) would otherwise go stale — reading as a
+  // premature "Cram complete" or resurfacing an already-mastered card. So we
+  // reconcile it against the post-delete deck BEFORE the refetch lands.
   const deleteCurrent = async () => {
     const c = current();
     if (!c || !props.basePath) return;
     setRevealed(false);
+    if (cram()) {
+      const perRow = bidirectional() ? 2 : 1; // fwd+rev entries a row contributes
+      const newRetired = new Set(reindexRetiredAfterDelete(retired(), c.index));
+      // buildQueue is pure, so the cram queue after the row is removed can be
+      // computed now (cram ignores due dates, so this matches the coming refetch).
+      const newQueue = buildQueue(
+        props.rows.filter((_, i) => i !== c.index),
+        dueField(),
+        todayISO(),
+        true,
+        bidirectional(),
+      );
+      setRetired(newRetired);
+      // The frozen total drops by the entries this row contributed.
+      setSessionTotal((t) => (t === null ? t : Math.max(0, t - perRow)));
+      // Reposition onto the next still-unmastered card in the shrunk deck (or the
+      // completion sentinel when none remain). Scanning from pos()-1 makes the slot
+      // the deleted card vacated the first candidate; nextCramPos never lands on a
+      // retired card and reports -1 only when every survivor is mastered.
+      const np = newQueue.length === 0 ? 0 : nextCramPos(newQueue, pos() - 1, newRetired);
+      setPos(np === -1 ? newQueue.length : np);
+    }
     await api.rowDelete(props.basePath, c.index);
     props.onReviewed();
   };
@@ -260,7 +320,10 @@ export function FlashcardsView(props: {
       <div class="revhead">
         <div class="progress">
           <div class="count">
-            <b>{Math.min(graded() + 1, total())}</b> / {total()}
+            {/* Normal mode: the 1-indexed card you're on. Cram: how many cards are
+                mastered (easy) so far — cards loop until easy, so a position index
+                would be meaningless. */}
+            <b>{cram() ? mastered() : Math.min(graded() + 1, total())}</b> / {total()}
             <Show when={bidirectional() && current()}>
               {" · "}
               <span class="card-dir">{current()!.dir === "fwd" ? "front → back" : "back → front"}</span>
@@ -330,8 +393,19 @@ export function FlashcardsView(props: {
               <div class="done">
                 <div class="big">{cram() ? "Cram complete" : "Deck complete"}</div>
                 <div class="sub">
-                  You reviewed <b>{graded()}</b> {graded() === 1 ? "card" : "cards"}
-                  <Show when={goodCount() > 0}> · <span class="good-text">good</span> on most</Show>.
+                  <Show
+                    when={cram()}
+                    fallback={
+                      <>
+                        You reviewed <b>{graded()}</b> {graded() === 1 ? "card" : "cards"}
+                        <Show when={goodCount() > 0}> · <span class="good-text">good</span> on most</Show>.
+                      </>
+                    }
+                  >
+                    Every card is <span class="good-text">easy</span> — you mastered{" "}
+                    <b>{total()}</b> {total() === 1 ? "card" : "cards"} in <b>{graded()}</b>{" "}
+                    {graded() === 1 ? "review" : "reviews"}.
+                  </Show>
                 </div>
                 <TextButton size="lg" onClick={restart}>REVIEW AGAIN</TextButton>
               </div>

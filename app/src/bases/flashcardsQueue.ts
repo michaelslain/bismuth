@@ -18,6 +18,16 @@ export function backField(field: string): string {
 }
 
 /**
+ * A queue item's stable identity within a session: its row `index` plus review
+ * `dir`. A bidirectional row's forward and reverse entries get distinct keys, so
+ * each direction is mastered (see cram-until-easy below) independently. Used to
+ * track which cards have been retired from the cram pool.
+ */
+export function itemKey(it: QueueItem): string {
+  return `${it.index}:${it.dir}`;
+}
+
+/**
  * Build the review queue from the base's rows.
  * - cram mode: ALL cards, order preserved (scheduling never changes).
  * - normal mode: only cards due today or earlier (null / empty / <= today).
@@ -77,18 +87,68 @@ export function progressTotal(queueLen: number, graded: number, cram: boolean): 
 }
 
 /**
- * Decide the next queue position after grading the card at `pos`.
+ * Decide the next queue position after grading the card at `pos`, for NON-cram
+ * (normal / persisted) reviews. Cram now traverses via `nextCramPos` instead
+ * (cards loop until mastered), so the `cram: true` branch here is only exercised
+ * by the standalone unit tests and the no-persistence fallback path.
  *
- * In cram mode the queue never changes membership, so step strictly
- * front-to-back (pos + 1). In a persisted non-cram review, scheduling pushes the
- * graded card's due date forward so it drops out of the due-only queue on the
- * next refetch; the shorter queue then shifts the *next* card into the current
- * position, so we stay put (mirrors deleteCurrent). With no persistence the card
- * stays due, so we advance by position to avoid re-showing it forever.
+ * In a persisted non-cram review, scheduling pushes the graded card's due date
+ * forward so it drops out of the due-only queue on the next refetch; the shorter
+ * queue then shifts the *next* card into the current position, so we stay put
+ * (mirrors deleteCurrent). With no persistence the card stays due, so we advance
+ * by position to avoid re-showing it forever. Cram (no refetch) steps strictly
+ * front-to-back (pos + 1).
  */
 export function nextPosAfterGrade(pos: number, opts: { cram: boolean; persisted: boolean }): number {
   if (opts.cram) return pos + 1;
   return opts.persisted ? pos : pos + 1;
+}
+
+/**
+ * Cram traversal: after grading the card at `pos`, find the next card still in the
+ * cram pool — i.e. NOT yet rated "easy" — scanning forward from `pos` and WRAPPING
+ * around to the front. Returns the queue position to show next, or `-1` when every
+ * card has been mastered (all retired), which the view treats as "Cram complete".
+ *
+ * This is the cram-until-easy loop: grading a card "good" or "hard" leaves it in
+ * the pool, so it resurfaces on a later wrap; only "easy" retires it. The user
+ * therefore keeps re-reviewing the good/hard cards, round after round, until each
+ * one is easy. Because the scan starts at `pos + 1` and wraps, the current round
+ * finishes (every remaining pool card is shown once) before a still-unmastered
+ * card comes back around — rather than immediately re-showing the card just graded.
+ *
+ * With a single card left in the pool, a good/hard grade returns that same `pos`
+ * (it is the only non-retired item), so it is shown again until finally rated easy.
+ * `retired` holds `itemKey()`s of cards already rated easy this session.
+ */
+export function nextCramPos(queue: QueueItem[], pos: number, retired: Set<string>): number {
+  const n = queue.length;
+  for (let step = 1; step <= n; step++) {
+    const i = (pos + step) % n;
+    if (!retired.has(itemKey(queue[i]))) return i;
+  }
+  return -1; // every card mastered → session complete
+}
+
+/**
+ * Reindex the cram `retired` pool after the row at `deletedIndex` is removed from
+ * the deck. `retired` keys are `"<rowIndex>:<dir>"`, but `rowDelete` shifts every
+ * higher row index DOWN by one on the refetch, so any key above the deleted row
+ * must decrement to keep pointing at the same card; keys for the deleted row itself
+ * are dropped. Without this, a stale key would either mask a survivor (skipping it
+ * forever, so the session "completes" with cards unmastered) or match nothing (so
+ * an already-easy card resurfaces). Returns a fresh array (stable signal identity).
+ */
+export function reindexRetiredAfterDelete(retired: Iterable<string>, deletedIndex: number): string[] {
+  const out: string[] = [];
+  for (const key of retired) {
+    const sep = key.lastIndexOf(":");
+    const idx = Number(key.slice(0, sep));
+    const dir = key.slice(sep + 1);
+    if (idx === deletedIndex) continue; // the row being deleted — drop its keys
+    out.push(idx > deletedIndex ? `${idx - 1}:${dir}` : key);
+  }
+  return out;
 }
 
 /**
@@ -113,6 +173,10 @@ export function canGrade(state: { revealed: boolean; grading: boolean }): boolea
  * tally. `pos` is the cram-mode queue offset (a persisted review stays at 0 as
  * cards drop out); the three counts are the per-grade tally. Lives only for the
  * app session (module scope) — never written to disk.
+ *
+ * `retired` is the cram-until-easy pool bookkeeping: the `itemKey()`s of cards
+ * already rated "easy" this cram session (empty in normal mode). Persisting it
+ * lets a mid-cram tab switch resume with the mastered cards still retired.
  */
 export interface SessionState {
   cram: boolean;
@@ -120,11 +184,12 @@ export interface SessionState {
   good: number;
   hard: number;
   easy: number;
+  retired: string[];
 }
 
 /** A fresh, zeroed session (first open of a deck, or one with no saved state). */
 export function emptySession(): SessionState {
-  return { cram: false, pos: 0, good: 0, hard: 0, easy: 0 };
+  return { cram: false, pos: 0, good: 0, hard: 0, easy: 0, retired: [] };
 }
 
 // Session store, keyed by the deck's base path. Module scope so it survives a
@@ -133,17 +198,19 @@ export function emptySession(): SessionState {
 const sessions = new Map<string, SessionState>();
 
 /** Read the saved session for `key` (a deck's base path), or a fresh zeroed one.
- *  Returns a COPY so the caller's signal writes don't mutate the stored record. */
+ *  Returns a COPY — including a fresh `retired` array — so the caller's signal
+ *  writes don't mutate the stored record. */
 export function loadSession(key: string | undefined): SessionState {
   const saved = key ? sessions.get(key) : undefined;
-  return saved ? { ...saved } : emptySession();
+  return saved ? { ...saved, retired: [...(saved.retired ?? [])] } : emptySession();
 }
 
 /** Persist the session for `key`. A missing key is a no-op — an unsaved deck
- *  (e.g. an embedded query with no base path) has nothing to resume. */
+ *  (e.g. an embedded query with no base path) has nothing to resume. Copies
+ *  `retired` so later mutation of the caller's array can't reach the store. */
 export function saveSession(key: string | undefined, state: SessionState): void {
   if (!key) return;
-  sessions.set(key, { ...state });
+  sessions.set(key, { ...state, retired: [...state.retired] });
 }
 
 /** Drop a deck's saved session. Exposed for tests / explicit resets. */

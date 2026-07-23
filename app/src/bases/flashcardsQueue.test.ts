@@ -2,6 +2,9 @@ import { test, expect } from "bun:test";
 import {
   buildQueue,
   backField,
+  itemKey,
+  nextCramPos,
+  reindexRetiredAfterDelete,
   canGrade,
   progressTotal,
   nextPosAfterGrade,
@@ -9,6 +12,7 @@ import {
   loadSession,
   saveSession,
   clearSession,
+  type QueueItem,
   type SessionState,
 } from "./flashcardsQueue";
 import type { Row } from "../../../core/src/bases/types";
@@ -94,7 +98,7 @@ test("single-advance-per-grade: a re-press during an in-flight grade is a no-op"
 
 // ── Session persistence: resume position + tally across unmount→remount ────
 test("emptySession is a fresh zeroed session", () => {
-  expect(emptySession()).toEqual({ cram: false, pos: 0, good: 0, hard: 0, easy: 0 });
+  expect(emptySession()).toEqual({ cram: false, pos: 0, good: 0, hard: 0, easy: 0, retired: [] });
 });
 
 test("loadSession returns a fresh session for an unseen or undefined key", () => {
@@ -105,19 +109,22 @@ test("loadSession returns a fresh session for an unseen or undefined key", () =>
 test("saveSession then loadSession resumes the exact position and tally", () => {
   const key = "reading/Spanish.md";
   clearSession(key);
-  const mid: SessionState = { cram: true, pos: 3, good: 5, hard: 2, easy: 4 };
+  const mid: SessionState = { cram: true, pos: 3, good: 5, hard: 2, easy: 4, retired: ["1:fwd", "2:fwd"] };
   saveSession(key, mid);
-  // A remount reads it back — the user returns to card 4 (pos 3) with their tally intact.
+  // A remount reads it back — the user returns to card 4 (pos 3) with their tally
+  // and cram-mastered pool intact.
   expect(loadSession(key)).toEqual(mid);
 });
 
 test("loadSession returns a COPY so signal writes don't mutate the stored record", () => {
   const key = "deck-copy.md";
   clearSession(key);
-  saveSession(key, { cram: false, pos: 2, good: 1, hard: 0, easy: 0 });
+  saveSession(key, { cram: false, pos: 2, good: 1, hard: 0, easy: 0, retired: ["0:fwd"] });
   const a = loadSession(key);
   a.pos = 99; // mutate the caller's copy (as a signal write would)
+  a.retired.push("9:fwd"); // mutate the copied array too
   expect(loadSession(key).pos).toBe(2); // store is unchanged
+  expect(loadSession(key).retired).toEqual(["0:fwd"]); // array not aliased into the store
 });
 
 test("saveSession(undefined) is a no-op (nothing to resume for an unsaved deck)", () => {
@@ -127,7 +134,7 @@ test("saveSession(undefined) is a no-op (nothing to resume for an unsaved deck)"
 
 test("clearSession drops a saved deck's resume state", () => {
   const key = "deck-clear.md";
-  saveSession(key, { cram: true, pos: 7, good: 3, hard: 1, easy: 2 });
+  saveSession(key, { cram: true, pos: 7, good: 3, hard: 1, easy: 2, retired: ["3:fwd"] });
   clearSession(key);
   expect(loadSession(key)).toEqual(emptySession());
 });
@@ -258,11 +265,138 @@ test("session persistence is unchanged (SessionState carries no frozen total)", 
   // remount from the restored tally + remaining queue, so SessionState is untouched.
   const key = "deck-total-freeze.md";
   clearSession(key);
-  const mid: SessionState = { cram: false, pos: 2, good: 1, hard: 1, easy: 0 };
+  const mid: SessionState = { cram: false, pos: 2, good: 1, hard: 1, easy: 0, retired: [] };
   saveSession(key, mid);
   const restored = loadSession(key);
   expect(restored).toEqual(mid);
   // Re-anchoring on remount reconstructs the original due total from restored state:
   // 2 graded + (say) 2 still queued == 4 due at session start.
   expect(progressTotal(2, restored.good + restored.hard + restored.easy, restored.cram)).toBe(4);
+});
+
+// ── Cram-until-easy: re-review good/hard cards until every card is easy ─────────
+//
+// itemKey + nextCramPos implement the loop. A card graded good/hard stays in the
+// pool and resurfaces; only "easy" retires it. The session ends (nextCramPos → -1)
+// when every card has been retired.
+
+test("itemKey encodes row index + direction so a bidirectional row's two sides differ", () => {
+  const it = (index: number, dir: "fwd" | "rev"): QueueItem => ({ r: row({}), index, dir, dueField: "due" });
+  expect(itemKey(it(0, "fwd"))).toBe("0:fwd");
+  expect(itemKey(it(0, "rev"))).toBe("0:rev"); // same row, other direction — distinct key
+  expect(itemKey(it(3, "fwd"))).toBe("3:fwd");
+});
+
+test("nextCramPos steps forward through the pool when nothing is retired", () => {
+  const q = buildQueue([row({}), row({}), row({})], "due", "2026-05-30", true, false);
+  expect(nextCramPos(q, 0, new Set())).toBe(1);
+  expect(nextCramPos(q, 1, new Set())).toBe(2);
+});
+
+test("nextCramPos wraps to the front after the last card (loops the deck)", () => {
+  const q = buildQueue([row({}), row({}), row({})], "due", "2026-05-30", true, false);
+  // At the last position with nothing retired, the next card is the front again.
+  expect(nextCramPos(q, 2, new Set())).toBe(0);
+});
+
+test("nextCramPos skips retired (easy'd) cards", () => {
+  const q = buildQueue([row({}), row({}), row({})], "due", "2026-05-30", true, false);
+  // Cards 0 and 1 already easy; from pos 0 the only remaining pool card is index 2.
+  expect(nextCramPos(q, 0, new Set(["0:fwd", "1:fwd"]))).toBe(2);
+  // And it wraps past the retired ones to reach it.
+  expect(nextCramPos(q, 2, new Set(["0:fwd", "1:fwd"]))).toBe(2); // only 2 left → itself
+});
+
+test("nextCramPos returns -1 when every card is mastered (session complete)", () => {
+  const q = buildQueue([row({}), row({})], "due", "2026-05-30", true, false);
+  expect(nextCramPos(q, 0, new Set(["0:fwd", "1:fwd"]))).toBe(-1);
+});
+
+test("nextCramPos on a single unmastered card returns that same card until it's easy", () => {
+  const q = buildQueue([row({})], "due", "2026-05-30", true, false);
+  // Not yet easy → keep showing it (only pool member).
+  expect(nextCramPos(q, 0, new Set())).toBe(0);
+  // Rated easy → retired, nothing left → complete.
+  expect(nextCramPos(q, 0, new Set(["0:fwd"]))).toBe(-1);
+});
+
+test("full cram session: good/hard cards loop until each is rated easy", () => {
+  // Three cards. Simulate the view's grade loop: good/hard leaves a card in the
+  // pool, easy retires it. Drive until nextCramPos reports completion, asserting
+  // the user is forced back through the not-yet-easy cards.
+  const q = buildQueue([row({ front: "a" }), row({ front: "b" }), row({ front: "c" })], "due", "2026-05-30", true, false);
+  const retired = new Set<string>();
+  let pos = 0;
+  const visited: string[] = [];
+
+  // Plan per (row index) how each visit is graded, in visit order:
+  //  a: good, then easy   b: hard, then good, then easy   c: easy
+  const plan: Record<number, ("good" | "hard" | "easy")[]> = {
+    0: ["good", "easy"],
+    1: ["hard", "good", "easy"],
+    2: ["easy"],
+  };
+  const cursor: Record<number, number> = { 0: 0, 1: 0, 2: 0 };
+
+  let guard = 0;
+  while (pos !== -1 && guard++ < 100) {
+    const it = q[pos];
+    visited.push(String(it.r.note.front));
+    const grade = plan[it.index][cursor[it.index]++];
+    if (grade === "easy") retired.add(itemKey(it));
+    pos = nextCramPos(q, pos, retired);
+  }
+
+  // Every card ended up retired (all easy) and the loop terminated.
+  expect(retired).toEqual(new Set(["0:fwd", "1:fwd", "2:fwd"]));
+  expect(guard).toBeLessThan(100);
+  // 'b' (2 non-easy grades) was shown 3 times total; 'a' twice; 'c' once.
+  expect(visited.filter((x) => x === "b").length).toBe(3);
+  expect(visited.filter((x) => x === "a").length).toBe(2);
+  expect(visited.filter((x) => x === "c").length).toBe(1);
+});
+
+// ── reindexRetiredAfterDelete: keep the cram pool valid when a row is deleted ───
+//
+// rowDelete shifts higher row indices down by one on the refetch. The index-keyed
+// retired pool must follow, or a stale key masks a survivor (premature "complete")
+// or matches nothing (an already-easy card resurfaces). See deleteCurrent (cram).
+
+test("reindexRetiredAfterDelete drops the deleted row's keys and shifts higher ones down", () => {
+  // Deck indices 0..3 with several mastered; delete row 1.
+  const retired = ["0:fwd", "1:fwd", "2:fwd", "3:rev"];
+  expect(reindexRetiredAfterDelete(retired, 1).sort()).toEqual(["0:fwd", "1:fwd", "2:rev"].sort());
+  // 0 stays 0; 1 (deleted) dropped; 2 -> 1; 3 -> 2 (dir preserved).
+});
+
+test("reindexRetiredAfterDelete leaves lower indices untouched when a high row goes", () => {
+  expect(reindexRetiredAfterDelete(["0:fwd", "1:fwd"], 2)).toEqual(["0:fwd", "1:fwd"]);
+});
+
+test("reindexRetiredAfterDelete preserves both directions of a bidirectional row", () => {
+  // Delete row 0; row 2's fwd+rev keys both shift to index 1.
+  expect(reindexRetiredAfterDelete(["2:fwd", "2:rev"], 0).sort()).toEqual(["1:fwd", "1:rev"].sort());
+});
+
+test("reindexRetiredAfterDelete on an empty pool returns empty", () => {
+  expect(reindexRetiredAfterDelete([], 3)).toEqual([]);
+});
+
+test("delete-mid-cram: reindexed pool + shrunk queue never falsely completes or resurfaces a card", () => {
+  // Deck a(0),b(1),c(2). Master c ('easy') -> retired {2:fwd}. Delete row a(0).
+  const retiredBefore = new Set(["2:fwd"]);
+  const deleted = 0;
+  const rowsAfter = [row({ front: "b" }), row({ front: "c" })]; // a removed; b,c reindex to 0,1
+  const newQueue = buildQueue(rowsAfter, "due", "2026-05-30", true, false);
+  const newRetired = new Set(reindexRetiredAfterDelete(retiredBefore, deleted));
+
+  // c was mastered and stays mastered after the reindex: its key is now "1:fwd".
+  expect(newRetired.has("1:fwd")).toBe(true); // c (was index 2 -> now 1)
+  expect(newQueue.map((it) => String(it.r.note.front))).toEqual(["b", "c"]);
+
+  // The still-unmastered survivor (b) is found, NOT a false "complete", and c is
+  // never re-surfaced.
+  const np = nextCramPos(newQueue, /* from */ -1, newRetired);
+  expect(np).not.toBe(-1);
+  expect(String(newQueue[np].r.note.front)).toBe("b");
 });
