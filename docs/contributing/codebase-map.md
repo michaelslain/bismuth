@@ -669,7 +669,7 @@ Calendar view renderer. Delegates to `app/src/calendar/` components.
 Flashcard review UI. Uses `flashcardsQueue.ts` for queue logic, calls `POST /cards/review` for both markdown-card and row-card paths.
 
 #### `bases/flashcardsQueue.ts`
-`buildQueue(rows, dueField, today, cram, bidirectional)` — pure queue construction. `nextPosAfterGrade(queue, pos, grade)` — next position after a review. `backField(field)` — derive the Back-direction field name. Stable row-index tracking (survives reorders). Tested.
+`buildQueue(rows, dueField, today, cram, bidirectional)` — pure queue construction. `nextPosAfterGrade(pos, {cram, persisted})` — next position after a normal-mode review. `nextCramPos(queue, pos, retired)` + `itemKey(item)` — cram-until-easy loop: re-surface good/hard cards, retire a card only when rated easy, return `-1` when all mastered. `backField(field)` — derive the Back-direction field name. Stable row-index tracking (survives reorders). Tested.
 
 #### `bases/renderValue.tsx`
 `renderValue(value, property, fileMeta?)` — renders a row cell value to a Solid JSX node. Handles links, dates, booleans, arrays, numbers, text.

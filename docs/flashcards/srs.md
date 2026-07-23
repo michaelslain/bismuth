@@ -393,10 +393,12 @@ Source: `app/src/bases/flashcardsQueue.ts` (`buildQueue`), `app/src/bases/Flashc
 
 Cram mode is a **frontend-only** state; no API calls differ. When `cram = true`:
 - `buildQueue` returns ALL cards from the base (all rows, both directions if bidirectional), regardless of due dates
-- `nextPosAfterGrade` always increments `pos + 1` (strict front-to-back traversal)
+- traversal is **cram-until-easy**: instead of stepping through once, `nextCramPos` loops the deck, re-surfacing every card graded **good** or **hard** and only retiring a card once it is graded **easy**. The session ends when every card has been rated easy (`nextCramPos` returns `-1`). A card graded good/hard resurfaces on a later wrap; grading a card easy adds its `itemKey()` (`"<rowIndex>:<dir>"`) to the session's `retired` pool
 - `grade()` skips the `api.reviewCardRow` call entirely — `persisted = !cram() && !!props.basePath` is false — so no scheduling columns are written
 
-Cram is toggled by the CRAM button in the deck header. Toggling resets the position and tally to zero. On completion, the UI shows "Cram complete" rather than "Deck complete".
+Because cards loop, the header progress reflects **mastery**, not raw grade count: the numerator is the number of distinct cards retired (rated easy) out of the deck size, so the bar fills toward "all easy" and cannot exceed 100%. The per-grade HARD/GOOD/EASY tally still counts every press (so it shows the total review effort, which may exceed the deck size).
+
+Cram is toggled by the CRAM button in the deck header. Toggling resets the position, tally, and `retired` pool to zero. The `retired` pool is persisted in the ephemeral `SessionState` so a mid-cram tab switch resumes with mastered cards still retired. On completion, the UI shows "Cram complete" rather than "Deck complete".
 
 **Important**: cram mode works only for row cards (base flashcard views). Markdown cards do not have a cram mode exposed by the API; all `/cards/due` calls always filter by due date.
 
@@ -600,7 +602,7 @@ When one sub-card of a multi-sub-card markdown card is reviewed, `applyReview` i
 
 ### Cram mode never writes to disk
 
-Cram mode is entirely client-side. No `POST /cards/review` calls are made during a cram session. Scheduling columns in the base file remain unchanged. The session tally (good/hard counts) resets when toggling cram or clicking "Review Again".
+Cram mode is entirely client-side. No `POST /cards/review` calls are made during a cram session. Scheduling columns in the base file remain unchanged. The session tally (good/hard/easy counts) and the `retired` (mastered) pool reset when toggling cram or clicking "Review Again". Because cram loops the deck until every card is rated easy, a card can be reviewed many times in one session without any disk write.
 
 ### Row card review invalidates the base file's cache
 

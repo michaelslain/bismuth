@@ -134,7 +134,7 @@ nextPosAfterGrade(pos: number, opts: { cram: boolean; persisted: boolean }): num
 
 | Scenario | Behavior | Reason |
 |---|---|---|
-| `cram: true` | `pos + 1` | Queue never changes membership; step forward. |
+| `cram: true` | `pos + 1` | Standalone helper only — the view routes cram through `nextCramPos` (below). |
 | `cram: false, persisted: true` | stay at `pos` | Graded card drops out on refetch; next card shifts into `pos`. |
 | `cram: false, persisted: false` | `pos + 1` | Card stays due (no write); must advance to avoid showing it again. |
 
@@ -144,6 +144,24 @@ nextPosAfterGrade(pos: number, opts: { cram: boolean; persisted: boolean }): num
 // skipping 'b' entirely.
 nextPosAfterGrade(0, { cram: false, persisted: true })  // → 0
 nextPosAfterGrade(0, { cram: true, persisted: false })   // → 1
+```
+
+### `nextCramPos(queue, pos, retired)` and `itemKey(item)`
+
+Cram traversal (cram-until-easy). After grading the card at `pos`, `nextCramPos` scans **forward, wrapping** for the next card not yet in `retired`, and returns `-1` when every card is retired (session complete).
+
+```ts
+nextCramPos(queue: QueueItem[], pos: number, retired: Set<string>): number
+itemKey(item: QueueItem): string  // "<rowIndex>:<dir>", e.g. "3:fwd" / "3:rev"
+```
+
+`retired` holds the `itemKey()`s of cards already graded **easy** this cram session. Grading a card **good** or **hard** leaves it in the pool, so it resurfaces on a later wrap and the user keeps re-reviewing it; only **easy** retires it. A bidirectional row's forward and reverse entries are retired independently (distinct `itemKey`s). Because the scan starts at `pos + 1`, the current round finishes before an unmastered card comes back around — the just-graded card is not immediately re-shown (unless it is the only card left in the pool).
+
+```ts
+const q = buildQueue([a, b, c], "due", today, /* cram */ true, false);
+nextCramPos(q, 2, new Set())                 // → 0  (wraps past the last card)
+nextCramPos(q, 0, new Set(["0:fwd", "1:fwd"])) // → 2  (skips the retired cards)
+nextCramPos(q, 0, new Set(["0:fwd","1:fwd","2:fwd"])) // → -1 (all easy → complete)
 ```
 
 ---
@@ -160,7 +178,7 @@ After revealing a card the user grades it with one of three responses:
 
 Grades are posted to `POST /cards/review` via `api.reviewCardRow()`. The backend applies SM-2 via `applyReviewToRow` in `core/src/srs/reviewRow.ts` and writes the updated `due`, `ease`, and `interval` columns back to the base row. See [../../../flashcards/srs.md](../../flashcards/srs.md) for full scheduler details.
 
-**Cram mode never writes scheduling.** When `cram` is `true`, the grade is tracked in the session tally (GOOD/HARD counts) but no API call is made and no row is updated.
+**Cram mode never writes scheduling.** When `cram` is `true`, the grade is tracked in the session tally (HARD/GOOD/EASY counts) but no API call is made and no row is updated. In cram, an **easy** grade retires the card while **good**/**hard** keep it in the pool to be reviewed again (see `nextCramPos` above).
 
 ### Keyboard Shortcuts
 
@@ -222,14 +240,14 @@ The header strip shows a direction indicator (`"front → back"` / `"back → fr
 
 Cram mode reviews every card in the deck regardless of due date and never modifies scheduling state. Activated by the CRAM button (Zap icon) in the header. The button shows as "selected" when cram is active.
 
-Toggling cram resets the session position to 0 and clears the GOOD/HARD tally.
+Toggling cram resets the session position to 0 and clears the HARD/GOOD/EASY tally and the mastered pool.
 
 When cram is active:
 - `buildQueue` returns all rows in original order
-- `nextPosAfterGrade` always steps to `pos + 1`
+- traversal is **cram-until-easy**: `nextCramPos` loops the deck, re-surfacing every card graded good/hard and retiring a card only when it is graded easy. The session completes when every card has been rated easy
 - no `api.reviewCardRow()` call is made on grade
 - `onReviewed()` is NOT called (no refetch needed)
-- the completion screen reads "Cram complete" instead of "Deck complete"
+- the completion screen reads "Cram complete" ("Every card is easy — you mastered N cards in M reviews") instead of "Deck complete"
 
 The empty-state message in cram mode changes to "No cards in this deck" (as opposed to "No cards due" in normal mode), with a hint to add rows.
 
@@ -237,11 +255,10 @@ The empty-state message in cram mode changes to "No cards in this deck" (as oppo
 
 ## Session Progress Bar
 
-The header strip shows a gradient progress bar and a GOOD/HARD tally.
+The header strip shows a gradient progress bar and a HARD/GOOD/EASY tally (one bucket per SM-2 grade; each press increments its bucket).
 
-- **Progress**: `graded / total` where `graded = goodCount + hardCount` and `total = graded + queue.length` (anchored to the starting size rather than using the shrinking queue)
-- **GOOD** counter: increments on `"good"` and `"easy"` responses
-- **HARD** counter: increments on `"hard"` responses
+- **Progress (normal mode)**: `graded / total` where `graded = hardCount + goodCount + easyCount` and `total = graded + queue.length` (anchored to the starting due count rather than the shrinking live queue)
+- **Progress (cram mode)**: `mastered / total` where `mastered` is the number of distinct cards rated easy and `total` is the deck size. Because cards loop until easy, mastery — not the raw grade count — drives the bar, so it fills toward "all easy" and never exceeds 100%. The header count shows mastered-so-far rather than a card position.
 
 ---
 
@@ -345,7 +362,8 @@ For grading, the `fields` parameter overrides which due/ease/interval columns ar
 |---|---|
 | Normal mode, queue empty | "No cards due" + hint to click CRAM to review everything anyway |
 | Cram mode, no rows at all | "No cards in this deck" + hint to add rows with `front`/`back` columns |
-| All cards reviewed | Completion screen: "Deck complete" (or "Cram complete"), graded count, REVIEW AGAIN button |
+| All cards reviewed (normal) | Completion screen: "Deck complete", graded count, REVIEW AGAIN button |
+| Every card rated easy (cram) | Completion screen: "Cram complete", mastered + review counts, REVIEW AGAIN button |
 
 ---
 
