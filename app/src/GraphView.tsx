@@ -99,6 +99,10 @@ export function GraphView(props: {
   // graph read as one surface — the graph lights up the set of matching notes, not just one.
   // Undefined/null = not driven (the FIND panel owns matches).
   searchMatchIds?: readonly string[] | null;
+  // Fired once, the first time this renderer actually draws a frame (any node count, including
+  // zero). App's boot splash waits on this (via bootGate.ts) instead of dismissing the moment
+  // data resolves, so the splash never drops before the graph is visibly on screen.
+  onFirstPaint?: () => void;
 }) {
   let host!: HTMLDivElement;
   let labelsEl: HTMLDivElement | undefined; // DOM overlay the renderer fills with native text labels
@@ -168,6 +172,7 @@ export function GraphView(props: {
       labelsEl, // DOM overlay for native text labels (replaces in-canvas sprite labels)
     );
     renderer.setFpsCallback(setFps);
+    if (props.onFirstPaint) renderer.setFirstPaintCallback(props.onFirstPaint);
     // Empty-canvas click cleared the highlight renderer-side — mirror it in the legend state.
     renderer.onHighlightCleared = () => setSelectedCluster(null);
     // The atmosphere glow (lobes that ride the 3 biggest clusters) is wired by <GraphAtmosphere>.

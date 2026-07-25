@@ -269,6 +269,12 @@ export class CanvasGraphRenderer {
   /** Fired when an empty-space click clears a persistent highlight — lets the view (e.g. the
    *  cluster legend's selected row) drop its own selection state in sync. */
   onHighlightCleared?: () => void;
+  /** Fired exactly once, the first time a real frame is actually drawn (i.e. once a usable host
+   *  box has been measured — see `boxReady`/drawCanvas). Any node count counts, including zero
+   *  (an empty vault). Used by App's boot splash to hold the overlay until the graph is visibly
+   *  on screen, not merely once its data has resolved. */
+  private onFirstPaint?: () => void;
+  private firstPaintFired = false;
 
   // loop
   private raf = 0; private running = false; private visible = true; private dirty = true;
@@ -324,6 +330,7 @@ export class CanvasGraphRenderer {
 
   setFpsCallback(cb: (fps: number) => void) { this.onFps = cb; }
   setGlowCallback(cb: (g: { lobes: { x: number; y: number }[] }) => void) { this.onGlow = cb; }
+  setFirstPaintCallback(cb: () => void) { this.onFirstPaint = cb; }
   setVisible(visible: boolean) { this.visible = visible; if (visible) { this.dirty = true; this.start(); } else this.stop(); }
   /** Zoom the resting fit out by this factor (>1 = smaller graph). Used by the intro graph. */
   setFitMargin(m: number) { this.fitMargin = Math.max(0.2, m); this.fit(); }
@@ -797,6 +804,7 @@ export class CanvasGraphRenderer {
     // canvas shows the host background until then; the ResizeObserver triggers a real paint moments
     // later once the box settles.
     if (!this.boxReady) return;
+    if (!this.firstPaintFired) { this.firstPaintFired = true; this.onFirstPaint?.(); }
     // edges — width scales with zoom: thin when zoomed out (declutters the hairball), thicker zoomed in
     ctx.strokeStyle = intToHex(this.cfg.edgeColor);
     const zoomScale = this.P / Math.max(1, this.P - this.zoom);

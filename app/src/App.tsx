@@ -58,6 +58,7 @@ import { daemonName, refreshDaemonIdentity } from "./daemonIdentity";
 import { chatTitle } from "./chatTitles";
 import { chatOrigin, chatOriginIcon } from "./chatOrigin";
 import { isExportable } from "./export/formats";
+import { createBootGate } from "./bootGate";
 import { publishEditorTabs } from "./chatContext";
 import { connectUiControl, type UiControlHandle, type UiTabsSnapshot } from "./uiControlClient";
 import { UI_CONTROL_BLOCKLIST } from "../../core/src/commands";
@@ -113,6 +114,18 @@ const THEME_VARS_KEY = "bismuth-theme-vars-v1";
 const GHOST_MAX_W = 200;
 
 export default function App() {
+  // Boot splash gate (see bootGate.ts): the graph is a single always-mounted instance (home tab
+  // OR the sidebar mini-graph — see the graph-floater below), so `graphMounts` is always true
+  // here. Dismissal waits for BOTH the initial data fetch (below) AND the graph's first actual
+  // painted frame (GraphView's onFirstPaint prop) — never stranding thanks to the `hidden`
+  // bypass (wired below) plus index.html's own 12s safety timeout, which calls the same
+  // idempotent __bismuthBootReady however this gate resolves.
+  const bootGate = createBootGate({
+    graphMounts: true,
+    onDismiss: () =>
+      (window as unknown as { __bismuthBootReady?: () => void }).__bismuthBootReady?.(),
+  });
+
   // Seed from the last good graph so it paints instantly on boot (the renderer already
   // caches node positions in localStorage; this supplies the structure). Reconciles when
   // /graph returns. Persisted WITHOUT the lazy `views` layouts to keep the blob small.
@@ -1426,15 +1439,21 @@ export default function App() {
 
 
   onMount(() => {
-    // Dismiss the boot splash (index.html) once the home-tab graph AND the sidebar tree are in,
-    // so the UI is revealed — and only becomes interactive — when it's actually ready to use, not
-    // mid-load. allSettled (never rejects) plus the splash's own safety timeout mean a slow or
-    // backend-down fetch can't strand the overlay; the extra frame lets the graph paint first.
+    // Dismiss the boot splash (index.html) once the initial graph+tree fetch settles AND the
+    // graph has actually painted its first frame (bootGate.setGraphPainted, fired by GraphView's
+    // onFirstPaint below) — not merely once the data resolved, so the UI is revealed only when
+    // there's really something drawn behind it. allSettled (never rejects) plus the splash's own
+    // 12s safety timeout mean a slow/backend-down fetch, or a paint that never arrives, can't
+    // strand the overlay.
     Promise.allSettled([refreshGraph(), refreshFileIcons()]).then(() => {
-      requestAnimationFrame(() =>
-        (window as unknown as { __bismuthBootReady?: () => void }).__bismuthBootReady?.(),
-      );
+      requestAnimationFrame(() => bootGate.setDataReady(true));
     });
+    // A backgrounded launch (window not visible) pauses the graph's render loop, so a first paint
+    // may never come — but nothing is visible to strand either, so let data-ready alone dismiss.
+    const onVisibilityChange = () => bootGate.setHidden(document.visibilityState === "hidden");
+    onVisibilityChange();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    onCleanup(() => document.removeEventListener("visibilitychange", onVisibilityChange));
     // Cold-launch check (plan §3): catch any daemon-inbox page that became due while the app
     // was closed. onOpenInbox lets the newly-due toast's "Review" action jump straight to ::inbox.
     void refreshDaemonPages(openInbox);
@@ -2289,7 +2308,7 @@ export default function App() {
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
       <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() && !switcherOpen() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} />
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} onFirstPaint={() => bootGate.setGraphPainted(true)} />
         </Suspense>
       </div>
       <Show when={palette() === "command"}>
