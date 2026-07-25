@@ -249,6 +249,9 @@ export function CardEditModal(props: {
       );
     }
     if (k.kind === "boolean") {
+      // Wrapped, not bare: `.field` is a column flex container with no align-items, so a bare Chip
+      // (an inline-flex <button>) gets blockified and cross-stretched to the full ~420px body width
+      // — a wide bar instead of a pill. The wrapper absorbs the stretch and keeps it shrink-to-fit.
       return (
         <span class={styles.boolChip}>
           <Chip
@@ -285,7 +288,7 @@ export function CardEditModal(props: {
           <span class={styles.label}>Title</span>
           <input
             ref={titleRef}
-            class={styles.titleInput}
+            class={`ui-input ${styles.titleInput}`}
             value={titleDraft()}
             placeholder="Untitled"
             onInput={(e) => setTitleDraft(e.currentTarget.value)}
