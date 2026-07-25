@@ -269,6 +269,13 @@ export class CanvasGraphRenderer {
   /** Fired when an empty-space click clears a persistent highlight — lets the view (e.g. the
    *  cluster legend's selected row) drop its own selection state in sync. */
   onHighlightCleared?: () => void;
+  /** Fired at the end of EVERY drawCanvas pass (i.e. once a usable host box has been measured —
+   *  see `boxReady`/drawCanvas), with the number of nodes actually drawn that frame. Called
+   *  synchronously, in-line with the draw — no rAF, no allocation, one call per frame. Used by
+   *  App's boot splash: a single callback firing doesn't by itself mean "the graph is on screen
+   *  with real data" (an early paint can land before the fetch resolves) — the caller correlates
+   *  this against its own data-ready state to decide what a paint means. */
+  private onPaint?: (nodeCount: number) => void;
 
   // loop
   private raf = 0; private running = false; private visible = true; private dirty = true;
@@ -324,6 +331,7 @@ export class CanvasGraphRenderer {
 
   setFpsCallback(cb: (fps: number) => void) { this.onFps = cb; }
   setGlowCallback(cb: (g: { lobes: { x: number; y: number }[] }) => void) { this.onGlow = cb; }
+  setPaintCallback(cb: (nodeCount: number) => void) { this.onPaint = cb; }
   setVisible(visible: boolean) { this.visible = visible; if (visible) { this.dirty = true; this.start(); } else this.stop(); }
   /** Zoom the resting fit out by this factor (>1 = smaller graph). Used by the intro graph. */
   setFitMargin(m: number) { this.fitMargin = Math.max(0.2, m); this.fit(); }
@@ -922,6 +930,14 @@ export class CanvasGraphRenderer {
       }
     }
     ctx.globalAlpha = 1;
+    // Paint is signalled HERE — after the frame's edges/nodes/labels are actually stroked, once per
+    // draw, with the node count actually drawn (drawOrder is rebuilt above, so its length reflects
+    // THIS frame, not a stale one). Firing at the top of this method only meant "a frame is about
+    // to be drawn": measured against a real boot, the splash began fading while the canvas was
+    // still blank (graphNonBg 0), because that early call fired on the empty graph's first frame,
+    // before the fetched data had even arrived. The caller (bootGate via GraphView) is responsible
+    // for only trusting a paint that lands after its data is ready.
+    this.onPaint?.(this.drawOrder.length);
   }
 
   /**
