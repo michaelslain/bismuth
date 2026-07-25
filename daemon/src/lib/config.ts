@@ -13,8 +13,17 @@ import { join } from "node:path"
 export const MACHINE_DIR = process.env.BISMUTH_DAEMON_DIR || join(homedir(), ".bismuth", "daemon")
 export const MACHINE_PID_FILE = join(MACHINE_DIR, "daemon.pid")
 export const MACHINE_LOGS_DIR = join(MACHINE_DIR, "logs")
-/** JSON array of absolute vault roots the daemon knows about (written by Bismuth core). */
+/** JSON array of absolute vault roots the daemon knows about (written by Bismuth core).
+ *  FROZEN FORMAT: a plain array of path STRINGS. Bismuth core and this binary are versioned and
+ *  updated independently, so an element that stops being a string is a silent kill switch for
+ *  whichever side is older — new per-vault metadata goes in a sibling file, never in here. */
 export const VAULTS_FILE = join(MACHINE_DIR, "vaults.json")
+
+/** `{ "<abs vault root>": "<ISO>" }` — when each registered vault was last observed in use.
+ *  The sibling of {@link VAULTS_FILE} rather than a field inside it (see above). Advisory only:
+ *  core's registry TTL reads it, nothing else does, and losing it costs one TTL cycle. Core owns
+ *  its EXISTENCE; this process only refreshes entries in a file core already created. */
+export const VAULTS_SEEN_FILE = join(MACHINE_DIR, "vaults-seen.json")
 
 /** Resolved per-vault brain paths. Everything the runtime touches for one vault. */
 export interface VaultContext {

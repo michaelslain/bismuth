@@ -41,7 +41,8 @@ Resolved by `MACHINE_DIR` (`daemon/src/lib/config.ts`) = `BISMUTH_DAEMON_DIR` en
 | `owner.json` | `{ ownerDeviceId, ownerLabel, updatedAt }` — which device owns the daemon (absent = unclaimed) |
 | `daemon.pid` | the running daemon's pid (presence + liveness ⇒ running) |
 | `logs/` | daemon stdout/stderr |
-| `vaults.json` | `VAULTS_FILE` — JSON array of vault roots the daemon knows about (written by Bismuth core) |
+| `vaults.json` | `VAULTS_FILE` — JSON array of vault roots the daemon knows about (written by Bismuth core). Frozen element shape: plain path strings |
+| `vaults-seen.json` | `VAULTS_SEEN_FILE` — `{ "<vault root>": "<ISO>" }` last-seen sidecar feeding core's registry TTL (advisory; see [storage.md](storage.md)) |
 | `.claude-bot-migrated` | one-time legacy-migration marker (see Migration) |
 
 Ownership gates sessions: `sendMessage` throws on a non-owner device, which still heartbeats but never runs a session (`daemon/src/lib/owner.ts` `isOwner` — absent `owner.json` ⇒ unclaimed ⇒ `true`, so a single-device install just works).

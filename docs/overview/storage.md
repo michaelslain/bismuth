@@ -246,6 +246,8 @@ The machine home holds only **machine-level identity + runtime state** (one devi
                             (ABSENT = vault is unclaimed)
   daemon.pid             — running daemon's integer PID; presence + liveness ⇒ running
   vaults.json            — JSON array of absolute vault roots the daemon knows about
+                            (frozen shape: plain strings — an installed daemon of any vintage reads it)
+  vaults-seen.json       — { "<vault root>": "<ISO>" } last-seen sidecar for the registry TTL (advisory)
   logs/                  — daemon log output
   .claude-bot-migrated   — marker recording which vault the legacy brain migrated into (§6.6)
 ```
@@ -437,7 +439,8 @@ $BISMUTH_MEMORY/                          # 3rd-brain memory dir (required; may 
   devices.json                       # all heartbeating devices
   owner.json                         # claimed owner device (absent = unclaimed)
   daemon.pid                         # running daemon's PID
-  vaults.json                        # absolute roots of known vaults
+  vaults.json                        # absolute roots of known vaults (plain strings — frozen shape)
+  vaults-seen.json                   # { vault root: ISO } last-seen sidecar (registry TTL; advisory)
   logs/                              # daemon log output
 ~/.bismuth/bin/bismuth-daemon        # installed daemon binary (launchd/systemd service)
 

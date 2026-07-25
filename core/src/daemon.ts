@@ -137,6 +137,75 @@ export function readDaemonSessionIds(vault: string): Set<string> {
  *  the user has not OPENED in a month would be retired out from under them. */
 export const VAULT_REGISTRY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+// ── Why "last seen" lives in a SIDECAR and not in vaults.json ──────────────────────────────────
+//
+// `vaults.json` is not core's private file: it is an INTEGRATION CONTRACT with a separately
+// installed, long-lived binary (`~/.bismuth/bin/bismuth-daemon`, run by launchd/systemd) that the
+// user updates on their own schedule — often days after the app. That binary parses vaults.json as
+// a plain JSON array of path STRINGS (`knownVaultRoots()` in daemon/src/lib/registry.ts:
+// `arr.filter(r => typeof r === "string")`).
+//
+// So enriching the elements into `{path,lastSeenISO}` objects — however carefully the in-repo
+// daemon is taught to read both shapes — is a silent, machine-wide kill switch: the FIRST boot of
+// a core that writes the new shape leaves the ALREADY-RUNNING old binary seeing zero vaults, and
+// every cron in every vault stops firing with no log line, no toast, and a DaemonList still drawing
+// the crons as enabled. Nothing heals it but reinstalling the daemon.
+//
+// The rule this encodes: a file two independently-versioned processes share may gain a NEIGHBOUR,
+// never a new element shape. `vaults.json` keeps its exact on-disk format forever; the stamps live
+// in `vaults-seen.json` beside it, which only code that knows about it ever opens. An old binary
+// reading a vaults.json written by this code sees precisely what it sees today.
+
+/**
+ * The stamp sidecar: `~/.bismuth/daemon/vaults-seen.json`, a flat `{ "<abs vault root>": "<ISO>" }`
+ * map of when each registered vault was last observed in use. Purely ADVISORY — it feeds
+ * {@link VAULT_REGISTRY_TTL_MS} and nothing else, so losing it costs at most one TTL cycle.
+ *
+ * Two writers, matching the two honest signals of "in use": core stamps a vault when it boots
+ * against it ({@link registerVaultRoot} = the user opened it), and the daemon stamps every vault it
+ * actually serves (`refreshVaultsSeen`, daemon/src/lib/registry.ts = its crons are firing). Both
+ * write temp-then-rename, so the worst interleaving is a lost refresh the next one redoes.
+ */
+export function vaultsSeenFile(home: string = daemonMachineDir()): string {
+  return join(home, "vaults-seen.json");
+}
+
+/**
+ * Read the stamp sidecar. Returns `null` — deliberately distinct from `{}` — when there is NO
+ * usable history at all (file absent, unreadable, not JSON, not an object). That distinction is
+ * load-bearing: {@link registerVaultRoot} answers "how old is this entry?" with "unknown, so
+ * baseline it" rather than "ancient, so retire it", which is what keeps a wiped or first-run
+ * sidecar from mass-retiring a registry it simply has no history for. Never throws.
+ */
+export function readVaultsSeen(home: string = daemonMachineDir()): Record<string, string> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(vaultsSeenFile(home), "utf8"));
+  } catch {
+    return null; // absent / unreadable / not JSON
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const out: Record<string, string> = {};
+  for (const [path, iso] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof iso === "string" && iso) out[path] = iso;
+  }
+  return out;
+}
+
+/** Persist the stamp sidecar (temp-then-rename, so the daemon never reads a half-written map).
+ *  Best-effort: an unwritable sidecar must never fail a REGISTRATION — the registry itself is
+ *  already on disk by the time this runs, and a lost sidecar just re-baselines next boot. */
+function writeVaultsSeen(home: string, seen: Record<string, string>): void {
+  try {
+    mkdirSync(home, { recursive: true });
+    const tmp = join(home, `vaults-seen.json.${process.pid}.tmp`);
+    writeFileSync(tmp, JSON.stringify(seen, null, 2));
+    renameSync(tmp, vaultsSeenFile(home));
+  } catch {
+    // best-effort — never blocks boot, never fails registration
+  }
+}
+
 /**
  * Where a vault retirement is RECORDED so a human can actually find it:
  * `~/.bismuth/daemon/logs/vault-registry.log` (i.e. the daemon's own log dir).
@@ -195,18 +264,24 @@ export function daemonOptIn(vault: string): "enabled" | "disabled" | "unknown" {
   }
 }
 
-/** One `vaults.json` entry, post-migration: the vault root plus when it was last actually
- *  registered (a core boot serving it). `lastSeenISO` is "" for a legacy plain-string entry that
- *  predates this field — {@link registerVaultRoot} treats that as "unknown", not "ancient", so an
- *  upgrade never mass-retires a whole registry it has no history for. */
+/** One parsed `vaults.json` array element: the vault root, plus a stamp ONLY when the element
+ *  carried one inline. `lastSeenISO` is "" for the canonical plain-string shape — the only shape
+ *  this module ever WRITES. */
 interface VaultRegistryEntry {
   path: string;
   lastSeenISO: string;
 }
 
-/** Normalize one raw `vaults.json` array element into a {@link VaultRegistryEntry}, tolerating the
- *  legacy plain-string shape (today's on-disk format) alongside the new `{path,lastSeenISO}` object
- *  shape. Returns null for anything else (malformed) so the caller can drop it — never throws. */
+/**
+ * Normalize one raw `vaults.json` array element, tolerating a `{path,lastSeenISO}` object
+ * alongside the canonical plain string. Returns null for anything else (malformed) so the caller
+ * can drop it — never throws.
+ *
+ * The object shape is READ-ONLY LEGACY: a pre-release build of the stamp feature briefly wrote it
+ * before it was moved to the sidecar (see {@link vaultsSeenFile}). Accepting it lets any machine
+ * that ran such a build migrate back to strings on the next boot, carrying its stamps into the
+ * sidecar instead of dropping them. Nothing writes it again.
+ */
 function normalizeVaultEntry(raw: unknown): VaultRegistryEntry | null {
   if (typeof raw === "string") return raw ? { path: raw, lastSeenISO: "" } : null;
   if (raw && typeof raw === "object") {
@@ -219,21 +294,31 @@ function normalizeVaultEntry(raw: unknown): VaultRegistryEntry | null {
   return null;
 }
 
+/** Milliseconds since `iso`, or null when there is nothing parseable to measure. Callers treat
+ *  null as "unknown age", never as "ancient" — see {@link registerVaultRoot}. */
+function ageSince(iso: string | undefined): number | null {
+  if (!iso) return null;
+  const ms = Date.now() - Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 /**
  * Register this vault's absolute root in the machine-level `vaults.json` registry — the
  * list the daemon's `loadEnabledVaults()` (daemon/src/lib/registry.ts) iterates every cron
  * tick to discover which vaults exist at all. Each vault still opts in via its OWN
  * `.settings` (`daemon.enabled`); this just makes the vault DISCOVERABLE so that check ever
- * runs. Idempotent (dedupes on the resolved path, and always refreshes ITS OWN `lastSeenISO` to
- * now) and best-effort — a failed read/write here must never block server boot, and must never
- * crash the daemon's own read of a mid-write file, so the write goes through a temp-then-rename
- * swap. On-disk shape stays an array (byte-compatible with the plain-string format daemon/src/lib/
- * registry.ts also still reads), just of `{path,lastSeenISO}` objects instead of bare strings.
+ * runs. Idempotent (dedupes on the resolved path) and best-effort — a failed read/write here must
+ * never block server boot, and must never crash the daemon's own read of a mid-write file, so the
+ * write goes through a temp-then-rename swap.
  *
- * TWO PROCESSES stamp `lastSeenISO`: this one (a core boot = "the user opened this vault") and the
+ * ON-DISK SHAPE IS FROZEN: a plain JSON array of absolute path strings, exactly as the separately
+ * installed `bismuth-daemon` binary has always parsed it. "Last seen" stamps go to the
+ * {@link vaultsSeenFile} sidecar instead — see the block comment there for why enriching the
+ * elements is a machine-wide kill switch rather than a schema upgrade.
+ *
+ * TWO PROCESSES stamp the sidecar: this one (a core boot = "the user opened this vault") and the
  * daemon (`refreshVaultsSeen`, daemon/src/lib/registry.ts = "this brain is actually being served").
- * Both write temp-then-rename, so the worst interleaving is a lost refresh, which the next tick
- * redoes. See {@link VAULT_REGISTRY_TTL_MS} for why the second writer is not optional.
+ * See {@link VAULT_REGISTRY_TTL_MS} for why the second writer is not optional.
  */
 export function registerVaultRoot(vault: string, home: string = daemonMachineDir()): void {
   const root = resolve(vault);
@@ -245,61 +330,93 @@ export function registerVaultRoot(vault: string, home: string = daemonMachineDir
   if (realHome && isTempPath(root)) return;
   const file = join(home, "vaults.json");
   try {
+    let onDisk: unknown[] = [];
     let known: VaultRegistryEntry[] = [];
     try {
       const parsed = JSON.parse(readFileSync(file, "utf8"));
       if (Array.isArray(parsed)) {
+        onDisk = parsed;
         known = parsed.map(normalizeVaultEntry).filter((e): e is VaultRegistryEntry => e !== null);
       }
     } catch {
       // absent/malformed → start fresh
     }
     const now = new Date().toISOString();
-    let entries: VaultRegistryEntry[];
-    if (realHome) {
+
+    // Stamps come from the sidecar, plus anything inlined by the read-only legacy object shape
+    // (most recent wins — both mean "observed in use at"). `readVaultsSeen` returns null for
+    // "no history on record", which is NOT the same as "seen long ago".
+    const stored = readVaultsSeen(home);
+    const seen: Record<string, string> = { ...(stored ?? {}) };
+    for (const e of known) {
+      if (e.lastSeenISO && (!seen[e.path] || e.lastSeenISO > seen[e.path])) seen[e.path] = e.lastSeenISO;
+    }
+    // With no history AT ALL we cannot judge any entry's age, so nothing may be retired for age on
+    // this pass: every survivor is baselined to now and gets a real TTL clock from here on. This is
+    // the first-upgrade / wiped-sidecar path, and it is what stops a missing sidecar from reading
+    // as "every vault is 30 days stale".
+    const noHistory = Object.keys(seen).length === 0;
+
+    const kept: string[] = [];
+    const nextSeen: Record<string, string> = {};
+    for (const e of known) {
+      if (kept.includes(e.path)) continue; // dedupe (also collapses a legacy dup)
+      if (e.path === root) {
+        kept.push(root); // the vault being registered always survives; stamped below
+        continue;
+      }
+      if (!realHome) {
+        // Throwaway home (test sandbox): keep the mechanics, skip the destructive self-heal.
+        kept.push(e.path);
+        if (seen[e.path]) nextSeen[e.path] = seen[e.path];
+        continue;
+      }
       // Self-healing (real home only): drop temp-dir strays from before this guard, vanished
       // vaults, and vaults not seen in VAULT_REGISTRY_TTL_MS — the registry stays a small list of
       // real, ACTIVE brains. Retirement is a DELETION of the daemon's only pointer at a vault, and
       // getting it wrong stops that vault's crons forever, so it is biased hard toward keeping:
       // an opt-in (or an unreadable `.settings`) outranks the clock, and every retirement is
       // logged where the user can find it (see logVaultRegistryChange).
-      entries = [];
-      for (const e of known) {
-        if (e.path === root) continue; // this call re-adds + stamps it below
-        if (isTempPath(e.path)) continue; // throwaway stray from before the temp guard
-        if (!existsSync(e.path)) {
-          logVaultRegistryChange(home, `dropping vault whose directory no longer exists: ${e.path}`);
-          continue;
-        }
-        // A legacy (pre-TTL) entry has no timestamp to judge — baseline its clock to now rather
-        // than treating "unknown" as "ancient" (which would mass-retire a fresh migration).
-        const lastSeenISO = e.lastSeenISO || now;
-        const ageMs = Date.now() - Date.parse(lastSeenISO);
-        if (Number.isFinite(ageMs) && ageMs > VAULT_REGISTRY_TTL_MS) {
-          const optIn = daemonOptIn(e.path);
-          if (optIn !== "disabled") {
-            // Still in use (or we can't prove otherwise). Keep it, and keep its OLD stamp — the
-            // daemon that actually serves this vault is the honest thing to refresh it.
-            entries.push({ path: e.path, lastSeenISO });
-            continue;
-          }
-          logVaultRegistryChange(
-            home,
-            `retiring vault not seen in 30+ days (daemon disabled): ${e.path} (last seen ${lastSeenISO})`,
-          );
-          continue;
-        }
-        entries.push({ path: e.path, lastSeenISO });
+      if (isTempPath(e.path)) continue; // throwaway stray from before the temp guard
+      if (!existsSync(e.path)) {
+        logVaultRegistryChange(home, `dropping vault whose directory no longer exists: ${e.path}`);
+        continue;
       }
-    } else {
-      entries = known.filter((e) => e.path !== root);
+      const stamp = seen[e.path];
+      if (!stamp && noHistory) {
+        kept.push(e.path);
+        nextSeen[e.path] = now; // baseline: start its clock rather than judging it unseen
+        continue;
+      }
+      const ageMs = ageSince(stamp);
+      // No stamp (the sidecar has history, just not for this one) = never seen. An unparseable
+      // stamp = unknown age, which stays a KEEP: we retire only what we can measure.
+      const expired = stamp === undefined || (ageMs !== null && ageMs > VAULT_REGISTRY_TTL_MS);
+      if (expired && daemonOptIn(e.path) === "disabled") {
+        logVaultRegistryChange(
+          home,
+          `retiring vault not seen in 30+ days (daemon disabled): ${e.path} (last seen ${stamp || "never"})`,
+        );
+        continue;
+      }
+      // Kept — with its OLD stamp: refreshing "last seen" belongs to the processes that actually
+      // serve or open the vault, not to a side effect of some other vault's boot.
+      kept.push(e.path);
+      if (stamp) nextSeen[e.path] = stamp;
     }
-    entries.push({ path: root, lastSeenISO: now });
+    if (!kept.includes(root)) kept.push(root);
+    nextSeen[root] = now;
 
     mkdirSync(home, { recursive: true });
-    const tmp = join(home, `vaults.json.${process.pid}.tmp`);
-    writeFileSync(tmp, JSON.stringify(entries, null, 2));
-    renameSync(tmp, file);
+    // Only rewrite the registry when its CONTENT actually changed. The installed daemon reads this
+    // file on a timer; leaving identical bytes in place keeps the steady state a pure no-op.
+    const unchanged = onDisk.length === kept.length && kept.every((p, i) => onDisk[i] === p);
+    if (!unchanged) {
+      const tmp = join(home, `vaults.json.${process.pid}.tmp`);
+      writeFileSync(tmp, JSON.stringify(kept, null, 2));
+      renameSync(tmp, file);
+    }
+    writeVaultsSeen(home, nextSeen);
   } catch {
     // best-effort — never blocks boot
   }

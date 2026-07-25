@@ -1,12 +1,16 @@
 // daemon/test/registry.test.ts
-// The daemon half of the vaults.json "last seen" contract.
+// The daemon half of the "last seen" contract.
 //
-// Core stamps `lastSeenISO` when a core boots against a vault (= the user opened it in the app) and
-// retires anything unstamped for 30 days. But the LONG-RUNNING consumer of vaults.json is this
-// process: it iterates the list every cron tick, for vaults whose crons fire hourly and which the
-// user may not open for months. Without the refresh below, "last seen" silently means "last app
-// launch", and such a vault gets dropped on some other vault's next core boot — every one of its
-// crons stopping forever. These tests pin the refresh's merge rule and its safety properties.
+// Core stamps a vault when a core boots against it (= the user opened it in the app) and retires
+// anything unseen for 30 days. But the LONG-RUNNING consumer of the registry is this process: it
+// iterates the list every cron tick, for vaults whose crons fire hourly and which the user may not
+// open for months. Without the refresh below, "last seen" silently means "last app launch", and
+// such a vault gets dropped on some other vault's next core boot — every one of its crons stopping
+// forever.
+//
+// The stamps live in vaults-seen.json, a `{path: iso}` SIDECAR — never in vaults.json, whose
+// element shape is a frozen contract with a separately-installed core/daemon pair. These tests pin
+// the refresh's merge rule, its safety properties, and the fact that it never touches vaults.json.
 import { test, expect, beforeEach, afterEach } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -25,7 +29,7 @@ let dir: string
 let file: string
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "bismuth-vaults-"))
-  file = join(dir, "vaults.json")
+  file = join(dir, "vaults-seen.json")
   resetVaultsSeenThrottle()
 })
 afterEach(() => {
@@ -33,100 +37,103 @@ afterEach(() => {
   resetVaultsSeenThrottle()
 })
 
-function write(entries: unknown): void {
-  writeFileSync(file, JSON.stringify(entries))
+function write(seen: unknown): void {
+  writeFileSync(file, JSON.stringify(seen))
 }
-function read(): Array<{ path: string; lastSeenISO: string }> {
+function read(): Record<string, string> {
   return JSON.parse(readFileSync(file, "utf-8"))
 }
 
 // ── stampVaultsSeen (pure) ────────────────────────────────────────────────────────────────────
 
-test("stampVaultsSeen refreshes only the served roots, leaving every other entry verbatim", () => {
-  const { entries, changed } = stampVaultsSeen(
-    [
-      { path: "/v/served", lastSeenISO: ANCIENT },
-      { path: "/v/other", lastSeenISO: ANCIENT },
-    ],
+test("stampVaultsSeen refreshes only the served roots, leaving every other stamp verbatim", () => {
+  const { seen, changed } = stampVaultsSeen(
+    { "/v/served": ANCIENT, "/v/other": ANCIENT },
     ["/v/served"],
     NOW,
   )
   expect(changed).toBe(true)
-  expect(entries).toEqual([
-    { path: "/v/served", lastSeenISO: NOW },
-    { path: "/v/other", lastSeenISO: ANCIENT },
-  ])
+  expect(seen).toEqual({ "/v/served": NOW, "/v/other": ANCIENT })
 })
 
-test("stampVaultsSeen upgrades a legacy plain-string entry in place", () => {
-  const { entries } = stampVaultsSeen(["/v/served", "/v/legacy"], ["/v/served"], NOW)
-  expect(entries).toEqual([
-    { path: "/v/served", lastSeenISO: NOW },
-    // Untouched legacy entry stays unstamped — "unknown", which core baselines rather than
-    // treating as ancient. The daemon must not invent history it doesn't have.
-    { path: "/v/legacy", lastSeenISO: "" },
-  ])
-})
-
-test("stampVaultsSeen never ADDS a root — core owns membership, the daemon only refreshes", () => {
-  // A root the daemon still holds in memory must not be able to resurrect a retired vault.
-  const { entries, changed } = stampVaultsSeen([{ path: "/v/known", lastSeenISO: ANCIENT }], ["/v/retired"], NOW)
-  expect(entries).toEqual([{ path: "/v/known", lastSeenISO: ANCIENT }])
+test("stampVaultsSeen reports changed=false when every served root is already stamped now", () => {
+  const { seen, changed } = stampVaultsSeen({ "/v/served": NOW }, ["/v/served"], NOW)
+  expect(seen).toEqual({ "/v/served": NOW })
   expect(changed).toBe(false)
 })
 
-test("stampVaultsSeen tolerates junk: a non-array, and malformed elements", () => {
-  expect(stampVaultsSeen(null, ["/v/a"], NOW)).toEqual({ entries: [], changed: false })
-  expect(stampVaultsSeen({ nope: 1 }, ["/v/a"], NOW)).toEqual({ entries: [], changed: false })
-  const { entries } = stampVaultsSeen([42, null, { lastSeenISO: ANCIENT }, "/v/a"], ["/v/a"], NOW)
-  expect(entries).toEqual([{ path: "/v/a", lastSeenISO: NOW }])
+test("stampVaultsSeen tolerates junk: a non-object, an array, and non-string values", () => {
+  expect(stampVaultsSeen(null, [], NOW)).toEqual({ seen: {}, changed: false })
+  expect(stampVaultsSeen([1, 2], [], NOW)).toEqual({ seen: {}, changed: false })
+  const { seen } = stampVaultsSeen({ "/v/a": 42, "/v/b": "", "/v/c": ANCIENT }, [], NOW)
+  expect(seen).toEqual({ "/v/c": ANCIENT })
 })
 
 // ── refreshVaultsSeen (IO) ────────────────────────────────────────────────────────────────────
 
 test("refreshVaultsSeen stamps a served vault so core's TTL can never retire it out from under us", async () => {
-  write([{ path: "/v/served", lastSeenISO: ANCIENT }])
+  write({ "/v/served": ANCIENT })
   await refreshVaultsSeen(["/v/served"], { file, force: true })
-  const [entry] = read()
-  expect(entry.path).toBe("/v/served")
   // The whole point: the stamp is now recent, so the 30-day TTL is nowhere near expiring.
-  expect(Date.now() - Date.parse(entry.lastSeenISO)).toBeLessThan(60_000)
+  expect(Date.now() - Date.parse(read()["/v/served"])).toBeLessThan(60_000)
 })
 
 test("refreshVaultsSeen is throttled — a 60s cron tick does not rewrite the file every minute", async () => {
-  write([{ path: "/v/served", lastSeenISO: ANCIENT }])
+  write({ "/v/served": ANCIENT })
   const t0 = Date.parse(NOW)
   await refreshVaultsSeen(["/v/served"], { file, now: t0 })
-  const first = read()[0].lastSeenISO
-  expect(first).toBe(NOW)
+  expect(read()["/v/served"]).toBe(NOW)
 
   // One minute later: inside the throttle window, so the file is untouched.
   await refreshVaultsSeen(["/v/served"], { file, now: t0 + 60_000 })
-  expect(read()[0].lastSeenISO).toBe(NOW)
+  expect(read()["/v/served"]).toBe(NOW)
 
   // Past the window: stamped again.
   const later = t0 + VAULT_SEEN_REFRESH_MS + 1
   await refreshVaultsSeen(["/v/served"], { file, now: later })
-  expect(read()[0].lastSeenISO).toBe(new Date(later).toISOString())
+  expect(read()["/v/served"]).toBe(new Date(later).toISOString())
 })
 
-test("refreshVaultsSeen never throws and never creates a registry it didn't find", async () => {
-  const missing = join(dir, "nope", "vaults.json")
-  await refreshVaultsSeen(["/v/served"], { file: missing, force: true })
-  expect(existsSync(missing)).toBe(false)
+test("refreshVaultsSeen never CREATES the sidecar — core seeds it by baselining every vault", async () => {
+  // If the daemon authored the first sidecar it would contain only the vaults IT serves, leaving
+  // every other registered vault looking "never seen" to core's TTL. Declining keeps core's
+  // absent-sidecar path (baseline everything, retire nothing) the one that runs.
+  await refreshVaultsSeen(["/v/served"], { file, force: true })
+  expect(existsSync(file)).toBe(false)
+})
 
+test("refreshVaultsSeen never throws, and leaves a corrupt sidecar exactly as found", async () => {
   writeFileSync(file, "not json{{{")
   await refreshVaultsSeen(["/v/served"], { file, force: true })
-  expect(readFileSync(file, "utf-8")).toBe("not json{{{") // left exactly as found
+  expect(readFileSync(file, "utf-8")).toBe("not json{{{")
+
+  // An array is not core's map either — refuse rather than replace it.
+  write(["/v/served"])
+  await refreshVaultsSeen(["/v/served"], { file, force: true })
+  expect(readFileSync(file, "utf-8")).toBe(JSON.stringify(["/v/served"]))
 
   // No served vaults → nothing to say, and no write.
-  write([{ path: "/v/served", lastSeenISO: ANCIENT }])
+  write({ "/v/served": ANCIENT })
   await refreshVaultsSeen([], { file, force: true })
-  expect(read()[0].lastSeenISO).toBe(ANCIENT)
+  expect(read()["/v/served"]).toBe(ANCIENT)
 })
 
 test("refreshVaultsSeen leaves no temp file behind (temp-then-rename, like core's writer)", async () => {
-  write([{ path: "/v/served", lastSeenISO: ANCIENT }])
+  write({ "/v/served": ANCIENT })
   await refreshVaultsSeen(["/v/served"], { file, force: true })
   expect(existsSync(`${file}.${process.pid}.tmp`)).toBe(false)
+})
+
+// ── The frozen contract: the daemon must never touch vaults.json ──────────────────────────────
+
+test("refreshVaultsSeen does not touch vaults.json — membership is core's alone, in its own format", async () => {
+  // vaults.json is read by a core binary that may be older than this daemon by days. If the daemon
+  // rewrote it, that older core (and this one) would have to agree on a format neither controls.
+  // It doesn't rewrite it: the stamps go somewhere else entirely.
+  const vaultsFile = join(dir, "vaults.json")
+  const original = JSON.stringify(["/v/served", "/v/other"], null, 2)
+  writeFileSync(vaultsFile, original)
+  write({ "/v/served": ANCIENT })
+  await refreshVaultsSeen(["/v/served"], { file, force: true })
+  expect(readFileSync(vaultsFile, "utf-8")).toBe(original)
 })
