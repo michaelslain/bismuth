@@ -249,15 +249,20 @@ export function CardEditModal(props: {
       );
     }
     if (k.kind === "boolean") {
+      // Wrapped, not bare: `.field` is a column flex container with no align-items, so a bare Chip
+      // (an inline-flex <button>) gets blockified and cross-stretched to the full ~420px body width
+      // — a wide bar instead of a pill. The wrapper absorbs the stretch and keeps it shrink-to-fit.
       return (
-        <Chip
-          selected={value(id) === true}
-          icon={value(id) === true ? "Check" : "Square"}
-          iconSize={13}
-          onClick={() => props.onSetMeta(id, !(value(id) === true))}
-        >
-          {value(id) === true ? "Yes" : "No"}
-        </Chip>
+        <span class={styles.boolChip}>
+          <Chip
+            selected={value(id) === true}
+            icon={value(id) === true ? "Check" : "Square"}
+            iconSize={13}
+            onClick={() => props.onSetMeta(id, !(value(id) === true))}
+          >
+            {value(id) === true ? "Yes" : "No"}
+          </Chip>
+        </span>
       );
     }
     return (

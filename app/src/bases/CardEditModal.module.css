@@ -168,3 +168,11 @@
 .footerSpacer {
   flex: 1;
 }
+
+/* Boolean toggle. Shrink-to-fit (see CardEditModal.tsx) and sized to the COMPACT card-face scale
+   its siblings use — PropertyValueEditor renders .kbMetaInput/.kbMetaSelect at 12px and
+   .kbMetaMultiselect chips at 20px (BaseView.module.css). At the global .chip-toggle size (30px)
+   this one control towered over the multiselect chips directly beneath it, which is the exact
+   intra-modal inconsistency this card exists to remove. 26px bridges the two scales. */
+.boolChip { align-self: flex-start; }
+.boolChip :global(.chip-toggle) { height: 26px; font-size: 12px; border-radius: 7px; }
