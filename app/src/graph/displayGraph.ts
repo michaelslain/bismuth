@@ -1,0 +1,60 @@
+// app/src/graph/displayGraph.ts
+// Pure per-mode graph selection for the Knowledge Graph tab (App.tsx's `displayGraph` memo).
+// Extracted so the "which graph does mode X render" decision — notably that NO mode except
+// "agents" carries a "you"/self node — is unit-testable without mounting the whole App.
+//
+// The self node used to be injected here for "2nd"/"3rd"/"both" too (via a `withYouNode()`
+// helper in the now-deleted app/src/graph/youNode.ts). It was removed: floating at the graph's
+// origin with only a handful of "open" edges to the user's current tabs, it read as frontend
+// noise rather than real vault/memory/daemon structure. "agents" mode is unaffected — its self
+// node is a different, unrelated construct (the literal root of the session tree), injected by
+// `layoutAgentGraph()` in `agentLayout.ts`, not by anything in this file.
+import type { GraphData, ViewLayout } from "../../../core/src/graph";
+import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../../core/src/graph";
+import type { GraphMode } from "../commands";
+
+/**
+ * Apply brain-view layout to a subgraph. Overwrites node positions with the view's
+ * precomputed layout (for 2nd/3rd brain views) instead of using full-graph positions
+ * which would strand cross-brain-linked nodes.
+ */
+export function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
+  if (!view) return graph;
+  return {
+    edges: graph.edges,
+    nodes: graph.nodes.map((node) => ({
+      ...node,
+      position: view.pos3d[node.id] ?? node.position,
+      position2d: view.pos2d[node.id] ?? node.position2d,
+    })),
+  };
+}
+
+/** Everything `selectDisplayGraph` needs, sourced from App.tsx's reactive signals. */
+export interface DisplayGraphSources {
+  /** The full "both"-mode graph (vault + memory), with `views.second`/`views.third` if cached. */
+  graph: GraphData;
+  /** The raw "agents" graph from `GET /agent-graph` (no self node — GraphView adds it). */
+  agents: GraphData;
+  /** The "daemon" graph (hub + crons/processes) — never has a self node. */
+  daemon: GraphData;
+}
+
+/**
+ * Picks and shapes the graph for the active mode. NEVER adds a "you"/self node — that only
+ * exists for "agents" mode, and it's added downstream (GraphView → layoutAgentGraph), not here.
+ */
+export function selectDisplayGraph(mode: GraphMode, sources: DisplayGraphSources): GraphData {
+  switch (mode) {
+    case "2nd":
+      return applyView(subgraphByKinds(sources.graph, SECOND_BRAIN_KINDS), sources.graph.views?.second);
+    case "3rd":
+      return applyView(subgraphByKinds(sources.graph, THIRD_BRAIN_KINDS), sources.graph.views?.third);
+    case "agents":
+      return sources.agents; // raw sessions/subagents; GraphView lays it out (you hub, pyramid/molecule, channels)
+    case "daemon":
+      return sources.daemon; // daemon mode centers on the daemon hub node — no "you" injection
+    case "both":
+      return sources.graph; // full brain, no "you" hub
+  }
+}

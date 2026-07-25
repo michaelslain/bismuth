@@ -46,10 +46,9 @@ const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.Te
 // hides the chat instead of unmounting it — unmount closes its WS with code 1000, which the
 // backend treats as an intentional tab-close and kills the whole `claude` session.
 const ChatView = lazy(() => import("./ChatView").then((m) => ({ default: m.ChatView })));
-import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
-import { withYouNode } from "./graph/youNode";
 import { agentGraphSig } from "./graph/agentGraphSig";
-import type { GraphData, ViewLayout } from "../../core/src/graph";
+import { selectDisplayGraph } from "./graph/displayGraph";
+import type { GraphData } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { memorySlugFromNodeId, type MemoryCandidate } from "../../core/src/memoryRef";
 import { TERMINAL_PREFIX, GRAPH_TAB, INBOX_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider, setChatIconProvider } from "./tabIds";
@@ -79,23 +78,6 @@ import { ContextMenu, type MenuItem, type QuickAction } from "./ContextMenu";
 import { openContextMenu, isTauri } from "./nativeMenu";
 import "./App.css";
 import "./ui/popover/popover.css";
-
-/**
- * Apply brain-view layout to a subgraph. Overwrites node positions with the view's
- * precomputed layout (for 2nd/3rd brain views) instead of using full-graph positions
- * which would strand cross-brain-linked nodes.
- */
-function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
-  if (!view) return graph;
-  return {
-    edges: graph.edges,
-    nodes: graph.nodes.map((node) => ({
-      ...node,
-      position: view.pos3d[node.id] ?? node.position,
-      position2d: view.pos2d[node.id] ?? node.position2d,
-    })),
-  };
-}
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
 // windows and the desktop app's WebviewWindows alike), so a single global key made every
@@ -551,22 +533,14 @@ export default function App() {
   // flicker.
   const scheduleGraphRefresh = debounce(() => { refreshGraph(); }, () => settings.graph.refreshDebounceMs);
 
-  const displayGraph = createMemo<GraphData>(() => {
-    const currentMode = mode();
-    const open = openContents();
-    switch (currentMode) {
-      case "2nd":
-        return withYouNode(applyView(subgraphByKinds(graph(), SECOND_BRAIN_KINDS), graph().views?.second), open);
-      case "3rd":
-        return withYouNode(applyView(subgraphByKinds(graph(), THIRD_BRAIN_KINDS), graph().views?.third), open);
-      case "agents":
-        return agents(); // raw sessions/subagents; GraphView lays it out (you hub, pyramid/molecule, channels)
-      case "daemon":
-        return daemon(); // daemon mode centers on the daemon hub node — no "you" injection
-      case "both":
-        return withYouNode(graph(), open); // full brain + the you hub linking the open working set
-    }
-  });
+  // No "you" hub in any mode except "agents" (see selectDisplayGraph in graph/displayGraph.ts) —
+  // it used to be frontend-injected here for 2nd/3rd/both too, but read as noise floating at the
+  // origin next to real vault/memory structure. The agents-mode hub is unaffected: it's a
+  // different construct (the literal root of the session tree), injected separately by
+  // GraphView/agentLayout.ts, not by this selection.
+  const displayGraph = createMemo<GraphData>(() =>
+    selectDisplayGraph(mode(), { graph: graph(), agents: agents(), daemon: daemon() }),
+  );
 
   const noteCandidates = createMemo<NoteCandidate[]>(() =>
     graph().nodes.filter((n) => n.kind === "note").map((n) => ({ label: n.label, path: n.id, folder: n.folder })),
