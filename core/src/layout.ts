@@ -94,10 +94,14 @@ export type Positions = Record<string, [number, number, number]>;
 // strengthening LINK_STRENGTH instead first: it shrinks edges just as well but reliably breaks the
 // "roughly spherical" hub-topology invariant below (a single high-degree hub + many degree-1 leaves,
 // same shape as a real vault's heaviest tags) — repulsion doesn't carry that risk and this whole
-// suite still passes with comfortable margins (see the sphericity/reel-in tests). Going further (-6)
-// starts violating the 2D collide floor (nodes render overlapping); -7 stays clear of that with room
-// to spare. NOTE: changing this changes cold-layout output — keep CACHE_VERSION in layout-cache.ts
-// in sync.
+// suite still passes with comfortable margins (see the sphericity/reel-in tests). -7 is an EMPIRICAL
+// choice, not a bound: it is simply the best of the values sampled. On the 400-note/8-hub fixture,
+// 3D p99 edge length is 46.5 at -7, 47.7 at -6, 49.3 at -5 — so the effect is non-monotone and -7 sits
+// at a local minimum of the sampled range. The 2D collide floor is NOT the binding constraint and does
+// not pick this value: measured min-pairwise-distance / collide-floor is ~1.20 at every one of
+// -10/-7/-6/-5, i.e. never violated. Treat -7 as "measured best so far", and re-measure rather than
+// reason from this comment if you change it.
+// NOTE: changing this changes cold-layout output — keep CACHE_VERSION in layout-cache.ts in sync.
 const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -7, linkDistance: 5, centering: 0.13, virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8, discBias: 0 };
 const LINK_STRENGTH = 0.18;
 // 2D-only force tuning (see prepareLayout): the flat layout has one less dimension of room, so without
