@@ -46,6 +46,14 @@
 /* Tables fill the scroll area edge-to-edge (sticky header sits on --bg); cards/list/kanban
    keep their own internal padding (re-applied per view since the host pad is removed). */
 
+/* Kanban-only modifier applied ALONGSIDE .base (never replacing it — table/cards/list/map keep
+   the plain `.base` vertical scroll untouched). Trello-style: the board fills the pane's height
+   exactly instead of growing as tall as its tallest column, so its horizontal scrollbar sits at
+   the very bottom of the window (reachable without scrolling down) instead of below the fold.
+   Kanban scrolls each column's OWN cards internally (see .kanbanCards), so `.base`'s own
+   vertical scroll is disabled here to avoid a double scroll. */
+.baseKanban { overflow: hidden; }
+
 .tabs { display: flex; gap: 4px; }
 
 /* ---------- table view ---------- */
@@ -631,17 +639,39 @@
 .mapEmpty code { background: var(--bismuth-surface-2); padding: 1px 4px; border-radius: 4px; }
 
 /* ---- Kanban ---- */
-.kanban { display: flex; gap: 14px; overflow-x: auto; align-items: flex-start; padding: 18px; }
+/* Trello-style board: fills its container's height exactly (flex:1/min-height:0 inside
+   .baseKanban, which is itself capped to the pane's height) instead of growing as tall as its
+   tallest column. `overflow-x` is this element's own — so its scrollbar renders at the very
+   bottom of the (height-capped) board, i.e. the bottom of the window, not below the fold.
+   `align-items: flex-start` is preserved (NOT stretch) so a board with only short columns keeps
+   looking exactly as before — columns size to their own content, not the board's full height;
+   `.kanbanColumn`'s `max-height: 100%` only ever clips a column that's ACTUALLY taller than the
+   board. `overflow-y: hidden` guards against the board itself ever growing a second (vertical)
+   scrollbar — tall columns scroll their own `.kanbanCards` instead (column header stays put). */
+.kanban {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-items: flex-start;
+  padding: 18px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
 .kanbanColumn {
   display: flex;
   flex-direction: column;
   min-width: var(--kanban-col-min, 248px);
   max-width: var(--kanban-col-max, 288px);
+  max-height: 100%;
   flex: 1;
   padding: 0;
   background: color-mix(in srgb, var(--bg) 60%, var(--panel));
   border: 1px solid var(--border-soft, var(--border));
   border-radius: 11px;
+  overflow: hidden;
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 .kanbanColumnOver {
@@ -659,6 +689,9 @@
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+  /* Never shrink — a tall column's `.kanbanCards` (below) is the one that scrolls internally, so
+     the header must stay full-size and in place rather than the flex column squeezing it. */
+  flex: none;
 }
 .kanbanColHeader:active { cursor: grabbing; }
 /* While a pointer-drag is live (class set on <html>), force the grabbing cursor everywhere and kill
@@ -672,7 +705,17 @@
 .kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
 .kanbanCount { margin-left: auto; font-size: 11px; color: var(--faint); }
 
-.kanbanCards { display: flex; flex-direction: column; padding: 9px 10px 12px; gap: 9px; }
+/* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
+   cards when the column is taller than the board — the header above stays put (it's a separate,
+   non-scrolling flex sibling, not `position: sticky`, so there's no double-scroll to coordinate). */
+.kanbanCards { display: flex; flex-direction: column; padding: 9px 10px 12px; gap: 9px; flex: 1; min-height: 0; overflow-y: auto; }
+/* Cards (and the drop-gap placeholders / "add card" affordance) must keep their natural height.
+   `.kanbanCards` is a COLUMN flex container, so its children default to `flex-shrink: 1` — without
+   this they compress to fit the now height-capped column instead of overflowing it, which both
+   clips every card's text AND means `scrollHeight === clientHeight`, so the column never grows a
+   scrollbar at all. Measured before this rule: a card rendered 79px tall in a short column was
+   crushed to 14px (content clipped) in a 28-card one, with no way to scroll to the rest. */
+.kanbanCards > * { flex: none; }
 .kanbanCards .card {
   cursor: grab;
   /* No native text selection while dragging cards — otherwise a drag that starts on card text
