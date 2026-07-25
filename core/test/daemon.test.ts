@@ -110,13 +110,23 @@ test("migrateDaemonState is a no-op when there is no legacy claude-bot dir", () 
   expect(existsSync(join(vault, ".daemon"))).toBe(false);
 });
 
+/** vaults.json entries are `{path,lastSeenISO}` objects (post-TTL registry) — this reads them back
+ *  and returns just the paths, in the order written, for the tests that don't care about stamps. */
+function readVaultPaths(home: string): string[] {
+  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8")) as Array<{ path: string }>;
+  return written.map((e) => e.path);
+}
+
 test("registerVaultRoot writes an absolute path into vaults.json, creating it if absent", () => {
   const home = makeHome({});
   const vault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
   created.push(vault);
   registerVaultRoot(vault, home);
   const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
-  expect(written).toEqual([vault]);
+  expect(written).toHaveLength(1);
+  expect(written[0].path).toBe(vault);
+  expect(typeof written[0].lastSeenISO).toBe("string");
+  expect(Number.isNaN(Date.parse(written[0].lastSeenISO))).toBe(false);
 });
 
 test("registerVaultRoot is idempotent — dedupes on the resolved path, doesn't duplicate", () => {
@@ -126,8 +136,7 @@ test("registerVaultRoot is idempotent — dedupes on the resolved path, doesn't 
   registerVaultRoot(vault, home);
   registerVaultRoot(vault, home);
   registerVaultRoot(join(vault, ".", "."), home); // same root, spelled differently
-  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
-  expect(written).toEqual([vault]);
+  expect(readVaultPaths(home)).toEqual([vault]);
 });
 
 test("registerVaultRoot appends to an existing registry without clobbering other vaults", () => {
@@ -137,8 +146,7 @@ test("registerVaultRoot appends to an existing registry without clobbering other
   created.push(vaultA, vaultB);
   registerVaultRoot(vaultA, home);
   registerVaultRoot(vaultB, home);
-  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
-  expect(written.sort()).toEqual([vaultA, vaultB].sort());
+  expect(readVaultPaths(home).sort()).toEqual([vaultA, vaultB].sort());
 });
 
 test("registerVaultRoot never throws against a malformed vaults.json", () => {
@@ -146,8 +154,7 @@ test("registerVaultRoot never throws against a malformed vaults.json", () => {
   const vault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
   created.push(vault);
   expect(() => registerVaultRoot(vault, home)).not.toThrow();
-  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
-  expect(written).toEqual([vault]);
+  expect(readVaultPaths(home)).toEqual([vault]);
 });
 
 test("daemonMachineDir honors BISMUTH_DAEMON_DIR, else falls back to ~/.bismuth/daemon", () => {
@@ -375,14 +382,100 @@ test("registerVaultRoot keeps throwaway (temp) vaults out of a persistent regist
     mkdirSync(realVault, { recursive: true });
     try {
       registerVaultRoot(realVault, home);
-      const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
-      expect(written).toEqual([realVault]);
+      expect(readVaultPaths(home)).toEqual([realVault]);
     } finally {
       rmSync(realVault, { recursive: true, force: true });
     }
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+// ── vaults.json TTL registry: lastSeenISO stamps + 30-day retirement ────────────────────────
+//
+// registerVaultRoot's self-heal (real home only, see the temp-guard test above) now also retires
+// an entry that hasn't been re-registered (i.e. its vault opened) in VAULT_REGISTRY_TTL_MS — a
+// real-but-abandoned vault used to sit in the registry forever, so the daemon kept booting a full
+// brain for it and every cron fired against it right alongside every live vault.
+
+/** A non-temp home (see the temp-guard test above for why: registerVaultRoot's self-heal/TTL path
+ *  only runs against a REAL, persistent home) inside the test dir, cleaned up by the caller. */
+function realHome(name: string): string {
+  const home = join(import.meta.dir, `.vaultroot-${name}-${process.pid}`);
+  mkdirSync(home, { recursive: true });
+  created.push(home);
+  return home;
+}
+
+test("registerVaultRoot migrates the legacy plain-string vaults.json without crashing", () => {
+  const home = realHome("migrate");
+  const vault = realHome("migrate-vault");
+  // Simulate the pre-upgrade on-disk shape: a bare array of path strings.
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([vault]));
+  expect(() => registerVaultRoot(vault, home)).not.toThrow();
+  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
+  expect(written).toHaveLength(1);
+  expect(written[0].path).toBe(vault);
+  expect(typeof written[0].lastSeenISO).toBe("string");
+  expect(Number.isNaN(Date.parse(written[0].lastSeenISO))).toBe(false);
+});
+
+test("registerVaultRoot keeps a legacy (unstamped) OTHER entry — an upgrade never mass-retires a registry it has no history for", () => {
+  const home = realHome("migrate-other");
+  const staysVault = realHome("migrate-other-stays");
+  const opened = realHome("migrate-other-opened");
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([staysVault]));
+  registerVaultRoot(opened, home); // registering a DIFFERENT vault triggers the self-heal pass
+  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8")) as Array<{ path: string; lastSeenISO: string }>;
+  const stayed = written.find((e) => e.path === staysVault);
+  expect(stayed).toBeDefined(); // not instantly pruned just for lacking a timestamp
+  expect(typeof stayed!.lastSeenISO).toBe("string"); // baselined to "now" so it now has a real TTL clock
+});
+
+test("registerVaultRoot keeps an entry seen well within the TTL", () => {
+  const home = realHome("ttl-keep");
+  const other = realHome("ttl-keep-other");
+  const recent = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(); // 5 days ago
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([{ path: other, lastSeenISO: recent }]));
+  registerVaultRoot(realHome("ttl-keep-trigger"), home);
+  expect(readVaultPaths(home)).toContain(other);
+});
+
+test("registerVaultRoot retires (and LOGS) an entry past the TTL", () => {
+  const home = realHome("ttl-prune");
+  const stale = realHome("ttl-prune-stale");
+  const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(); // 40 days ago
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([{ path: stale, lastSeenISO: old }]));
+  // bun:test's spyOn(console, "log") doesn't intercept calls made from other modules in this Bun
+  // version (verified: it silently records zero calls) — patch console.log manually instead.
+  const logs: unknown[][] = [];
+  const origLog = console.log;
+  console.log = (...args: unknown[]) => { logs.push(args); };
+  try {
+    registerVaultRoot(realHome("ttl-prune-trigger"), home);
+  } finally {
+    console.log = origLog;
+  }
+  expect(readVaultPaths(home)).not.toContain(stale);
+  expect(logs.length).toBeGreaterThan(0);
+  expect(logs.some((args) => String(args[0]).includes(stale))).toBe(true);
+});
+
+test("registering the same vault again refreshes its lastSeenISO stamp", () => {
+  const home = realHome("refresh");
+  const vault = realHome("refresh-vault");
+  registerVaultRoot(vault, home);
+  const first = (JSON.parse(readFileSync(join(home, "vaults.json"), "utf8")) as Array<{ path: string; lastSeenISO: string }>).find((e) => e.path === vault)!;
+
+  // Rewrite its stamp far in the past, then re-register — the fresh registration should bump it
+  // back to "now" rather than leaving the stale timestamp in place.
+  const stale = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([{ path: vault, lastSeenISO: stale }]));
+  registerVaultRoot(vault, home);
+  const second = (JSON.parse(readFileSync(join(home, "vaults.json"), "utf8")) as Array<{ path: string; lastSeenISO: string }>).find((e) => e.path === vault)!;
+  expect(second.lastSeenISO).not.toBe(stale);
+  expect(Date.parse(second.lastSeenISO)).toBeGreaterThan(Date.parse(stale));
+  void first; // (kept only to document the initial stamp exists; not asserted further)
 });
 
 // ── readDaemonSessionIds: the daemon-session membership test ────────────────────────────────

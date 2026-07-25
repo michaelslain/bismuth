@@ -9,11 +9,22 @@ import { VAULTS_FILE, vaultPaths, type VaultContext } from "./config.ts"
 // settings.daemon.enabled. The cron/process loops iterate loadEnabledVaults() every tick,
 // so enabling/disabling a vault's daemon takes effect without restarting the runtime.
 
-/** Known vault roots (written by core). Returns [] if the registry is absent/malformed. */
+/** Known vault roots (written by core). Each element is either the legacy plain path string, or
+ *  (since core added a `lastSeenISO`-stamped TTL registry) a `{path,lastSeenISO}` object — this
+ *  reads either shape, since core self-heals in place rather than doing a flag-day migration.
+ *  Returns [] if the registry is absent/malformed. */
 async function knownVaultRoots(): Promise<string[]> {
   try {
     const arr = JSON.parse(await readFile(VAULTS_FILE, "utf-8"))
-    return Array.isArray(arr) ? arr.filter((r): r is string => typeof r === "string") : []
+    if (!Array.isArray(arr)) return []
+    const out: string[] = []
+    for (const entry of arr) {
+      if (typeof entry === "string") out.push(entry)
+      else if (entry && typeof entry === "object" && typeof (entry as { path?: unknown }).path === "string") {
+        out.push((entry as { path: string }).path)
+      }
+    }
+    return out
   } catch {
     return []
   }

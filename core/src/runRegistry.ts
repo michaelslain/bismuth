@@ -11,6 +11,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync, renameSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { pidAlive } from "./daemonState";
+import { isTempPath } from "./pathUtils";
 
 /** One running-core record: which port serves which vault (+ pid, for future liveness checks). */
 export interface RunRecord {
@@ -70,7 +72,22 @@ export function deleteRunRecord(vault: string): void {
   }
 }
 
-/** All current records. Tolerant: a missing dir or a malformed file is skipped, never thrown. */
+// A hard-killed core (SIGKILL, OOM, a `bun test` worker that never reaches writeRunRecord's
+// exit/SIGINT/SIGTERM cleanup) leaves its record behind forever — readdirSync/JSON.parse is O(n)
+// per call, so a registry that only ever grows eventually makes EVERY `bismuth app …` invocation
+// pay for parsing tens of thousands of dead files (measured: 4.51s over ~31k records). Almost all
+// of them are (a) a dead pid, and/or (b) a test's throwaway `bismuth-vault-*` temp-dir vault — so
+// readRunRecords filters both, reusing the SAME temp-path guard registerVaultRoot uses (daemon.ts),
+// rather than growing a second copy of it.
+//
+// Deletion is bounded per call (MAX_PRUNE_PER_CALL) so a read never blocks on unlinking a huge
+// backlog in one go — a giant existing backlog drains over a handful of calls instead of one slow
+// one, while a steady-state registry (a few live cores) prunes its rare dead entries immediately.
+const MAX_PRUNE_PER_CALL = 200;
+
+/** All current, LIVE records: a dead pid or a temp-path vault (leaked by a killed test/dev server)
+ *  is filtered out and opportunistically unlinked from disk (bounded per call — see above).
+ *  Tolerant: a missing dir or a malformed file is skipped, never thrown. */
 export function readRunRecords(): RunRecord[] {
   const dir = runRegistryDir();
   let names: string[];
@@ -80,13 +97,25 @@ export function readRunRecords(): RunRecord[] {
     return [];
   }
   const out: RunRecord[] = [];
+  let pruned = 0;
   for (const n of names) {
+    const file = join(dir, n);
+    let rec: RunRecord;
     try {
-      const rec = JSON.parse(readFileSync(join(dir, n), "utf8")) as RunRecord;
-      if (rec && typeof rec.port === "number" && typeof rec.vault === "string") out.push(rec);
+      rec = JSON.parse(readFileSync(file, "utf8")) as RunRecord;
     } catch {
-      /* skip a malformed record */
+      continue; // malformed/unreadable — skip, leave it for a future pass to reconsider
     }
+    if (!rec || typeof rec.port !== "number" || typeof rec.vault !== "string" || typeof rec.pid !== "number") {
+      continue; // wrong shape — skip without pruning (be conservative about deleting the unknown)
+    }
+    if (!pidAlive(rec.pid) || isTempPath(rec.vault)) {
+      if (pruned < MAX_PRUNE_PER_CALL) {
+        try { unlinkSync(file); pruned++; } catch { /* best-effort; a future call retries */ }
+      }
+      continue;
+    }
+    out.push(rec);
   }
   return out;
 }

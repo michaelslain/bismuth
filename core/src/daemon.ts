@@ -17,11 +17,12 @@
 //
 // Every function tolerates missing/malformed files and NEVER throws (a daemon
 // that has never run yet, or a partially-written file, degrades to empty/null).
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync, renameSync } from "node:fs";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { isDaemonAlive, readFrontmatter } from "./daemonState";
+import { isTempPath } from "./pathUtils";
 import { AppError } from "./error";
 
 /** The daemon's machine-level identity dir: BISMUTH_DAEMON_DIR env, else ~/.bismuth/daemon. */
@@ -122,14 +123,46 @@ export function readDaemonSessionIds(vault: string): Set<string> {
   return ids;
 }
 
+/** How long a registered vault may go unseen (never re-registered by a core boot against it)
+ *  before {@link registerVaultRoot} retires it from the persistent registry. A real-but-abandoned
+ *  vault used to stay in vaults.json forever, so the daemon kept booting a full brain (memory +
+ *  crons + processes) for it and every cron fired against it right alongside every live vault. */
+export const VAULT_REGISTRY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** One `vaults.json` entry, post-migration: the vault root plus when it was last actually
+ *  registered (a core boot serving it). `lastSeenISO` is "" for a legacy plain-string entry that
+ *  predates this field — {@link registerVaultRoot} treats that as "unknown", not "ancient", so an
+ *  upgrade never mass-retires a whole registry it has no history for. */
+interface VaultRegistryEntry {
+  path: string;
+  lastSeenISO: string;
+}
+
+/** Normalize one raw `vaults.json` array element into a {@link VaultRegistryEntry}, tolerating the
+ *  legacy plain-string shape (today's on-disk format) alongside the new `{path,lastSeenISO}` object
+ *  shape. Returns null for anything else (malformed) so the caller can drop it — never throws. */
+function normalizeVaultEntry(raw: unknown): VaultRegistryEntry | null {
+  if (typeof raw === "string") return raw ? { path: raw, lastSeenISO: "" } : null;
+  if (raw && typeof raw === "object") {
+    const path = (raw as Record<string, unknown>).path;
+    const lastSeenISO = (raw as Record<string, unknown>).lastSeenISO;
+    if (typeof path === "string" && path) {
+      return { path, lastSeenISO: typeof lastSeenISO === "string" ? lastSeenISO : "" };
+    }
+  }
+  return null;
+}
+
 /**
  * Register this vault's absolute root in the machine-level `vaults.json` registry — the
  * list the daemon's `loadEnabledVaults()` (daemon/src/lib/registry.ts) iterates every cron
  * tick to discover which vaults exist at all. Each vault still opts in via its OWN
  * `.settings` (`daemon.enabled`); this just makes the vault DISCOVERABLE so that check ever
- * runs. Idempotent (dedupes on the resolved path) and best-effort — a failed read/write
- * here must never block server boot, and must never crash the daemon's own read of a
- * mid-write file, so the write goes through a temp-then-rename swap.
+ * runs. Idempotent (dedupes on the resolved path, and always refreshes ITS OWN `lastSeenISO` to
+ * now) and best-effort — a failed read/write here must never block server boot, and must never
+ * crash the daemon's own read of a mid-write file, so the write goes through a temp-then-rename
+ * swap. On-disk shape stays an array (byte-compatible with the plain-string format daemon/src/lib/
+ * registry.ts also still reads), just of `{path,lastSeenISO}` objects instead of bare strings.
  */
 export function registerVaultRoot(vault: string, home: string = daemonMachineDir()): void {
   const root = resolve(vault);
@@ -141,34 +174,48 @@ export function registerVaultRoot(vault: string, home: string = daemonMachineDir
   if (realHome && isTempPath(root)) return;
   const file = join(home, "vaults.json");
   try {
-    let known: string[] = [];
+    let known: VaultRegistryEntry[] = [];
     try {
       const parsed = JSON.parse(readFileSync(file, "utf8"));
-      if (Array.isArray(parsed)) known = parsed.filter((v): v is string => typeof v === "string");
+      if (Array.isArray(parsed)) {
+        known = parsed.map(normalizeVaultEntry).filter((e): e is VaultRegistryEntry => e !== null);
+      }
     } catch {
       // absent/malformed → start fresh
     }
-    // Self-healing (real home only): drop temp-dir strays from before this guard and vanished
-    // vaults while we're writing anyway — the registry stays a small list of real brains.
-    const pruned = realHome ? known.filter((v) => !isTempPath(v) && existsSync(v)) : known;
-    if (pruned.includes(root)) {
-      if (pruned.length === known.length) return; // nothing to heal, nothing to add
+    const now = new Date().toISOString();
+    let entries: VaultRegistryEntry[];
+    if (realHome) {
+      // Self-healing (real home only): drop temp-dir strays from before this guard, vanished
+      // vaults, and vaults not seen in VAULT_REGISTRY_TTL_MS — the registry stays a small list of
+      // real, ACTIVE brains. Every TTL prune is logged: a vault someone opens rarely silently
+      // dropping off would be a nasty surprise, not a quiet cleanup.
+      entries = [];
+      for (const e of known) {
+        if (e.path === root) continue; // this call re-adds + stamps it below
+        if (isTempPath(e.path) || !existsSync(e.path)) continue;
+        // A legacy (pre-TTL) entry has no timestamp to judge — baseline its clock to now rather
+        // than treating "unknown" as "ancient" (which would mass-retire a fresh migration).
+        const lastSeenISO = e.lastSeenISO || now;
+        const ageMs = Date.now() - Date.parse(lastSeenISO);
+        if (Number.isFinite(ageMs) && ageMs > VAULT_REGISTRY_TTL_MS) {
+          console.log(`[daemon] retiring vault not seen in 30+ days: ${e.path} (last seen ${lastSeenISO})`);
+          continue;
+        }
+        entries.push({ path: e.path, lastSeenISO });
+      }
     } else {
-      pruned.push(root);
+      entries = known.filter((e) => e.path !== root);
     }
+    entries.push({ path: root, lastSeenISO: now });
+
     mkdirSync(home, { recursive: true });
     const tmp = join(home, `vaults.json.${process.pid}.tmp`);
-    writeFileSync(tmp, JSON.stringify(pruned, null, 2));
+    writeFileSync(tmp, JSON.stringify(entries, null, 2));
     renameSync(tmp, file);
   } catch {
     // best-effort — never blocks boot
   }
-}
-
-/** True for paths under the OS temp root(s) — throwaway by definition, never daemon-adoptable. */
-function isTempPath(p: string): boolean {
-  const roots = [resolve(tmpdir()), "/tmp", "/private/tmp", "/var/folders"];
-  return roots.some((r) => p === r || p.startsWith(r + "/"));
 }
 
 /**

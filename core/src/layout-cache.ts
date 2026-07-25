@@ -11,9 +11,9 @@
 // /tmp periodically (and it's empty on every fresh process), so a meaningful fraction of cold boots
 // recomputed the whole (multi-second) layout from scratch; a durable dir makes a normal close/reopen a
 // reliable cache hit. Override with BISMUTH_LAYOUT_CACHE_DIR (used by tests to isolate/redirect the cache).
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { computeLayoutAsync, type Positions } from "./layout";
 import { subgraphByKinds, type GraphData, type ViewLayout, SECOND_BRAIN_KINDS as SECOND_KINDS, THIRD_BRAIN_KINDS as THIRD_KINDS } from "./graph";
@@ -50,6 +50,57 @@ const REFINE_TICKS_INCREMENTAL = 60;
 const INCREMENTAL_MAX_ADD = 25;
 const INCREMENTAL_MAX_FRAC = 0.1;
 const memCache = new Map<string, Layout>();
+
+// --- Disk cache eviction -----------------------------------------------------------------------
+// CACHE_DIR is uncapped by nature (a layout/seed file per graph signature, forever), so a long-lived
+// machine accumulates one entry per structural edit ever made across every vault — measured at 3,174
+// entries / 426MB on a real machine with no eviction at all. Bound it to a LRU-by-mtime cap, checked
+// right after every write (the only place the dir can grow), rather than on every read.
+const DEFAULT_MAX_CACHE_ENTRIES = 1000;
+
+/** Read lazily (not cached at module load, unlike CACHE_DIR) so tests can override
+ *  BISMUTH_LAYOUT_CACHE_MAX_ENTRIES per-call without needing to control import order. */
+function maxCacheEntries(): number {
+  const raw = Number(process.env.BISMUTH_LAYOUT_CACHE_MAX_ENTRIES);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_CACHE_ENTRIES;
+}
+
+/**
+ * Bound `dir` to at most `maxEntries` `.json` files, evicting the OLDEST (by mtime) first. Any name
+ * in `protect` (bare filename, no directory) is never evicted regardless of age — callers pass the
+ * file they just wrote (or are about to read later in the same call) so a write can never evict
+ * itself. Best-effort and total: a missing or unwritable `dir` degrades to a silent no-op, matching
+ * every other cache path in this module (the disk cache is a convenience, never load-bearing).
+ */
+export function pruneCacheDir(dir: string, maxEntries: number, protect: Set<string> = new Set()): void {
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith(".json"));
+  } catch {
+    return; // missing/unreadable dir — nothing to prune
+  }
+  const excess = names.length - maxEntries;
+  if (excess <= 0) return;
+  const stamped = names
+    .filter((n) => !protect.has(n))
+    .map((n) => {
+      try {
+        return { name: n, mtime: statSync(join(dir, n)).mtimeMs };
+      } catch {
+        return null; // vanished between the readdir and the stat — nothing to evict
+      }
+    })
+    .filter((e): e is { name: string; mtime: number } => e !== null)
+    .sort((a, b) => a.mtime - b.mtime);
+  for (const e of stamped.slice(0, excess)) {
+    try {
+      unlinkSync(join(dir, e.name));
+    } catch {
+      /* best-effort — already gone, or a race with another writer, is fine */
+    }
+  }
+}
+// -------------------------------------------------------------------------------------------------
 
 // --- Per-graph-object memoization -------------------------------------------------------------
 // graphSig() sorts every node id (O(n log n)) + every edge string (O(m log m)); subgraphByKinds()
@@ -119,12 +170,15 @@ function readDisk(sig: string): Layout | null {
 async function writeDisk(sig: string, layout: Layout): Promise<void> {
   try {
     mkdirSync(CACHE_DIR, { recursive: true });
+    const name = `${sig}.json`;
     // Async write (Bun.write) instead of writeFileSync: the layout JSON can be
     // multi-MB for a large vault, and a sync write here blocks Bun's single thread
     // on the /graph path — stalling concurrent /file reads. JSON.stringify is still
     // sync, but the blocking syscall is the bigger offender; the await also lets the
     // event loop service other requests while the bytes flush.
-    await Bun.write(join(CACHE_DIR, `${sig}.json`), JSON.stringify(layout));
+    await Bun.write(join(CACHE_DIR, name), JSON.stringify(layout));
+    // Protect the entry we just wrote — this call must never evict what it just created.
+    pruneCacheDir(CACHE_DIR, maxCacheEntries(), new Set([name]));
   } catch {
     // cache dir unavailable — in-memory cache still applies for this run
   }
@@ -149,7 +203,10 @@ function readSeed(vaultKey: string): Layout | null {
 async function writeSeed(vaultKey: string, layout: Layout): Promise<void> {
   try {
     mkdirSync(CACHE_DIR, { recursive: true });
-    await Bun.write(seedPath(vaultKey), JSON.stringify(layout));
+    const path = seedPath(vaultKey);
+    await Bun.write(path, JSON.stringify(layout));
+    // Protect the seed we just wrote — this call must never evict what it just created.
+    pruneCacheDir(CACHE_DIR, maxCacheEntries(), new Set([basename(path)]));
   } catch {
     // cache dir unavailable — in-memory lastFullLayout still seeds this run
   }
