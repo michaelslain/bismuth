@@ -13,6 +13,9 @@ import { Icon } from "./icons/Icon";
 import { IconPicker } from "./icons/IconPicker";
 import { BASE_VIEW_KINDS, baseTemplate, baseFileName } from "./baseViews";
 import { primeNoteCache } from "./noteCache";
+import { settings } from "./settings";
+import { newNoteContent } from "../../core/src/newNoteTemplate";
+import { setPendingCursor, clearPendingCursor } from "./pendingCursor";
 
 import { buildTree, reconcileTree, type TreeNode } from "./fileTreeModel";
 
@@ -416,7 +419,30 @@ export function FileTree(props: {
     // is a guaranteed instant cache hit instead of a GET /file that could race the
     // create (briefly flashing a spinner or 404). Dirs have no body; only prime files.
     if (fsKind === "file") primeNoteCache(path, "");
-    const createP = trackPending(() => api.create(path, fsKind));
+    // A plain new note (kind==="file"; sheet/draw/base seed their own content elsewhere) can be
+    // pre-filled from a configured template (settings.templates.newNote →
+    // core/src/newNoteTemplate.ts), mirroring the daily-note template pattern (dailyNote.ts).
+    // Resolved + written as part of the SAME tracked operation as the bare create — so a fast
+    // rename-on-Enter (awaitCreate, below) waits for the template write too, not just the create,
+    // which would otherwise let a move race ahead of an in-flight write to the old path.
+    const createP = trackPending(async () => {
+      await api.create(path, fsKind);
+      if (kind !== "file") return;
+      const templatePath = settings.templates.newNote.trim();
+      if (!templatePath) return; // unset (the default) → empty note, unchanged behavior
+      let raw: string;
+      try {
+        raw = await api.read(templatePath);
+      } catch {
+        return; // missing/unreadable template → empty note, never blocks/errors the create
+      }
+      const title = name.replace(STRIP_EXT, "");
+      const { text, cursorOffset } = newNoteContent(raw, new Date(), title);
+      if (!text) return; // empty template → nothing to write, cursor stays at the default start
+      await api.write(path, text);
+      primeNoteCache(path, text);
+      setPendingCursor(path, cursorOffset);
+    });
     // Expose the in-flight create so a fast rename-on-Enter can wait for it (see awaitCreate).
     // Keyed by a fresh per-invocation token so a concurrent create can't clobber this entry.
     const token = Symbol();
@@ -427,6 +453,7 @@ export function FileTree(props: {
       // Only tear down THIS create's own inline-rename box — a concurrent fast create now yields a
       // distinct row that may be mid-edit, and an unconditional setEditing(null) would blur-commit it.
       if (editing() === path) setEditing(null);
+      clearPendingCursor(path);
       await refetch();
       pushToast(`Create failed: ${(e as Error).message}`);
     } finally {

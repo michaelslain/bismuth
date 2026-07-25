@@ -393,12 +393,14 @@ Template-folder configuration.
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
 | `folder` | path (`only: "dir"`) | `Templates` | Vault folder holding template `.md` files. `Option+T` inserts one at the cursor. |
+| `newNote` | path (`scope: "templates"`) | `""` | Vault path to a template `.md` used to pre-fill a brand-new note (the New Note command and the file-tree "New File" action). Empty (the default) = no template — a brand-new note is created empty, exactly as before this setting existed. Expanded via the same `{{...}}` tokens as `dailyNotes[].template` (see `templates/syntax.md`); a `{{cursor}}` token places the caret. |
 
 Example:
 
 ```yaml
 templates:
   folder: _templates
+  newNote: _templates/Note.md
 ```
 
 ---
