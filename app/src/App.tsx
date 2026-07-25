@@ -116,10 +116,11 @@ const GHOST_MAX_W = 200;
 export default function App() {
   // Boot splash gate (see bootGate.ts): the graph is a single always-mounted instance (home tab
   // OR the sidebar mini-graph — see the graph-floater below), so `graphMounts` is always true
-  // here. Dismissal waits for BOTH the initial data fetch (below) AND the graph's first actual
-  // painted frame (GraphView's onFirstPaint prop) — never stranding thanks to the `hidden`
-  // bypass (wired below) plus index.html's own 12s safety timeout, which calls the same
-  // idempotent __bismuthBootReady however this gate resolves.
+  // here. Dismissal waits for BOTH the initial data fetch (below) AND a graph frame painted AFTER
+  // that data arrived (GraphView's onPaint prop, correlated against dataReady inside bootGate —
+  // an empty pre-data paint does not satisfy it) — never stranding thanks to the `hidden` bypass
+  // (wired below), the bounded paintWaitExpired fallback (also below), plus index.html's own 12s
+  // safety timeout, which calls the same idempotent __bismuthBootReady however this gate resolves.
   const bootGate = createBootGate({
     graphMounts: true,
     onDismiss: () =>
@@ -1440,13 +1441,20 @@ export default function App() {
 
   onMount(() => {
     // Dismiss the boot splash (index.html) once the initial graph+tree fetch settles AND the
-    // graph has actually painted its first frame (bootGate.setGraphPainted, fired by GraphView's
-    // onFirstPaint below) — not merely once the data resolved, so the UI is revealed only when
-    // there's really something drawn behind it. allSettled (never rejects) plus the splash's own
-    // 12s safety timeout mean a slow/backend-down fetch, or a paint that never arrives, can't
-    // strand the overlay.
+    // graph has actually painted a frame AFTER that (bootGate.setGraphPainted, fired by
+    // GraphView's onPaint below; bootGate itself discards any paint that arrived before
+    // dataReady) — not merely once the data resolved, so the UI is revealed only when there's
+    // really something drawn behind it, with the loaded data. allSettled (never rejects) plus
+    // the paintWaitExpired fallback below plus the splash's own 12s safety timeout mean a
+    // slow/backend-down fetch, or a post-data paint that never arrives (e.g. a vault with
+    // nothing new to draw), can't strand the overlay.
     Promise.allSettled([refreshGraph(), refreshFileIcons()]).then(() => {
       requestAnimationFrame(() => bootGate.setDataReady(true));
+      // Bounded fallback: if no graph paint lands within 1.5s of data being ready (renderer had
+      // nothing to redraw, e.g. an unchanged/empty graph), stop waiting on the paint signal
+      // rather than falling all the way through to index.html's 12s backstop. No-op once
+      // dismissed (bootGate.dismissed guards every setter's effect via canDismissBoot).
+      setTimeout(() => bootGate.setPaintWaitExpired(true), 1500);
     });
     // A backgrounded launch (window not visible) pauses the graph's render loop, so a first paint
     // may never come — but nothing is visible to strand either, so let data-ready alone dismiss.
@@ -2308,7 +2316,14 @@ export default function App() {
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
       <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() && !switcherOpen() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} onFirstPaint={() => bootGate.setGraphPainted(true)} />
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} onPaint={() => {
+            // No-op for the rest of the session once dismissed — this fires every frame, and
+            // there's nothing left to gate after boot.
+            if (bootGate.dismissed) return;
+            // One rAF so the frame we just drew has actually been composited before the splash
+            // (if this is the paint that opens the gate) starts hiding it.
+            requestAnimationFrame(() => bootGate.setGraphPainted(true));
+          }} />
         </Suspense>
       </div>
       <Show when={palette() === "command"}>
