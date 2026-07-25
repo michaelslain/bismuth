@@ -73,15 +73,31 @@ case "${1:-}" in
     [ $# -ge 1 ] || usage
     val="$*"
     case "$key" in *[!a-zA-Z0-9_-]*) echo "refused — bad key: $key" >&2; exit 1;; esac
-    awk -v k="$key" -v v="$val" '
-      BEGIN { inFM = 0; done = 0 }
-      NR == 1 && $0 == "---"          { inFM = 1; print; next }
-      inFM && $0 == "---"             { if (!done) print k ": " v; inFM = 0; print; next }
-      inFM && index($0, k ":") == 1   { if (!done) { print k ": " v; done = 1 } next }
-                                      { print }
+    # A YAML value can span lines — a folded scalar or a list continues on the INDENTED lines
+    # after `key:`. Replacing only the `key:` line orphans those, silently grafting the old
+    # value's tail onto the new one (it once left a card reading "…has actually painted.\n gone
+    # the graph is empty for a bit…"). So the key's whole block is replaced, and the dropped
+    # continuation lines are recorded so the guard below can verify EXACTLY those and no others.
+    dropped=$(mktemp); trap 'rm -f "$orig" "$tmp" "$dropped"' EXIT
+    # A BLANK line inside a folded scalar is part of the value, not the end of it, so blanks are
+    # buffered while skipping: dropped if an indented line follows (still inside the value),
+    # replayed if a real key follows (they were separator lines that belong to the card).
+    awk -v k="$key" -v v="$val" -v dropfile="$dropped" '
+      function flush(  i) { for (i = 1; i <= nb; i++) print blanks[i]; nb = 0 }
+      function sink(   i) { for (i = 1; i <= nb; i++) print blanks[i] >> dropfile; nb = 0 }
+      BEGIN { inFM = 0; done = 0; skipping = 0; nb = 0 }
+      NR == 1 && $0 == "---"            { inFM = 1; print; next }
+      inFM && $0 == "---"               { if (skipping) flush(); if (!done) print k ": " v; inFM = 0; skipping = 0; print; next }
+      inFM && skipping && /^[ \t]*$/    { blanks[++nb] = $0; next }
+      inFM && skipping && /^[ \t]/      { sink(); print >> dropfile; next }
+      inFM && skipping                  { flush(); skipping = 0 }
+      inFM && index($0, k ":") == 1     { if (!done) { print k ": " v; done = 1; skipping = 1 } next }
+                                        { print }
     ' "$orig" > "$tmp"
-    # the diff must touch ONLY this key — anything else means we would clobber the user
-    bad=$(diff "$orig" "$tmp" | grep -E '^[<>]' | grep -vE "^[<>] ${key}:" || true)
+    # the diff must touch ONLY this key (plus the continuation lines we deliberately dropped) —
+    # anything else means we would clobber the user
+    bad=$(diff "$orig" "$tmp" | grep -E '^[<>]' | grep -vE "^[<>] ${key}:" \
+          | { if [ -s "$dropped" ]; then grep -vxFf <(sed 's/^/< /' "$dropped"); else cat; fi } || true)
     if [ -n "$bad" ]; then
       echo "refused — edit would touch more than '${key}:':" >&2
       echo "$bad" >&2
