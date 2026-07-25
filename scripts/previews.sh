@@ -9,7 +9,10 @@
 # instead of hosting a dashboard — the BOARD is the interface (the user's own words).
 #
 #   previews.sh status            human table: card, state, url, port pair, worktree
-#   previews.sh start <card>      provision + launch + write the `preview` property
+#   previews.sh start <card> [--vault <path>]
+#                                 provision + launch + write the `preview` property.
+#                                 --vault serves a make-sandbox.sh clone instead of the
+#                                 real vault (authoring-cards) — board writes stay real.
 #   previews.sh stop <card>       stop that card's servers (leave the worktree; clear preview)
 #   previews.sh gc [--run]        kill ORPHANED preview servers (dry run by default)
 #   previews.sh sync              reconcile every Awaiting-Confirmation card's `preview`
@@ -234,10 +237,10 @@ ensure_deps(){
 }
 
 launch_servers(){
-  local wt="$1" vite="$2" core="$3" slug="$4"
+  local wt="$1" vite="$2" core="$3" slug="$4" vault="${5:-$VAULT}"
   mkdir -p "$LOGDIR"
   ( cd "$wt" && nohup bun run "$wt/core/src/server.ts" --port "$core" \
-      --vault "$VAULT" --memory "$VAULT/.daemon/memory" \
+      --vault "$vault" --memory "$vault/.daemon/memory" \
       >"$LOGDIR/$slug.core.log" 2>&1 </dev/null & )
   ( cd "$wt/app" && VITE_API_BASE="http://localhost:$core" nohup bun run vite --port "$vite" --strictPort \
       >"$LOGDIR/$slug.vite.log" 2>&1 </dev/null & )
@@ -272,8 +275,20 @@ cmd_status(){
 }
 
 cmd_start(){
-  local raw="${1:-}" card name slug ports v c target wt_path
-  [ -n "$raw" ] || { echo "usage: previews.sh start <card>" >&2; exit 2; }
+  # --vault serves a DIFFERENT vault (a make-sandbox.sh clone) behind this card's
+  # preview. Only the servers repoint — the card, its ports, and the preview
+  # property all stay on the REAL board ($DIR). Never pass the real vault's own
+  # path here; the default IS the real vault.
+  local raw="" pvault="$VAULT" card name slug ports v c target wt_path
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault) shift; pvault="${1:-}";;
+      *) raw="$1";;
+    esac
+    shift
+  done
+  [ -n "$raw" ] || { echo "usage: previews.sh start <card> [--vault <path>]" >&2; exit 2; }
+  pvault=$(cd "$pvault" 2>/dev/null && pwd -P) || { echo "no such vault dir: --vault" >&2; exit 1; }
   card=$(resolve_card "$raw")
   [ -f "$card" ] || { echo "no such card: $card" >&2; exit 1; }
   name=$(basename "$card" .md)
@@ -302,10 +317,18 @@ cmd_start(){
   ports=$(assign_ports "$card") || { echo "no free preview ports left" >&2; exit 1; }
   v=${ports%% *}; c=${ports##* }
 
-  # Already up AND actually ours -> idempotent no-op.
+  # Already up AND actually ours -> idempotent no-op... unless it is serving a
+  # DIFFERENT vault than the one asked for. A live server is not evidence it serves
+  # the right DATA any more than the right code — restarting with --vault while the
+  # old pair keeps answering would hand the user the wrong world with a green check.
   if preview_live "$v" "$c" "$wt_path"; then
+    if ! lsof -ti tcp:"$c" -sTCP:LISTEN 2>/dev/null | xargs ps -o command= -p 2>/dev/null | grep -qF -- "--vault $pvault"; then
+      echo "REFUSE — $name is already live on $v/$c but serving a different vault than requested." >&2
+      echo "  previews.sh stop '$name' first, then re-run start with --vault." >&2
+      exit 1
+    fi
     "$BOARD_WRITE" "$card" preview "http://localhost:$v" >/dev/null
-    echo "already live: $name -> http://localhost:$v"
+    echo "already live: $name -> http://localhost:$v (vault: $pvault)"
     exit 0
   fi
 
@@ -320,11 +343,15 @@ cmd_start(){
   fi
 
   echo "launching core:$c vite:$v (logs: $LOGDIR/$slug.{core,vite}.log)"
-  launch_servers "$wt_path" "$v" "$c" "$slug"
+  launch_servers "$wt_path" "$v" "$c" "$slug" "$pvault"
 
   if wait_live "$v" "$c" "$wt_path"; then
     "$BOARD_WRITE" "$card" preview "http://localhost:$v" >/dev/null
     echo "live: http://localhost:$v"
+    if [ "$pvault" != "$VAULT" ]; then
+      echo "  SANDBOX vault: $pvault"
+      echo "  -> say so on the card: board-write.sh '$name' --append  (the user must know what they type is disposable)"
+    fi
   else
     echo "FAILED to come up within 30s — tail of logs:" >&2
     tail -n 15 "$LOGDIR/$slug.core.log" 2>/dev/null | sed 's/^/  [core] /' >&2
@@ -449,9 +476,9 @@ cmd_gc(){
 
 case "${1:-}" in
   status) cmd_status ;;
-  start)  shift; cmd_start "${1:-}" ;;
+  start)  shift; cmd_start "$@" ;;
   stop)   shift; cmd_stop "${1:-}" ;;
   sync)   cmd_sync ;;
   gc)     shift; cmd_gc "${1:-}" ;;
-  *) echo "usage: previews.sh {status|start <card>|stop <card>|sync|gc [--run]}" >&2; exit 2 ;;
+  *) echo "usage: previews.sh {status|start <card> [--vault <path>]|stop <card>|sync|gc [--run]}" >&2; exit 2 ;;
 esac
