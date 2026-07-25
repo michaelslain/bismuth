@@ -215,6 +215,11 @@ export const SETTINGS_SCHEMA: Schema = {
   }),
   templates: object({
     folder: { type: { kind: "path", only: "dir" }, default: "Templates", doc: "Vault folder holding template .md files. Option+T inserts one at the cursor." },
+    // Mirrors dailyNotes[].template: a `path`/`scope:"templates"` pointer to a template .md,
+    // expanded via the same {{...}} engine (core/src/templates.ts) and applied by
+    // core/src/newNoteTemplate.ts. Empty (the default) = no template — a brand-new note is
+    // created empty exactly as before this setting existed.
+    newNote: { type: { kind: "path", scope: "templates" }, default: "", doc: "Vault path to a template .md used to pre-fill a brand-new note (the New Note command and the file-tree \"New File\" action). Empty = no template (plain empty note)." },
   }),
   // The vault-wide property registry. Free-form `{name: typeString}`, validated
   // leniently by registry.loadRegistry — seeded empty on first launch.

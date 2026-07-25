@@ -47,6 +47,7 @@ import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
 import { resolveNotePath, parseHeadings, wikilinkOpenPath, type NoteCandidate, type HeadingItem } from "./editor/wikilink";
 import { clearPendingAnchor } from "./pendingAnchor";
+import { clearPendingCursor } from "./pendingCursor";
 import { FormatBar, type FormatBarState, type FormatBlockKind } from "./blocks/FormatBar";
 import { saveScroll, loadScroll } from "./scrollMemory";
 import { BaseView } from "./bases/BaseView";
@@ -891,6 +892,10 @@ export function BlockEditor(props: {
   // regardless of remount) AND on the live reveal event (covers a self-link where props.path is
   // unchanged, so the effect wouldn't re-run).
   createEffect(() => { if (props.path) clearPendingAnchor(props.path); });
+  // Same reasoning as the anchor above: a raw CodeMirror character offset from a freshly
+  // templated new note (pendingCursor.ts) has no meaning in the block model, so drop it here too
+  // rather than let it fire a spurious caret jump on a later source-mode open.
+  createEffect(() => { if (props.path) clearPendingCursor(props.path); });
   onMount(() => {
     const onReveal = (e: Event): void => {
       const d = (e as CustomEvent).detail as { path?: string };

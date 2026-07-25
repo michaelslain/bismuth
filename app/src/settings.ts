@@ -144,6 +144,7 @@ export interface Settings {
   };
   templates: {
     folder: string; // vault folder containing template .md files
+    newNote: string; // vault path to a template .md pre-filling brand-new notes; "" = none
   };
   // Global keyboard shortcuts, keyed by action id (core/src/keybindings.ts).
   // Each value is a combo like "Mod+P" (Mod = Cmd on macOS / Ctrl elsewhere);

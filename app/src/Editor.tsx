@@ -38,6 +38,7 @@ import { propertyRegistry } from "./propertyRegistry";
 import { parseWikilink, resolveNotePath, findHeadingLineIndex, wikilinkOpenPath, type NoteCandidate } from "./editor/wikilink";
 import { MEMORY_REF_RE, memoryRefPath, resolveMemorySlug, type MemoryCandidate } from "../../core/src/memoryRef";
 import { takePendingAnchor, clearPendingAnchor } from "./pendingAnchor";
+import { takePendingCursor } from "./pendingCursor";
 import { pointInDropRect, type NativeDragDetail } from "./nativeDrop";
 import { nativeDropScale, claimNativeDrop } from "./nativeDropRouting";
 import { isTauri } from "./nativeMenu";
@@ -1064,6 +1065,11 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     //     (one-shot) so an unrelated later rebuild — e.g. flipping an editor setting — can't re-fire it.
     const anchor = takePendingAnchor(path);
     const snapEffect = anchor ? undefined : loadScrollSnapshot(path);
+    // A brand-new note created from a template (settings.templates.newNote) records where its
+    // {{cursor}} token landed; seed the initial selection there so the caret starts in the right
+    // spot instead of at doc start. One-shot + clamped to the (possibly since-edited) doc length.
+    const pendingCursor = takePendingCursor(path);
+    const initialSelection = pendingCursor != null ? { anchor: Math.min(pendingCursor, text.length) } : undefined;
 
     // #46: release a deferred disk pull the moment a table cell stops being edited. Bubble
     // order guarantees the widget root's own focusout commit runs first (deeper ancestor),
@@ -1088,6 +1094,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       scrollTo: snapEffect,
       state: EditorState.create({
         doc: text,
+        selection: initialSelection,
         extensions: [
           ...extensions,
           EditorView.domEventHandlers({
