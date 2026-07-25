@@ -84,14 +84,41 @@ export type Positions = Record<string, [number, number, number]>;
 // without overlaps, while small multi-node clusters stay recognizable lobes. Short (0.8× linkDist) +
 // strong (1.2) + 4 anchors: short/strong beats the long-range repulsion; the extra anchors distribute
 // each stray around the mass instead of piling it at one point. See prepareLayout's "Reel in" block.
-const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -10, linkDistance: 5, centering: 0.13, virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8, discBias: 0 };
+// repulsion -7 (was -10): "edges extend too far out" on a real 2246-node/4957-edge vault, measured
+// against the actual /graph output (core/test/layout.test.ts documents the measurement method).
+// Linked-pair distance was ~5× the local nearest-neighbour spacing (mean 69 vs 13 in 3D) — most edges
+// crossed past several other nodes rather than connecting adjacent-looking dots. Softening many-body
+// repulsion (the force that competes against the link spring) shrinks that gap directly: on the same
+// vault, 3D edge length p99 156→132 and max 211→188, with 2D following similarly (p99 645→464,
+// max 987→780) — all measured with `refineTicks`/`repulsion` left otherwise at their defaults. Tried
+// strengthening LINK_STRENGTH instead first: it shrinks edges just as well but reliably breaks the
+// "roughly spherical" hub-topology invariant below (a single high-degree hub + many degree-1 leaves,
+// same shape as a real vault's heaviest tags) — repulsion doesn't carry that risk and this whole
+// suite still passes with comfortable margins (see the sphericity/reel-in tests). -7 is an EMPIRICAL
+// choice, not a bound: it is simply the best of the values sampled. On the 400-note/8-hub fixture,
+// 3D p99 edge length is 46.5 at -7, 47.7 at -6, 49.3 at -5 — so the effect is non-monotone and -7 sits
+// at a local minimum of the sampled range. The 2D collide floor is NOT the binding constraint and does
+// not pick this value: measured min-pairwise-distance / collide-floor is ~1.20 at every one of
+// -10/-7/-6/-5, i.e. never violated. Treat -7 as "measured best so far", and re-measure rather than
+// reason from this comment if you change it.
+// NOTE: changing this changes cold-layout output — keep CACHE_VERSION in layout-cache.ts in sync.
+const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -7, linkDistance: 5, centering: 0.13, virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8, discBias: 0 };
 const LINK_STRENGTH = 0.18;
 // 2D-only force tuning (see prepareLayout): the flat layout has one less dimension of room, so without
 // help it collapses into a hairball. Push communities apart (repulsion ×), let them breathe (centering
-// ×), and enforce a slightly bigger honeycomb gap (collide ×). 3D keeps the gentler defaults.
+// ×) — 3D keeps the gentler defaults for both.
 const MODE_2D_REPULSION_MULT = 3;
 const MODE_2D_CENTERING_MULT = 0.5;
-const MODE_2D_COLLIDE_MULT = 1.2;
+// 0.65 (was 1.2): that extra padding on TOP of the already-larger 2D collide floor (COLLIDE_RATIO ×
+// MODE_2D_SPACING) is what produced the "condensed honeycomb" look — on the real 2246-node vault it
+// forced ~every leaf node to the exact same collide radius, so nearly all of them settled at a
+// near-identical spacing (nearest-neighbour distance had a coefficient of variation of just 0.25 —
+// a near-regular grid) regardless of which community/cluster they actually belonged to. Shrinking
+// this multiplier lets real link/community structure set the local spacing instead of the collide
+// floor: CV nearly doubles to 0.42 (organic, uneven spacing) with the 2D collide-floor minimum still
+// comfortably respected (measured minimum pairwise distance stayed ~1.8× the theoretical floor).
+// 3D is completely unaffected — this multiplier only ever applies in the `dim === 2` branch below.
+const MODE_2D_COLLIDE_MULT = 0.65;
 const COLLIDE_RATIO = 1.25;
 // 6 (was 3): more solver passes per tick so overlaps actually resolve within the refine budget —
 // notably in the 2D view, where nodes separated only along Z in 3D collapse onto the same XY and

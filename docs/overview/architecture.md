@@ -75,9 +75,7 @@ Bismuth treats knowledge as three layers, each producing a graph:
 
 Node kind: `"self"`, id: `"::you"`.
 
-The self node is **not** produced by the backend graph builders. It is a synthetic hub injected on the **frontend** (`app/src/graph/youNode.ts`) because its connectivity depends on live client state: which notes are open in which panes. The `::` prefix is a sentinel that can never collide with a vault note id (a vault-relative path minus `.md`).
-
-In "agents" mode, `withYouAgents` additionally connects the self node to every root agent session (top-level terminal-tab sessions that have no parent).
+The self node is **not** produced by the backend graph builders, and today it only appears in **"agents" mode** — `app/src/graph/agentLayout.ts`'s `layoutAgentGraph()` manufactures it as a synthetic hub on the **frontend** and connects it to every root agent session (top-level terminal-tab sessions that have no parent). It is deliberately absent from "2nd", "3rd", "both", and "daemon" mode (a prior `withYouNode()` helper injected it into those three brain views too; it was removed as visual noise). The `::` prefix is a sentinel that can never collide with a vault note id (a vault-relative path minus `.md`).
 
 ### 2nd Brain (vault)
 

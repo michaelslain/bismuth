@@ -480,7 +480,7 @@ All 400 errors from relay endpoints are silently swallowed by the hooks (best-ef
 
 ## Agents Graph (`core/src/agents.ts`)
 
-`buildAgentGraph` is a **pure function** over a `RelaySnapshot` and a set of live terminal ids. It returns a `GraphData` with only session and subagent nodes — the "you" hub and `you → session` edges are injected on the frontend (`app/src/graph/youNode.ts` `withYouAgents`).
+`buildAgentGraph` is a **pure function** over a `RelaySnapshot` and a set of live terminal ids. It returns a `GraphData` with only session and subagent nodes — the "you" hub and `you → session` edges are injected on the frontend (`app/src/graph/agentLayout.ts` `layoutAgentGraph`), which is also the ONLY place the self node is injected anywhere in the app (agents mode only; "2nd"/"3rd"/"both"/"daemon" show no self node).
 
 ### Node ids
 
