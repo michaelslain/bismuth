@@ -121,6 +121,12 @@ export default function App() {
   // an empty pre-data paint does not satisfy it) — never stranding thanks to the `hidden` bypass
   // (wired below), the bounded paintWaitExpired fallback (also below), plus index.html's own 12s
   // safety timeout, which calls the same idempotent __bismuthBootReady however this gate resolves.
+  // Timer id for the bounded paint-wait fallback; armed by the graph's first paint (see onPaint
+  // on the graph-floater below), 0 = not yet armed.
+  let paintFallback = 0;
+  // Timer id proving the graph has stayed drawn (not just drawn once) — see onPaint below.
+  let paintStable = 0;
+  const STABLE_MS = 180;
   const bootGate = createBootGate({
     graphMounts: true,
     onDismiss: () =>
@@ -1450,11 +1456,6 @@ export default function App() {
     // nothing new to draw), can't strand the overlay.
     Promise.allSettled([refreshGraph(), refreshFileIcons()]).then(() => {
       requestAnimationFrame(() => bootGate.setDataReady(true));
-      // Bounded fallback: if no graph paint lands within 1.5s of data being ready (renderer had
-      // nothing to redraw, e.g. an unchanged/empty graph), stop waiting on the paint signal
-      // rather than falling all the way through to index.html's 12s backstop. No-op once
-      // dismissed (bootGate.dismissed guards every setter's effect via canDismissBoot).
-      setTimeout(() => bootGate.setPaintWaitExpired(true), 1500);
     });
     // A backgrounded launch (window not visible) pauses the graph's render loop, so a first paint
     // may never come — but nothing is visible to strand either, so let data-ready alone dismiss.
@@ -2316,13 +2317,40 @@ export default function App() {
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
       <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() && !switcherOpen() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} onPaint={() => {
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} onPaint={(nodeCount) => {
             // No-op for the rest of the session once dismissed — this fires every frame, and
             // there's nothing left to gate after boot.
             if (bootGate.dismissed) return;
-            // One rAF so the frame we just drew has actually been composited before the splash
-            // (if this is the paint that opens the gate) starts hiding it.
-            requestAnimationFrame(() => bootGate.setGraphPainted(true));
+            // The FIRST paint proves the renderer is alive (its lazy chunk loaded, its host box
+            // measured) — only now is "a paint should arrive shortly" a safe assumption, so this
+            // is where the bounded fallback starts. Starting it when the DATA landed instead was
+            // measured to misfire on a cold boot: data was ready at ~1.7s while the GraphView
+            // chunk was still loading, so the 1.5s timer expired and dropped the splash at 3.2s
+            // over an area whose canvas did not exist until 3.9s — the exact gap being fixed.
+            if (paintFallback === 0) {
+              paintFallback = window.setTimeout(() => bootGate.setPaintWaitExpired(true), 1500);
+            }
+            // Only a frame that actually DREW NODES counts as "the graph is on screen" — the
+            // renderer paints blank frames throughout boot (host box measured, data not in yet,
+            // and again for a moment after each resize clears the canvas). Accepting those is
+            // what let the splash drop over an empty graph area, which is the user-visible bug:
+            // "even after it's gone the graph is empty for a bit before it populates itself."
+            // A genuinely empty vault never sends nodeCount > 0, and is covered by the bounded
+            // paintWaitExpired fallback armed just above.
+            // ...and it has to STAY drawn. The graph host box settles in steps during boot
+            // (measured: 1000x773 -> 969x814 -> 952x814), and every resize clears the canvas and
+            // leaves it blank until the next frame. Dismissing on the first good frame therefore
+            // still uncovered an empty graph, just later. So a good frame ARMS a short timer and
+            // any blank frame DISARMS it: the splash lifts only once the graph has been
+            // continuously on screen for STABLE_MS, which is exactly the user's criterion.
+            if (nodeCount > 0) {
+              if (paintStable === 0) {
+                paintStable = window.setTimeout(() => bootGate.setGraphPainted(true), STABLE_MS);
+              }
+            } else if (paintStable !== 0) {
+              clearTimeout(paintStable);
+              paintStable = 0;
+            }
           }} />
         </Suspense>
       </div>
