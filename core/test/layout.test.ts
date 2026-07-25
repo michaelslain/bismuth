@@ -54,6 +54,75 @@ test("the DEFAULT 3D shape is roughly spherical (discBias ships off — the flat
   expect(Math.sqrt(sy2 / n)).toBeGreaterThan(Math.sqrt(sxz2 / (2 * n)) * 0.85);
 });
 
+// --- "edges extend too far out" regression (bug report: 3D edges too long, 2D honeycomb) ---------
+// Measured against a real 2246-node/4957-edge vault via `curl :PORT/graph` (see layout.ts's DEFAULTS
+// comment): linked-pair distance ran ~5× the local nearest-neighbour spacing in 3D (most edges
+// crossed past several other nodes rather than connecting adjacent-looking dots), and 2D nearest-
+// neighbour spacing had a coefficient of variation of just ~0.25 (near-uniform "honeycomb" packing).
+// These two fixtures reproduce the same qualitative shapes (a high-degree hub + many degree-1
+// leaves; a note/tag vault with a handful of hub tags) at a size small enough to stay a fast test.
+
+test("softer repulsion shrinks hub-to-leaf edges vs. the pre-fix default (a mega-tag's edges were the longest in the real vault)", () => {
+  // A single hub with 600 degree-1 leaves — the same shape as the real vault's heaviest tag node
+  // (one tag referenced by hundreds of notes). `repulsion` is a LayoutOptions field, so the OLD
+  // default (-10) is reconstructed here via an explicit override for a same-fixture comparison,
+  // rather than needing to touch the module's own DEFAULTS.
+  const hubDeg = 600;
+  const nodes = [{ id: "hub" }, ...Array.from({ length: hubDeg }, (_, i) => ({ id: `leaf${i}` }))];
+  const edges = Array.from({ length: hubDeg }, (_, i) => ({ from: "hub", to: `leaf${i}` }));
+  const g = { nodes, edges };
+
+  const edgeLenP = (pos: Positions, p: number) => {
+    const lens = edges.map((e) => dist(pos[e.from], pos[e.to])).sort((a, b) => a - b);
+    return lens[Math.floor(p * (lens.length - 1))];
+  };
+
+  const old = computeLayout(g, { refineTicks: 150, repulsion: -10 }); // pre-fix default
+  const now = computeLayout(g, { refineTicks: 150 }); // current default (-7)
+  expect(edgeLenP(now, 0.5)).toBeLessThan(edgeLenP(old, 0.5) * 0.92); // >8% shorter, typical edge
+  expect(edgeLenP(now, 0.9)).toBeLessThan(edgeLenP(old, 0.9) * 0.92); // >8% shorter, near-worst edge
+});
+
+test("2D layout of a hub-and-leaf vault-like graph keeps real spacing variation, not a uniform honeycomb grid", () => {
+  // A handful of hub "tags" with lopsided membership sizes (power-law-ish, like real vault tags)
+  // plus some note-to-note links so it isn't purely bipartite.
+  const numNotes = 400, numTags = 8;
+  const nodes: { id: string }[] = [];
+  const edges: { from: string; to: string }[] = [];
+  for (let i = 0; i < numNotes; i++) nodes.push({ id: `note${i}` });
+  for (let t = 0; t < numTags; t++) nodes.push({ id: `tag${t}` });
+  for (let i = 0; i < numNotes; i++) {
+    const t1 = i % numTags;
+    edges.push({ from: `note${i}`, to: `tag${t1}` });
+    const t2 = (i * 7) % numTags;
+    if (i % 3 === 0 && t2 !== t1) edges.push({ from: `note${i}`, to: `tag${t2}` });
+    if (i % 5 === 0 && i + 1 < numNotes) edges.push({ from: `note${i}`, to: `note${i + 1}` });
+  }
+  const g = { nodes, edges };
+  const ids = nodes.map((n) => n.id);
+
+  const pos3 = computeLayout(g, { dimensions: 3, refineTicks: 150 });
+  const pos2 = computeLayout(g, { dimensions: 2, refineTicks: 150, initialPositions: pos3 });
+
+  // Nearest-neighbour distance per node in 2D — a uniform honeycomb grid has a tiny coefficient of
+  // variation (every node equidistant from its neighbours); real cluster structure does not.
+  const n = ids.length;
+  const nn = ids.map((id, i) => {
+    let best = Infinity;
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      const d = Math.hypot(pos2[id][0] - pos2[ids[j]][0], pos2[id][1] - pos2[ids[j]][1]);
+      if (d < best) best = d;
+    }
+    return best;
+  });
+  const mean = nn.reduce((a, b) => a + b, 0) / n;
+  const std = Math.sqrt(nn.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+  // The pre-fix MODE_2D_COLLIDE_MULT (1.2) measures ~0.01 on this exact fixture (a near-perfect
+  // grid); the fix measures ~0.08. 0.05 sits safely between the two.
+  expect(std / mean).toBeGreaterThan(0.05);
+});
+
 test("two clusters joined by a bridge separate spatially", () => {
   // Two 6-cliques A0..A5 and B0..B5, joined by a single A0-B0 bridge.
   const nodes = [...Array(6)].map((_, i) => ({ id: `A${i}` })).concat([...Array(6)].map((_, i) => ({ id: `B${i}` })));

@@ -24,6 +24,11 @@ interface Layout { pos3d: Positions; pos2d: Positions }
 const to2d = (p: number[]): [number, number] => [p[0], p[1]];
 
 const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache");
+// v12: repulsion -10→-7 and MODE_2D_COLLIDE_MULT 1.2→0.65 (layout.ts) — shorter 3D edges and a
+//      less uniform 2D packing. MUST bump: graphSig() keys the cache on CACHE_VERSION alone, so
+//      without it every existing user keeps their v11 layout and sees no change whatsoever —
+//      and it would not self-heal, because attachLayout warm-starts from the stale seed and the
+//      incremental path pins every pre-existing node.
 // v11: discBias default reverted to 0 (the v10 flattening read as a squashed blob on real vaults,
 //      not a planet) — bump so v10's flattened seeds don't pin the restored spherical shape.
 // v10: 3D layout gets a degree-weighted disc-flatten bias (planet-with-rings shape; layout.ts
@@ -36,7 +41,7 @@ const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bism
 // v7: stronger small-graph linkDist boost (400/n, cap 8) — much airier small graphs.
 // v6: small-graph linkDist boost added (sqrt(500/n) factor in layout.ts) changes layout output.
 // v5: collide iterations 3→6 + padding 1.25→1.55 (anti-overlap).
-const CACHE_VERSION = "v11";
+const CACHE_VERSION = "v12";
 const REFINE_TICKS = 120; // PivotMDS-seeded, so this polishes well without a full ~300-tick settle
 // Incremental (pinned add-only) rebuild: only the new nodes move, so far fewer ticks converge (the
 // early-exit in computeLayoutAsync usually stops sooner). Cap the number of added nodes that take this

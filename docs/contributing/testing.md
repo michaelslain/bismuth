@@ -127,7 +127,7 @@ Every test file is a `*.test.ts` colocated with (or adjacent to) the module it t
 | `app/src/bases/` | Flashcards queue, row cache, calendar serialization tests |
 | `app/src/calendar/` | EventStore, date helpers, state tests |
 | `app/src/editor/` | CodeMirror extension unit tests (tableModel, wikilink, tag, autocomplete, etc.) |
-| `app/src/graph/` | Label selection, collision radius, agent graph, you-node tests |
+| `app/src/graph/` | Label selection, collision radius, agent graph, agent layout tests |
 | `app/src/export/` | Export format and renderer tests |
 
 There is no separate `__tests__` directory. The rule is: test lives next to (or one directory above) the source it covers.

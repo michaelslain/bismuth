@@ -26,7 +26,7 @@ removed when it merged into Bismuth). The relay registry now lives **in core**
      session node when Claude exits, so it doesn't linger until the pane closes; skips
      `clear`/`compact`, which keep the terminal's Claude running).
 3. `core/src/agents.ts` builds the graph from the registry; the frontend draws
-   you → session → subagent (`app/src/graph/youNode.ts` `withYouAgents`).
+   you → session → subagent (`app/src/graph/agentLayout.ts` `layoutAgentGraph`).
 
 All hooks are **best-effort**: they no-op without `CLAUDE_TERMINAL_ID`, swallow every
 error, and exit 0 within a budget so they never block the user's session

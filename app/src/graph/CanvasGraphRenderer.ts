@@ -373,13 +373,13 @@ export class CanvasGraphRenderer {
       this.link(e.from, e.to); this.link(e.to, e.from);
     }
 
-    // Center on the CONTENT centroid EXCLUDING the injected "you" hub — NOT self.position. The hub
-    // is injected at the backend origin [0,0,0] (youNode.ts), so centering on it would frame the
-    // empty origin instead of the real cloud's center of mass. The exclusion mirrors scaleToSpacing,
-    // which scales about the same self-excluded centroid; using the same origin here keeps the
-    // initial p3/p2 centered on the cloud before any rescale runs (most visible in 3rd-brain, where
-    // "you" isn't linked to the memory nodes and sits far from their centroid). Falls back to the
-    // all-node centroid when there are no non-self nodes.
+    // Center on the CONTENT centroid EXCLUDING the "you" hub — NOT self.position. In "agents" mode
+    // (the only mode that still has a self node; see App.tsx displayGraph + GraphView/agentLayout.ts)
+    // the hub is injected at the origin [0,0,0], so centering on it would frame the empty origin
+    // instead of the real cloud's center of mass. The exclusion mirrors scaleToSpacing, which scales
+    // about the same self-excluded centroid; using the same origin here keeps the initial p3/p2
+    // centered on the cloud before any rescale runs. Falls back to the all-node centroid when there
+    // are no non-self nodes.
     // Sanitize every coordinate to a finite triple first: a stray NaN/Infinity (stale localStorage
     // cache, a node still awaiting layout, a diverged force tick) would otherwise poison the centroid
     // and the fit radius, turning worldScale into NaN and blanking/exploding the whole cloud.
