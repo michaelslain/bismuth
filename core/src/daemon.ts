@@ -19,10 +19,12 @@
 // that has never run yet, or a partially-written file, degrades to empty/null).
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync, renameSync, appendFileSync } from "node:fs";
+import { parse } from "yaml";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { isDaemonAlive, readFrontmatter } from "./daemonState";
 import { isTempPath } from "./pathUtils";
+import { SETTINGS_FILE } from "./settings";
 import { AppError } from "./error";
 
 /** The daemon's machine-level identity dir: BISMUTH_DAEMON_DIR env, else ~/.bismuth/daemon. */
@@ -123,11 +125,75 @@ export function readDaemonSessionIds(vault: string): Set<string> {
   return ids;
 }
 
-/** How long a registered vault may go unseen (never re-registered by a core boot against it)
- *  before {@link registerVaultRoot} retires it from the persistent registry. A real-but-abandoned
- *  vault used to stay in vaults.json forever, so the daemon kept booting a full brain (memory +
- *  crons + processes) for it and every cron fired against it right alongside every live vault. */
+/** How long a registered vault may go unseen before {@link registerVaultRoot} retires it from the
+ *  persistent registry. A real-but-abandoned vault used to stay in vaults.json forever, so the
+ *  daemon kept booting a full brain (memory + crons + processes) for it and every cron fired
+ *  against it right alongside every live vault.
+ *
+ *  "Unseen" means unseen by ANY of the registry's users, not just by an app launch. Core stamps a
+ *  vault on its own boot ({@link registerVaultRoot}); the long-running daemon stamps every vault it
+ *  actually serves (`refreshVaultsSeen` in daemon/src/lib/registry.ts). Without that second writer
+ *  "last seen" would mean "last opened in the app", and a vault whose crons fire hourly but which
+ *  the user has not OPENED in a month would be retired out from under them. */
 export const VAULT_REGISTRY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Where a vault retirement is RECORDED so a human can actually find it:
+ * `~/.bismuth/daemon/logs/vault-registry.log` (i.e. the daemon's own log dir).
+ *
+ * `console.log` alone is not good enough. In the bundled /Applications app `registerVaultRoot` runs
+ * inside the core SIDECAR, whose stdout is not attached to any terminal the user will ever read —
+ * so a retirement would be, from the user's side, a vault's crons silently stopping forever with no
+ * trace. The daemon's log dir is where they already look when the daemon misbehaves.
+ */
+export function vaultRegistryLogFile(home: string = daemonMachineDir()): string {
+  return join(home, "logs", "vault-registry.log");
+}
+
+/** Record a registry retirement in both places: the daemon's durable log (for the bundled app,
+ *  where stdout goes nowhere) and stdout (for `bun run dev`). Best-effort — a log must never be
+ *  able to break server boot. */
+function logVaultRegistryChange(home: string, message: string): void {
+  console.log(`[daemon] ${message}`);
+  try {
+    mkdirSync(join(home, "logs"), { recursive: true });
+    appendFileSync(vaultRegistryLogFile(home), `[${new Date().toISOString()}] ${message}\n`);
+  } catch {
+    // best-effort — never blocks boot
+  }
+}
+
+/**
+ * Has this vault opted its daemon IN? Three-valued on purpose.
+ *
+ * `enabled` is a POSITIVE statement that the vault is in use — its crons are firing on a schedule
+ * whether or not anyone has opened it lately — and it always beats the TTL, which is only a
+ * heuristic about disuse. `unknown` (a `.settings` that exists but we could not read or parse: a
+ * permissions blip, a half-written file, an unmounted volume) counts as in-use too: we retire only
+ * what we can PROVE is idle. Only a cleanly-parsed file that does not say `daemon.enabled: true`
+ * reads as `disabled`.
+ *
+ * Deliberately a local sync read rather than settings.ts's `readDaemonEnabledSync`, which collapses
+ * "absent", "corrupt" and "off" into a single `false` — exactly the distinction this needs.
+ */
+export function daemonOptIn(vault: string): "enabled" | "disabled" | "unknown" {
+  let raw: string;
+  try {
+    raw = readFileSync(join(vault, SETTINGS_FILE), "utf8");
+  } catch (err) {
+    // Never opened / never configured → no opt-in exists, so the schema default (false) applies.
+    // Anything else (EACCES, EIO, a directory) is a read we could not perform, not a "no".
+    return (err as NodeJS.ErrnoException)?.code === "ENOENT" ? "disabled" : "unknown";
+  }
+  try {
+    const parsed = parse(raw) as Record<string, unknown> | null;
+    const daemon = parsed && typeof parsed === "object" ? parsed.daemon : undefined;
+    const enabled = daemon && typeof daemon === "object" ? (daemon as Record<string, unknown>).enabled : undefined;
+    return enabled === true ? "enabled" : "disabled";
+  } catch {
+    return "unknown"; // malformed YAML — we cannot tell, so we must not retire
+  }
+}
 
 /** One `vaults.json` entry, post-migration: the vault root plus when it was last actually
  *  registered (a core boot serving it). `lastSeenISO` is "" for a legacy plain-string entry that
@@ -163,6 +229,11 @@ function normalizeVaultEntry(raw: unknown): VaultRegistryEntry | null {
  * crash the daemon's own read of a mid-write file, so the write goes through a temp-then-rename
  * swap. On-disk shape stays an array (byte-compatible with the plain-string format daemon/src/lib/
  * registry.ts also still reads), just of `{path,lastSeenISO}` objects instead of bare strings.
+ *
+ * TWO PROCESSES stamp `lastSeenISO`: this one (a core boot = "the user opened this vault") and the
+ * daemon (`refreshVaultsSeen`, daemon/src/lib/registry.ts = "this brain is actually being served").
+ * Both write temp-then-rename, so the worst interleaving is a lost refresh, which the next tick
+ * redoes. See {@link VAULT_REGISTRY_TTL_MS} for why the second writer is not optional.
  */
 export function registerVaultRoot(vault: string, home: string = daemonMachineDir()): void {
   const root = resolve(vault);
@@ -188,18 +259,34 @@ export function registerVaultRoot(vault: string, home: string = daemonMachineDir
     if (realHome) {
       // Self-healing (real home only): drop temp-dir strays from before this guard, vanished
       // vaults, and vaults not seen in VAULT_REGISTRY_TTL_MS — the registry stays a small list of
-      // real, ACTIVE brains. Every TTL prune is logged: a vault someone opens rarely silently
-      // dropping off would be a nasty surprise, not a quiet cleanup.
+      // real, ACTIVE brains. Retirement is a DELETION of the daemon's only pointer at a vault, and
+      // getting it wrong stops that vault's crons forever, so it is biased hard toward keeping:
+      // an opt-in (or an unreadable `.settings`) outranks the clock, and every retirement is
+      // logged where the user can find it (see logVaultRegistryChange).
       entries = [];
       for (const e of known) {
         if (e.path === root) continue; // this call re-adds + stamps it below
-        if (isTempPath(e.path) || !existsSync(e.path)) continue;
+        if (isTempPath(e.path)) continue; // throwaway stray from before the temp guard
+        if (!existsSync(e.path)) {
+          logVaultRegistryChange(home, `dropping vault whose directory no longer exists: ${e.path}`);
+          continue;
+        }
         // A legacy (pre-TTL) entry has no timestamp to judge — baseline its clock to now rather
         // than treating "unknown" as "ancient" (which would mass-retire a fresh migration).
         const lastSeenISO = e.lastSeenISO || now;
         const ageMs = Date.now() - Date.parse(lastSeenISO);
         if (Number.isFinite(ageMs) && ageMs > VAULT_REGISTRY_TTL_MS) {
-          console.log(`[daemon] retiring vault not seen in 30+ days: ${e.path} (last seen ${lastSeenISO})`);
+          const optIn = daemonOptIn(e.path);
+          if (optIn !== "disabled") {
+            // Still in use (or we can't prove otherwise). Keep it, and keep its OLD stamp — the
+            // daemon that actually serves this vault is the honest thing to refresh it.
+            entries.push({ path: e.path, lastSeenISO });
+            continue;
+          }
+          logVaultRegistryChange(
+            home,
+            `retiring vault not seen in 30+ days (daemon disabled): ${e.path} (last seen ${lastSeenISO})`,
+          );
           continue;
         }
         entries.push({ path: e.path, lastSeenISO });

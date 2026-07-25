@@ -91,15 +91,78 @@ test("readRunRecords keeps a record with a live pid", () => {
   expect(recs[0]).toEqual({ port: 4322, vault: "/v/one", pid: process.pid });
 });
 
-test("readRunRecords filters a temp-path vault (leaked by a killed test server) and prunes it", () => {
+// LIVENESS IS THE ONLY LICENCE TO DELETE. A temp-dir vault is not evidence the core is dead —
+// verification servers, sandbox/preview cores and `bun run dev` against a scratch vault all run
+// there. Deleting a LIVE core's record makes it permanently undiscoverable, so `bismuth app …`
+// falls through to :4321 and drives the WRONG window, with nothing left on disk to recover from.
+test("a LIVE pid's record survives even on a temp path — and is still returned", () => {
   const tempVault = mkdtempSync(join(tmpdir(), "bismuth-vault-"));
   try {
-    writeRunRecord({ port: 4322, vault: tempVault, pid: process.pid }); // pid alive, but vault is a temp dir
+    writeRunRecord({ port: 4322, vault: tempVault, pid: process.pid }); // alive, temp-dir vault
+    expect(readRunRecords()).toEqual([{ port: 4322, vault: tempVault, pid: process.pid }]);
+    // The file is STILL THERE — a second reader (a later CLI call) must find it too.
+    expect(readdirSync(dir).filter((n) => n.endsWith(".json"))).toHaveLength(1);
+    expect(readRunRecords()).toHaveLength(1);
+  } finally {
+    rmSync(tempVault, { recursive: true, force: true });
+  }
+});
+
+test("a live temp-path core is reachable by exact vault — positive identification beats the path shape", () => {
+  const tempVault = mkdtempSync(join(tmpdir(), "bismuth-vault-"));
+  try {
+    writeRunRecord({ port: 4399, vault: tempVault, pid: process.pid });
+    expect(resolveRunRegistryBase(tempVault)).toBe("http://localhost:4399");
+  } finally {
+    rmSync(tempVault, { recursive: true, force: true });
+  }
+});
+
+test("a DEAD pid's record on a temp path is still pruned — liveness, not the path, decides", () => {
+  const tempVault = mkdtempSync(join(tmpdir(), "bismuth-vault-"));
+  try {
+    writeRunRecord({ port: 4322, vault: tempVault, pid: DEAD_PID });
     expect(readRunRecords()).toEqual([]);
     expect(readdirSync(dir).filter((n) => n.endsWith(".json"))).toEqual([]);
   } finally {
     rmSync(tempVault, { recursive: true, force: true });
   }
+});
+
+test("the no-vault guess prefers a persistent vault over a live sandbox core", () => {
+  const tempVault = mkdtempSync(join(tmpdir(), "bismuth-vault-"));
+  try {
+    writeRunRecord({ port: 4322, vault: tempVault, pid: process.pid });
+    // A lone sandbox core IS the answer when it's all that's running.
+    expect(resolveRunRegistryBase()).toBe("http://localhost:4322");
+    // Add the user's real vault: the bare `bismuth app …` guess must land on THAT, not the sandbox.
+    writeRunRecord({ port: 4321, vault: "/v/real", pid: process.pid });
+    expect(resolveRunRegistryBase()).toBe("http://localhost:4321");
+    // …while the sandbox stays addressable by name, and on disk.
+    expect(resolveRunRegistryBase(tempVault)).toBe("http://localhost:4322");
+    expect(readdirSync(dir).filter((n) => n.endsWith(".json"))).toHaveLength(2);
+  } finally {
+    rmSync(tempVault, { recursive: true, force: true });
+  }
+});
+
+test("two live persistent cores stay ambiguous with no vault named", () => {
+  writeRunRecord({ port: 1, vault: "/v/one", pid: process.pid });
+  writeRunRecord({ port: 2, vault: "/v/two", pid: process.pid });
+  expect(resolveRunRegistryBase()).toBeUndefined();
+});
+
+// The cap used to bound the wrong operation: readdir+read+JSON.parse runs over EVERY record (the
+// multi-second part) while only 200 unlinks were allowed per call, so a 33k backlog needed ~165
+// calls that EACH paid the full stall. One pass must drain it.
+test("a large dead backlog drains completely in ONE readRunRecords call", () => {
+  for (let i = 0; i < 1200; i++) {
+    writeFileSync(join(dir, `dead-${i}.json`), JSON.stringify({ port: 5000 + i, vault: `/v/dead-${i}`, pid: DEAD_PID }));
+  }
+  writeRunRecord({ port: 4321, vault: "/v/alive", pid: process.pid });
+  expect(readRunRecords()).toEqual([{ port: 4321, vault: "/v/alive", pid: process.pid }]);
+  // Every dead record is gone after a SINGLE call — only the live one is left on disk.
+  expect(readdirSync(dir).filter((n) => n.endsWith(".json"))).toHaveLength(1);
 });
 
 test("readRunRecords keeps a live-pid, real-path record alongside pruning a dead one", () => {

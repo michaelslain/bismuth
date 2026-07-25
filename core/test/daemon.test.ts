@@ -18,6 +18,8 @@ import {
   daemonMachineDir,
   migrateDaemonState,
   registerVaultRoot,
+  daemonOptIn,
+  vaultRegistryLogFile,
   readDaemonSessionIds,
   vaultSessionIdsFile,
   parseSessionIds,
@@ -459,6 +461,109 @@ test("registerVaultRoot retires (and LOGS) an entry past the TTL", () => {
   expect(readVaultPaths(home)).not.toContain(stale);
   expect(logs.length).toBeGreaterThan(0);
   expect(logs.some((args) => String(args[0]).includes(stale))).toBe(true);
+});
+
+// ── Retirement is conservative: an opt-in outranks the clock ───────────────────────────────────
+//
+// The TTL is a HEURISTIC about disuse; `daemon.enabled: true` is a POSITIVE statement of use. A
+// vault firing crons hourly that the user simply hasn't OPENED in 30 days must never be dropped on
+// another vault's core boot — every one of its crons would stop forever.
+
+/** Write a `.settings` file into `vault` with the given `daemon.enabled` value. */
+function writeVaultSettings(vault: string, enabled: boolean): void {
+  writeFileSync(join(vault, ".settings"), `daemon:\n  enabled: ${enabled}\n`);
+}
+
+/** Seed `home`'s registry with one entry stamped 40 days ago (well past the 30-day TTL). */
+function seedStaleEntry(home: string, vault: string): string {
+  const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([{ path: vault, lastSeenISO: old }]));
+  return old;
+}
+
+test("registerVaultRoot NEVER retires a daemon-enabled vault, however long since it was opened", () => {
+  const home = realHome("ttl-enabled");
+  const enabled = realHome("ttl-enabled-vault");
+  writeVaultSettings(enabled, true);
+  const old = seedStaleEntry(home, enabled);
+  registerVaultRoot(realHome("ttl-enabled-trigger"), home);
+  expect(readVaultPaths(home)).toContain(enabled);
+  // Its stamp is left alone — refreshing "last seen" is the DAEMON's job (it is the process that
+  // actually serves the brain), not a side effect of another vault's boot.
+  const kept = (JSON.parse(readFileSync(join(home, "vaults.json"), "utf8")) as Array<{ path: string; lastSeenISO: string }>).find((e) => e.path === enabled)!;
+  expect(kept.lastSeenISO).toBe(old);
+});
+
+test("registerVaultRoot still retires an EXPIRED vault whose daemon is disabled", () => {
+  const home = realHome("ttl-disabled");
+  const disabled = realHome("ttl-disabled-vault");
+  writeVaultSettings(disabled, false);
+  seedStaleEntry(home, disabled);
+  registerVaultRoot(realHome("ttl-disabled-trigger"), home);
+  expect(readVaultPaths(home)).not.toContain(disabled);
+});
+
+test("registerVaultRoot does not retire an expired vault whose .settings is unreadable (unknown ≠ idle)", () => {
+  const home = realHome("ttl-corrupt");
+  const corrupt = realHome("ttl-corrupt-vault");
+  // Malformed YAML: we cannot tell whether the daemon is on, so we must not delete the pointer.
+  writeFileSync(join(corrupt, ".settings"), "daemon:\n  enabled: [unclosed\n\t\tbad: :\n");
+  seedStaleEntry(home, corrupt);
+  registerVaultRoot(realHome("ttl-corrupt-trigger"), home);
+  expect(readVaultPaths(home)).toContain(corrupt);
+});
+
+test("daemonOptIn: enabled / disabled / absent / unreadable", () => {
+  const on = realHome("optin-on");
+  writeVaultSettings(on, true);
+  expect(daemonOptIn(on)).toBe("enabled");
+
+  const off = realHome("optin-off");
+  writeVaultSettings(off, false);
+  expect(daemonOptIn(off)).toBe("disabled");
+
+  const bare = realHome("optin-bare");
+  writeFileSync(join(bare, ".settings"), "appearance:\n  theme: nord\n");
+  expect(daemonOptIn(bare)).toBe("disabled"); // parsed cleanly, no opt-in → schema default (false)
+
+  const none = realHome("optin-none"); // no .settings at all → never configured
+  expect(daemonOptIn(none)).toBe("disabled");
+
+  const broken = realHome("optin-broken");
+  writeFileSync(join(broken, ".settings"), "daemon:\n  enabled: [unclosed\n\t\tbad: :\n");
+  expect(daemonOptIn(broken)).toBe("unknown");
+});
+
+test("a retirement is written to the daemon's OWN log, not just stdout", () => {
+  const home = realHome("ttl-logfile");
+  const stale = realHome("ttl-logfile-stale");
+  writeVaultSettings(stale, false);
+  seedStaleEntry(home, stale);
+  const origLog = console.log;
+  console.log = () => {}; // stdout is invisible in the bundled app — that's the whole point
+  try {
+    registerVaultRoot(realHome("ttl-logfile-trigger"), home);
+  } finally {
+    console.log = origLog;
+  }
+  const logFile = vaultRegistryLogFile(home);
+  expect(existsSync(logFile)).toBe(true);
+  expect(readFileSync(logFile, "utf8")).toContain(stale);
+});
+
+test("a vanished vault's removal is logged too (never a silent drop)", () => {
+  const home = realHome("gone");
+  const gone = join(home, "never-existed-vault");
+  seedStaleEntry(home, gone);
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    registerVaultRoot(realHome("gone-trigger"), home);
+  } finally {
+    console.log = origLog;
+  }
+  expect(readVaultPaths(home)).not.toContain(gone);
+  expect(readFileSync(vaultRegistryLogFile(home), "utf8")).toContain(gone);
 });
 
 test("registering the same vault again refreshes its lastSeenISO stamp", () => {
