@@ -13,11 +13,14 @@
 #
 # Usage: scripts/board-scan.sh            (human view)
 #        scripts/board-scan.sh --actions  (only cards needing operator action)
+#        scripts/board-scan.sh --survey   (the full-board survey the operator reports
+#                                          in chat every cycle — generated, not remembered)
 # bash 3.2 compatible (macOS system bash) — no associative arrays.
 set -u
 VAULT="${BISMUTH_VAULT:-/Users/michaelslain/Documents/library of alexandria}"
 DIR="$VAULT/thoughts/Bismuth Changes"
 ACTIONS_ONLY=0; [ "${1:-}" = "--actions" ] && ACTIONS_ONLY=1
+SURVEY=0; [ "${1:-}" = "--survey" ] && SURVEY=1
 [ -d "$DIR" ] || { echo "board dir not found: $DIR" >&2; exit 1; }
 
 fm(){ awk -v k="$2" '{ if($0 ~ "^"k":"){ sub(/^[^:]*: */,""); print; exit } }' "$1"; }
@@ -25,7 +28,8 @@ fm(){ awk -v k="$2" '{ if($0 ~ "^"k":"){ sub(/^[^:]*: */,""); print; exit } }' "
 lines=(); pending=0
 while IFS= read -r -d '' f; do
   st=$(fm "$f" status); wt=$(fm "$f" worktree); ld=$(fm "$f" landed)
-  bo=$(fm "$f" bounces); name=$(basename "$f" .md)
+  bo=$(fm "$f" bounces); pv=$(fm "$f" preview); ty=$(fm "$f" type)
+  name=$(basename "$f" .md)
   case "$st" in
     Todo)                    act="TRIAGE + BUILD";           pending=$((pending+1));;
     "In Progress")           act="building (workflow owns it)";;
@@ -35,15 +39,56 @@ while IFS= read -r -d '' f; do
     Ideas)                   act="idea";;
     *)                       st="<none>"; act="(no status -> treat as Todo)"; pending=$((pending+1));;
   esac
-  lines+=("$st|$act|$name|$ld")
+  lines+=("$st|$act|$name|$ld|$wt|$pv|$bo|$ty")
 done < <(find "$DIR" -maxdepth 1 -name '*.md' -print0)
+
+# --survey: the report the operator posts in chat every cycle — one line per card,
+# grouped by column, each column carrying the detail the USER needs to act on it
+# (Awaiting Confirmation: the preview link + branch — NOT `landed`, which is
+# correctly EMPTY there under the Merge Invariant).
+if [ "$SURVEY" = 1 ]; then
+  echo "== Bismuth Changes — board survey =="
+  for col in "Awaiting Confirmation" "In Progress" "Done but Broken" Done Todo "<none>" Ideas; do
+    first=1
+    for L in "${lines[@]}"; do
+      s=${L%%|*}; r=${L#*|}; a=${r%%|*}; r=${r#*|}; n=${r%%|*}; r=${r#*|}
+      l=${r%%|*}; r=${r#*|}; w=${r%%|*}; r=${r#*|}; p=${r%%|*}; r=${r#*|}
+      b=${r%%|*}; t=${r##*|}
+      [ "$s" = "$col" ] || continue
+      if [ $first = 1 ]; then
+        echo
+        case "$col" in
+          "Awaiting Confirmation") echo "YOUR TURN — test at the link, drag to Done if it works:";;
+          "In Progress")           echo "BUILDING:";;
+          "Done but Broken")       echo "RE-FIXING (bounced):";;
+          Done)                    echo "MERGING (you confirmed these):";;
+          Todo|"<none>")           echo "QUEUED:";;
+          Ideas)                   echo "IDEAS (yours):";;
+        esac
+        first=0
+      fi
+      detail=""
+      case "$col" in
+        "Awaiting Confirmation")
+          detail="  ->  ${p:-NO PREVIEW (operator bug)}"; [ -n "$w" ] && detail="$detail  (branch $w)";;
+        "In Progress")     [ -n "$w" ] && detail="  (branch $w)";;
+        "Done but Broken") detail="  (bounces ${b:-0})"; [ -n "$w" ] && detail="$detail  (branch $w)";;
+        Done)              [ -n "$l" ] && detail="  (landed $l)";;
+        Todo|"<none>")     [ "$t" = question ] && detail="  [question — answering, not building]";;
+      esac
+      printf '  - %s%s\n' "$n" "$detail"
+    done
+  done
+  echo
+  exit 0
+fi
 
 echo "-- Bismuth Changes board --"
 for col in Todo "Done but Broken" "In Progress" "Awaiting Confirmation" Done Ideas "<none>"; do
   if [ "$ACTIONS_ONLY" = 1 ]; then case "$col" in "In Progress"|Ideas) continue;; esac; fi
   first=1
   for L in "${lines[@]}"; do
-    s=${L%%|*}; rest=${L#*|}; a=${rest%%|*}; rest=${rest#*|}; n=${rest%%|*}; l=${rest##*|}
+    s=${L%%|*}; rest=${L#*|}; a=${rest%%|*}; rest=${rest#*|}; n=${rest%%|*}; rest=${rest#*|}; l=${rest%%|*}
     [ "$s" = "$col" ] || continue
     [ $first = 1 ] && { echo; echo "[$col]"; first=0; }
     tail=""; [ -n "$l" ] && tail="  [landed $l]"
