@@ -709,6 +709,13 @@
    cards when the column is taller than the board — the header above stays put (it's a separate,
    non-scrolling flex sibling, not `position: sticky`, so there's no double-scroll to coordinate). */
 .kanbanCards { display: flex; flex-direction: column; padding: 9px 10px 12px; gap: 9px; flex: 1; min-height: 0; overflow-y: auto; }
+/* Cards (and the drop-gap placeholders / "add card" affordance) must keep their natural height.
+   `.kanbanCards` is a COLUMN flex container, so its children default to `flex-shrink: 1` — without
+   this they compress to fit the now height-capped column instead of overflowing it, which both
+   clips every card's text AND means `scrollHeight === clientHeight`, so the column never grows a
+   scrollbar at all. Measured before this rule: a card rendered 79px tall in a short column was
+   crushed to 14px (content clipped) in a 28-card one, with no way to scroll to the rest. */
+.kanbanCards > * { flex: none; }
 .kanbanCards .card {
   cursor: grab;
   /* No native text selection while dragging cards — otherwise a drag that starts on card text
