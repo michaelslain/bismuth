@@ -14,8 +14,10 @@ import { IconPicker } from "./icons/IconPicker";
 import { BASE_VIEW_KINDS, baseTemplate, baseFileName } from "./baseViews";
 import { primeNoteCache } from "./noteCache";
 import { settings } from "./settings";
-import { newNoteContent } from "../../core/src/newNoteTemplate";
-import { setPendingCursor, clearPendingCursor } from "./pendingCursor";
+import { applyNewNoteTemplate } from "../../core/src/newNoteTemplate";
+import { NOTE_EXT_RE } from "../../core/src/pathUtils";
+import { setPendingCursor } from "./pendingCursor";
+import { createRenameSettleRegistry } from "./renameSettle";
 
 import { buildTree, reconcileTree, type TreeNode } from "./fileTreeModel";
 
@@ -24,10 +26,10 @@ import { buildTree, reconcileTree, type TreeNode } from "./fileTreeModel";
 // the toolbar "+" chooser via the `bismuth-new` event (see App.tsx).
 export type CreateKind = "file" | "dir" | "base" | "sheet" | "draw";
 
-// Extensions hidden in the tree's display labels (and re-applied on rename),
-// just like Obsidian hides `.md`. Markdown notes and YAML configs alike.
-const STRIP_EXT = /\.(md|yaml|yml)$/i;
-const displayName = (name: string) => name.replace(STRIP_EXT, "");
+// Extensions hidden in the tree's display labels (and re-applied on rename), just like Obsidian
+// hides `.md`. Markdown notes and YAML configs alike. Shared with core (`noteStem`, which derives
+// a template's `{{title}}`) so the two can't disagree about where a name ends.
+const displayName = (name: string) => name.replace(NOTE_EXT_RE, "");
 
 const TREE_CACHE_KEY = "bismuth-tree-cache-v1";
 
@@ -114,6 +116,13 @@ export function FileTree(props: {
       if (p === path) { try { await promise; } catch { /* create failure is handled by doCreate */ } return; }
     }
   };
+  // Where a just-created row FINALLY lands (renameSettle.ts). A new note is created under a
+  // placeholder name ("Untitled.md") and drops straight into inline rename, so its create-time
+  // path is almost never the path it keeps — and the new-note template's {{title}}/{{cursor}}/
+  // note-cache entry must all bind to the kept one (core/src/newNoteTemplate.ts). doCreate parks
+  // a waiter here keyed by the CREATE path; EditableLabel reports the settled path once its
+  // rename is over. Per-instance, not module-global, so two windows never share waiters.
+  const renameSettle = createRenameSettleRegistry();
   // Persist the last good tree so the sidebar paints instantly next launch. Skip while an
   // optimistic op is in flight (pendingOps > 0) so we never cache un-confirmed state; the
   // effect re-runs and writes the settled tree once pendingOps drops back to 0.
@@ -414,35 +423,21 @@ export function FileTree(props: {
       }
       return;
     }
+    // Register the settle waiter BEFORE handing the row to inline rename: a fast Enter can commit
+    // (and report) before the create round-trip even resolves, and an unregistered report is
+    // silently dropped. Only a plain note is templated — sheet/draw/base seed their own content.
+    const settledPath = kind === "file" ? renameSettle.waitFor(path) : null;
+    // Snapshot the template config + clock at CREATE time, not at settle time: {{date}}/{{time}}
+    // should read as the moment the note came into existence, however long the user then spends
+    // deciding on its name.
+    const templatePath = settings.templates.newNote;
+    const createdAt = new Date();
     setEditing(path);
     // Seed the cache with the (empty) body BEFORE the round-trip so an immediate open
     // is a guaranteed instant cache hit instead of a GET /file that could race the
     // create (briefly flashing a spinner or 404). Dirs have no body; only prime files.
     if (fsKind === "file") primeNoteCache(path, "");
-    // A plain new note (kind==="file"; sheet/draw/base seed their own content elsewhere) can be
-    // pre-filled from a configured template (settings.templates.newNote →
-    // core/src/newNoteTemplate.ts), mirroring the daily-note template pattern (dailyNote.ts).
-    // Resolved + written as part of the SAME tracked operation as the bare create — so a fast
-    // rename-on-Enter (awaitCreate, below) waits for the template write too, not just the create,
-    // which would otherwise let a move race ahead of an in-flight write to the old path.
-    const createP = trackPending(async () => {
-      await api.create(path, fsKind);
-      if (kind !== "file") return;
-      const templatePath = settings.templates.newNote.trim();
-      if (!templatePath) return; // unset (the default) → empty note, unchanged behavior
-      let raw: string;
-      try {
-        raw = await api.read(templatePath);
-      } catch {
-        return; // missing/unreadable template → empty note, never blocks/errors the create
-      }
-      const title = name.replace(STRIP_EXT, "");
-      const { text, cursorOffset } = newNoteContent(raw, new Date(), title);
-      if (!text) return; // empty template → nothing to write, cursor stays at the default start
-      await api.write(path, text);
-      primeNoteCache(path, text);
-      setPendingCursor(path, cursorOffset);
-    });
+    const createP = trackPending(() => api.create(path, fsKind));
     // Expose the in-flight create so a fast rename-on-Enter can wait for it (see awaitCreate).
     // Keyed by a fresh per-invocation token so a concurrent create can't clobber this entry.
     const token = Symbol();
@@ -453,11 +448,36 @@ export function FileTree(props: {
       // Only tear down THIS create's own inline-rename box — a concurrent fast create now yields a
       // distinct row that may be mid-edit, and an unconditional setEditing(null) would blur-commit it.
       if (editing() === path) setEditing(null);
-      clearPendingCursor(path);
+      renameSettle.cancel(path); // nothing to template — the note never made it to disk
       await refetch();
       pushToast(`Create failed: ${(e as Error).message}`);
+      return;
     } finally {
       pendingCreate.delete(token);
+    }
+    if (!settledPath) return;
+    // A plain new note can be pre-filled from a configured template (settings.templates.newNote →
+    // core/src/newNoteTemplate.ts), mirroring the daily-note template pattern (dailyNote.ts).
+    // The template READ starts as soon as the create lands (overlapping the user typing a name),
+    // but the expand + write wait for `settledPath` — the note's post-rename resting place — so
+    // {{title}} is the name the user actually typed, and the write, the note-cache prime and the
+    // caret offset all land on a path that still exists. Nothing here gates the create or the
+    // rename: both have already resolved by this line.
+    try {
+      await applyNewNoteTemplate({
+        templatePath,
+        now: createdAt,
+        settledPath,
+        io: {
+          readTemplate: (p) => api.read(p),
+          write: (p, text) => api.write(p, text).then(() => undefined),
+          primeCache: primeNoteCache,
+          setCursor: setPendingCursor,
+        },
+      });
+    } catch (e) {
+      // The note exists and is usable (just empty); only the template body failed to land.
+      pushToast(`Template failed: ${(e as Error).message}`);
     }
   }
 
@@ -591,6 +611,7 @@ export function FileTree(props: {
         optimisticRename={optimisticRename}
         trackPending={trackPending}
         awaitCreate={awaitCreate}
+        onSettled={renameSettle.report}
         selected={selected()}
         onRowClick={onRowClick}
         startItemDrag={props.startItemDrag}
@@ -620,29 +641,41 @@ function EditableLabel(props: {
   optimisticRename: (from: string, to: string) => void;
   trackPending: <T>(fn: () => Promise<T>) => Promise<T>;
   awaitCreate: (path: string) => Promise<void>;
+  onSettled: (createPath: string, finalPath: string) => void;
 }) {
   let inputRef: HTMLInputElement | undefined;
   const initial = props.node.name;
+  const startPath = props.node.path;
   // The input shows the extension-STRIPPED stem (like Obsidian hides `.md`), so the
   // user never sees or has to preserve the `.md`/`.yaml`/`.yml`. The extension is
   // re-applied on commit. Dirs (and any name without a hidden ext) have ext="" and
   // stem === initial. `.slice` (not `.replace`) so a multi-dot name like
   // `notes.v2.md` strips only the trailing `.md`, leaving `notes.v2`.
-  const ext = props.isDir ? "" : (initial.match(STRIP_EXT)?.[0] ?? "");
+  const ext = props.isDir ? "" : (initial.match(NOTE_EXT_RE)?.[0] ?? "");
   const stem = ext ? initial.slice(0, initial.length - ext.length) : initial;
   // setEditing(null) unmounts the input, which fires blur → a second commit.
   // `done` makes the rename (or cancel) run exactly once.
   let done = false;
+  // Report this row's resting place EXACTLY once, whichever way the edit ended. A brand-new
+  // note's template write is waiting on this (renameSettle, in FileTree above) — it has to fire
+  // on the abandon paths too (Escape, empty/unchanged input, a failed move), otherwise a user
+  // who keeps "Untitled" would silently get no template at all.
+  let reported = false;
+  const settle = (finalPath: string) => {
+    if (reported) return;
+    reported = true;
+    props.onSettled(startPath, finalPath);
+  };
 
   const commit = async () => {
     if (done) return;
     done = true;
     const raw = inputRef?.value.trim() ?? "";
     props.setEditing(null);
-    if (!raw || raw === stem) return; // no-op (input holds the stem, not the full name)
+    if (!raw || raw === stem) { settle(startPath); return; } // no-op (input holds the stem, not the full name)
     // Re-apply the original hidden extension (.md/.yaml/.yml) if the user dropped it.
     const newName = ext && !raw.toLowerCase().endsWith(ext.toLowerCase()) ? `${raw}${ext}` : raw;
-    if (newName === initial) return; // typed the exact current name back (e.g. with the ext) → silent no-op, not an EEXIST error
+    if (newName === initial) { settle(startPath); return; } // typed the exact current name back (e.g. with the ext) → silent no-op, not an EEXIST error
     const from = props.node.path;
     const to = joinPath(parentOf(from), newName);
     props.optimisticRename(from, to); // instant; reverted via refresh() on failure
@@ -653,9 +686,13 @@ function EditableLabel(props: {
       // wait for it so the move never races ahead of the file's existence on disk.
       await props.awaitCreate(from);
       await props.trackPending(() => api.move(from, to));
+      // Only NOW is the file actually at `to` on disk, so anything waiting to write to it
+      // (the new-note template) can go ahead without racing the move.
+      settle(to);
     } catch (e) {
       props.refresh();
       pushToast(`Rename failed: ${(e as Error).message}`);
+      settle(from); // the move never landed — the note is still at the path it was created at
     }
   };
 
@@ -663,7 +700,15 @@ function EditableLabel(props: {
     if (done) return;
     done = true;
     props.setEditing(null);
+    settle(startPath);
   };
+
+  // Safety net: if the edit box goes away without either path running (an external
+  // setEditing(null), a tree rebuild that drops the row), the row is still on disk at the name
+  // it had — report that, so a pending template write can never be stranded forever. `done` is
+  // set BEFORE commit()'s own setEditing(null) unmounts us, so this can't pre-empt a commit
+  // that is still awaiting its move.
+  onCleanup(() => { if (!done) settle(startPath); });
 
   return (
     <input
@@ -747,6 +792,7 @@ function Level(props: {
   optimisticRename: (from: string, to: string) => void;
   trackPending: <T>(fn: () => Promise<T>) => Promise<T>;
   awaitCreate: (path: string) => Promise<void>;
+  onSettled: (createPath: string, finalPath: string) => void;
   selected: Set<string>; onRowClick: (node: TreeNode, e: MouseEvent) => boolean;
   startItemDrag: (e: PointerEvent, kind: "note" | "folder", path: string, label: string) => void;
   dropHighlight: () => string | null;
@@ -784,7 +830,7 @@ function Level(props: {
               <Icon value={child.icon} fallback={child.isSystemFolder ? "Settings2" : props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class="ft-icon" />
               <VisibilityBadge visibility={child.visibility} />
               <Show when={props.editing === child.path} fallback={child.label ?? child.name}>
-                <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} awaitCreate={props.awaitCreate} />
+                <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} awaitCreate={props.awaitCreate} onSettled={props.onSettled} />
               </Show>
             </div>
             <Collapsible open={props.open.has(child.path)}>
@@ -792,7 +838,8 @@ function Level(props: {
                 onOpen={props.onOpen} activeFile={props.activeFile} onMenu={props.onMenu}
                 editing={props.editing} setEditing={props.setEditing} refresh={props.refresh}
                 optimisticRename={props.optimisticRename} trackPending={props.trackPending}
-                awaitCreate={props.awaitCreate} selected={props.selected} onRowClick={props.onRowClick}
+                awaitCreate={props.awaitCreate} onSettled={props.onSettled}
+                selected={props.selected} onRowClick={props.onRowClick}
                 startItemDrag={props.startItemDrag} dropHighlight={props.dropHighlight} />
             </Collapsible>
           </div>
@@ -808,7 +855,7 @@ function Level(props: {
             <Icon value={child.icon} fallback={child.name.endsWith(".sheet") ? "Table" : "FileText"} size={16} class="ft-icon" />
             <VisibilityBadge visibility={child.visibility} />
             <Show when={props.editing === child.path} fallback={child.label ?? displayName(child.name)}>
-              <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} awaitCreate={props.awaitCreate} />
+              <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} awaitCreate={props.awaitCreate} onSettled={props.onSettled} />
             </Show>
           </div>
         );

@@ -403,6 +403,12 @@ templates:
   newNote: _templates/Note.md
 ```
 
+A new note is created under a placeholder name (`Untitled.md`) and drops straight into the file
+tree's inline rename, so the template is expanded and written **after that rename settles** —
+`{{title}}` is the name you actually typed, not `Untitled`. Abandoning the rename (Escape, or
+keeping `Untitled`) still applies the template. A missing or unreadable template file is not an
+error: the note is simply created empty.
+
 ---
 
 ## `properties`
