@@ -250,16 +250,14 @@ export function CardEditModal(props: {
     }
     if (k.kind === "boolean") {
       return (
-        <span class={styles.boolChip}>
-          <Chip
-            selected={value(id) === true}
-            icon={value(id) === true ? "Check" : "Square"}
-            iconSize={13}
-            onClick={() => props.onSetMeta(id, !(value(id) === true))}
-          >
-            {value(id) === true ? "Yes" : "No"}
-          </Chip>
-        </span>
+        <Chip
+          selected={value(id) === true}
+          icon={value(id) === true ? "Check" : "Square"}
+          iconSize={13}
+          onClick={() => props.onSetMeta(id, !(value(id) === true))}
+        >
+          {value(id) === true ? "Yes" : "No"}
+        </Chip>
       );
     }
     return (
@@ -285,7 +283,7 @@ export function CardEditModal(props: {
           <span class={styles.label}>Title</span>
           <input
             ref={titleRef}
-            class={styles.titleInput}
+            class={`ui-input ${styles.titleInput}`}
             value={titleDraft()}
             placeholder="Untitled"
             onInput={(e) => setTitleDraft(e.currentTarget.value)}
