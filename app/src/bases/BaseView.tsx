@@ -313,7 +313,10 @@ export function BaseView(props: {
           <Show when={data()} fallback={<BaseSkeleton type="table" />}>
             <Switch
               fallback={
-                <div class={styles.base}>
+                <div
+                  class={styles.base}
+                  classList={{ [styles.baseKanban]: activeType() === "kanban" }}
+                >
                   <Show when={result()} fallback={<BaseSkeleton type={activeType()} />}>
                     {(res) => (
                       <Switch

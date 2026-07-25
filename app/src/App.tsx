@@ -46,10 +46,9 @@ const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.Te
 // hides the chat instead of unmounting it — unmount closes its WS with code 1000, which the
 // backend treats as an intentional tab-close and kills the whole `claude` session.
 const ChatView = lazy(() => import("./ChatView").then((m) => ({ default: m.ChatView })));
-import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
-import { withYouNode } from "./graph/youNode";
 import { agentGraphSig } from "./graph/agentGraphSig";
-import type { GraphData, ViewLayout } from "../../core/src/graph";
+import { selectDisplayGraph } from "./graph/displayGraph";
+import type { GraphData } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { memorySlugFromNodeId, type MemoryCandidate } from "../../core/src/memoryRef";
 import { TERMINAL_PREFIX, GRAPH_TAB, INBOX_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider, setChatIconProvider } from "./tabIds";
@@ -58,6 +57,7 @@ import { daemonName, refreshDaemonIdentity } from "./daemonIdentity";
 import { chatTitle } from "./chatTitles";
 import { chatOrigin, chatOriginIcon } from "./chatOrigin";
 import { isExportable } from "./export/formats";
+import { createBootGate } from "./bootGate";
 import { publishEditorTabs } from "./chatContext";
 import { connectUiControl, type UiControlHandle, type UiTabsSnapshot } from "./uiControlClient";
 import { UI_CONTROL_BLOCKLIST } from "../../core/src/commands";
@@ -80,23 +80,6 @@ import { openContextMenu, isTauri } from "./nativeMenu";
 import "./App.css";
 import "./ui/popover/popover.css";
 
-/**
- * Apply brain-view layout to a subgraph. Overwrites node positions with the view's
- * precomputed layout (for 2nd/3rd brain views) instead of using full-graph positions
- * which would strand cross-brain-linked nodes.
- */
-function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
-  if (!view) return graph;
-  return {
-    edges: graph.edges,
-    nodes: graph.nodes.map((node) => ({
-      ...node,
-      position: view.pos3d[node.id] ?? node.position,
-      position2d: view.pos2d[node.id] ?? node.position2d,
-    })),
-  };
-}
-
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
 // windows and the desktop app's WebviewWindows alike), so a single global key made every
 // window mirror — and then clobber — the others' tabs. Key the layout by this window's id
@@ -113,6 +96,25 @@ const THEME_VARS_KEY = "bismuth-theme-vars-v1";
 const GHOST_MAX_W = 200;
 
 export default function App() {
+  // Boot splash gate (see bootGate.ts): the graph is a single always-mounted instance (home tab
+  // OR the sidebar mini-graph — see the graph-floater below), so `graphMounts` is always true
+  // here. Dismissal waits for BOTH the initial data fetch (below) AND a graph frame painted AFTER
+  // that data arrived (GraphView's onPaint prop, correlated against dataReady inside bootGate —
+  // an empty pre-data paint does not satisfy it) — never stranding thanks to the `hidden` bypass
+  // (wired below), the bounded paintWaitExpired fallback (also below), plus index.html's own 12s
+  // safety timeout, which calls the same idempotent __bismuthBootReady however this gate resolves.
+  // Timer id for the bounded paint-wait fallback; armed by the graph's first paint (see onPaint
+  // on the graph-floater below), 0 = not yet armed.
+  let paintFallback = 0;
+  // Timer id proving the graph has stayed drawn (not just drawn once) — see onPaint below.
+  let paintStable = 0;
+  const STABLE_MS = 180;
+  const bootGate = createBootGate({
+    graphMounts: true,
+    onDismiss: () =>
+      (window as unknown as { __bismuthBootReady?: () => void }).__bismuthBootReady?.(),
+  });
+
   // Seed from the last good graph so it paints instantly on boot (the renderer already
   // caches node positions in localStorage; this supplies the structure). Reconciles when
   // /graph returns. Persisted WITHOUT the lazy `views` layouts to keep the blob small.
@@ -551,22 +553,14 @@ export default function App() {
   // flicker.
   const scheduleGraphRefresh = debounce(() => { refreshGraph(); }, () => settings.graph.refreshDebounceMs);
 
-  const displayGraph = createMemo<GraphData>(() => {
-    const currentMode = mode();
-    const open = openContents();
-    switch (currentMode) {
-      case "2nd":
-        return withYouNode(applyView(subgraphByKinds(graph(), SECOND_BRAIN_KINDS), graph().views?.second), open);
-      case "3rd":
-        return withYouNode(applyView(subgraphByKinds(graph(), THIRD_BRAIN_KINDS), graph().views?.third), open);
-      case "agents":
-        return agents(); // raw sessions/subagents; GraphView lays it out (you hub, pyramid/molecule, channels)
-      case "daemon":
-        return daemon(); // daemon mode centers on the daemon hub node — no "you" injection
-      case "both":
-        return withYouNode(graph(), open); // full brain + the you hub linking the open working set
-    }
-  });
+  // No "you" hub in any mode except "agents" (see selectDisplayGraph in graph/displayGraph.ts) —
+  // it used to be frontend-injected here for 2nd/3rd/both too, but read as noise floating at the
+  // origin next to real vault/memory structure. The agents-mode hub is unaffected: it's a
+  // different construct (the literal root of the session tree), injected separately by
+  // GraphView/agentLayout.ts, not by this selection.
+  const displayGraph = createMemo<GraphData>(() =>
+    selectDisplayGraph(mode(), { graph: graph(), agents: agents(), daemon: daemon() }),
+  );
 
   const noteCandidates = createMemo<NoteCandidate[]>(() =>
     graph().nodes.filter((n) => n.kind === "note").map((n) => ({ label: n.label, path: n.id, folder: n.folder })),
@@ -1426,15 +1420,23 @@ export default function App() {
 
 
   onMount(() => {
-    // Dismiss the boot splash (index.html) once the home-tab graph AND the sidebar tree are in,
-    // so the UI is revealed — and only becomes interactive — when it's actually ready to use, not
-    // mid-load. allSettled (never rejects) plus the splash's own safety timeout mean a slow or
-    // backend-down fetch can't strand the overlay; the extra frame lets the graph paint first.
+    // Dismiss the boot splash (index.html) once the initial graph+tree fetch settles AND the
+    // graph has actually painted a frame AFTER that (bootGate.setGraphPainted, fired by
+    // GraphView's onPaint below; bootGate itself discards any paint that arrived before
+    // dataReady) — not merely once the data resolved, so the UI is revealed only when there's
+    // really something drawn behind it, with the loaded data. allSettled (never rejects) plus
+    // the paintWaitExpired fallback below plus the splash's own 12s safety timeout mean a
+    // slow/backend-down fetch, or a post-data paint that never arrives (e.g. a vault with
+    // nothing new to draw), can't strand the overlay.
     Promise.allSettled([refreshGraph(), refreshFileIcons()]).then(() => {
-      requestAnimationFrame(() =>
-        (window as unknown as { __bismuthBootReady?: () => void }).__bismuthBootReady?.(),
-      );
+      requestAnimationFrame(() => bootGate.setDataReady(true));
     });
+    // A backgrounded launch (window not visible) pauses the graph's render loop, so a first paint
+    // may never come — but nothing is visible to strand either, so let data-ready alone dismiss.
+    const onVisibilityChange = () => bootGate.setHidden(document.visibilityState === "hidden");
+    onVisibilityChange();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    onCleanup(() => document.removeEventListener("visibilitychange", onVisibilityChange));
     // Cold-launch check (plan §3): catch any daemon-inbox page that became due while the app
     // was closed. onOpenInbox lets the newly-due toast's "Review" action jump straight to ::inbox.
     void refreshDaemonPages(openInbox);
@@ -2289,7 +2291,41 @@ export default function App() {
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
       <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() && !switcherOpen() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} />
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} onPaint={(nodeCount) => {
+            // No-op for the rest of the session once dismissed — this fires every frame, and
+            // there's nothing left to gate after boot.
+            if (bootGate.dismissed) return;
+            // The FIRST paint proves the renderer is alive (its lazy chunk loaded, its host box
+            // measured) — only now is "a paint should arrive shortly" a safe assumption, so this
+            // is where the bounded fallback starts. Starting it when the DATA landed instead was
+            // measured to misfire on a cold boot: data was ready at ~1.7s while the GraphView
+            // chunk was still loading, so the 1.5s timer expired and dropped the splash at 3.2s
+            // over an area whose canvas did not exist until 3.9s — the exact gap being fixed.
+            if (paintFallback === 0) {
+              paintFallback = window.setTimeout(() => bootGate.setPaintWaitExpired(true), 1500);
+            }
+            // Only a frame that actually DREW NODES counts as "the graph is on screen" — the
+            // renderer paints blank frames throughout boot (host box measured, data not in yet,
+            // and again for a moment after each resize clears the canvas). Accepting those is
+            // what let the splash drop over an empty graph area, which is the user-visible bug:
+            // "even after it's gone the graph is empty for a bit before it populates itself."
+            // A genuinely empty vault never sends nodeCount > 0, and is covered by the bounded
+            // paintWaitExpired fallback armed just above.
+            // ...and it has to STAY drawn. The graph host box settles in steps during boot
+            // (measured: 1000x773 -> 969x814 -> 952x814), and every resize clears the canvas and
+            // leaves it blank until the next frame. Dismissing on the first good frame therefore
+            // still uncovered an empty graph, just later. So a good frame ARMS a short timer and
+            // any blank frame DISARMS it: the splash lifts only once the graph has been
+            // continuously on screen for STABLE_MS, which is exactly the user's criterion.
+            if (nodeCount > 0) {
+              if (paintStable === 0) {
+                paintStable = window.setTimeout(() => bootGate.setGraphPainted(true), STABLE_MS);
+              }
+            } else if (paintStable !== 0) {
+              clearTimeout(paintStable);
+              paintStable = 0;
+            }
+          }} />
         </Suspense>
       </div>
       <Show when={palette() === "command"}>
