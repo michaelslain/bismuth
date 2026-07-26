@@ -18,6 +18,10 @@ import {
   daemonMachineDir,
   migrateDaemonState,
   registerVaultRoot,
+  daemonOptIn,
+  vaultRegistryLogFile,
+  vaultsSeenFile,
+  readVaultsSeen,
   readDaemonSessionIds,
   vaultSessionIdsFile,
   parseSessionIds,
@@ -110,6 +114,11 @@ test("migrateDaemonState is a no-op when there is no legacy claude-bot dir", () 
   expect(existsSync(join(vault, ".daemon"))).toBe(false);
 });
 
+/** vaults.json as it is on disk — a plain array of absolute path strings, in write order. */
+function readVaultPaths(home: string): string[] {
+  return JSON.parse(readFileSync(join(home, "vaults.json"), "utf8")) as string[];
+}
+
 test("registerVaultRoot writes an absolute path into vaults.json, creating it if absent", () => {
   const home = makeHome({});
   const vault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
@@ -119,6 +128,51 @@ test("registerVaultRoot writes an absolute path into vaults.json, creating it if
   expect(written).toEqual([vault]);
 });
 
+// ── vaults.json's element shape is a FROZEN cross-process contract ──────────────────────────────
+//
+// vaults.json is not core's private file. The daemon that reads it is a separately installed,
+// long-lived binary (~/.bismuth/bin/bismuth-daemon under launchd) that the user updates on their
+// own schedule, and it parses the array as plain path STRINGS
+// (`arr.filter(r => typeof r === "string")`). Enrich the elements into objects and the FIRST boot
+// of the new core leaves the already-running old binary seeing ZERO vaults — every cron in every
+// vault stops firing, with no log line, no toast, and DaemonList still drawing them as enabled.
+// Per-vault metadata therefore goes in a SIDECAR (vaults-seen.json), never in these elements.
+
+test("vaults.json elements stay plain strings — an older installed daemon binary can still read it", () => {
+  const home = makeHome({});
+  const vaultA = mkdtempSync(join(tmpdir(), "vaultRoot-a-"));
+  const vaultB = mkdtempSync(join(tmpdir(), "vaultRoot-b-"));
+  created.push(vaultA, vaultB);
+  registerVaultRoot(vaultA, home);
+  registerVaultRoot(vaultB, home);
+  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8")) as unknown[];
+  expect(Array.isArray(written)).toBe(true);
+  for (const entry of written) expect(typeof entry).toBe("string");
+  // The exact filter an old binary applies must keep every vault.
+  expect(written.filter((r): r is string => typeof r === "string").sort()).toEqual([vaultA, vaultB].sort());
+});
+
+test("registerVaultRoot records lastSeen in the vaults-seen.json sidecar, not in vaults.json", () => {
+  const home = makeHome({});
+  const vault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
+  created.push(vault);
+  registerVaultRoot(vault, home);
+  expect(readFileSync(join(home, "vaults.json"), "utf8")).not.toContain("lastSeenISO");
+  const seen = readVaultsSeen(home)!;
+  expect(Object.keys(seen)).toEqual([vault]);
+  expect(Number.isNaN(Date.parse(seen[vault]))).toBe(false);
+});
+
+test("registerVaultRoot leaves an already-correct vaults.json byte-identical (no needless rewrite)", () => {
+  const home = makeHome({});
+  const vault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
+  created.push(vault);
+  registerVaultRoot(vault, home);
+  const first = readFileSync(join(home, "vaults.json"), "utf8");
+  registerVaultRoot(vault, home);
+  expect(readFileSync(join(home, "vaults.json"), "utf8")).toBe(first);
+});
+
 test("registerVaultRoot is idempotent — dedupes on the resolved path, doesn't duplicate", () => {
   const home = makeHome({});
   const vault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
@@ -126,8 +180,7 @@ test("registerVaultRoot is idempotent — dedupes on the resolved path, doesn't 
   registerVaultRoot(vault, home);
   registerVaultRoot(vault, home);
   registerVaultRoot(join(vault, ".", "."), home); // same root, spelled differently
-  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
-  expect(written).toEqual([vault]);
+  expect(readVaultPaths(home)).toEqual([vault]);
 });
 
 test("registerVaultRoot appends to an existing registry without clobbering other vaults", () => {
@@ -137,8 +190,7 @@ test("registerVaultRoot appends to an existing registry without clobbering other
   created.push(vaultA, vaultB);
   registerVaultRoot(vaultA, home);
   registerVaultRoot(vaultB, home);
-  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
-  expect(written.sort()).toEqual([vaultA, vaultB].sort());
+  expect(readVaultPaths(home).sort()).toEqual([vaultA, vaultB].sort());
 });
 
 test("registerVaultRoot never throws against a malformed vaults.json", () => {
@@ -146,8 +198,7 @@ test("registerVaultRoot never throws against a malformed vaults.json", () => {
   const vault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
   created.push(vault);
   expect(() => registerVaultRoot(vault, home)).not.toThrow();
-  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
-  expect(written).toEqual([vault]);
+  expect(readVaultPaths(home)).toEqual([vault]);
 });
 
 test("daemonMachineDir honors BISMUTH_DAEMON_DIR, else falls back to ~/.bismuth/daemon", () => {
@@ -375,14 +426,295 @@ test("registerVaultRoot keeps throwaway (temp) vaults out of a persistent regist
     mkdirSync(realVault, { recursive: true });
     try {
       registerVaultRoot(realVault, home);
-      const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
-      expect(written).toEqual([realVault]);
+      expect(readVaultPaths(home)).toEqual([realVault]);
     } finally {
       rmSync(realVault, { recursive: true, force: true });
     }
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+// ── The registry TTL: stamps in the SIDECAR, 30-day retirement in vaults.json ─────────────────
+//
+// registerVaultRoot's self-heal (real home only, see the temp-guard test above) also retires an
+// entry nothing has been seen using in VAULT_REGISTRY_TTL_MS — a real-but-abandoned vault used to
+// sit in the registry forever, so the daemon kept booting a full brain for it and every cron fired
+// against it right alongside every live vault.
+//
+// "Seen" is recorded in vaults-seen.json, a `{path: iso}` sidecar, so that vaults.json itself never
+// changes shape (see the frozen-contract tests above). The sidecar is ADVISORY: every path below
+// that costs it — missing, corrupt, unwritable — must degrade to keeping vaults, never to dropping
+// them.
+
+/** A non-temp home (see the temp-guard test above for why: registerVaultRoot's self-heal/TTL path
+ *  only runs against a REAL, persistent home) inside the test dir, cleaned up by the caller. */
+function realHome(name: string): string {
+  const home = join(import.meta.dir, `.vaultroot-${name}-${process.pid}`);
+  mkdirSync(home, { recursive: true });
+  created.push(home);
+  return home;
+}
+
+/** Seed `home`'s sidecar with explicit stamps — i.e. give the TTL a history to judge against. */
+function seedSeen(home: string, seen: Record<string, string>): void {
+  writeFileSync(vaultsSeenFile(home), JSON.stringify(seen, null, 2));
+}
+
+/** An ISO stamp `days` in the past. */
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+test("registerVaultRoot rewrites a plain-string vaults.json as plain strings, seeding the sidecar", () => {
+  const home = realHome("migrate");
+  const vault = realHome("migrate-vault");
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([vault]));
+  expect(() => registerVaultRoot(vault, home)).not.toThrow();
+  expect(readVaultPaths(home)).toEqual([vault]);
+  expect(Number.isNaN(Date.parse(readVaultsSeen(home)![vault]))).toBe(false);
+});
+
+test("registerVaultRoot migrates a legacy {path,lastSeenISO} vaults.json back to strings + sidecar", () => {
+  // A pre-release build of this feature briefly wrote object elements. Any machine that ran it must
+  // heal back to the frozen string shape — carrying the stamps it recorded into the sidecar rather
+  // than throwing away that history.
+  const home = realHome("legacy-obj");
+  const other = realHome("legacy-obj-other");
+  const opened = realHome("legacy-obj-opened");
+  const stamp = daysAgo(3);
+  writeFileSync(
+    join(home, "vaults.json"),
+    JSON.stringify([{ path: other, lastSeenISO: stamp }, { path: opened, lastSeenISO: daysAgo(1) }]),
+  );
+  registerVaultRoot(opened, home);
+
+  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8")) as unknown[];
+  for (const entry of written) expect(typeof entry).toBe("string");
+  expect(written.sort()).toEqual([other, opened].sort());
+  expect(readVaultsSeen(home)![other]).toBe(stamp); // the legacy stamp survived the move
+});
+
+test("registerVaultRoot keeps every entry when there is NO stamp history at all (fresh/wiped sidecar)", () => {
+  // The first boot after upgrade, or a deleted sidecar: "no history" must read as "unknown age",
+  // never as "everything is 30 days stale". Otherwise one boot silently retires the whole registry.
+  const home = realHome("no-history");
+  const disabled = realHome("no-history-disabled");
+  writeVaultSettings(disabled, false); // the shape that WOULD be retired if it looked expired
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([disabled]));
+  expect(existsSync(vaultsSeenFile(home))).toBe(false);
+
+  registerVaultRoot(realHome("no-history-trigger"), home);
+  expect(readVaultPaths(home)).toContain(disabled);
+  // Baselined, so it now has a real TTL clock instead of being re-judged from nothing forever.
+  expect(Number.isNaN(Date.parse(readVaultsSeen(home)![disabled]))).toBe(false);
+});
+
+test("registerVaultRoot keeps every entry when the sidecar is CORRUPT", () => {
+  const home = realHome("corrupt-seen");
+  const disabled = realHome("corrupt-seen-vault");
+  writeVaultSettings(disabled, false);
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([disabled]));
+  writeFileSync(vaultsSeenFile(home), "{{{not json");
+
+  expect(() => registerVaultRoot(realHome("corrupt-seen-trigger"), home)).not.toThrow();
+  expect(readVaultPaths(home)).toContain(disabled);
+  expect(readVaultsSeen(home)![disabled]).toBeDefined(); // rebuilt from scratch, baselined
+});
+
+test("registerVaultRoot still registers when the sidecar is UNWRITABLE", () => {
+  // The sidecar is advisory; the registry is not. A sidecar we cannot write must cost us a TTL
+  // clock, never the registration itself.
+  const home = realHome("unwritable-seen");
+  const vault = realHome("unwritable-seen-vault");
+  mkdirSync(vaultsSeenFile(home), { recursive: true }); // a DIRECTORY where the file goes → EISDIR
+  expect(() => registerVaultRoot(vault, home)).not.toThrow();
+  expect(readVaultPaths(home)).toContain(vault);
+  expect(readVaultsSeen(home)).toBeNull(); // unreadable → "no history", the safe reading
+});
+
+test("registerVaultRoot keeps an entry seen well within the TTL", () => {
+  const home = realHome("ttl-keep");
+  const other = realHome("ttl-keep-other");
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([other]));
+  seedSeen(home, { [other]: daysAgo(5) });
+  registerVaultRoot(realHome("ttl-keep-trigger"), home);
+  expect(readVaultPaths(home)).toContain(other);
+});
+
+test("registerVaultRoot retires (and LOGS) an entry past the TTL", () => {
+  const home = realHome("ttl-prune");
+  const stale = realHome("ttl-prune-stale");
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([stale]));
+  seedSeen(home, { [stale]: daysAgo(40) });
+  // bun:test's spyOn(console, "log") doesn't intercept calls made from other modules in this Bun
+  // version (verified: it silently records zero calls) — patch console.log manually instead.
+  const logs: unknown[][] = [];
+  const origLog = console.log;
+  console.log = (...args: unknown[]) => { logs.push(args); };
+  try {
+    registerVaultRoot(realHome("ttl-prune-trigger"), home);
+  } finally {
+    console.log = origLog;
+  }
+  expect(readVaultPaths(home)).not.toContain(stale);
+  expect(readVaultsSeen(home)![stale]).toBeUndefined(); // sidecar pruned with the registry
+  expect(logs.length).toBeGreaterThan(0);
+  expect(logs.some((args) => String(args[0]).includes(stale))).toBe(true);
+});
+
+test("registerVaultRoot treats a vault MISSING from a populated sidecar as never-seen", () => {
+  // The sidecar has real history (so we are not in the fresh/wiped case), just nothing for this
+  // vault. With its daemon cleanly off, that is the one combination that retires.
+  const home = realHome("ttl-unstamped");
+  const disabled = realHome("ttl-unstamped-disabled");
+  const known = realHome("ttl-unstamped-known");
+  writeVaultSettings(disabled, false);
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([disabled, known]));
+  seedSeen(home, { [known]: daysAgo(1) });
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    registerVaultRoot(realHome("ttl-unstamped-trigger"), home);
+  } finally {
+    console.log = origLog;
+  }
+  expect(readVaultPaths(home)).not.toContain(disabled);
+  expect(readVaultPaths(home)).toContain(known);
+});
+
+// ── Retirement is conservative: an opt-in outranks the clock ───────────────────────────────────
+//
+// The TTL is a HEURISTIC about disuse; `daemon.enabled: true` is a POSITIVE statement of use. A
+// vault firing crons hourly that the user simply hasn't OPENED in 30 days must never be dropped on
+// another vault's core boot — every one of its crons would stop forever.
+
+/** Write a `.settings` file into `vault` with the given `daemon.enabled` value. */
+function writeVaultSettings(vault: string, enabled: boolean): void {
+  writeFileSync(join(vault, ".settings"), `daemon:\n  enabled: ${enabled}\n`);
+}
+
+test("registerVaultRoot NEVER retires a daemon-enabled vault, however long since it was opened", () => {
+  const home = realHome("ttl-enabled");
+  const enabled = realHome("ttl-enabled-vault");
+  writeVaultSettings(enabled, true);
+  const old = daysAgo(40);
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([enabled]));
+  seedSeen(home, { [enabled]: old });
+  registerVaultRoot(realHome("ttl-enabled-trigger"), home);
+  expect(readVaultPaths(home)).toContain(enabled);
+  // Its stamp is left alone — refreshing "last seen" is the DAEMON's job (it is the process that
+  // actually serves the brain), not a side effect of another vault's boot.
+  expect(readVaultsSeen(home)![enabled]).toBe(old);
+});
+
+test("registerVaultRoot NEVER retires a daemon-enabled vault that has NO stamp at all", () => {
+  const home = realHome("ttl-enabled-unstamped");
+  const enabled = realHome("ttl-enabled-unstamped-vault");
+  const known = realHome("ttl-enabled-unstamped-known");
+  writeVaultSettings(enabled, true);
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([enabled, known]));
+  seedSeen(home, { [known]: daysAgo(1) }); // populated sidecar, but nothing for `enabled`
+  registerVaultRoot(realHome("ttl-enabled-unstamped-trigger"), home);
+  expect(readVaultPaths(home)).toContain(enabled);
+});
+
+test("registerVaultRoot still retires an EXPIRED vault whose daemon is disabled", () => {
+  const home = realHome("ttl-disabled");
+  const disabled = realHome("ttl-disabled-vault");
+  writeVaultSettings(disabled, false);
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([disabled]));
+  seedSeen(home, { [disabled]: daysAgo(40) });
+  registerVaultRoot(realHome("ttl-disabled-trigger"), home);
+  expect(readVaultPaths(home)).not.toContain(disabled);
+});
+
+test("registerVaultRoot does not retire an expired vault whose .settings is unreadable (unknown ≠ idle)", () => {
+  const home = realHome("ttl-corrupt");
+  const corrupt = realHome("ttl-corrupt-vault");
+  // Malformed YAML: we cannot tell whether the daemon is on, so we must not delete the pointer.
+  writeFileSync(join(corrupt, ".settings"), "daemon:\n  enabled: [unclosed\n\t\tbad: :\n");
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([corrupt]));
+  seedSeen(home, { [corrupt]: daysAgo(40) });
+  registerVaultRoot(realHome("ttl-corrupt-trigger"), home);
+  expect(readVaultPaths(home)).toContain(corrupt);
+});
+
+test("registerVaultRoot does not retire an expired vault whose stamp is UNPARSEABLE (unknown age ≠ old)", () => {
+  const home = realHome("ttl-badstamp");
+  const vault = realHome("ttl-badstamp-vault");
+  writeVaultSettings(vault, false);
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([vault]));
+  seedSeen(home, { [vault]: "yesterday-ish" });
+  registerVaultRoot(realHome("ttl-badstamp-trigger"), home);
+  expect(readVaultPaths(home)).toContain(vault);
+});
+
+test("daemonOptIn: enabled / disabled / absent / unreadable", () => {
+  const on = realHome("optin-on");
+  writeVaultSettings(on, true);
+  expect(daemonOptIn(on)).toBe("enabled");
+
+  const off = realHome("optin-off");
+  writeVaultSettings(off, false);
+  expect(daemonOptIn(off)).toBe("disabled");
+
+  const bare = realHome("optin-bare");
+  writeFileSync(join(bare, ".settings"), "appearance:\n  theme: nord\n");
+  expect(daemonOptIn(bare)).toBe("disabled"); // parsed cleanly, no opt-in → schema default (false)
+
+  const none = realHome("optin-none"); // no .settings at all → never configured
+  expect(daemonOptIn(none)).toBe("disabled");
+
+  const broken = realHome("optin-broken");
+  writeFileSync(join(broken, ".settings"), "daemon:\n  enabled: [unclosed\n\t\tbad: :\n");
+  expect(daemonOptIn(broken)).toBe("unknown");
+});
+
+test("a retirement is written to the daemon's OWN log, not just stdout", () => {
+  const home = realHome("ttl-logfile");
+  const stale = realHome("ttl-logfile-stale");
+  writeVaultSettings(stale, false);
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([stale]));
+  seedSeen(home, { [stale]: daysAgo(40) });
+  const origLog = console.log;
+  console.log = () => {}; // stdout is invisible in the bundled app — that's the whole point
+  try {
+    registerVaultRoot(realHome("ttl-logfile-trigger"), home);
+  } finally {
+    console.log = origLog;
+  }
+  const logFile = vaultRegistryLogFile(home);
+  expect(existsSync(logFile)).toBe(true);
+  expect(readFileSync(logFile, "utf8")).toContain(stale);
+});
+
+test("a vanished vault's removal is logged too (never a silent drop)", () => {
+  const home = realHome("gone");
+  const gone = join(home, "never-existed-vault");
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([gone]));
+  seedSeen(home, { [gone]: daysAgo(40) });
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    registerVaultRoot(realHome("gone-trigger"), home);
+  } finally {
+    console.log = origLog;
+  }
+  expect(readVaultPaths(home)).not.toContain(gone);
+  expect(readFileSync(vaultRegistryLogFile(home), "utf8")).toContain(gone);
+});
+
+test("registering the same vault again refreshes its sidecar stamp", () => {
+  const home = realHome("refresh");
+  const vault = realHome("refresh-vault");
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([vault]));
+  const stale = daysAgo(20);
+  seedSeen(home, { [vault]: stale });
+  registerVaultRoot(vault, home);
+  const stamp = readVaultsSeen(home)![vault];
+  expect(stamp).not.toBe(stale);
+  expect(Date.parse(stamp)).toBeGreaterThan(Date.parse(stale));
 });
 
 // ── readDaemonSessionIds: the daemon-session membership test ────────────────────────────────

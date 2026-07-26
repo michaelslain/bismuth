@@ -43,8 +43,9 @@ test("resolveCore precedence: --api > BISMUTH_API > CLAUDE_RELAY_URL > run-regis
   const { writeRunRecord } = await import("../../core/src/runRegistry");
   // Nothing set → default port.
   expect(resolveCore([])).toBe("http://localhost:4321");
-  // Run-registry single match.
-  writeRunRecord({ port: 4399, vault: "/v/one", pid: 1 });
+  // Run-registry single match. readRunRecords filters dead pids (core/src/runRegistry.ts), so use
+  // this test process's own — the one pid guaranteed alive for the test's duration.
+  writeRunRecord({ port: 4399, vault: "/v/one", pid: process.pid });
   expect(resolveCore([])).toBe("http://localhost:4399");
   // CLAUDE_RELAY_URL beats the registry.
   process.env.CLAUDE_RELAY_URL = "http://localhost:5000";
