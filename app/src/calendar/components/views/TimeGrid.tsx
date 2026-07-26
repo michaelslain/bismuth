@@ -337,7 +337,7 @@ export function TimeGrid(props: Props) {
                     const left = `calc(3px + (100% - 6px) * ${lane} / ${lanes})`
                     const width = `calc((100% - 6px) * ${lanes - lane} / ${lanes})`
                     return (
-                      <div class="time-grid-event" style={{ top: `${top}px`, height: `${height}px`, left, width, 'z-index': lane + 1, 'box-shadow': lane > 0 ? '-4px 0 7px rgba(0,0,0,0.3)' : undefined, opacity: (dragState.value?.type === 'move' && dragState.value.event.id === e.id) ? 0.3 : 1 }}
+                      <div class="time-grid-event" style={{ top: `${top}px`, height: `${height}px`, left, width, 'z-index': lane + 1, /* A stacked (overlapping) chip reads a flat inset separator against the one behind it — not a blurred elevation shadow. */ 'box-shadow': lane > 0 ? 'inset 2px 0 0 0 var(--bg)' : undefined, opacity: (dragState.value?.type === 'move' && dragState.value.event.id === e.id) ? 0.3 : 1 }}
                         onMouseDown={ev => onChipMouseDown(ev, e, ds, e.recurrence ? e.id : undefined)}>
                         <EventChip event={e} compact={compact} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? ds : undefined} categories={props.categories} store={props.store} />
                       </div>

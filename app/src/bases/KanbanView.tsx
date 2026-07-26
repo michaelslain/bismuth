@@ -407,7 +407,10 @@ export function KanbanView(props: {
     g.setAttribute("data-kbghost", "");
     Object.assign(g.style, {
       position: "fixed", left: "0", top: "0", width: `${r.width}px`, height: `${r.height}px`,
-      margin: "0", pointerEvents: "none", zIndex: "10000", opacity: "0.92", boxShadow: "0 10px 28px rgba(0,0,0,0.4)",
+      margin: "0", pointerEvents: "none", zIndex: "10000", opacity: "0.92",
+      // A dragged card is genuinely floating (following the cursor above the board) —
+      // the one legitimate elevation shadow in this view, read off the theme token.
+      boxShadow: "var(--shadow-modal)",
     } as CSSStyleDeclaration);
     document.body.appendChild(g);
     ghostEl = g;
