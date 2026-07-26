@@ -5,6 +5,7 @@ import { Editor } from "./Editor";
 import { BlockEditor } from "./BlockEditor";
 import { BaseView } from "./bases/BaseView";
 import { InboxPageView } from "./InboxPageView";
+import { Backlinks } from "./Backlinks";
 import { Loading } from "./ui/EmptyState";
 import { settings } from "./settings";
 import { isConfigBuffer } from "./editor/settingsBuffer";
@@ -69,14 +70,23 @@ export function FileView(props: {
           <InboxPageView path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
         </Match>
         <Match when={!isBase() && !isDaemonPage()}>
-          <Show
-            when={visualMode()}
-            fallback={
-              <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
-            }
-          >
-            <BlockEditor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
-          </Show>
+          {/* Column wrapper: the editor takes the available height (flex:1, min-height:0 so it
+              keeps owning its OWN internal scroll exactly as before), Backlinks sits below it and
+              — being collapsed-empty when there are none (Backlinks.tsx) — costs zero layout on
+              a note nothing links to. */}
+          <div style={{ height: "100%", display: "flex", "flex-direction": "column", "min-height": "0" }}>
+            <div style={{ flex: "1 1 auto", "min-height": "0" }}>
+              <Show
+                when={visualMode()}
+                fallback={
+                  <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
+                }
+              >
+                <BlockEditor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
+              </Show>
+            </div>
+            <Backlinks path={props.path} onOpen={props.onOpen} />
+          </div>
         </Match>
       </Switch>
     </Show>
