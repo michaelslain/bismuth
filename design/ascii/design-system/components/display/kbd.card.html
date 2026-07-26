@@ -1,0 +1,46 @@
+<!-- @dsCard group="Components" viewport="700x300" subtitle="Key caps, chords, sequences, hint rows" name="Keybindings" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>body{margin:0;font-family:var(--ui-font-stack);font-variant-ligatures:none;background:var(--bg);color:var(--fg);font-size:var(--fs-ui)}
+.wrap{padding:0 0 12px}.pad{padding:12px 16px;display:grid;gap:12px}
+.row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.lbl{font-size:10.5px;color:var(--faint);width:96px;flex:none;letter-spacing:.1em}</style></head>
+<body class="ink"><div class="wrap">
+  <div class="pad">
+    <div class="row"><span class="lbl">SINGLE</span>
+      <span class="asc-kbd"><span class="asc-key">⌘</span></span><span class="asc-kbd"><span class="asc-key">⌥</span></span><span class="asc-kbd"><span class="asc-key">⇧</span></span><span class="asc-kbd"><span class="asc-key">↵</span></span><span class="asc-kbd"><span class="asc-key">⌫</span></span><span class="asc-kbd"><span class="asc-key">esc</span></span><span class="asc-kbd"><span class="asc-key">⇥</span></span><span class="asc-kbd"><span class="asc-key">↑</span></span><span class="asc-kbd"><span class="asc-key">↓</span></span><span class="asc-kbd"><span class="asc-key">space</span></span>
+    </div>
+    <div class="row"><span class="lbl">CHORD</span>
+      <span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">K</span></span><span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">O</span></span><span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">⇧</span><span class="asc-key">D</span></span><span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">\</span></span><span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">↵</span></span>
+      <span style="font-size:10.5px;color:var(--faint)">adjacency is the chord — never a literal "+"</span>
+    </div>
+    <div class="row"><span class="lbl">SEQUENCE</span>
+      <span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">`</span><span class="asc-kbd-then">then</span><span class="asc-key">⌘</span><span class="asc-key">J</span></span>
+      <span style="font-size:10.5px;color:var(--faint)">comma-separated combos in the app's keybinding syntax</span>
+    </div>
+    <div class="row"><span class="lbl">HINT ROW</span>
+      <span class="asc-kbd-hints">
+        <span class="asc-kbd-hint"><span class="asc-kbd"><span class="asc-key">↑</span><span class="asc-key">↓</span></span><span class="asc-kbd-desc">move</span></span><span class="asc-kbd-hint"><span class="asc-kbd"><span class="asc-key">↵</span></span><span class="asc-kbd-desc">run</span></span><span class="asc-kbd-hint"><span class="asc-kbd"><span class="asc-key">esc</span></span><span class="asc-kbd-desc">close</span></span>
+      </span>
+    </div>
+  </div>
+
+  <div style="border-top:1px solid var(--border);padding:12px 16px 0">
+    <div class="lbl" style="width:auto">IN CONTEXT — palette row, footer, status bar</div>
+    <div class="asc-popover" style="margin-top:8px;padding:5px 0">
+      <div class="asc-menurow active"><span style="color:var(--faint)">◈</span><span>Open command palette</span>
+        <span class="row-kbd"><span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">K</span></span></span></div>
+      <div class="asc-menurow"><span style="color:var(--faint)">✎</span><span>New note</span>
+        <span class="row-kbd"><span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">N</span></span></span></div>
+      <div class="asc-menurow"><span style="color:var(--faint)">⏻</span><span>Open terminal</span>
+        <span class="row-kbd"><span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">`</span></span></span></div>
+    </div>
+  </div>
+
+  <div style="margin-top:10px;display:flex;align-items:center;gap:16px;padding:0 14px;height:26px;
+              border-top:1px solid var(--border);background:var(--rail);font-size:10.5px;color:var(--faint)">
+    <span>~/vault/journal/2029-09-15.md</span><span>ln 24, col 12</span><span>md · utf-8</span>
+    <div style="flex:1"></div><span>daemon: idle</span>
+    <span class="asc-kbd-hint"><span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">O</span></span><span class="asc-kbd-desc">switcher</span></span><span class="asc-kbd-hint"><span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">K</span></span><span class="asc-kbd-desc">commands</span></span>
+  </div>
+</div></body></html>

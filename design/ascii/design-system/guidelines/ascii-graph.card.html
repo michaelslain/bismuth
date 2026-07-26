@@ -1,0 +1,118 @@
+<!-- @dsCard group="ASCII" viewport="700x592" subtitle="Edges rasterized into the character grid" name="Graph field" -->
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin:0; font-family: var(--ui-font-stack); font-variant-ligatures: none;
+         background: var(--bg); color: var(--fg); font-size: var(--fs-ui); }
+  .wrap { padding: 14px 16px; display: grid; gap: 10px; }
+  .lbl { font-size: 10.5px; color: var(--faint); }
+  pre { margin:0; white-space: pre; }
+  .ctl { display:flex; align-items:center; gap:10px; }
+  .ctl > .name { width:78px; font-size:10.5px; color:var(--faint); letter-spacing:.1em; }
+  input[type=range] { -webkit-appearance:none; appearance:none; flex:1; height:12px; background:transparent; cursor:pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height:1px; background:var(--border); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:9px; height:13px; margin-top:-6px;
+                                            background:var(--accent); border:0; border-radius:1px; }
+  input[type=range]::-moz-range-track { height:1px; background:var(--border); }
+  input[type=range]::-moz-range-thumb { width:9px; height:13px; background:var(--accent); border:0; border-radius:1px; }
+  output { color:var(--text-muted); font-size:10.5px; width:52px; text-align:right; }
+</style></head><body class="ink"><div class="wrap"><div style="display:flex;justify-content:center">
+  <div class="asc-field" id="field" style="width:460px;height:460px;border:1px solid var(--border)">
+    <pre class="noise" id="noise" style="padding:6px"></pre>
+    <pre class="edges" id="edges" style="padding:6px"></pre>
+    <pre id="nodes" style="position:absolute;left:0;top:0;padding:6px;color:var(--graph-2)"></pre>
+    <pre id="hubs" style="position:absolute;left:0;top:0;padding:6px;color:var(--accent);text-shadow:var(--glow-accent)"></pre>
+  </div>
+</div>
+<div class="ctl"><span class="name">NODES</span>
+  <input type="range" id="count" min="6" max="600" step="2" value="60"><output id="ocount">60</output></div>
+<div class="ctl"><span class="name">GLYPHS</span>
+  <input type="range" id="dens" min="0" max="80" step="2" value="0"><output id="odens">0%</output></div>
+<div class="lbl">Nodes are clustered, then every edge is rasterized with <code>- | / \</code> and <code>+</code>.
+Node weight is its glyph: <code>.</code> leaf · <code>o</code> linked · <code>@</code> hub. GLYPHS 0% clears the noise field.</div>
+
+<script>
+  const CHARS = "\u0259\u0248KV9PC6W\u04E9J\u028C\u03D8\u1D0B\u03D1\u040D\u025F\u03E4\u00B7:".split("");
+  const CW = 4.2, CH = 7;                       // cell metrics at 7px Monaspace
+  const COLS = Math.floor(448 / CW), ROWS = Math.floor(448 / CH);
+  const CLUSTERS = [[.22,.24,.15,.17],[.74,.20,.14,.15],[.46,.52,.17,.20],[.20,.78,.13,.15],[.78,.72,.14,.16]];
+  const el = (id) => document.getElementById(id);
+  [ "noise","edges","nodes","hubs" ].forEach(id => {
+    el(id).style.fontSize = "7px"; el(id).style.lineHeight = CH + "px";
+  });
+
+  function build(count, density) {
+    let s = 0x51ab3d;
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+    const gauss = () => (rnd() + rnd() + rnd() + rnd() - 2) / 2;
+
+    const nodes = [];
+    for (let i = 0; i < count; i++) {
+      const c = CLUSTERS[i % CLUSTERS.length];
+      nodes.push({
+        x: Math.max(1, Math.min(COLS - 2, Math.round((c[0] + gauss() * c[2]) * COLS))),
+        y: Math.max(1, Math.min(ROWS - 2, Math.round((c[1] + gauss() * c[3]) * ROWS))),
+        cl: i % CLUSTERS.length, deg: 0
+      });
+    }
+
+    const grid = (fill) => { const g = []; for (let r = 0; r < ROWS; r++) g.push(new Array(COLS).fill(fill)); return g; };
+    const noise = grid(" "), edge = grid(" "), dot = grid(" "), hub = grid(" ");
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        if (rnd() < density) noise[r][c] = CHARS[Math.floor(rnd() * CHARS.length)];
+
+    const put = (x, y, ch) => { if (y >= 0 && y < ROWS && x >= 0 && x < COLS) { edge[y][x] = ch; noise[y][x] = " "; } };
+    const draw = (a, b) => {
+      let x = a.x, y = a.y;
+      const dx = Math.abs(b.x - x), dy = Math.abs(b.y - y);
+      const sx = b.x > x ? 1 : -1, sy = b.y > y ? 1 : -1;
+      let err = dx - dy, guard = 0;
+      while (guard++ < 900 && !(x === b.x && y === b.y)) {
+        const e2 = 2 * err; let mx = false, my = false;
+        if (e2 > -dy) { err -= dy; x += sx; mx = true; }
+        if (e2 < dx) { err += dx; y += sy; my = true; }
+        put(x, y, mx && my ? (sx === sy ? "\\" : "/") : mx ? "-" : "|");
+      }
+    };
+
+    // link within clusters by proximity, then a few long-range strands
+    const byCluster = CLUSTERS.map(() => []);
+    nodes.forEach((n, i) => byCluster[n.cl].push(i));
+    byCluster.forEach((list) => {
+      list.sort((a, b) => nodes[a].x - nodes[b].x || nodes[a].y - nodes[b].y);
+      for (let i = 1; i < list.length; i++) {
+        const a = nodes[list[i]], b = nodes[list[i - 1]];
+        if (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) < 22) { draw(a, b); a.deg++; b.deg++; }
+      }
+    });
+    for (let i = 0; i < Math.min(18, count / 4); i++) {
+      const a = nodes[Math.floor(rnd() * count)], b = nodes[Math.floor(rnd() * count)];
+      if (a && b && a.cl !== b.cl) { draw(a, b); a.deg += 2; b.deg += 2; }
+    }
+
+    nodes.forEach((n) => {
+      edge[n.y][n.x] = " "; noise[n.y][n.x] = " ";
+      if (n.deg >= 5) hub[n.y][n.x] = "@";
+      else if (n.deg >= 2) dot[n.y][n.x] = "o";
+      else dot[n.y][n.x] = ".";
+    });
+
+    const join = (g) => g.map((r) => r.join("")).join("\n");
+    el("noise").textContent = join(noise);
+    el("edges").textContent = join(edge);
+    el("nodes").textContent = join(dot);
+    el("hubs").textContent = join(hub);
+  }
+
+  function sync() {
+    el("ocount").textContent = el("count").value;
+    el("odens").textContent = el("dens").value + "%";
+    build(+el("count").value, +el("dens").value / 100);
+  }
+  el("count").addEventListener("input", sync);
+  el("dens").addEventListener("input", sync);
+  sync();
+</script>
+</div></body></html>

@@ -1,0 +1,59 @@
+<!-- @dsCard group="ASCII" viewport="700x315" subtitle="Why the graph must not use transform: scale" name="Zoom is resolution" -->
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin:0; font-family: var(--ui-font-stack); font-variant-ligatures: none;
+         background: var(--bg); color: var(--fg); font-size: var(--fs-ui); }
+  .wrap { padding: 14px 16px; display: grid; gap: 12px; }
+  .lbl { font-size: 10.5px; color: var(--faint); }
+  pre { margin:0; white-space: pre; }
+</style></head><body class="ink"><div class="wrap"><div class="lbl" style="line-height:1.7;color:var(--text-muted)">
+  <b style="color:var(--fg)">The rule:</b> zooming the graph must never scale the characters. The cell stays
+  10.5px at every zoom level; what grows is the <b style="color:var(--fg)">number of cells</b>. A closer view
+  therefore carries more edge detail and more named notes, at the same crisp type size — and, because
+  nothing is CSS-scaled, an embedded graph can't drag the host page's zoom with it.
+</div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+  <div>
+    <div style="border:1px solid var(--border);padding:10px;background:var(--graph-bg)">
+      <pre style="font-size:10.5px;line-height:11px;color:var(--accent)">o-----------o
+|           |
+|     @     |
+|           |
+o-----------o</pre>
+    </div>
+    <div class="lbl" style="margin-top:6px;color:var(--text-muted)">0% · fit</div>
+    <div class="lbl">14 x 7 cells · type stays 10.5px</div>
+  </div>
+  <div>
+    <div style="border:1px solid var(--border);padding:10px;background:var(--graph-bg)">
+      <pre style="font-size:10.5px;line-height:11px;color:var(--accent)">o-----+-----o
+|     |     |
++-----@-----+
+|     |     |
+o-----+-----o</pre>
+    </div>
+    <div class="lbl" style="margin-top:6px;color:var(--text-muted)">50%</div>
+    <div class="lbl">28 x 14 cells · type stays 10.5px</div>
+  </div>
+  <div>
+    <div style="border:1px solid var(--border);padding:10px;background:var(--graph-bg)">
+      <pre style="font-size:10.5px;line-height:11px;color:var(--accent)">o--+--+--+--o
+|  |  |  |  |
++--o--@--o--+
+|  |  |  |  |
+o--+--+--+--o</pre>
+    </div>
+    <div class="lbl" style="margin-top:6px;color:var(--text-muted)">100% · every note named</div>
+    <div class="lbl">56 x 28 cells · type stays 10.5px</div>
+  </div>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;font-size:10.5px;line-height:1.7">
+  <div style="border-left:2px solid var(--success);padding-left:9px;color:var(--text-muted)">
+    <b style="color:var(--success)">DO</b> &nbsp;rebuild the field at <code>cols × res</code>, <code>rows × res</code>.
+    Redraw edges into the finer grid; reveal more labels as tiers unlock.</div>
+  <div style="border-left:2px solid var(--danger);padding-left:9px;color:var(--text-muted)">
+    <b style="color:var(--danger)">DON'T</b> &nbsp;<code>transform: scale(z)</code>. It blurs the grid, shears
+    the connectors off their cells, and hijacks page zoom in an embed.</div>
+</div></div></body></html>
