@@ -1,0 +1,29 @@
+<!-- @dsCard group="Components" viewport="700x215" subtitle="Nothing here — typed, never illustrated" name="EmptyState &amp; Loading" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>
+  body { margin:0; font-family:var(--ui-font-stack); font-variant-ligatures:none;
+         background:var(--bg); color:var(--fg); font-size:var(--fs-ui); }
+  .wrap { padding:14px 16px; display:grid; gap:14px; }
+  .lbl { font-size:10.5px; color:var(--faint); letter-spacing:.14em; }
+  .row { display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+  .note { font-size:10.5px; color:var(--faint); line-height:1.7; }
+</style></head><body class="ink"><div class="wrap">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:center">
+    <div class="ui-empty-block">
+      <pre class="asc-glyph" style="color:var(--faint);font-size:10.5px;line-height:12px">   .   
+  .o.  
+   .   </pre>
+      <h2>INBOX EMPTY</h2>
+      <p class="ui-empty">Pages the daemon needs you to approve or dismiss will show up here.</p>
+    </div>
+    <div style="display:grid;gap:16px">
+      <div class="ui-loading" style="padding:0">reindexing vault…<span class="asc-caret">_</span></div>
+      <div class="ui-empty-block" style="gap:8px">
+        <h2>NO RESULTS</h2>
+        <p class="ui-empty">Nothing in ~/vault matches "xenolinguistics".</p>
+        <button class="btn btn--text btn--normal">[&nbsp;search all brains&nbsp;]</button>
+      </div>
+    </div>
+  </div>
+</div></body></html>
