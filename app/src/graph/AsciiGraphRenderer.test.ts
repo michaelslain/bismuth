@@ -13,7 +13,7 @@
 import { GlobalWindow } from "happy-dom";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { AsciiGraphRenderer } from "./AsciiGraphRenderer";
-import { CELL_W } from "./asciiGrid";
+import { CELL_W, LAYER_EDGE } from "./asciiGrid";
 
 const DOM_GLOBALS = [
   "document", "window", "navigator", "Node", "Element", "HTMLElement", "HTMLDivElement",
@@ -158,7 +158,7 @@ interface Mounted {
   zooms: number[];
 }
 
-function mountRenderer(viewMode: "2d" | "3d" = "3d"): Mounted {
+function mountRenderer(viewMode: "2d" | "3d" = "3d", graph: ReturnType<typeof sampleGraph> = sampleGraph()): Mounted {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const r = new AsciiGraphRenderer();
@@ -168,10 +168,66 @@ function mountRenderer(viewMode: "2d" | "3d" = "3d"): Mounted {
   r.mount(host, (id) => clicks.push(id), (n) => hovers.push(n?.id ?? null));
   r.setZoomCallback((p) => zooms.push(p));
   r.setConfig({ ...CONFIG, viewMode });
-  r.render(sampleGraph());
+  r.render(graph);
   ctx.fills.length = 0;
   frame();
   return { r, viewport: host.firstElementChild as HTMLElement, clicks, hovers, zooms };
+}
+
+/** The private per-frame LOD state the integration tests assert against (cell buffers + entity
+ *  views). Cast-only — the public surface stays exactly GraphRenderer. */
+interface LodPriv {
+  cellEntity: Int32Array;
+  cellNode: Int32Array;
+  layerBuf: Uint8Array;
+  entityFlat: { level: number; community: number; count: number; col: number; row: number }[];
+  nodes: { col: number; row: number; onGrid: boolean; node: { id: string } }[];
+  m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
+  pxPerWorld: number; res: number; panX: number; panY: number; target: [number, number, number];
+}
+const lodPriv = (r: AsciiGraphRenderer) => r as unknown as LodPriv;
+/** Distinct entity levels currently rasterized (via the hit-test buffer). */
+function entityLevelsOnGrid(p: LodPriv): Set<number> {
+  const out = new Set<number>();
+  for (const v of p.cellEntity) if (v >= 0) out.add(p.entityFlat[v].level);
+  return out;
+}
+const cellPx = (p: LodPriv, i: number) => ({
+  x: p.m.padX + (i % p.m.cols) * p.m.cellW + 1,
+  y: p.m.padY + Math.floor(i / p.m.cols) * p.m.cellH + 1,
+});
+
+/**
+ * The LOD fixture: four spatially TIGHT 6-note blobs in a 2-level hierarchy — TOP 0 (blobs 0+1)
+ * on the left, TOP 1 (blobs 2+3) on the right — with a KNOWN aggregate-link structure: 6 links
+ * cross the two top halves (3 b0–b2 + 3 b1–b3), 2 link blob 0 to blob 1. Unlike sampleGraph's
+ * interleaved ring, members are co-located with their cluster, so centroids, expansion and
+ * click-to-frame all behave like a real vault's geometry.
+ */
+function lodGraph() {
+  const nodes = [];
+  const edges = [];
+  const CENTERS = [[-350, -120], [-350, 120], [350, -120], [350, 120]];
+  for (let b = 0; b < 4; b++) {
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2;
+      const x = (CENTERS[b][0] + Math.cos(a) * 8) * RING_SCALE;
+      const y = (CENTERS[b][1] + Math.sin(a) * 8) * RING_SCALE;
+      const top = b < 2 ? 0 : 1;
+      nodes.push({
+        id: `b${b}k${k}`, label: `note ${b}${k}`, kind: "note" as const,
+        position: [x, y, 0] as [number, number, number],
+        position2d: [x, y] as [number, number],
+        community: b, communityLabel: `Blob ${b}`,
+        communityPath: [top, b], communityPathLabels: [`Top ${top}`, `Blob ${b}`],
+      });
+    }
+  }
+  for (let b = 0; b < 4; b++) for (let k = 1; k < 6; k++) edges.push({ from: `b${b}k0`, to: `b${b}k${k}`, kind: "link" as const });
+  for (let k = 0; k < 3; k++) edges.push({ from: `b0k${k}`, to: `b2k${k}`, kind: "link" as const });
+  for (let k = 0; k < 3; k++) edges.push({ from: `b1k${k}`, to: `b3k${k}`, kind: "link" as const });
+  edges.push({ from: "b0k0", to: "b1k0", kind: "link" as const }, { from: "b0k1", to: "b1k1", kind: "link" as const });
+  return { nodes, edges };
 }
 
 const allText = () => ctx.fills.map((f) => f.text).join("");
@@ -183,8 +239,16 @@ const allText = () => ctx.fills.map((f) => f.text).join("");
 // its color.
 const RAMP_COLORS = new Set(["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a"]);
 const nodeRuns = () => ctx.fills.filter((f) => RAMP_COLORS.has(f.color) && /^[.o@ ]+$/.test(f.text));
-const wheelIn = (viewport: HTMLElement, times = 10) => {
-  for (let i = 0; i < times; i++) viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, cancelable: true }));
+// A real wheel event always carries the cursor position — default to the field's centre (2D zoom
+// is cursor-ANCHORED now). happy-dom's WheelEvent constructor DROPS MouseEvent init fields
+// (clientX comes out undefined), so the coordinates are pinned on afterwards.
+const wheelIn = (viewport: HTMLElement, times = 10, at = { x: BOX.width / 2, y: BOX.height / 2 }) => {
+  for (let i = 0; i < times; i++) {
+    const e = new WheelEvent("wheel", { deltaY: -120, cancelable: true });
+    Object.defineProperty(e, "clientX", { value: at.x });
+    Object.defineProperty(e, "clientY", { value: at.y });
+    viewport.dispatchEvent(e);
+  }
 };
 
 describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
@@ -317,14 +381,34 @@ describe("semantic zoom — cluster names own the field zoomed out, file names c
     r.destroy();
   });
 
-  it("hover always names the hovered node, even at fit (100% zoom, where non-forced file names are withheld)", () => {
+  it("hover at fit reports the CLUSTER entity; a hovered NOTE is force-named once leaves are on the field", () => {
+    // At fit the 2D field is AGGREGATE ENTITIES (LOD) — there is no note glyph to hover. Hovering
+    // a mass surfaces the cluster; the forced file-name behaviour now lives at the deep stops.
     const { r, hovers } = mountRenderer("2d");
-    const run = nodeRuns().find((f) => /[.o@]/.test(f.text));
-    expect(run).toBeDefined();
-    const p = { x: run!.x + run!.text.search(/[.o@]/) * CELL_W + 1, y: run!.y };
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: p.x, clientY: p.y }));
-    expect(hovers.filter(Boolean).length).toBeGreaterThan(0); // sanity: something actually got hovered
+    const priv = r as unknown as {
+      cellEntity: Int32Array;
+      m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
+      nodes: { col: number; row: number; onGrid: boolean; node: { id: string } }[];
+    };
+    const i = priv.cellEntity.findIndex((v) => v >= 0);
+    expect(i).toBeGreaterThanOrEqual(0);
+    const m = priv.m;
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      clientX: m.padX + (i % m.cols) * m.cellW + 1, clientY: m.padY + Math.floor(i / m.cols) * m.cellH + 1,
+    }));
+    expect(String(hovers.at(-1))).toContain("cluster:");
+
+    // Deep: frame a note (t → 1, leaves fully on the field), hover it → forced label.
+    r.frameSubset(["n0"]);
+    settle(200);
+    const nv = priv.nodes.find((n) => n.onGrid);
+    expect(nv).toBeDefined();
+    ctx.fills.length = 0;
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      clientX: m.padX + nv!.col * m.cellW + 1, clientY: m.padY + nv!.row * m.cellH + m.cellH / 2,
+    }));
     frame();
+    expect(hovers.filter(Boolean).length).toBeGreaterThan(1);
     expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true); // forced past the reveal gate
     r.destroy();
   });
@@ -377,7 +461,10 @@ describe("N-level semantic labels — the zoom ladder walks communityPath, coars
 
   it("steps down to the sub-level's names on zooming in, before file names appear", () => {
     const { r, viewport } = mountTwoLevel();
-    wheelIn(viewport, 2); // two notches = two 10% steps: 100% -> 80%, well inside the finer half of the ladder
+    // Three notches = 100% -> 70%, i.e. t = 0.3 — exactly the 2-level boundary of the LOD ladder
+    // (levelBoundaries splits [0, FILE_LABEL_REVEAL_T=0.6) evenly), where the SUB level owns the
+    // field outright and the TOP level has fully crossfaded away.
+    wheelIn(viewport, 3);
     settle(200);
     // The settle() glide paints every intermediate frame too (including ones still mid-crossfade
     // from TOP to SUB), so only the FINAL settled frame answers "what does 80% look like" — force
@@ -520,6 +607,126 @@ describe("THE LAW — zoom is resolution, never scale", () => {
   });
 });
 
+describe("LEVEL OF DETAIL — coarse stops rasterize aggregate entities, deep stops the real graph", () => {
+  it("renders ONE named entity per coarsest community at fit — and no individual notes at all", () => {
+    const { r } = mountRenderer("2d", lodGraph());
+    const p = lodPriv(r);
+    // No leaf raster work ran: no note occupies any cell.
+    expect([...p.cellNode].every((v) => v < 0)).toBe(true);
+    // Exactly the two TOP communities, one entity each, left and right of centre, at their
+    // members' centroids.
+    const flats = new Set<number>();
+    for (const v of p.cellEntity) if (v >= 0) flats.add(v);
+    const ents = [...flats].map((f) => p.entityFlat[f]);
+    expect(ents.length).toBe(2);
+    expect(new Set(ents.map((e) => e.level))).toEqual(new Set([0]));
+    expect(ents.map((e) => e.count).sort()).toEqual([12, 12]);
+    const left = ents.find((e) => e.community === 0)!;
+    const right = ents.find((e) => e.community === 1)!;
+    expect(left.col).toBeLessThan(p.m.cols / 2);
+    expect(right.col).toBeGreaterThan(p.m.cols / 2);
+    // The auto names ride along in eyebrow register.
+    expect(ctx.fills.some((f) => f.text === "TOP 0")).toBe(true);
+    expect(ctx.fills.some((f) => f.text === "TOP 1")).toBe(true);
+    r.destroy();
+  });
+
+  it("draws aggregate connectors between entities at fit — the leaf edge pass never ran", () => {
+    const { r } = mountRenderer("2d", lodGraph());
+    const p = lodPriv(r);
+    // Any LAYER_EDGE cell at fit is an aggregate connector (the leaf passes are skipped wholesale).
+    let edgeCells = 0;
+    for (const v of p.layerBuf) if (v === LAYER_EDGE) edgeCells++;
+    expect(edgeCells).toBeGreaterThan(0);
+    r.destroy();
+  });
+
+  it("stepping in over an entity expands it into its CHILDREN near the parent's position", () => {
+    const { r, viewport } = mountRenderer("2d", lodGraph());
+    const p = lodPriv(r);
+    expect(entityLevelsOnGrid(p)).toEqual(new Set([0]));
+    // Wheel ANCHORED on the left top-level mass (community 0 = blobs 0+1).
+    const leftFlat = p.entityFlat.findIndex((e) => e.level === 0 && e.community === 0);
+    const i = p.cellEntity.findIndex((v) => v === leftFlat);
+    expect(i).toBeGreaterThanOrEqual(0);
+    const at = cellPx(p, i);
+    wheelIn(viewport, 3, at); // 100% -> 70% = t 0.3: the 2-level boundary — level 1 owns the field
+    settle(200);
+    expect(entityLevelsOnGrid(p)).toEqual(new Set([1]));
+    // The children on the field are the anchored parent's OWN blobs (0 and 1) — expansion happens
+    // in place; the other half of the graph has left the anchored view.
+    const comms = new Set<number>();
+    for (const v of p.cellEntity) if (v >= 0) comms.add(p.entityFlat[v].community);
+    expect(comms.size).toBeGreaterThan(0);
+    expect([...comms].every((c) => c === 0 || c === 1)).toBe(true);
+    // Still no real notes this far out.
+    expect([...p.cellNode].every((v) => v < 0)).toBe(true);
+    r.destroy();
+  });
+
+  it("only the real graph rasterizes at the deep stops — entities are gone, real notes and edges draw", () => {
+    const { r, viewport } = mountRenderer("2d", lodGraph());
+    const p = lodPriv(r);
+    // Phase 1: into the left top cluster (level 1 active).
+    const leftFlat = p.entityFlat.findIndex((e) => e.level === 0 && e.community === 0);
+    const at0 = cellPx(p, p.cellEntity.findIndex((v) => v === leftFlat));
+    wheelIn(viewport, 3, at0);
+    settle(200);
+    // Phase 2: follow ONE child mass down to 0% (the anchor keeps it under the cursor).
+    const childIdx = p.cellEntity.findIndex((v) => v >= 0);
+    expect(childIdx).toBeGreaterThanOrEqual(0);
+    wheelIn(viewport, 7, cellPx(p, childIdx));
+    settle(300);
+    expect([...p.cellEntity].every((v) => v < 0)).toBe(true); // entities fully dissolved
+    expect([...p.cellNode].some((v) => v >= 0)).toBe(true);   // real notes on the field
+    r.destroy();
+  });
+
+  it("keeps the world point under the cursor fixed through zoom steps (within a cell)", () => {
+    const { r, viewport } = mountRenderer("2d", lodGraph());
+    const p = lodPriv(r);
+    const m = p.m;
+    // A deliberately off-centre cursor point: over the left mass.
+    const at = cellPx(p, p.cellEntity.findIndex((v) => v >= 0));
+    const screenOf = (wx: number, wy: number) => {
+      const s = p.pxPerWorld * p.res;
+      return {
+        x: m.padX + (m.cols / 2) * m.cellW + p.panX + (wx - p.target[0]) * s,
+        y: m.padY + (m.rows / 2) * m.cellH + p.panY + (wy - p.target[1]) * s,
+      };
+    };
+    // The world point under the cursor, from the settled fit camera.
+    const s0 = p.pxPerWorld * p.res;
+    const wx = p.target[0] + (at.x - (m.padX + (m.cols / 2) * m.cellW + p.panX)) / s0;
+    const wy = p.target[1] + (at.y - (m.padY + (m.rows / 2) * m.cellH + p.panY)) / s0;
+
+    wheelIn(viewport, 1, at);
+    settle(300);
+    const p1 = screenOf(wx, wy);
+    expect(Math.abs(p1.x - at.x)).toBeLessThanOrEqual(m.cellW);
+    expect(Math.abs(p1.y - at.y)).toBeLessThanOrEqual(m.cellH);
+
+    wheelIn(viewport, 1, at); // consecutive steps must compose without drift
+    settle(300);
+    const p2 = screenOf(wx, wy);
+    expect(Math.abs(p2.x - at.x)).toBeLessThanOrEqual(m.cellW);
+    expect(Math.abs(p2.y - at.y)).toBeLessThanOrEqual(m.cellH);
+    r.destroy();
+  });
+
+  it("3D keeps its full-detail path untouched — no entities, ever", () => {
+    const { r, viewport } = mountRenderer("3d", lodGraph());
+    const p = lodPriv(r);
+    expect([...p.cellEntity].every((v) => v < 0)).toBe(true);
+    expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
+    wheelIn(viewport, 1); // one step in — the 3D camera still rasterizes the REAL graph
+    settle(200);
+    expect([...p.cellEntity].every((v) => v < 0)).toBe(true);
+    expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
+    r.destroy();
+  });
+});
+
 describe("interaction", () => {
   /** Screen px of a node glyph the renderer actually drew (identified by its cluster colour). */
   function nodeHit(): { x: number; y: number } {
@@ -528,8 +735,16 @@ describe("interaction", () => {
     return { x: run!.x + run!.text.search(/[.o@]/) * CELL_W + 1, y: run!.y };
   }
 
-  it("hovers the node under the cursor, and a click opens it", () => {
+  it("hovers the node under the cursor, and a click opens it (at a deep stop, where notes are on the field)", () => {
     const { r, viewport, clicks, hovers } = mountRenderer("2d");
+    // At fit the 2D field shows aggregate entities (LOD) — frame a note first so real note glyphs
+    // are on the grid to hit.
+    r.frameSubset(["n0"]);
+    settle(200);
+    // The settled loop is idle (dirty=false) — force one repaint so nodeHit() reads a fresh frame.
+    ctx.fills.length = 0;
+    r.setSearchMatches(new Set());
+    frame(9999);
     const p = nodeHit();
     window.dispatchEvent(new PointerEvent("pointermove", { clientX: p.x, clientY: p.y }));
     expect(hovers.filter(Boolean).length).toBeGreaterThan(0);
@@ -537,6 +752,20 @@ describe("interaction", () => {
     viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: p.x, clientY: p.y }));
     window.dispatchEvent(new PointerEvent("pointerup", { clientX: p.x, clientY: p.y }));
     expect(clicks.length).toBe(1);
+    r.destroy();
+  });
+
+  it("clicking an AGGREGATE ENTITY at fit expands it (zooms toward its members) instead of opening a note", () => {
+    const { r, viewport, clicks, zooms } = mountRenderer("2d", lodGraph());
+    const p = lodPriv(r);
+    const i = p.cellEntity.findIndex((v) => v >= 0);
+    expect(i).toBeGreaterThanOrEqual(0);
+    const { x, y } = cellPx(p, i);
+    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: x, clientY: y }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x, clientY: y }));
+    settle(200);
+    expect(clicks).toEqual([]);                 // a cluster is not a note
+    expect(zooms.at(-1)!).toBeLessThan(100);    // the field zoomed toward the cluster's members
     r.destroy();
   });
 
@@ -557,13 +786,16 @@ describe("interaction", () => {
 
   it("panning in 2D moves the field", () => {
     const { r, viewport, clicks } = mountRenderer("2d");
-    const before = allText();
+    // At fit the 2D field is a handful of entity masses whose TEXT is identical wherever they sit —
+    // a pan shows up in the fills' positions, so snapshot text AND coordinates.
+    const snap = () => ctx.fills.map((f) => `${f.text}@${f.x.toFixed(1)},${f.y.toFixed(1)}`).join("|");
+    const before = snap();
     viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
     window.dispatchEvent(new PointerEvent("pointermove", { clientX: 300, clientY: 250 }));
     ctx.fills.length = 0;
     frame(32);
     window.dispatchEvent(new PointerEvent("pointerup", { clientX: 300, clientY: 250 }));
-    expect(allText()).not.toBe(before);
+    expect(snap()).not.toBe(before);
     expect(clicks).toEqual([]);
     r.destroy();
   });

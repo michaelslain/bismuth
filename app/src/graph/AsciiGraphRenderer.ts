@@ -35,6 +35,10 @@ import { hashKey } from "../themeColors";
 import { isUsableBox, finiteVec3, boundingRadius } from "./graphFit";
 import { structuralGraphSig, shouldResetView } from "./graphStability";
 import { noiseField, DEFAULT_NOISE_SEED } from "../ui/ascii/noiseField";
+import {
+  AGG_EDGE_ALPHA_MIN, AGG_EDGE_DOUBLE_W, LOD_ALPHA_EPS, buildLodIndex, lodMix, massCellAlpha,
+  massCellCode, massRadii, type LodLevel,
+} from "./lod";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
 import {
   CELL_H, CELL_W, FONT_PX,
@@ -89,6 +93,22 @@ interface NodeView {
   col: number; row: number; onGrid: boolean;
 }
 interface EdgeView { a: NodeView; b: NodeView; kr: number }
+/** One LOD aggregate entity on the field — a hierarchy-level community rendered as a single ASCII
+ *  mass. Built once per graph build (structure) with per-frame screen scratch, mirroring NodeView. */
+interface EntityView {
+  flat: number;          // index into entityFlat (what cellEntity stores)
+  level: number;
+  community: number;
+  count: number;
+  wx: number; wy: number; // members' 2D world centroid (same space as NodeView.p2)
+  color: number;          // ramp slot — the SAME key layoutClusterNames uses, so mass == name colour
+  name: string;
+  rowR: number; colR: number; // uncapped mass radii in cells (sqrt scaling — lod.ts massRadii)
+  memberIds: string[];
+  // per-frame scratch
+  sx: number; sy: number; col: number; row: number; onGrid: boolean;
+  drawnRowR: number; drawnColR: number; // grid-capped radii for this frame
+}
 interface LabelDraw {
   text: string; col: number; row: number; color: number; accent: boolean;
   alpha: number;      // crossfade multiplier — forced file labels and cluster names ignore this differently (see paint())
@@ -158,6 +178,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
   // 0 means no node carries a community at all (no cluster names to draw).
   private levelCount = 0;
   private boxReady = false;
+
+  // LOD (2D only — see lod.ts): the per-level aggregate structure, built once per build().
+  private lodLevels: LodLevel[] = [];
+  private entityLevels: EntityView[][] = [];
+  private entityFlat: EntityView[] = [];
+  private cellEntity = new Int32Array(1);  // cell → entityFlat index (-1 none), rebuilt per raster
+  // Per-frame LOD state (written at the top of rasterize, read by the label + hit-test paths).
+  private lodOn = false;
+  private leafAlpha = 1;
+  private hoverEntityIdx = -1;
 
   // camera — rx/ry orbit (3D), res = THE zoom (resolution), pan in px (2D)
   private rx = -0.5; private ry = 0;
@@ -333,6 +363,31 @@ export class AsciiGraphRenderer implements GraphRenderer {
       if (a && b) this.edges.push({ a, b, kr: (hashKey(e.from + "\0" + e.to) % 1000) / 1000 });
     }
 
+    // LOD structure (2D aggregate entities + aggregate edges), precomputed HERE — per graph build,
+    // never per frame. Cluster world centroids use the same centred/flipped p2 space the projector
+    // consumes, so per-frame entity projection is the same two multiplies a node costs.
+    this.lodLevels = buildLodIndex(
+      this.nodes.map((nv) => ({ id: nv.node.id, path: nodePath(nv.node), x: nv.p2[0], y: nv.p2[1] })),
+      g.edges.map((e) => ({ from: e.from, to: e.to })),
+    );
+    this.entityFlat = [];
+    this.entityLevels = this.lodLevels.map((lv, L) => lv.clusters.map((c) => {
+      const isFinest = L === this.lodLevels.length - 1;
+      const key = isFinest ? "community:" + c.community : `community:L${L}:${c.community}`;
+      const { rowR, colR } = massRadii(c.count, this.cellW, this.cellH);
+      const ev: EntityView = {
+        flat: this.entityFlat.length, level: L, community: c.community, count: c.count,
+        wx: c.wx, wy: c.wy,
+        color: RAMP[hashKey(key) % RAMP.length],
+        name: this.communityNamesByLevel[L]?.get(c.community) ?? `cluster ${c.community}`,
+        rowR, colR, memberIds: c.memberIds,
+        sx: 0, sy: 0, col: -1, row: -1, onGrid: false, drawnRowR: rowR, drawnColR: colR,
+      };
+      this.entityFlat.push(ev);
+      return ev;
+    }));
+    this.hoverEntityIdx = -1;
+
     this.radius3 = boundingRadius(this.nodes.map((nv) => nv.p3));
     this.radius2 = boundingRadius(this.nodes.map((nv) => nv.p2));
     this.alwaysOn = computeAlwaysOnSet(
@@ -485,6 +540,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.colorBuf = new Uint8Array(cells);
       this.alphaBuf = new Uint8Array(cells);
       this.cellNode = new Int32Array(cells);
+      this.cellEntity = new Int32Array(cells);
       this.labelOccupied = new Uint8Array(cells);
       this.noiseBuf = buildNoise(m.cols, m.rows);
     }
@@ -589,6 +645,39 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (pct !== this.lastZoomPct) { this.lastZoomPct = pct; this.onZoom?.(pct); }
   }
 
+  // ---- cursor-anchored zoom (2D) -------------------------------------------
+
+  /**
+   * Take one zoom-ladder step ANCHORED at viewport px (ax, ay): move the percent state as
+   * `setZoomPercent` does, then re-aim `goalTarget` so the world point sitting at that px keeps
+   * exactly that px through the step. Everything is computed in GOAL space (goalRes/goalTarget,
+   * not the mid-glide res/target), so consecutive wheel notches COMPOSE exactly — the settled
+   * post-step camera puts the anchored world point back under the cursor to the pixel, whatever
+   * the glide did in between. Pan is untouched (it stays the drag's). 3D falls back to the plain
+   * step: the orbit camera has no meaningful cursor point to pin.
+   */
+  private zoomStepAnchored(pct: number, ax: number, ay: number) {
+    const before = this.goalRes;
+    this.setZoomPercent(pct);
+    const after = this.goalRes;
+    if (this.cfg.viewMode !== "2d" || after === before) return;
+    const sB = this.pxPerWorld * before, sA = this.pxPerWorld * after;
+    if (!(sB > 0) || !(sA > 0)) return;
+    const m = this.m;
+    const ox = m.padX + (m.cols / 2) * m.cellW + this.panX;
+    const oy = m.padY + (m.rows / 2) * m.cellH + this.panY;
+    // World point under the anchor px at the goal-before camera … stays put at the goal-after one.
+    const wx = this.goalTarget[0] + (ax - ox) / sB;
+    const wy = this.goalTarget[1] + (ay - oy) / sB;
+    this.goalTarget = [wx - (ax - ox) / sA, wy - (ay - oy) / sA, this.goalTarget[2]];
+  }
+
+  /** Keyboard zoom (and any cursorless step) anchors the CENTRE of the grid. */
+  private zoomStepCentered(pct: number) {
+    const m = this.m;
+    this.zoomStepAnchored(pct, m.padX + (m.cols * m.cellW) / 2, m.padY + (m.rows * m.cellH) / 2);
+  }
+
   // ---- rasterization -------------------------------------------------------
 
   // Scratch read by putEdge (see rasterize) — the alternative was a closure per edge per frame.
@@ -608,7 +697,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (!wasEdge || this.alphaBuf[i] < this.edgeAlpha) this.alphaBuf[i] = this.edgeAlpha;
   };
 
-  /** Project every node onto the grid, then draw the four layers into the cell buffers. */
+  /** Project every ACTIVE primitive onto the grid, then draw the layers into the cell buffers.
+   *
+   *  LEVEL OF DETAIL (2D + a community hierarchy): the zoom ladder maps onto the hierarchy —
+   *  coarse stops rasterize the active level's AGGREGATE ENTITIES + AGGREGATE EDGES only (a frame
+   *  costs O(clusters + inter-cluster connectors)); the leaf passes below — per-node projection,
+   *  the real edge loop, the real node loop — simply do not run until `lodMix`'s leaf alpha comes
+   *  up near the deep stops. Crossfades between adjacent levels (and between the finest level and
+   *  the leaves) reuse the exact alphas of the cluster-name/file-name label crossfade, so geometry
+   *  and naming always move together. 3D keeps the original full-detail path untouched. */
   private rasterize(is2d: boolean) {
     const m = this.m;
     const cells = m.cols * m.rows;
@@ -630,50 +727,153 @@ export class AsciiGraphRenderer implements GraphRenderer {
         this.layerBuf[i] = 0;
       }
       this.cellNode[i] = -1;
+      this.cellEntity[i] = -1;
     }
 
-    this.projectNodes(is2d);
+    const lodOn = is2d && this.levelCount > 0 && this.entityLevels.length > 0;
+    this.lodOn = lodOn;
+    const mix = lodOn ? lodMix(resolutionT(this.res, this.maxRes), this.levelCount) : null;
+    const leafA = mix ? mix.leafAlpha : 1;
+    this.leafAlpha = leafA;
 
-    const focus = this.focusSet();
-    // Layer 2 — edges. Bresenham between the two snapped cells; crossing runs merge into "+".
-    // `putEdge` is a single hoisted closure reading two scratch fields, so the per-frame edge loop
-    // allocates nothing (2.6k closures a frame was the obvious thing to get wrong here).
-    const keepFrac = this.edges.length > EDGE_BUDGET ? Math.max(EDGE_FLOOR, EDGE_BUDGET / this.edges.length) : 1;
-    for (const e of this.edges) {
-      if (e.kr >= keepFrac) continue;
-      const { a, b } = e;
-      if (!a.onGrid || !b.onGrid) continue;
-      const incident = this.hoveredId != null && (a.node.id === this.hoveredId || b.node.id === this.hoveredId);
-      const inFocus = !focus || focus.has(a.node.id) || focus.has(b.node.id);
-      let alpha = is2d ? EDGE_ALPHA_2D : EDGE_ALPHA_2D * depthAlpha((a.dr + b.dr) / 2);
-      if (focus && !inFocus) alpha *= DIM_ALPHA;
-      if (incident) alpha = 1;
-      this.edgeColor = incident ? C_ACCENT : C_MUTED;
-      this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
-      traceEdge(a.col, a.row, b.col, b.row, this.putEdge);
+    // ---- LEAF passes (real notes + real edges) — skipped wholesale at coarse LOD stops. --------
+    if (leafA > LOD_ALPHA_EPS) {
+      this.projectNodes(is2d);
+
+      const focus = this.focusSet();
+      // Layer 2 — edges. Bresenham between the two snapped cells; crossing runs merge into "+".
+      // `putEdge` is a single hoisted closure reading two scratch fields, so the per-frame edge loop
+      // allocates nothing (2.6k closures a frame was the obvious thing to get wrong here).
+      const keepFrac = this.edges.length > EDGE_BUDGET ? Math.max(EDGE_FLOOR, EDGE_BUDGET / this.edges.length) : 1;
+      for (const e of this.edges) {
+        if (e.kr >= keepFrac) continue;
+        const { a, b } = e;
+        if (!a.onGrid || !b.onGrid) continue;
+        const incident = this.hoveredId != null && (a.node.id === this.hoveredId || b.node.id === this.hoveredId);
+        const inFocus = !focus || focus.has(a.node.id) || focus.has(b.node.id);
+        let alpha = is2d ? EDGE_ALPHA_2D : EDGE_ALPHA_2D * depthAlpha((a.dr + b.dr) / 2);
+        if (focus && !inFocus) alpha *= DIM_ALPHA;
+        if (incident) alpha = 1;
+        alpha *= leafA;
+        this.edgeColor = incident ? C_ACCENT : C_MUTED;
+        this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
+        traceEdge(a.col, a.row, b.col, b.row, this.putEdge);
+      }
+
+      // Layer 3 — nodes. Weight is the glyph (degree ramp, shifted by depth band in 3D), colour is
+      // the cluster; the hovered / active node takes the accent.
+      for (let i = 0; i < this.nodes.length; i++) {
+        const nv = this.nodes[i];
+        if (!nv.onGrid) continue;
+        const idx = nv.row * m.cols + nv.col;
+        const id = nv.node.id;
+        const hot = id === this.hoveredId || id === this.activeFile || this.searchMatches.has(id);
+        let alpha = is2d ? 1 : depthAlpha(nv.dr);
+        if (focus && !focus.has(id)) alpha *= DIM_ALPHA;
+        if (nv.dim) alpha *= 0.45;
+        if (hot) alpha = 1;
+        alpha *= leafA;
+        const glyph = nv.node.kind === "self" ? "@" : nodeGlyph(nv.deg, nv.dr, !is2d, DEPTH_BANDS);
+        this.charBuf[idx] = glyph.charCodeAt(0);
+        this.layerBuf[idx] = LAYER_NODE;
+        this.colorBuf[idx] = hot ? C_ACCENT : nv.color;
+        this.alphaBuf[idx] = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
+        this.cellNode[idx] = i;
+      }
     }
 
-    // Layer 3 — nodes. Weight is the glyph (degree ramp, shifted by depth band in 3D), colour is
-    // the cluster; the hovered / active node takes the accent.
-    for (let i = 0; i < this.nodes.length; i++) {
-      const nv = this.nodes[i];
-      if (!nv.onGrid) continue;
-      const idx = nv.row * m.cols + nv.col;
-      const id = nv.node.id;
-      const hot = id === this.hoveredId || id === this.activeFile || this.searchMatches.has(id);
-      let alpha = is2d ? 1 : depthAlpha(nv.dr);
-      if (focus && !focus.has(id)) alpha *= DIM_ALPHA;
-      if (nv.dim) alpha *= 0.45;
-      if (hot) alpha = 1;
-      const glyph = nv.node.kind === "self" ? "@" : nodeGlyph(nv.deg, nv.dr, !is2d, DEPTH_BANDS);
-      this.charBuf[idx] = glyph.charCodeAt(0);
-      this.layerBuf[idx] = LAYER_NODE;
-      this.colorBuf[idx] = hot ? C_ACCENT : nv.color;
-      this.alphaBuf[idx] = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
-      this.cellNode[idx] = i;
+    // ---- AGGREGATE passes (entities + inter-cluster connectors), active levels only. -----------
+    if (mix) {
+      for (let L = 0; L < this.entityLevels.length; L++) {
+        const a = mix.levelAlphas[L] ?? 0;
+        if (a <= LOD_ALPHA_EPS) continue;
+        this.projectEntities(L);
+        this.drawAggregateEdges(L, a);
+        this.drawEntityMasses(L, a);
+      }
     }
 
     this.layoutLabels(is2d);
+  }
+
+  /** Project one level's entities (2D only — the flat pipeline with rx = ry = 0, i.e. two
+   *  multiplies per entity). O(clusters), allocation-free: scratch lives on the prebuilt views. */
+  private projectEntities(level: number) {
+    const m = this.m;
+    const s = this.pxPerWorld * this.res;
+    const tx = this.target[0], ty = this.target[1];
+    const ox = m.padX + (m.cols / 2) * m.cellW + this.panX;
+    const oy = m.padY + (m.rows / 2) * m.cellH + this.panY;
+    const capRow = Math.max(1, (m.rows / 7) | 0);
+    const capCol = Math.max(2, (m.cols / 7) | 0);
+    for (const ev of this.entityLevels[level]) {
+      ev.sx = ox + (ev.wx - tx) * s;
+      ev.sy = oy + (ev.wy - ty) * s;
+      ev.col = Math.round((ev.sx - m.padX) / m.cellW);
+      ev.row = Math.round((ev.sy - m.padY) / m.cellH);
+      ev.drawnRowR = Math.min(ev.rowR, capRow);
+      ev.drawnColR = Math.min(ev.colR, capCol);
+      // A mass whose CENTRE is off-grid can still overlap the field by up to its radius.
+      ev.onGrid = ev.col >= -ev.drawnColR && ev.col < m.cols + ev.drawnColR
+        && ev.row >= -ev.drawnRowR && ev.row < m.rows + ev.drawnRowR;
+    }
+  }
+
+  /** Aggregate edges for one level: ONE connector per community pair summarizing every real link
+   *  between the two member sets. Visual weight = link count → alpha ramp, and the heaviest
+   *  connectors draw DOUBLED (a parallel Bresenham trace one cell off, perpendicular to the
+   *  dominant axis) — char density, never a wider glyph. Counts precomputed at build. */
+  private drawAggregateEdges(level: number, levelAlpha: number) {
+    const lv = this.lodLevels[level];
+    const evs = this.entityLevels[level];
+    if (!lv) return;
+    this.edgeColor = C_MUTED;
+    for (const e of lv.edges) {
+      const a = evs[e.a], b = evs[e.b];
+      if (!a.onGrid && !b.onGrid) continue;
+      const alpha = EDGE_ALPHA_2D * (AGG_EDGE_ALPHA_MIN + (1 - AGG_EDGE_ALPHA_MIN) * e.w) * levelAlpha;
+      this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
+      traceEdge(a.col, a.row, b.col, b.row, this.putEdge);
+      if (e.w >= AGG_EDGE_DOUBLE_W) {
+        if (Math.abs(b.col - a.col) >= Math.abs(b.row - a.row)) traceEdge(a.col, a.row + 1, b.col, b.row + 1, this.putEdge);
+        else traceEdge(a.col + 1, a.row, b.col + 1, b.row, this.putEdge);
+      }
+    }
+  }
+
+  /** One level's entity masses: an elliptical "@ o ." ramp blob per community, sized by member
+   *  count (sqrt scaling, grid-capped), in the community's own ramp colour. During the leaf
+   *  crossfade a real node glyph already on a cell WINS — members "emerge through" the dissolving
+   *  parent instead of being stamped over. Every mass cell registers in cellEntity for the hit
+   *  test, whichever glyph won the cell. */
+  private drawEntityMasses(level: number, levelAlpha: number) {
+    const m = this.m;
+    for (const ev of this.entityLevels[level]) {
+      if (!ev.onGrid) continue;
+      const hot = ev.flat === this.hoverEntityIdx;
+      const rowR = ev.drawnRowR, colR = ev.drawnColR;
+      const invR2 = 1 / (rowR * rowR), invC2 = 1 / (colR * colR);
+      for (let dy = -rowR; dy <= rowR; dy++) {
+        const row = ev.row + dy;
+        if (row < 0 || row >= m.rows) continue;
+        const base = row * m.cols;
+        for (let dx = -colR; dx <= colR; dx++) {
+          const col = ev.col + dx;
+          if (col < 0 || col >= m.cols) continue;
+          const d2 = dx * dx * invC2 + dy * dy * invR2;
+          if (d2 > 1) continue;
+          const i = base + col;
+          this.cellEntity[i] = ev.flat;
+          if (this.layerBuf[i] === LAYER_NODE && this.cellNode[i] >= 0) continue; // a real note owns the cell
+          let alpha = massCellAlpha(d2) * levelAlpha;
+          if (hot) alpha = Math.min(1, alpha + 0.25);
+          this.charBuf[i] = massCellCode(d2);
+          this.layerBuf[i] = LAYER_NODE;
+          this.colorBuf[i] = ev.color;
+          this.alphaBuf[i] = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
+        }
+      }
+    }
   }
 
   /** The copied camera math (CanvasGraphRenderer.project/projectPositions), evaluated inline with
@@ -746,9 +946,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const levelAlphas = clusterLevelAlphas(t, this.levelCount);
       for (let L = 0; L < levelAlphas.length; L++) {
         const a = levelAlphas[L] * cAlpha;
-        if (a > 0.01) this.layoutClusterNames(L, a);
+        // LOD (2D): a level's name anchors to its ENTITY (already projected — O(clusters)); the
+        // 3D / no-hierarchy path keeps the per-node on-grid aggregation.
+        if (a > 0.01) { if (this.lodOn) this.layoutEntityNames(L, a); else this.layoutClusterNames(L, a); }
       }
     }
+
+    // At coarse LOD stops the leaf raster passes did not run — there are no note glyphs on the
+    // field for a file label (forced or not) to point at, so the file-label pass is skipped
+    // entirely (which is also what keeps a coarse frame O(clusters), not O(nodes log nodes)).
+    if (this.lodOn && this.leafAlpha <= LOD_ALPHA_EPS) return;
 
     // Reused scratch array — layoutLabels runs every frame, so it must not allocate one per frame.
     const ordered = this.labelScratch;
@@ -849,6 +1056,38 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
   }
 
+  /** LOD variant of the cluster-name pass: one eyebrow label per ON-GRID entity of `level`,
+   *  centred under its mass (falling back to above it at the bottom edge). Entities come presorted
+   *  largest-first from buildLodIndex, so contested cells go to the biggest community — the same
+   *  greedy-by-worth rule as everywhere else. O(clusters), not O(nodes). */
+  private layoutEntityNames(level: number, alpha: number) {
+    const m = this.m;
+    const evs = this.entityLevels[level];
+    if (!evs) return;
+    for (const ev of evs) {
+      if (!ev.onGrid) continue;
+      const text = clusterLabelText(ev.name);
+      const len = text.length;
+      let row = ev.row + ev.drawnRowR + 1;
+      if (row >= m.rows) row = ev.row - ev.drawnRowR - 1;
+      if (row < 0 || row >= m.rows) continue;
+      const pad = Math.max(1, Math.ceil(len * CLUSTER_LABEL_PAD_FRAC));
+      let col = ev.col - Math.floor(len / 2);
+      if (col < 0) col = 0;
+      if (col + len > m.cols) col = Math.max(0, m.cols - len);
+      let free = true;
+      for (let c = col - pad; c <= col + len + pad && free; c++) {
+        if (c < 0 || c >= m.cols) continue;
+        if (this.labelOccupied[row * m.cols + c]) free = false;
+      }
+      if (!free) continue;
+      for (let c = col - pad; c <= col + len + pad; c++) {
+        if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
+      }
+      this.labels.push({ text, col, row, color: ev.color, accent: false, alpha, eyebrow: true });
+    }
+  }
+
   // ---- painting ------------------------------------------------------------
 
   /** One fillText per colour+alpha RUN per row. Runs keep the character count per call high (a
@@ -944,7 +1183,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
   }
 
-  private onPointerLeave = () => { if (this.hoveredId) this.setHover(null); this.dirty = true; };
+  private onPointerLeave = () => { if (this.hoveredId || this.hoverEntityIdx >= 0) this.applyHover(null, -1); this.dirty = true; };
 
   /** Cell under the cursor → the node that owns it (or a node within a couple of cells). */
   private pick(clientX: number, clientY: number): NodeView | null {
@@ -955,15 +1194,27 @@ export class AsciiGraphRenderer implements GraphRenderer {
     return idx >= 0 ? this.nodes[idx] ?? null : null;
   }
 
+  /** Cell under the cursor → the LOD entity whose mass covers it (entityFlat index, -1 none).
+   *  Radius 0 extra rings: a mass is many cells wide — nothing to be fuzzy about. */
+  private pickEntityIdx(clientX: number, clientY: number): number {
+    if (!this.viewport || !this.lodOn) return -1;
+    const r = this.viewport.getBoundingClientRect();
+    const { col, row } = pxToCell(clientX - r.left, clientY - r.top, this.m);
+    return nearestCellNode(col, row, this.m, this.cellEntity, 1);
+  }
+
   private onPointerMove = (e: PointerEvent) => {
-    if (!this.dragging) this.setHover(this.pick(e.clientX, e.clientY)?.node.id ?? null);
+    if (!this.dragging) {
+      const nv = this.pick(e.clientX, e.clientY);
+      this.applyHover(nv, nv ? -1 : this.pickEntityIdx(e.clientX, e.clientY));
+    }
     if (!this.pressed) return;
     const dx = e.clientX - this.lastX, dy = e.clientY - this.lastY;
     this.lastX = e.clientX; this.lastY = e.clientY;
     if (!this.movedFar && Math.hypot(e.clientX - this.downX, e.clientY - this.downY) > DRAG_THRESHOLD) {
       this.movedFar = true; this.dragging = true; this.userTook = true;
       this.viewport.classList.add("is-dragging");
-      if (this.hoveredId) this.setHover(null);
+      if (this.hoveredId || this.hoverEntityIdx >= 0) this.applyHover(null, -1);
       if (typeof window !== "undefined") window.getSelection()?.removeAllRanges();
     }
     if (!this.dragging) return;
@@ -985,7 +1236,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (wasDrag) return;
     const hit = this.pick(e.clientX, e.clientY);
     if (hit) this.onNodeClick(hit.node.id);
-    else if (this.highlightSet) { this.clearHighlight(); this.onHighlightCleared?.(); }
+    else {
+      // Clicking an AGGREGATE ENTITY expands it: frame its members, which raises the resolution
+      // into the next level of the ladder (never onNodeClick — a cluster id is not a note).
+      const evIdx = this.pickEntityIdx(e.clientX, e.clientY);
+      if (evIdx >= 0) { this.applyHover(null, -1); this.frameSubset(this.entityFlat[evIdx].memberIds); }
+      else if (this.highlightSet) { this.clearHighlight(); this.onHighlightCleared?.(); }
+    }
   };
 
   /** THE LAW: the wheel changes RESOLUTION, never the glyph size — and it does so in
@@ -997,13 +1254,22 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private onWheel = (e: WheelEvent) => {
     e.preventDefault();
     this.userTook = true;
+    // CURSOR-ANCHORED (2D): each notch steps the ladder about the world point under the cursor —
+    // zoomStepAnchored re-aims goalTarget so that point keeps its px through the step. An event
+    // without usable coordinates (synthetic dispatch) anchors the grid centre, like keyboard zoom.
+    const r = this.viewport.getBoundingClientRect();
+    let ax = e.clientX - r.left, ay = e.clientY - r.top;
+    if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
+      ax = this.m.padX + (this.m.cols * this.m.cellW) / 2;
+      ay = this.m.padY + (this.m.rows * this.m.cellH) / 2;
+    }
     this.wheelAccum += e.deltaY;
     while (Math.abs(this.wheelAccum) >= WHEEL_NOTCH_PX) {
       // deltaY < 0 (scroll up / pinch in) is the conventional "zoom in" gesture — MORE resolution,
       // i.e. a LOWER percent under the 100%=fit/0%=deepest convention.
       const dir = this.wheelAccum < 0 ? -1 : 1;
       this.wheelAccum -= dir * WHEEL_NOTCH_PX;
-      this.setZoomPercent(this.zoomPct + dir * ZOOM_STEP_PCT);
+      this.zoomStepAnchored(this.zoomPct + dir * ZOOM_STEP_PCT, ax, ay);
     }
   };
 
@@ -1022,15 +1288,22 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (!this.host || this.host.offsetParent === null) return;
     if (e.key === "Escape") this.resetView();
     else if (e.key === "z" || e.key === "Z") { if (this.hoveredId) this.focusNode(this.hoveredId); else this.resetView(); }
-    else if (e.key === "+" || e.key === "=") { this.userTook = true; this.setZoomPercent(this.zoomPct - ZOOM_STEP_PCT); }
-    else if (e.key === "-" || e.key === "_") { this.userTook = true; this.setZoomPercent(this.zoomPct + ZOOM_STEP_PCT); }
+    else if (e.key === "+" || e.key === "=") { this.userTook = true; this.zoomStepCentered(this.zoomPct - ZOOM_STEP_PCT); }
+    else if (e.key === "-" || e.key === "_") { this.userTook = true; this.zoomStepCentered(this.zoomPct + ZOOM_STEP_PCT); }
   };
 
-  private setHover(id: string | null) {
-    if (id === this.hoveredId) return;
-    const nv = id ? this.byId.get(id) : undefined;
-    this.onHover(nv ? { id: nv.node.id, label: nv.node.label, kind: nv.node.kind, folder: nv.node.folder } : null);
+  /** The one place hover state changes: a real node wins over an entity; either surfaces through
+   *  `onHover` (an entity as a synthetic "cluster"-kind HoverNode naming the community + size). */
+  private applyHover(nv: NodeView | null, evIdx: number) {
+    const id = nv?.node.id ?? null;
+    if (id === this.hoveredId && evIdx === this.hoverEntityIdx) return;
     this.hoveredId = id;
+    this.hoverEntityIdx = evIdx;
+    if (nv) this.onHover({ id: nv.node.id, label: nv.node.label, kind: nv.node.kind, folder: nv.node.folder });
+    else if (evIdx >= 0) {
+      const ev = this.entityFlat[evIdx];
+      this.onHover({ id: `cluster:L${ev.level}:${ev.community}`, label: `${ev.name} · ${ev.count} notes`, kind: "cluster" });
+    } else this.onHover(null);
     this.dirty = true;
   }
 
