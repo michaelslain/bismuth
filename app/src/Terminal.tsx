@@ -1,69 +1,61 @@
 // app/src/Terminal.tsx
 // Mounts an xterm.js terminal and connects it to the backend WebSocket PTY.
 import { onMount, onCleanup, createEffect } from "solid-js";
-import { Terminal as Xterm } from "@xterm/xterm";
+import { Terminal as Xterm, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./Terminal.css";
-import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
-import { paletteToInts } from "./themeColors";
-import { resolveAppearance } from "./themes";
+import { settings } from "./settings";
 import { api, apiBase } from "./api";
 import { pointInDropRect, type NativeDragDetail } from "./nativeDrop";
 
-// The active node palette (centralized Oxide accentPalette) as 0xRRGGBB ints.
-function activePaletteInts(): number[] {
-  const ap = resolveAppearance(settings.appearance).accentPalette;
-  return paletteToInts(ap?.length ? ap : DEFAULT_ACCENT_PALETTE);
+// --- ANSI palette, DERIVED from the live theme tokens (never hand-authored) -------------
+// xterm.js wants 16 named colors. Rather than author 64 hex values across the four ASCII
+// scopes, the base 8 map onto tokens that already exist and the bright 8 are each base
+// mixed 70% toward --fg — every scope themes its terminal for free, and a token edit moves
+// the terminal with it. See design/ascii-extended/PORTING.md §1a / README's ANSI section.
+
+// Resolve a CSS custom property against the app root. tokens.ts values are literal
+// colors, so this is a plain read — no color-mix resolution needed for the base 8.
+function cssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-// Build a 16-color ANSI palette from the accent palette + theme bg/fg.
-// Cycles palette colors through the hue slots; black/white come from CSS vars.
-function buildAnsiPalette(palette: number[], fg: string, bg: string) {
-  const hexes = palette.map((n) => "#" + n.toString(16).padStart(6, "0"));
-  // Cycle 5 palette colors (mod) across 6 hue slots: red, green, yellow, blue, magenta, cyan.
-  const cycle = (i: number) => hexes[i % hexes.length];
-  const lighten = (hex: string, pct: number) => {
-    const n = parseInt(hex.slice(1), 16);
-    let r = (n >> 16) & 0xff, g = (n >> 8) & 0xff, b = n & 0xff;
-    r = Math.min(255, Math.round(r + (255 - r) * pct));
-    g = Math.min(255, Math.round(g + (255 - g) * pct));
-    b = Math.min(255, Math.round(b + (255 - b) * pct));
-    return "#" + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
-  };
-  return {
-    black: bg,
-    red: cycle(0),
-    green: cycle(1),
-    yellow: cycle(2),
-    blue: cycle(3),
-    magenta: cycle(4),
-    cyan: cycle(5),
-    white: fg,
-    brightBlack: lighten(bg, 0.4),
-    brightRed: lighten(cycle(0), 0.2),
-    brightGreen: lighten(cycle(1), 0.2),
-    brightYellow: lighten(cycle(2), 0.2),
-    brightBlue: lighten(cycle(3), 0.2),
-    brightMagenta: lighten(cycle(4), 0.2),
-    brightCyan: lighten(cycle(5), 0.2),
-    brightWhite: fg,
-  };
+// color-mix() can't be read back off a custom property directly — resolve it through a
+// throwaway probe element (computed style always returns a concrete rgb()/rgba() color).
+function mixToward(color: string, toward: string, pct = 70): string {
+  const el = document.createElement("span");
+  el.style.color = `color-mix(in srgb, ${color} ${pct}%, ${toward})`;
+  document.body.appendChild(el);
+  const out = getComputedStyle(el).color;
+  el.remove();
+  return out;
 }
 
-// Build the 240-entry extendedAnsi array (slots 16-255) tinted toward the
-// active palette. Preserves brightness/contrast from the standard 256-color
-// scheme so prompts/themes that use 256-color escapes still read structurally,
-// but pulls hues into the palette's family.
-function buildExtendedAnsi(paletteInts: number[]): string[] {
-  // Convert palette to {r,g,b} once.
-  const palette = paletteInts.map((n) => ({ r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }));
+// Parse a resolved CSS color ("rgb(r, g, b)" or "#rrggbb") into 0-255 components — only
+// needed to seed the 256-color extendedAnsi ramp below.
+function toRgbTuple(color: string): { r: number; g: number; b: number } {
+  if (color.startsWith("#")) {
+    const n = parseInt(color.slice(1), 16);
+    return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
+  }
+  const m = color.match(/[\d.]+/g);
+  return m && m.length >= 3
+    ? { r: Math.round(+m[0]), g: Math.round(+m[1]), b: Math.round(+m[2]) }
+    : { r: 128, g: 128, b: 128 };
+}
+
+// Build the 240-entry extendedAnsi array (slots 16-255) tinted toward the derived ANSI
+// base hues, so 256-color escapes (many prompts/TUIs use them) still read in-scope
+// instead of falling back to xterm's stock ramp. Preserves the RGB cube's own
+// brightness/contrast — just pulls each cell's hue toward the nearest derived anchor.
+function buildExtendedAnsi(anchors: { r: number; g: number; b: number }[]): string[] {
   const stops = [0, 95, 135, 175, 215, 255];
   const out: string[] = [];
 
   const closest = (r: number, g: number, b: number) => {
-    let best = palette[0], bestD = Infinity;
-    for (const p of palette) {
+    let best = anchors[0], bestD = Infinity;
+    for (const p of anchors) {
       const d = (p.r - r) ** 2 + (p.g - g) ** 2 + (p.b - b) ** 2;
       if (d < bestD) { bestD = d; best = p; }
     }
@@ -79,15 +71,15 @@ function buildExtendedAnsi(paletteInts: number[]): string[] {
       for (let b6 = 0; b6 < 6; b6++) {
         const r = stops[r6], g = stops[g6], b = stops[b6];
         const c = closest(r, g, b);
-        // 25% original, 75% palette tint.
+        // 25% original, 75% anchor tint.
         out.push(hex(mix(r, c.r, 0.75), mix(g, c.g, 0.75), mix(b, c.b, 0.75)));
       }
     }
   }
-  // Grayscale (slots 232-255 → array indices 216-239). Tint slightly toward
-  // the average palette color so it doesn't feel disjoint.
-  const avg = palette.reduce(
-    (a, p) => ({ r: a.r + p.r / palette.length, g: a.g + p.g / palette.length, b: a.b + p.b / palette.length }),
+  // Grayscale (slots 232-255 → array indices 216-239). Tint slightly toward the
+  // average anchor color so it doesn't feel disjoint.
+  const avg = anchors.reduce(
+    (a, p) => ({ r: a.r + p.r / anchors.length, g: a.g + p.g / anchors.length, b: a.b + p.b / anchors.length }),
     { r: 0, g: 0, b: 0 },
   );
   for (let i = 0; i < 24; i++) {
@@ -95,6 +87,65 @@ function buildExtendedAnsi(paletteInts: number[]): string[] {
     out.push(hex(mix(v, Math.round(avg.r), 0.5), mix(v, Math.round(avg.g), 0.5), mix(v, Math.round(avg.b), 0.5)));
   }
   return out;
+}
+
+// Module-scope single-entry cache — extendedAnsi is 240 entries and only needs
+// recomputing when the derived base hues actually change (theme switch), not per render.
+let _extendedAnsiKey = "";
+let _extendedAnsiResult: string[] = [];
+function cachedExtendedAnsi(baseHex: string[]): string[] {
+  const key = baseHex.join(",");
+  if (key !== _extendedAnsiKey) {
+    _extendedAnsiKey = key;
+    _extendedAnsiResult = buildExtendedAnsi(baseHex.map(toRgbTuple));
+  }
+  return _extendedAnsiResult;
+}
+
+// Build xterm's ITheme straight from the live custom properties. Called at mount AND
+// re-called by TerminalTab's createEffect on every theme/font change, so a scope switch
+// moves the terminal with everything else — nothing here is hand-picked per scope.
+function buildTerminalTheme(): ITheme {
+  const fg = cssVar("--fg");
+  const base = {
+    black: cssVar("--rail"),
+    red: cssVar("--danger"),
+    green: cssVar("--green"),
+    yellow: cssVar("--gold"),
+    blue: cssVar("--blue"),
+    magenta: cssVar("--violet"),
+    cyan: cssVar("--teal"),
+    white: cssVar("--term-fg"),
+  };
+  return {
+    background: cssVar("--term-bg"),
+    foreground: cssVar("--term-fg"),
+    // Native cursor stays fully invisible — .xterm-custom-cursor (Terminal.css) draws the
+    // actual caret, since xterm's native cursor can't CSS-transition between cells.
+    // cursorAccent = fg keeps the underlying character rendering in its normal color.
+    cursor: "rgba(0,0,0,0)",
+    cursorAccent: fg,
+    selectionBackground: cssVar("--accent-soft"),
+    ...base,
+    brightBlack: cssVar("--faint"),
+    brightRed: mixToward(base.red, fg),
+    brightGreen: mixToward(base.green, fg),
+    brightYellow: mixToward(base.yellow, fg),
+    brightBlue: mixToward(base.blue, fg),
+    brightMagenta: mixToward(base.magenta, fg),
+    brightCyan: mixToward(base.cyan, fg),
+    brightWhite: fg,
+    extendedAnsi: cachedExtendedAnsi([base.red, base.green, base.yellow, base.blue, base.magenta, base.cyan]),
+  };
+}
+
+// Resolve the terminal's font family from the user's chosen UI face
+// (appearance.uiFont → --ui-font-stack), keeping the Nerd Font icon fallbacks many
+// shell prompts/TUIs rely on (a plain face swap wouldn't carry those).
+function resolvedFontFamily(): string {
+  const stack = cssVar("--ui-font-stack");
+  const primary = stack.split(",")[0]?.trim() || "'Monaspace Xenon'";
+  return `${primary}, 'FiraCode Nerd Font', 'Symbols Nerd Font', 'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace`;
 }
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses.
@@ -105,6 +156,10 @@ const wsBase = () => apiBase().replace(/^http/, "ws"); // http→ws, https→wss
 
 // Fix 3: Hoist TextEncoder to module scope — avoids a per-keystroke allocation.
 const enc = new TextEncoder();
+
+// Caret thickness (px) for the custom cursor overlay — a blinking underline matching
+// .asc-caret, not a solid block. See Terminal.css .xterm-custom-cursor.
+const CARET_H = 2;
 
 // --- Drag-and-drop file paths into the terminal -----------------------------------
 // The absolute vault path is the terminal's cwd; we fetch it once (cached across all
@@ -208,18 +263,6 @@ function resizeFrame(cols: number, rows: number): Uint8Array {
   return frame;
 }
 
-// Module-scope single-entry cache for buildExtendedAnsi (240 entries, rarely changes).
-let _extendedAnsiKey = "";
-let _extendedAnsiResult: string[] = [];
-function cachedExtendedAnsi(paletteInts: number[]): string[] {
-  const key = paletteInts.join(",");
-  if (key !== _extendedAnsiKey) {
-    _extendedAnsiKey = key;
-    _extendedAnsiResult = buildExtendedAnsi(paletteInts);
-  }
-  return _extendedAnsiResult;
-}
-
 export function TerminalTab(props: { id: string; active: () => boolean; onExit?: () => void }) {
   let container!: HTMLDivElement;
   // Fix 1: Declare mutable refs at component scope so the top-level createEffect
@@ -312,6 +355,22 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     });
   });
 
+  // Re-derive the ANSI theme + face on every scope/font change, not only at mount — a
+  // scope switch (or a UI-font change in .settings) must move the running terminal with
+  // it. Also owned by the component's reactive context so it auto-disposes on cleanup.
+  createEffect(() => {
+    settings.appearance.theme; // track
+    settings.appearance.uiFont; // track
+    if (!term) return; // onMount hasn't completed yet — skip silently
+    try {
+      term.options.theme = buildTerminalTheme();
+      term.options.fontFamily = resolvedFontFamily();
+      recomputeCursorMetrics();
+    } catch {
+      /* ignore during teardown */
+    }
+  });
+
   onMount(async () => {
     // B8/B20: Register cleanup synchronously, BEFORE the font-load await. onMount
     // is async, so if the tab is closed while `document.fonts.load(...)` is still
@@ -350,11 +409,13 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
       try { term?.dispose(); } catch {}
     });
 
-    // xterm.js measures font metrics at construction time. If Monaspace Xenon
-    // hasn't loaded yet, the grid is sized for the fallback font and characters
-    // drift out of their cells. Wait for the actual font to be ready.
+    // xterm.js measures font metrics at construction time. If the active face hasn't
+    // loaded yet, the grid is sized for the fallback font and characters drift out of
+    // their cells. Wait for the actual (user-chosen) face to be ready.
+    const fontFamily = resolvedFontFamily();
+    const primaryFace = fontFamily.split(",")[0]?.trim() || "'Monaspace Xenon'";
     try {
-      await document.fonts.load(`13px 'Monaspace Xenon'`);
+      await document.fonts.load(`13px ${primaryFace}`);
     } catch { /* font load failed; we'll render with fallback */ }
 
     // B8/B20: If the tab was closed during the await above, the synchronous
@@ -362,41 +423,19 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     // whose teardown would never fire.
     if (disposed) return;
 
-    // Read CSS variables for terminal theme colors. The terminal renders on the
-    // deep Bismuth terminal surface (--term-bg), falling back to the app bg, with
-    // --term-fg (falling back to --fg) for default text — matching the host
-    // container's .term-host styling so xterm's grid sits flush on it.
-    const style = getComputedStyle(document.documentElement);
-    const bg =
-      style.getPropertyValue("--term-bg").trim() ||
-      style.getPropertyValue("--bg").trim() ||
-      "#08090e";
-    const fg =
-      style.getPropertyValue("--term-fg").trim() ||
-      style.getPropertyValue("--fg").trim() ||
-      "#C7CCE0"; // exact --term-fg token value (App.css); this last-resort fallback is reachable-never
-
-    const pal = activePaletteInts();
-    const ansi = buildAnsiPalette(pal, fg, bg);
-    const extendedAnsi = cachedExtendedAnsi(pal);
     term = new Xterm({
-      cursorBlink: false,
-      fontFamily: "'Monaspace Xenon', 'FiraCode Nerd Font', 'Symbols Nerd Font', 'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace",
+      // The visible caret is our own .xterm-custom-cursor overlay (a blinking
+      // underline matching .asc-caret) — see buildTerminalTheme's cursor comment.
+      // These native options are set for correctness/parity but the native cursor
+      // itself is fully transparent, so they have no visible effect.
+      cursorBlink: true,
+      cursorStyle: "underline",
+      letterSpacing: 0,
+      allowTransparency: false,
+      fontFamily,
       fontSize: settings.terminal.fontSize,
       lineHeight: settings.terminal.lineHeight,
-      theme: {
-        background: bg,
-        foreground: fg,
-        // xterm's native cursor: make the block totally invisible. cursorAccent is
-        // the text color INSIDE the cursor cell — setting it to `fg` makes the
-        // underlying character render in its normal color (not the cursor accent).
-        // Our `.xterm-custom-cursor` overlay draws the actual cursor.
-        cursor: "rgba(0,0,0,0)",
-        cursorAccent: fg,
-        selectionBackground: "rgba(125,125,125,0.3)",
-        ...ansi,
-        extendedAnsi,
-      },
+      theme: buildTerminalTheme(),
     });
 
     fit = new FitAddon();
@@ -407,7 +446,9 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
 
     // Custom cursor overlay that glides smoothly between positions — xterm's native
     // cursor is a class transferred between inline spans, so CSS transitions don't
-    // apply. We render our own absolutely-positioned div and animate transform.
+    // apply. We render our own absolutely-positioned div and animate transform. Shaped
+    // as a blinking underline (CARET_H, Terminal.css) to match .asc-caret everywhere
+    // else in the system, not a solid block.
     cursorEl = document.createElement("div");
     cursorEl.className = "xterm-custom-cursor";
     container.appendChild(cursorEl);
@@ -419,19 +460,20 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     const updateCursor = () => {
       if (!term || !cursorEl) return;
       // Hide the overlay while the user is scrolled up into the scrollback — the real
-      // cursor sits on the (now off-screen) prompt line, so a floating block would be
-      // misleading. onRender fires on scroll, so this toggles promptly.
+      // cursor sits on the (now off-screen) prompt line, so a floating underline would
+      // be misleading. onRender fires on scroll, so this toggles promptly.
       const buf = term.buffer.active;
       if (buf.viewportY !== buf.baseY) { cursorEl.style.opacity = "0"; return; }
       cursorEl.style.opacity = "";
       // First paint (or after an xterm reflow that left the metrics at 0): measure once.
       if (cellH === 0) recomputeCursorMetrics();
       // cursorX/Y are in cell units relative to the visible viewport; offset by the
-      // padded rows element's position within the container.
+      // padded rows element's position within the container. The underline sits at the
+      // BOTTOM of the cell (full cell width, CARET_H thick) rather than filling it.
       const x = rowOffX + buf.cursorX * cellW;
-      const y = rowOffY + buf.cursorY * cellH;
+      const y = rowOffY + buf.cursorY * cellH + cellH - CARET_H;
       cursorEl.style.transform = `translate(${x}px, ${y}px)`;
-      cursorEl.style.height = `${cellH}px`;
+      cursorEl.style.width = `${cellW}px`;
     };
 
     recomputeCursorMetrics();

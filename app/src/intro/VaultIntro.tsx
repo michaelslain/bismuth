@@ -5,11 +5,26 @@
    WebGL renderer); clicking a theme option recolors it live to that palette, and the SAME
    graph carries into the "Three brains, one mind" slide. The picked theme also re-themes
    the whole takeover and seeds the new vault's appearance.theme (written by the Tauri
-   `choose_first_vault` command on the CTA). Reuses the standard ui/ buttons + theme system. */
+   `choose_first_vault` command on the CTA — unchanged contract). Reuses the standard ui/
+   buttons + theme system.
+
+   Re-expressed in the ASCII redesign's own language (design/ascii-extended, item 5 —
+   self-designed, no specimen exists for this surface): --bg ground, the wordmark
+   (.asc-wordmark sheen, marks.tsx WordmarkHero) as the hero instead of a bespoke glow/spin
+   crystal, .asc-eyebrow section labels, a four swatch-card theme picker (not a dropdown),
+   power-ups as asc-card rows with a Chip toggle, and the CTA as the one bracket
+   btn--primary in the takeover. A face picker (5 Monaspace variants) was considered but
+   deliberately left out: PORTING's own "if trivially wired to appearance.uiFont/editorFont
+   SEEDS" is conditional, and it isn't trivial here — persisting a chosen face into the
+   NEW vault would need either a new choose_first_vault argument (a Tauri command-contract
+   change, explicitly out of scope) or a post-restart apply step wired in App.tsx (out of
+   this lane's file boundary). A picker that only live-previewed the intro's own text
+   without actually seeding the vault would be misleading, so it's omitted rather than
+   half-built. */
 import { For, Show, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import { TextButton } from "../ui/TextButton";
 import { IconButton } from "../ui/IconButton";
-import { Select } from "../ui/Select";
+import { Chip } from "../ui/Chip";
 import { Icon } from "../icons/Icon";
 import { CanvasGraphRenderer } from "../graph/CanvasGraphRenderer";
 import { GraphAtmosphere } from "../graph/GraphAtmosphere";
@@ -19,7 +34,7 @@ import { THEME_NAMES, THEMES, THEME_LABELS, DEFAULT_THEME, resolveAppearance, ty
 import { settingsToCssVars, setCssVars } from "../settingsCssVars";
 import { DEFAULTS, DEFAULT_ACCENT_PALETTE } from "../settings";
 import { isTauri } from "../nativeMenu";
-import { CrystalStage, DaemonStage, ClaudeStage, Lockup } from "./marks";
+import { WordmarkHero, DaemonStage, ClaudeStage, Lockup } from "./marks";
 import "./VaultIntro.css";
 
 type SlideKey = "welcome" | "theme" | "graph" | "daemon" | "claude" | "powerups" | "begin";
@@ -81,9 +96,6 @@ const SLIDES: Slide[] = [
 
 // localStorage key the post-restart app reads to run the chosen power-ups against the real backend.
 const POWERUPS_KEY = "bismuth-first-run-powerups";
-
-// All themes (dark + light) in one list for the selector dropdown.
-const THEME_OPTIONS = THEME_NAMES.map((n) => ({ value: n, label: THEME_LABELS[n] }));
 
 // Build a point-cloud graph with BAKED positions (a seeded random sphere). Baking positions
 // means the renderer draws the layout directly — no cold force-settle, no auto-fit race — so
@@ -304,9 +316,8 @@ export default function VaultIntro() {
   const nonGraphVisual = () => {
     switch (slide().key) {
       case "welcome":
-        return <CrystalStage icon={DEFAULTS.appearance.icon} size={252} />;
       case "begin":
-        return <CrystalStage icon={DEFAULTS.appearance.icon} size={220} />;
+        return <WordmarkHero icon={DEFAULTS.appearance.icon} size={96} />;
       case "daemon":
         return <DaemonStage />;
       case "claude":
@@ -346,17 +357,41 @@ export default function VaultIntro() {
           )}
         </Show>
 
+        {/* Theme picker: four swatch cards (not a dropdown) — each live-previews its OWN
+            scope's bg/fg/accent simultaneously (design/ascii-extended's item 5: "theme
+            picker = four swatch cards ... live-preview via the scope's own bg/fg/accent").
+            Baked from the core token literals (THEMES[name]) rather than var(), the same
+            technique the drawing toolbar's ink swatches use — the running app has no
+            per-subtree scope-class mechanism (that only exists in the static design-system
+            demo CSS), so all four previews can only render at once as literal colors. */}
         <Show when={slide().key === "theme"}>
           <div class="vi-themes">
-            <Select
-              class="vi-theme-select"
-              value={themeName()}
-              onChange={(v) => setThemeName(v as ThemeName)}
-              options={THEME_OPTIONS}
-            />
+            <For each={THEME_NAMES}>
+              {(name) => {
+                const t = THEMES[name];
+                return (
+                  <button
+                    type="button"
+                    class="vi-theme-card"
+                    classList={{ selected: themeName() === name }}
+                    aria-pressed={themeName() === name}
+                    onClick={() => setThemeName(name)}
+                  >
+                    <span class="vi-theme-swatch" style={{ background: t.background }}>
+                      <span class="vi-theme-swatch-fg" style={{ background: t.foreground }} />
+                      <span class="vi-theme-swatch-accent" style={{ background: t.accent }} />
+                    </span>
+                    <span class="vi-theme-name">{THEME_LABELS[name]}</span>
+                  </button>
+                );
+              }}
+            </For>
           </div>
         </Show>
 
+        {/* Power-ups: asc-card rows with a chip toggle (not a bespoke selectable-card grid) —
+            the system's own vocabulary for "a labeled option you can flip" (ui/Chip.tsx,
+            already the ExportView/search-toggle primitive). */}
         <Show when={slide().key === "powerups"}>
           <div class="vi-powerups">
             <For each={POWER_UPS}>
@@ -364,22 +399,20 @@ export default function VaultIntro() {
                 const selectable = !!p.cmd;
                 const on = () => !selectable || powerups().includes(p.id);
                 return (
-                  <button
-                    type="button"
-                    class="vi-powerup"
-                    classList={{ selected: on(), locked: !selectable }}
-                    aria-pressed={on()}
-                    onClick={() => selectable && togglePowerup(p.id)}
-                  >
-                    <span class="vi-powerup-top">
+                  <div class="vi-powerup asc-card" classList={{ locked: !selectable }}>
+                    <div class="vi-powerup-top">
                       <Icon value={p.icon} size={16} />
                       <span class="vi-powerup-name">{p.name}</span>
-                      <Show when={on()}>
-                        <Icon value="Check" size={14} class="vi-powerup-check" />
-                      </Show>
-                    </span>
+                      <Chip
+                        selected={on()}
+                        title={selectable ? undefined : "Always on"}
+                        onClick={() => selectable && togglePowerup(p.id)}
+                      >
+                        {on() ? "ON" : "OFF"}
+                      </Chip>
+                    </div>
                     <span class="vi-powerup-desc">{p.desc}</span>
-                  </button>
+                  </div>
                 );
               }}
             </For>
@@ -391,7 +424,7 @@ export default function VaultIntro() {
         <Show when={slide()} keyed>
           {(s) => (
             <div class="vi-copy">
-              <div class="vi-tag">{s.tag}</div>
+              <div class="asc-eyebrow">{s.tag}</div>
               <h1 class="vi-title">{s.title}</h1>
               <p class="vi-body">{s.body}</p>
             </div>
@@ -417,8 +450,10 @@ export default function VaultIntro() {
             when={i() === last}
             fallback={<IconButton icon="ArrowRight" label="Next" variant="selected" size="md" onClick={next} />}
           >
-            <TextButton variant="selected" size="md" onClick={next} disabled={busy()}>
-              {busy() ? "OPENING…" : "ENTER YOUR VAULT"}
+            {/* The one bracket btn--primary CTA in the takeover — invokes the EXISTING
+                choose_first_vault flow unchanged (design/ascii-extended item 5). */}
+            <TextButton primary size="md" onClick={next} disabled={busy()}>
+              [ {busy() ? "OPENING…" : "ENTER YOUR VAULT"} ]
             </TextButton>
           </Show>
         </div>

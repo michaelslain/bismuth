@@ -6,7 +6,8 @@ import { ZOOM_MIN, ZOOM_MAX } from "./DrawingPage";
 import { Button } from "../ui/Button";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Icon } from "../icons/Icon";
-import { ACCENT_RAMP, THEMES, DEFAULT_THEME } from "../themes";
+import { CATEGORY_SWATCHES, resolveAppearance } from "../themes";
+import { settings } from "../settings";
 
 const TOOLS: { id: ToolState["tool"]; icon: string; title: string }[] = [
   { id: "pen", icon: "Pen", title: "Pen" },
@@ -25,11 +26,12 @@ const dotIcon = (size: number) => (
     <circle cx="11" cy="8" r={2 + (size / 20) * 5} fill="currentColor" />
   </svg>
 );
-// A color swatch in the identical 22×16 box as dotIcon (a rounded square so it reads as
-// a swatch, not a dot) — keeps the color row and size row the same size + spacing.
+// A color swatch in the identical 22×16 box as dotIcon — a FLAT 16px square (no
+// rounding), matching the register's "token swatches, butted in a single --border
+// frame" (design/ascii-extended PORTING.md §2c / view-sheets-draw.card.html .sw-c).
 const colorSwatch = (fill: string) => (
   <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
-    <rect x="4.5" y="1.5" width="13" height="13" rx="3" fill={fill} />
+    <rect x="3" y="0" width="16" height="16" fill={fill} />
   </svg>
 );
 const smoothIcon = (d: string) => (
@@ -63,16 +65,32 @@ export function Toolbar(props: {
   onImportImage?: () => void;
 }) {
   const t = props.tools;
-  // Fixed 7-swatch Bismuth ink palette = the "fg" default ink + the one category swatch
-  // ramp (teal→rose), both sourced from the color source of truth (themes.ts) so this bar
-  // can't drift from the App.css / export / gcal copies.
-  const colors = () => ["fg", ...ACCENT_RAMP];
-  const swatchColor = (c: string) => (c === "fg" ? THEMES[DEFAULT_THEME].foreground : c);
+  // The five-swatch ink set the register specifies: default ink + accent + three
+  // category hues (design/ascii-extended PORTING.md §2c: "--fg --accent --rose --gold
+  // --green"). The STORED value stays either the "fg" sentinel (resolved live to the
+  // active theme's ink at render time — core/src/drawing/theme.ts resolveInkColor) or a
+  // literal hex, exactly as before: a stroke's color is persisted into the .draw JSON
+  // and re-rendered by the HEADLESS server-side exporter (core/src/drawing/render2d.ts,
+  // no DOM/CSS engine there) as well as this canvas, so anything but "fg" must already
+  // be a concrete color — never a CSS var() and never a bare id like "accent"/"rose".
+  // "fg"/accent are read off the LIVE active scope (settings.appearance.theme), not a
+  // frozen DEFAULT_THEME snapshot, so the swatch preview follows a theme switch; the
+  // three category hues are intentionally scope-INVARIANT (CATEGORY_SWATCHES is the one
+  // fixed teal→rose ramp every categorical surface in the app shares — tokens.ts).
+  const activeTheme = () => resolveAppearance(settings.appearance);
+  const SWATCHES = () => [
+    { id: "fg", name: "Default ink" },
+    { id: activeTheme().accent ?? activeTheme().foreground, name: "accent" },
+    { id: CATEGORY_SWATCHES.rose, name: "rose" },
+    { id: CATEGORY_SWATCHES.gold, name: "gold" },
+    { id: CATEGORY_SWATCHES.green, name: "green" },
+  ];
+  const swatchColor = (c: string) => (c === "fg" ? activeTheme().foreground : c);
 
   const toolOpts = TOOLS.map((x) => ({ id: x.id, label: <Icon value={x.icon} size={17} />, title: x.title }));
-  // Colors render as filled rounded-square swatches drawn in the SAME 22×16 box as the
+  // Colors render as filled flat-square swatches drawn in the SAME 22×16 box as the
   // size dots, so the color row and the line-weight row are identical in size + spacing.
-  const colorOpts = () => colors().map((c) => ({ id: c, label: colorSwatch(swatchColor(c)), title: c === "fg" ? "Default ink" : c }));
+  const colorOpts = () => SWATCHES().map((s) => ({ id: s.id, label: colorSwatch(swatchColor(s.id)), title: s.name }));
   const sizeOpts = SIZE_LEVELS.map((s) => ({ id: s, label: dotIcon(s), title: `Size ${s}` }));
   const smoothOpts: { id: ToolState["smoothMode"]; label: JSX.Element; title: string }[] = [
     { id: "sharp", label: smoothIcon(SHARP_PATH), title: "Sharp (raw)" },
@@ -99,7 +117,7 @@ export function Toolbar(props: {
         {/* Colors on top, line-weight directly below — same box size + spacing. */}
         <div class="draw-group">
           <div class="draw-vstack">
-            <SegmentedToggle options={colorOpts()} value={t().color} onChange={(c) => props.setTools({ color: c })} segmentClass="draw-iconseg" />
+            <SegmentedToggle options={colorOpts()} value={t().color} onChange={(c) => props.setTools({ color: c })} class="draw-colorrow" segmentClass="draw-colorseg" />
             <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-iconseg" />
           </div>
         </div>

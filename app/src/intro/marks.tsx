@@ -1,9 +1,11 @@
-/* app/src/intro/marks.tsx — first-run intro visuals (Solid port of the mock).
-   The brand lockup + crystal hero reuse the REAL logo marks shipped in
-   /logos/*.svg (spun via CSS); the daemon/claude heroes are static terminal
-   panels. Every color comes from the
-   theme CSS vars (--bg/--fg/--accent/--grad/--graph-0..4/…) so the intro's theme
-   picker re-themes all of it live. */
+/* app/src/intro/marks.tsx — first-run intro visuals, re-expressed in the ASCII redesign's
+   own language (design/ascii-extended, item 5 — self-designed, no specimen). The lockup
+   reuses the REAL logo mark shipped in /logos/*.svg; the hero is the system's ONE sanctioned
+   decorative flourish (.asc-wordmark's sheen, ui.css/patterns.css) rather than a bespoke
+   glow/spin treatment; the daemon/claude panels are plain ASCII terminal chrome (bracket
+   session tab, .asc-caret blinking underline) instead of macOS traffic-light dots + a glow
+   cursor. Every color comes from the theme CSS vars, so the intro's theme picker re-themes
+   all of it live. */
 import { For, type JSX } from "solid-js";
 
 // ---- small persistent brand lockup (logo mark only — no wordmark) ------
@@ -17,16 +19,16 @@ export function Lockup(props: { icon: string }) {
   );
 }
 
-// ---- crystal hero: the real logo mark, glowing + slowly spinning --------
-export function CrystalStage(props: { icon: string; size?: number }) {
-  const size = () => props.size ?? 240;
+// ---- wordmark hero: the logo mark + the system's one flourish (asc-wordmark sheen) -----
+// Replaces the old spinning/glowing crystal — the ASCII register limits itself to ONE
+// decorative flourish (the wordmark's gradient sheen, ui.css/patterns.css), so the hero
+// IS that flourish, not another glow layered around the logo mark.
+export function WordmarkHero(props: { icon: string; size?: number }) {
+  const size = () => props.size ?? 96;
   return (
-    <div class="vi-crystal" style={{ width: `${size()}px`, height: `${size()}px` }}>
-      <div class="vi-crystal-glow" />
-      <div class="vi-crystal-ring" />
-      <div class="vi-crystal-spin">
-        <img src={`/logos/${props.icon}.svg`} width={size() * 0.82} height={size() * 0.82} alt="" />
-      </div>
+    <div class="vi-wordmark-hero">
+      <img src={`/logos/${props.icon}.svg`} width={size()} height={size()} alt="" />
+      <div class="asc-wordmark vi-wordmark-text">bismuth</div>
     </div>
   );
 }
@@ -94,11 +96,11 @@ function Line(props: { ln: TermLine }): JSX.Element {
 function TermPanel(props: { name: string; lines: TermLine[] }) {
   return (
     <div class="vi-term">
+      {/* Bracket session tab — the terminal chrome's own vocabulary (Terminal.tsx /
+          design/ascii-extended's view-terminal.card.html: "[ 1 zsh ]"), not tab shapes
+          or macOS traffic-light dots. */}
       <div class="vi-term-bar">
-        <span class="vi-term-dot" />
-        <span class="vi-term-dot" />
-        <span class="vi-term-dot" />
-        <span class="vi-term-name">{props.name}</span>
+        <span class="vi-term-tab">[ {props.name} ]</span>
       </div>
       <div class="vi-term-body">
         <For each={props.lines}>
@@ -110,7 +112,7 @@ function TermPanel(props: { name: string; lines: TermLine[] }) {
         </For>
         <div class="vi-term-line" style={{ "animation-delay": `${0.15 + props.lines.length * 0.28}s` }}>
           <span class="t-pmt">~/vault ❯ </span>
-          <span class="vi-cursor" />
+          <span class="asc-caret">_</span>
         </div>
       </div>
     </div>
