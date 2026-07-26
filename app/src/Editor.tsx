@@ -65,7 +65,7 @@ import "./Editor.css";
 // Prose font/size and selection tint come from CSS variables (set by App.tsx from
 // the Appearance settings), so they update live without rebuilding the editor.
 const editorTheme = EditorView.theme({
-  // Prose reads as serif Lora near --fg with a soft tone (design: color-mix(hi 86%, lo)),
+  // Prose reads in the mono prose font near --fg with a soft tone (design: color-mix(hi 86%, lo)),
   // centered in a 760px reading column to match the redesigned editor column.
   "&": { backgroundColor: "transparent", color: "color-mix(in srgb, var(--fg) 88%, var(--text-muted))", height: "100%" },
   // Center the gutter + content TOGETHER (justify-content on the flex scroller) rather
@@ -1261,7 +1261,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // Snapshot restore, re-asserted. The `scrollTo` config above already placed the view at the
     // saved position during its first measure; re-dispatch the SAME position-anchored effect across
     // the next several frames so a LATER async reflow can't drift it. The note-title block widget
-    // grows once the Lora serif finishes loading (its ResizeObserver fires well after the initial
+    // grows once the Monaspace prose font finishes loading (its ResizeObserver fires well after the initial
     // measure), and live-preview / Harper decorations re-measure too — each re-dispatch re-scrolls
     // to the exact document position. rAF (not requestMeasure) so re-dispatch is legal. Skipped
     // when a heading anchor claimed the scroll.

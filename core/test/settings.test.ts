@@ -203,11 +203,11 @@ test("serializeSettingsForFrontend overlays valid keys, ignoring wrong types", a
   await writeNote(
     vault,
     ".settings",
-    "appearance:\n  editorFont: Georgia\n  editorFontSize: big\ngraph:\n  nodeSize: 9\n",
+    "appearance:\n  editorFont: Monaspace Radon\n  editorFontSize: big\ngraph:\n  nodeSize: 9\n",
   );
   const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).editorFont).toBe("Georgia");   // valid string, applied
-  expect((data.appearance as any).editorFontSize).toBe(16);      // "big" is wrong type → default
+  expect((data.appearance as any).editorFont).toBe("Monaspace Radon");   // valid string, applied
+  expect((data.appearance as any).editorFontSize).toBe(13.5);      // "big" is wrong type → default
   expect((data.graph as any).nodeSize).toBe(9);                  // valid number, applied
 });
 
@@ -220,7 +220,7 @@ test("serializeSettingsForFrontend clamps out-of-range numbers and invalid enums
     "appearance:\n  editorFontSize: 999\n  theme: not-a-real-theme\n",
   );
   const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).editorFontSize).toBe(16);       // above max → default
+  expect((data.appearance as any).editorFontSize).toBe(13.5);       // above max → default
   expect((data.appearance as any).theme).toBe("ink");   // invalid enum → default
 });
 
@@ -256,10 +256,10 @@ import { readFileSync } from "node:fs";
 
 test("reconcile fills a missing top-level section with its defaults", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  editorFont: Georgia\n");
+  await writeNote(vault, ".settings", "appearance:\n  editorFont: Monaspace Radon\n");
   await reconcileSettings(vault);
   const { data } = (await readSettings(vault))!;
-  expect((data.appearance as any).editorFont).toBe("Georgia"); // user value kept
+  expect((data.appearance as any).editorFont).toBe("Monaspace Radon"); // user value kept
   expect((data.appearance as any).theme).toBe("ink"); // missing default added
   expect((data.graph as any).spin).toBe(true);                 // missing section added
 });
@@ -507,12 +507,12 @@ describe("concurrent setSettingInFile", () => {
   it("serializes concurrent requests so none clobber each other", async () => {
     const vault = await emptyVault();
     // Set up initial settings with multiple keys
-    await writeNote(vault, ".settings", "appearance:\n  theme: ink\n  editorFont: Lora\ngraph:\n  nodeSize: 5\n");
+    await writeNote(vault, ".settings", "appearance:\n  theme: ink\n  editorFont: Monaspace Radon\ngraph:\n  nodeSize: 5\n");
 
     // Fire 3 concurrent requests that each modify a different key
     const results = await Promise.all([
       setSettingInFile(vault, ["appearance", "theme"], "cathode"),
-      setSettingInFile(vault, ["appearance", "editorFont"], "Georgia"),
+      setSettingInFile(vault, ["appearance", "editorFont"], "Monaspace Neon"),
       setSettingInFile(vault, ["graph", "nodeSize"], 10),
     ]);
 
@@ -522,7 +522,7 @@ describe("concurrent setSettingInFile", () => {
     // Verify all three changes were persisted (none clobbered)
     const { data } = (await readSettings(vault))!;
     expect((data.appearance as any).theme).toBe("cathode");
-    expect((data.appearance as any).editorFont).toBe("Georgia");
+    expect((data.appearance as any).editorFont).toBe("Monaspace Neon");
     expect((data.graph as any).nodeSize).toBe(10);
   });
 

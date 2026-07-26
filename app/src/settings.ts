@@ -31,6 +31,7 @@ export interface Settings {
     theme: string;
     icon: string; // app logo mark name (app/scripts/logoMarks.ts MARK_NAMES)
     editorFont: string;  // key into FONT_STACKS
+    uiFont: string;      // key into FONT_STACKS — UI chrome (rail, tabs, tables, buttons, menus)
     editorFontSize: number; // px
     sidebarWidth: number;        // px
     sidebarGraphHeight: number;  // px
@@ -193,12 +194,14 @@ export { SETTINGS_DEFAULTS as DEFAULTS };
 const _DEFAULTS: Settings = SETTINGS_DEFAULTS;
 void (DEFAULTS satisfies SpineSettings);
 
-// Editor font choices → full CSS font stacks. Lora + Monaspace ship via @fontsource.
+// Editor/UI font choices → full CSS font stacks. One family does the whole interface:
+// all five Monaspace variants ship via @fontsource; no serif, no system-ui.
 export const FONT_STACKS: Record<string, string> = {
-  Lora: "'Lora', serif",
   "Monaspace Xenon": "'Monaspace Xenon', ui-monospace, monospace",
-  Georgia: "Georgia, 'Times New Roman', serif",
-  "system-ui": "system-ui, -apple-system, sans-serif",
+  "Monaspace Neon": "'Monaspace Neon', ui-monospace, monospace",
+  "Monaspace Argon": "'Monaspace Argon', ui-monospace, monospace",
+  "Monaspace Krypton": "'Monaspace Krypton', ui-monospace, monospace",
+  "Monaspace Radon": "'Monaspace Radon', ui-monospace, monospace",
 };
 
 // The fallback accent palette. Categories (graph nodes/clusters/tags, drawing ink

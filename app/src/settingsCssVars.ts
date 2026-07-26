@@ -140,6 +140,7 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--shadow-card": shadow.card,
     "--shadow-modal": shadow.modal,
     "--editor-font": FONT_STACKS[s.appearance.editorFont] ?? s.appearance.editorFont,
+    "--ui-font-stack": FONT_STACKS[s.appearance.uiFont] ?? FONT_STACKS["Monaspace Xenon"],
     "--editor-font-size": s.appearance.editorFontSize + "px",
     "--sidebar-width": s.appearance.sidebarWidth + "px",
     "--sidebar-graph-height": s.appearance.sidebarGraphHeight + "px",

@@ -43,7 +43,7 @@ const GRADE_KEYS: { response: "hard" | "good" | "easy"; key: string; cls: string
  * Flashcards view over a base's rows. Cards are table rows (front/back/due/ease/interval).
  * Reviewing flips to the back (front kept as a small italic caption) and writes fixed-SM-2
  * scheduling back to the row. Cram mode reviews ALL cards ignoring due dates and never changes
- * scheduling. Faces render markdown (Lora serif; `code` monospace).
+ * scheduling. Faces render markdown (mono prose font; `code` monospace).
  *
  * Layout follows the "claude-design" handoff: a header strip with a gradient progress bar +
  * GOOD/HARD session tally and deck controls (edit cards, cram), then a centered stage holding

@@ -156,7 +156,7 @@
   text-transform: uppercase;
 }
 .vi-title {
-  font-family: var(--editor-font, "Lora", Georgia, serif);
+  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
   font-weight: 600;
   font-size: 48px;
   line-height: 1.05;
@@ -166,7 +166,7 @@
   text-wrap: balance;
 }
 .vi-body {
-  font-family: var(--editor-font, "Lora", Georgia, serif);
+  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
   font-size: 18px;
   line-height: 1.62;
   margin: 0;
@@ -242,7 +242,7 @@
   color: var(--accent);
 }
 .vi-powerup-desc {
-  font-family: var(--editor-font, "Lora", Georgia, serif);
+  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
   font-size: 12.5px;
   line-height: 1.45;
   color: color-mix(in srgb, var(--fg) 60%, var(--text-muted));

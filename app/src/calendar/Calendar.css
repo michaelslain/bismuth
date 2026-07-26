@@ -30,7 +30,7 @@
 .calendar-app textarea { font-family: var(--font-interface); }
 
 /* The modal panels are portaled to <body>, outside `.calendar-app`, so they don't
-   inherit the app font/size and would fall back to the UA serif at the 16px body
+   inherit the app font/size and would fall back to the UA default at the 16px body
    size. Pin the mono UI font + the app's 13px control scale on the whole panel
    (headers, labels, inputs, buttons) so it matches the rest of the chrome. */
 .event-modal,
@@ -54,7 +54,7 @@
 /* ---- Toolbar (bismuth .viewbar shell) ------------------------------------ */
 /* The toolbar reuses the global .viewbar / .vbtn / .vseg / .crumb primitives.
    These local rules add the calendar-specific bits: prev/next chevron icon
-   buttons, the serif month title, and the accent-filled Event CTA. */
+   buttons, the prose-font month title, and the accent-filled Event CTA. */
 .cal-viewbar { gap: 8px; }
 .cal-nav { display: inline-flex; gap: 2px; }
 
@@ -83,7 +83,7 @@
 .ev.ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
 .ev.ghost .event-chip-time { color: var(--faint); }
 .event-chip-time { font-size: 0.95em; opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; font-family: var(--font-interface); }
-.event-chip-title { font-family: var(--editor-font, 'Lora', serif); font-weight: 700; font-size: 1.08em; white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
+.event-chip-title { font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace); font-weight: 700; font-size: 1.08em; white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
 .event-chip-meta { display: flex; align-items: center; gap: 3px; overflow: hidden; flex-shrink: 1; min-height: 0; }
 .event-chip-location { opacity: 0.8; overflow: hidden; white-space: normal; word-break: break-word; }
 .event-chip-link { flex-shrink: 0; }
@@ -174,7 +174,7 @@
 .evm-modal .rec-opt:active { transform: translateY(1px); }
 .evm-modal .rec-opt-ic { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--accent); background: var(--accent-soft); }
 .evm-modal .rec-opt-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.evm-modal .rec-opt-lab { font-family: var(--serif); font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; color: var(--hi); }
+.evm-modal .rec-opt-lab { font-family: var(--evm-font); font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; color: var(--hi); }
 .evm-modal .rec-opt-sub { font-family: var(--mono); font-size: 10.5px; letter-spacing: .02em; color: var(--faint); }
 .evm-modal .rec-opt-chev { flex: 0 0 auto; color: var(--faint); display: inline-flex; transition: transform .14s, color .14s; }
 .evm-modal .rec-opt:hover .rec-opt-chev { color: var(--accent); transform: translateX(2px); }
@@ -198,12 +198,12 @@
 .evm-modal .cat-group { background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; overflow: visible; }
 .evm-modal .cat-row { display: flex; align-items: center; gap: 12px; padding: 10px 13px; }
 .evm-modal .cat-row + .cat-row { border-top: 1px solid var(--border2); }
-.evm-modal .cat-name { flex: 1; font-family: var(--serif); font-size: 15.5px; font-weight: 600; color: var(--hi); letter-spacing: -.01em; cursor: default; }
+.evm-modal .cat-name { flex: 1; font-family: var(--evm-font); font-size: 15.5px; font-weight: 600; color: var(--hi); letter-spacing: -.01em; cursor: default; }
 .evm-modal .cat-del { width: 24px; height: 24px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 6px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
 .evm-modal .cat-del:hover { color: var(--rose); background: color-mix(in srgb, var(--rose) 15%, transparent); }
 /* inline rename: sits exactly where the name was (negative margins cancel the
    padding so the text doesn't jump), with a subtle tint + thin inset accent ring. */
-.evm-modal .cat-nameedit { flex: 1; min-width: 0; font-family: var(--serif); font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; color: var(--hi); background: color-mix(in srgb, var(--accent) 9%, transparent); border: none; border-radius: 6px; padding: 3px 7px; margin: -3px -7px; outline: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.evm-modal .cat-nameedit { flex: 1; min-width: 0; font-family: var(--evm-font); font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; color: var(--hi); background: color-mix(in srgb, var(--accent) 9%, transparent); border: none; border-radius: 6px; padding: 3px 7px; margin: -3px -7px; outline: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 
 /* color chip + palette popover */
 .evm-modal .cat-chipwrap { position: relative; flex: 0 0 auto; display: inline-flex; }
@@ -316,7 +316,7 @@
    New Event modal — redesign (see ~/Downloads/claude-design).
    `.event-modal` IS the card (the <Modal> portals it inside `.ui-overlay`,
    which supplies the centered scrim). Design tokens (--surface2, --hi,
-   --serif…) are aliased here onto the app's real CSS vars so the design
+   --evm-font…) are aliased here onto the app's real CSS vars so the design
    CSS ports almost verbatim and re-themes automatically (incl. light mode).
    ============================================================ */
 .evm-modal {
@@ -325,7 +325,7 @@
   --surface2: var(--surface-2);
   --border2: var(--border-soft);
   --hi: var(--fg);
-  --serif: var(--editor-font, 'Lora', Georgia, serif);
+  --evm-font: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
   --mono: "Monaspace Xenon", ui-monospace, monospace;
   --azure: var(--blue);
   --orchid: var(--accent-purple, var(--violet));
@@ -353,7 +353,7 @@
 .evm-modal .evm-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 20px 10px; }
 .evm-modal .evm-mark { width: 24px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
 .evm-modal .evm-htext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.evm-modal .evm-title { font-family: var(--serif); font-weight: 600; font-size: 19px; letter-spacing: -.01em; color: var(--hi); line-height: 1.1; }
+.evm-modal .evm-title { font-family: var(--evm-font); font-weight: 600; font-size: 19px; letter-spacing: -.01em; color: var(--hi); line-height: 1.1; }
 .evm-modal .evm-sub { font-size: 11px; color: var(--faint); letter-spacing: .02em; }
 .evm-modal .evm-x { margin-left: auto; width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 7px; color: var(--lo); cursor: pointer; appearance: none; background: none; border: none; padding: 0; font: inherit; }
 .evm-modal .evm-x:hover { background: rgba(255, 255, 255, .06); color: var(--hi); }
@@ -368,9 +368,9 @@
    scrolling. `.set-cols` opts back into its own capped internal scroll below. */
 .evm-modal .evm-body > * { flex-shrink: 0; }
 
-/* big serif title input */
+/* big prose-font title input */
 .evm-modal .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
-.evm-modal .evm-titlein { width: 100%; border: none; outline: none; background: none; font-family: var(--serif); font-size: 23px; font-weight: 600; letter-spacing: -.015em; color: var(--hi); padding: 2px 0 9px; border-bottom: 1px solid var(--border2); transition: border-color .15s; }
+.evm-modal .evm-titlein { width: 100%; border: none; outline: none; background: none; font-family: var(--evm-font); font-size: 23px; font-weight: 600; letter-spacing: -.015em; color: var(--hi); padding: 2px 0 9px; border-bottom: 1px solid var(--border2); transition: border-color .15s; }
 .evm-modal .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; font-family: var(--mono); }
 .evm-modal .evm-titlein:focus { border-bottom-color: var(--accent); }
 
@@ -390,7 +390,7 @@
 .evm-modal .evm-in input, .evm-modal .evm-in textarea { flex: 1; min-width: 0; border: none; outline: none; background: none; font-family: var(--mono); font-size: 13.5px; color: var(--hi); }
 .evm-modal .evm-in textarea { resize: none; line-height: 1.6; min-height: 48px; }
 .evm-modal .evm-in input::placeholder, .evm-modal .evm-in textarea::placeholder { color: var(--faint); }
-.evm-modal .evm-in.serif input, .evm-modal .evm-in.serif textarea { font-family: var(--serif); font-size: 15px; }
+.evm-modal .evm-in.serif input, .evm-modal .evm-in.serif textarea { font-family: var(--evm-font); font-size: 15px; }
 .evm-modal .evm-in.serif textarea { line-height: 1.55; }
 .evm-modal .evm-in.serif input::placeholder, .evm-modal .evm-in.serif textarea::placeholder { font-style: italic; }
 

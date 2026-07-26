@@ -14,8 +14,8 @@
 //   • a CodeMirror scroll SNAPSHOT (`snapshotByPath`) — a StateEffect anchored to a DOCUMENT
 //     POSITION, used by the source/CodeMirror Editor (the DEFAULT surface). A raw pixel offset is
 //     UNRELIABLE there: CodeMirror virtualizes off-screen lines with ESTIMATED heights (line
-//     wrapping is on by default), and the note title is an async-measured block widget (the Lora
-//     serif loads late, then a ResizeObserver re-measures). So a pixel scrollTop set on a fresh
+//     wrapping is on by default), and the note title is an async-measured block widget (the
+//     Monaspace prose font loads late, then a ResizeObserver re-measures). So a pixel scrollTop set on a fresh
 //     view CLAMPS against an under-measured scrollHeight — landing at the BOTTOM — and the late
 //     reflow cements it. `view.scrollSnapshot()` records the position instead, and CodeMirror
 //     re-scrolls to it as it measures (applied via the new view's `scrollTo` config). Stored

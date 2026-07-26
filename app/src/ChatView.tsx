@@ -9,8 +9,8 @@
 // Code features light up with ZERO code changes here — nothing is hardcoded.
 //
 // Prose (both the user's messages AND the assistant's replies) renders through renderNoteBody,
-// the SAME markdown pipeline notes use, so a chat reads exactly like the editor (Lora, math,
-// code, wikilinks, tags). There is NO API fallback by design — if `claude` isn't installed the
+// the SAME markdown pipeline notes use, so a chat reads exactly like the editor (mono prose,
+// math, code, wikilinks, tags). There is NO API fallback by design — if `claude` isn't installed the
 // backend emits {error, code:"no-claude"} and we show a setup state.
 import { createSignal, onMount, onCleanup, For, Show, createEffect, createMemo } from "solid-js";
 import { createStore, produce } from "solid-js/store";

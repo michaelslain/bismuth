@@ -6,9 +6,53 @@
 
 /* ── Tokens ──────────────────────────────────────────────────────────────── */
 :root {
-  /* The UI monospace font stack (Monaspace Xenon) shared by buttons, modal text,
-     and select triggers — defined once so the stack can't drift between them. */
+  /* The UI monospace font stack shared by buttons, modal text, and select
+     triggers — defined once so the stack can't drift between them. This literal
+     is only the first-paint fallback (before settings hydrate); at runtime
+     settingsCssVars.ts overrides it from appearance.uiFont (FONT_STACKS). */
   --ui-font-stack: "Monaspace Xenon", ui-monospace, monospace;
+
+  /* Fixed type scale (design/ascii/design-system/tokens/typography.css) — static,
+     not settings-driven (contrast the four settings-backed sizes in settingsCssVars.ts:
+     --editor-font-size/--ui-font-size/--tab-font-size/--mono-scale). Stage 3 rewrites
+     ui.css geometry against these. */
+  --fs-micro: 10.5px;   /* eyebrows, meta, legends, status bar */
+  --fs-ui: 11.5px;      /* rail, tabs, tables, chrome — the workhorse */
+  --fs-body: 13px;      /* note prose in panels */
+  --fs-body-lg: 13.5px; /* note prose in the full editor column */
+  --fs-lead: 15px;      /* section heads inside prose */
+  --fs-title: 19px;     /* panel titles */
+  --fs-display: 24px;   /* note titles, the one big size */
+
+  --lh-tight: 1.4;
+  --lh-ui: 1.7;
+  --lh-prose: 1.9;
+  --lh-grid: 1;         /* ASCII fields: line-height must equal the cell height */
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 600;
+
+  /* Eyebrows/labels are UPPERCASE and widely tracked; body text is never tracked. */
+  --ls-eyebrow: .14em;
+  --ls-label: .06em;
+  --ls-display: -.01em;
+
+  /* Corners, rules, elevation, motion (design/ascii/design-system/tokens/effects.css).
+     Nothing is pill-round. */
+  --r-chip: 2px;
+  --r-control: 3px;
+  --r-card: 4px;
+  --r-panel: 5px;
+  --rule: 1px solid var(--border);
+  --rule-soft: 1px solid var(--border-soft);
+  --accent-edge: 2px solid var(--accent);   /* frontmatter + callout left border */
+
+  --dur-fast: 120ms;
+  --dur: 150ms;
+  --ease: cubic-bezier(.2,.6,.3,1);
+  --blink: 1.1s;        /* caret step-end blink */
+  --sheen: 8s;          /* wordmark gradient traverse */
 }
 
 /* ── Button ──────────────────────────────────────────────────────────────── */
@@ -120,7 +164,7 @@
 .ui-input {
   width: 100%;
   box-sizing: border-box;
-  /* Input VALUES use the prose font (Lora) like note bodies; reads optically
+  /* Input VALUES use the prose font (--editor-font) like note bodies; reads optically
      smaller than mono so the size is bumped a touch. */
   font-family: var(--editor-font);
   font-size: 15px;
@@ -132,8 +176,8 @@
   outline: none;
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
-/* The placeholder is UI chrome, not typed prose — mono (not the value's Lora) at the standard
-   13px UI size, so a hint reads distinctly from what you actually type. */
+/* The placeholder is UI chrome, not typed prose — the UI font stack (not the value's
+   prose font) at the standard 13px UI size, so a hint reads distinctly from what you actually type. */
 .ui-input::placeholder { color: var(--text-muted); font-family: var(--ui-font-stack); font-size: 13px; }
 .ui-input:hover:not(:focus) { border-color: var(--border); }
 /* Signature focus treatment: accent border + a soft accent glow ring. */

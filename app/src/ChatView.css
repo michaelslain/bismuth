@@ -2,7 +2,7 @@
    NOTEBOOK-TRANSCRIPT design: the chat reads as a NOTE, not a messaging app. No message
    bubbles — no per-turn fill, border, or left/right alignment. A turn is a quiet uppercase
    speaker label ("You" / the daemon's persona name) followed by plain note prose, set in the
-   SAME 680px Lora reading column the CodeMirror editor uses (BlockEditor.css: .block-editor
+   SAME 680px mono-prose reading column the CodeMirror editor uses (BlockEditor.css: .block-editor
    padding-inline 40px + .block-editor-col max-width 680px). Separation between turns is
    whitespace. Thinking + tool calls are quiet one-line disclosures that expand to left-ruled
    excerpts; the permission prompt is the one affordance that keeps chrome, as a callout.
@@ -363,13 +363,13 @@
   gap: 26px;
 }
 
-/* Empty state via <EmptyState>/.ui-empty — Lora-italic note prose (the flashcards idiom). */
+/* Empty state via <EmptyState>/.ui-empty — italic note prose (the flashcards idiom). */
 .chat-empty.ui-empty-block {
   max-width: 440px;
   padding: 24px;
 }
 .chat-empty .ui-empty {
-  font-family: var(--editor-font, "Lora", serif);
+  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
   font-style: italic;
   font-size: 15px;
   line-height: 1.6;
@@ -497,7 +497,7 @@
    prose. Retires the old .chat-bubble.user accent fill + hardcoded #fff (no fill left to
    need --on-accent). .user/.assistant remain as inert hooks. ───────────────────────────── */
 .chat-bubble {
-  font-family: var(--editor-font, "Lora", serif);
+  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
   font-size: var(--editor-font-size, 18px);
   line-height: var(--prose-line-height, 1.65);
   color: var(--fg);

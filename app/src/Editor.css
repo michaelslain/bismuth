@@ -11,7 +11,7 @@
    already match there:
      - .cm-wikilink / .cm-link → color var(--accent); text-decoration none;
        border-bottom 1px solid var(--accent-soft)  (soft underline)
-     - .cm-h1 → inherits var(--editor-font) (Lora) + var(--fg); weight 600; tight tracking
+     - .cm-h1 → inherits var(--editor-font) (Monaspace) + var(--fg); weight 600; tight tracking
      - .cm-h2 → inherits var(--editor-font); weight 600; letter-spacing -0.01em
    The H1 *note title* (the editable `# <title>` row) is styled in NoteTitle.css.
    Body `#tags` have NO decoration class in live-preview (only headings consume `#`),

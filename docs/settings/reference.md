@@ -40,13 +40,14 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 |-----|------|---------|-----------------|-----|
 | `theme` | enum | `oxide-duotone` | `oxide-duotone`, `gunmetal-teal`, `rose-gold`, `indigo-oxide`, `forest-oxide`, `full-sheen`, `oxide-duotone-light`, `gunmetal-teal-light`, `rose-gold-light`, `indigo-oxide-light`, `forest-oxide-light`, `full-sheen-light` | Bismuth color theme: oxide-duotone (default) · gunmetal-teal · rose-gold · indigo-oxide · forest-oxide · full-sheen. Selects EVERY color in the app + graph (background, surfaces, border, text, muted, accent, and the graph node palette). |
 | `icon` | enum | `hopper-crystal` | `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings` | App logo mark (favicon + sidebar logo). One of the 14 Bismuth marks. |
-| `editorFont` | enum | `Lora` | `Lora`, `Monaspace Xenon`, `Georgia`, `system-ui` | Editor font family. |
-| `editorFontSize` | number | `16` | min `11`, max `28` | Editor font size (px). |
+| `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor prose font — a Monaspace variant; the whole app is one monospace grid. |
+| `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus. |
+| `editorFontSize` | number | `13.5` | min `11`, max `28` | Editor font size (px). |
 | `sidebarWidth` | number | `280` | min `200`, max `600` | Left sidebar width (px). |
 | `sidebarGraphHeight` | number | `305` | min `200`, max `500` | Height of the mini graph panel in the sidebar (px). |
-| `uiFontSize` | number | `13` | min `11`, max `16` | Base UI font size — sidebar, tabs, menus (px). |
-| `monoScale` | number | `0.85` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). Monaspace renders visually larger than the serif body at the same px; this shrinks all mono text — UI chrome and code blocks — so it optically matches. `1` = no correction. |
-| `tabFontSize` | number | `12` | min `11`, max `14` | Editor tab label font size (px). |
+| `uiFontSize` | number | `11.5` | min `11`, max `16` | Base UI font size — sidebar, tabs, menus (px) (the ASCII design's `--fs-ui` workhorse size). |
+| `monoScale` | number | `1` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
+| `tabFontSize` | number | `11.5` | min `11`, max `14` | Editor tab label font size (px). |
 | `sidebarIconFontSize` | number | `15` | min `12`, max `20` | Sidebar header icon button size (px). |
 | `paletteInputFontSize` | number | `15` | min `13`, max `18` | Command palette search-input font size (px). |
 

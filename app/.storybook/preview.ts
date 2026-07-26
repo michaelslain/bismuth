@@ -1,14 +1,25 @@
 import type { Preview } from "storybook-solidjs-vite";
 
 // ── Fonts ─────────────────────────────────────────────────────────────────────
-// Same font faces the app entry (src/index.tsx) loads: Lora (prose / input values)
-// + Monaspace Xenon (the UI monospace used by buttons, chips, select triggers).
-// Without these the components fall back to the browser default serif/mono.
-import "@fontsource/lora/400.css";
-import "@fontsource/lora/700.css";
-import "@fontsource/lora/400-italic.css";
+// Same font faces the app entry (src/index.tsx) loads: all five Monaspace variants —
+// one family does the whole interface (prose/input values AND the UI monospace used
+// by buttons, chips, select triggers). Without these the components fall back to the
+// browser default.
 import "@fontsource/monaspace-xenon/400.css";
+import "@fontsource/monaspace-xenon/500.css";
 import "@fontsource/monaspace-xenon/700.css";
+import "@fontsource/monaspace-neon/400.css";
+import "@fontsource/monaspace-neon/500.css";
+import "@fontsource/monaspace-neon/700.css";
+import "@fontsource/monaspace-argon/400.css";
+import "@fontsource/monaspace-argon/500.css";
+import "@fontsource/monaspace-argon/700.css";
+import "@fontsource/monaspace-krypton/400.css";
+import "@fontsource/monaspace-krypton/500.css";
+import "@fontsource/monaspace-krypton/700.css";
+import "@fontsource/monaspace-radon/400.css";
+import "@fontsource/monaspace-radon/500.css";
+import "@fontsource/monaspace-radon/700.css";
 
 // ── Stylesheets ───────────────────────────────────────────────────────────────
 // App.css supplies the global chrome the primitives lean on beyond their own file:

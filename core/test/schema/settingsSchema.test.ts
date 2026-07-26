@@ -57,9 +57,18 @@ test("editorFont enum carries the EDITOR_FONTS list", () => {
   const appearance = objectFields(SETTINGS_SCHEMA.appearance);
   expect(appearance.editorFont.type).toEqual({
     kind: "enum",
-    values: ["Lora", "Monaspace Xenon", "Georgia", "system-ui"],
+    values: ["Monaspace Xenon", "Monaspace Neon", "Monaspace Argon", "Monaspace Krypton", "Monaspace Radon"],
   });
-  expect(appearance.editorFont.default).toBe("Lora");
+  expect(appearance.editorFont.default).toBe("Monaspace Xenon");
+});
+
+test("uiFont enum carries the EDITOR_FONTS list", () => {
+  const appearance = objectFields(SETTINGS_SCHEMA.appearance);
+  expect(appearance.uiFont.type).toEqual({
+    kind: "enum",
+    values: ["Monaspace Xenon", "Monaspace Neon", "Monaspace Argon", "Monaspace Krypton", "Monaspace Radon"],
+  });
+  expect(appearance.uiFont.default).toBe("Monaspace Xenon");
 });
 
 test("graph.repulsion is a number with the old slider bounds and default", () => {
