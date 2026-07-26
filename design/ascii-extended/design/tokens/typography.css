@@ -1,0 +1,52 @@
+/* Bismuth ASCII — type.
+   One family does the whole interface: Monaspace. Every surface sits on the
+   same monospace cell, which is what makes box-drawing, meters, tables and the
+   graph field line up without any layout code.
+
+   --ui-font-stack is the app's existing variable name (app/src/ui/ui.css).
+   --editor-font is the app's prose variable; in this direction it is ALSO mono. */
+
+:root {
+  --ui-font-stack: 'Monaspace Xenon', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --editor-font: var(--ui-font-stack);
+
+  /* Variant stacks — swap --ui-font-stack to one of these per surface or per user setting. */
+  --font-xenon:   'Monaspace Xenon', ui-monospace, monospace;    /* slab — canonical */
+  --font-neon:    'Monaspace Neon', ui-monospace, monospace;     /* grotesque — dense UI */
+  --font-argon:   'Monaspace Argon', ui-monospace, monospace;    /* humanist — long prose */
+  --font-krypton: 'Monaspace Krypton', ui-monospace, monospace;  /* mechanical — data */
+  --font-radon:   'Monaspace Radon', ui-monospace, monospace;    /* handwriting — annotation */
+  --font-serif:   'Lora', Georgia, serif;                        /* legacy prose only */
+
+  /* Sizes. Nothing below 10.5px ships. */
+  --fs-micro: 10.5px;   /* eyebrows, meta, legends, status bar */
+  --fs-ui: 11.5px;      /* rail, tabs, tables, chrome — the workhorse */
+  --fs-body: 13px;      /* note prose in panels */
+  --fs-body-lg: 13.5px; /* note prose in the full editor column */
+  --fs-lead: 15px;      /* section heads inside prose */
+  --fs-title: 19px;     /* panel titles */
+  --fs-display: 24px;   /* note titles, the one big size */
+
+  --lh-tight: 1.4;
+  --lh-ui: 1.7;
+  --lh-prose: 1.9;
+  --lh-grid: 1;         /* ASCII fields: line-height must equal the cell height */
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 600;
+
+  /* Eyebrows/labels are UPPERCASE and widely tracked; body text is never tracked. */
+  --ls-eyebrow: .14em;
+  --ls-label: .06em;
+  --ls-display: -.01em;
+}
+
+/* Face scopes — put one on <html> (or any subtree) to swap the whole surface to
+   another Monaspace variant. They are metric-compatible, so nothing reflows.
+   Scoped to `html` so they outrank the :root default rather than tie with it. */
+html.face-xenon,   .face-xenon   { --ui-font-stack: var(--font-xenon); }
+html.face-neon,    .face-neon    { --ui-font-stack: var(--font-neon); }
+html.face-argon,   .face-argon   { --ui-font-stack: var(--font-argon); }
+html.face-krypton, .face-krypton { --ui-font-stack: var(--font-krypton); }
+html.face-radon,   .face-radon   { --ui-font-stack: var(--font-radon); }
