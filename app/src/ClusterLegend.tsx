@@ -6,6 +6,8 @@
 // --text-muted), so it tracks light and dark themes instead of baking in dark greys.
 import { For, createMemo } from "solid-js";
 import "./ClusterLegend.css";
+// ASCII register: the swatch is a coloured hub glyph, the rows sit on --fs-ui.
+import "./graph/asciiGraph.css";
 
 export interface ClusterRow {
   community: number;
@@ -45,7 +47,10 @@ export function ClusterLegend(props: {
             onMouseLeave={() => props.onHover?.(null)}
             title={row.label}
           >
-            <span class="cluster-swatch" style={{ background: row.color }} />
+            {/* The cluster's swatch is the degree ramp's hub glyph in the cluster's own colour —
+                the same "@" the field draws its hubs with (tokens/ascii.css --node-hub), not a
+                rounded colour chip. */}
+            <span class="cluster-glyph" style={{ color: row.color }} aria-hidden="true">@</span>
             <span class="cluster-label">
               {row.label}
             </span>
