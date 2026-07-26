@@ -8,6 +8,11 @@
 //      hubs stay roughly spherical while sparse leaves flatten toward the Y=0 plane.
 //      Starting from PivotMDS means it converges in a fraction of the iterations a
 //      random start needs — that's the whole point, since the force solve is the expensive part.
+//   3. In 2D (the default; LayoutOptions.clusterLayout) a GRID-ISLAND post-pass on the seed: every
+//      top-level cluster is translated rigidly onto a coarse lattice cell with provable empty lanes
+//      between neighbours, and the refine then settles its members around that fixed anchor. See the
+//      "GRID ISLANDS" block for why the organic settle alone could not separate this vault's clusters
+//      (measured: it IS clusterable — Q = 0.45 — but 75% of its edges run through shared tag hubs).
 //
 // Pure (no DOM, no Bun/fs) so it runs in both Bun (core) and a browser Worker (app).
 import {
@@ -99,6 +104,20 @@ export interface LayoutOptions {
    *  finest gets `communityGravity · decay^a` and `communitySeparation · decay^a`. 0 disables the
    *  coarse levels entirely (finest-only = the pre-hierarchy behaviour). See the COMMUNITY_* block. */
   communityLevelDecay?: number;
+  /**
+   * How the TOP-level clusters are arranged (see the GRID_* block below).
+   *   - `"grid"`  — each top-level cluster ("island") is anchored on a coarse GRID cell, biggest
+   *                 islands nearest the centre, with generous empty lanes between neighbours. Its
+   *                 members settle around that fixed anchor; sub-clusters arrange INSIDE the island
+   *                 via the unchanged nested community forces.
+   *   - `"organic"` — the pure force settle (islands find their own places via community gravity +
+   *                 community-level collide). This is the pre-grid behaviour, bit-for-bit.
+   * DEFAULT: `"grid"` in 2D, `"organic"` in 3D. Grid mode only takes effect in 2D (a flat lattice
+   * would squash a 3D cloud) and only when the nodes actually carry communities; it is also skipped
+   * for an incremental (`fixedIds`) rebuild, where pinned nodes must hold the positions the previous
+   * — already gridded — build gave them.
+   */
+  clusterLayout?: "grid" | "organic";
 }
 
 export type Positions = Record<string, [number, number, number]>;
@@ -154,6 +173,11 @@ const LINK_STRENGTH = 0.18;
 // ×) — 3D keeps the gentler defaults for both.
 const MODE_2D_REPULSION_MULT = 3;
 const MODE_2D_CENTERING_MULT = 0.5;
+// Grid mode retargets the centering spring from the origin to each node's island ANCHOR, which makes
+// it the force that holds the placement rather than a gentle pull to the middle — so it keeps the full
+// `centering` strength instead of the halved 2D value. (The "let communities breathe" reason for
+// halving it is served by the lattice's own lanes in grid mode.)
+const GRID_CENTERING_MULT = 1;
 // 0.65 (was 1.2): that extra padding on TOP of the already-larger 2D collide floor (COLLIDE_RATIO ×
 // MODE_2D_SPACING) is what produced the "condensed honeycomb" look — on the real 2246-node vault it
 // forced ~every leaf node to the exact same collide radius, so nearly all of them settled at a
@@ -314,26 +338,251 @@ const COMMUNITY_MAX_STEP = 1.5;
 //    invariant fell to 0.56. Unpadded, the same run improves every level and holds 0.82.
 // (COMMUNITY_LEVEL_DECAY itself is declared next to DEFAULTS, which needs it at module init.)
 
+// --- GRID ISLANDS (the 2D default; LayoutOptions.clusterLayout) -----------------------------------
+// Measured verdict on the reference vault (2114 nodes / 4535 deduped edges): its Louvain partition
+// has modularity Q = 0.45 at the finest level, 0.57 mid, 0.62 coarsest, against ~0.00 for a random
+// partition of the same group count. The vault is GENUINELY, strongly clusterable — so when the
+// picture still read as "one intermingled blob", the failure was the LAYOUT's, not the data's.
+//
+// Why the organic settle can't win it: the same partition also shows the vault is heavily
+// TAG-MEDIATED hub-and-spoke — 75% of all edges are incident to a tag node, and the top 1% of nodes
+// by degree touch 73% of the edges. Communities therefore share hubs, and a shared hub can only sit
+// in one place: whatever the community forces do, a few very heavy bridges keep dragging clusters
+// back into each other. (For comparison: with tag nodes removed the note-only graph scores Q = 0.86,
+// and the vault's own FOLDER tree scores Q = -0.07 — folders carry no structure at all.)
+//
+// So the top level's positions are IMPOSED rather than negotiated: each top-level cluster (an
+// "island") gets a cell on a coarse square lattice, ordered largest-first from the centre outward,
+// and its members settle around that fixed anchor. Sub-clusters still arrange themselves INSIDE the
+// island through the unchanged nested community forces — the grid replaces exactly one level of
+// negotiation, the one the bridges were winning.
+//
+// LANE GUARANTEE (why the empty space is provable, not hoped for). An island of packing radius R
+// gets a square block of `span = ceil(R / unit)` cells at pitch `P = 2·unit·(1 + GRID_LANE)`, so
+//     R ≤ span·unit = span·P / (2·(1 + GRID_LANE)).
+// Blocks never overlap, so two islands' anchors are ≥ (spanᵢ + spanⱼ)·P/2 apart along some axis, and
+// the gap between their packing DISCS is
+//     gap ≥ (spanᵢ + spanⱼ)·P/2 − Rᵢ − Rⱼ ≥ GRID_LANE · (Rᵢ + Rⱼ).
+// At GRID_LANE = 0.75 that is 1.5× the mean of the two radii of clear space — comfortably the
+// "at least one island-radius" the design asks for, and independent of `unit`, so the cell-count cap
+// below can only ever make the lanes wider.
+const GRID_LANE = 0.75;
+// An island needs this many members to earn its own cell. Smaller top-level groups (on the reference
+// vault: 143 fully-isolated notes, which are singleton communities at every level) have no structure
+// to summarize — they ride along with the island they already settled nearest to.
+const GRID_MIN_ISLAND = COMMUNITY_MIN_SIZE;
+// Fewest islands a level must yield to be worth gridding. The grid takes the COARSEST level that
+// clears this — 2 is the real floor (one island is not an arrangement), and it must stay that low on
+// purpose: raising it lets a coarse level with only 3 super-clusters be REJECTED, at which point the
+// grid drops down to a finer level and the levels above it get discarded — i.e. sub-clusters land on
+// the lattice with no regard for which parent they belong to, which is exactly the nesting the grid is
+// supposed to preserve ("sub-clusters arrange INSIDE their parent's island").
+const GRID_MIN_ISLANDS = 2;
+// The cell size ("unit" island radius) is a low quantile of the island radii rather than the max, so
+// a single huge island doesn't set the pitch for the whole field and strand the small ones in
+// oversized cells — it takes a multi-cell block instead.
+const GRID_UNIT_QUANTILE = 0.25;
+// Cap on the lattice's WIDTH in cells. This is a READABILITY constraint, not a geometric one: at the
+// 100% (fit) stop the whole lattice maps to ~92% of the field, so two adjacent island anchors land
+// ~0.92·cols/width columns apart on screen — and a capped 20-char cluster name is 26 columns wide
+// (app/src/graph/labelSelection.ts `eyebrowWidthCells`, 0.14em tracking at 11.5px on a 6.3px cell).
+// Measured on the reference vault at 1400×900 (219 columns): the mosaic spans 182 columns, so a width
+// of 6 gives ~30 columns per cell step — a name per island with clear space, where 8 gave only ~23 and
+// two adjacent islands would contend. When the packing wants a wider lattice the unit is grown until
+// it fits, which only widens the lanes (see above). A level with more than ~GRID_MAX_SIDE² islands
+// can't be satisfied and degrades to best-effort; the renderer then drops contending names rather than
+// overlapping them, which is also what happens at the FINER aggregate stops (46 and 75 entities on the
+// reference vault) where contention is inherent.
+const GRID_MAX_SIDE = 6;
+const GRID_UNIT_GROWTH = 1.25;
+// Target width:height of the whole mosaic. A graph pane is LANDSCAPE (~1.6:1 on a normal window), and
+// the world→screen projection is isotropic, so a SQUARE mosaic fitted to the pane's height leaves ~40%
+// of the width empty — measured as an ink coverage of 0.53 against 0.85 for an aspect-matched one.
+// Implemented as an anisotropic placement score (x compressed by this factor), so the spiral grows a
+// wide ellipse instead of a circle. Not a hard bound — one enormous island can still make the mosaic
+// taller than this — just the preference the placement order expresses.
+const GRID_ASPECT = 1.6;
+// Spring strength multiplier for a link that CROSSES an island boundary (and for the orphan tethers,
+// which are hash-picked and therefore cross freely). 0 = released entirely.
+// This is the piece without which the whole thing does not work, and it took a measurement to see:
+// with the inter-community multiplier (0.2) still applied across islands, the reference vault's
+// mosaic formed in the right ARRANGEMENT but contracted to ~0.5× its lattice — settled island
+// centroids sat at 0.26-0.68 of their anchor magnitude, and 64 of 105 island pairs still overlapped.
+// The cause is arithmetic, not subtle: 4535 edges, most of them island-crossing and stretched to
+// ~1000 world units against a 29-unit rest length, each contributing ~0.036 of that separation per
+// tick, collectively overwhelm a single 0.13 anchor spring per node. The same applies to the 572
+// orphan tethers (strength 1.2 each, endpoints chosen by hash so they criss-cross the whole mosaic).
+// Releasing them is not a fudge — it is the definition of "imposed rather than negotiated": inter-island
+// edges are still DRAWN, they just no longer vote on where the islands go. Orphans lose nothing by it
+// either: the anchor spring places each one on its host island, which is what the tethers were for.
+const GRID_INTER_ISLAND_LINK = 0;
+
+/** One island's square block on the lattice. */
+export interface IslandCell { comm: number; col: number; row: number; span: number }
+
+/**
+ * Place each island on the coarse lattice and return its ANCHOR in world coordinates (the block's
+ * centre, recentred so the whole mosaic straddles the origin). Pure + deterministic: islands are
+ * placed largest-radius-first (ties → smaller community id) into the free block whose centre is
+ * nearest the origin (ties → smaller row, then column), so the biggest masses end up central and the
+ * same island set always produces the same mosaic. See the GRID_* block above for the lane
+ * guarantee and the cell-count cap.
+ *
+ * O(islands · side²) with `side` in the low tens — run once per layout, never per tick.
+ */
+export function gridIslandAnchors(
+  islands: { comm: number; radius: number }[],
+  opts: { lane?: number; unitQuantile?: number; maxSide?: number; aspect?: number } = {},
+): { anchors: Map<number, [number, number]>; cells: IslandCell[]; pitch: number; unit: number; side: number } {
+  const lane = opts.lane ?? GRID_LANE;
+  const quantile = opts.unitQuantile ?? GRID_UNIT_QUANTILE;
+  const maxSide = opts.maxSide ?? GRID_MAX_SIDE;
+  const aspect = Math.max(1e-6, opts.aspect ?? GRID_ASPECT);
+  const anchors = new Map<number, [number, number]>();
+  if (islands.length === 0) return { anchors, cells: [], pitch: 0, unit: 0, side: 0 };
+
+  // Cell size: a low quantile of the island radii, grown until the lattice's WIDTH fits `maxSide` (see
+  // the GRID_MAX_SIDE comment — the cap is about label width, so it is the column count that matters,
+  // and growing the unit shrinks every span, which can only widen the lanes).
+  const ascending = islands.map((i) => Math.max(1e-6, i.radius)).sort((a, b) => a - b);
+  let unit = ascending[Math.min(ascending.length - 1, Math.floor(ascending.length * quantile))];
+  const spanFor = (r: number, u: number) => Math.max(1, Math.ceil(r / u - 1e-9));
+  const sideFor = (u: number) => {
+    let area = 0;
+    for (const it of islands) area += spanFor(it.radius, u) ** 2;
+    return Math.ceil(Math.sqrt(area * aspect)); // width of an `aspect`-shaped block of that many cells
+  };
+  // Bounded: each step shrinks every span, and all-spans-1 gives side = ceil(sqrt(k)), the floor.
+  for (let guard = 0; guard < 64 && sideFor(unit) > maxSide && unit < ascending[ascending.length - 1]; guard++) {
+    unit *= GRID_UNIT_GROWTH;
+  }
+  const pitch = 2 * unit * (1 + lane);
+
+  const order = [...islands].sort((a, b) => b.radius - a.radius || a.comm - b.comm);
+  const spans = new Map<number, number>();
+  for (const it of order) spans.set(it.comm, spanFor(it.radius, unit));
+  // Search window: big enough to hold every block even in the degenerate "one long row" case.
+  let maxSpan = 1;
+  for (const s of spans.values()) if (s > maxSpan) maxSpan = s;
+  const W = sideFor(unit) + maxSpan + 1;
+  const stride = 2 * W + 1;
+  const occupied = new Set<number>();
+  const key = (c: number, r: number) => (c + W) * stride + (r + W);
+  const blockFree = (c: number, r: number, s: number) => {
+    for (let dc = 0; dc < s; dc++) for (let dr = 0; dr < s; dr++) if (occupied.has(key(c + dc, r + dr))) return false;
+    return true;
+  };
+  // Candidate top-left positions per span, pre-ordered by |block centre| (then row, then col) so
+  // placement is a single scan to the first free slot instead of a full O(W²) argmin per island.
+  const candCache = new Map<number, { c: number; r: number }[]>();
+  const candidates = (s: number) => {
+    let list = candCache.get(s);
+    if (!list) {
+      list = [];
+      for (let c = -W; c + s <= W; c++) for (let r = -W; r + s <= W; r++) list.push({ c, r });
+      // Anisotropic: x compressed by `aspect`, so equal score is an ellipse and the mosaic grows
+      // wider than tall — matching the landscape pane it will be fitted into.
+      const score = (c: number, r: number) => ((c + s / 2) / aspect) ** 2 + (r + s / 2) ** 2;
+      list.sort((a, b) => score(a.c, a.r) - score(b.c, b.r) || a.r - b.r || a.c - b.c);
+      candCache.set(s, list);
+    }
+    return list;
+  };
+
+  const cells: IslandCell[] = [];
+  for (const it of order) {
+    const s = spans.get(it.comm)!;
+    for (const cand of candidates(s)) {
+      if (!blockFree(cand.c, cand.r, s)) continue;
+      for (let dc = 0; dc < s; dc++) for (let dr = 0; dr < s; dr++) occupied.add(key(cand.c + dc, cand.r + dr));
+      cells.push({ comm: it.comm, col: cand.c, row: cand.r, span: s });
+      break;
+    }
+  }
+  // Recentre on the mosaic's bounding box so the field straddles the origin (the renderer fits a
+  // symmetric box; an off-centre mosaic would waste a margin on one side).
+  let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+  for (const cl of cells) {
+    if (cl.col < minC) minC = cl.col;
+    if (cl.col + cl.span > maxC) maxC = cl.col + cl.span;
+    if (cl.row < minR) minR = cl.row;
+    if (cl.row + cl.span > maxR) maxR = cl.row + cl.span;
+  }
+  const ox = (minC + maxC) / 2, oy = (minR + maxR) / 2;
+  for (const cl of cells) {
+    anchors.set(cl.comm, [(cl.col + cl.span / 2 - ox) * pitch, (cl.row + cl.span / 2 - oy) * pitch]);
+  }
+  return { anchors, cells, pitch, unit, side: Math.max(maxC - minC, maxR - minR) };
+}
+// -------------------------------------------------------------------------------------------------
+
 /** One level of the community hierarchy as the force sees it: a dense per-node community index
- *  (-1 = not in a community at this level) and the strength this level acts at. */
+ *  (-1 = not in a community at this level) and the strength this level acts at. `anchorX/anchorY`
+ *  (grid mode only, see the GRID_* block) replace the level's running CENTROID with a fixed target
+ *  per community — NaN for a community with no anchor, which falls back to the centroid. */
 interface CommunityLevel {
   comm: Int32Array;
   numComms: number;
   gravity: number;
   separation: number;
+  anchorX?: Float64Array;
+  anchorY?: Float64Array;
 }
 
 /** Per-level precomputed geometry (sizes, packing radii, participating communities, scratch). */
-interface LevelState {
-  comm: Int32Array;
-  numComms: number;
-  gravity: number;
-  separation: number;
+interface LevelState extends CommunityLevel {
   count: Float64Array;
   packRadius: Float64Array;
   big: number[];
   cx: Float64Array; cy: Float64Array; cz: Float64Array;
   rx: Float64Array; ry: Float64Array; rz: Float64Array;
+}
+
+/**
+ * Per-level member counts + packing radii for a level stack (finest first). Extracted from
+ * `communityForce` because grid placement needs the SAME radii the separation force uses — the
+ * recursive definition (a coarse level packs its CHILDREN's radii, not raw node radii; see invariant
+ * 2 in the "Nesting" block) is exactly what makes a super-cluster's footprint realistic, and sizing
+ * grid cells from the flat estimate instead would let islands bleed into their lanes.
+ */
+function levelPackRadii(
+  levels: CommunityLevel[],
+  radii: Float64Array,
+  dim: 2 | 3,
+  n: number,
+): { counts: Float64Array[]; packRadius: Float64Array[] } {
+  const fill = dim === 2 ? COMMUNITY_PACK_FILL_2D : COMMUNITY_PACK_FILL_3D;
+  const counts: Float64Array[] = [];
+  const packRadius: Float64Array[] = [];
+  for (let li = 0; li < levels.length; li++) {
+    const { comm, numComms } = levels[li];
+    const count = new Float64Array(numComms);
+    for (let i = 0; i < n; i++) if (comm[i] >= 0) count[comm[i]]++;
+    const pr = new Float64Array(numComms);
+    if (li === 0) {
+      for (let i = 0; i < n; i++) if (comm[i] >= 0) pr[comm[i]] += Math.pow(radii[i], dim);
+    } else {
+      const childComm = levels[li - 1].comm;
+      const childN = levels[li - 1].numComms;
+      const childPr = packRadius[li - 1];
+      // child community → this level's community (well-defined: the levels are strictly nested).
+      const parentOf = new Int32Array(childN).fill(-1);
+      for (let i = 0; i < n; i++) {
+        const ch = childComm[i];
+        if (ch >= 0 && comm[i] >= 0) parentOf[ch] = comm[i];
+      }
+      for (let c = 0; c < childN; c++) {
+        const p = parentOf[c];
+        if (p >= 0) pr[p] += Math.pow(childPr[c], dim);
+      }
+      // Nodes with no community at the finer level still occupy room in this one.
+      for (let i = 0; i < n; i++) if (comm[i] >= 0 && childComm[i] < 0) pr[comm[i]] += Math.pow(radii[i], dim);
+    }
+    for (let c = 0; c < numComms; c++) pr[c] = Math.pow(pr[c] / fill, 1 / dim);
+    counts.push(count);
+    packRadius.push(pr);
+  }
+  return { counts, packRadius };
 }
 
 /**
@@ -353,46 +602,18 @@ function communityForce(
   radii: Float64Array,
 ): (alpha: number) => void {
   const n = nodes.length;
-  const fill = dim === 2 ? COMMUNITY_PACK_FILL_2D : COMMUNITY_PACK_FILL_3D;
-
-  // Built with an explicit loop (not .map): each coarser level's packing radius is derived from the
-  // level below it, so the array has to be readable while it is still being filled.
-  const states: LevelState[] = [];
-  for (let li = 0; li < levels.length; li++) {
-    const lv = levels[li];
-    const { comm, numComms } = lv;
-    const count = new Float64Array(numComms);
-    for (let i = 0; i < n; i++) if (comm[i] >= 0) count[comm[i]]++;
-    // Packing radius: the finest level packs raw node radii; a coarser level packs the (unpadded —
-    // see invariant 2 above) packing radii of the level below it.
-    const packRadius = new Float64Array(numComms);
-    if (li === 0) {
-      for (let i = 0; i < n; i++) if (comm[i] >= 0) packRadius[comm[i]] += Math.pow(radii[i], dim);
-    } else {
-      const child = states[li - 1];
-      // child community → this level's community (well-defined: the levels are strictly nested).
-      const parentOf = new Int32Array(child.numComms).fill(-1);
-      for (let i = 0; i < n; i++) {
-        const ch = child.comm[i];
-        if (ch >= 0 && comm[i] >= 0) parentOf[ch] = comm[i];
-      }
-      for (let c = 0; c < child.numComms; c++) {
-        const p = parentOf[c];
-        if (p >= 0) packRadius[p] += Math.pow(child.packRadius[c], dim);
-      }
-      // Nodes with no community at the finer level still occupy room in this one.
-      for (let i = 0; i < n; i++) if (comm[i] >= 0 && child.comm[i] < 0) packRadius[comm[i]] += Math.pow(radii[i], dim);
-    }
-    for (let c = 0; c < numComms; c++) packRadius[c] = Math.pow(packRadius[c] / fill, 1 / dim);
+  const { counts, packRadius: packRadii } = levelPackRadii(levels, radii, dim, n);
+  const states: LevelState[] = levels.map((lv, li) => {
+    const count = counts[li];
     // Communities big enough to repel each other as coarse bodies (index list, computed once).
     const big: number[] = [];
-    for (let c = 0; c < numComms; c++) if (count[c] >= COMMUNITY_MIN_SIZE) big.push(c);
-    states.push({
-      comm, numComms, gravity: lv.gravity, separation: lv.separation, count, packRadius, big,
-      cx: new Float64Array(numComms), cy: new Float64Array(numComms), cz: new Float64Array(numComms),
-      rx: new Float64Array(numComms), ry: new Float64Array(numComms), rz: new Float64Array(numComms),
-    });
-  }
+    for (let c = 0; c < lv.numComms; c++) if (count[c] >= COMMUNITY_MIN_SIZE) big.push(c);
+    return {
+      ...lv, count, packRadius: packRadii[li], big,
+      cx: new Float64Array(lv.numComms), cy: new Float64Array(lv.numComms), cz: new Float64Array(lv.numComms),
+      rx: new Float64Array(lv.numComms), ry: new Float64Array(lv.numComms), rz: new Float64Array(lv.numComms),
+    };
+  });
 
   return (alpha: number) => {
     for (const s of states) {
@@ -450,8 +671,14 @@ function communityForce(
       for (const s of states) {
         const c = s.comm[i];
         if (c < 0) continue;
-        if (s.count[c] >= 2) {
-          const ox = s.cx[c] - (nd.x ?? 0), oy = s.cy[c] - (nd.y ?? 0), oz = dim === 3 ? s.cz[c] - (nd.z ?? 0) : 0;
+        // Gravity target: the level's running CENTROID, or — in grid mode, for a community that owns
+        // a lattice cell — that cell's FIXED anchor, so the island gathers itself onto the grid
+        // instead of drifting with its own centre of mass.
+        const anchored = s.anchorX !== undefined && s.anchorY !== undefined && Number.isFinite(s.anchorX[c]);
+        if (s.count[c] >= 2 || anchored) {
+          const tx = anchored ? s.anchorX![c] : s.cx[c];
+          const ty = anchored ? s.anchorY![c] : s.cy[c];
+          const ox = tx - (nd.x ?? 0), oy = ty - (nd.y ?? 0), oz = dim === 3 ? s.cz[c] - (nd.z ?? 0) : 0;
           const d = Math.sqrt(ox * ox + oy * oy + oz * oz);
           // Fraction of the offset that lies outside the packing radius (0 inside it → no pull at all).
           const excess = d > s.packRadius[c] ? (d - s.packRadius[c]) / d : 0;
@@ -633,7 +860,7 @@ type RL = SimLink<RN>;
 /** A force-link, with an optional flag marking a layout-only "tether" link that reels a disconnected
  *  component into the main mass (stronger + shorter than a real link; see prepareLayout's reel-in),
  *  and (when community forces are active) whether both endpoints sit in the SAME community. */
-type VL = RL & { virtual?: boolean; intra?: boolean };
+type VL = RL & { virtual?: boolean; intra?: boolean; island?: boolean };
 
 /** All layout setup short of running the tick loop: build the adjacency, seed coordinates
  *  (PivotMDS or `initialPositions`), and construct the stopped d3-force simulation. Shared by the
@@ -705,15 +932,16 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
     }
   }
 
+  // Adjacency first; the force LINKS are materialized further down (after the grid pass), because in
+  // grid mode a link's strength depends on whether it crosses an island boundary — which isn't known
+  // until the islands have been placed.
   const adj: number[][] = Array.from({ length: n }, () => []);
-  const links: VL[] = [];
+  const edgePairs: { a: number; b: number }[] = [];
   for (const e of input.edges) {
     const a = index.get(e.from), b = index.get(e.to);
     if (a === undefined || b === undefined || a === b) continue;
     adj[a].push(b); adj[b].push(a);
-    links.push(useCommunity
-      ? { source: e.from, target: e.to, intra: comm[a] >= 0 && comm[a] === comm[b] }
-      : { source: e.from, target: e.to });
+    edgePairs.push({ a, b });
   }
 
   // Node spacing (mirrors the renderer): scale link distance UP as the graph shrinks so a handful of
@@ -727,6 +955,22 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   // the node as DRAWN (the renderer sizes by real degree), and the layout-only tethers must not inflate it.
   const realDeg = adj.map((a) => a.length);
 
+  // Per-node collide radius: leaves keep the uniform spacing floor; hubs get their actual drawn
+  // radius (degree-scaled) so big nodes repel as the circles they're drawn as, not as points. `i`
+  // indexes `nodes`, the same order as `adj`. Degree uses realDeg (real edges only) so the layout-only
+  // tether links below don't inflate an orphan's drawn-size collision radius. Computed HERE (before
+  // the seed) because the grid pass needs it to size islands.
+  const collideMult = dim === 2 ? MODE_2D_COLLIDE_MULT : 1;
+  const radii = Float64Array.from(realDeg, (d) =>
+    collideMult * Math.max(collideFloor, drawnNodeRadius(degreeScale(d)) * COLLIDE_SIZE_PADDING));
+  const collideRadiusFor = (_n: RN, i: number) => radii[i];
+
+  // The community force's level stack, finest first (see the "Nesting" block). Built here so the grid
+  // pass below can read the top level's membership + packing radii before the sim is constructed.
+  const levels: CommunityLevel[] = useCommunity
+    ? [{ comm, numComms, gravity: o.communityGravity, separation: o.communitySeparation }, ...ancestors]
+    : [];
+
   // --- Reel in disconnected components --------------------------------------------------------------
   // A note with no in-view links is its own connected component; many-body repulsion flings it into an
   // empty angular direction at the cloud's edge (reads as a lone node "off to the side", and the recoil
@@ -739,6 +983,7 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   // SAME `links` array as real edges (flagged `virtual`) so forceLink's degree-bias is computed over the
   // combined set — the heavily-real-linked anchor stays put and the (real-edge-less) stray moves IN.
   const mainIdx: number[] = [];
+  const tetherPairs: { a: number; b: number }[] = [];
   if (n > 0 && o.virtualAnchors > 0) {
     const comp = connectedComponents(adj, n);
     const compSize: number[] = [];
@@ -764,7 +1009,7 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
           if (anchor === i || picked.has(anchor)) continue;
           picked.add(anchor);
           adj[i].push(anchor); adj[anchor].push(i); // connect for the PivotMDS seed too (no cap-distance fling)
-          links.push({ source: ids[i], target: ids[anchor], virtual: true });
+          tetherPairs.push({ a: i, b: anchor });
         }
       }
     }
@@ -789,6 +1034,84 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
         }
       })
     : pivotMDS(adj, n, dim, o.numPivots);
+
+  // --- Grid islands (2D default — see the GRID_* block) --------------------------------------------
+  // A POST-PASS ON THE SEED, not a second simulation: the 2D seed is the settled 3D layout flattened,
+  // so every island already carries its organically-settled internal structure. Each island is
+  // translated RIGIDLY onto its lattice cell (structure intact, position imposed), and the settle that
+  // follows then only has to relax the seams — which is why it converges inside the normal tick budget.
+  let anchorX: Float64Array | null = null;
+  let anchorY: Float64Array | null = null;
+  /** Per-node community at the GRIDDED level (null when not in grid mode) — the island boundary the
+   *  link force needs to know about (see GRID_INTER_ISLAND_LINK). */
+  let islandOf: Int32Array | null = null;
+  let forceLevels = levels;
+  const gridMode = o.clusterLayout === "grid" && dim === 2 && useCommunity
+    && !(o.fixedIds && o.fixedIds.length > 0);
+  if (gridMode) {
+    // Grid the COARSEST level that still yields a mosaic worth drawing (see GRID_MIN_ISLANDS). Levels
+    // COARSER than the gridded one are dropped: their separation force would shove whole
+    // super-clusters off the absolute anchors the grid just handed out.
+    const { counts, packRadius } = levelPackRadii(levels, radii, dim, n);
+    let gi = -1;
+    for (let l = levels.length - 1; l >= 0; l--) {
+      let islands = 0;
+      for (let c = 0; c < levels[l].numComms; c++) if (counts[l][c] >= GRID_MIN_ISLAND) islands++;
+      if (islands >= GRID_MIN_ISLANDS) { gi = l; break; }
+    }
+    if (gi >= 0) {
+      const lvl = levels[gi];
+      const count = counts[gi];
+      const islands: { comm: number; radius: number }[] = [];
+      for (let c = 0; c < lvl.numComms; c++) if (count[c] >= GRID_MIN_ISLAND) islands.push({ comm: c, radius: packRadius[gi][c] });
+      const { anchors } = gridIslandAnchors(islands);
+      const ax = new Float64Array(lvl.numComms).fill(NaN);
+      const ay = new Float64Array(lvl.numComms).fill(NaN);
+      for (const [c, a] of anchors) { ax[c] = a[0]; ay[c] = a[1]; }
+      // Seed centroid per community at the gridded level → the rigid translation onto its cell.
+      const scx = new Float64Array(lvl.numComms), scy = new Float64Array(lvl.numComms);
+      for (let i = 0; i < n; i++) {
+        const c = lvl.comm[i];
+        if (c < 0) continue;
+        scx[c] += X[i][0] ?? 0; scy[c] += X[i][1] ?? 0;
+      }
+      for (let c = 0; c < lvl.numComms; c++) if (count[c] > 0) { scx[c] /= count[c]; scy[c] /= count[c]; }
+      const islandComms = [...anchors.keys()].sort((a, b) => a - b);
+      anchorX = new Float64Array(n); anchorY = new Float64Array(n);
+      for (let i = 0; i < n; i++) {
+        const c = lvl.comm[i];
+        let host = c >= 0 && anchors.has(c) ? c : -1;
+        if (host < 0) {
+          // No island of its own (a singleton/tiny top-level group — on a real vault these are the
+          // fully-isolated notes). It rides along with the island it already settled NEAREST to, so it
+          // stays with the neighbourhood it visually belongs to instead of piling up at the origin.
+          let best = Infinity;
+          for (const ic of islandComms) {
+            const d = ((X[i][0] ?? 0) - scx[ic]) ** 2 + ((X[i][1] ?? 0) - scy[ic]) ** 2;
+            if (d < best) { best = d; host = ic; }
+          }
+        }
+        X[i][0] = (X[i][0] ?? 0) + (ax[host] - scx[host]);
+        X[i][1] = (X[i][1] ?? 0) + (ay[host] - scy[host]);
+        anchorX[i] = ax[host]; anchorY[i] = ay[host];
+      }
+      // The gridded level: gravity toward the fixed anchor at FULL strength, separation off.
+      //   - Full strength (not the `communityLevelDecay^gi` an ancestor level normally acts at) because
+      //     this level is no longer a weak hint about where a super-cluster would like to be — it IS
+      //     the placement. Measured on the reference vault with the decayed value (0.6·0.4² = 0.096):
+      //     the finer levels' own gravity (0.6) and separation (0.85) simply overrode the anchors and
+      //     the mosaic never formed — settled island centroids showed no lattice at all and 72 of 105
+      //     island pairs still overlapped. At full strength the centroids land on their cells.
+      //   - Separation off because the lattice already guarantees the lanes, and a community-level
+      //     collide on top would push islands straight back off their cells.
+      forceLevels = [...levels.slice(0, gi), {
+        ...lvl, gravity: o.communityGravity, separation: 0, anchorX: ax, anchorY: ay,
+      }];
+      islandOf = lvl.comm;
+    }
+  }
+  // -------------------------------------------------------------------------------------------------
+
   const nodes: RN[] = ids.map((id, i) => ({
     id,
     x: X[i][0] ?? 0,
@@ -810,18 +1133,20 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
     }
   }
 
-  // Per-node collide radius: leaves keep the uniform spacing floor; hubs get their actual drawn
-  // radius (degree-scaled) so big nodes repel as the circles they're drawn as, not as points. `i`
-  // indexes `nodes`, the same order as `adj` and the sim's node array. Degree uses realDeg (real edges
-  // only) so layout-only tether links above don't inflate an orphan's drawn-size collision radius.
-  const collideMult = dim === 2 ? MODE_2D_COLLIDE_MULT : 1;
-  const collideRadiusFor = (_n: RN, i: number) =>
-    collideMult * Math.max(collideFloor, drawnNodeRadius(degreeScale(realDeg[i])) * COLLIDE_SIZE_PADDING);
   // One link force over real + tether links. Tethers (virtual) are shorter and stronger so a stray is
   // held inside the cloud against the long-range many-body repulsion; real edges keep their own spacing.
   // Community-anisotropic springs (see the COMMUNITY_* block): intra-community edges pull harder over
   // a shorter rest length, inter-community edges are weak + long, so modularity turns into geometry.
   // Tethers are exempt (they exist to reel orphans in, not to express community structure).
+  // `island` is set only in grid mode: false = the edge CROSSES an island boundary (see
+  // GRID_INTER_ISLAND_LINK for why those springs are released).
+  const links: VL[] = edgePairs.map(({ a, b }) => {
+    const l: VL = { source: ids[a], target: ids[b] };
+    if (useCommunity) l.intra = comm[a] >= 0 && comm[a] === comm[b];
+    if (islandOf) l.island = islandOf[a] >= 0 && islandOf[a] === islandOf[b];
+    return l;
+  });
+  for (const { a, b } of tetherPairs) links.push({ source: ids[a], target: ids[b], virtual: true });
   const linkDistFor = !useCommunity
     ? (_l: VL) => linkDist
     : (l: VL) => linkDist * (l.intra ? o.communityIntraDist : o.communityInterDist);
@@ -831,13 +1156,20 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   const linkForce = forceLink<RN, VL>(links)
     .id((d: RN) => d.id)
     .distance((l: VL) => (l.virtual ? linkDist * o.virtualDistMult : linkDistFor(l)))
-    .strength((l: VL) => (l.virtual ? o.virtualLinkStrength : linkStrengthFor(l)));
+    .strength((l: VL) => {
+      // Grid mode: the top level's positions are IMPOSED, so nothing may negotiate them. Both the
+      // island-crossing real edges and the orphan tethers are released (see GRID_INTER_ISLAND_LINK).
+      if (islandOf && (l.virtual || l.island === false)) return LINK_STRENGTH * GRID_INTER_ISLAND_LINK;
+      return l.virtual ? o.virtualLinkStrength : linkStrengthFor(l);
+    });
   // Flattening to 2D loses a whole dimension of room, so the same forces that spread nicely in 3D
   // collapse into a dense blob in 2D. Compensate in 2D: stronger many-body repulsion pushes communities
   // apart (so clusters stay distinct, not one hairball) and weaker pull-to-center lets them breathe into
   // an even, honeycomb-spaced spread. 3D keeps the gentler defaults.
   const repulsion = dim === 2 ? o.repulsion * MODE_2D_REPULSION_MULT : o.repulsion;
-  const centering = dim === 2 ? o.centering * MODE_2D_CENTERING_MULT : o.centering;
+  const centering = dim === 2
+    ? o.centering * (anchorX ? GRID_CENTERING_MULT : MODE_2D_CENTERING_MULT)
+    : o.centering;
   const sim = forceSimulation<RN>(nodes, dim)
     .alpha(1)
     .force("charge", forceManyBody<RN>().strength(repulsion).theta(MANYBODY_THETA))
@@ -852,17 +1184,16 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
     // forceCollide uses, so both community forces automatically track every spacing/size multiplier.
     // ONE force for the whole hierarchy (finest first, then ancestors) — see invariant 1 in the
     // "Nesting" block: the per-tick speed cap has to bound the SUM of every level's contribution.
-    sim.force("community", communityForce(
-      nodes,
-      [{ comm, numComms, gravity: o.communityGravity, separation: o.communitySeparation }, ...ancestors],
-      dim,
-      Float64Array.from(nodes, (nd, i) => collideRadiusFor(nd, i)),
-    ));
+    sim.force("community", communityForce(nodes, forceLevels, dim, radii));
   }
+  // Centering: normally a spring to the ORIGIN. In grid mode it becomes a spring to the node's own
+  // island ANCHOR instead — that is what keeps each island bounded on its cell (the packing-gated
+  // anchor gravity above only gathers strays; this linear term is what makes the placement stick, and
+  // it can never squeeze past the collide floor because collide is registered after it).
   sim
     .force("collide", forceCollide<RN>(collideRadiusFor).iterations(COLLIDE_ITERATIONS))
-    .force("x", forceX<RN>(0).strength(centering))
-    .force("y", forceY<RN>(0).strength(centering));
+    .force("x", (anchorX ? forceX<RN>((_nd: RN, i: number) => anchorX![i]) : forceX<RN>(0)).strength(centering))
+    .force("y", (anchorY ? forceY<RN>((_nd: RN, i: number) => anchorY![i]) : forceY<RN>(0)).strength(centering));
   if (dim === 3) {
     sim.force("z", forceZ<RN>(0).strength(o.centering));
     if (o.discBias > 0) sim.force("disc", discFlattenForce(nodes, realDeg, o.discBias));
@@ -884,8 +1215,19 @@ function extractPositions(nodes: RN[], dim: 2 | 3): Positions {
  * in 2D mode). Synchronous: the whole tick loop runs to completion on the calling thread — use
  * `computeLayoutAsync` on the server hot path so a big graph doesn't stall concurrent requests.
  */
+/** DEFAULTS merged with the caller's options, plus the one default that isn't a constant:
+ *  `clusterLayout` is dimension-dependent ("grid" in 2D, "organic" in 3D — see LayoutOptions), so it
+ *  cannot live in DEFAULTS. Both entry points resolve options through here. */
+function withDefaults(options: LayoutOptions): typeof DEFAULTS & LayoutOptions {
+  const dimensions = options.dimensions ?? DEFAULTS.dimensions;
+  return {
+    ...DEFAULTS, ...options, dimensions,
+    clusterLayout: options.clusterLayout ?? (dimensions === 2 ? "grid" : "organic"),
+  };
+}
+
 export function computeLayout(input: LayoutInput, options: LayoutOptions = {}): Positions {
-  const o = { ...DEFAULTS, ...options };
+  const o = withDefaults(options);
   if (input.nodes.length === 0) return {};
   const { sim, nodes, dim } = prepareLayout(input, o);
   for (let i = 0; i < o.refineTicks; i++) sim.tick();
@@ -913,7 +1255,7 @@ const INCREMENTAL_EXIT_EPSILON = 0.3;
 const INCREMENTAL_EXIT_MIN_TICKS = 8;
 const yieldToEventLoop = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
 export async function computeLayoutAsync(input: LayoutInput, options: LayoutOptions = {}): Promise<Positions> {
-  const o = { ...DEFAULTS, ...options };
+  const o = withDefaults(options);
   if (input.nodes.length === 0) return {};
   const { sim, nodes, dim } = prepareLayout(input, o);
   const fixed = o.fixedIds && o.fixedIds.length > 0 ? new Set(o.fixedIds) : null;

@@ -7,13 +7,16 @@
 // through the raster buffers; this file pins the arithmetic directly.
 import { describe, expect, it } from "bun:test";
 import {
-  AGG_EDGE_DOUBLE_W, aggEdgeWeight, buildLodIndex, lodMix, massCellAlpha, massCellCode, massRadii,
+  AGG_EDGE_DOUBLE_W, aggEdgeWeight, buildLodIndex, LOD_MIN_CLUSTER, lodMix, massCellAlpha, massCellCode, massRadii,
 } from "./lod";
 import { FILE_LABEL_REVEAL_T } from "./labelSelection";
 import { CELL_H, CELL_W } from "./asciiGrid";
 
 /** Two-level fixture: TOP 0 = {a0..a3 at x≈-100} + {b0,b1 at x≈-60}, TOP 1 = {c0..c2 at x≈100}.
- *  Cross-links: 3 between the tops (a–c), 2 inside TOP 0 (a–b). */
+ *  Cross-links: 3 between the tops (a–c), 2 inside TOP 0 (a–b).
+ *  NOTE its sub-clusters are 2-4 members, i.e. below the shipped `LOD_MIN_CLUSTER`, so the grouping
+ *  tests below pass `minCluster: 1` explicitly — they pin the grouping/centroid/edge ARITHMETIC, which
+ *  is independent of the "don't summarize a 1-note cluster" product gate (tested separately). */
 function nodes() {
   const out = [];
   for (let i = 0; i < 4; i++) out.push({ id: `a${i}`, path: [0, 0], x: -100, y: i * 10 });
@@ -29,7 +32,7 @@ const edges = [
 
 describe("buildLodIndex — aggregate entities", () => {
   it("groups per level with correct counts and member ids, largest cluster first", () => {
-    const levels = buildLodIndex(nodes(), edges);
+    const levels = buildLodIndex(nodes(), edges, 1);
     expect(levels.length).toBe(2);
     // Level 0: TOP 0 (6 members) before TOP 1 (3).
     expect(levels[0].clusters.map((c) => [c.community, c.count])).toEqual([[0, 6], [1, 3]]);
@@ -39,7 +42,7 @@ describe("buildLodIndex — aggregate entities", () => {
   });
 
   it("positions every entity at its members' centroid", () => {
-    const levels = buildLodIndex(nodes(), edges);
+    const levels = buildLodIndex(nodes(), edges, 1);
     const top0 = levels[0].clusters.find((c) => c.community === 0)!;
     // (4×-100 + 2×-60) / 6
     expect(top0.wx).toBeCloseTo((4 * -100 + 2 * -60) / 6, 10);
@@ -49,7 +52,7 @@ describe("buildLodIndex — aggregate entities", () => {
   });
 
   it("aggregates inter-cluster links per level with real counts (intra-cluster links never count)", () => {
-    const levels = buildLodIndex(nodes(), edges);
+    const levels = buildLodIndex(nodes(), edges, 1);
     // Level 0: ONE connector — the 3 a–c links; the a–b and a–a links live inside TOP 0.
     expect(levels[0].edges.length).toBe(1);
     expect(levels[0].edges[0].count).toBe(3);
@@ -66,6 +69,34 @@ describe("buildLodIndex — aggregate entities", () => {
 
   it("returns an empty structure when no node carries a hierarchy (LOD off)", () => {
     expect(buildLodIndex([{ id: "x", x: 0, y: 0 }], [])).toEqual([]);
+  });
+
+  it("omits communities under LOD_MIN_CLUSTER — a summary view is not a scatter of 1-note dots", () => {
+    // The reference vault has 143 fully-isolated notes; as singleton communities at every level they
+    // turned the coarsest stop into 15 real masses plus 143 unnamed, indistinguishable dots.
+    const many = [
+      ...Array.from({ length: 8 }, (_, i) => ({ id: `big${i}`, path: [0, 0], x: 0, y: i })),
+      ...Array.from({ length: 20 }, (_, i) => ({ id: `orphan${i}`, path: [i + 1, i + 1], x: 500, y: i })),
+    ];
+    const gated = buildLodIndex(many, []);
+    expect(gated[0].clusters.map((c) => c.count)).toEqual([8]);
+    // ...and the gate is exactly the shipped constant, not an ad-hoc number.
+    expect(LOD_MIN_CLUSTER).toBe(4);
+    // With the gate opened, every singleton comes back — so the omission really is the gate.
+    expect(buildLodIndex(many, [], 1)[0].clusters.length).toBe(21);
+  });
+
+  it("drops aggregate edges whose endpoint community was gated out", () => {
+    const ns = [
+      ...Array.from({ length: 5 }, (_, i) => ({ id: `a${i}`, path: [0], x: 0, y: i })),
+      ...Array.from({ length: 5 }, (_, i) => ({ id: `b${i}`, path: [1], x: 100, y: i })),
+      { id: "lonely", path: [2], x: 200, y: 0 },
+    ];
+    const es = [{ from: "a0", to: "b0" }, { from: "a1", to: "lonely" }];
+    const levels = buildLodIndex(ns, es);
+    expect(levels[0].clusters.length).toBe(2);   // "lonely" is not summarized
+    expect(levels[0].edges.length).toBe(1);      // ...so neither is its connector
+    expect(levels[0].edges[0].count).toBe(1);
   });
 });
 

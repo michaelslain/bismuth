@@ -28,11 +28,11 @@ import "./asciiGraph.css";
 import type { GraphData, GraphNode } from "../../../core/src/graph";
 import { nodeVisualState } from "../../../core/src/daemonViz";
 import {
-  clusterLabelAlpha, clusterLabelText, clusterLevelAlphas, computeAlwaysOnSet, fileLabelAlpha,
-  fileLabelBudget,
+  clusterLabelAlpha, clusterLabelText, clusterLevelAlphas, computeAlwaysOnSet, eyebrowWidthCells,
+  fileLabelAlpha, fileLabelBudget,
 } from "./labelSelection";
 import { hashKey } from "../themeColors";
-import { isUsableBox, finiteVec3, boundingRadius } from "./graphFit";
+import { isUsableBox, finiteVec3, boundingRadius, boundingHalfExtents, fitScaleForBox } from "./graphFit";
 import { structuralGraphSig, shouldResetView } from "./graphStability";
 import { noiseField, DEFAULT_NOISE_SEED } from "../ui/ascii/noiseField";
 import {
@@ -40,6 +40,20 @@ import {
   massCellCode, massRadii, type LodLevel,
 } from "./lod";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
+
+/** Numeric per-frame snapshot for QA (`window.__asciiGraphStats`, DEV builds only) — lets the
+ *  redesign's fit/LOD/label criteria be asserted against directly instead of eyeballed off a
+ *  screenshot. See `AsciiGraphRenderer.computeStats()`. */
+export interface AsciiGraphStats {
+  zoomPct: number;         // 100 = fit .. 0 = deepest (resolutionPercent)
+  entitiesDrawn: number;   // aggregate cluster masses actually rasterized this frame
+  labelsDrawn: number;     // this.labels.length (file + cluster names combined)
+  labelOverlaps: number;   // count of label PAIRS on the same row whose [col, col+widthCells] spans intersect
+  maxLabelChars: number;   // longest label's text.length this frame
+  notesOnScreen: number;   // leaf (real) nodes rasterized this frame
+  edgesDrawn: number;      // real + aggregate edges traced this frame
+  inkCoverage: number;     // bounding-box area of non-empty cells / (cols*rows)
+}
 import {
   CELL_H, CELL_W, FONT_PX,
   LAYER_EDGE, LAYER_NODE, LAYER_NOISE, PAD_X, PAD_Y, ZOOM_STEP_PCT,
@@ -66,7 +80,6 @@ const EDGE_BUDGET = 2600;        // dense-graph edge thinning (stable per-edge r
 const EDGE_FLOOR = 0.12;
 const HIT_RADIUS_CELLS = 2;      // cells searched outward from the cursor for a node
 const CLUSTER_LABEL_TRACKING_EM = 0.14; // tokens/typography.css --ls-eyebrow, applied via ctx.letterSpacing
-const CLUSTER_LABEL_PAD_FRAC = 0.18;    // occupancy cushion for that extra sub-cell tracking width
 
 // Colour slots. Every colour is a CSS custom property read off the host, so a theme switch is a
 // re-read (the old renderer took ints through setConfig; here the tokens ARE the source).
@@ -113,6 +126,10 @@ interface LabelDraw {
   text: string; col: number; row: number; color: number; accent: boolean;
   alpha: number;      // crossfade multiplier — forced file labels and cluster names ignore this differently (see paint())
   eyebrow?: boolean;  // cluster name: uppercase + tracked, drawn at full brightness × alpha
+  // Real drawn width in cells (eyebrowWidthCells for a tracked cluster name, plain text.length for a
+  // file label) — the SAME span the occupancy reservation used, so debug/QA instrumentation
+  // (window.__asciiGraphStats) can check for overlaps without recomputing tracking math.
+  widthCells: number;
 }
 
 /** A node's hierarchy path, coarsest → finest — `communityPath` when the backend sent one, else the
@@ -156,6 +173,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private adjacency = new Map<string, Set<string>>();
   private sig = "";
   private radius3 = 1; private radius2 = 1;
+  // 2D-only bounding-BOX half-extents (see graphFit.ts boundingHalfExtents/fitScaleForBox) — the
+  // fit-to-100% law for a rectangular field fills each AXIS to FIT_FILL_FRACTION independently,
+  // rather than reading a single circumscribing radius (which over-reads a wide/short cloud and
+  // only considers the field's shorter axis). 3D keeps radius2/radius3-style fitting (see fit()).
+  private half2 = { hx: 1, hy: 1 };
 
   // grid + buffers (reused across frames — nothing is allocated in the hot loop)
   private m: GridMetrics = gridMetrics(1, 1, CELL_W, CELL_H);
@@ -188,6 +210,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private lodOn = false;
   private leafAlpha = 1;
   private hoverEntityIdx = -1;
+
+  // Per-frame QA/debug counters (see computeStats/window.__asciiGraphStats) — reset + incremented in
+  // rasterize()'s existing passes, never a separate loop.
+  private entitiesDrawnFrame = 0;
+  private notesOnScreenFrame = 0;
+  private edgesDrawnFrame = 0;
 
   // camera — rx/ry orbit (3D), res = THE zoom (resolution), pan in px (2D)
   private rx = -0.5; private ry = 0;
@@ -241,6 +269,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private raf = 0; private running = false; private visible = true; private dirty = true;
   private lastFrameT = 0; private fpsAccum = 0; private fpsFrames = 0;
   private lastZoomPct = -1;
+  private statsHookInstalled = false;
 
   // ---- lifecycle -----------------------------------------------------------
 
@@ -269,6 +298,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.viewport.addEventListener("pointerleave", this.onPointerLeave);
     window.addEventListener("keydown", this.onKeyDown);
 
+    // DEV-only QA hook (see AsciiGraphStats/computeStats) — the LAST mounted instance wins if more
+    // than one field is on the page (main + sidebar mini-graph); harmless, since QA always targets
+    // the one visible field. Guarded so a non-Vite runtime (Bun's test runner has no `import.meta.env`)
+    // never throws — `?.` short-circuits straight to `undefined`, which is falsy.
+    if (typeof window !== "undefined" && (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
+      (window as unknown as { __asciiGraphStats?: () => AsciiGraphStats }).__asciiGraphStats = () => this.computeStats();
+      this.statsHookInstalled = true;
+    }
+
     this.start();
   }
 
@@ -282,6 +320,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.viewport?.removeEventListener("wheel", this.onWheel);
     this.viewport?.removeEventListener("pointerleave", this.onPointerLeave);
     window.removeEventListener("keydown", this.onKeyDown);
+    if (this.statsHookInstalled && typeof window !== "undefined") {
+      delete (window as unknown as { __asciiGraphStats?: unknown }).__asciiGraphStats;
+      this.statsHookInstalled = false;
+    }
     this.host?.replaceChildren();
     this.nodes = []; this.edges = []; this.byId.clear();
   }
@@ -363,6 +405,26 @@ export class AsciiGraphRenderer implements GraphRenderer {
       if (a && b) this.edges.push({ a, b, kr: (hashKey(e.from + "\0" + e.to) % 1000) / 1000 });
     }
 
+    // Recentre 2D on the bounding-BOX centre (not the centroid computed above) so a lopsided cloud
+    // doesn't leave a dead margin on one side at 100% fit: `c2` above only zeroes the MEAN position,
+    // which a skewed cloud still leaves asymmetric against a rectangular field — 92% of the box
+    // isn't really 92% if the cloud itself sits off-centre inside its own bounding box. Done BEFORE
+    // buildLodIndex/boundingHalfExtents below consume `nv.p2`, so the LOD centroids and the fit
+    // radius both already see the recentred coordinates. 3D (`p3`) is untouched — the orbit camera
+    // has no "box" to speak of, only a target point.
+    if (this.nodes.length) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const nv of this.nodes) {
+        const x = nv.p2[0], y = nv.p2[1];
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+      const midX = (minX + maxX) / 2, midY = (minY + maxY) / 2;
+      if (Number.isFinite(midX) && Number.isFinite(midY)) {
+        for (const nv of this.nodes) { nv.p2[0] -= midX; nv.p2[1] -= midY; }
+      }
+    }
+
     // LOD structure (2D aggregate entities + aggregate edges), precomputed HERE — per graph build,
     // never per frame. Cluster world centroids use the same centred/flipped p2 space the projector
     // consumes, so per-frame entity projection is the same two multiplies a node costs.
@@ -390,6 +452,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
     this.radius3 = boundingRadius(this.nodes.map((nv) => nv.p3));
     this.radius2 = boundingRadius(this.nodes.map((nv) => nv.p2));
+    this.half2 = boundingHalfExtents(this.nodes.map((nv) => nv.p2));
     this.alwaysOn = computeAlwaysOnSet(
       g.nodes, g.edges.map((e) => ({ source: e.from, target: e.to })), this.activeFile, this.cfg.graphLabelHubCount ?? 10,
     );
@@ -581,12 +644,26 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *  deepest-zoom ceiling (`maxRes`, i.e. 0% — see asciiGrid.ts maxResFor). The ceiling is
    *  graph/box-derived, so it can shift on every resize or rebuild; `zoomPct` (not `goalRes`) is the
    *  durable state, so a shifted ceiling re-derives `goalRes` to land back on the SAME percent
-   *  instead of silently changing what "the user's current zoom" means. */
+   *  instead of silently changing what "the user's current zoom" means.
+   *
+   *  FIT LAW: 2D fills each screen AXIS to FIT_FILL_FRACTION of the graph's own bounding-box
+   *  half-extents (`fitScaleForBox`/`half2`) — the binding axis lands at exactly that fraction, so a
+   *  16:9 field no longer wastes its long axis, and a rectangular node cloud is no longer over-read
+   *  by a circumscribing radius (which reads up to sqrt(2) too large against its own bounding box).
+   *  3D keeps the original radius-based `fitPxPerWorld` (a fraction of the shorter screen axis) —
+   *  the orbiting camera has no fixed box to fill, only a distance to keep the whole cloud in frame
+   *  regardless of yaw/pitch. */
   private fit(resetCamera = false) {
     if (!this.boxReady) return;
     const is2d = this.cfg.viewMode === "2d";
-    const radius = Math.max(1e-6, is2d ? this.radius2 : this.radius3);
-    this.pxPerWorld = fitPxPerWorld(this.m.cols, this.m.rows, this.m, radius);
+    if (is2d) {
+      this.pxPerWorld = fitScaleForBox(
+        this.m.cols * this.m.cellW, this.m.rows * this.m.cellH, this.half2.hx, this.half2.hy,
+      );
+    } else {
+      const radius = Math.max(1e-6, this.radius3);
+      this.pxPerWorld = fitPxPerWorld(this.m.cols, this.m.rows, this.m, radius);
+    }
     this.maxRes = maxResFor(this.pxPerWorld, this.cellW);
     if (resetCamera) {
       this.zoomPct = 100;
@@ -710,6 +787,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const m = this.m;
     const cells = m.cols * m.rows;
     const noiseA = Math.round(NOISE_ALPHA * 255);
+    // QA/debug instrumentation counters (see computeStats/window.__asciiGraphStats) — reset once per
+    // rasterize() and incremented in the SAME passes below that already walk these collections, so
+    // the hot loop pays for nothing extra beyond a few integer increments.
+    this.entitiesDrawnFrame = 0;
+    this.notesOnScreenFrame = 0;
+    this.edgesDrawnFrame = 0;
     // Layer 1 — the noise field (graph.backgroundNoise, off by default — settingsSchema.ts). Static
     // per grid size + seed, laid down first so edges and nodes can CLEAR it (writing a higher layer
     // over the same cell). When the setting is off the buffers are just reset to empty — cellNode
@@ -758,6 +841,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         this.edgeColor = incident ? C_ACCENT : C_MUTED;
         this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
         traceEdge(a.col, a.row, b.col, b.row, this.putEdge);
+        this.edgesDrawnFrame++;
       }
 
       // Layer 3 — nodes. Weight is the glyph (degree ramp, shifted by depth band in 3D), colour is
@@ -765,6 +849,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       for (let i = 0; i < this.nodes.length; i++) {
         const nv = this.nodes[i];
         if (!nv.onGrid) continue;
+        this.notesOnScreenFrame++;
         const idx = nv.row * m.cols + nv.col;
         const id = nv.node.id;
         const hot = id === this.hoveredId || id === this.activeFile || this.searchMatches.has(id);
@@ -834,6 +919,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const alpha = EDGE_ALPHA_2D * (AGG_EDGE_ALPHA_MIN + (1 - AGG_EDGE_ALPHA_MIN) * e.w) * levelAlpha;
       this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
       traceEdge(a.col, a.row, b.col, b.row, this.putEdge);
+      this.edgesDrawnFrame++;
       if (e.w >= AGG_EDGE_DOUBLE_W) {
         if (Math.abs(b.col - a.col) >= Math.abs(b.row - a.row)) traceEdge(a.col, a.row + 1, b.col, b.row + 1, this.putEdge);
         else traceEdge(a.col + 1, a.row, b.col + 1, b.row, this.putEdge);
@@ -850,6 +936,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const m = this.m;
     for (const ev of this.entityLevels[level]) {
       if (!ev.onGrid) continue;
+      this.entitiesDrawnFrame++;
       const hot = ev.flat === this.hoverEntityIdx;
       const rowR = ev.drawnRowR, colR = ev.drawnColR;
       const invR2 = 1 / (rowR * rowR), invC2 = 1 / (colR * colR);
@@ -995,7 +1082,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const accent = nv.node.id === this.activeFile || nv.node.id === this.hoveredId || this.searchMatches.has(nv.node.id);
       this.labels.push({
         text, col, row, color: accent ? C_ACCENT : is2d ? C_MUTED : nv.dr > 0.55 ? C_MUTED : C_FAINT,
-        accent, alpha: force ? 1 : fAlpha,
+        accent, alpha: force ? 1 : fAlpha, widthCells: len,
       });
       drawn++;
     }
@@ -1034,25 +1121,28 @@ export class AsciiGraphRenderer implements GraphRenderer {
       if (row < 0 || row >= m.rows) continue;
       const text = clusterLabelText(names.get(community) ?? `cluster ${community}`);
       const len = text.length;
-      // The tracked (ctx.letterSpacing) draw is a little wider on screen than `len` cells — pad the
-      // reservation so a neighbouring label can't butt right up against the extra sub-cell gap.
-      const pad = Math.max(1, Math.ceil(len * CLUSTER_LABEL_PAD_FRAC));
+      // The tracked (ctx.letterSpacing) draw is wider on screen than `len` cells — reserve the REAL
+      // drawn width (eyebrowWidthCells), not `len`, so a neighbouring label can never be painted
+      // over by the extra sub-cell tracking gap (the "soup" bug). Reservation range and the
+      // free-space check below share the exact same [col-1, col+wCells] bounds — that identity is
+      // what makes overlap impossible, not just unlikely.
+      const wCells = eyebrowWidthCells(len, CLUSTER_LABEL_TRACKING_EM, this.fontPx, this.cellW);
       const col0 = Math.round(g.colSum / g.n);
-      let col = col0 - Math.floor(len / 2);
+      let col = col0 - Math.floor(wCells / 2); // centre by DRAWN width, not raw char count
       if (col < 0) col = 0;
-      if (col + len > m.cols) col = Math.max(0, m.cols - len);
+      if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
       let free = true;
-      for (let c = col - pad; c <= col + len + pad && free; c++) {
+      for (let c = col - 1; c <= col + wCells && free; c++) {
         if (c < 0 || c >= m.cols) continue;
         if (this.labelOccupied[row * m.cols + c]) free = false;
       }
       if (!free) continue;
-      for (let c = col - pad; c <= col + len + pad; c++) {
+      for (let c = col - 1; c <= col + wCells; c++) {
         if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
       }
       const key = isFinest ? "community:" + community : `community:L${level}:${community}`;
       const color = RAMP[hashKey(key) % RAMP.length];
-      this.labels.push({ text, col, row, color, accent: false, alpha, eyebrow: true });
+      this.labels.push({ text, col, row, color, accent: false, alpha, eyebrow: true, widthCells: wCells });
     }
   }
 
@@ -1071,20 +1161,22 @@ export class AsciiGraphRenderer implements GraphRenderer {
       let row = ev.row + ev.drawnRowR + 1;
       if (row >= m.rows) row = ev.row - ev.drawnRowR - 1;
       if (row < 0 || row >= m.rows) continue;
-      const pad = Math.max(1, Math.ceil(len * CLUSTER_LABEL_PAD_FRAC));
-      let col = ev.col - Math.floor(len / 2);
+      // Reserve the REAL drawn width (tracking included), not the raw char count — see
+      // layoutClusterNames' comment. Reservation and the free-space check share identical bounds.
+      const wCells = eyebrowWidthCells(len, CLUSTER_LABEL_TRACKING_EM, this.fontPx, this.cellW);
+      let col = ev.col - Math.floor(wCells / 2); // centre by DRAWN width, not raw char count
       if (col < 0) col = 0;
-      if (col + len > m.cols) col = Math.max(0, m.cols - len);
+      if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
       let free = true;
-      for (let c = col - pad; c <= col + len + pad && free; c++) {
+      for (let c = col - 1; c <= col + wCells && free; c++) {
         if (c < 0 || c >= m.cols) continue;
         if (this.labelOccupied[row * m.cols + c]) free = false;
       }
       if (!free) continue;
-      for (let c = col - pad; c <= col + len + pad; c++) {
+      for (let c = col - 1; c <= col + wCells; c++) {
         if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
       }
-      this.labels.push({ text, col, row, color: ev.color, accent: false, alpha, eyebrow: true });
+      this.labels.push({ text, col, row, color: ev.color, accent: false, alpha, eyebrow: true, widthCells: wCells });
     }
   }
 
@@ -1399,6 +1491,64 @@ export class AsciiGraphRenderer implements GraphRenderer {
       });
     }
     return out;
+  }
+
+  // ---- QA / debug instrumentation ------------------------------------------
+
+  /**
+   * A numeric snapshot of the CURRENT frame, for QA to assert against directly instead of
+   * eyeballing a screenshot (see `AsciiGraphStats`). The per-frame counts (`entitiesDrawnFrame` etc.)
+   * are already tracked for free inside rasterize()'s existing passes; only `inkCoverage` (a
+   * bounding-box sweep over `charBuf`) and `labelOverlaps`/`maxLabelChars` (an O(labels²) pass over
+   * the — at most a few dozen — labels drawn this frame) do any extra work, and both are deferred to
+   * HERE (called on demand, e.g. from `window.__asciiGraphStats()`) rather than every rasterize().
+   */
+  computeStats(): AsciiGraphStats {
+    const cols = this.m.cols, rows = this.m.rows;
+    let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+    for (let r = 0; r < rows; r++) {
+      const base = r * cols;
+      for (let c = 0; c < cols; c++) {
+        if (this.charBuf[base + c]) {
+          if (r < minR) minR = r;
+          if (r > maxR) maxR = r;
+          if (c < minC) minC = c;
+          if (c > maxC) maxC = c;
+        }
+      }
+    }
+    const inkCoverage = Number.isFinite(minR)
+      ? ((maxR - minR + 1) * (maxC - minC + 1)) / Math.max(1, cols * rows)
+      : 0;
+
+    let maxLabelChars = 0;
+    const byRow = new Map<number, { col: number; w: number }[]>();
+    for (const l of this.labels) {
+      if (l.text.length > maxLabelChars) maxLabelChars = l.text.length;
+      let arr = byRow.get(l.row);
+      if (!arr) { arr = []; byRow.set(l.row, arr); }
+      arr.push({ col: l.col, w: l.widthCells });
+    }
+    let labelOverlaps = 0;
+    for (const arr of byRow.values()) {
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          const a = arr[i], b = arr[j];
+          if (a.col <= b.col + b.w && b.col <= a.col + a.w) labelOverlaps++;
+        }
+      }
+    }
+
+    return {
+      zoomPct: this.lastZoomPct,
+      entitiesDrawn: this.entitiesDrawnFrame,
+      labelsDrawn: this.labels.length,
+      labelOverlaps,
+      maxLabelChars,
+      notesOnScreen: this.notesOnScreenFrame,
+      edgesDrawn: this.edgesDrawnFrame,
+      inkCoverage,
+    };
   }
 }
 

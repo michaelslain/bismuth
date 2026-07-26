@@ -7,6 +7,8 @@ import {
   fileLabelAlpha,
   clusterLabelAlpha,
   clusterLabelText,
+  CLUSTER_LABEL_MAX_CHARS,
+  eyebrowWidthCells,
   clusterLevelAlphas,
   levelBoundaries,
   FILE_LABEL_REVEAL_T,
@@ -222,6 +224,63 @@ describe("clusterLabelText", () => {
 
   it("is a no-op on an already-uppercase name", () => {
     expect(clusterLabelText("PROJECTS")).toBe("PROJECTS");
+  });
+
+  it("leaves a name at/under the cap unchanged besides casing", () => {
+    expect(clusterLabelText("reading")).toBe("READING");
+    const exact = "A".repeat(CLUSTER_LABEL_MAX_CHARS);
+    expect(clusterLabelText(exact)).toBe(exact);
+  });
+
+  it("caps a long name to exactly maxChars ending in '..'", () => {
+    const long = "A Very Long Cluster Name About Reading";
+    const capped = clusterLabelText(long);
+    expect(capped.length).toBe(CLUSTER_LABEL_MAX_CHARS);
+    expect(capped.endsWith("..")).toBe(true);
+  });
+
+  it("never emits the unicode ellipsis, only ASCII '..'", () => {
+    const capped = clusterLabelText("A Very Long Cluster Name About Reading And Writing Things");
+    expect(capped.includes("…")).toBe(false);
+    expect(capped.endsWith("..")).toBe(true);
+  });
+
+  it("is deterministic across calls", () => {
+    const name = "Some Long Cluster Title That Definitely Needs Truncating";
+    expect(clusterLabelText(name)).toBe(clusterLabelText(name));
+  });
+
+  it("respects a custom maxChars", () => {
+    const capped = clusterLabelText("Reading List Projects", 10);
+    expect(capped.length).toBeLessThanOrEqual(10);
+    expect(capped.endsWith("..")).toBe(true);
+  });
+});
+
+describe("eyebrowWidthCells", () => {
+  it("matches the design's reference numbers: 20 chars at 0.14em/11.5px/6.3px cell -> 26", () => {
+    expect(eyebrowWidthCells(20, 0.14, 11.5, 6.3)).toBe(26);
+  });
+
+  it("is monotone (non-decreasing) in len", () => {
+    let prev = 0;
+    for (let len = 1; len <= 30; len++) {
+      const w = eyebrowWidthCells(len, 0.14, 11.5, 6.3);
+      expect(w).toBeGreaterThanOrEqual(prev);
+      prev = w;
+    }
+  });
+
+  it("is always >= len (tracking only ever widens, never narrows)", () => {
+    expect(eyebrowWidthCells(10, 0, 11.5, 6.3)).toBeGreaterThanOrEqual(10);
+    expect(eyebrowWidthCells(10, 0.14, 11.5, 6.3)).toBeGreaterThanOrEqual(10);
+    expect(eyebrowWidthCells(0, 0.14, 11.5, 6.3)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("falls back to len for a degenerate cellW", () => {
+    expect(eyebrowWidthCells(20, 0.14, 11.5, 0)).toBe(20);
+    expect(eyebrowWidthCells(20, 0.14, 11.5, -1)).toBe(20);
+    expect(eyebrowWidthCells(20, 0.14, 11.5, NaN)).toBe(20);
   });
 });
 
