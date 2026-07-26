@@ -60,12 +60,28 @@ export interface LodNodeInput {
 }
 
 /**
+ * Fewest members a community needs before it is drawn as an aggregate ENTITY. A summary view must not
+ * be a scatter of one-note "clusters": on the reference vault 143 of 2114 notes are fully isolated, so
+ * they are singleton communities at EVERY hierarchy level, and drawing them turned the coarsest stop
+ * into 15 real masses plus 143 indistinguishable unnamed dots. Gating at 4 (the same threshold
+ * core/src/layout.ts uses to decide which cluster earns a grid cell — the two must agree, or the field
+ * would draw masses the layout never placed) yields a 15 → 46 → 75 → leaves ladder on that vault.
+ * Below-threshold notes simply aren't summarized; they appear when the leaf passes fade in.
+ */
+export const LOD_MIN_CLUSTER = 4;
+
+/**
  * Precompute the whole LOD structure for a graph: per level, its clusters (count + world centroid +
  * member ids, sorted largest-first so contested label cells go to the biggest community — the same
  * greedy-by-worth rule the label passes use) and its aggregate edges with per-edge link counts and
- * log-scaled weights. O(N·levels + E·levels), run once per graph BUILD — never per frame.
+ * log-scaled weights. Communities under `minCluster` members are omitted (see LOD_MIN_CLUSTER).
+ * O(N·levels + E·levels), run once per graph BUILD — never per frame.
  */
-export function buildLodIndex(nodes: LodNodeInput[], edges: { from: string; to: string }[]): LodLevel[] {
+export function buildLodIndex(
+  nodes: LodNodeInput[],
+  edges: { from: string; to: string }[],
+  minCluster = LOD_MIN_CLUSTER,
+): LodLevel[] {
   let levelCount = 0;
   for (const n of nodes) if (n.path && n.path.length > levelCount) levelCount = n.path.length;
   if (levelCount === 0) return [];
@@ -84,6 +100,7 @@ export function buildLodIndex(nodes: LodNodeInput[], edges: { from: string; to: 
       g.sx += n.x; g.sy += n.y; g.ids.push(n.id);
     }
     const clusters: LodCluster[] = [...groups.entries()]
+      .filter(([, g]) => g.ids.length >= minCluster)
       .map(([community, g]) => ({
         level: L, community, count: g.ids.length,
         wx: g.sx / g.ids.length, wy: g.sy / g.ids.length,
@@ -100,8 +117,9 @@ export function buildLodIndex(nodes: LodNodeInput[], edges: { from: string; to: 
       const ca = pathById.get(e.from)?.[L];
       const cb = pathById.get(e.to)?.[L];
       if (ca == null || cb == null || ca === cb) continue;
-      const ia = indexByCommunity.get(ca)!;
-      const ib = indexByCommunity.get(cb)!;
+      const ia = indexByCommunity.get(ca);
+      const ib = indexByCommunity.get(cb);
+      if (ia === undefined || ib === undefined) continue; // an endpoint's community is under minCluster
       const lo = Math.min(ia, ib), hi = Math.max(ia, ib);
       const key = lo * clusters.length + hi;
       let p = pair.get(key);

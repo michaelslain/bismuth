@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { computeLayout, computeLayoutAsync, pivotMDS, type Positions } from "../src/layout";
+import { computeLayout, computeLayoutAsync, gridIslandAnchors, pivotMDS, type Positions } from "../src/layout";
 
 function ring(n: number) {
   return {
@@ -399,13 +399,19 @@ function separationAtLevel(nodes: { id: string; communityPath: number[] }[], pos
 
 const HIER = [[70, 55, 45], [65, 50, 40], [60, 50, 45]];
 
+// NOTE these two tests pin `clusterLayout: "organic"` in 2D. They are an A/B of the NESTED COMMUNITY
+// FORCES, which is orthogonal to where the grid post-pass decides to put a top-level island — and grid
+// mode (the 2D default) would otherwise dominate both arms of the comparison and measure nothing about
+// the forces. Grid placement has its own tests further down.
+
 test("nesting separates the COARSE level too, without undoing the fine level", () => {
   const g = plantedHierarchy(HIER);
   for (const dim of [3, 2] as const) {
-    const seedFlat = dim === 2 ? computeLayout(g, { refineTicks: 120, communityLevelDecay: 0 }) : undefined;
-    const seedNest = dim === 2 ? computeLayout(g, { refineTicks: 120 }) : undefined;
-    const flat = computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedFlat, communityLevelDecay: 0 });
-    const nest = computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedNest });
+    const organic = { clusterLayout: "organic" as const };
+    const seedFlat = dim === 2 ? computeLayout(g, { ...organic, refineTicks: 120, communityLevelDecay: 0 }) : undefined;
+    const seedNest = dim === 2 ? computeLayout(g, { ...organic, refineTicks: 120 }) : undefined;
+    const flat = computeLayout(g, { ...organic, dimensions: dim, refineTicks: 120, initialPositions: seedFlat, communityLevelDecay: 0 });
+    const nest = computeLayout(g, { ...organic, dimensions: dim, refineTicks: 120, initialPositions: seedNest });
     // The super-clusters (level 0) read as distinct groups only once the coarse forces are on.
     expect(separationAtLevel(g.nodes, nest, 0).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 0).ratio * 0.75);
     // ...and the finest level is not sacrificed for it (it stays at least as separated as flat).
@@ -466,6 +472,139 @@ test("nested layout is deterministic across runs", () => {
   expect(a).toEqual(computeLayout(g, { refineTicks: 80 }));
   expect(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }))
     .toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }));
+});
+
+// --- Grid islands (layout.ts GRID_*) ---------------------------------------------------------------
+// The 2D default: every top-level cluster is anchored on a coarse lattice cell with provable empty
+// lanes, biggest islands central. Measured on the reference 2114-node vault (which HAS strong cluster
+// structure — modularity Q = 0.45 finest / 0.62 coarsest — but 75% of whose edges run through shared
+// tag hubs, which is why the organic settle could not separate it): settled island centroids land on
+// their anchors, worst gap/(Rᵢ+Rⱼ) between islands is 1.47 and 0 of 105 island pairs overlap, against
+// -0.89 and 64/105 without the two forces the grid needs (full-strength anchor gravity + released
+// island-crossing links).
+
+test("gridIslandAnchors: blocks never overlap and every pair clears the lane guarantee", () => {
+  // gap ≥ GRID_LANE·(Rᵢ+Rⱼ) is a consequence of block non-overlap plus span = ceil(R/unit); this pins
+  // the whole derivation (see the GRID ISLANDS block) on a wide spread of island sizes.
+  const islands = [400, 380, 210, 190, 150, 120, 90, 80, 50, 30, 20, 12, 8, 5, 4]
+    .map((size, i) => ({ comm: i, radius: 10 * Math.sqrt(size) }));
+  const { anchors, cells, pitch } = gridIslandAnchors(islands);
+  expect(anchors.size).toBe(islands.length);
+  expect(pitch).toBeGreaterThan(0);
+
+  // No two blocks share a cell.
+  const taken = new Set<string>();
+  for (const c of cells) {
+    for (let dc = 0; dc < c.span; dc++) for (let dr = 0; dr < c.span; dr++) {
+      const k = `${c.col + dc},${c.row + dr}`;
+      expect(taken.has(k)).toBe(false);
+      taken.add(k);
+    }
+  }
+  // Every island fits inside its own block, and every PAIR clears ≥ 0.75·(Rᵢ+Rⱼ) of empty lane.
+  const rOf = new Map(islands.map((i) => [i.comm, i.radius]));
+  for (let a = 0; a < cells.length; a++) {
+    const ra = rOf.get(cells[a].comm)!;
+    expect(ra).toBeLessThanOrEqual((cells[a].span * pitch) / (2 * 1.75) + 1e-6);
+    for (let b = a + 1; b < cells.length; b++) {
+      const pa = anchors.get(cells[a].comm)!, pb = anchors.get(cells[b].comm)!;
+      const gap = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) - ra - rOf.get(cells[b].comm)!;
+      expect(gap).toBeGreaterThan(0.75 * (ra + rOf.get(cells[b].comm)!) - 1e-6);
+    }
+  }
+});
+
+test("gridIslandAnchors puts the BIGGEST islands nearest the centre, in a landscape mosaic", () => {
+  const islands = [500, 400, 300, 40, 30, 20, 10, 8, 6, 5].map((size, i) => ({ comm: i, radius: 10 * Math.sqrt(size) }));
+  const { anchors } = gridIslandAnchors(islands);
+  const d = (c: number) => Math.hypot(...anchors.get(c)!);
+  // The three big ones are all closer to the origin than the smallest.
+  for (const big of [0, 1, 2]) expect(d(big)).toBeLessThan(d(9));
+  // ...and the mosaic is wider than it is tall (GRID_ASPECT), matching a landscape pane.
+  const xs = [...anchors.values()].map((a) => Math.abs(a[0]));
+  const ys = [...anchors.values()].map((a) => Math.abs(a[1]));
+  expect(Math.max(...xs)).toBeGreaterThan(Math.max(...ys));
+});
+
+test("gridIslandAnchors is deterministic and order-independent", () => {
+  const islands = [200, 120, 90, 60, 40, 20].map((size, i) => ({ comm: i, radius: 10 * Math.sqrt(size) }));
+  const a = gridIslandAnchors(islands);
+  const b = gridIslandAnchors([...islands].reverse());
+  expect([...a.anchors.entries()].sort()).toEqual([...b.anchors.entries()].sort());
+  expect(gridIslandAnchors([])).toEqual({ anchors: new Map(), cells: [], pitch: 0, unit: 0, side: 0 });
+});
+
+test("2D defaults to grid: top-level clusters settle ON their lattice, far apart", () => {
+  // A 2-level hierarchy, laid out exactly as the backend does it (3D settle → 2D seeded from it).
+  const g = plantedHierarchy(HIER);
+  const pos3 = computeLayout(g, { refineTicks: 120 });
+  const grid = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3 });
+  const organic = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3, clusterLayout: "organic" });
+
+  /** Per top-level cluster: centroid + the radius containing 95% of its members. */
+  const islands = (pos: Positions) => {
+    const by = new Map<number, string[]>();
+    for (const nd of g.nodes) by.set(nd.communityPath[0], [...(by.get(nd.communityPath[0]) ?? []), nd.id]);
+    return [...by.values()].map((ids) => {
+      const c = ids.reduce((a, id) => [a[0] + pos[id][0], a[1] + pos[id][1]], [0, 0]).map((v) => v / ids.length) as [number, number];
+      const ds = ids.map((id) => Math.hypot(pos[id][0] - c[0], pos[id][1] - c[1])).sort((x, y) => x - y);
+      return { c, r: ds[Math.floor(ds.length * 0.95)] };
+    });
+  };
+  /** Worst gap between two islands' 95% discs, normalized by their radii (>0 = a real empty lane). */
+  const worstLane = (pos: Positions) => {
+    const isl = islands(pos);
+    let worst = Infinity;
+    for (let a = 0; a < isl.length; a++) for (let b = a + 1; b < isl.length; b++) {
+      const gap = Math.hypot(isl[a].c[0] - isl[b].c[0], isl[a].c[1] - isl[b].c[1]) - isl[a].r - isl[b].r;
+      worst = Math.min(worst, gap / (isl[a].r + isl[b].r));
+    }
+    return worst;
+  };
+  // Grid mode opens a genuine lane between EVERY pair of top-level clusters...
+  expect(worstLane(grid)).toBeGreaterThan(0.4);
+  // ...and a much wider one than the organic settle manages on the same graph.
+  expect(worstLane(grid)).toBeGreaterThan(worstLane(organic) + 0.3);
+  // Islands sit at lattice-like spacing: the closest pair of centroids is far apart relative to the
+  // island radii (the organic settle lets neighbours touch).
+  const isl = islands(grid);
+  expect(Math.min(...isl.map((i) => i.r))).toBeGreaterThan(0); // no island collapsed to a point
+});
+
+test("grid mode keeps the layout overlap-free (the anchor spring must not beat collide)", () => {
+  const g = plantedHierarchy(HIER);
+  const pos3 = computeLayout(g, { refineTicks: 120 });
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3 });
+  const ids = g.nodes.map((x) => x.id);
+  let minPair = Infinity;
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) minPair = Math.min(minPair, dist(pos[ids[i]], pos[ids[j]]));
+  expect(minPair).toBeGreaterThan(collideFloorFor(ids.length, 2) * 0.9);
+});
+
+test("grid mode is deterministic across runs", () => {
+  const g = plantedHierarchy([[40, 30], [35, 28], [32, 25], [30, 22]]);
+  const seed = computeLayout(g, { refineTicks: 80 });
+  const a = computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: seed });
+  expect(a).toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: seed }));
+});
+
+test("grid mode is 2D-only, opt-outable, and never fires without communities or on a pinned rebuild", () => {
+  const g = plantedHierarchy([[40, 30], [35, 28], [32, 25]]);
+  const seed = computeLayout(g, { refineTicks: 60 });
+  // 3D defaults to organic, so passing it explicitly changes nothing...
+  expect(computeLayout(g, { dimensions: 3, refineTicks: 60 }))
+    .toEqual(computeLayout(g, { dimensions: 3, refineTicks: 60, clusterLayout: "organic" }));
+  // ...and asking for "grid" in 3D is a no-op (a flat lattice would squash the cloud).
+  expect(computeLayout(g, { dimensions: 3, refineTicks: 60, clusterLayout: "grid" }))
+    .toEqual(computeLayout(g, { dimensions: 3, refineTicks: 60 }));
+  // A community-less graph is untouched by the 2D default (opt-in BY DATA, like every community force).
+  const plain = ring(80);
+  expect(computeLayout(plain, { dimensions: 2, refineTicks: 60 }))
+    .toEqual(computeLayout(plain, { dimensions: 2, refineTicks: 60, clusterLayout: "organic" }));
+  // An incremental (pinned) rebuild must not re-grid: pinned nodes hold the previous build's positions.
+  const fixed = g.nodes.slice(0, 100).map((nd) => nd.id);
+  const inc = computeLayout(g, { dimensions: 2, refineTicks: 40, initialPositions: seed, fixedIds: fixed });
+  for (const id of fixed) expect([inc[id][0], inc[id][1]]).toEqual([Math.round(seed[id][0]), Math.round(seed[id][1])]);
 });
 
 test("pivotMDS is deterministic", () => {

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { detectCommunities, detectCommunityHierarchy, communityLevelsFor } from "../src/community";
+import { detectCommunities, detectCommunityHierarchy, communityLevelsFor, pickExemplar } from "../src/community";
 
 test("two disconnected triangles → two communities", () => {
   const nodes = ["a","b","c","x","y","z"].map((id) => ({ id, label: id }));
@@ -31,12 +31,64 @@ test("empty graph → empty map", () => {
   expect(detectCommunities([], []).size).toBe(0);
 });
 
-test("exemplar label is the highest-degree member", () => {
-  // star: hub connected to 3 leaves → hub is exemplar for the whole community
+test("exemplar label comes from the community's hubs, not a short-titled leaf", () => {
+  // star: hub connected to 3 leaves → hub is exemplar for the whole community. Note the LEAF labels
+  // are SHORTER than the hub's, and the exemplar rule prefers short names (see pickExemplar) — the
+  // degree-fraction gate is what keeps a leaf out of the pool entirely.
   const nodes = ["hub","l1","l2","l3"].map((id) => ({ id, label: id.toUpperCase() }));
   const edges = [["hub","l1"],["hub","l2"],["hub","l3"]].map(([from,to]) => ({ from, to }));
   const m = detectCommunities(nodes, edges);
   for (const id of ["hub","l1","l2","l3"]) expect(m.get(id)!.label).toBe("HUB");
+});
+
+// --- Exemplar (cluster NAME) selection -------------------------------------------------------------
+// The names are drawn on a monospace ASCII grid, so SHORT is the whole point: the old
+// "highest-degree member" rule produced full note-title sentences that overlapped into soup.
+
+test("pickExemplar prefers a TAG member over a note, whatever the degrees", () => {
+  const pick = pickExemplar([
+    { id: "n1", label: "Player - More Responsive Walking Physics + Animations", kind: "note", degree: 40 },
+    { id: "tag:school", label: "#school", kind: "tag", degree: 22 },
+    { id: "n2", label: "Some Other Long Note Title Here", kind: "note", degree: 30 },
+  ]);
+  expect(pick!.label).toBe("#school");
+});
+
+test("pickExemplar picks the SHORTEST name among the hub pool", () => {
+  const pick = pickExemplar([
+    { id: "a", label: "A Very Long Note Title Indeed", degree: 30 },
+    { id: "b", label: "Kant", degree: 25 },
+    { id: "c", label: "Another Longish Title", degree: 28 },
+  ]);
+  expect(pick!.label).toBe("Kant");
+});
+
+test("pickExemplar excludes members below the degree fraction (a leaf never names a cluster)", () => {
+  const pick = pickExemplar([
+    { id: "hub", label: "Bibliography", degree: 100 },
+    { id: "leaf", label: "x", degree: 1 },
+  ]);
+  expect(pick!.label).toBe("Bibliography");
+});
+
+test("pickExemplar is deterministic and total", () => {
+  expect(pickExemplar([])).toBeUndefined();
+  const ms = [
+    { id: "b", label: "same", degree: 5 },
+    { id: "a", label: "same", degree: 5 },
+  ];
+  expect(pickExemplar(ms)!.id).toBe("a"); // equal length + equal degree → smallest id
+  expect(pickExemplar([...ms].reverse())!.id).toBe("a");
+});
+
+test("a tag member names its community end-to-end (detectCommunities carries `kind`)", () => {
+  const nodes = [
+    { id: "tag:books", label: "#books", kind: "tag" },
+    ...Array.from({ length: 10 }, (_, i) => ({ id: `n${i}`, label: `A Long Book Note Title Number ${i}`, kind: "note" })),
+  ];
+  const edges = Array.from({ length: 10 }, (_, i) => ({ from: "tag:books", to: `n${i}` }));
+  const m = detectCommunities(nodes, edges);
+  expect(m.get("n0")!.label).toBe("#books");
 });
 
 // --- Hierarchy ("clusters in clusters in clusters") ------------------------------------------------
@@ -190,9 +242,10 @@ test("edgeless notes stay their own singleton at every level", () => {
   }
 });
 
-test("labels at every level name the biggest hub inside that level's community", () => {
+test("labels at every level name a hub inside that level's community", () => {
   // Two stars joined by a weak bridge: each star's own hub names it at the fine level, and whichever
-  // hub has the higher degree names the merged group at the coarse level.
+  // hub has the higher degree names the merged group at the coarse level (the two hub labels are the
+  // same length, so pickExemplar's shortest-name rule falls through to degree).
   const nodes: { id: string; label: string }[] = [{ id: "hubA", label: "HUB-A" }, { id: "hubB", label: "HUB-B" }];
   const edges: { from: string; to: string }[] = [{ from: "hubA", to: "hubB" }];
   for (let i = 0; i < 12; i++) { nodes.push({ id: `a${i}`, label: `a${i}` }); edges.push({ from: "hubA", to: `a${i}` }); }

@@ -14,6 +14,7 @@ import { GlobalWindow } from "happy-dom";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { AsciiGraphRenderer } from "./AsciiGraphRenderer";
 import { CELL_W, LAYER_EDGE } from "./asciiGrid";
+import { CLUSTER_LABEL_MAX_CHARS } from "./labelSelection";
 
 const DOM_GLOBALS = [
   "document", "window", "navigator", "Node", "Element", "HTMLElement", "HTMLDivElement",
@@ -115,14 +116,19 @@ function frame(t = 16) {
 /** Advance many frames so a camera glide (resolution / target) settles. */
 function settle(n = 120) { for (let i = 0; i < n; i++) frame(16 * (i + 2)); }
 
-// The fixture's world coordinates are scaled up 12x from the "natural" ring geometry below (still
-// only 24 notes on a small ring) so the graph's bounding radius is big enough, relative to the fixed
-// absolute DEEPEST_WORLD_PER_CELL target (asciiGrid.ts), to actually have zoom range to test against
-// — fit() normalizes screen layout to a fraction of the box regardless of world scale (see
-// AsciiGraphRenderer's zoom law), so this changes NOTHING about on-screen geometry at 100%, only how
-// much further there is to zoom toward 0%. Chosen so maxRes lands on a clean, comfortably-settling
-// value in both 2D and 3D (see AsciiGraphRenderer.ts fit()/asciiGrid.ts maxResFor).
-const RING_SCALE = 12;
+// The fixture's world coordinates are scaled up from the "natural" ring geometry below (still only 24
+// notes on a small ring) so the graph's bounding radius is big enough, relative to the fixed absolute
+// DEEPEST_WORLD_PER_CELL target (asciiGrid.ts), to actually have zoom range to test against — fit()
+// normalizes screen layout to a fraction of the box regardless of world scale (see AsciiGraphRenderer's
+// zoom law), so this changes NOTHING about on-screen geometry at 100%, only how much further there is to
+// zoom toward 0%. Chosen so maxRes lands on a clean, comfortably-settling value in both 2D and 3D (see
+// AsciiGraphRenderer.ts fit()/asciiGrid.ts maxResFor).
+// 3, was 12: maxRes is proportional to RING_SCALE / DEEPEST_WORLD_PER_CELL, and that constant went
+// 3.125 → 0.8 (a deeper absolute 0%). Left at 12 the fixture's ladder got ~4x deeper, so the level-
+// boundary stops these tests step to (70% = t 0.3) magnified 4 blobs of 6 notes past the whole field
+// and every entity went off-grid. Rescaling by the same factor keeps the ladder — and therefore what
+// each stop MEANS for this fixture — exactly where it was. Retune this whenever that constant moves.
+const RING_SCALE = 3;
 
 /** A ring of notes around one high-degree hub, in three communities. */
 function sampleGraph() {
@@ -484,6 +490,78 @@ describe("N-level semantic labels — the zoom ladder walks communityPath, coars
     wheelIn(viewport, 30);
     settle(200);
     expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
+    r.destroy();
+  });
+});
+
+describe("cluster label occupancy — no two eyebrow labels ever overlap (the 'soup' regression)", () => {
+  /** Many small clusters packed TIGHTLY along one horizontal band — dense enough that greedy
+   *  placement genuinely contends for cells. A wide margin between clusters would never exercise
+   *  the bug: reservation and real DRAWN width only diverge once labels actually compete for the
+   *  same row. Names are long enough to land past `CLUSTER_LABEL_MAX_CHARS`, so clusterLabelText's
+   *  truncation is exercised too. */
+  function denseClusterGraph() {
+    const nodes = [];
+    const edges = [];
+    const N = 10;
+    for (let b = 0; b < N; b++) {
+      const cx = (b - (N - 1) / 2) * 40 * RING_SCALE;
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2;
+        const x = cx + Math.cos(a) * 4 * RING_SCALE;
+        const y = Math.sin(a) * 4 * RING_SCALE;
+        nodes.push({
+          id: `b${b}k${k}`, label: `note ${b}${k}`, kind: "note" as const,
+          position: [x, y, 0] as [number, number, number],
+          position2d: [x, y] as [number, number],
+          community: b,
+          communityLabel: `Cluster Number ${b} About Something Long`,
+        });
+      }
+    }
+    for (let b = 0; b < N; b++) for (let k = 1; k < 4; k++) edges.push({ from: `b${b}k0`, to: `b${b}k${k}`, kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  it("keeps every drawn cluster label's DRAWN span disjoint from every other on the same row", () => {
+    const { r } = mountRenderer("2d", denseClusterGraph());
+    const priv = r as unknown as {
+      labels: { text: string; col: number; row: number; widthCells: number; eyebrow?: boolean }[];
+    };
+    const eyebrows = priv.labels.filter((l) => l.eyebrow);
+    expect(eyebrows.length).toBeGreaterThan(1); // the fixture must actually produce contention
+    const byRow = new Map<number, typeof eyebrows>();
+    for (const l of eyebrows) {
+      const arr = byRow.get(l.row) ?? [];
+      arr.push(l);
+      byRow.set(l.row, arr);
+    }
+    let sameRowPairs = 0;
+    for (const arr of byRow.values()) {
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          sameRowPairs++;
+          const a = arr[i], b = arr[j];
+          const overlaps = a.col <= b.col + b.widthCells && b.col <= a.col + a.widthCells;
+          expect(overlaps).toBe(false);
+        }
+      }
+    }
+    expect(sameRowPairs).toBeGreaterThan(0); // the assertion above must actually have run at least once
+    r.destroy();
+  });
+
+  it("computeStats() reports zero label overlaps and a capped max label length on the same dense fixture", () => {
+    const { r } = mountRenderer("2d", denseClusterGraph());
+    const stats = r.computeStats();
+    expect(stats.labelsDrawn).toBeGreaterThan(1);
+    expect(stats.labelOverlaps).toBe(0);
+    expect(stats.maxLabelChars).toBeLessThanOrEqual(CLUSTER_LABEL_MAX_CHARS);
+    // At fit (100%), a graph with communities is fully AGGREGATE (LOD) — the leaf pass that would
+    // rasterize real note glyphs does not run at all (see "shows cluster names and NO file names at
+    // fit" above), so no notes are on screen yet.
+    expect(stats.notesOnScreen).toBe(0);
+    expect(stats.entitiesDrawn).toBeGreaterThan(0);
     r.destroy();
   });
 });

@@ -204,15 +204,37 @@ export function fitPxPerWorld(cols: number, rows: number, m: GridMetrics, radius
 /**
  * THE 0% floor: world units per cell at maximum resolution, independent of the graph — the whole
  * point of "0% = deepest zoom" is that it does NOT depend on graph size the way `fitPxPerWorld`
- * does. Derived from layout.ts's own spacing law, not picked freehand: the tightest two leaf notes
- * are ever allowed to sit is the collide floor `linkDistance(5) × COLLIDE_RATIO(1.25) × 2 = 12.5`
- * world units (layout.ts `collideFloor`, doubled since collide radius applies to BOTH nodes). Split
- * that gap into 4 cells — one for each node's own glyph, plus a 1-cell buffer on each side so the
- * two glyphs (and a hovered label) don't crowd into the same or adjacent cell — giving
- * 12.5 / 4 = 3.125 world units/cell. That is the finest two touching notes ever need to be to read
- * as separate marks on the grid; anything denser than this would just be empty cells between them.
+ * does.
+ *
+ * 0.8, was 3.125. The old value was derived from "two touching notes must land on separate cells",
+ * which is the wrong bar twice over. It only counted CELL WIDTH (a row is 2.86× a column in world
+ * terms, so vertically two adjacent notes were only ~1.6 rows apart), and a mark being merely
+ * *distinct* is not the same as its NEIGHBOURHOOD being *readable* — a note carries a label. Measured
+ * on the reference 2114-note vault at 1400×900 the old floor put ~170 notes (and their labels) on the
+ * field at 0%: a wall of text, i.e. no deep end at all.
+ *
+ * The new value is derived from the target the deep end is actually for — "a readable local
+ * neighbourhood of a few dozen notes":
+ *
+ *   1. NOTES ON SCREEN. The visible world box at 0% is `cols·W` wide by `rows·W·(cellH/cellW)` tall.
+ *      On the reference field (219 cols × 48 rows, cellH/cellW = 2.857) that is 30,033·W² world units².
+ *      The vault's own local spacing — set by layout.ts's collide floor, measured, not assumed — has a
+ *      median nearest-neighbour distance of 14.1 world units. Sampling 400 windows centred on real
+ *      notes of the settled layout gives a median count of 170 at W = 3.125, 42 at W = 1.0, 35 at
+ *      W = 0.8 and 20 at W = 0.5. W = 0.8 is the value that lands the median in the 30-60 band
+ *      (p10 15, p90 62) — the whole band, not just its middle.
+ *   2. LABEL ROOM, the reason that band is the right one. At W the two closest notes sit 14.1/W
+ *      columns apart horizontally and 14.1/(W·2.857) ROWS apart vertically. At W = 0.8 that is 17.6
+ *      columns and 6.2 rows — so each note has room beside it for a label (a capped cluster name is 26
+ *      columns; a file label is placed 2 columns off the glyph and simply drops if it doesn't fit) and
+ *      several clear rows above and below. At the old 3.125 it was 4.5 columns and 1.6 rows, which is
+ *      exactly the overlapping soup that was reported.
+ *
+ * Changing this changes nothing but the ladder's DEPTH: `maxResFor` reaches further, and the 10%
+ * steps (`ZOOM_STEP_PCT`) simply each cover more range — on the reference vault maxRes goes 8.6 → 33.7,
+ * i.e. ~1.42× per notch.
  */
-export const DEEPEST_WORLD_PER_CELL = 3.125;
+export const DEEPEST_WORLD_PER_CELL = 0.8;
 
 /**
  * The ladder's MINIMUM span, as a multiple of the fit resolution.
@@ -230,12 +252,18 @@ export const DEEPEST_WORLD_PER_CELL = 3.125;
  * frozen at "100%" however far you scrolled. "Nothing left to resolve" is a fair reading of the
  * design law, but a dead control is not an acceptable expression of it.
  *
- * So the ceiling is floored at a span instead of at unity: 0% is always at least 4x the fit
- * resolution (~15% per `ZOOM_STEP_PCT` notch — the smallest step that reads as motion on a grid
- * whose cell never changes size). Where the absolute target asks for MORE than that it still wins,
- * so the "0% is a fixed absolute detail level" law holds wherever it is meaningful.
+ * So the ceiling is floored at a span instead of at unity: 0% is always at least this multiple of the
+ * fit resolution. Where the absolute target asks for MORE than that it still wins, so the "0% is a
+ * fixed absolute detail level" law holds wherever it is meaningful.
+ *
+ * 8, was 4. This floor is what a graph gets when it is ALREADY denser than the absolute target — i.e.
+ * a small graph, or any graph on a big enough display — and 4 was too shallow to explore one: it gave
+ * only ~15% per `ZOOM_STEP_PCT` notch and a 2× total magnification from the middle of the ladder.
+ * Raised in step with `DEEPEST_WORLD_PER_CELL` (3.125 → 0.8, a 3.9× deeper absolute end) so the
+ * floored case gets a comparable amount of depth rather than staying at the old shallow span. The
+ * steps stay at 10% — 11 stops either way, each just covering more range (~28% per notch at 8).
  */
-export const MIN_ZOOM_SPAN = 4;
+export const MIN_ZOOM_SPAN = 8;
 
 /**
  * The res-multiplier ceiling that reaches `deepestWorldPerCell` FROM the current fit scale.

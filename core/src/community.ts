@@ -31,10 +31,9 @@
  *   - The modularity local-move visits nodes in that order; ties go to the smallest community id.
  *   - Resolution search is a fixed-step geometric bisection (no adaptive termination on timing).
  *   - Communities are renumbered densely `0..k-1` in order of first appearance, per level.
- *   - Each community's exemplar is its highest-degree member (tie → lexicographically smallest id)
- *     measured on the ORIGINAL graph, so a coarse level is labelled by the biggest real hub inside
- *     it. Isolated nodes (no edges) form their own singleton community at every level, labelled by
- *     themselves.
+ *   - Each community's exemplar is picked by `pickExemplar` (see its doc comment) from the community's
+ *     highest-degree members, measured on the ORIGINAL graph. Isolated nodes (no edges) form their own
+ *     singleton community at every level, labelled by themselves.
  */
 
 export interface CommunityAssignment {
@@ -50,6 +49,67 @@ export interface HierarchicalCommunityAssignment extends CommunityAssignment {
   /** Exemplar label per level, COARSEST → FINEST; same length as `path`, last element === `label`. */
   labels: string[];
 }
+
+// --- Exemplar (cluster NAME) selection -----------------------------------------------------------
+// A cluster's exemplar is what the graph DRAWS as the cluster's name, and the field is a monospace
+// ASCII grid — so the name has to be SHORT above all else. Picking "the single highest-degree
+// member" (what this used to do) reliably produced a full note-title SENTENCE:
+// "PLAYER - MORE RESPONSIVE WALKING PHYSICS + ANIMATIONS" was a real label on the reference vault,
+// and a field of those overlaps into unreadable soup no matter how the renderer places them.
+//
+// So: build a pool of the community's genuine HUBS — members whose degree is at least
+// `EXEMPLAR_DEGREE_FRAC` of the community's maximum, capped at `EXEMPLAR_POOL` of them — then inside
+// that pool prefer the SHORTEST name, with one override: a TAG member wins over a note outright.
+// A tag ("#school", "#books") is already the vault's own one-word summary of a group of notes, which
+// is exactly what a cluster name wants to be, and on the reference vault 75% of all edges are
+// incident to a tag node, so most communities have one in their top-degree pool.
+// The degree FRACTION (not just "the top 8") is what keeps a short-titled LEAF from naming the
+// cluster: in a star of one hub + three leaves, only the hub clears the threshold, so "HUB" wins even
+// though "L1" is shorter.
+const EXEMPLAR_POOL = 8;
+const EXEMPLAR_DEGREE_FRAC = 0.5;
+
+/** One candidate member for `pickExemplar`. `kind` is the graph node kind ("tag" gets the override
+ *  above); anything else, or absent, is treated as a plain note. */
+export interface ExemplarCandidate {
+  id: string;
+  label: string;
+  kind?: string;
+  degree: number;
+}
+
+/**
+ * The community's display name source, per the rule in the block above:
+ *   1. keep the members whose degree is >= `degreeFrac` × the community's max degree, ranked by degree
+ *      DESC (ties → shorter label, then id ASC), at most `poolSize` of them — the hub pool;
+ *   2. if any of those is a `kind: "tag"`, consider only the tags;
+ *   3. among the survivors pick the SHORTEST label (ties → higher degree, then id ASC).
+ * Deterministic and total: returns `undefined` only for an empty candidate list. Exported for
+ * community.test.ts — the ranking rule is the whole readability contract, so it is pinned directly.
+ */
+export function pickExemplar(
+  members: ExemplarCandidate[],
+  poolSize = EXEMPLAR_POOL,
+  degreeFrac = EXEMPLAR_DEGREE_FRAC,
+): ExemplarCandidate | undefined {
+  if (members.length === 0) return undefined;
+  const byDegree = [...members].sort(
+    (a, b) => b.degree - a.degree || a.label.length - b.label.length || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  const cut = byDegree[0].degree * degreeFrac;
+  // `|| [byDegree[0]]` can't be needed — byDegree[0] always clears its own fraction — but slicing
+  // first keeps the cap honest when many members tie at the top degree.
+  const pool = byDegree.filter((m) => m.degree >= cut).slice(0, Math.max(1, poolSize));
+  const tags = pool.filter((m) => m.kind === "tag");
+  const field = tags.length > 0 ? tags : pool;
+  return field.reduce((best, m) =>
+    m.label.length < best.label.length ||
+    (m.label.length === best.label.length && (m.degree > best.degree || (m.degree === best.degree && m.id < best.id)))
+      ? m
+      : best,
+  );
+}
+// -------------------------------------------------------------------------------------------------
 
 // --- Level count ---------------------------------------------------------------------------------
 // The finest level aims for communities of ~MEAN_FINEST_SIZE nodes, so a graph of N nodes wants
@@ -281,7 +341,7 @@ function moveToTarget(g: WGraph, target: number): Int32Array {
  *  (the coarse levels are built from the finest, never the other way round). Asserted in
  *  community.test.ts, which compares this against the full hierarchy's finest level. */
 export function detectCommunities(
-  nodes: { id: string; label: string }[],
+  nodes: { id: string; label: string; kind?: string }[],
   edges: { from: string; to: string }[],
 ): Map<string, CommunityAssignment> {
   const out = new Map<string, CommunityAssignment>();
@@ -302,7 +362,7 @@ export function detectCommunities(
  * that share a finest community always share every coarser one.
  */
 export function detectCommunityHierarchy(
-  nodes: { id: string; label: string }[],
+  nodes: { id: string; label: string; kind?: string }[],
   edges: { from: string; to: string }[],
   opts: { levels?: number } = {},
 ): Map<string, HierarchicalCommunityAssignment> {
@@ -310,7 +370,11 @@ export function detectCommunityHierarchy(
   if (nodes.length === 0) return result;
 
   const labelById = new Map<string, string>();
-  for (const n of nodes) labelById.set(n.id, n.label);
+  const kindById = new Map<string, string>();
+  for (const n of nodes) {
+    labelById.set(n.id, n.label);
+    if (n.kind) kindById.set(n.id, n.kind);
+  }
 
   // Process in sorted id order for determinism (also the order dense ids are assigned in).
   const sortedIds = nodes.map((n) => n.id).sort();
@@ -387,25 +451,25 @@ export function detectCommunityHierarchy(
   // -------------------------------------------------------------------------------------------------
 
   // Per level: renumber densely in sorted-id first-appearance order (so ids read left-to-right in the
-  // same order nodes are processed) and pick each community's exemplar — the highest-degree member on
-  // the ORIGINAL graph, ties → lexicographically smallest id (free: ids are visited in ascending
-  // order, so the first-seen id at a given degree already wins and no later equal-degree id displaces
-  // it). A coarse level is therefore named after the biggest real hub inside it.
+  // same order nodes are processed), then name each community via `pickExemplar` — top-degree pool,
+  // tag members preferred, shortest label wins (see the "Exemplar (cluster NAME) selection" block:
+  // the name is drawn on a monospace ASCII grid, so SHORT beats "biggest hub").
   const perLevelId: Int32Array[] = [];
   const perLevelLabel: string[][] = [];
   for (const part of partitions) {
     const dense = new Map<number, number>();
     const ids = new Int32Array(n);
-    const exemplar: string[] = [];
+    const members: ExemplarCandidate[][] = [];
     for (let i = 0; i < n; i++) {
       const raw = part[i];
       let d = dense.get(raw);
-      if (d === undefined) { d = dense.size; dense.set(raw, d); exemplar.push(sortedIds[i]); }
+      if (d === undefined) { d = dense.size; dense.set(raw, d); members.push([]); }
       ids[i] = d;
-      if (degree[i] > (degree[indexOf.get(exemplar[d])!] ?? -1)) exemplar[d] = sortedIds[i];
+      const id = sortedIds[i];
+      members[d].push({ id, label: labelById.get(id) ?? id, kind: kindById.get(id), degree: degree[i] });
     }
     perLevelId.push(ids);
-    perLevelLabel.push(exemplar.map((id) => labelById.get(id) ?? id));
+    perLevelLabel.push(members.map((ms, d) => pickExemplar(ms)?.label ?? `cluster ${d}`));
   }
 
   // partitions/perLevel* are FINEST-first; the emitted path is COARSEST-first.

@@ -272,9 +272,43 @@ export function clusterLevelAlphas(
   return Array.from({ length: n }, (_, i) => entered(i) - entered(i + 1));
 }
 
+/** Hard cap (TOTAL characters, including the ".." tail) on a cluster label's text — see
+ *  `clusterLabelText`. Cluster names are free-form note-title-ish sentences pulled from the vault's
+ *  community detector, but the field draws them on a fixed-width monospace GRID at coarse zoom
+ *  stops: an uncapped label spills across neighbouring cells and paints over whatever else the
+ *  aggregate view put there (the "soup" — see AsciiGraphRenderer's `eyebrowWidthCells` and its
+ *  occupancy reservation, which assumes a label's length is bounded by this constant). */
+export const CLUSTER_LABEL_MAX_CHARS = 20;
+
 /** Eyebrow-register text for a cluster name: upper-cased, matching the design system's
  *  `.asc-eyebrow` treatment (`--ls-eyebrow` tracking is applied by the canvas caller via
- *  `ctx.letterSpacing`, not baked into the string). */
-export function clusterLabelText(name: string): string {
-  return name.toUpperCase();
+ *  `ctx.letterSpacing`, not baked into the string), then hard-capped to `maxChars` TOTAL characters
+ *  (default `CLUSTER_LABEL_MAX_CHARS`) — long names are truncated to `maxChars - 2` characters (with
+ *  any trailing whitespace/punctuation trimmed so the cut doesn't read as mid-word-then-dangling-
+ *  punctuation) and suffixed with ASCII ".." — NEVER the Unicode "…" ellipsis, since the field is a
+ *  monospace ASCII grid and a non-ASCII glyph doesn't share the font's fixed per-cell advance,
+ *  shearing the rest of the line off its cells. */
+export function clusterLabelText(name: string, maxChars: number = CLUSTER_LABEL_MAX_CHARS): string {
+  const upper = name.toUpperCase();
+  if (upper.length <= maxChars) return upper;
+  const head = upper.slice(0, Math.max(0, maxChars - 2)).replace(/[\s.,;:!?-]+$/, "");
+  return head + "..";
+}
+
+/**
+ * Real drawn width, in GRID CELLS, of an eyebrow (cluster) label of `len` characters when the
+ * canvas additionally applies `trackingEm` em of `ctx.letterSpacing` tracking at `fontPx` on top of
+ * the grid's own `cellW`-px character advance (see AsciiGraphRenderer's `CLUSTER_LABEL_TRACKING_EM`
+ * / eyebrow `fillText` call). Canvas letterSpacing pads every glyph — including the last — by that
+ * many px, so the drawn run is `len * cellW + len * (trackingEm * fontPx)` px wide, i.e.
+ * `len * (1 + trackingEm*fontPx/cellW)` CELLS. Ceil'd so an occupancy reservation never
+ * under-covers a partial cell, and floored at `len` (tracking only ever WIDENS a label, never
+ * narrows it). A non-finite or non-positive `cellW` (unmeasured canvas, degenerate boot state)
+ * falls back to the untracked `len` instead of propagating a NaN/Infinity into the caller's
+ * occupancy math — the same non-finite discipline as `graphFit.ts`'s guards.
+ */
+export function eyebrowWidthCells(len: number, trackingEm: number, fontPx: number, cellW: number): number {
+  if (!Number.isFinite(cellW) || cellW <= 0) return len;
+  const cells = Math.ceil(len * (1 + (trackingEm * fontPx) / cellW));
+  return Math.max(len, cells);
 }

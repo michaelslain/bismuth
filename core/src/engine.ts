@@ -17,7 +17,9 @@ function stampCommunities(g: GraphData): GraphData {
   const present = new Set(g.nodes.map((n) => n.id));
   const structural = g.edges.filter((e) => present.has(e.from) && present.has(e.to));
   const assignments = detectCommunityHierarchy(
-    g.nodes.map((n) => ({ id: n.id, label: n.label })),
+    // `kind` feeds the exemplar picker's tag preference (community.ts pickExemplar): a cluster whose
+    // top-degree members include a tag is named "#school", not by a note's whole title.
+    g.nodes.map((n) => ({ id: n.id, label: n.label, kind: n.kind })),
     structural.map((e) => ({ from: e.from, to: e.to })),
   );
   for (const n of g.nodes) {
