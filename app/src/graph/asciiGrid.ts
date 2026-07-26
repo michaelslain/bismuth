@@ -191,26 +191,111 @@ export function nearestCellNode(col: number, row: number, m: GridMetrics, cellNo
 
 /**
  * Resolution → the world-units-per-cell ratio, expressed as the px-per-world-unit scale the
- * projection multiplies by. At `res = 1` the whole graph fits the grid (0% zoom); at `res = max`
- * the field is at maximum resolution with every note named (100%). The CELL SIZE is not a term in
- * this function — that is the point.
+ * projection multiplies by. At `res = 1` the whole graph fits the grid (100% zoom — see the HUD
+ * convention below); at `res = maxRes` the field is at maximum resolution (0%). The CELL SIZE is
+ * not a term in this function — that is the point. `radius` is the graph's own bounding radius, so
+ * this scale is graph-size RELATIVE — a bigger graph gets a smaller fit scale to fit the same box.
  */
 export function fitPxPerWorld(cols: number, rows: number, m: GridMetrics, radius: number, fitFraction = 0.42): number {
   const boxPx = Math.min(cols * m.cellW, rows * m.cellH);
   return (boxPx * fitFraction) / Math.max(1e-6, radius);
 }
 
-/** Resolution multiplier → the continuous 0..1 log-scale progress toward `maxRes` that both the
- *  0–100% readout (`resolutionPercent`) and the label crossfade math (`labelSelection.ts`
- *  `fileLabelBudget`/`fileLabelAlpha`) key off. Unrounded, unlike the percent readout, so the
- *  crossfade stays smooth frame to frame instead of stepping in 1% jumps. */
+/**
+ * THE 0% floor: world units per cell at maximum resolution, independent of the graph — the whole
+ * point of "0% = deepest zoom" is that it does NOT depend on graph size the way `fitPxPerWorld`
+ * does. Derived from layout.ts's own spacing law, not picked freehand: the tightest two leaf notes
+ * are ever allowed to sit is the collide floor `linkDistance(5) × COLLIDE_RATIO(1.25) × 2 = 12.5`
+ * world units (layout.ts `collideFloor`, doubled since collide radius applies to BOTH nodes). Split
+ * that gap into 4 cells — one for each node's own glyph, plus a 1-cell buffer on each side so the
+ * two glyphs (and a hovered label) don't crowd into the same or adjacent cell — giving
+ * 12.5 / 4 = 3.125 world units/cell. That is the finest two touching notes ever need to be to read
+ * as separate marks on the grid; anything denser than this would just be empty cells between them.
+ */
+export const DEEPEST_WORLD_PER_CELL = 3.125;
+
+/**
+ * The ladder's MINIMUM span, as a multiple of the fit resolution.
+ *
+ * `maxResFor` below reaches a FIXED ABSOLUTE target (`DEEPEST_WORLD_PER_CELL`) from a fit scale
+ * that is not fixed at all: `fitPxPerWorld` is a fraction of the FIELD, so the same graph gets
+ * denser-at-fit as the window grows. Any graph therefore eventually crosses the absolute target
+ * just by being looked at on a big enough display — the real 2251-note vault does it at roughly a
+ * 2200px-wide field, i.e. a maximized window on a large monitor.
+ *
+ * Past that crossover the old `Math.max(1, …)` floor pinned `maxRes` to exactly 1, and BOTH
+ * directions of the percent mapping degenerate there (`resFromPercent` returns 1 for every step,
+ * `resolutionPercent` returns 100 for every res): the whole 11-stop ladder collapsed onto a single
+ * stop. The wheel moved the percent state, nothing else moved — no re-rasterization, and a HUD
+ * frozen at "100%" however far you scrolled. "Nothing left to resolve" is a fair reading of the
+ * design law, but a dead control is not an acceptable expression of it.
+ *
+ * So the ceiling is floored at a span instead of at unity: 0% is always at least 4x the fit
+ * resolution (~15% per `ZOOM_STEP_PCT` notch — the smallest step that reads as motion on a grid
+ * whose cell never changes size). Where the absolute target asks for MORE than that it still wins,
+ * so the "0% is a fixed absolute detail level" law holds wherever it is meaningful.
+ */
+export const MIN_ZOOM_SPAN = 4;
+
+/**
+ * The res-multiplier ceiling that reaches `deepestWorldPerCell` FROM the current fit scale.
+ * Because `fitPxPerWorld` shrinks as the graph grows (see above) but the deepest-zoom target is a
+ * fixed absolute scale, a bigger graph needs a BIGGER ceiling to reach the same absolute detail —
+ * that's the whole "0% is fixed, 100% is graph-relative" law made concrete. Floored at
+ * `MIN_ZOOM_SPAN` (see above) so a graph already at/past the absolute target keeps a usable ladder
+ * rather than collapsing every stop onto fit.
+ */
+export function maxResFor(pxPerWorld: number, cellW: number, deepestWorldPerCell = DEEPEST_WORLD_PER_CELL): number {
+  const sDeepest = cellW / Math.max(1e-6, deepestWorldPerCell);
+  return Math.max(MIN_ZOOM_SPAN, sDeepest / Math.max(1e-6, pxPerWorld));
+}
+
+/** Resolution multiplier → the continuous 0..1 log-scale progress toward `maxRes` that the label
+ *  crossfade math (`labelSelection.ts` `fileLabelBudget`/`fileLabelAlpha`/`clusterLevelAlphas`) keys
+ *  off. 0 = res is at the fit scale (`res = 1`), 1 = res is at the deepest-zoom ceiling
+ *  (`res = maxRes`). NOTE this is the internal camera/label progress, unrelated in direction to the
+ *  0–100% HUD readout below (`resolutionPercent`), which is inverted (100% = fit) — everything that
+ *  isn't display-facing (the label math, `AsciiGraphRenderer`'s internal `res`/`goalRes`) keeps this
+ *  0=fit/1=deepest convention throughout. Unrounded, unlike the percent readout, so the crossfade
+ *  stays smooth frame to frame instead of stepping in jumps. */
 export function resolutionT(res: number, maxRes: number): number {
   if (maxRes <= 1) return 0;
   const t = Math.log(Math.max(1, res)) / Math.log(maxRes);
   return Math.max(0, Math.min(1, t));
 }
 
-/** Map a resolution multiplier onto the 0–100 readout the design's viewbar shows. */
+/** Inverse of `resolutionT`: the resolution multiplier sitting at internal progress `t` (0=fit,
+ *  1=deepest) against a given `maxRes` ceiling. */
+export function resFromT(t: number, maxRes: number): number {
+  if (maxRes <= 1) return 1;
+  return Math.pow(maxRes, Math.max(0, Math.min(1, t)));
+}
+
+/**
+ * Map a resolution multiplier onto the HUD's 0–100% readout — INVERTED from the internal `t` above:
+ * 100% = fit (the whole graph exactly fills the field), 0% = the deepest-zoom ceiling (every note
+ * individually distinguishable). This is the user-facing convention (see AsciiGraphRenderer's zoom
+ * law comment); `resolutionT`/`resFromT` above stay in the original 0=fit/1=deepest direction
+ * because that's what the label crossfade math (and `res`/`goalRes` internally) is built on.
+ */
 export function resolutionPercent(res: number, maxRes: number): number {
-  return Math.round(resolutionT(res, maxRes) * 100);
+  return 100 - Math.round(resolutionT(res, maxRes) * 100);
+}
+
+/** Zoom moves in 10% increments (wheel notches / +- keys), never continuously — 11 stops from 0%
+ *  (deepest) to 100% (fit). The renderer glides `res` toward whichever step's resolution smoothly
+ *  (its existing per-frame easing), so motion still reads as continuous; only the STOPS are quantized. */
+export const ZOOM_STEP_PCT = 10;
+
+/** Snap a raw HUD percent to the nearest `ZOOM_STEP_PCT` stop, clamped to 0..100. */
+export function snapZoomPercent(pct: number): number {
+  const clamped = Math.max(0, Math.min(100, pct));
+  return Math.round(clamped / ZOOM_STEP_PCT) * ZOOM_STEP_PCT;
+}
+
+/** Inverse of `resolutionPercent`: the resolution multiplier for a HUD percent (100=fit, 0=deepest)
+ *  against a given `maxRes` ceiling. */
+export function resFromPercent(pct: number, maxRes: number): number {
+  const t = 1 - Math.max(0, Math.min(100, pct)) / 100;
+  return resFromT(t, maxRes);
 }

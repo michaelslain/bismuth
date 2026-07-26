@@ -35,10 +35,25 @@ export interface GraphNode {
   position?: [number, number, number];
   /** Precomputed flat 2D layout coordinate [x,y] (z=0), for an instant + smooth 2D↔3D morph. */
   position2d?: [number, number];
-  /** Louvain community id (stable color/group key), attached by the backend. */
+  /** Louvain community id (stable color/group key), attached by the backend. Always the FINEST
+   *  level of the hierarchy below — every existing consumer (colours, cluster legend, graph search
+   *  subtitles) keeps reading exactly this one field. */
   community?: number;
-  /** Exemplar name for the node's community (highest-degree member's label). */
+  /** Exemplar name for the node's community (highest-degree member's label). Finest level. */
   communityLabel?: string;
+  /**
+   * Hierarchical community membership, COARSEST → FINEST ("clusters in clusters in clusters").
+   * The last element is always `community`. Length is 1..4 and derives from the graph's total node
+   * count (see `communityLevelsFor` in community.ts): 1 level below ~360 nodes, 2 to ~1620, 3 to
+   * ~7290, 4 beyond. Levels are strictly NESTED — two nodes sharing a finest community share every
+   * coarser one — and ids are densely renumbered PER LEVEL, so an id only means something paired
+   * with its level index. Drives the nested community forces in layout.ts.
+   */
+  communityPath?: number[];
+  /** Exemplar name per level, COARSEST → FINEST; same length as `communityPath`, last element is
+   *  `communityLabel`. Same exemplar rule at every level: the highest-degree member of that level's
+   *  community (tie → lexicographically smallest id), i.e. the biggest real hub inside it. */
+  communityPathLabels?: string[];
   /** Daemon-mode viz state (cron/process nodes only). Drives per-node opacity + tint in the
    *  renderer via `nodeVisualState`. Absent on every other node kind / graph mode. */
   daemon?: DaemonVizState;

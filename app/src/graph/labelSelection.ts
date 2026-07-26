@@ -200,6 +200,74 @@ export function clusterLabelAlpha(
   return 1 - fileLabelAlpha(t, revealT, fadeSpan);
 }
 
+// ---------------------------------------------------------------------------
+// N-LEVEL cluster-name ladder: below `FILE_LABEL_REVEAL_T` (owned entirely by cluster names, see
+// above) a graph with a `communityPath` deeper than one level doesn't just show ONE cluster
+// tier — it walks the hierarchy coarsest → finest as the camera zooms in, one crossfade per level
+// boundary, landing on the finest level exactly at `revealT` (where the two-state file-vs-cluster
+// crossfade above takes over unchanged). A 1-level graph (the pre-hierarchy default, or any graph
+// under the community detector's finest-only threshold) collapses to exactly the original
+// single-tier behaviour: `clusterLevelAlphas(t, 1)` is `[1]` for every t below `revealT`.
+// ---------------------------------------------------------------------------
+
+/** Fraction of each level's segment spent crossfading INTO the next level (smoothstep, ending
+ *  exactly at the segment's own boundary) — the rest of the segment shows that level at full
+ *  strength. Mirrors `FILE_LABEL_FADE_SPAN`'s role for the outer file crossfade, sized per-segment
+ *  instead of being a fixed t-width so it still fits comfortably at 4 levels. */
+const LEVEL_FADE_FRAC = 0.45;
+
+/**
+ * The `levelCount + 1` t-boundaries splitting `[0, revealT)` into `levelCount` even segments, one
+ * per hierarchy level (coarsest → finest). `boundaries[i]` is where level `i` starts owning the
+ * field; `boundaries[levelCount] === revealT`, where the outer file crossfade takes over.
+ */
+export function levelBoundaries(levelCount: number, revealT: number = FILE_LABEL_REVEAL_T): number[] {
+  const n = Math.max(1, levelCount);
+  const seg = revealT / n;
+  return Array.from({ length: n + 1 }, (_, i) => i * seg);
+}
+
+function smoothstep01(u: number): number {
+  const c = Math.max(0, Math.min(1, u));
+  return c * c * (3 - 2 * c);
+}
+
+/** Rises smoothly from 0 to 1 as `t` crosses `at`, over a span of `fadeSpan` ending exactly at `at`. */
+function riseTo1(t: number, at: number, fadeSpan: number): number {
+  if (t >= at) return 1;
+  const span = Math.max(1e-6, fadeSpan);
+  if (t <= at - span) return 0;
+  return smoothstep01((t - (at - span)) / span);
+}
+
+/**
+ * Per-level alpha (coarsest → finest), one entry per level, for the N-level cluster-name ladder at
+ * zoom progress `t`. A true partition of unity below `revealT` (the entries always sum to 1 — a
+ * crossfade between adjacent levels, never independent fades), landing on `[0,…,0,1]` (only the
+ * finest level "current") at/after `revealT`, where `clusterLabelAlpha`/`fileLabelAlpha` own the
+ * rest of the fade into file names. Implemented as telescoping "have we entered level i yet"
+ * indicators (`entered(0)=1`, `entered(levelCount)=0`, each boundary in between its own smoothstep)
+ * so `alpha[i] = entered(i) - entered(i+1)` — the same shape as `fileLabelAlpha`/`clusterLabelAlpha`,
+ * generalized to `levelCount - 1` internal boundaries instead of one.
+ */
+export function clusterLevelAlphas(
+  t: number,
+  levelCount: number,
+  revealT: number = FILE_LABEL_REVEAL_T,
+): number[] {
+  const n = Math.max(1, levelCount);
+  if (t >= revealT) return Array.from({ length: n }, (_, i) => (i === n - 1 ? 1 : 0));
+  const bounds = levelBoundaries(n, revealT);
+  const entered = (i: number): number => {
+    if (i <= 0) return 1;
+    if (i >= n) return 0;
+    const segStart = bounds[i - 1], segEnd = bounds[i];
+    const fadeSpan = (segEnd - segStart) * LEVEL_FADE_FRAC;
+    return riseTo1(t, segEnd, fadeSpan);
+  };
+  return Array.from({ length: n }, (_, i) => entered(i) - entered(i + 1));
+}
+
 /** Eyebrow-register text for a cluster name: upper-cased, matching the design system's
  *  `.asc-eyebrow` treatment (`--ls-eyebrow` tracking is applied by the canvas caller via
  *  `ctx.letterSpacing`, not baked into the string). */

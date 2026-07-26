@@ -347,6 +347,127 @@ test("community-aware layout is deterministic across runs", () => {
     .toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }));
 });
 
+// --- Hierarchical (nested) communities -------------------------------------------------------------
+// `communityPath` (coarsest → finest) adds one gravity + separation pair per ancestor level at
+// COMMUNITY_LEVEL_DECAY^a strength, so super-clusters clump and spread the way clusters do. Measured
+// on the reference 2251-node vault (3 levels, 120 ticks) as per-level separation ratio, nested vs
+// finest-level-only: L0 1.985 → 0.926, L1 1.668 → 0.869, L2 1.090 → 0.926 (3D).
+
+/** `supers.length` super-clusters, each holding several sub-clusters: dense inside a sub-cluster,
+ *  moderate between sub-clusters of the same super, sparse across supers. Emits a 2-level
+ *  `communityPath` matching the planted structure, so the test measures the LAYOUT not the detector. */
+function plantedHierarchy(supers: number[][], cross = 0.02) {
+  const nodes: { id: string; community: number; communityPath: number[] }[] = [];
+  const edges: { from: string; to: string }[] = [];
+  let s = 24680 >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const key = (S: number, c: number, i: number) => `s${S}c${c}n${i}`;
+  let sub = 0;
+  const subOf: number[][] = supers.map((subs) => subs.map(() => sub++));
+  supers.forEach((subs, S) => subs.forEach((size, c) => {
+    for (let i = 0; i < size; i++) nodes.push({ id: key(S, c, i), community: subOf[S][c], communityPath: [S, subOf[S][c]] });
+  }));
+  supers.forEach((subs, S) => subs.forEach((size, c) => {
+    const hubs = Math.max(2, Math.round(size / 25));
+    for (let h = 1; h < hubs; h++) edges.push({ from: key(S, c, 0), to: key(S, c, h) });
+    for (let i = hubs; i < size; i++) {
+      edges.push({ from: key(S, c, i), to: key(S, c, Math.floor(rnd() * hubs)) });
+      if (rnd() < 0.45) {
+        const j = hubs + Math.floor(rnd() * (size - hubs));
+        if (j !== i) edges.push({ from: key(S, c, i), to: key(S, c, j) });
+      }
+    }
+    for (let i = 0; i < size; i++) {
+      if (subs.length > 1 && rnd() < 0.2) {
+        let o = Math.floor(rnd() * (subs.length - 1)); if (o >= c) o++;
+        edges.push({ from: key(S, c, i), to: key(S, o, Math.floor(rnd() * subs[o])) });
+      }
+      if (rnd() < cross) {
+        let oS = Math.floor(rnd() * (supers.length - 1)); if (oS >= S) oS++;
+        const oc = Math.floor(rnd() * supers[oS].length);
+        edges.push({ from: key(S, c, i), to: key(oS, oc, Math.floor(rnd() * supers[oS][oc])) });
+      }
+    }
+  }));
+  return { nodes, edges };
+}
+
+/** `separation`, but grouping by a given level of `communityPath` instead of the flat `community`. */
+function separationAtLevel(nodes: { id: string; communityPath: number[] }[], pos: Positions, level: number) {
+  return separation(nodes.map((n) => ({ id: n.id, community: n.communityPath[level] })), pos);
+}
+
+const HIER = [[70, 55, 45], [65, 50, 40], [60, 50, 45]];
+
+test("nesting separates the COARSE level too, without undoing the fine level", () => {
+  const g = plantedHierarchy(HIER);
+  for (const dim of [3, 2] as const) {
+    const seedFlat = dim === 2 ? computeLayout(g, { refineTicks: 120, communityLevelDecay: 0 }) : undefined;
+    const seedNest = dim === 2 ? computeLayout(g, { refineTicks: 120 }) : undefined;
+    const flat = computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedFlat, communityLevelDecay: 0 });
+    const nest = computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedNest });
+    // The super-clusters (level 0) read as distinct groups only once the coarse forces are on.
+    expect(separationAtLevel(g.nodes, nest, 0).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 0).ratio * 0.75);
+    // ...and the finest level is not sacrificed for it (it stays at least as separated as flat).
+    expect(separationAtLevel(g.nodes, nest, 1).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 1).ratio * 1.15);
+    // No level collapses: each keeps real spatial extent (the degenerate way to win the ratio).
+    for (const level of [0, 1]) {
+      expect(separationAtLevel(g.nodes, nest, level).intra)
+        .toBeGreaterThan(separationAtLevel(g.nodes, flat, level).intra * 0.15);
+    }
+  }
+}, 30000); // four full 120-tick settles over a ~480-node fixture
+
+test("coarse levels sit at a LARGER spatial scale than fine ones", () => {
+  // The point of a hierarchy: a super-cluster is a bigger thing than a cluster. If the two levels
+  // settled at the same spread they would be the same picture drawn twice.
+  const g = plantedHierarchy(HIER);
+  const pos = computeLayout(g, { refineTicks: 120 });
+  const coarse = separationAtLevel(g.nodes, pos, 0);
+  const fine = separationAtLevel(g.nodes, pos, 1);
+  expect(coarse.intra).toBeGreaterThan(fine.intra * 1.3);
+});
+
+test("a 1-level communityPath is byte-identical to no path at all", () => {
+  // The finest level is the tuned baseline; hierarchies must be pure opt-in BY DATA. A single-level
+  // path (small vault) and a communityLevelDecay of 0 both have to reproduce it exactly.
+  const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
+  const flat = computeLayout(g, { refineTicks: 80 });
+  const oneLevel = { nodes: g.nodes.map((n) => ({ ...n, communityPath: [n.community] })), edges: g.edges };
+  expect(computeLayout(oneLevel, { refineTicks: 80 })).toEqual(flat);
+  const withPath = { nodes: g.nodes.map((n) => ({ ...n, communityPath: [n.community % 2, n.community] })), edges: g.edges };
+  expect(computeLayout(withPath, { refineTicks: 80, communityLevelDecay: 0 })).toEqual(flat);
+});
+
+test("an ancestor level that is a copy of its child is skipped, not applied twice", () => {
+  // Strict nesting means an equal group COUNT implies an identical partition. Re-applying it would
+  // silently scale the finest level's tuned constants up, changing the layout for no reason.
+  const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
+  const flat = computeLayout(g, { refineTicks: 80 });
+  const dup = { nodes: g.nodes.map((n) => ({ ...n, communityPath: [n.community, n.community] })), edges: g.edges };
+  expect(computeLayout(dup, { refineTicks: 80 })).toEqual(flat);
+});
+
+test("nested community forces keep the layout overlap-free (one speed cap for the whole stack)", () => {
+  // Regression for the per-level speed cap: capping each level separately lets L levels contribute
+  // up to L x COMMUNITY_MAX_STEP, outrunning the collide relaxation. Asserted in 2D (tightest budget).
+  const g = plantedHierarchy(HIER);
+  const pos3 = computeLayout(g, { refineTicks: 120 });
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3 });
+  const ids = g.nodes.map((x) => x.id);
+  let minPair = Infinity;
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) minPair = Math.min(minPair, dist(pos[ids[i]], pos[ids[j]]));
+  expect(minPair).toBeGreaterThan(collideFloorFor(ids.length, 2) * 0.9);
+});
+
+test("nested layout is deterministic across runs", () => {
+  const g = plantedHierarchy([[30, 25], [28, 22], [26, 20]]);
+  const a = computeLayout(g, { refineTicks: 80 });
+  expect(a).toEqual(computeLayout(g, { refineTicks: 80 }));
+  expect(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }))
+    .toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }));
+});
+
 test("pivotMDS is deterministic", () => {
   const g = ring(40);
   const index = new Map(g.nodes.map((n, i) => [n.id, i] as const));

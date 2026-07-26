@@ -23,11 +23,15 @@ import {
 } from "d3-force-3d";
 
 export interface LayoutInput {
-  /** `community` is the detected community id already stamped on every graph node by
+  /** `community` is the FINEST detected community id already stamped on every graph node by
    *  `engine.ts stampCommunities` (see community.ts). When present on 2+ distinct communities the
    *  layout adds community-aware forces (see COMMUNITY_* below); when absent the layout is
-   *  byte-identical to the community-unaware behaviour. */
-  nodes: { id: string; community?: number }[];
+   *  byte-identical to the community-unaware behaviour.
+   *  `communityPath` (coarsest → finest, last element === `community`) additionally arms the
+   *  NESTED forces: one extra gravity + separation pair per ancestor level, at decaying strength,
+   *  so super-clusters clump and spread the same way individual clusters do. A node array with no
+   *  `communityPath` (or a 1-element one) behaves exactly as it did before hierarchies existed. */
+  nodes: { id: string; community?: number; communityPath?: number[] }[];
   edges: { from: string; to: string }[];
 }
 
@@ -91,6 +95,10 @@ export interface LayoutOptions {
   /** Strength (0..1, 0 = off) of the community-level collide that pushes whole communities apart
    *  until their packing radii clear. Same semantics as d3's forceCollide strength. */
   communitySeparation?: number;
+  /** Per-ancestor-level falloff for the NESTED community forces: an ancestor `a` levels above the
+   *  finest gets `communityGravity · decay^a` and `communitySeparation · decay^a`. 0 disables the
+   *  coarse levels entirely (finest-only = the pre-hierarchy behaviour). See the COMMUNITY_* block. */
+  communityLevelDecay?: number;
 }
 
 export type Positions = Record<string, [number, number, number]>;
@@ -124,14 +132,21 @@ export type Positions = Record<string, [number, number, number]>;
 // -10/-7/-6/-5, i.e. never violated. Treat -7 as "measured best so far", and re-measure rather than
 // reason from this comment if you change it.
 // NOTE: changing this changes cold-layout output — keep CACHE_VERSION in layout-cache.ts in sync.
+// Declared up here (not with the rest of the COMMUNITY_* block) only because DEFAULTS below reads
+// it at module-init time. Full rationale lives in the "Nesting" block further down.
+const COMMUNITY_LEVEL_DECAY = 0.4;
 const DEFAULTS = {
   dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -7, linkDistance: 5, centering: 0.13,
   virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8, discBias: 0,
   // --- Community-aware clustering (see the COMMUNITY_* block below) ---
   communityForces: true,
-  communityIntraLink: 1.6, communityInterLink: 0.35,
-  communityIntraDist: 1.0, communityInterDist: 1.9,
-  communityGravity: 0.4, communitySeparation: 0.6,
+  // Cranked 2026-07-25 (user: tighter clumps, wider lanes, "like the design example"):
+  // gravity .4→.6, separation .6→.85, inter links .35→.2 @ 1.9→2.6× rest length.
+  communityIntraLink: 1.8, communityInterLink: 0.2,
+  communityIntraDist: 1.0, communityInterDist: 2.6,
+  communityGravity: 0.6, communitySeparation: 0.85,
+  // Hierarchical ("clusters in clusters") nesting — see the COMMUNITY_LEVEL_DECAY block below.
+  communityLevelDecay: COMMUNITY_LEVEL_DECAY,
 };
 const LINK_STRENGTH = 0.18;
 // 2D-only force tuning (see prepareLayout): the flat layout has one less dimension of room, so without
@@ -246,7 +261,7 @@ const COMMUNITY_MIN_SIZE = 4; // min members for a community to take part in com
 const COMMUNITY_PACK_FILL_2D = 0.55; // random-loose disc packing
 const COMMUNITY_PACK_FILL_3D = 0.5;  // random-loose sphere packing
 // Target clearance between two communities' packing radii — >1 leaves an actual empty lane.
-const COMMUNITY_SEP_MULT = 1.25;
+const COMMUNITY_SEP_MULT = 1.6; // 1.25 → 1.6 (2026-07-25): visibly wider empty lanes between clusters
 // Per-tick speed limit for everything this force adds, as a multiple of the node's OWN collide
 // radius. Both community terms can be large on the first ticks (alpha=1, communities still deeply
 // interpenetrating), and an uncapped step drags a whole community across the field faster than the
@@ -256,101 +271,199 @@ const COMMUNITY_SEP_MULT = 1.25;
 // longer reach their targets inside the tick budget.
 const COMMUNITY_MAX_STEP = 1.5;
 
+// --- Nesting (hierarchical communities) -----------------------------------------------------------
+// Communities now come as a PATH (coarsest → finest; see community.ts / GraphNode.communityPath),
+// so the two shape-setting forces above are applied once per level instead of once, total:
+//   - the FINEST level keeps the constants above verbatim — it is the tuned baseline and a graph
+//     with a 1-level path (or none) produces byte-identical output to before hierarchies existed;
+//   - each ancestor level `a` above it gets the SAME two forces at COMMUNITY_LEVEL_DECAY^a strength,
+//     so a super-cluster gathers its member clusters and shoulders other super-clusters aside, more
+//     weakly than its children do among themselves.
+//
+// COMMUNITY_LEVEL_DECAY = 0.4, swept on the reference 2251-node/4979-edge vault (3 levels, 120
+// refine ticks) as per-level separation ratio (intra spread / nearest-other-centroid; LOWER is
+// better) plus the collide invariant (worst pairwise distance / (rᵢ+rⱼ); the flat baseline is 0.89):
+//     decay   L0 3D   L1 3D   L2 3D    L0 2D   L1 2D   L2 2D    2D collide
+//     0.00    1.985   1.668   1.090    2.421   2.745   1.936    0.89 (0 pairs)   ← finest-level only
+//     0.30    0.996   0.915   0.993    1.358   1.384   1.856    0.83 (2 pairs)
+//     0.40    0.926   0.869   0.926    1.248   1.404   1.951    0.82 (1 pair)    ← shipped
+//     0.50    0.882   0.838   0.919    1.251   1.412   1.933    0.71 (2 pairs)
+//     0.65    0.809   0.821   0.941    1.254   1.494   2.057    0.78 (4 pairs)
+// 0.5 buys ~4% more 3D separation than 0.4 and gives back a chunk of the collide invariant for it
+// (0.82 → 0.71); 0.65 starts pulling the FINEST level back apart (L2 worsens) because the coarse
+// gravity begins to outweigh the level that actually sets local structure. 0.4 is the knee.
+//
+// TWO invariants from the flat version have to be preserved deliberately here:
+//
+// 1. ONE speed cap for the WHOLE stack, not one per level. COMMUNITY_MAX_STEP exists because an
+//    uncapped community step outruns the collide relaxation; capping each level separately would let
+//    L levels contribute up to L× the cap and silently reintroduce the overlap it was added to stop.
+//    So every level's gravity + separation is summed into one velocity delta and clamped once.
+// 2. The packing radius has to be computed RECURSIVELY, not from raw node radii. Summing rᵢ^dim over
+//    a 500-node super-community answers "how big if you jam-packed its NODES", but its members are
+//    not jam-packed — they sit in sub-clusters that are themselves held apart by COMMUNITY_SEP_MULT
+//    lanes, so the real footprint is several times bigger. Feed that underestimate to the separation
+//    force and it reads every super-cluster pair as already clear and barely fires. So each level
+//    packs its CHILDREN's radii instead of the raw node radii:
+//        R_a(C) = ( Σ_{child ∈ C} R_{a-1}(child)^dim / fill )^(1/dim)
+//    with the finest level still packing raw node radii exactly as before. Note the children go in
+//    UNPADDED: the pairwise target already multiplies by COMMUNITY_SEP_MULT, so padding them here
+//    too compounds 1.6× per level. Measured with the padding on, the reference vault's coarse
+//    separation over-inflated the whole field — the FINEST level's ratio got 23% (3D) / 50% (2D)
+//    WORSE than finest-only, intra spread nearly doubled (1.83× baseline), and the 2D collide
+//    invariant fell to 0.56. Unpadded, the same run improves every level and holds 0.82.
+// (COMMUNITY_LEVEL_DECAY itself is declared next to DEFAULTS, which needs it at module init.)
+
+/** One level of the community hierarchy as the force sees it: a dense per-node community index
+ *  (-1 = not in a community at this level) and the strength this level acts at. */
+interface CommunityLevel {
+  comm: Int32Array;
+  numComms: number;
+  gravity: number;
+  separation: number;
+}
+
+/** Per-level precomputed geometry (sizes, packing radii, participating communities, scratch). */
+interface LevelState {
+  comm: Int32Array;
+  numComms: number;
+  gravity: number;
+  separation: number;
+  count: Float64Array;
+  packRadius: Float64Array;
+  big: number[];
+  cx: Float64Array; cy: Float64Array; cz: Float64Array;
+  rx: Float64Array; ry: Float64Array; rz: Float64Array;
+}
+
 /**
- * Per-tick community gravity + community-level collide. `comm[i]` is a DENSE community index per
- * node (-1 = no community / singleton). Pure function of the node array — deterministic, no RNG.
- * `radii` holds each node's own collide radius (the same values the sim's forceCollide uses); they
- * set the per-community packing radius, inside which gravity stops pulling (so a community is never
- * squeezed into an overlap) and which doubles as the community-level collide's body radius.
+ * Per-tick community gravity + community-level collide, applied at every level of the hierarchy.
+ * `levels[0]` is the FINEST (its `gravity`/`separation` are the tuned baseline); later entries are
+ * successively coarser ancestors at decayed strength. Pure function of the node array —
+ * deterministic, no RNG. `radii` holds each node's own collide radius (the same values the sim's
+ * forceCollide uses); they seed the finest level's packing radius, inside which gravity stops
+ * pulling (so a community is never squeezed into an overlap) and which doubles as the
+ * community-level collide's body radius. Coarser levels derive theirs from the level below (see the
+ * nesting block above).
  */
 function communityForce(
   nodes: RN[],
-  comm: Int32Array,
-  numComms: number,
+  levels: CommunityLevel[],
   dim: 2 | 3,
-  gravity: number,
-  separation: number,
   radii: Float64Array,
 ): (alpha: number) => void {
   const n = nodes.length;
-  const count = new Float64Array(numComms);
-  for (let i = 0; i < n; i++) if (comm[i] >= 0) count[comm[i]]++;
-  // Per-community packing radius (see COMMUNITY_PACK_FILL_*) — gravity's dead zone and the
-  // community-level collide's body radius.
   const fill = dim === 2 ? COMMUNITY_PACK_FILL_2D : COMMUNITY_PACK_FILL_3D;
-  const packRadius = new Float64Array(numComms);
-  for (let i = 0; i < n; i++) if (comm[i] >= 0) packRadius[comm[i]] += Math.pow(radii[i], dim);
-  for (let c = 0; c < numComms; c++) packRadius[c] = Math.pow(packRadius[c] / fill, 1 / dim);
-  // Communities big enough to repel each other as coarse bodies (index list, computed once).
-  const big: number[] = [];
-  for (let c = 0; c < numComms; c++) if (count[c] >= COMMUNITY_MIN_SIZE) big.push(c);
-  const cx = new Float64Array(numComms), cy = new Float64Array(numComms), cz = new Float64Array(numComms);
-  // Per-member displacement accumulated by the community-level collide below, per community.
-  const rx = new Float64Array(numComms), ry = new Float64Array(numComms), rz = new Float64Array(numComms);
+
+  // Built with an explicit loop (not .map): each coarser level's packing radius is derived from the
+  // level below it, so the array has to be readable while it is still being filled.
+  const states: LevelState[] = [];
+  for (let li = 0; li < levels.length; li++) {
+    const lv = levels[li];
+    const { comm, numComms } = lv;
+    const count = new Float64Array(numComms);
+    for (let i = 0; i < n; i++) if (comm[i] >= 0) count[comm[i]]++;
+    // Packing radius: the finest level packs raw node radii; a coarser level packs the (unpadded —
+    // see invariant 2 above) packing radii of the level below it.
+    const packRadius = new Float64Array(numComms);
+    if (li === 0) {
+      for (let i = 0; i < n; i++) if (comm[i] >= 0) packRadius[comm[i]] += Math.pow(radii[i], dim);
+    } else {
+      const child = states[li - 1];
+      // child community → this level's community (well-defined: the levels are strictly nested).
+      const parentOf = new Int32Array(child.numComms).fill(-1);
+      for (let i = 0; i < n; i++) {
+        const ch = child.comm[i];
+        if (ch >= 0 && comm[i] >= 0) parentOf[ch] = comm[i];
+      }
+      for (let c = 0; c < child.numComms; c++) {
+        const p = parentOf[c];
+        if (p >= 0) packRadius[p] += Math.pow(child.packRadius[c], dim);
+      }
+      // Nodes with no community at the finer level still occupy room in this one.
+      for (let i = 0; i < n; i++) if (comm[i] >= 0 && child.comm[i] < 0) packRadius[comm[i]] += Math.pow(radii[i], dim);
+    }
+    for (let c = 0; c < numComms; c++) packRadius[c] = Math.pow(packRadius[c] / fill, 1 / dim);
+    // Communities big enough to repel each other as coarse bodies (index list, computed once).
+    const big: number[] = [];
+    for (let c = 0; c < numComms; c++) if (count[c] >= COMMUNITY_MIN_SIZE) big.push(c);
+    states.push({
+      comm, numComms, gravity: lv.gravity, separation: lv.separation, count, packRadius, big,
+      cx: new Float64Array(numComms), cy: new Float64Array(numComms), cz: new Float64Array(numComms),
+      rx: new Float64Array(numComms), ry: new Float64Array(numComms), rz: new Float64Array(numComms),
+    });
+  }
 
   return (alpha: number) => {
-    cx.fill(0); cy.fill(0); cz.fill(0);
-    for (let i = 0; i < n; i++) {
-      const c = comm[i];
-      if (c < 0) continue;
-      const nd = nodes[i];
-      cx[c] += nd.x ?? 0; cy[c] += nd.y ?? 0;
-      if (dim === 3) cz[c] += nd.z ?? 0;
-    }
-    for (let c = 0; c < numComms; c++) {
-      const k = count[c];
-      if (k > 0) { cx[c] /= k; cy[c] /= k; cz[c] /= k; }
-    }
+    for (const s of states) {
+      const { comm, numComms, count, packRadius, big, cx, cy, cz, rx, ry, rz, separation } = s;
+      cx.fill(0); cy.fill(0); cz.fill(0);
+      for (let i = 0; i < n; i++) {
+        const c = comm[i];
+        if (c < 0) continue;
+        const nd = nodes[i];
+        cx[c] += nd.x ?? 0; cy[c] += nd.y ?? 0;
+        if (dim === 3) cz[c] += nd.z ?? 0;
+      }
+      for (let c = 0; c < numComms; c++) {
+        const k = count[c];
+        if (k > 0) { cx[c] /= k; cy[c] /= k; cz[c] /= k; }
+      }
 
-    // (3) Community-level collide: resolve the overlap of two soft bodies of radius packRadius,
-    // split between them by MASS (the smaller community yields more), exactly like d3's forceCollide.
-    // Bounded by construction — zero force once the pair clears, so it dilates the assembly just
-    // enough to open a lane and never inflates an already-separated graph.
-    if (separation > 0 && big.length > 1) {
+      // (3) Community-level collide: resolve the overlap of two soft bodies of radius packRadius,
+      // split between them by MASS (the smaller community yields more), exactly like d3's forceCollide.
+      // Bounded by construction — zero force once the pair clears, so it dilates the assembly just
+      // enough to open a lane and never inflates an already-separated graph.
       rx.fill(0); ry.fill(0); rz.fill(0);
-      for (let a = 0; a < big.length; a++) {
-        const ca = big[a];
-        for (let b = a + 1; b < big.length; b++) {
-          const cb = big[b];
-          const target = (packRadius[ca] + packRadius[cb]) * COMMUNITY_SEP_MULT;
-          let dx = cx[ca] - cx[cb], dy = cy[ca] - cy[cb], dz = dim === 3 ? cz[ca] - cz[cb] : 0;
-          let d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (d >= target) continue;
-          if (d === 0) {
-            // Exactly coincident centroids: deterministic (no RNG) unit axis so they still separate.
-            dx = 1; dy = ca & 1 ? 1 : -1; dz = dim === 3 ? (cb & 1 ? 1 : -1) : 0;
-            d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (separation > 0 && big.length > 1) {
+        for (let a = 0; a < big.length; a++) {
+          const ca = big[a];
+          for (let b = a + 1; b < big.length; b++) {
+            const cb = big[b];
+            const target = (packRadius[ca] + packRadius[cb]) * COMMUNITY_SEP_MULT;
+            let dx = cx[ca] - cx[cb], dy = cy[ca] - cy[cb], dz = dim === 3 ? cz[ca] - cz[cb] : 0;
+            let d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d >= target) continue;
+            if (d === 0) {
+              // Exactly coincident centroids: deterministic (no RNG) unit axis so they still separate.
+              dx = 1; dy = ca & 1 ? 1 : -1; dz = dim === 3 ? (cb & 1 ? 1 : -1) : 0;
+              d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            }
+            // Displacement vector that would exactly clear the pair, split by mass share.
+            const push = ((target - d) / d) * separation;
+            const total = count[ca] + count[cb];
+            const wa = count[cb] / total, wb = count[ca] / total;
+            rx[ca] += dx * push * wa; ry[ca] += dy * push * wa; rz[ca] += dz * push * wa;
+            rx[cb] -= dx * push * wb; ry[cb] -= dy * push * wb; rz[cb] -= dz * push * wb;
           }
-          // Displacement vector that would exactly clear the pair, split by mass share.
-          const push = ((target - d) / d) * separation;
-          const total = count[ca] + count[cb];
-          const wa = count[cb] / total, wb = count[ca] / total;
-          rx[ca] += dx * push * wa; ry[ca] += dy * push * wa; rz[ca] += dz * push * wa;
-          rx[cb] -= dx * push * wb; ry[cb] -= dy * push * wb; rz[cb] -= dz * push * wb;
         }
       }
     }
 
-    // (2) Centroid gravity + apply the accumulated (3) push, both scaled by alpha like every d3 force.
-    // Gravity only acts on the part of a node's offset that exceeds the community's packing radius,
-    // so the cluster's already-dense core is left alone (no collide fight, no overlaps).
+    // (2) Centroid gravity + the accumulated (3) push, summed over EVERY level, both scaled by alpha
+    // like every d3 force. Gravity only acts on the part of a node's offset that exceeds that level's
+    // packing radius, so a cluster's (or super-cluster's) already-dense core is left alone — no
+    // collide fight, no overlaps.
     for (let i = 0; i < n; i++) {
-      const c = comm[i];
       const nd = nodes[i];
-      let gx = 0, gy = 0, gz = 0;
-      if (c >= 0 && count[c] >= 2) {
-        const ox = cx[c] - (nd.x ?? 0), oy = cy[c] - (nd.y ?? 0), oz = dim === 3 ? cz[c] - (nd.z ?? 0) : 0;
-        const d = Math.sqrt(ox * ox + oy * oy + oz * oz);
-        // Fraction of the offset that lies outside the packing radius (0 inside it → no pull at all).
-        const excess = d > packRadius[c] ? (d - packRadius[c]) / d : 0;
-        const g = gravity * alpha * excess;
-        gx = ox * g; gy = oy * g; gz = oz * g;
+      let vx = 0, vy = 0, vz = 0;
+      for (const s of states) {
+        const c = s.comm[i];
+        if (c < 0) continue;
+        if (s.count[c] >= 2) {
+          const ox = s.cx[c] - (nd.x ?? 0), oy = s.cy[c] - (nd.y ?? 0), oz = dim === 3 ? s.cz[c] - (nd.z ?? 0) : 0;
+          const d = Math.sqrt(ox * ox + oy * oy + oz * oz);
+          // Fraction of the offset that lies outside the packing radius (0 inside it → no pull at all).
+          const excess = d > s.packRadius[c] ? (d - s.packRadius[c]) / d : 0;
+          const g = s.gravity * alpha * excess;
+          vx += ox * g; vy += oy * g; vz += oz * g;
+        }
+        // Community-level collide (3) is accumulated per community, so every member gets the same push.
+        vx += s.rx[c] * alpha; vy += s.ry[c] * alpha; if (dim === 3) vz += s.rz[c] * alpha;
       }
-      // Community-level collide (3) is accumulated per community, so every member gets the same push.
-      let vx = gx, vy = gy, vz = gz;
-      if (c >= 0) { vx += rx[c] * alpha; vy += ry[c] * alpha; if (dim === 3) vz += rz[c] * alpha; }
       if (vx === 0 && vy === 0 && vz === 0) continue;
-      // Speed limit (see COMMUNITY_MAX_STEP) — keeps the motion collide-trackable.
+      // ONE speed limit for the whole stack (see COMMUNITY_MAX_STEP + invariant 1 above) — keeps the
+      // motion collide-trackable no matter how many levels contributed to it.
       const step = Math.sqrt(vx * vx + vy * vy + vz * vz);
       const cap = COMMUNITY_MAX_STEP * radii[i];
       if (step > cap) {
@@ -552,6 +665,46 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   }
   const useCommunity = numComms >= 2;
 
+  // Ancestor levels of the community hierarchy (coarsest → finest is how `communityPath` arrives;
+  // here they are indexed by DISTANCE ABOVE THE FINEST, so `ancestors[0]` is the finest's parent).
+  // Paths are read from the RIGHT so a node with a shorter path (there shouldn't be one, but a
+  // hand-built or partially-stamped graph can produce one) simply contributes to fewer levels
+  // instead of being misaligned into the wrong one. A level is kept only if it is a genuinely
+  // COARSER grouping than the level below: strict nesting means an equal community count implies an
+  // identical partition, and re-applying the same partition would just silently scale the finest
+  // level's constants up. See the "Nesting" block above the force for what these levels do.
+  const ancestors: CommunityLevel[] = [];
+  if (useCommunity && o.communityLevelDecay > 0) {
+    let maxDepth = 0;
+    for (const nd of input.nodes) {
+      const p = nd.communityPath;
+      if (p && p.length > maxDepth) maxDepth = p.length;
+    }
+    let finerCount = numComms;
+    for (let up = 1; up < maxDepth; up++) {
+      const dense = new Map<number, number>();
+      const levelComm = new Int32Array(n).fill(-1);
+      for (let i = 0; i < n; i++) {
+        const p = input.nodes[i].communityPath;
+        if (!p || p.length <= up) continue;
+        const c = p[p.length - 1 - up];
+        if (c === undefined || !Number.isFinite(c)) continue;
+        let d = dense.get(c);
+        if (d === undefined) { d = dense.size; dense.set(c, d); }
+        levelComm[i] = d;
+      }
+      if (dense.size < 2 || dense.size >= finerCount) break; // degenerate or a duplicate of the level below
+      const decay = Math.pow(o.communityLevelDecay, up);
+      ancestors.push({
+        comm: levelComm,
+        numComms: dense.size,
+        gravity: o.communityGravity * decay,
+        separation: o.communitySeparation * decay,
+      });
+      finerCount = dense.size;
+    }
+  }
+
   const adj: number[][] = Array.from({ length: n }, () => []);
   const links: VL[] = [];
   for (const e of input.edges) {
@@ -697,10 +850,12 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   if (useCommunity && (o.communityGravity > 0 || o.communitySeparation > 0)) {
     // The community body radius is derived from the SAME per-node collide radii the sim's own
     // forceCollide uses, so both community forces automatically track every spacing/size multiplier.
+    // ONE force for the whole hierarchy (finest first, then ancestors) — see invariant 1 in the
+    // "Nesting" block: the per-tick speed cap has to bound the SUM of every level's contribution.
     sim.force("community", communityForce(
-      nodes, comm, numComms, dim,
-      o.communityGravity,
-      o.communitySeparation,
+      nodes,
+      [{ comm, numComms, gravity: o.communityGravity, separation: o.communitySeparation }, ...ancestors],
+      dim,
       Float64Array.from(nodes, (nd, i) => collideRadiusFor(nd, i)),
     ));
   }
