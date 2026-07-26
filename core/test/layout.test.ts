@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { computeLayout, computeLayoutAsync, gridIslandAnchors, pivotMDS, type Positions } from "../src/layout";
+import { computeLayout, computeLayoutAsync, gridIslandAnchors, gridIslandPlan, pivotMDS, type Positions } from "../src/layout";
 
 function ring(n: number) {
   return {
@@ -579,6 +579,73 @@ test("grid mode keeps the layout overlap-free (the anchor spring must not beat c
   let minPair = Infinity;
   for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) minPair = Math.min(minPair, dist(pos[ids[i]], pos[ids[j]]));
   expect(minPair).toBeGreaterThan(collideFloorFor(ids.length, 2) * 0.9);
+});
+
+/** The planted hierarchy plus the two kinds of group that earn NO lattice cell and therefore have to
+ *  ride along with an island (`GRID_MIN_ISLAND` = 4): fully-isolated singletons — 143 of them on the
+ *  reference vault — and a small linked pair. Both are what sprawled worst before containment. */
+function hierarchyWithRiders() {
+  const g = plantedHierarchy(HIER);
+  const nodes: { id: string; community: number; communityPath: number[] }[] = [...g.nodes];
+  const edges = [...g.edges];
+  let top = Math.max(...g.nodes.map((nd) => nd.communityPath[0])) + 1;
+  let comm = Math.max(...g.nodes.map((nd) => nd.community)) + 1;
+  for (let k = 0; k < 8; k++) nodes.push({ id: `stray${k}`, community: comm++, communityPath: [top++, comm - 1] });
+  for (let k = 0; k < 3; k++) {
+    const c = comm++, t = top++;
+    nodes.push({ id: `pair${k}a`, community: c, communityPath: [t, c] });
+    nodes.push({ id: `pair${k}b`, community: c, communityPath: [t, c] });
+    edges.push({ from: `pair${k}a`, to: `pair${k}b` });
+  }
+  return { nodes, edges };
+}
+
+test("grid mode CONTAINS every member inside its island's disc, riders included", () => {
+  const g = hierarchyWithRiders();
+  const pos3 = computeLayout(g, { refineTicks: 120 });
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3 });
+  // The plan must be the one the settle enforced, so it gets the SAME seed (riders are hosted on the
+  // island they seeded nearest to — see gridIslandPlan).
+  const plan = gridIslandPlan(g, { initialPositions: pos3 })!;
+  expect(plan).not.toBeNull();
+  expect(plan.islands.length).toBe(HIER.length); // one island per planted super-cluster
+  const islandOf = new Map(plan.islands.map((i) => [i.comm, i]));
+
+  // Every containment disc fits inside its own lattice block, which is what carries the lane
+  // guarantee over from the packing discs to the individual members (see the CONTAINMENT block).
+  for (const isl of plan.islands) expect(isl.containRadius).toBeLessThanOrEqual(isl.span * plan.unit + 1e-9);
+  for (let a = 0; a < plan.islands.length; a++) for (let b = a + 1; b < plan.islands.length; b++) {
+    const A = plan.islands[a], B = plan.islands[b];
+    const gap = Math.hypot(A.anchor[0] - B.anchor[0], A.anchor[1] - B.anchor[1]) - A.containRadius - B.containRadius;
+    expect(gap).toBeGreaterThan(0.75 * (A.containRadius + B.containRadius) - 1e-6);
+  }
+
+  // ...and the settle actually respects them. A hair of tolerance because forceCollide and the anchor
+  // springs both run AFTER the constraint in a tick, so the last word on a rim node is theirs.
+  let worst = 0, inside = 0;
+  g.nodes.forEach((nd, i) => {
+    const isl = islandOf.get(plan.hostIsland[i])!;
+    const r = Math.hypot(pos[nd.id][0] - isl.anchor[0], pos[nd.id][1] - isl.anchor[1]) / isl.containRadius;
+    if (r <= 1) inside++;
+    worst = Math.max(worst, r);
+  });
+  expect(inside / g.nodes.length).toBeGreaterThan(0.97);
+  expect(worst).toBeLessThan(1.05);
+
+  // Hosting is decided per GROUP: a rider group is never split across islands (a split group's
+  // nested containment disc lands in a lane and cancels the island's, stranding its members).
+  for (let k = 0; k < 3; k++) {
+    const [a, b] = [`pair${k}a`, `pair${k}b`].map((id) => plan.hostIsland[g.nodes.findIndex((nd) => nd.id === id)]);
+    expect(a).toBe(b);
+  }
+}, 30000);
+
+test("gridIslandPlan is null exactly where grid mode is", () => {
+  const g = plantedHierarchy([[40, 30], [35, 28], [32, 25]]);
+  expect(gridIslandPlan(g, { dimensions: 3 })).toBeNull();
+  expect(gridIslandPlan(g, { clusterLayout: "organic" })).toBeNull();
+  expect(gridIslandPlan(ring(80))).toBeNull(); // no communities
+  expect(gridIslandPlan(g)!.islands.length).toBe(3);
 });
 
 test("grid mode is deterministic across runs", () => {
