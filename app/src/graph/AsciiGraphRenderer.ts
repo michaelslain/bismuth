@@ -9,9 +9,12 @@
 //
 // THE LAW (design/ascii/design-system/guidelines/ascii-zoom.card.html, PORTING.md §4):
 //   ZOOM IS RESOLUTION. The cell is a constant size at every zoom level. What zooming changes is
-//   the world-units-per-cell ratio — 0% fits the whole graph on the grid, 100% is maximum
-//   resolution with every note named. No transform: scale, no ctx.scale on glyphs; a wheel event
-//   re-rasterizes the field at a finer world→cell mapping.
+//   the world-units-per-cell ratio — 100% fits the whole graph on the grid (graph-size RELATIVE:
+//   the fit scale is derived from the graph's own bounding radius), 0% is a FIXED absolute
+//   resolution where every note is individually distinguishable, identical world-per-cell
+//   regardless of graph size (see asciiGrid.ts DEEPEST_WORLD_PER_CELL/maxResFor). No transform:
+//   scale, no ctx.scale on glyphs; zoom moves in 10% steps (wheel notches / +- keys) that the field
+//   glides toward, re-rasterizing at a finer world→cell mapping each frame of the glide.
 //
 // The 3D mode is the same grid: the camera math is lifted verbatim from CanvasGraphRenderer's
 // project()/projectPositions() (worldScale/target subtract → yaw → pitch → perspective divide),
@@ -25,7 +28,8 @@ import "./asciiGraph.css";
 import type { GraphData, GraphNode } from "../../../core/src/graph";
 import { nodeVisualState } from "../../../core/src/daemonViz";
 import {
-  computeAlwaysOnSet, clusterLabelAlpha, clusterLabelText, fileLabelAlpha, fileLabelBudget,
+  clusterLabelAlpha, clusterLabelText, clusterLevelAlphas, computeAlwaysOnSet, fileLabelAlpha,
+  fileLabelBudget,
 } from "./labelSelection";
 import { hashKey } from "../themeColors";
 import { isUsableBox, finiteVec3, boundingRadius } from "./graphFit";
@@ -34,16 +38,20 @@ import { noiseField, DEFAULT_NOISE_SEED } from "../ui/ascii/noiseField";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
 import {
   CELL_H, CELL_W, FONT_PX,
-  LAYER_EDGE, LAYER_NODE, LAYER_NOISE, PAD_X, PAD_Y,
-  depthAlpha, fitPxPerWorld, gridMetrics, mergeEdgeCode, nearestCellNode, nodeGlyph,
-  pxToCell, resolutionPercent, resolutionT, traceEdge, type GridMetrics,
+  LAYER_EDGE, LAYER_NODE, LAYER_NOISE, PAD_X, PAD_Y, ZOOM_STEP_PCT,
+  depthAlpha, fitPxPerWorld, gridMetrics, maxResFor, mergeEdgeCode, nearestCellNode, nodeGlyph,
+  pxToCell, resFromPercent, resolutionPercent, resolutionT, snapZoomPercent, traceEdge,
+  type GridMetrics,
 } from "./asciiGrid";
 
 const FOV_DEG = 60;              // same camera as the old renderer, so framing carries over
 const ORBIT_SPEED = 0.005;       // rad per px of drag (copied)
 const DRAG_THRESHOLD = 5;        // px before a press becomes an orbit/pan rather than a click
 const GLIDE = 0.18;              // per-frame easing toward the camera goal
-const MAX_RES = 16;              // 100% zoom = 16x the fit resolution
+const FALLBACK_MAX_RES = 16;     // pre-fit() bootstrap value for `maxRes` (real one is graph/box-derived — see fit())
+const WHEEL_NOTCH_PX = 120;      // one physical mouse-wheel click (the Windows WHEEL_DELTA convention most
+                                  // browsers report a notch as); each notch moves ZOOM_STEP_PCT, trackpad
+                                  // deltas simply accumulate toward the next notch instead of firing every event
 const RES_EPS = 0.002;           // below this the resolution glide is considered settled
 const NOISE_DENSITY = 0.08;      // texture, never the signal (the design card defaults GLYPHS to 0%)
 const NOISE_ALPHA = 0.45;        // tokens/ascii.css --field-noise-op
@@ -87,6 +95,21 @@ interface LabelDraw {
   eyebrow?: boolean;  // cluster name: uppercase + tracked, drawn at full brightness × alpha
 }
 
+/** A node's hierarchy path, coarsest → finest — `communityPath` when the backend sent one, else the
+ *  single-element fallback `[community]` so a node/graph with no hierarchy data (legacy, or simply
+ *  never rebuilt against the new detector) reads as exactly a 1-level graph, unchanged from before
+ *  communityPath existed. `undefined` when the node carries no community at all. */
+function nodePath(n: GraphNode): number[] | undefined {
+  if (n.communityPath && n.communityPath.length) return n.communityPath;
+  return n.community != null ? [n.community] : undefined;
+}
+
+/** The exemplar name per level, mirroring `nodePath`'s fallback. */
+function nodePathLabels(n: GraphNode): string[] | undefined {
+  if (n.communityPathLabels && n.communityPathLabels.length) return n.communityPathLabels;
+  return n.community != null ? [n.communityLabel ?? `cluster ${n.community}`] : undefined;
+}
+
 /** Wikilink/tag flavouring so a label reads like the vault does (design's `[[note name]]`). */
 function labelText(n: GraphNode): string {
   // vault.ts already builds a tag node's label WITH its "#" (`label: \`#${tag}\``), so prefixing
@@ -127,9 +150,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private labels: LabelDraw[] = [];
   private labelScratch: NodeView[] = [];
   private clusterAgg = new Map<number, { colSum: number; rowSum: number; n: number }>();
-  // Community → its display name, resolved once per build() (communityLabel is static graph data,
-  // not a per-frame thing) so layoutClusterNames() never has to search for a representative member.
-  private communityNames = new Map<number, string>();
+  // Per-level community → its display name, resolved once per build() (communityPathLabels is
+  // static graph data, not a per-frame thing) so layoutClusterNames() never has to search for a
+  // representative member. Index = hierarchy level (0 = coarsest); length = levelCount.
+  private communityNamesByLevel: Map<number, string>[] = [];
+  // Deepest hierarchy depth any node carries (1..4 typically; see core/src/graph.ts communityPath).
+  // 0 means no node carries a community at all (no cluster names to draw).
+  private levelCount = 0;
   private boxReady = false;
 
   // camera — rx/ry orbit (3D), res = THE zoom (resolution), pan in px (2D)
@@ -138,6 +165,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private target: Vec3 = [0, 0, 0]; private goalTarget: Vec3 = [0, 0, 0];
   private panX = 0; private panY = 0;
   private pxPerWorld = 1; private P = 1;
+  // The zoom LADDER, recomputed every fit() from the graph's own bounding radius (see
+  // asciiGrid.ts maxResFor) — a bigger graph needs a bigger multiplier to reach the same fixed
+  // absolute (0%) detail. `zoomPct` is the durable HUD-facing state (100=fit .. 0=deepest, snapped
+  // to ZOOM_STEP_PCT); `goalRes`/`res` are always DERIVED from it via resFromPercent so a resize or
+  // rebuild that changes `maxRes` keeps the user's chosen PERCENT stable rather than the raw
+  // multiplier. Camera commands that aren't zoom "steps" (frameSubset/resetView) set goalRes
+  // directly and then resync zoomPct to match.
+  private maxRes = FALLBACK_MAX_RES;
+  private zoomPct = 100;
+  private wheelAccum = 0;
   private userTook = false;
 
   // interaction
@@ -269,11 +306,25 @@ export class AsciiGraphRenderer implements GraphRenderer {
     });
     this.byId = new Map(this.nodes.map((nv) => [nv.node.id, nv]));
 
-    this.communityNames.clear();
+    // Hierarchy depth + per-level exemplar names, resolved once here (not per-frame): `nodePath`
+    // falls back to the single-element `[community]` for pre-hierarchy/legacy nodes, so a graph with
+    // no communityPath at all still gets exactly the original one-tier cluster-name behaviour.
+    this.levelCount = 0;
     for (const nv of this.nodes) {
-      const c = nv.node.community;
-      if (c == null || this.communityNames.has(c)) continue;
-      this.communityNames.set(c, nv.node.communityLabel ?? `cluster ${c}`);
+      const path = nodePath(nv.node);
+      if (path && path.length > this.levelCount) this.levelCount = path.length;
+    }
+    this.communityNamesByLevel = Array.from({ length: this.levelCount }, () => new Map<number, string>());
+    for (const nv of this.nodes) {
+      const path = nodePath(nv.node);
+      if (!path) continue;
+      const labels = nodePathLabels(nv.node);
+      for (let L = 0; L < path.length; L++) {
+        const id = path[L];
+        const map = this.communityNamesByLevel[L];
+        if (id == null || !map || map.has(id)) continue;
+        map.set(id, labels?.[L] ?? `cluster ${id}`);
+      }
     }
 
     this.edges = [];
@@ -316,6 +367,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (cfg.viewMode !== prevMode) {
       this.rx = -0.5; this.ry = 0;
       this.panX = 0; this.panY = 0;
+      this.zoomPct = 100;
       this.res = 1; this.goalRes = 1;
       this.target = [0, 0, 0]; this.goalTarget = [0, 0, 0];
       this.userTook = false;
@@ -414,8 +466,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.boxReady = true;
     this.W = Math.max(1, r.width); this.H = Math.max(1, r.height);
     this.dpr = Math.min(2, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
-    this.canvas.width = Math.round(this.W * this.dpr);
-    this.canvas.height = Math.round(this.H * this.dpr);
+    // Only touch the backing store when it actually changes: assigning canvas.width/height CLEARS
+    // the canvas (and resets the 2D context state) even when the value is identical. measure() is
+    // called unconditionally from setConfig(), which GraphView fires on every theme/settings change
+    // — so an unguarded reassign blanks the field, and if the rAF loop happens to be paused at that
+    // moment (backgrounded tab, hidden mini-graph) nothing repaints it until the loop resumes.
+    const bw = Math.round(this.W * this.dpr), bh = Math.round(this.H * this.dpr);
+    if (this.canvas.width !== bw || this.canvas.height !== bh) { this.canvas.width = bw; this.canvas.height = bh; }
     this.canvas.style.width = `${this.W}px`;
     this.canvas.style.height = `${this.H}px`;
     this.applyFont();
@@ -464,17 +521,25 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.fit();
   }
 
-  /** Recompute the world→px fit ("res = 1 fits the whole graph on the grid"). */
+  /** Recompute the world→px fit ("res = 1 fits the whole graph on the grid", i.e. 100%) and the
+   *  deepest-zoom ceiling (`maxRes`, i.e. 0% — see asciiGrid.ts maxResFor). The ceiling is
+   *  graph/box-derived, so it can shift on every resize or rebuild; `zoomPct` (not `goalRes`) is the
+   *  durable state, so a shifted ceiling re-derives `goalRes` to land back on the SAME percent
+   *  instead of silently changing what "the user's current zoom" means. */
   private fit(resetCamera = false) {
     if (!this.boxReady) return;
     const is2d = this.cfg.viewMode === "2d";
     const radius = Math.max(1e-6, is2d ? this.radius2 : this.radius3);
     this.pxPerWorld = fitPxPerWorld(this.m.cols, this.m.rows, this.m, radius);
+    this.maxRes = maxResFor(this.pxPerWorld, this.cellW);
     if (resetCamera) {
+      this.zoomPct = 100;
       this.res = 1; this.goalRes = 1;
       this.target = [0, 0, 0]; this.goalTarget = [0, 0, 0];
       this.panX = 0; this.panY = 0; this.userTook = false;
       this.rx = -0.5; this.ry = 0;
+    } else {
+      this.goalRes = resFromPercent(this.zoomPct, this.maxRes);
     }
     this.dirty = true;
   }
@@ -497,8 +562,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (!is2d && this.cfg.spin && this.nodes.length <= 350 && !this.userTook && !this.dragging) {
       this.ry += this.cfg.spinSpeed ?? 0.0015; this.dirty = true;
     }
-    // Smooth-glide the world-per-cell ratio (the old renderer's goalZoom glide, in resolution space).
+    // Smooth-glide the world-per-cell ratio (the old renderer's goalZoom glide, in resolution space),
+    // then SNAP the last sub-epsilon sliver. An asymptotic ease never actually arrives, and `res` is
+    // what the HUD percent is derived from — leaving it permanently `RES_EPS` short of the step the
+    // user selected reads out as 91% for a 90% stop (worse the shorter the ladder, since RES_EPS is
+    // absolute while a step's size shrinks with `maxRes`). Landing exactly makes the readout the
+    // step, without giving up the animated approach.
     if (Math.abs(this.goalRes - this.res) > RES_EPS) { this.res += (this.goalRes - this.res) * GLIDE; this.dirty = true; }
+    else if (this.res !== this.goalRes) { this.res = this.goalRes; this.dirty = true; }
     if (Math.hypot(this.goalTarget[0] - this.target[0], this.goalTarget[1] - this.target[1], this.goalTarget[2] - this.target[2]) > 0.3) {
       for (let i = 0; i < 3; i++) this.target[i] += (this.goalTarget[i] - this.target[i]) * GLIDE;
       this.dirty = true;
@@ -514,7 +585,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
   };
 
   private emitZoom() {
-    const pct = resolutionPercent(this.res, MAX_RES);
+    const pct = resolutionPercent(this.res, this.maxRes);
     if (pct !== this.lastZoomPct) { this.lastZoomPct = pct; this.onZoom?.(pct); }
   }
 
@@ -643,13 +714,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
   }
 
   /**
-   * Which labels to draw, and where — a two-tier zoom-driven system (labelSelection.ts owns the
+   * Which labels to draw, and where — an N+1-tier zoom-driven system (labelSelection.ts owns the
    * pure curve math):
    *
-   *   1. CLUSTER NAMES. Below `FILE_LABEL_REVEAL_T` the field names communities, not files — each
-   *      community's projected on-grid centroid gets its `communityLabel` in eyebrow register
-   *      (uppercase + tracked), placed by the same greedy grid-occupancy the file-label pass below
-   *      uses, so cluster names never overlap each other.
+   *   1. CLUSTER NAMES, per hierarchy LEVEL. Below `FILE_LABEL_REVEAL_T` the field names
+   *      communities, not files — walking `communityPath` coarsest → finest as the camera zooms in,
+   *      one crossfade per level boundary (`clusterLevelAlphas`), landing on the finest level right
+   *      at the reveal point. Each active level's community centroids get their
+   *      `communityPathLabels[level]` exemplar in eyebrow register (uppercase + tracked), placed by
+   *      the same greedy grid-occupancy the file-label pass below uses, so cluster names — at any
+   *      level, even two adjacent levels mid-crossfade — never overlap each other.
    *   2. FILE NAMES. Labels sit to the node's right on the SAME grid; a label that would run off
    *      the field flips to the node's left, and one whose cells are already taken (by a cluster
    *      name or a higher-ranked file label) is dropped unless it's forced (active/hovered/search —
@@ -657,18 +731,24 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *      after the reveal point (only the highest-ranked, i.e. hub, candidates clear it) and only
    *      opens up toward `FILE_LABEL_FULL_T` — "full naming" is a near-max-resolution thing.
    *
-   * The two tiers crossfade (not switch) across the same span, via `alpha` on each LabelDraw.
+   * Every tier crossfades (not switches) across its own span, via `alpha` on each LabelDraw.
    */
   private layoutLabels(is2d: boolean) {
     this.labels.length = 0;
     if (this.cfg.showGraphLabels === false) return;
     const m = this.m;
     this.labelOccupied.fill(0);
-    const t = resolutionT(this.res, MAX_RES);
+    const t = resolutionT(this.res, this.maxRes);
     const cAlpha = clusterLabelAlpha(t);
     const fAlpha = fileLabelAlpha(t);
 
-    if (cAlpha > 0.01) this.layoutClusterNames(cAlpha);
+    if (cAlpha > 0.01 && this.levelCount > 0) {
+      const levelAlphas = clusterLevelAlphas(t, this.levelCount);
+      for (let L = 0; L < levelAlphas.length; L++) {
+        const a = levelAlphas[L] * cAlpha;
+        if (a > 0.01) this.layoutClusterNames(L, a);
+      }
+    }
 
     // Reused scratch array — layoutLabels runs every frame, so it must not allocate one per frame.
     const ordered = this.labelScratch;
@@ -714,18 +794,25 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
   }
 
-  /** Cluster-name pass: one label per community, centred on the average grid cell of its
-   *  currently-on-grid members (so it works in 2D and follows the 3D orbit alike), reserved first
-   *  so file labels never draw over a cluster name. Larger clusters (more on-grid members) claim
-   *  contested cells first — same greedy-by-worth idea as the file-label loop, just ranked by
-   *  member count instead of renderedPx. */
-  private layoutClusterNames(alpha: number) {
+  /** Cluster-name pass for ONE hierarchy `level` (0 = coarsest): one label per that level's
+   *  community, centred on the average grid cell of its currently-on-grid members (so it works in
+   *  2D and follows the 3D orbit alike), reserved first so file labels — and any OTHER level's
+   *  names drawn the same frame during a level-to-level crossfade — never draw over each other.
+   *  Larger communities (more on-grid members) claim contested cells first — same greedy-by-worth
+   *  idea as the file-label loop, just ranked by member count instead of renderedPx. Colour is the
+   *  level's own community ramp colour: at the FINEST level this is deliberately the exact same key
+   *  `colorSlot()` uses for the nodes themselves (so a cluster name matches the colour of the nodes
+   *  it names); coarser levels get a level-scoped key so a super-cluster's name doesn't just
+   *  coincidentally borrow one of its children's colours. */
+  private layoutClusterNames(level: number, alpha: number) {
     const m = this.m;
+    const names = this.communityNamesByLevel[level];
+    if (!names) return;
     const agg = this.clusterAgg;
     agg.clear();
     for (const nv of this.nodes) {
       if (!nv.onGrid) continue;
-      const c = nv.node.community;
+      const c = nodePath(nv.node)?.[level];
       if (c == null) continue;
       let g = agg.get(c);
       if (!g) { g = { colSum: 0, rowSum: 0, n: 0 }; agg.set(c, g); }
@@ -733,11 +820,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
     if (agg.size === 0) return;
 
+    const isFinest = level === this.levelCount - 1;
     const items = [...agg.entries()].sort((a, b) => b[1].n - a[1].n || a[0] - b[0]);
     for (const [community, g] of items) {
       const row = Math.round(g.rowSum / g.n);
       if (row < 0 || row >= m.rows) continue;
-      const text = clusterLabelText(this.communityNames.get(community) ?? `cluster ${community}`);
+      const text = clusterLabelText(names.get(community) ?? `cluster ${community}`);
       const len = text.length;
       // The tracked (ctx.letterSpacing) draw is a little wider on screen than `len` cells — pad the
       // reservation so a neighbouring label can't butt right up against the extra sub-cell gap.
@@ -755,7 +843,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
       for (let c = col - pad; c <= col + len + pad; c++) {
         if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
       }
-      const color = RAMP[hashKey("community:" + community) % RAMP.length];
+      const key = isFinest ? "community:" + community : `community:L${level}:${community}`;
+      const color = RAMP[hashKey(key) % RAMP.length];
       this.labels.push({ text, col, row, color, accent: false, alpha, eyebrow: true });
     }
   }
@@ -899,14 +988,33 @@ export class AsciiGraphRenderer implements GraphRenderer {
     else if (this.highlightSet) { this.clearHighlight(); this.onHighlightCleared?.(); }
   };
 
-  /** THE LAW: the wheel changes RESOLUTION, never the glyph size. The field re-rasterizes at a
-   *  finer world→cell mapping; the cell stays exactly as big as it was. */
+  /** THE LAW: the wheel changes RESOLUTION, never the glyph size — and it does so in
+   *  `ZOOM_STEP_PCT` STEPS, not continuously. `wheelAccum` turns however finely a trackpad/mouse
+   *  slices its deltaY into discrete notches (`WHEEL_NOTCH_PX`, one per `ZOOM_STEP_PCT`): a real
+   *  mouse wheel click is already ~one notch, a trackpad's finer deltas simply accumulate toward
+   *  one. The field itself still reads as smooth motion — `setZoomPercent` only moves the STEP
+   *  target; `tick()`'s existing per-frame glide eases `res` toward it. */
   private onWheel = (e: WheelEvent) => {
     e.preventDefault();
     this.userTook = true;
-    this.goalRes = Math.max(1, Math.min(MAX_RES, this.goalRes * Math.exp(-e.deltaY * 0.0016)));
-    this.dirty = true;
+    this.wheelAccum += e.deltaY;
+    while (Math.abs(this.wheelAccum) >= WHEEL_NOTCH_PX) {
+      // deltaY < 0 (scroll up / pinch in) is the conventional "zoom in" gesture — MORE resolution,
+      // i.e. a LOWER percent under the 100%=fit/0%=deepest convention.
+      const dir = this.wheelAccum < 0 ? -1 : 1;
+      this.wheelAccum -= dir * WHEEL_NOTCH_PX;
+      this.setZoomPercent(this.zoomPct + dir * ZOOM_STEP_PCT);
+    }
   };
+
+  /** Move the zoom ladder to the step nearest `pct` (100=fit .. 0=deepest), and re-derive `goalRes`
+   *  from it against the current `maxRes` ceiling. The single place that ever assigns `zoomPct`
+   *  outside of a reset, so wheel/keys/frameSubset/resetView all stay in one durable state. */
+  private setZoomPercent(pct: number) {
+    this.zoomPct = snapZoomPercent(pct);
+    this.goalRes = resFromPercent(this.zoomPct, this.maxRes);
+    this.dirty = true;
+  }
 
   private onKeyDown = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null;
@@ -914,6 +1022,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (!this.host || this.host.offsetParent === null) return;
     if (e.key === "Escape") this.resetView();
     else if (e.key === "z" || e.key === "Z") { if (this.hoveredId) this.focusNode(this.hoveredId); else this.resetView(); }
+    else if (e.key === "+" || e.key === "=") { this.userTook = true; this.setZoomPercent(this.zoomPct - ZOOM_STEP_PCT); }
+    else if (e.key === "-" || e.key === "_") { this.userTook = true; this.setZoomPercent(this.zoomPct + ZOOM_STEP_PCT); }
   };
 
   private setHover(id: string | null) {
@@ -968,13 +1078,17 @@ export class AsciiGraphRenderer implements GraphRenderer {
     for (const p of pts) r = Math.max(r, Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]));
     const whole = Math.max(1e-6, is2d ? this.radius2 : this.radius3);
     this.goalTarget = c;
-    this.goalRes = Math.max(1, Math.min(MAX_RES, (whole / r) * 0.55));
+    this.goalRes = Math.max(1, Math.min(this.maxRes, (whole / r) * 0.55));
+    // Framing isn't a zoom STEP — it's a continuous camera command — but resync the durable percent
+    // state to wherever it landed, so the next wheel notch / +- press steps from there.
+    this.zoomPct = resolutionPercent(this.goalRes, this.maxRes);
     this.userTook = true;
     this.dirty = true;
   }
 
   resetView() {
     this.clearHighlight();
+    this.zoomPct = 100;
     this.goalRes = 1;
     this.goalTarget = [0, 0, 0];
     this.panX = 0; this.panY = 0;

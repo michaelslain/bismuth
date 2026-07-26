@@ -101,9 +101,12 @@ export function GraphView(props: {
   let lastGraph: GraphData | null = null;
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);
   const [fps, setFps] = createSignal<number | null>(null);
-  // Zoom is RESOLUTION, not scale: 0% fits the whole graph on the grid, 100% is maximum
-  // resolution with every note named (design/ascii .../guidelines/ascii-zoom.card.html).
-  const [zoomPct, setZoomPct] = createSignal(0);
+  // Zoom is RESOLUTION, not scale: 100% fits the whole graph on the grid (graph-size relative),
+  // 0% is a fixed absolute resolution with every note individually distinguishable, independent of
+  // graph size (design/ascii .../guidelines/ascii-zoom.card.html; asciiGrid.ts DEEPEST_WORLD_PER_CELL).
+  // Moves in 10% steps (wheel notches / +- keys). Starts at 100 so the HUD never flashes "0%" (which
+  // would misleadingly read as "already at max detail") before the renderer's first real emitZoom.
+  const [zoomPct, setZoomPct] = createSignal(100);
   const [searchItems, setSearchItems] = createSignal<SearchItem[]>([]);
 
   // Graph search panel, opened by the FIND / ☰ buttons. Only shown when the graph is a full

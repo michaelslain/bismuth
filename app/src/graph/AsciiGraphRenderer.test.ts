@@ -115,6 +115,15 @@ function frame(t = 16) {
 /** Advance many frames so a camera glide (resolution / target) settles. */
 function settle(n = 120) { for (let i = 0; i < n; i++) frame(16 * (i + 2)); }
 
+// The fixture's world coordinates are scaled up 12x from the "natural" ring geometry below (still
+// only 24 notes on a small ring) so the graph's bounding radius is big enough, relative to the fixed
+// absolute DEEPEST_WORLD_PER_CELL target (asciiGrid.ts), to actually have zoom range to test against
+// — fit() normalizes screen layout to a fraction of the box regardless of world scale (see
+// AsciiGraphRenderer's zoom law), so this changes NOTHING about on-screen geometry at 100%, only how
+// much further there is to zoom toward 0%. Chosen so maxRes lands on a clean, comfortably-settling
+// value in both 2D and 3D (see AsciiGraphRenderer.ts fit()/asciiGrid.ts maxResFor).
+const RING_SCALE = 12;
+
 /** A ring of notes around one high-degree hub, in three communities. */
 function sampleGraph() {
   const nodes = [];
@@ -123,8 +132,8 @@ function sampleGraph() {
     const a = (i / 24) * Math.PI * 2;
     nodes.push({
       id: `n${i}`, label: `note ${i}`, kind: "note" as const,
-      position: [Math.cos(a) * 80, Math.sin(a) * 80, ((i % 5) - 2) * 30] as [number, number, number],
-      position2d: [Math.cos(a) * 80, Math.sin(a) * 80] as [number, number],
+      position: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE, ((i % 5) - 2) * 30 * RING_SCALE] as [number, number, number],
+      position2d: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE] as [number, number],
       community: i % 3,
       communityLabel: `Cluster ${i % 3}`,
     });
@@ -212,9 +221,9 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
   });
 
   it("names nodes on the grid — labels are cells, not a DOM overlay (once zoomed past the cluster-name reveal point)", () => {
-    // At fit (0% zoom) the field names CLUSTERS, not files — see the "cluster names own the field
-    // at 0% zoom" describe block below. frameSubset + a wheel push to saturation deterministically
-    // reaches max resolution centred on n0, regardless of the fixture's ring geometry.
+    // At fit (100% zoom) the field names CLUSTERS, not files — see the "cluster names own the field
+    // at fit" describe block below. frameSubset + a wheel push to saturation deterministically
+    // reaches max resolution (0%) centred on n0, regardless of the fixture's ring geometry.
     const { r, viewport } = mountRenderer("2d");
     r.frameSubset(["n0"]);
     wheelIn(viewport, 30);
@@ -229,10 +238,15 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
     const r = new AsciiGraphRenderer();
     r.mount(host, () => {});
     r.setConfig({ ...CONFIG, viewMode: "2d" });
+    // Positions scaled by RING_SCALE for the same reason as sampleGraph() above — a big enough
+    // bounding radius to have real zoom range under the fixed-absolute 0% target.
     r.render({
       nodes: [
         { id: "note", label: "note", kind: "note", position: [0, 0, 0], position2d: [0, 0] },
-        { id: "tag:research", label: "#research", kind: "tag", position: [60, 0, 0], position2d: [60, 0] },
+        {
+          id: "tag:research", label: "#research", kind: "tag",
+          position: [60 * RING_SCALE, 0, 0], position2d: [60 * RING_SCALE, 0],
+        },
       ],
       edges: [{ from: "note", to: "tag:research", kind: "tag" }],
     });
@@ -285,7 +299,7 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
 });
 
 describe("semantic zoom — cluster names own the field zoomed out, file names crossfade in on zoom-in", () => {
-  it("shows cluster names and NO file names at fit (0% zoom)", () => {
+  it("shows cluster names and NO file names at fit (100% zoom)", () => {
     const { r } = mountRenderer("2d");
     // sampleGraph() gives every node communityLabel `Cluster ${0|1|2}`; the eyebrow register
     // upper-cases it.
@@ -303,7 +317,7 @@ describe("semantic zoom — cluster names own the field zoomed out, file names c
     r.destroy();
   });
 
-  it("hover always names the hovered node, even at fit (0% zoom, where non-forced file names are withheld)", () => {
+  it("hover always names the hovered node, even at fit (100% zoom, where non-forced file names are withheld)", () => {
     const { r, hovers } = mountRenderer("2d");
     const run = nodeRuns().find((f) => /[.o@]/.test(f.text));
     expect(run).toBeDefined();
@@ -312,6 +326,77 @@ describe("semantic zoom — cluster names own the field zoomed out, file names c
     expect(hovers.filter(Boolean).length).toBeGreaterThan(0); // sanity: something actually got hovered
     frame();
     expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true); // forced past the reveal gate
+    r.destroy();
+  });
+});
+
+describe("N-level semantic labels — the zoom ladder walks communityPath, coarsest to finest", () => {
+  /** Two top-level super-clusters (TOP 0/TOP 1), each split into two finer sub-clusters (SUB
+   *  0..3) — a 2-level hierarchy, communityPath/communityPathLabels coarsest-first per graph.ts. */
+  function twoLevelGraph() {
+    const nodes = [];
+    const edges = [];
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const top = i < 12 ? 0 : 1;
+      const sub = top * 2 + (i % 2);
+      nodes.push({
+        id: `n${i}`, label: `note ${i}`, kind: "note" as const,
+        position: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE, ((i % 5) - 2) * 30 * RING_SCALE] as [number, number, number],
+        position2d: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE] as [number, number],
+        community: sub,
+        communityLabel: `Sub ${sub}`,
+        communityPath: [top, sub],
+        communityPathLabels: [`Top ${top}`, `Sub ${sub}`],
+      });
+    }
+    for (let i = 1; i < 24; i++) edges.push({ from: "n0", to: `n${i}`, kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  function mountTwoLevel(): Mounted {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = new AsciiGraphRenderer();
+    const zooms: number[] = [];
+    r.mount(host, () => {});
+    r.setZoomCallback((p) => zooms.push(p));
+    r.setConfig({ ...CONFIG, viewMode: "2d" });
+    r.render(twoLevelGraph());
+    ctx.fills.length = 0;
+    frame();
+    return { r, viewport: host.firstElementChild as HTMLElement, clicks: [], hovers: [], zooms };
+  }
+
+  it("shows only the COARSEST level's names at fit (100%)", () => {
+    const { r } = mountTwoLevel();
+    expect(ctx.fills.some((f) => f.text === "TOP 0" || f.text === "TOP 1")).toBe(true);
+    expect(ctx.fills.some((f) => f.text.startsWith("SUB "))).toBe(false);
+    r.destroy();
+  });
+
+  it("steps down to the sub-level's names on zooming in, before file names appear", () => {
+    const { r, viewport } = mountTwoLevel();
+    wheelIn(viewport, 2); // two notches = two 10% steps: 100% -> 80%, well inside the finer half of the ladder
+    settle(200);
+    // The settle() glide paints every intermediate frame too (including ones still mid-crossfade
+    // from TOP to SUB), so only the FINAL settled frame answers "what does 80% look like" — force
+    // one more repaint at the now-converged camera via a harmless no-op mutation.
+    ctx.fills.length = 0;
+    r.setSearchMatches(new Set());
+    frame();
+    expect(ctx.fills.some((f) => f.text.startsWith("SUB "))).toBe(true);
+    expect(ctx.fills.some((f) => f.text === "TOP 0" || f.text === "TOP 1")).toBe(false);
+    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(false); // still well before the file reveal
+    r.destroy();
+  });
+
+  it("eventually crossfades all the way to file names, same as the single-level case", () => {
+    const { r, viewport } = mountTwoLevel();
+    r.frameSubset(["n0"]);
+    wheelIn(viewport, 30);
+    settle(200);
+    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
     r.destroy();
   });
 });
@@ -345,31 +430,91 @@ describe("THE LAW — zoom is resolution, never scale", () => {
     r.destroy();
   });
 
-  it("reads 0% at fit and climbs as the wheel turns", () => {
+  it("reads 100% at fit and drops toward 0% as the wheel zooms in (10% steps)", () => {
     const { r, viewport, zooms } = mountRenderer("2d");
-    expect(zooms.at(-1)).toBe(0);
-    wheelIn(viewport, 10);
+    expect(zooms.at(-1)).toBe(100);
+    wheelIn(viewport, 1); // exactly one notch = one ZOOM_STEP_PCT step
     settle();
-    expect(zooms.at(-1)!).toBeGreaterThan(0);
+    expect(zooms.at(-1)).toBe(90);
+    wheelIn(viewport, 9); // saturate at the 0% (deepest) floor
+    settle();
+    expect(zooms.at(-1)).toBe(0);
     r.destroy();
   });
 
-  it("resetView glides back to fit", () => {
+  /**
+   * REGRESSION (the stepped-zoom ladder collapsing to a single point).
+   *
+   * `RING_SCALE` above exists precisely to give the fixture enough bounding radius to have zoom
+   * range — which means every other test in this file dodges the case that actually shipped broken:
+   * a graph whose OWN fit resolution already meets the fixed absolute 0% target
+   * (`DEEPEST_WORLD_PER_CELL`). That is not exotic — it is any compact graph, and it is the real
+   * 2251-note vault the moment the field is ~2200px wide (a maximized window on a large display).
+   *
+   * There, `maxResFor`'s floor pinned `maxRes` to exactly 1, and BOTH directions of the percent
+   * mapping degenerate at `maxRes <= 1`: `resFromPercent` returns 1 for every step and
+   * `resolutionPercent` returns 100 for every res. So a wheel notch moved `zoomPct` to 90 while
+   * `goalRes` stayed at the fit resolution — the field never re-rasterized, the HUD stayed pinned
+   * at "100%", and every further notch did nothing. The whole 11-stop ladder collapsed onto one
+   * stop. This test drives the REAL wheel path (one 120px notch) on a natural-scale graph and pins
+   * the three things that were wrong: the ladder has range, the field still draws, and the HUD
+   * reports the step the user actually selected.
+   */
+  it("keeps a live ladder on a graph whose own fit already meets the absolute 0% target", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = new AsciiGraphRenderer();
+    const zooms: number[] = [];
+    r.mount(host, () => {});
+    r.setZoomCallback((p) => zooms.push(p));
+    r.setConfig({ ...CONFIG, viewMode: "2d" });
+    // sampleGraph() WITHOUT the RING_SCALE blow-up: an ordinary compact ring, whose fit scale is
+    // already finer than DEEPEST_WORLD_PER_CELL in an 800x600 field.
+    r.render({
+      nodes: sampleGraph().nodes.map((n) => ({
+        ...n,
+        position: n.position.map((v) => v / RING_SCALE) as [number, number, number],
+        position2d: n.position2d.map((v) => v / RING_SCALE) as [number, number],
+      })),
+      edges: sampleGraph().edges,
+    });
+    const viewport = host.firstElementChild as HTMLElement;
+    ctx.fills.length = 0;
+    frame();
+    expect(zooms.at(-1)).toBe(100); // sanity: we start at fit
+
+    // The camera internals are private; this is the one place the test needs to see the ladder
+    // itself rather than only its symptoms.
+    const cam = r as unknown as { res: number; goalRes: number; maxRes: number };
+    const fitRes = cam.res;
+
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, cancelable: true })); // ONE notch
+    expect(Number.isFinite(cam.goalRes)).toBe(true);
+    expect(cam.goalRes).toBeGreaterThan(fitRes); // the step must actually move the resolution
+
+    settle();
+    expect(cam.res).toBe(cam.goalRes);                 // the glide LANDS on the step, exactly
+    expect(zooms.at(-1)).toBe(90);                     // ...so the HUD reads the step the user picked
+    expect(nodeRuns().length).toBeGreaterThan(0);      // ...and the field is still on the grid
+    r.destroy();
+  });
+
+  it("resetView glides back to 100% (fit)", () => {
     const { r, viewport, zooms } = mountRenderer("2d");
     wheelIn(viewport, 10);
     settle();
     r.resetView();
     settle(200);
-    expect(zooms.at(-1)).toBe(0);
+    expect(zooms.at(-1)).toBe(100);
     r.destroy();
   });
 
-  it("frameSubset raises the resolution instead of scaling anything", () => {
+  it("frameSubset raises the resolution (drops the percent toward 0%) instead of scaling anything", () => {
     const { r, zooms } = mountRenderer("2d");
     const fontBefore = ctx.font;
     r.frameSubset(["n0", "n1", "n2"]);
     settle(200);
-    expect(zooms.at(-1)!).toBeGreaterThan(0);
+    expect(zooms.at(-1)!).toBeLessThan(100);
     expect(ctx.font).toBe(fontBefore);
     r.destroy();
   });

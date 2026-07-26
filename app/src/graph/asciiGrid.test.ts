@@ -4,9 +4,10 @@
 // from CanvasGraphRenderer and already proven, so it isn't re-tested here.
 import { describe, expect, it } from "bun:test";
 import {
-  CELL_H, CELL_W, NODE_GLYPHS, PAD_X, PAD_Y,
+  CELL_H, CELL_W, DEEPEST_WORLD_PER_CELL, MIN_ZOOM_SPAN, NODE_GLYPHS, PAD_X, PAD_Y, ZOOM_STEP_PCT,
   cellToPx, degreeTier, depthAlpha, depthBand, fitPxPerWorld, glyphTier, gridMetrics, inGrid,
-  mergeEdgeChar, mergeEdgeCode, nearestCellNode, nodeGlyph, pxToCell, resolutionPercent, resolutionT, snapToCell, traceEdge,
+  maxResFor, mergeEdgeChar, mergeEdgeCode, nearestCellNode, nodeGlyph, pxToCell, resFromPercent,
+  resFromT, resolutionPercent, resolutionT, snapToCell, snapZoomPercent, traceEdge,
 } from "./asciiGrid";
 
 describe("gridMetrics", () => {
@@ -221,20 +222,85 @@ describe("zoom is resolution", () => {
     expect(Number.isFinite(fitPxPerWorld(m.cols, m.rows, m, 0))).toBe(true);
   });
 
-  it("reports 0% at fit and 100% at maximum resolution", () => {
-    expect(resolutionPercent(1, 16)).toBe(0);
-    expect(resolutionPercent(16, 16)).toBe(100);
+  it("reports 100% at fit and 0% at maximum resolution (the HUD convention: 100=fit, 0=deepest)", () => {
+    expect(resolutionPercent(1, 16)).toBe(100);
+    expect(resolutionPercent(16, 16)).toBe(0);
     expect(resolutionPercent(4, 16)).toBe(50);
-    expect(resolutionPercent(0.1, 16)).toBe(0); // clamped — you cannot zoom out past fit
+    expect(resolutionPercent(0.1, 16)).toBe(100); // clamped — you cannot zoom out past fit
   });
 
-  it("resolutionT is the unrounded 0..1 progress resolutionPercent rounds to a percent", () => {
+  it("resolutionT stays in the ORIGINAL 0=fit/1=deepest direction internally — only the HUD percent is inverted", () => {
     expect(resolutionT(1, 16)).toBe(0);
     expect(resolutionT(16, 16)).toBe(1);
     expect(resolutionT(4, 16)).toBeCloseTo(0.5, 10);
     expect(resolutionT(0.1, 16)).toBe(0); // clamped, same as resolutionPercent
     for (const res of [1, 2, 4, 7, 10, 16]) {
-      expect(Math.round(resolutionT(res, 16) * 100)).toBe(resolutionPercent(res, 16));
+      expect(Math.round((1 - resolutionT(res, 16)) * 100)).toBe(resolutionPercent(res, 16));
     }
+  });
+});
+
+describe("maxResFor — the fixed absolute 0% ceiling", () => {
+  /** The ladder must never collapse onto fit. A graph already denser at fit than the absolute
+   *  target (any graph, once the field is big enough — see MIN_ZOOM_SPAN) used to floor at exactly
+   *  1, and `maxRes <= 1` degenerates BOTH percent mappings: every step maps to res 1, every res
+   *  maps to 100%. The wheel became a dead control with a HUD frozen at "100%". */
+  it("never collapses the ladder: a graph already denser than the absolute target still spans MIN_ZOOM_SPAN", () => {
+    expect(maxResFor(1000, CELL_W)).toBe(MIN_ZOOM_SPAN);
+    expect(MIN_ZOOM_SPAN).toBeGreaterThan(1);
+  });
+
+  it("every stop is a DISTINCT resolution, even at the floor (the collapse regression)", () => {
+    const maxRes = maxResFor(1000, CELL_W);
+    const stops = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0].map((p) => resFromPercent(p, maxRes));
+    expect(new Set(stops).size).toBe(stops.length);
+    for (let i = 1; i < stops.length; i++) expect(stops[i]).toBeGreaterThan(stops[i - 1]);
+    // ...and the HUD maps each one back to the stop the user selected.
+    for (const p of [100, 90, 50, 10, 0]) expect(resolutionPercent(resFromPercent(p, maxRes), maxRes)).toBe(p);
+  });
+
+  it("a bigger graph (smaller fit scale) needs a BIGGER ceiling to reach the same absolute detail", () => {
+    const bigGraphFit = 0.1;   // sparse fit scale — a big graph, everything crammed small at 100%
+    const smallGraphFit = 5;   // tight fit scale — a small graph, already fairly detailed at 100%
+    expect(maxResFor(bigGraphFit, CELL_W)).toBeGreaterThan(maxResFor(smallGraphFit, CELL_W));
+    // The absolute target still WINS wherever it asks for more than the floor — the floor only
+    // rescues the degenerate end (see MIN_ZOOM_SPAN).
+    expect(maxResFor(bigGraphFit, CELL_W)).toBeGreaterThan(MIN_ZOOM_SPAN);
+  });
+
+  it("is otherwise a pure function of pxPerWorld/cellW — not of anything graph-identity-specific", () => {
+    expect(maxResFor(2, CELL_W)).toBe(maxResFor(2, CELL_W));
+  });
+
+  it("DEEPEST_WORLD_PER_CELL is a fixed positive constant (not derived per-graph)", () => {
+    expect(DEEPEST_WORLD_PER_CELL).toBeGreaterThan(0);
+  });
+});
+
+describe("zoom percent <-> resolution (100% = fit, 0% = deepest, in ZOOM_STEP_PCT steps)", () => {
+  it("resFromT is the exact inverse of resolutionT", () => {
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      expect(resolutionT(resFromT(t, 16), 16)).toBeCloseTo(t, 10);
+    }
+  });
+
+  it("resFromPercent: 100% is fit (res=1), 0% is the maxRes ceiling", () => {
+    expect(resFromPercent(100, 16)).toBeCloseTo(1, 10);
+    expect(resFromPercent(0, 16)).toBeCloseTo(16, 10);
+    expect(resFromPercent(50, 16)).toBeCloseTo(4, 10); // sqrt(16), the log-scale midpoint
+  });
+
+  it("resolutionPercent/resFromPercent round-trip at every ZOOM_STEP_PCT stop", () => {
+    for (let pct = 0; pct <= 100; pct += ZOOM_STEP_PCT) {
+      expect(resolutionPercent(resFromPercent(pct, 16), 16)).toBe(pct);
+    }
+  });
+
+  it("snapZoomPercent rounds to the nearest step and clamps to 0..100", () => {
+    expect(snapZoomPercent(94)).toBe(90);
+    expect(snapZoomPercent(96)).toBe(100);
+    expect(snapZoomPercent(45)).toBe(50);
+    expect(snapZoomPercent(-5)).toBe(0);
+    expect(snapZoomPercent(105)).toBe(100);
   });
 });

@@ -7,6 +7,8 @@ import {
   fileLabelAlpha,
   clusterLabelAlpha,
   clusterLabelText,
+  clusterLevelAlphas,
+  levelBoundaries,
   FILE_LABEL_REVEAL_T,
   FILE_LABEL_FADE_SPAN,
   FILE_LABEL_FULL_T,
@@ -220,5 +222,61 @@ describe("clusterLabelText", () => {
 
   it("is a no-op on an already-uppercase name", () => {
     expect(clusterLabelText("PROJECTS")).toBe("PROJECTS");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// N-level cluster-name ladder — generalizing the two-state cluster/file crossfade above to walk a
+// graph's full communityPath depth (1..4 levels) as the camera zooms from 0 to FILE_LABEL_REVEAL_T.
+// ---------------------------------------------------------------------------
+
+describe("levelBoundaries", () => {
+  it("splits [0, revealT) into levelCount even segments, ending exactly at revealT", () => {
+    const b = levelBoundaries(4, FILE_LABEL_REVEAL_T);
+    expect(b.length).toBe(5);
+    expect(b[0]).toBe(0);
+    expect(b[4]).toBeCloseTo(FILE_LABEL_REVEAL_T, 10);
+    for (let i = 1; i < b.length; i++) expect(b[i] - b[i - 1]).toBeCloseTo(FILE_LABEL_REVEAL_T / 4, 10);
+  });
+
+  it("clamps a level count below 1 up to a single segment", () => {
+    expect(levelBoundaries(0, FILE_LABEL_REVEAL_T)).toEqual([0, FILE_LABEL_REVEAL_T]);
+  });
+});
+
+describe("clusterLevelAlphas", () => {
+  it("a 1-level graph behaves exactly like the original two-tier crossfade: always fully 'current' below revealT", () => {
+    expect(clusterLevelAlphas(0, 1)).toEqual([1]);
+    expect(clusterLevelAlphas(0.29, 1)).toEqual([1]);
+    expect(clusterLevelAlphas(0.5, 1)).toEqual([1]); // past revealT too — clusterLabelAlpha (not this fn) owns the overall fade-out
+  });
+
+  it("clamps a level count below 1 up to 1", () => {
+    expect(clusterLevelAlphas(0, 0)).toEqual([1]);
+  });
+
+  it("is a true partition of unity below revealT, for any level count (a crossfade, never independent fades)", () => {
+    for (const n of [1, 2, 3, 4]) {
+      for (const t of [0, 0.02, 0.08, 0.15, 0.22, 0.29]) {
+        const sum = clusterLevelAlphas(t, n).reduce((a, b) => a + b, 0);
+        expect(sum).toBeCloseTo(1, 8);
+      }
+    }
+  });
+
+  it("opens on the coarsest level and closes on the finest as t sweeps toward revealT", () => {
+    const n = 3;
+    const b = levelBoundaries(n, FILE_LABEL_REVEAL_T);
+    expect(clusterLevelAlphas(0, n)).toEqual([1, 0, 0]);
+    const midLevel1 = (b[1] + b[2]) / 2; // comfortably inside level 1's own segment
+    const a = clusterLevelAlphas(midLevel1, n);
+    expect(a[1]).toBeGreaterThan(a[0]);
+    expect(a[1]).toBeGreaterThan(a[2]);
+    expect(clusterLevelAlphas(b[n] - 1e-6, n)[n - 1]).toBeCloseTo(1, 3); // finest owns it right at the reveal point
+  });
+
+  it("at/after revealT, only the finest level is nonzero — the outer file crossfade owns the handoff from there", () => {
+    expect(clusterLevelAlphas(FILE_LABEL_REVEAL_T, 3)).toEqual([0, 0, 1]);
+    expect(clusterLevelAlphas(1, 4)).toEqual([0, 0, 0, 1]);
   });
 });
