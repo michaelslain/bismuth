@@ -2059,9 +2059,7 @@ export function ChatView(props: {
             <div class="chat-msg assistant">
               <div class="chat-turn-label"><Icon value="MessageSquare" size={11} /> {persona()}</div>
               <div class="chat-thinking-dots">
-                <span class="chat-dot" />
-                <span class="chat-dot" />
-                <span class="chat-dot" />
+                working<span class="asc-caret">_</span>
               </div>
             </div>
           </Show>
@@ -2470,7 +2468,7 @@ export function ChatView(props: {
               when={p.part.pending}
               fallback={<Icon value={p.part.isError ? "X" : "Check"} size={13} class={p.part.isError ? "chat-tool-x" : "chat-tool-check"} />}
             >
-              <span class="chat-tool-spinner" />
+              <span class="asc-caret">_</span>
             </Show>
           </span>
           <Icon value={open() ? "ChevronDown" : "ChevronRight"} size={13} class="chat-tool-caret" />

@@ -82,19 +82,20 @@ body { background: var(--bg); color: var(--fg); }
    reading-mode markdown renderer (`.bismuth-word`, bases/markdown.ts) and the live-preview editor
    decoration (`.cm-bismuth`, editor/livePreview.ts). The gradient is oversized and slowly pans for
    a gentle shimmer; reduced-motion users get the static ramp. Theme-independent by design — the
-   crystal colors read the same on every theme; the effect never uses a theme-accent color. */
+   crystal colors read the same on every theme; the effect never uses a theme-accent color.
+   Reuses the wordmark's own `asc-sheen`/`--sheen` animation (defined below, with `.asc-wordmark`)
+   rather than a second infinite loop — PORTING.md §7 permits exactly one decorative sheen. */
 .bismuth-word, .cm-bismuth {
   background-image: linear-gradient(100deg,
     #ff6ec7 0%, #a06bff 18%, #4d8bff 36%, #22d3d6 52%, #5ff0a8 68%, #ffd36e 84%, #ff6ec7 100%);
-  background-size: 260% 100%;
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
   font-weight: 600;
-  animation: bismuth-shimmer 7s linear infinite;
+  animation: asc-sheen var(--sheen, 8s) linear infinite;
 }
-@keyframes bismuth-shimmer { to { background-position: 260% 0; } }
 @media (prefers-reduced-motion: reduce) {
   .bismuth-word, .cm-bismuth { animation: none; }
 }
@@ -228,7 +229,7 @@ body { background: var(--bg); color: var(--fg); }
 /* A toolbar button that carries a live count (the daemon inbox): the wrap anchors the badge
    to the button's top-right corner without disturbing the icon row's layout. */
 .toolbar-btn-wrap { position: relative; display: inline-flex; }
-.toolbar-badge { position: absolute; top: -1px; right: -3px; pointer-events: none; font-size: 9.5px; font-weight: 600; line-height: 1; color: var(--bg); background: var(--accent); border-radius: 8px; padding: 2px 4px; }
+.toolbar-badge { position: absolute; top: -1px; right: -3px; pointer-events: none; font-size: 10.5px; font-weight: 600; line-height: 1; color: var(--bg); background: var(--accent); border-radius: 8px; padding: 2px 4px; }
 /* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
    resting color rising to --fg on hover — not full-strength white at rest. Shared by
    the sidebar toolbar, the tab-strip actions, and the empty-pane new-terminal icon. */
@@ -383,7 +384,7 @@ body { background: var(--bg); color: var(--fg); }
 .tab-rail:hover .tab-rail-inner,
 .tab-rail:focus-within .tab-rail-inner {
   width: 232px;                      /* expanded: icon + full name + close/pin */
-  box-shadow: -10px 0 28px -14px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-menu);
 }
 @media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
 
@@ -441,7 +442,7 @@ body { background: var(--bg); color: var(--fg); }
   max-width: 280px; overflow: hidden; text-overflow: ellipsis;
   background: var(--panel); color: var(--fg);
   border: 1px solid var(--accent); border-radius: 6px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-popup);
   opacity: 0.96; transform: scale(1.02); transform-origin: top left;
 }
 .drag-ghost.pane { border-style: dashed; }
@@ -471,8 +472,8 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .graph-search-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 3px; cursor: pointer; white-space: nowrap; background: transparent; }
 .graph-search-row.selected { background: var(--accent-soft); }
 .graph-search-row .graph-search-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
-.graph-search-row .graph-search-sub { margin-left: auto; padding-left: 10px; max-width: 42%; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; color: var(--faint); font-size: 10px; }
-.graph-search-empty { padding: 8px 9px; color: var(--faint); font-size: 10px; }
+.graph-search-row .graph-search-sub { margin-left: auto; padding-left: 10px; max-width: 42%; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; color: var(--faint); font-size: 10.5px; }
+.graph-search-empty { padding: 8px 9px; color: var(--faint); font-size: 10.5px; }
 .palette-search { padding: 15px 18px; border-bottom: 1px solid var(--border-soft); gap: 11px; }
 .palette-search .search-bar-lead { color: var(--faint); opacity: 1; }
 .palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); }
@@ -594,7 +595,7 @@ html.view-dragging .graph-floater { pointer-events: none; }
 /* Flip hint: the shared asc-kbd/asc-key keycap, pinned to the bottom of the front face. */
 .fliphint {
   position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
-  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.22em; text-transform: uppercase;
   color: var(--faint); display: flex; align-items: center; gap: 7px;
 }
 
@@ -663,11 +664,13 @@ html.view-dragging .graph-floater { pointer-events: none; }
 /* ── Edit-cards modal — "claude-design" handoff ───────────────────────────────
    Two modes: a reorderable Front/Back list (markdown-overlay cells) + a bulk-add
    paster with a live preview. Built on Modal + SegmentedToggle + the Button family. */
+/* Chrome (background/border/radius/shadow) comes from the shared `.asc-modal` class every
+   <Modal> panel carries (ui/Modal.tsx) — this rule only supplies sizing/layout. It used to
+   re-declare its own gradient background + 18px radius + shadow, which fought `.asc-modal`'s
+   flat `--pop-bg-strong` + radius 5 chrome for the win depending on CSS load order. */
 .cards-modal {
   width: min(940px, 94vw); height: min(840px, 92vh); display: flex; flex-direction: column;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
-  border: 1px solid var(--border); border-radius: 18px;
-  box-shadow: var(--shadow-modal); overflow: hidden;
+  overflow: hidden;
 }
 .cards-modal .sp { flex: 1; }
 
@@ -679,7 +682,7 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .cards-modebar { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 14px 24px; }
 .cards-modebar .segmented .btn { gap: 7px; }
 .cards-hint { color: var(--faint); font-size: 11px; white-space: nowrap; }
-.cards-hint .key, .cards-lefthint .key { border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--text-muted); font-size: 10px; }
+.cards-hint .key, .cards-lefthint .key { border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--text-muted); font-size: 10.5px; }
 
 /* ── Cards list ── */
 .cards-listwrap { flex: 1 1 auto; overflow-y: auto; padding: 0 24px 8px; }
@@ -687,7 +690,7 @@ html.view-dragging .graph-floater { pointer-events: none; }
   display: grid; grid-template-columns: 30px 1fr 1fr 34px; gap: 12px; align-items: center;
   padding: 6px 4px 8px; position: sticky; top: 0; z-index: 2;
   background: linear-gradient(180deg, var(--surface-1) 70%, transparent);
-  font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint);
+  font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint);
 }
 .cards-collbl span:first-child { text-align: center; }
 .cards-row { display: grid; grid-template-columns: 30px 1fr 1fr 34px; gap: 12px; align-items: stretch; padding: 9px 4px; border-top: 1px solid var(--border-soft); position: relative; }
@@ -728,7 +731,7 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .cell:focus-within .cell-md { visibility: hidden; }
 .cell textarea::placeholder { color: transparent; }
 .cell:focus-within textarea::placeholder { color: var(--text-muted); }
-.cell-tag { position: absolute; top: -7px; left: 10px; z-index: 3; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); padding: 0 4px; background: var(--surface-1); opacity: 0; transition: opacity 0.14s; }
+.cell-tag { position: absolute; top: -7px; left: 10px; z-index: 3; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); padding: 0 4px; background: var(--surface-1); opacity: 0; transition: opacity 0.14s; }
 .cell:focus-within .cell-tag { opacity: 1; }
 /* Draft row: plain monospace inputs (no markdown overlay), dashed until focused. */
 .cards-draft .cell textarea {
@@ -764,13 +767,13 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .cards-pvlist { flex: 1; overflow-y: auto; border: 1px solid var(--border-soft); border-radius: 11px; background: var(--bg); padding: 6px; }
 .cards-pvcard { display: grid; grid-template-columns: 18px 1fr; gap: 9px; padding: 9px 10px; border-radius: 8px; }
 .cards-pvcard:nth-child(odd) { background: color-mix(in srgb, var(--fg) 2%, transparent); }
-.cards-pi { color: var(--faint); font-size: 10px; font-family: "Monaspace Xenon", ui-monospace, monospace; padding-top: 3px; text-align: right; }
+.cards-pi { color: var(--faint); font-size: 10.5px; font-family: "Monaspace Xenon", ui-monospace, monospace; padding-top: 3px; text-align: right; }
 .cards-pf { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 13px; color: var(--fg); line-height: 1.45; }
 .cards-pb { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 12.5px; color: var(--text-muted); line-height: 1.45; margin-top: 3px; }
 .cards-pb::before { content: "→ "; color: var(--blue); font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 11px; }
 .cards-pvcard.bad .cards-pf { color: var(--accent-purple); }
 .cards-warn-em { color: var(--accent-purple); font-style: italic; }
-.cards-warn { color: var(--accent-purple); font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 10px; margin-top: 3px; }
+.cards-warn { color: var(--accent-purple); font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 10.5px; margin-top: 3px; }
 .cards-pvempty { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--faint); font-size: 12px; text-align: center; padding: 30px; }
 
 /* ── Footer ── */
@@ -864,14 +867,14 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .daemon-list { display: flex; flex-direction: column; gap: 1px; width: 100%; height: 100%; overflow-y: auto; pointer-events: auto; font-family: inherit; font-size: 11px; }
 .daemon-row { display: flex; align-items: center; gap: 7px; padding: 3px 6px; border-radius: 3px; cursor: pointer; }
 .daemon-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
-.daemon-section-head { padding: 4px 6px 2px; font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.daemon-section-head { padding: 4px 6px 2px; font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
 .graph-legend-rows { max-height: 240px; overflow: auto; }
-.graph-card-h { font-size: 10px; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; }
+.graph-card-h { font-size: 10.5px; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; }
 .graph-stats { position: absolute; right: 18px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--faint); background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 9px; padding: 7px 12px; }
 .graph-find-panel { position: absolute; top: 8px; right: 8px; width: 260px; max-height: calc(100% - 16px); display: flex; flex-direction: column; pointer-events: auto; background: var(--pop-bg-strong); border: 1px solid var(--border); border-radius: 11px; backdrop-filter: blur(10px); box-shadow: var(--shadow-card); z-index: 5; overflow: hidden; }
 .graph-bottom-narrow { display: flex; gap: 2px; align-items: stretch; background: var(--pop-bg); border-radius: 4px; padding: 1px; pointer-events: auto; flex-shrink: 0; }
 /* Bottom-bar fps readout (paired with .graph-hud-pill; dynamic traffic-light color stays inline). */
-.graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: 10px; padding: 2px 7px; }
+.graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: 10.5px; padding: 2px 7px; }
 /* Narrow (sidebar mini-graph): drop every segment's text label so the toolbar
    controls collapse to icon-only, and match the main sidebar toolbar
    (.sidebar-icons) — 18px icons in 28px square buttons with 3px gaps — so the
@@ -901,7 +904,7 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .agents-card { position: absolute; left: 18px; background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 11px; backdrop-filter: blur(8px); width: 206px; z-index: 4; pointer-events: auto; }
 .agents-status { top: 18px; padding: 13px 15px; }
 .agents-structures { top: 140px; padding: 12px 12px 13px; }
-.agents-card-h { font-size: 10px; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; padding-left: 3px; }
+.agents-card-h { font-size: 10.5px; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; padding-left: 3px; }
 .agents-status-body { font-size: 11.5px; color: var(--text-muted); line-height: 1.7; }
 .agents-struct-list { display: flex; flex-direction: column; gap: 2px; }
 .agents-struct-desc { font-size: 10.5px; color: var(--text-muted); line-height: 1.5; margin-top: 11px; padding: 10px 0 0 3px; border-top: 1px solid var(--border-soft); }
@@ -936,7 +939,7 @@ html.view-dragging .graph-floater { pointer-events: none; }
 /* Drop-to-reference cue (Row 74): a full-pane wash + centered "Drop to reference" pill, shown over a
    chat pane when a file/folder is dragged onto it — a mention, NOT a split (no quadrant highlight). */
 .pane-drop-reference { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px dashed var(--accent); border-radius: 4px; }
-.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 600; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); }
+.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 600; box-shadow: var(--shadow-card); }
 .pane-divider { flex: 0 0 var(--pane-divider-width, 5px); background: var(--border); cursor: col-resize; }
 .pane-divider.col { cursor: row-resize; }
 .pane-divider:hover { background: var(--accent); }

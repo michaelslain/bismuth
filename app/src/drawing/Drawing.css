@@ -3,7 +3,7 @@
 /* The page keeps the letter aspect ratio; the canvases inside fill it via inset:0 +
    100%. The width cap + centering live on the .draw-page-zoom wrapper (which the zoom
    control scales), so the shadow simply fills its wrapper. */
-.draw-page-shadow { box-shadow: 0 6px 28px rgba(0,0,0,.45); width: 100%; }
+.draw-page-shadow { box-shadow: var(--shadow-card); width: 100%; }
 .draw-page { position: relative; width: 100%; aspect-ratio: 816 / 1056; }
 /* Zoom wrapper: width = zoom × stage width (capped at zoom × 1400px), centered. At
    zoom > 1 it overflows the stage horizontally, which scrolls. DrawingCanvas.toLocal

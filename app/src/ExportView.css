@@ -108,7 +108,7 @@
 /* A small heads-up under a field's chip row (e.g. "N pages -> N files" for a page-broken
    PNG export) — quieter than .flab, not a label. */
 .exp-hint {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--faint);
   line-height: 1.45;
 }

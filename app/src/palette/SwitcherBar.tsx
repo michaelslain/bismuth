@@ -293,7 +293,7 @@ export function SwitcherBar(props: Props) {
         </Show>
         <Show when={aiPhase() === "loading"}>
           <div class="search-state">
-            <span class="search-spinner search-spinner-lg" />
+            <span class="search-spinner search-spinner-lg asc-caret">_</span>
             <div class="search-state-title">Searching your vault with Bismuth AI…</div>
             <div class="search-state-hint">Reading your notes to find what answers your question</div>
           </div>
