@@ -1,8 +1,8 @@
 // app/src/GraphView.tsx
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
-import { CanvasGraphRenderer, type HoverNode } from "./graph/CanvasGraphRenderer";
-import { GraphAtmosphere } from "./graph/GraphAtmosphere";
+import { AsciiGraphRenderer } from "./graph/AsciiGraphRenderer";
+import type { GraphRenderer, HoverNode } from "./graph/graphRenderer";
 import { AgentsGraph } from "./graph/AgentsGraph";
 import { layoutAgentGraph } from "./graph/agentLayout";
 import type { Org } from "./graph/agentOrg";
@@ -106,12 +106,16 @@ export function GraphView(props: {
   onPaint?: (nodeCount: number) => void;
 }) {
   let host!: HTMLDivElement;
-  let labelsEl: HTMLDivElement | undefined; // DOM overlay the renderer fills with native text labels
-  const renderer = new CanvasGraphRenderer();
+  // The ASCII field draws its labels ON the character grid (they're cells like everything else),
+  // so there is no DOM label overlay any more — CanvasGraphRenderer's `labelsEl` argument is gone.
+  const renderer: GraphRenderer = new AsciiGraphRenderer();
   let mounted = false;
   let lastGraph: GraphData | null = null;
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);
   const [fps, setFps] = createSignal<number | null>(null);
+  // Zoom is RESOLUTION, not scale: 0% fits the whole graph on the grid, 100% is maximum
+  // resolution with every note named (design/ascii .../guidelines/ascii-zoom.card.html).
+  const [zoomPct, setZoomPct] = createSignal(0);
   const [legendRows, setLegendRows] = createSignal<ClusterRow[]>([]);
   // The persistently-highlighted cluster (legend click). Toggled off by clicking the same row
   // again, clicking empty canvas space (renderer.onHighlightCleared), or the search menu close.
@@ -166,17 +170,12 @@ export function GraphView(props: {
   };
 
   onMount(() => {
-    renderer.mount(
-      host,
-      openNode,
-      (node) => setHovered(node),
-      labelsEl, // DOM overlay for native text labels (replaces in-canvas sprite labels)
-    );
+    renderer.mount(host, openNode, (node) => setHovered(node));
     renderer.setFpsCallback(setFps);
+    renderer.setZoomCallback?.(setZoomPct);
     if (props.onPaint) renderer.setPaintCallback(props.onPaint);
     // Empty-canvas click cleared the highlight renderer-side — mirror it in the legend state.
     renderer.onHighlightCleared = () => setSelectedCluster(null);
-    // The atmosphere glow (lobes that ride the 3 biggest clusters) is wired by <GraphAtmosphere>.
     mounted = true;
     if (lastGraph) { renderer.render(rendererGraph()); refreshUiData(); }
   });
@@ -246,6 +245,12 @@ export function GraphView(props: {
     // view/mode switch). Refresh here too so the legend always tracks the live palette.
     if (mounted) refreshUiData();
   });
+
+  // The one graph instance moves between a full pane and the cramped backdrop/sidebar slot, so the
+  // cell metric follows `mini` reactively: the small slot draws on the DENSE 7px cell
+  // (tokens/ascii.css --cell-w-dense / --cell-h-dense), the full pane on the --fs-ui cell. The
+  // glyphs never scale — a smaller cell just fits more of them (see the zoom law).
+  createEffect(() => renderer.setDense?.(props.mini === true));
 
   createEffect(() => {
     const a = props.active;
@@ -327,21 +332,17 @@ export function GraphView(props: {
       </ViewBar>
       <div class="graph-area" style={{ ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div class="graph-canvas-host" ref={host} />
-        {/* Native-text label overlay: the renderer projects each visible node to screen px and
-            places a crisp <div> here (replaces low-res in-canvas sprites). Layered above the glow. */}
-        <div class="graph-labels" ref={labelsEl} />
-        {/* Iridescent cluster-glow + depth vignette over the canvas (design's BigGraph
-            look). Screen-blended glow tints; pure CSS, no renderer cost. Shown in every
-            mode, agents included. */}
-        <GraphAtmosphere renderer={renderer} mode={props.mode} />
-        {/* Agents mode: the WebGL graph renders the nodes (2D pyramid / 3D molecule); this
+        {/* No label overlay and no atmosphere layer: labels are cells on the character grid, and
+            the design's ground is a FLAT --graph-bg field — no glow lobes, no vignette.
+            GraphAtmosphere.tsx stays in the tree, just out of the render path. */}
+        {/* Agents mode: the character field renders the nodes (2D pyramid / 3D molecule); this
             overlay adds the status card + organization picker on top. */}
         <Show when={props.mode === "agents"}>
           <AgentsGraph agents={props.graph} org={agentOrg()} setOrg={setAgentOrg} />
         </Show>
         {/* Floating cluster-legend card (non-agents, non-daemon) — hidden in the cramped sidebar via container query. */}
         <Show when={props.mode !== "agents" && props.mode !== "daemon"}>
-          <div class="graph-legend-card">
+          <div class="graph-legend-card asc-popover">
             <div class="graph-card-h">{modeLabel()} · clusters</div>
             <div class="graph-legend-rows">
               <ClusterLegend rows={legendRows()} selected={selectedCluster()} onFocus={focusCluster} />
@@ -350,7 +351,7 @@ export function GraphView(props: {
         </Show>
         {/* Daemon-mode list: crons and processes with live status. */}
         <Show when={props.mode === "daemon"}>
-          <div class="graph-legend-card daemon-legend">
+          <div class="graph-legend-card daemon-legend asc-popover">
             <div class="graph-card-h">daemon · services</div>
             <div class="graph-legend-rows">
               <DaemonList
@@ -365,13 +366,15 @@ export function GraphView(props: {
         <Show when={props.mode !== "agents"}>
           <div class="graph-stats">
             <span>{nodeCount()} nodes · {edgeCount()} edges · {modeLabel()}</span>
+            {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
+            <span class="graph-zoom-pct">{zoomPct()}%</span>
             <Show when={settings.graph.showFps && fps() !== null}><span style={{ color: fpsColor(fps()!) }}>{fps()} fps</span></Show>
           </div>
         </Show>
         {/* Find panel: search only. Clusters live in the floating legend card; there's no
             reset-view button here (Escape / toggling Find closes it). */}
         <Show when={props.fill && menuOpen()}>
-          <div class="graph-find-panel">
+          <div class="graph-find-panel asc-popover">
             <GraphSearch
               items={searchItems()}
               onPreview={(id) => renderer.setSearchMatches(new Set([id]))}
