@@ -1,7 +1,7 @@
 // Visual spec for <IconTextButton> — a text <Button> with a leading Lucide icon.
 //
 // Props: icon (required), iconSize (default 14), variant ("normal" default | "selected"
-// | "unselected"), danger, size, plus native <button> attributes. Labels must be
+// | "unselected"), danger, primary, size, plus native <button> attributes. Labels must be
 // UPPERCASE (dev warns otherwise — same rule as TextButton).
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
 import { IconTextButton } from "./IconTextButton";
@@ -16,6 +16,7 @@ const meta = {
     variant: { control: "inline-radio", options: ["normal", "selected", "unselected"] },
     size: { control: "inline-radio", options: ["sm", "md", "lg"] },
     danger: { control: "boolean" },
+    primary: { control: "boolean" },
     disabled: { control: "boolean" },
     children: { control: "text" },
   },
@@ -23,6 +24,7 @@ const meta = {
     icon: "Plus",
     variant: "normal",
     danger: false,
+    primary: false,
     disabled: false,
     children: "NEW",
   },

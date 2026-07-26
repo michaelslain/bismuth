@@ -1,7 +1,7 @@
 // Visual spec for <TextButton> — the thin, labels-only wrapper over the base
 // <Button kind="text">: the default app button. Enforces UPPERCASE labels (dev warns
-// on lowercase input) and exposes only `variant` (selection state) + `danger` + `size` —
-// everything else is layout the caller supplies via `style`.
+// on lowercase input) and exposes only `variant` (selection state) + `danger` + `primary`
+// + `size` — everything else is layout the caller supplies via `style`.
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
 import type { JSX } from "solid-js";
 import { TextButton } from "./TextButton";
@@ -14,12 +14,14 @@ const meta = {
     variant: { control: "inline-radio", options: ["normal", "selected", "unselected"] },
     size: { control: "inline-radio", options: ["sm", "md", "lg"] },
     danger: { control: "boolean" },
+    primary: { control: "boolean" },
     disabled: { control: "boolean" },
     children: { control: "text" },
   },
   args: {
     variant: "normal",
     danger: false,
+    primary: false,
     disabled: false,
     children: "CANCEL",
   },
@@ -74,6 +76,16 @@ export const ModalFooter: Story = {
     <Row>
       <TextButton variant="unselected">CANCEL</TextButton>
       <TextButton danger>DELETE</TextButton>
+    </Row>
+  ),
+};
+
+/** Primary — selected + a glow rim, the view's one emphasized action. Max one per view. */
+export const Primary: Story = {
+  render: () => (
+    <Row>
+      <TextButton variant="unselected">CANCEL</TextButton>
+      <TextButton primary>SAVE</TextButton>
     </Row>
   ),
 };
