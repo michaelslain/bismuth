@@ -41,7 +41,7 @@ const composerTheme = EditorView.theme({
   "&": { backgroundColor: "transparent", color: "var(--fg)" },
   "&.cm-editor.cm-focused": { outline: "none" },
   ".cm-scroller": {
-    fontFamily: "var(--editor-font, 'Lora', serif)",
+    fontFamily: "var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace)",
     fontSize: "var(--editor-font-size, 18px)",
     lineHeight: "1.45",
     overflowY: "auto",

@@ -9,8 +9,9 @@ import { COMMAND_IDS } from "../commands";
 import { KEYBINDING_CATALOG } from "../keybindings";
 import { THEME_NAMES as THEME_NAME_TUPLE } from "../theme/tokens";
 
-// Kept in lockstep with app/src/settings.ts EDITOR_FONTS.
-const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
+// Kept in lockstep with app/src/settings.ts FONT_STACKS. One family does the whole
+// interface: all five Monaspace variants, no serif/system-ui.
+const EDITOR_FONTS = ["Monaspace Xenon", "Monaspace Neon", "Monaspace Argon", "Monaspace Krypton", "Monaspace Radon"];
 // The theme enum is sourced directly from the color source of truth
 // (core/src/theme/tokens.ts) — no hand-maintained copy to drift from THEMES.
 const THEME_NAMES = [...THEME_NAME_TUPLE];
@@ -54,13 +55,22 @@ export const SETTINGS_SCHEMA: Schema = {
       default: "hopper-crystal",
       doc: "App logo mark: hopper-crystal · node-b · square-funnel · nested-diamonds · pinwheel · node-crystal · lattice · diamond-bloom · node-diamond · octagon-bloom · spin-cross · tri-bloom · radial-graph · node-rings.",
     },
-    editorFont: { type: enumType(EDITOR_FONTS), default: "Lora", doc: "Editor font family." },
-    editorFontSize: { type: "number", default: 16, min: 11, max: 28, doc: "Editor font size (px)." },
+    editorFont: {
+      type: enumType(EDITOR_FONTS),
+      default: "Monaspace Xenon",
+      doc: "Editor prose font — a Monaspace variant; the whole app is one monospace grid.",
+    },
+    uiFont: {
+      type: enumType(EDITOR_FONTS),
+      default: "Monaspace Xenon",
+      doc: "UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus.",
+    },
+    editorFontSize: { type: "number", default: 13.5, min: 11, max: 28, doc: "Editor font size (px)." },
     sidebarWidth: { type: "number", default: 280, min: 200, max: 600, doc: "Left sidebar width (px)." },
     sidebarGraphHeight: { type: "number", default: 305, min: 200, max: 500, doc: "Height of the mini graph panel in the sidebar (px)." },
-    uiFontSize: { type: "number", default: 13, min: 11, max: 16, doc: "Base UI font size — sidebar, tabs, menus (px)." },
-    monoScale: { type: "number", default: 0.85, min: 0.6, max: 1, doc: "Optical-size factor for Monaspace (the mono UI/code font). Monaspace renders visually larger than the serif body at the same px; this shrinks all mono text — UI chrome and code blocks — so it optically matches. 1 = no correction." },
-    tabFontSize: { type: "number", default: 12, min: 11, max: 14, doc: "Editor tab label font size (px)." },
+    uiFontSize: { type: "number", default: 11.5, min: 11, max: 16, doc: "Base UI font size — sidebar, tabs, menus (px) (the ASCII design's --fs-ui workhorse size)." },
+    monoScale: { type: "number", default: 1, min: 0.6, max: 1, doc: "Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; 1 = no correction." },
+    tabFontSize: { type: "number", default: 11.5, min: 11, max: 14, doc: "Editor tab label font size (px)." },
     sidebarIconFontSize: { type: "number", default: 15, min: 12, max: 20, doc: "Sidebar header icon button size (px)." },
     paletteInputFontSize: { type: "number", default: 15, min: 13, max: 18, doc: "Command palette search-input font size (px)." },
   }),

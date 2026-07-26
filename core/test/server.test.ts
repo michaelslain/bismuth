@@ -1452,12 +1452,12 @@ test("POST /set-setting merges one key and preserves the rest of settings.yaml",
     const res = await fetch(`${base}/set-setting`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: ["appearance", "editorFont"], value: "Georgia" }),
+      body: JSON.stringify({ path: ["appearance", "editorFont"], value: "Monaspace Neon" }),
     });
     expect(res.status).toBe(200);
 
     const settings = await (await fetch(`${base}/settings`)).json();
-    expect(settings.appearance.editorFont).toBe("Georgia"); // changed key
+    expect(settings.appearance.editorFont).toBe("Monaspace Neon"); // changed key
     expect(settings.appearance.theme).toBe("ink"); // reconciled default present
 
     const raw = await readNote(vault, ".settings");
@@ -1695,7 +1695,7 @@ test("a structural mutation invalidates the cached /graph", async () => {
 test("POST /set-setting serializes concurrent requests without clobbering changes", async () => {
   const { vault } = await makeSampleVault();
   // Seed settings with multiple keys
-  await writeNote(vault, ".settings", "appearance:\n  theme: ink\n  editorFont: Lora\ngraph:\n  nodeSize: 5\n");
+  await writeNote(vault, ".settings", "appearance:\n  theme: ink\n  editorFont: Monaspace Radon\ngraph:\n  nodeSize: 5\n");
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -1709,7 +1709,7 @@ test("POST /set-setting serializes concurrent requests without clobbering change
       fetch(`${base}/set-setting`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: ["appearance", "editorFont"], value: "Georgia" }),
+        body: JSON.stringify({ path: ["appearance", "editorFont"], value: "Monaspace Neon" }),
       }),
       fetch(`${base}/set-setting`, {
         method: "POST",
@@ -1724,7 +1724,7 @@ test("POST /set-setting serializes concurrent requests without clobbering change
     // Verify all three changes were persisted (none clobbered)
     const settings = await (await fetch(`${base}/settings`)).json();
     expect(settings.appearance.theme).toBe("cathode");
-    expect(settings.appearance.editorFont).toBe("Georgia");
+    expect(settings.appearance.editorFont).toBe("Monaspace Neon");
     expect(settings.graph.nodeSize).toBe(10);
   } finally {
     server.stop(true);

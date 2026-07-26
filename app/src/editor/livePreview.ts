@@ -1178,12 +1178,12 @@ export const livePreview = [
     ".cm-strong": { "font-weight": "bold" },
     ".cm-em": { "font-style": "italic" },
     ".cm-strike": { "text-decoration": "line-through", opacity: "0.7" },
-    // Monaspace renders visually larger than Lora at the same px; the --mono-scale
-    // factor (settings: appearance.monoScale, default 0.85) makes mono code optically
-    // match the surrounding serif body. This is an OPTICAL correction for mono-next-to-
-    // serif, so it lives only where mono sits inside prose (code regions here + the
-    // flashcard .card-md code in App.css) — NOT on the all-mono UI chrome, which has no
-    // serif to match. Keep all mono regions (inline code, blocks, frontmatter, tables) on it.
+    // Legacy optical correction from the serif-prose era: the --mono-scale factor
+    // (settings: appearance.monoScale, default 1 — no-op now that prose is Monaspace
+    // too) let mono code optically match a serif body. It lives only where mono sits
+    // inside prose (code regions here + the flashcard .card-md code in App.css) —
+    // NOT on the all-mono UI chrome. Keep all mono regions (inline code, blocks,
+    // frontmatter, tables) on it in case a future theme reintroduces the mismatch.
     // Inline code + the same inline-code marks rendered inside a table cell (inlineMarkdown.ts
     // emits a native <code>): byte-identical styling, so they share one rule.
     ".cm-inline-code, .cm-table-rendered code": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", background: "rgba(140,140,140,0.18)", padding: "0 3px", "border-radius": "3px" },

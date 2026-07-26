@@ -11,8 +11,9 @@ function withTheme(theme: string) {
 describe("settingsToCssVars", () => {
   it("maps non-color appearance settings to CSS custom properties with units", () => {
     const vars = settingsToCssVars(DEFAULTS);
-    expect(vars["--editor-font-size"]).toBe("16px");
-    expect(vars["--editor-font"]).toBe("'Lora', serif"); // resolved through FONT_STACKS
+    expect(vars["--editor-font-size"]).toBe("13.5px");
+    expect(vars["--editor-font"]).toBe("'Monaspace Xenon', ui-monospace, monospace"); // resolved through FONT_STACKS
+    expect(vars["--ui-font-stack"]).toBe("'Monaspace Xenon', ui-monospace, monospace"); // resolved through FONT_STACKS
   });
 
   it("derives the color tokens from the default theme (ink)", () => {
@@ -40,8 +41,8 @@ describe("settingsToCssVars", () => {
   it("maps appearance/ui sizing to px vars and passes CSS lengths through", () => {
     const vars = settingsToCssVars(DEFAULTS);
     expect(vars["--sidebar-width"]).toBe("280px");
-    expect(vars["--ui-font-size"]).toBe("13px");
-    expect(vars["--tab-font-size"]).toBe("12px");
+    expect(vars["--ui-font-size"]).toBe("11.5px");
+    expect(vars["--tab-font-size"]).toBe("11.5px");
     expect(vars["--pane-divider-width"]).toBe("5px");
     expect(vars["--palette-top-offset"]).toBe("12vh"); // CSS length passed through verbatim
   });

@@ -307,13 +307,14 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 
 | Setting | CSS var | Default |
 |---|---|---|
-| `appearance.editorFont` | `--editor-font` | `'Lora', serif` |
-| `appearance.editorFontSize` | `--editor-font-size` | `16px` |
+| `appearance.editorFont` | `--editor-font` | `'Monaspace Xenon', ui-monospace, monospace` |
+| `appearance.uiFont` | `--ui-font-stack` | `'Monaspace Xenon', ui-monospace, monospace` |
+| `appearance.editorFontSize` | `--editor-font-size` | `13.5px` |
 | `appearance.sidebarWidth` | `--sidebar-width` | `280px` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
-| `appearance.uiFontSize` | `--ui-font-size` | `13px` |
-| `appearance.monoScale` | `--mono-scale` | `0.85` |
-| `appearance.tabFontSize` | `--tab-font-size` | `12px` |
+| `appearance.uiFontSize` | `--ui-font-size` | `11.5px` |
+| `appearance.monoScale` | `--mono-scale` | `1` |
+| `appearance.tabFontSize` | `--tab-font-size` | `11.5px` |
 | `appearance.sidebarIconFontSize` | `--sidebar-icon-font-size` | `15px` |
 | `appearance.paletteInputFontSize` | `--palette-input-font-size` | `15px` |
 
@@ -351,22 +352,23 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 
 ---
 
-## Editor Fonts (EDITOR_FONTS / FONT_STACKS)
+## Editor & UI Fonts (EDITOR_FONTS / FONT_STACKS)
 
-The `appearance.editorFont` setting accepts one of four values. The setting name maps to a full CSS font stack via `FONT_STACKS` in `app/src/settings.ts`:
+Serif is gone — the ASCII redesign is **one monospace family for the whole interface**. `appearance.editorFont` (prose) and `appearance.uiFont` (rail/tabs/tables/buttons/menus) each independently pick one of the five Monaspace variants; both default to `Monaspace Xenon`. The setting name maps to a full CSS font stack via `FONT_STACKS` in `app/src/settings.ts`:
 
 | Setting value | CSS font stack | Notes |
 |---|---|---|
-| `Lora` *(default)* | `'Lora', serif` | Variable serif from `@fontsource/lora`; shipped with Bismuth |
-| `Monaspace Xenon` | `'Monaspace Xenon', ui-monospace, monospace` | Monospaced from `@fontsource/monaspace-xenon`; shipped with Bismuth; use `monoScale` to correct optical size |
-| `Georgia` | `Georgia, 'Times New Roman', serif` | System serif; no download |
-| `system-ui` | `system-ui, -apple-system, sans-serif` | System sans; no download |
+| `Monaspace Xenon` *(default)* | `'Monaspace Xenon', ui-monospace, monospace` | From `@fontsource/monaspace-xenon`; shipped with Bismuth |
+| `Monaspace Neon` | `'Monaspace Neon', ui-monospace, monospace` | From `@fontsource/monaspace-neon`; shipped with Bismuth |
+| `Monaspace Argon` | `'Monaspace Argon', ui-monospace, monospace` | From `@fontsource/monaspace-argon`; shipped with Bismuth |
+| `Monaspace Krypton` | `'Monaspace Krypton', ui-monospace, monospace` | From `@fontsource/monaspace-krypton`; shipped with Bismuth |
+| `Monaspace Radon` | `'Monaspace Radon', ui-monospace, monospace` | From `@fontsource/monaspace-radon`; shipped with Bismuth |
 
-The `--editor-font` CSS var receives the full stack, not just the name. The `--mono-scale` var (default `0.85`) globally shrinks all Monaspace text — both editor body and code blocks — to correct its visual size relative to the body serif. When `editorFont` is not Monaspace, `monoScale` still applies to inline `<code>` and code blocks that render in Monaspace.
+`app/src/index.tsx` imports the 400/500/700 weights of all five variants at boot, so any variant is available instantly regardless of which one is selected. `--editor-font` receives `editorFont`'s stack, `--ui-font-stack` receives `uiFont`'s stack (with a static literal fallback in `app/src/ui/ui.css :root` for first paint, before settings load). `font-variant-ligatures: none` is set app-wide (`App.css`, html/body) — Monaspace's coding ligatures (`->`, `!=`) would otherwise break the character grid the design leans on.
+
+The `--mono-scale` var (default `1`) is a legacy optical-size correction from the serif-prose era (it shrank mono text to match a serif body); the all-mono UI needs no correction, but the setting and its consumers (inline `<code>`, code blocks) still exist for anyone who wants to tune it.
 
 **Adding a new font**: add it to `EDITOR_FONTS` in `settingsSchema.ts` AND to `FONT_STACKS` in `settings.ts`. The schema enum, autocomplete, and lint all pick it up automatically.
-
-> Typography is being reworked in a later stage of the ASCII redesign (Monaspace-only, a size-scale token set) — this table reflects the current, pre-typography-stage state.
 
 ---
 

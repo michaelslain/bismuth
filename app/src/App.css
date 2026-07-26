@@ -45,7 +45,7 @@
   --green: #A3BE8C;
   --gold: #CBB27E;
   --rose: #C98CA8;
-  --editor-font: 'Lora', serif;
+  --editor-font: 'Monaspace Xenon', ui-monospace, monospace;
   --editor-font-size: 16px;
   /* Semantic status colors + shadows — first-paint DARK (ink) fallbacks; settingsCssVars.ts
      projects the per-theme (light/dark) values at runtime from core/src/theme/tokens.ts. */
@@ -64,6 +64,9 @@
    browser UA system font. */
 button { outline: none; font: inherit; }
 body, html, #root { margin: 0; height: 100%; }
+/* Monaspace ships coding ligatures (e.g. "->", "!="); they break the character grid
+   the whole ASCII design leans on, so they're off everywhere, app-wide. */
+body, html { font-variant-ligatures: none; }
 body { background: var(--bg); color: var(--fg); }
 
 /* Text selection ("highlighting" a drag-range) tints with the accent palette color
@@ -535,27 +538,28 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .key { border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; color: var(--text-muted); font-size: 9.5px; letter-spacing: 0.08em; }
 
 /* Answer face: italic prompt echo, hairline divider, then the answer body. */
-.qcaption { font-family: "Lora", serif; font-style: italic; font-size: 16px; line-height: 1.4; color: var(--text-muted); text-align: left; margin-bottom: 16px; }
+.qcaption { font-family: var(--editor-font); font-style: italic; font-size: 16px; line-height: 1.4; color: var(--text-muted); text-align: left; margin-bottom: 16px; }
 .qcaption p { margin: 0; }
 .qcaption img { max-width: 100%; max-height: 200px; object-fit: contain; border-radius: 6px; }
 .fcdiv { width: 100%; height: 1px; background: linear-gradient(90deg, transparent, var(--border) 12%, var(--border) 88%, transparent); margin-bottom: 18px; flex: 0 0 auto; }
 .abody { overflow-y: auto; max-height: 100%; padding-right: 4px; }
 
-/* Card prose: Lora serif by default; monospace only for `code`/```fences```. Markdown-rendered. */
-.card-md { font-family: "Lora", serif; font-size: 22px; line-height: 1.55; text-align: left; color: var(--fg); max-width: 100%; }
+/* Card prose: the prose font (--editor-font, a Monaspace variant) by default; the UI
+   font stack only for `code`/```fences```. Markdown-rendered. */
+.card-md { font-family: var(--editor-font); font-size: 22px; line-height: 1.55; text-align: left; color: var(--fg); max-width: 100%; }
 .card-md.abody { font-size: 19px; line-height: 1.62; color: color-mix(in srgb, var(--fg) 86%, var(--text-muted)); text-align: left; width: 100%; }
 .card-md p { margin: 0 0 10px; }
 .card-md p:last-child { margin-bottom: 0; }
 .card-md ul, .card-md ol { text-align: left; margin: 6px 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; }
 .card-md li { margin: 0; }
 .card-md li::marker { color: var(--faint); }
-.card-md h1, .card-md h2, .card-md h3 { font-family: "Lora", serif; margin: 4px 0 8px; }
+.card-md h1, .card-md h2, .card-md h3 { font-family: var(--editor-font); margin: 4px 0 8px; }
 .card-md strong { font-weight: 600; color: var(--fg); }
 .card-md em { font-style: italic; }
 .card-md a { color: var(--accent); }
 .card-md img { max-width: 100%; max-height: 320px; object-fit: contain; border-radius: 6px; }
-.card-md code { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: calc(1em * var(--mono-scale, 0.85)); background: rgba(127, 127, 127, 0.16); padding: 1px 5px; border-radius: 4px; }
-.card-md pre { text-align: left; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: calc(1em * var(--mono-scale, 0.85)); background: rgba(127, 127, 127, 0.12); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
+.card-md code { font-family: var(--ui-font-stack); font-size: calc(1em * var(--mono-scale, 0.85)); background: rgba(127, 127, 127, 0.16); padding: 1px 5px; border-radius: 4px; }
+.card-md pre { text-align: left; font-family: var(--ui-font-stack); font-size: calc(1em * var(--mono-scale, 0.85)); background: rgba(127, 127, 127, 0.12); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
 .card-md pre code { background: none; padding: 0; }
 
 /* Grade row: one bespoke button per grade with a colored top edge + key badge.
@@ -581,19 +585,19 @@ html.view-dragging .graph-floater { pointer-events: none; }
 
 /* Done state */
 .done { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; margin: auto; }
-.done .big { font-family: "Lora", serif; font-size: 30px; color: var(--fg); }
+.done .big { font-family: var(--editor-font); font-size: 30px; color: var(--fg); }
 .done .sub { color: var(--text-muted); font-size: 13px; letter-spacing: 0.04em; }
 .done .sub b { color: var(--fg); }
 .done .good-text { color: var(--blue); }
 
-/* Empty/all-done states: faint Lora italic, matching the card prose tone (not the
+/* Empty/all-done states: faint prose italic, matching the card prose tone (not the
    default mono EmptyState). Scoped to the review so other empty states are untouched. */
 .flashcards-host .ui-empty-block { gap: 4px; }
-.flashcards-host .ui-empty-block h2 { font-family: "Lora", serif; font-style: italic; font-weight: 500; font-size: 17px; margin: 0; color: var(--faint); }
-.flashcards-host .ui-empty { font-family: "Lora", serif; font-style: italic; font-size: 17px; color: var(--faint); }
+.flashcards-host .ui-empty-block h2 { font-family: var(--editor-font); font-style: italic; font-weight: 500; font-size: 17px; margin: 0; color: var(--faint); }
+.flashcards-host .ui-empty { font-family: var(--editor-font); font-style: italic; font-size: 17px; color: var(--faint); }
 .flashcards-host .ui-empty strong { font-style: italic; font-weight: 600; color: var(--text-muted); }
 .flashcards-host .ui-empty .inline-bolt { display: inline-flex; vertical-align: -0.18em; color: var(--text-muted); margin: 0 1px; }
-.flashcards-host .ui-empty code { font-family: "Lora", serif; font-style: italic; background: none; padding: 0; }
+.flashcards-host .ui-empty code { font-family: var(--editor-font); font-style: italic; background: none; padding: 0; }
 
 /* ── Edit-cards modal — "claude-design" handoff ───────────────────────────────
    Two modes: a reorderable Front/Back list (markdown-overlay cells) + a bulk-add
@@ -607,7 +611,7 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .cards-modal .sp { flex: 1; }
 
 .cards-head { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 20px 24px 16px; border-bottom: 1px solid var(--border-soft); }
-.cards-title { margin: 0; font-family: "Lora", serif; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+.cards-title { margin: 0; font-family: var(--editor-font); font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
 .cards-meta { color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 7px; }
 .cards-meta .dot { color: var(--faint); }
 

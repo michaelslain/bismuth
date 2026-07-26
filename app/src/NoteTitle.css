@@ -15,7 +15,7 @@
   padding-right: 0;
 }
 
-/* H1 row (Bismuth redesign): a mono `#` hash in --accent + a serif title.
+/* H1 row (Bismuth redesign): a mono `#` hash in --accent + a mono prose title.
    Centered in the same 760px reading column as the editor body, baseline-aligned. */
 .note-title {
   display: flex;
@@ -52,7 +52,7 @@
   display: none;
 }
 
-/* Editable title text — serif Lora, 600, tight tracking (design: 31px / -.015em).
+/* Editable title text — mono prose font, 600, tight tracking (design: 31px / -.015em).
    Borderless until focused so it reads as a heading. A <textarea> (not <input>)
    so long titles wrap onto multiple lines instead of being clipped; its height
    is auto-grown to fit the content in JS (see NoteTitle.tsx). */
@@ -73,9 +73,9 @@
      before layout/font are ready — e.g. when CodeMirror virtualizes this block widget back
      into view on a long note (B3). autosize still grows it for multi-line titles. */
   min-height: calc(1.1em + 0.22em);
-  /* Bottom padding gives Lora's descenders (g/p/y) room inside the clip box.
+  /* Bottom padding gives the prose font's descenders (g/p/y) room inside the clip box.
      `overflow: hidden` clips to the PADDING edge, and line-height 1.1 is tighter
-     than Lora's glyph box, so without this the tails get cut off. Top padding
+     than the font's glyph box, so without this the tails get cut off. Top padding
      stays 0 so the `#` glyph (flex-start) still aligns to the first line. */
   padding: 0 2px 0.22em;
   border-radius: 3px;

@@ -3,12 +3,24 @@ import { render } from "solid-js/web";
 import { lazy } from "solid-js";
 // KaTeX CSS is now loaded lazily alongside the katex JS chunk (see editor/katexLoader.ts),
 // so it no longer ships in the entry bundle.
-// default fonts: Lora (prose) + Monaspace Xenon (monospace)
-import "@fontsource/lora/400.css";
-import "@fontsource/lora/700.css";
-import "@fontsource/lora/400-italic.css";
+// One family does the whole interface: Monaspace, all five variants. Xenon is the
+// canonical/default face; Neon/Argon/Krypton/Radon are user-selectable (see settings.ts
+// FONT_STACKS) and metric-compatible, so switching never reflows the grid.
 import "@fontsource/monaspace-xenon/400.css";
+import "@fontsource/monaspace-xenon/500.css";
 import "@fontsource/monaspace-xenon/700.css";
+import "@fontsource/monaspace-neon/400.css";
+import "@fontsource/monaspace-neon/500.css";
+import "@fontsource/monaspace-neon/700.css";
+import "@fontsource/monaspace-argon/400.css";
+import "@fontsource/monaspace-argon/500.css";
+import "@fontsource/monaspace-argon/700.css";
+import "@fontsource/monaspace-krypton/400.css";
+import "@fontsource/monaspace-krypton/500.css";
+import "@fontsource/monaspace-krypton/700.css";
+import "@fontsource/monaspace-radon/400.css";
+import "@fontsource/monaspace-radon/500.css";
+import "@fontsource/monaspace-radon/700.css";
 import { isTauri } from "./nativeMenu";
 
 // First-run takeover: when the bundled app launches with no vault yet, lib.rs injects

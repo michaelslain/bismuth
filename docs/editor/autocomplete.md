@@ -390,7 +390,7 @@ For `- key: value` list-item lines, `enclosingListItemType` resolves the enclosi
 - Each option shows `type rangeLabel` as `detail` (e.g. `number 11–28`, `enum dark | light`) and the `doc` string as `info` tooltip.
 - `validFor: /^[\w-]*$/`.
 
-**Example:** In the `appearance:` block, typing `edi` suggests `editorFont` (detail: `enum Lora | Monaspace Xenon | Georgia | system-ui`) and `editorFontSize` (detail: `number 11–28`).
+**Example:** In the `appearance:` block, typing `edi` suggests `editorFont` (detail: `enum Monaspace Xenon | Monaspace Neon | Monaspace Argon | Monaspace Krypton | Monaspace Radon`) and `editorFontSize` (detail: `number 11–28`).
 
 ### Enum / Boolean Value Completion
 

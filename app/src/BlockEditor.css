@@ -197,7 +197,7 @@
   left: 0;
   color: color-mix(in srgb, var(--fg) 28%, transparent);
   pointer-events: none;
-  /* Mono (not the block's Lora prose font) — the hint reads as UI chrome, not typed content. */
+  /* The UI font stack (not the block's prose font) — the hint reads as UI chrome, not typed content. */
   font-family: var(--ui-font-stack);
 }
 
