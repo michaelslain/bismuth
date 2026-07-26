@@ -1,0 +1,147 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Bismuth ASCII — Extended surfaces</title>
+<link rel="stylesheet" href="design/styles.css">
+<style>
+  html { scroll-behavior: smooth; }
+  body { margin:0; background: var(--rail); color: var(--fg);
+         font-family: var(--font-xenon, var(--ui-font-stack)); font-variant-ligatures: none;
+         font-size: var(--fs-ui); }
+  header { padding: 34px 40px 20px; border-bottom: 1px solid var(--border); }
+  h1 { margin:0; font-size: 24px; font-weight: 600; letter-spacing: .04em; }
+  header p { margin: 10px 0 0; color: var(--text-muted); max-width: 700px; line-height: 1.7; }
+  .bar { display:flex; align-items:center; gap:10px; margin-top:18px; flex-wrap:wrap; }
+  .note { color: var(--faint); font-size: 10.5px; }
+  section { padding: 28px 40px; border-bottom: 1px solid var(--border); }
+  h2 { margin: 0 0 6px; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+       display: inline-block; background: var(--fg); color: var(--bg); padding: 1px 6px; }
+  .lede { margin: 0 0 16px; color: var(--text-muted); font-size: 11.5px; line-height: 1.7;
+          max-width: 660px; }
+  .frame { overflow: hidden; border: 1px solid var(--border); background: var(--bg); }
+  iframe { border: 0; display: block; }
+  .src { margin-top: 8px; font-size: 10.5px; color: var(--faint); }
+  footer { padding: 26px 40px 56px; color: var(--faint); font-size: 10.5px; line-height: 1.8; }
+  a { color: var(--accent); }
+</style></head>
+<body class="ink">
+<header>
+  <h1><span class="asc-wordmark" style="font-size:24px">bismuth</span> ascii — extended surfaces</h1>
+  <p>Three app surfaces the original redesign handoff never specified: the terminal, the
+     sheet + drawing chrome, and the export view. Each is a retheme onto the ASCII direction's
+     existing tokens — no new primitives, no new controls.</p>
+  <div class="bar">
+    <span class="asc-eyebrow">THEME</span>
+    <div class="segmented" id="themes">
+      <button class="btn btn--text btn--selected" data-theme="ink">ink</button>
+      <button class="btn btn--text btn--unselected" data-theme="paper">paper</button>
+      <button class="btn btn--text btn--unselected" data-theme="cathode">cathode</button>
+      <button class="btn btn--text btn--unselected" data-theme="riso">riso</button>
+    </div>
+    <span class="asc-eyebrow" style="margin-left:14px">FACE</span>
+    <div class="segmented" id="faces">
+      <button class="btn btn--text btn--selected" data-face="xenon">xenon</button>
+      <button class="btn btn--text btn--unselected" data-face="neon">neon</button>
+      <button class="btn btn--text btn--unselected" data-face="argon">argon</button>
+      <button class="btn btn--text btn--unselected" data-face="krypton">krypton</button>
+      <button class="btn btn--text btn--unselected" data-face="radon">radon</button>
+    </div>
+    <span class="note">applies to every specimen below</span>
+  </div>
+</header>
+
+<section>
+  <h2>Terminal</h2>
+  <p class="lede">xterm.js retheme. The 16 ANSI slots are <b>derived</b> from the scope's own
+     tokens rather than authored per theme, so all four scopes come for free. Bracket tab
+     chrome, underline <code>_</code> caret.</p>
+  <div class="frame" style="width:700px;height:445px">
+    <iframe src="design/guidelines/view-terminal.card.html" style="width:700px;height:445px"></iframe>
+  </div>
+  <div class="src">app/src/TerminalView.tsx · design/guidelines/view-terminal.card.html · PORTING.md §1</div>
+</section>
+
+<section>
+  <h2>Sheets · Drawing</h2>
+  <p class="lede">Chrome only. The Univer canvas and the drawing canvas are untouched — what
+     changes is the formula bar, the headers, the sheet tabs, the tool row, and the paper
+     ground. Brush strokes stay real ink; they are the one surface in the system that is not
+     on the character grid.</p>
+  <div class="frame" style="width:700px;height:560px">
+    <iframe src="design/guidelines/view-sheets-draw.card.html" style="width:700px;height:560px"></iframe>
+  </div>
+  <div class="src">app/src/{SheetView,DrawView}.tsx · design/guidelines/view-sheets-draw.card.html · PORTING.md §2</div>
+</section>
+
+<section>
+  <h2>Export</h2>
+  <p class="lede">A pure retheme of <code>ExportView</code> — same grid, same fields, same
+     order, same chips. The rendered artifact carries its own copy of the chosen scope's
+     tokens, and sits on 22px ruled paper.</p>
+  <div class="frame" style="width:700px;height:560px">
+    <iframe src="design/guidelines/view-export.card.html" style="width:700px;height:560px"></iframe>
+  </div>
+  <div class="src">app/src/ExportView.{tsx,css} · design/guidelines/view-export.card.html · PORTING.md §3</div>
+</section>
+
+<footer>
+  Read <b>README.md</b> for what each surface is and why, and <b>PORTING.md</b> for the
+  file-by-file changes. Tokens and component classes live in <code>design/</code> — the
+  specimens link <code>design/styles.css</code> and nothing else.<br>
+  Vault intro is deliberately not in this folder.
+</footer>
+
+<script>
+  const SCOPES = ["ink", "paper", "cathode", "riso"];
+  const FACES = ["xenon", "neon", "argon", "krypton", "radon"];
+  let current = "ink", face = "xenon";
+
+  function paintFrame(f) {
+    try {
+      const d = f.contentDocument;
+      if (!d || !d.body) return;
+      SCOPES.forEach(s => d.body.classList.remove(s));
+      d.body.classList.add(current);
+      FACES.forEach(s => d.documentElement.classList.remove("face-" + s));
+      d.documentElement.classList.add("face-" + face);
+    } catch (e) {}
+  }
+  function paintAll() { document.querySelectorAll("iframe").forEach(paintFrame); }
+
+  function setFace(name) {
+    face = name;
+    document.querySelectorAll("#faces button").forEach(b => {
+      const on = b.dataset.face === name;
+      b.classList.toggle("btn--selected", on);
+      b.classList.toggle("btn--unselected", !on);
+    });
+    paintAll();
+    try { localStorage.setItem("bismuth-ext-face", name); } catch (e) {}
+  }
+  function setTheme(name) {
+    current = name;
+    SCOPES.forEach(s => document.body.classList.remove(s));
+    document.body.classList.add(name);
+    document.querySelectorAll("#themes button").forEach(b => {
+      const on = b.dataset.theme === name;
+      b.classList.toggle("btn--selected", on);
+      b.classList.toggle("btn--unselected", !on);
+    });
+    paintAll();
+    try { localStorage.setItem("bismuth-ext-theme", name); } catch (e) {}
+  }
+
+  document.querySelectorAll("#themes button").forEach(b =>
+    b.addEventListener("click", () => setTheme(b.dataset.theme)));
+  document.querySelectorAll("#faces button").forEach(b =>
+    b.addEventListener("click", () => setFace(b.dataset.face)));
+  document.querySelectorAll("iframe").forEach(f =>
+    f.addEventListener("load", () => paintFrame(f)));
+
+  let t = null, fc = null;
+  try {
+    t = localStorage.getItem("bismuth-ext-theme");
+    fc = localStorage.getItem("bismuth-ext-face");
+  } catch (e) {}
+  setFace(FACES.includes(fc) ? fc : "xenon");
+  setTheme(SCOPES.includes(t) ? t : "ink");
+</script>
+</body></html>

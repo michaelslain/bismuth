@@ -1,0 +1,175 @@
+<!-- @dsCard group="Views" viewport="700x560" subtitle="ExportView retheme — the real option set from app/src/ExportView.tsx, preview left, panel right" name="Export" -->
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { height:100%; }
+  body { margin:0; font-family:var(--ui-font-stack); font-variant-ligatures:none;
+         background:var(--bg); color:var(--fg); font-size:var(--fs-ui);
+         display:flex; flex-direction:column; }
+  /* app/src/ExportView.css — .exp is `grid-template-columns: 1fr 360px`:
+     paper preview LEFT, options panel on the rail RIGHT. */
+  .exp { flex:1; min-height:0; display:grid; grid-template-columns:1fr 252px; }
+
+  .exppreview { padding:22px; overflow:auto; display:flex; align-items:flex-start;
+                justify-content:center; }
+  /* The sheet carries the CHOSEN export theme, not the app's — Light renders in the
+     Paper scope, Dark in the app scope. Same trick the vault-intro picker uses. */
+  .sheet { width:100%; max-width:330px; background:var(--editor); color:var(--fg);
+           border:var(--rule-soft); box-shadow:var(--shadow-menu); padding:22px 22px 26px;
+           background-image:linear-gradient(to bottom, var(--border-soft) 1px, transparent 1px);
+           background-size:100% 22px; background-position:0 21px; }
+  .sheet * { margin:0; }
+  /* Ruled paper: EVERY line box is 22px or a multiple, or the prose walks off the ruling. */
+  .doc { font-family:var(--editor-font); font-size:12px; line-height:22px; color:var(--fg); }
+  .doc h1 { font-size:16px; font-weight:600; letter-spacing:-.01em; line-height:22px; }
+  .doc h2 { font-size:12.5px; font-weight:600; line-height:22px; margin-top:22px; }
+  .doc h2::before { content:"## "; color:var(--faint); font-weight:400; }
+  .doc p, .doc li { line-height:22px; color:var(--text-muted); }
+  .doc ul { padding-left:0; list-style:none; }
+  .doc li::before { content:"- "; color:var(--faint); }
+  .doc a { color:var(--accent); text-decoration:none; }
+  .doc blockquote { border-left:var(--accent-edge); padding-left:9px; color:var(--text-muted); }
+  .fmatter { border-left:var(--accent-edge); padding-left:9px; margin-bottom:22px;
+             font-size:10.5px; line-height:22px; color:var(--text-muted); }
+  .fmatter .k { color:var(--faint); }
+  .pagefoot { margin-top:22px; font-size:9px; color:var(--faint); letter-spacing:.04em;
+              display:flex; justify-content:space-between; }
+
+  /* ── Options panel (.exppanel) ─────────────────────────────────────────── */
+  .exppanel { border-left:var(--rule-soft); background:var(--rail); padding:14px;
+              display:flex; flex-direction:column; gap:13px; overflow:auto; }
+  .exp-title { display:flex; align-items:center; gap:7px; font-size:14px; color:var(--fg); }
+  .exp-title .g { color:var(--accent); }
+  .field { display:flex; flex-direction:column; gap:6px; }
+  .flab { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); }
+  .fopts { display:flex; gap:5px; flex-wrap:wrap; }
+  .path-row { display:flex; gap:5px; align-items:stretch; }
+  /* Block, not flex: text-overflow never applies to an anonymous flex item. */
+  .path-input { flex:1; min-width:0; border:var(--rule); background:var(--panel);
+                padding:0 7px; line-height:20px; font-size:10.5px; color:var(--fg);
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .path-input.ph { color:var(--faint); }
+  .exp-hint { font-size:10px; color:var(--faint); line-height:1.45; }
+  .theme-swatch { width:9px; height:9px; display:inline-block; border:1px solid var(--border); }
+  .exp-spacer { flex:1; min-height:6px; }
+  .exp-footer { display:flex; justify-content:flex-end; }
+  .baseonly { border-top:var(--rule-soft); padding-top:9px; font-size:10px; color:var(--faint);
+              line-height:1.6; }
+  .baseonly b { color:var(--text-muted); font-weight:400; }
+</style></head><body class="ink">
+  <div class="viewbar">
+    <span class="crumb"><span class="asc-eyebrow">EXPORT</span>
+      <span style="color:var(--text-muted)">biology/lichen-taxonomy.md</span></span>
+    <div class="vbar-sp"></div>
+    <span style="color:var(--faint);font-size:10.5px">2 pages · pdf</span>
+  </div>
+
+  <div class="exp">
+    <div class="exppreview">
+      <div class="sheet paper" id="sheet">
+        <div class="doc">
+          <div class="fmatter"><span class="k">title:</span> Lichen taxonomy<br>
+            <span class="k">updated:</span> 2026-07-21<br>
+            <span class="k">tags:</span> biology, field</div>
+          <h1>Lichen taxonomy</h1>
+          <p>Started this as a key and it became a diary of walks. The Cladonia
+             section is where I keep stalling.</p>
+          <h2>Cladonia</h2>
+          <ul>
+            <li>key out the pixie-cup group</li>
+            <li>reconcile with <a>field notes 09-12</a></li>
+          </ul>
+          <blockquote>The graph remembers what I don't.</blockquote>
+          <div class="pagefoot"><span>lichen-taxonomy</span><span>1 / 2</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="exppanel">
+      <div class="exp-title"><span class="g">&gt;&gt;</span> Export note</div>
+
+      <div class="field">
+        <span class="flab">Input path</span>
+        <div class="path-row">
+          <div class="path-input">biology/lichen-taxonomy.md</div>
+          <button class="btn btn--text btn--sm">BROWSE</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="flab">Output path</span>
+        <div class="path-row">
+          <div class="path-input ph">Downloads (default)</div>
+          <button class="btn btn--text btn--sm">BROWSE</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="flab">Frontmatter</span>
+        <div class="fopts">
+          <button class="chip-toggle selected" data-toggle>Include frontmatter</button>
+        </div>
+      </div>
+
+      <div class="field" data-pick="format">
+        <span class="flab">Format</span>
+        <div class="fopts">
+          <button class="chip-toggle">HTML</button>
+          <button class="chip-toggle selected">PDF</button>
+          <button class="chip-toggle">Markdown</button>
+          <button class="chip-toggle">PNG</button>
+        </div>
+        <span class="exp-hint">2 pages (page breaks) → PNG would export as 2 separate files</span>
+      </div>
+
+      <div class="field" data-pick="pt">
+        <span class="flab">Font size</span>
+        <div class="fopts">
+          <button class="chip-toggle">9pt</button>
+          <button class="chip-toggle">10pt</button>
+          <button class="chip-toggle">11pt</button>
+          <button class="chip-toggle selected">12pt</button>
+          <button class="chip-toggle">14pt</button>
+          <button class="chip-toggle">16pt</button>
+          <button class="chip-toggle">18pt</button>
+        </div>
+      </div>
+
+      <div class="field" data-pick="theme" id="themefield">
+        <span class="flab">Theme</span>
+        <div class="fopts">
+          <button class="chip-toggle selected" data-scope="paper">
+            <span class="theme-swatch" style="background:#f7f6f2"></span>Light</button>
+          <button class="chip-toggle" data-scope="ink">
+            <span class="theme-swatch" style="background:#0D0E16"></span>Dark</button>
+        </div>
+      </div>
+
+      <div class="baseonly">Shown only for a <b>base</b>: <b>View</b> (one chip per configured
+        view) · <b>Content</b> — Visual / Data · and, for a visual calendar,
+        <b>Calendar span</b> + <b>Start day</b>.</div>
+
+      <div class="exp-spacer"></div>
+      <div class="exp-footer">
+        <button class="btn btn--text btn--sm btn--primary">EXPORT</button>
+      </div>
+    </div>
+  </div>
+<script>
+  // Chip groups are single-select (the real panel drives a signal per field);
+  // Frontmatter is the one standalone toggle.
+  document.querySelectorAll("[data-pick]").forEach(f =>
+    f.addEventListener("click", e => {
+      const b = e.target.closest(".chip-toggle"); if (!b) return;
+      f.querySelectorAll(".chip-toggle").forEach(x => x.classList.toggle("selected", x === b));
+      if (f.id === "themefield") {
+        const sheet = document.getElementById("sheet");
+        sheet.classList.remove("paper", "ink");
+        sheet.classList.add(b.dataset.scope);
+      }
+    }));
+  document.querySelectorAll("[data-toggle]").forEach(t =>
+    t.addEventListener("click", () => t.classList.toggle("selected")));
+</script>
+</body></html>

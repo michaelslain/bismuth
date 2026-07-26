@@ -1,0 +1,195 @@
+<!-- @dsCard group="Views" viewport="700x560" subtitle="Chrome around Univer and the drawing canvas — the canvases themselves stay as-is" name="Sheets · Drawing" -->
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { height:100%; }
+  body { margin:0; font-family:var(--ui-font-stack); font-variant-ligatures:none;
+         background:var(--bg); color:var(--fg); font-size:var(--fs-ui);
+         display:flex; flex-direction:column; }
+  .half { display:flex; flex-direction:column; min-height:0; }
+  .half + .half { border-top:var(--rule); }
+
+  /* ── Sheet (app: .sheet) ─────────────────────────────────────────────────
+     Univer owns everything inside .canvas. We own the formula bar, the name
+     box, the sheet tabs and the range readout — so those are the surfaces the
+     retheme touches. */
+  .formula { flex:none; display:flex; align-items:stretch; height:24px;
+             border-bottom:var(--rule-soft); background:var(--rail); }
+  .namebox { width:82px; flex:none; display:flex; align-items:center; padding:0 8px;
+             border-right:var(--rule-soft); color:var(--accent); font-size:var(--fs-micro); }
+  .fx { width:26px; flex:none; display:flex; align-items:center; justify-content:center;
+        border-right:var(--rule-soft); color:var(--faint); font-size:var(--fs-micro); }
+  .fbar { flex:1; display:flex; align-items:center; padding:0 9px; color:var(--fg);
+          font-size:11.5px; }
+  .fbar .fn { color:var(--violet); }
+  .fbar .rng { color:var(--blue); }
+
+  .canvas { flex:1; min-height:0; overflow:hidden; background:var(--editor);
+            position:relative; }
+  .grid { width:100%; border-collapse:collapse; table-layout:fixed; font-size:11px; }
+  .grid th, .grid td { border:var(--rule-soft); height:18px; padding:0 6px;
+                       text-align:left; font-weight:400; }
+  .grid thead th { background:var(--rail); color:var(--faint); text-align:center;
+                   font-size:9.5px; letter-spacing:.08em; }
+  .grid tbody th { width:26px; background:var(--rail); color:var(--faint);
+                   text-align:center; font-size:9.5px; }
+  .grid td { color:var(--text-muted); }
+  .grid td.n { text-align:right; color:var(--fg); }
+  .grid td.sel { outline:1px solid var(--accent); outline-offset:-1px;
+                 background:var(--accent-soft); color:var(--fg); }
+  .grid tr.hdr td { color:var(--fg); font-weight:600; }
+
+  .sheettabs { flex:none; display:flex; align-items:center; gap:0; height:22px;
+               padding:0 8px; border-top:var(--rule-soft); background:var(--rail);
+               font-size:var(--fs-micro); }
+  .stab { padding:2px 8px; color:var(--faint); cursor:pointer; }
+  .stab.on { color:var(--accent); background:var(--accent-soft); }
+  .sp { flex:1; }
+  .readout { color:var(--faint); font-size:9.5px; letter-spacing:.04em; }
+
+  /* ── Drawing (app: .draw) ────────────────────────────────────────────────
+     The tool row is bracket buttons; the paper is the themeable part. */
+  .drawbar { flex:none; display:flex; align-items:center; gap:var(--sp-4);
+             height:32px; padding:0 10px; border-bottom:var(--rule-soft);
+             background:var(--rail); }
+  .drawbar .lbl { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+                  color:var(--faint); }
+  .swatches { display:flex; gap:0; border:var(--rule); }
+  .sw-c { width:16px; height:16px; border:none; padding:0; cursor:pointer; display:block; }
+  .sw-c + .sw-c { border-left:var(--rule); }
+  .sw-c.on { box-shadow:inset 0 0 0 1px var(--bg), inset 0 0 0 2px var(--fg); }
+
+  .draw-paper { flex:1; min-height:0; position:relative; background:var(--editor);
+           background-image:
+             linear-gradient(to right, var(--border-soft) 1px, transparent 1px),
+             linear-gradient(to bottom, var(--border-soft) 1px, transparent 1px);
+           background-size: 14px 14px; }
+  .papers { position:absolute; right:9px; top:9px; display:flex; gap:0;
+            border:var(--rule); background:var(--panel); }
+  .papers button { font:inherit; font-family:var(--ui-font-stack); background:none;
+                   border:none; padding:2px 8px; font-size:9.5px; letter-spacing:.06em;
+                   color:var(--faint); cursor:pointer; text-transform:uppercase; }
+  .papers button.on { color:var(--accent); background:var(--accent-soft); }
+  /* The ONE surface in the system that is not on the character grid: a real
+     brush. Strokes are tapered outlines (filled paths), not uniform lines. */
+  .ink-svg { position:absolute; inset:0; width:100%; height:100%; }
+  .hand { font-family:var(--ui-font-stack); font-size:10px; letter-spacing:.02em; }
+  .caption { position:absolute; left:12px; bottom:9px; color:var(--faint); font-size:9.5px;
+             letter-spacing:.04em; }
+</style></head><body class="ink">
+
+  <div class="half" style="flex:1.15">
+    <div class="viewbar">
+      <span class="crumb"><span class="asc-eyebrow">SHEET</span>
+        <span style="color:var(--text-muted)">budget-2026.xlsx</span></span>
+      <div class="vbar-sp"></div>
+      <span class="readout">R4C3 · 12 rows</span>
+      <button class="btn btn--text btn--sm">[ export ]</button>
+    </div>
+    <div class="formula">
+      <div class="namebox">C4</div>
+      <div class="fx">fx</div>
+      <div class="fbar">=<span class="fn">SUM</span>(<span class="rng">C2:C3</span>)</div>
+    </div>
+    <div class="canvas">
+      <table class="grid">
+        <thead><tr><th style="width:26px"></th><th>A</th><th>B</th><th>C</th><th>D</th></tr></thead>
+        <tbody>
+          <tr class="hdr"><th>1</th><td>line</td><td>owner</td><td>amount</td><td>note</td></tr>
+          <tr><th>2</th><td>hosting</td><td>me</td><td class="n">1,440</td><td>annual</td></tr>
+          <tr><th>3</th><td>fonts</td><td>me</td><td class="n">320</td><td>monaspace ok</td></tr>
+          <tr><th>4</th><td>subtotal</td><td></td><td class="n sel">1,760</td><td></td></tr>
+          <tr><th>5</th><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+      <div style="position:absolute;right:9px;bottom:7px;color:var(--faint);font-size:9.5px">
+        univer canvas — unthemed, chrome only</div>
+    </div>
+    <div class="sheettabs">
+      <span class="stab on">[ budget ]</span>
+      <span class="stab">[ runway ]</span>
+      <span class="stab">[ + ]</span>
+      <span class="sp"></span>
+      <span class="readout">SUM 1,760 · AVG 880</span>
+    </div>
+  </div>
+
+  <div class="half" style="flex:1">
+    <div class="drawbar">
+      <div class="segmented">
+        <button class="btn btn--text btn--sm btn--selected">PEN</button>
+        <button class="btn btn--text btn--sm btn--unselected">LINE</button>
+        <button class="btn btn--text btn--sm btn--unselected">BOX</button>
+        <button class="btn btn--text btn--sm btn--unselected">TEXT</button>
+        <button class="btn btn--text btn--sm btn--unselected">ERASE</button>
+      </div>
+      <div class="swatches">
+        <button class="sw-c on" style="background:var(--fg)"></button>
+        <button class="sw-c" style="background:var(--accent)"></button>
+        <button class="sw-c" style="background:var(--rose)"></button>
+        <button class="sw-c" style="background:var(--gold)"></button>
+        <button class="sw-c" style="background:var(--green)"></button>
+      </div>
+      <span class="lbl">weight</span>
+      <div class="segmented">
+        <button class="btn btn--text btn--sm btn--unselected">1</button>
+        <button class="btn btn--text btn--sm btn--selected">2</button>
+        <button class="btn btn--text btn--sm btn--unselected">4</button>
+      </div>
+      <span class="sp" style="flex:1"></span>
+      <span class="readout">⌘Z undo</span>
+    </div>
+    <div class="draw-paper" id="paper">
+      <div class="papers" id="papers">
+        <button class="on" data-p="grid">grid</button>
+        <button data-p="dot">dot</button>
+        <button data-p="ruled">ruled</button>
+        <button data-p="blank">blank</button>
+      </div>
+      <svg class="ink-svg" viewBox="0 0 420 150" preserveAspectRatio="xMinYMin meet">
+        <!-- loose circle, tapered: thin on entry, heavy through the belly, thin on exit -->
+        <path fill="var(--fg)" d="M74 30c-19 1-33 14-34 31 0 18 15 31 34 32 20 1 35-13 36-31 1-17-14-31-33-32zm-1 4c17 0 30 12 30 27 0 16-14 28-31 28-16 0-29-11-29-27 0-16 13-28 30-28z"/>
+        <path fill="var(--fg)" d="M240 22c-22 0-38 15-38 34 0 20 17 35 39 35 21 0 38-15 38-35 0-19-16-34-39-34zm1 5c19 0 33 13 33 29 0 17-14 30-33 30-19 0-33-13-33-30 0-16 15-29 33-29z" opacity=".85"/>
+        <!-- connector: a single confident stroke that thickens mid-span -->
+        <path fill="var(--accent)" d="M112 60c25-7 51-9 84-6l-1 5c-32-3-57-1-82 6z"/>
+        <!-- arrowhead, two quick flicks -->
+        <path fill="var(--accent)" d="M188 52l12 7-13 6 1-4 6-2-6-3z"/>
+        <!-- underline scribble beneath the second node -->
+        <path fill="var(--rose)" d="M204 106c22-6 45-8 70-5l-1 4c-24-3-46-1-68 5z" opacity=".9"/>
+        <!-- a fast tail stroke off to the right -->
+        <path fill="var(--text-muted)" d="M292 60c14 10 22 22 25 37l-4 1c-3-14-11-25-23-34z" opacity=".7"/>
+        <text class="hand" x="60" y="112" fill="var(--text-muted)">first brain</text>
+        <text class="hand" x="212" y="130" fill="var(--faint)">daemon</text>
+      </svg>
+      <div class="caption">brush strokes stay real ink — only the paper ground and the chrome are tokenized</div>
+    </div>
+  </div>
+<script>
+  // Paper is the one drawing surface the theme owns. Four grounds, all from tokens.
+  const P = {
+    grid: `linear-gradient(to right, var(--border-soft) 1px, transparent 1px),
+           linear-gradient(to bottom, var(--border-soft) 1px, transparent 1px)`,
+    dot:  `radial-gradient(var(--border) .8px, transparent .8px)`,
+    ruled:`linear-gradient(to bottom, var(--border-soft) 1px, transparent 1px)`,
+    blank:`none`
+  };
+  document.querySelectorAll(".segmented").forEach(seg => seg.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    seg.querySelectorAll("button").forEach(x => {
+      x.classList.toggle("btn--selected", x === b);
+      x.classList.toggle("btn--unselected", x !== b);
+    });
+  }));
+  document.querySelectorAll(".sw-c").forEach(c => c.addEventListener("click", () =>
+    document.querySelectorAll(".sw-c").forEach(x => x.classList.toggle("on", x === c))));
+
+  const paper = document.getElementById("paper");
+  document.getElementById("papers").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    document.querySelectorAll("#papers button").forEach(x => x.classList.toggle("on", x === b));
+    paper.style.backgroundImage = P[b.dataset.p];
+    paper.style.backgroundSize = b.dataset.p === "ruled" ? "100% 14px" : "14px 14px";
+  });
+</script>
+</body></html>
