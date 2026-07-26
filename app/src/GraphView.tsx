@@ -100,9 +100,9 @@ export function GraphView(props: {
   // Undefined/null = not driven (the FIND panel owns matches).
   searchMatchIds?: readonly string[] | null;
   // Fired at the end of EVERY frame this renderer draws, with the node count drawn that frame
-  // (any count, including zero). App's boot splash (via bootGate.ts) correlates these against its
-  // own data-ready state — a paint that lands before the data arrives doesn't count — so the
-  // splash never drops before the graph is visibly on screen WITH the loaded data.
+  // (any count, including zero). General-purpose instrumentation; not currently wired by App —
+  // the boot splash gates on the app shell's own first paint (see App.tsx's bootGate wiring),
+  // not the graph's, so the graph is free to keep rasterizing after the splash is gone.
   onPaint?: (nodeCount: number) => void;
 }) {
   let host!: HTMLDivElement;

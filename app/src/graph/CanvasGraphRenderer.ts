@@ -932,11 +932,10 @@ export class CanvasGraphRenderer {
     ctx.globalAlpha = 1;
     // Paint is signalled HERE — after the frame's edges/nodes/labels are actually stroked, once per
     // draw, with the node count actually drawn (drawOrder is rebuilt above, so its length reflects
-    // THIS frame, not a stale one). Firing at the top of this method only meant "a frame is about
-    // to be drawn": measured against a real boot, the splash began fading while the canvas was
-    // still blank (graphNonBg 0), because that early call fired on the empty graph's first frame,
-    // before the fetched data had even arrived. The caller (bootGate via GraphView) is responsible
-    // for only trusting a paint that lands after its data is ready.
+    // THIS frame, not a stale one) — not at the top of this method, which would only mean "a frame
+    // is about to be drawn". General-purpose instrumentation hook (currently unconsumed: the boot
+    // splash gates on the app SHELL's first paint now, not the graph's — see App.tsx's bootGate
+    // wiring); any future caller gets the real per-frame drawn-node count via setPaintCallback.
     this.onPaint?.(this.drawOrder.length);
   }
 
