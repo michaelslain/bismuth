@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync, readdirSync, utimesSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, expect } from "bun:test";
-import { graphSig, attachLayout, peekLayout, computeViewLayouts } from "../src/layout-cache";
+import { graphSig, attachLayout, peekLayout, computeViewLayouts, pruneCacheDir } from "../src/layout-cache";
 import type { GraphData } from "../src/graph";
 
 // Three notes A, B, C; the only edge is a wikilink A -> B.
@@ -135,4 +138,60 @@ test("removing a node yields a valid layout for the survivors", async () => {
   const out2 = await attachLayout(g2, key);
   expect(out2.nodes.map((n) => n.id).sort()).toEqual(["A", "B"]);
   for (const n of out2.nodes) expect(n.position!.every((c) => Number.isFinite(c))).toBe(true);
+});
+
+// ── pruneCacheDir: bounded LRU-by-mtime eviction of the disk cache ──────────────────────────────
+// Tested directly against a throwaway dir (rather than through attachLayout's fire-and-forget
+// writeSeed) so entry age is controlled deterministically via utimesSync instead of racing real
+// wall-clock writes.
+
+function makeAgedFiles(dir: string, names: string[]): void {
+  // names[0] is oldest, names[names.length - 1] is newest.
+  names.forEach((name, i) => {
+    const file = join(dir, name);
+    writeFileSync(file, "{}");
+    const t = new Date(2000, 0, 1 + i);
+    utimesSync(file, t, t);
+  });
+}
+
+test("pruneCacheDir evicts the oldest entries first, keeping at most maxEntries", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-cache-prune-"));
+  try {
+    makeAgedFiles(dir, ["f0.json", "f1.json", "f2.json", "f3.json", "f4.json"]);
+    pruneCacheDir(dir, 3);
+    expect(readdirSync(dir).sort()).toEqual(["f2.json", "f3.json", "f4.json"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("pruneCacheDir never evicts a protected name, even when it's the oldest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-cache-prune-"));
+  try {
+    makeAgedFiles(dir, ["f0.json", "f1.json", "f2.json", "f3.json", "f4.json"]);
+    // f0 is the oldest by far, but it's the entry this call just wrote/is about to read.
+    pruneCacheDir(dir, 3, new Set(["f0.json"]));
+    const remaining = readdirSync(dir).sort();
+    expect(remaining).toContain("f0.json");
+    expect(remaining).toHaveLength(3); // still capped: two of the (non-protected) oldest go instead
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("pruneCacheDir is a no-op when under the cap", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-cache-prune-"));
+  try {
+    makeAgedFiles(dir, ["f0.json", "f1.json"]);
+    pruneCacheDir(dir, 5);
+    expect(readdirSync(dir).sort()).toEqual(["f0.json", "f1.json"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("pruneCacheDir tolerates a missing directory", () => {
+  const dir = join(tmpdir(), `bismuth-cache-prune-missing-${randomUUID()}`);
+  expect(() => pruneCacheDir(dir, 3)).not.toThrow();
 });
