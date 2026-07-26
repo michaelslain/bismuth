@@ -18,7 +18,7 @@ import { settingsToCssVars, setCssVars } from "./settingsCssVars";
 import { resolveAppearance } from "./themes";
 import { matchesKeybinding } from "./keybindings";
 import { initZoom, zoomIn, zoomOut, zoomReset } from "./zoom";
-import { lastChange } from "./serverVersion";
+import { lastChange, currentConnectionState } from "./serverVersion";
 import { debounce } from "./debounce";
 import { ToastHost, pushToast, dismissToast, updateToast } from "./Toast";
 import { applyUpdateAndRelaunch } from "./updateCheck";
@@ -95,6 +95,27 @@ const THEME_VARS_KEY = "bismuth-theme-vars-v1";
 // looked oversized as a ghost; cap it to a tab-like chip.
 const GHOST_MAX_W = 200;
 
+// Top strip / platform titlebar (design/ascii/README.md "Screens -> App shell"). macOS gets a
+// transparent Overlay titlebar (native traffic lights float over the strip, see lib.rs
+// build_main_window) — no typed window controls there. Windows/Linux run fully undecorated
+// (decorations(false)) and get typed `[-] [+] [x]` controls wired to the Tauri window API. A
+// static check (not a signal): the platform never changes mid-session.
+const IS_MAC_PLATFORM =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
+
+async function winMinimize(): Promise<void> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().minimize();
+}
+async function winToggleMaximize(): Promise<void> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().toggleMaximize();
+}
+async function winClose(): Promise<void> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().close();
+}
+
 export default function App() {
   // Boot splash gate (see bootGate.ts): the graph is a single always-mounted instance (home tab
   // OR the sidebar mini-graph — see the graph-floater below), so `graphMounts` is always true
@@ -128,6 +149,20 @@ export default function App() {
   // Per-file frontmatter icon (vault path -> Lucide name), sourced from the file tree so a
   // note's tab shows the same icon as its file-tree row. Refreshed alongside the graph.
   const [fileIcons, setFileIcons] = createSignal<Map<string, string>>(new Map());
+
+  // Vault name for the status bar's field-log line (design/ascii/README.md "App shell").
+  // Fetched once from the existing GET /config (already used by the settings page to show how
+  // core was launched) — pure presentation of an existing backend signal, no new server state.
+  const [vaultName, setVaultName] = createSignal<string>("");
+  onMount(() => {
+    fetch(`${apiBase()}/config`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg: { vault?: string } | null) => {
+        const v = cfg?.vault;
+        if (typeof v === "string") setVaultName(v.split("/").filter(Boolean).pop() ?? v);
+      })
+      .catch(() => {}); // best-effort — the status bar just shows a blank vault name on failure
+  });
 
   // Chat tab labels: the session's conversation title once one exists (chatTitles, published by
   // ChatView from the backend's `title` frames), else the daemon's identity name when it's
@@ -1997,14 +2032,47 @@ export default function App() {
     openContextMenu(e.clientX, e.clientY, items, setEditorMenu);
   }
 
+  // Status bar field-log line (design/ascii/README.md "App shell") — pure presentation of
+  // existing signals, no new state: the focused pane's content id (real path, or a friendly
+  // label for a sentinel/terminal via the same contentLabel used by the tab bar).
+  const statusPath = createMemo<string>(() => {
+    const c = focusedContent();
+    if (!c) return "no file";
+    return isSentinel(c) ? contentLabel(c, terminalContentIndex().get(c)) : c;
+  });
+
   return (
+    <div class="app-shell">
+    {/* Top strip (design/ascii/README.md "App shell", §1): the wordmark + platform titlebar.
+        macOS runs a transparent Overlay titlebar (native traffic lights float over the strip,
+        left padding reserves room for them) with no typed controls; Windows/Linux run fully
+        undecorated with typed `[-] [+] [x]` controls; the browser/dev build gets neither. */}
+    <div
+      class="top-strip"
+      classList={{ "top-strip--mac": isTauri() && IS_MAC_PLATFORM }}
+      data-tauri-drag-region={isTauri() ? "" : undefined}
+    >
+      <span class="asc-wordmark">bismuth</span>
+      <div class="top-strip-spacer" />
+      <Show when={isTauri() && !IS_MAC_PLATFORM}>
+        <div class="win-controls">
+          <button type="button" class="win-btn" title="Minimize" onClick={() => void winMinimize()}>[-]</button>
+          <button type="button" class="win-btn" title="Maximize" onClick={() => void winToggleMaximize()}>[+]</button>
+          <button type="button" class="win-btn win-btn--close" title="Close" onClick={() => void winClose()}>[x]</button>
+        </div>
+      </Show>
+    </div>
     <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": settings.ui.verticalTabs }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
           <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} />}</For>
         </div>
+        <div class="sidebar-eyebrow-row"><span class="asc-eyebrow">VAULT</span></div>
         <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} startItemDrag={startItemDrag} dropHighlight={sidebarDropHighlight} /></div>
-        <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }} ref={sidebarSlot} />
+        <div class="sidebar-graph-section" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }}>
+          <div class="sidebar-eyebrow-row"><span class="asc-eyebrow">GRAPH</span></div>
+          <div class="sidebar-graph" ref={sidebarSlot} />
+        </div>
       </aside>
       <main class="editor-pane">
         <UpdateBanner />
@@ -2058,7 +2126,7 @@ export default function App() {
                     onContextMenu={(e) => openTabContextMenu(e, t())}
                   >
                     <Show when={tabBarIcon(t())}>
-                      {(icon) => <Icon value={icon()} size={13} style={chipColor() ? { color: chipColor() } : undefined} />}
+                      {(icon) => <Icon class="tab-icon" value={icon()} size={13} style={chipColor() ? { color: chipColor() } : undefined} />}
                     </Show>
                     <Show when={renamingTabId() === t().id} fallback={<Show when={!t().pinned}><span>{tabBarLabel(t())}</span></Show>}>
                       <input
@@ -2387,6 +2455,25 @@ export default function App() {
       </Show>
       <ToastHost />
       <GalleryHost />
+    </div>
+    {/* Status bar (design/ascii/README.md "App shell", §2): a field-log line, pure
+        presentation of existing signals — vault name, the focused pane's content, connection
+        health (serverVersion's ConnectionState), and right-aligned mode indicators, closed by
+        a blinking `_` caret. No new state. */}
+    <div class="status-bar">
+      <span class="status-vault">{vaultName() || "vault"}</span>
+      <span class="status-sep">//</span>
+      <span class="status-path">{statusPath()}</span>
+      <Show when={currentConnectionState() !== "connected"}>
+        <span class="status-conn">connection lost — polling</span>
+      </Show>
+      <div class="status-spacer" />
+      <span class="status-mode">{mode()}</span>
+      <span class="status-daemon">
+        daemon: {settings.daemon.enabled ? (anyWorking() ? "working" : "idle") : "off"}
+      </span>
+      <span class="asc-caret">_</span>
+    </div>
     </div>
   );
 }

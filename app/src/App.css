@@ -115,7 +115,7 @@ body { background: var(--bg); color: var(--fg); }
    is unreliable — Chrome falls back to a discrete (instant) jump when a track
    animates next to an `fr` track. Driving the grid from var(--sidebar-w) and
    transitioning that property instead gives a smooth, frame-by-frame collapse. */
-@property --sidebar-w { syntax: "<length>"; inherits: true; initial-value: 280px; }
+@property --sidebar-w { syntax: "<length>"; inherits: true; initial-value: 266px; }
 /* Registered (like --sidebar-w above) so its 48px<->0 collapse animates as a real <length>
    instead of snapping instantly — see BUG #40 below. */
 @property --rail-w { syntax: "<length>"; inherits: true; initial-value: 0px; }
@@ -129,8 +129,57 @@ body { background: var(--bg); color: var(--fg); }
    resolves TALLER than the real webview area, since the native title-bar band drops out of the
    frame but the viewport unit keeps counting it / lags the resize), so the grid overflowed
    past the bottom of the screen and the bottom of the content was clipped in full-screen. */
-.layout { display: grid; --sidebar-w: var(--sidebar-width, 280px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100%; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1), --rail-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
-.layout.has-rail { --rail-w: 48px; }
+/* ── App shell: top strip + status bar (design/ascii/README.md "Screens -> App shell", §1-2) ──
+   `.app-shell` stacks the 40px top strip, the existing 3-column `.layout` grid (unchanged
+   internally), and the new 26px status bar. height:100% for the same WKWebView-fullscreen
+   reason `.layout` used it (see the comment that used to sit just above `.layout` below) —
+   `.app-shell` is now the top-level element under #root instead. */
+.app-shell { display: flex; flex-direction: column; height: 100%; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; }
+.app-shell .layout { height: auto; flex: 1 1 auto; min-height: 0; }
+.top-strip {
+  flex: 0 0 auto; height: 40px; display: flex; align-items: center; gap: 14px; padding: 0 14px;
+  border-bottom: 1px solid var(--border-soft); color: var(--text-muted); background: var(--bg);
+  font-size: var(--fs-ui); -webkit-user-select: none; user-select: none;
+}
+/* macOS Overlay titlebar: native traffic lights float over the strip's left edge (see
+   src-tauri/src/lib.rs build_main_window) — reserve room for them instead of the wordmark. */
+.top-strip--mac { padding-left: 78px; }
+.top-strip-spacer { flex: 1; }
+/* Windows/Linux typed window controls (decorations(false) — no native titlebar at all). */
+.win-controls { display: flex; align-items: center; gap: 2px; }
+.win-btn {
+  font: inherit; font-family: var(--ui-font-stack); cursor: pointer; color: var(--faint);
+  background: transparent; border: none; padding: 4px 8px; border-radius: var(--r-control, 3px);
+}
+.win-btn:hover { color: var(--fg); background: var(--hover-bg); }
+.win-btn--close:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.status-bar {
+  flex: 0 0 auto; height: 26px; display: flex; align-items: center; gap: 16px; padding: 0 14px;
+  border-top: 1px solid var(--border-soft); background: var(--rail);
+  font-size: var(--fs-micro); color: var(--faint); white-space: nowrap; overflow: hidden;
+}
+.status-vault { color: var(--text-muted); }
+.status-sep { color: var(--faint); }
+.status-path { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+.status-conn { color: var(--warning); }
+.status-spacer { flex: 1; min-width: 8px; }
+.status-mode { text-transform: uppercase; letter-spacing: var(--ls-label, .06em); }
+.status-daemon { color: var(--faint); }
+
+/* Wordmark: the system's ONE decorative flourish (design/ascii/README.md "App shell" + ui.css's
+   reserved-for-App.css note above the ASCII primitives section). A slow iridescent sheen across
+   the accent ramp — --grad is derived per-theme in settingsCssVars.ts from the graph ramp. */
+.asc-wordmark {
+  font-size: 13px; font-weight: var(--fw-bold, 600); letter-spacing: .08em;
+  background: var(--grad); background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: asc-sheen var(--sheen, 8s) linear infinite;
+}
+@keyframes asc-sheen { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+@media (prefers-reduced-motion: reduce) { .asc-wordmark { animation: none; } }
+
+.layout { display: grid; --sidebar-w: var(--sidebar-width, 266px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100%; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1), --rail-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+.layout.has-rail { --rail-w: 46px; }
 /* BUG #40: the Cmd+O quick switcher takeover already collapses the LEFT sidebar via
    `.sidebar-hidden` below (`!sidebarVisible() || switcherOpen()`) — the right-edge vertical tab
    rail never followed the same rule, so it kept floating over the switcher's full-window graph
@@ -143,18 +192,22 @@ body { background: var(--bg); color: var(--fg); }
 /* Children are pinned to the full sidebar width so they don't reflow/squish while
    the column animates to 0 — overflow:hidden on .sidebar clips them as it collapses,
    producing a smooth slide instead of an instant on/off. */
-.sidebar > * { width: var(--sidebar-width, 280px); box-sizing: border-box; }
+.sidebar > * { width: var(--sidebar-width, 266px); box-sizing: border-box; }
 /* Collapse the sidebar track to 0 (animated via the --sidebar-w transition) rather
    than removing it; the editor pane (1fr) expands to fill. */
 .layout.sidebar-hidden { --sidebar-w: 0px; }
 @media (prefers-reduced-motion: reduce) { .layout { transition: none; } }
-.sidebar-files { flex: 1; overflow: auto; padding: 8px; min-height: 0; }
+/* Section eyebrows above the tree ("VAULT") and the mini-graph slot ("GRAPH") —
+   design/ascii/README.md "Components" + ascii-tree.card.html/spacing-chrome.card.html. */
+.sidebar-eyebrow-row { flex-shrink: 0; padding: 8px 12px 6px; }
+.sidebar-files { flex: 1; overflow: auto; padding: 0 8px 8px; min-height: 0; }
 /* width:auto (overriding the `.sidebar > *` pin) keeps the slot at the sidebar's
    content width — one pixel narrower than the box — so the graph floater that snaps
    onto it doesn't paint over the sidebar's 1px border-right. The file tree above can
    stay pinned because its 8px padding already keeps content off that border. */
-.sidebar-graph { border-top: 1px solid var(--border); flex-shrink: 0; height: var(--sidebar-graph-height, 305px); width: auto; }
-.sidebar-graph.collapsed { display: none; }
+.sidebar-graph-section { display: flex; flex-direction: column; flex-shrink: 0; }
+.sidebar-graph-section.collapsed { display: none; }
+.sidebar-graph { border-top: 1px solid var(--border); height: var(--sidebar-graph-height, 305px); width: auto; }
 .graph-slot-main { width: 100%; height: 100%; }
 /* Generic full-box filler — pane placeholders / Suspense fallbacks that should hold the
    pane's full geometry while their real content (graph host, lazy chunk) mounts. */
@@ -166,7 +219,7 @@ body { background: var(--bg); color: var(--fg); }
    no node flicker) and instead clips its right edge in lockstep with the sidebar's
    animating width — var(--sidebar-w) is inherited from .layout and interpolates, so
    the graph collapses/reveals smoothly along with the rest of the sidebar. */
-.graph-floater.docked { clip-path: inset(0 calc(var(--sidebar-width, 280px) - var(--sidebar-w)) 0 0); }
+.graph-floater.docked { clip-path: inset(0 calc(var(--sidebar-width, 266px) - var(--sidebar-w)) 0 0); }
 /* The left "toolzone" of the design's 40px top strip. Height matches .tabbar so the two
    top bars' bottom divider lines align into one continuous row across the app.
    .tabbar's height is its 40px tabs PLUS its own 1px bottom border (= 41px total), so the
@@ -183,23 +236,27 @@ body { background: var(--bg); color: var(--fg); }
 .sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .empty .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 .sidebar-logo { width: 18px; height: 18px; flex-shrink: 0; margin-right: 4px; display: block; }
 .sidebar canvas { display: block; }
-/* File-tree row icons (Lucide SVGs). Inherit currentColor; never shrink in the flex row.
-   min-height matches the text's 1.5 line-height so the icon centers on the FIRST line
-   when a long name wraps (rows use align-items: flex-start), not on the wrapped block. */
+/* File-tree row icons (typed glyphs, icons/Icon.tsx). Inherit currentColor; never shrink in
+   the flex row. min-height matches the text's 1.5 line-height so the icon centers on the FIRST
+   line when a long name wraps (rows use align-items: flex-start), not on the wrapped block. */
 .ft-icon, .ft-chevron { flex-shrink: 0; display: inline-flex; align-items: center; }
 .ft-chevron { color: var(--faint); }
+/* The tree connector — treePrefix(depth,last)'s "|-- " / "`-- " run — prepended to every row
+   (design/ascii/README.md "Components", ascii-tree.card.html). Plain --faint structure, never
+   body content; replaces the old depth*12px padding-left indent entirely. */
+.ft-prefix { flex-shrink: 0; color: var(--faint); white-space: pre; font-family: var(--ui-font-stack); }
 /* AI-visibility badge (chat-only / hidden) beside a row's icon — see docs/vault/visibility.md.
    "hidden" reads as more severe (danger tint); "chat-only" stays muted like the rest of the row. */
 .ft-visibility-badge { flex-shrink: 0; display: inline-flex; align-items: center; margin-left: -3px; color: var(--faint); }
 .ft-visibility-badge.hidden { color: var(--danger); opacity: 0.85; }
-/* File-tree rows (folders + files). The design's 28px rounded rows; static look lives
-   here, the dynamic drop-target highlight stays inline/classList in FileTree.tsx. */
-.ft-row { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 8px; border-radius: 7px; font-size: 12.5px; color: var(--text-muted); white-space: nowrap; cursor: pointer; user-select: none; }
+/* File-tree rows (folders + files) — the ASCII register's 22px row (tokens/spacing.css), no
+   pill radius. The connector prefix now carries depth; static look lives here, the dynamic
+   drop-target highlight stays inline/classList in FileTree.tsx. */
+.ft-row { display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; font-size: var(--fs-ui); color: var(--text-muted); white-space: nowrap; cursor: pointer; user-select: none; }
 .ft-row .ft-icon { color: var(--text-muted); }
 .ft-row:hover { background: var(--hover-bg); color: var(--fg); }
 .ft-row:hover .ft-icon { color: var(--fg); }
-.ft-row.file { padding-left: 28px; }
-.ft-row.active { background: var(--accent-soft); color: var(--fg); }
+.ft-row.active { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }
 .ft-row.active .ft-icon { color: var(--accent); }
 .ft-row.drop-target { background: var(--accent-soft); }
 /* System folders (.settings / .daemon): rendered as muted, italic surfaces so they
@@ -253,15 +310,16 @@ body { background: var(--bg); color: var(--fg); }
 .editor-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .editor-body { flex: 1; overflow: auto; min-height: 0; position: relative; }
 .tabbar { display: flex; align-items: stretch; overflow-x: auto; border-bottom: 1px solid var(--border-soft); background: var(--rail); position: relative; }
-.tab { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; font-size: var(--tab-font-size, 12px); cursor: pointer; color: var(--text-muted); border-right: 1px solid var(--border-soft); white-space: nowrap; user-select: none; position: relative; transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), opacity 0.12s ease, color 0.12s ease, background 0.12s ease; }
-.tab > svg { color: var(--faint); }
+.tab { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; font-size: var(--tab-font-size, var(--fs-ui)); cursor: pointer; color: var(--text-muted); border-right: 1px solid var(--border-soft); white-space: nowrap; user-select: none; position: relative; transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), opacity 0.12s ease, color 0.12s ease, background 0.12s ease; }
+.tab-icon { color: var(--faint); }
 /* Optical centering: Monaspace caps sit high in the em box, so the label reads as
    floating above the tab's icon / close X. Nudge it down 1px to center it. */
 .tab > span { position: relative; top: 1px; }
 .tab:hover { color: var(--fg); }
-/* Active tab is signified by a lightened background (like the segmented switchers), no accent line. */
-.tab.active { color: var(--fg); background: var(--surface-2); }
-.tab.active > svg { color: var(--fg); }
+/* Active tab: accent text on accent-soft fill (design/ascii/README.md "Interactions" —
+   "selected = --accent-soft fill, accent border, accent text"), no pill/rounded shape. */
+.tab.active { color: var(--accent); background: var(--accent-soft); }
+.tab.active .tab-icon { color: var(--accent); }
 .tab.dragging { opacity: 0.25; transition: opacity 0.12s ease; } /* lifted source chip — the ghost stands in for it */
 /* Tab close button: trim the default icon-button padding so the X doesn't dominate the chip. */
 .tab .tab-x { padding: 2px; margin-right: -4px; }
@@ -302,21 +360,20 @@ body { background: var(--bg); color: var(--fg); }
    narrow icon column; on HOVER (or focus-within, so an in-rail rename stays open) it
    widens leftward to reveal each tab's full name, then collapses on mouseleave.
 
-   The .tab-rail cell only ever reserves the COLLAPSED width in the grid (--rail-w, 48px);
-   the actual surface (.tab-rail-inner) is absolutely anchored to the right and animates
-   its own width, OVERFLOWING leftward over the editor — so the expand/collapse is a pure
-   overlay and the editor body never reflows on hover. Layout top-to-bottom: the
-   +/terminal/chat action TOOLBAR, then the back/forward nav, then the scrollable tab-row
-   list. The toolbar + nav are flex-wrap rows: collapsed (48px) each 28px button drops to its
-   own line → a centered single-icon column aligned with the tab icons; expanded (240px) they
-   fit on one line as horizontal rows (nav = ‹ › side-by-side). Rows sit in a straight,
-   centered icon column (no arc).
-   NOTE: exact widths (48/240px) + row spacing are visual-polish knobs that still want an
-   in-browser eyeball (the browser was down at authoring time). */
+   The .tab-rail cell only ever reserves the COLLAPSED width in the grid (--rail-w, 46px —
+   tokens/spacing.css's "right tab rail 46px collapsed / 232px open"); the actual surface
+   (.tab-rail-inner) is absolutely anchored to the right and animates its own width,
+   OVERFLOWING leftward over the editor — so the expand/collapse is a pure overlay and the
+   editor body never reflows on hover. Layout top-to-bottom: the +/terminal/chat action
+   TOOLBAR, then the back/forward nav, then the scrollable tab-row list. The toolbar + nav are
+   flex-wrap rows: collapsed (46px) each 28px button drops to its own line → a centered
+   single-icon column aligned with the tab icons; expanded (232px) they fit on one line as
+   horizontal rows (nav = ‹ › side-by-side). Rows sit in a straight, centered icon column (no
+   arc). */
 .tab-rail { position: relative; z-index: 6; }
 .tab-rail-inner {
   position: absolute; top: 0; right: 0; bottom: 0;
-  width: 48px;                       /* collapsed: icon column only (matches --rail-w) */
+  width: 46px;                       /* collapsed: icon column only (matches --rail-w) */
   display: flex; flex-direction: column;
   background: var(--rail);
   border-left: 1px solid var(--border-soft);
@@ -325,36 +382,41 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tab-rail:hover .tab-rail-inner,
 .tab-rail:focus-within .tab-rail-inner {
-  width: 240px;                      /* expanded: icon + full name + close/pin */
+  width: 232px;                      /* expanded: icon + full name + close/pin */
   box-shadow: -10px 0 28px -14px rgba(0, 0, 0, 0.5);
 }
 @media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
 
-/* Top action toolbar. A LEFT-packed flex-wrap row: collapsed (48px, content 28px) each
+/* Top action toolbar. A LEFT-packed flex-wrap row: collapsed (46px, content 28px) each
    28px button wraps to its own line → a centered single-icon column whose centre lands at
-   24px = the collapsed rail's midline / the tab icon column; expanded (240px) the buttons
+   23px = the collapsed rail's midline / the tab icon column; expanded (232px) the buttons
    fit on one line as a horizontal row. */
-.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 10px; flex: 0 0 auto; }
+.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 9px; flex: 0 0 auto; }
 .tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
 
 /* The scrollable row list fills the middle. */
 .tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0; display: flex; flex-direction: column; gap: 2px; }
 
-/* A tab row: icon + (revealed) label + close/pin. margin 5px + padding 11px puts the 16px
-   icon's centre at 24px = the middle of the 48px collapsed rail. The label + trailing
-   button overflow past 48px and are clipped by .tab-rail-inner until it expands. */
+/* A tab row: icon + (revealed) label + close/pin. margin 5px + padding 10px puts the 16px
+   icon's centre at 23px = the middle of the 46px collapsed rail. The label + trailing
+   button overflow past 46px and are clipped by .tab-rail-inner until it expands. Radius is
+   the design's --r-card (4px) — nothing in the ASCII register is pill-round. */
 .tab-rail-row {
   display: flex; align-items: center; gap: 10px;
   height: 34px; min-height: 34px; box-sizing: border-box;
-  margin: 0 5px; padding: 0 11px; border-radius: 8px;
+  margin: 0 5px; padding: 0 10px; border-radius: var(--r-card, 4px);
   color: var(--text-muted); cursor: pointer; user-select: none;
   white-space: nowrap; position: relative;
   transition: background 0.12s ease, color 0.12s ease;
 }
 .tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
-.tab-rail-row.active { background: var(--surface-2); color: var(--fg); }
+/* Active tab: accent-soft fill + accent text, PLUS the --grad rule (design vocabulary's one
+   other use of the wordmark's gradient) as a 2px left bar marking the active row. */
+.tab-rail-row.active { background: var(--accent-soft); color: var(--accent); }
+.tab-rail-row.active::before { content: ""; position: absolute; left: -5px; top: 2px; bottom: 2px; width: 2px; background: var(--grad); }
 .tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
-.tab-rail-row:hover .tab-rail-icon, .tab-rail-row.active .tab-rail-icon { color: var(--fg); }
+.tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
+.tab-rail-row.active .tab-rail-icon { color: var(--accent); }
 /* Label is revealed with the rail: it takes flex space always (so the collapsed row still
    sizes the same) but fades in only once expanded. */
 .tab-rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.16s ease; }

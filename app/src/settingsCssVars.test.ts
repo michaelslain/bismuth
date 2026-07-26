@@ -40,7 +40,7 @@ describe("settingsToCssVars", () => {
 
   it("maps appearance/ui sizing to px vars and passes CSS lengths through", () => {
     const vars = settingsToCssVars(DEFAULTS);
-    expect(vars["--sidebar-width"]).toBe("280px");
+    expect(vars["--sidebar-width"]).toBe("266px"); // the ASCII design's 266px vault rail
     expect(vars["--ui-font-size"]).toBe("11.5px");
     expect(vars["--tab-font-size"]).toBe("11.5px");
     expect(vars["--pane-divider-width"]).toBe("5px");

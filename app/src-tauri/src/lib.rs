@@ -350,6 +350,20 @@ fn build_main_window(app: &tauri::AppHandle, injected: Option<String>, first_run
     let mut builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
         .title("Bismuth")
         .inner_size(1200.0, 800.0);
+    // Custom chrome for the ASCII redesign's 40px top strip (design/ascii/README.md "App
+    // shell" §1): macOS keeps its native traffic lights but floats them over the strip (an
+    // Overlay titlebar with no native title text — App.tsx's `.top-strip` renders its own
+    // "bismuth" wordmark underneath and marks itself `data-tauri-drag-region`); Windows/Linux
+    // run fully undecorated instead, and the frontend renders typed `[-] [+] [x]` controls
+    // wired to the Tauri window API (getCurrentWindow().minimize/toggleMaximize/close).
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.decorations(false);
+    }
     let mut script = String::new();
     if let Some(api) = injected {
         script.push_str(&format!("window.__BISMUTH_API__={api:?};"));
