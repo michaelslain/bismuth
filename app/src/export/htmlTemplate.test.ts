@@ -17,9 +17,12 @@ describe("wrapHtmlDocument", () => {
   });
 
   test("omits an explicit body font-size when none is requested (intrinsic sizing)", () => {
+    // Narrowed to the PDF-only conditional rule specifically (pt units) — the stylesheet
+    // legitimately carries other unconditional font-size rules (.fmatter, .pagefoot) that
+    // have nothing to do with fontSizePt, so a blanket "no font-size anywhere" assertion
+    // would be testing the wrong thing.
     const out = wrapHtmlDocument("<p>hi</p>", "N");
-    expect(out).not.toContain("font-size:");
-    expect(out).not.toContain("font-size: ");
+    expect(out).not.toMatch(/font-size:\s*\d+pt/);
   });
 
   test("emits the requested body font-size (pt) when given", () => {
