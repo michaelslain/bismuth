@@ -48,9 +48,12 @@ const composerTheme = EditorView.theme({
     maxHeight: "200px",
     padding: "0",
   },
-  ".cm-content": { padding: "5px 0", minHeight: "28px", caretColor: "var(--fg)", maxWidth: "none" },
+  ".cm-content": { padding: "5px 0", minHeight: "28px", caretColor: "var(--accent)", maxWidth: "none" },
   ".cm-line": { padding: "0" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--fg)", borderLeftWidth: "2px" },
+  // The one blinking caret in the composer — accent-colored to read as the same mark as
+  // .asc-caret elsewhere, even though CodeMirror's own cursor-blink timer (not a CSS
+  // @keyframes) drives the actual blink, so there's no bespoke animation to declare here.
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--accent)", borderLeftWidth: "2px" },
   ".cm-placeholder": { color: "var(--text-muted)", fontStyle: "normal" },
   ".cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },

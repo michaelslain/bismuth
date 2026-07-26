@@ -7,6 +7,7 @@ import { createSignal, createMemo, For, Show, onMount } from "solid-js";
 import { Icon } from "../icons/Icon";
 import { Modal } from "../ui/Modal";
 import { SearchBar } from "../ui/SearchBar";
+import { Kbd } from "../ui/ascii/Kbd";
 import { createMenuNav } from "../ui/popover/createMenuNav";
 import { createPointerGuard, resetActiveOnChange, scrollSelectedIntoView } from "./paletteNav";
 import { rankItems, toSegments, type Match, type PaletteItem } from "./rankItems";
@@ -105,7 +106,11 @@ export function PaletteModal(props: Props) {
                 <span class="palette-sub">{r.item.sublabel}</span>
               </Show>
               <Show when={r.item.shortcut}>
-                <span class="palette-shortcut">{r.item.shortcut}</span>
+                {/* row-kbd (ui/ui.css): a menu row's own caps recede to --faint — the same
+                    treatment every .asc-menurow shortcut gets. */}
+                <span class="palette-shortcut row-kbd">
+                  <Kbd combo={r.item.shortcut} />
+                </span>
               </Show>
             </div>
           )}

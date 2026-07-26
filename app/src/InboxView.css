@@ -18,27 +18,24 @@
   width: 100%;
   box-sizing: border-box;
 }
+/* Section heads are .asc-eyebrow chips (inverse video, uppercase — see ui/ui.css); the count
+   nests inside at reduced opacity so "NEEDS REVIEW 3" still reads label-then-count. */
 .inbox-section-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: var(--text-muted);
+  gap: 8px;
   padding: 16px 4px 6px;
 }
 .inbox-section-head-collapsible {
   cursor: pointer;
 }
 .inbox-section-count {
-  opacity: 0.6;
+  opacity: 0.65;
   font-weight: 400;
 }
 .inbox-section-toggle {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   text-transform: none;
   opacity: 0.7;
 }
@@ -47,18 +44,22 @@
   align-items: flex-start;
   gap: 10px;
   padding: 10px 4px;
+  font-size: var(--fs-ui);
   border-bottom: 1px solid var(--border);
   cursor: pointer;
 }
 .inbox-row:hover {
-  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  background: var(--hover-bg);
 }
+/* A 6px currentColor dot (the shared .status-dot idiom, ui/ui.css) — color comes from the row's
+   inline style (STATUS_COLOR, daemonInboxLogic.ts), not a hardcoded fill. */
 .inbox-row-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   margin-top: 6px;
   flex-shrink: 0;
+  background: currentColor;
 }
 .inbox-row-main {
   flex: 1;
@@ -74,19 +75,25 @@
   font-size: 13.5px;
   color: var(--fg);
 }
+/* Source tag: a faint mono chip, radius 2 — "cron:answer-emails" reads as an identifier, not
+   prose. */
 .inbox-row-source {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  color: var(--faint);
   white-space: nowrap;
+  padding: 0 5px;
+  border: var(--rule);
+  border-radius: var(--r-chip);
 }
 .inbox-row-time {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--faint);
   white-space: nowrap;
 }
 .inbox-row-snippet {
-  font-size: 12.5px;
+  font-size: var(--fs-ui);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -99,3 +106,11 @@
   flex-shrink: 0;
   padding-top: 1px;
 }
+/* Bracket action buttons — "[ approve ] [ dismiss ]" (the CLI-confirm register). Scoped to a
+   row's OWN actions, not the section head's "APPROVE ALL" bulk button, which stays a plain
+   uppercase pill (it's a toolbar action, not a per-item confirm). */
+.inbox-row-actions .btn--text {
+  text-transform: lowercase;
+}
+.inbox-row-actions .btn--text::before { content: "[ "; }
+.inbox-row-actions .btn--text::after { content: " ]"; }
