@@ -3,7 +3,6 @@ import { resolveProperty } from "../../../core/src/bases/query";
 import type { Row } from "../../../core/src/bases/types";
 import { isLink, type Link } from "../../../core/src/bases/values";
 import { renderInline, hasInlineMarkup } from "./markdown";
-import { Icon } from "../icons/Icon";
 import { Stars } from "../ui/Stars";
 import { StatusText } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
@@ -68,7 +67,7 @@ function linkLabel(link: Link): string {
   return link.display || link.path.replace(/\.md$/, "").split("/").pop() || link.path;
 }
 
-/** First-column title cell: accent book icon + medium-weight label. */
+/** First-column title cell: a typed accent title glyph (✎ — no SVG icon) + label. */
 export function renderTitle(id: string, row: Row): JSX.Element {
   const v = resolveProperty(id, row);
   // A Link value (e.g. file.asLink("quote text")) shows its display text and opens
@@ -78,7 +77,7 @@ export function renderTitle(id: string, row: Row): JSX.Element {
   const open = () => window.dispatchEvent(new CustomEvent("bismuth-open", { detail: target }));
   return (
     <span class={styles.cellTitle}>
-      <Icon value="Book" size={14} />
+      <span class={styles.titleGlyph} aria-hidden="true">✎</span>
       <a
         href="#"
         onClick={(e) => {
@@ -143,12 +142,14 @@ export function renderValue(id: string, row: Row): JSX.Element {
     return <span>{v.map((x) => String(x)).join(", ")}</span>;
   }
 
+  // Typed glyph, not an SVG check — "x" when true, blank when false (per the ASCII
+  // system's renderValue rule: booleans render as text, never an icon asset).
   if (typeof v === "boolean") {
-    return <span>{v ? <Icon value="Check" size={14} /> : ""}</span>;
+    return <span class={styles.boolCell}>{v ? "x" : ""}</span>;
   }
 
   if (v instanceof Date) {
-    return <span>{v.toISOString().slice(0, 10)}</span>;
+    return <span class={styles.dateCell}>{v.toISOString().slice(0, 10)}</span>;
   }
 
   // Plain string/number cell. If it carries inline markup (emphasis, code, a wikilink, a
