@@ -500,7 +500,7 @@ Solid store for user settings. Seeded synchronously from `DEFAULTS` (no white-sc
 `diffLeaves(prev, next)` — walks two settings objects, returns `[path, value][]` for changed leaves. Used by `settings.ts` to compute the minimal `POST /set-setting` diff.
 
 #### `themes.ts`
-`THEME_NAMES`, `LIGHT_THEMES`, `resolveAppearance(appearance)` → `ColorTokens`. Named Bismuth color themes (12 total, 6 dark + 6 light). `ColorTokens`: background, foreground, neutral, accent, border, surface, surface2, accentPalette, isLight, categoryGreen/Gold/Rose. DOM-free and unit-tested.
+`THEME_NAMES`, `resolveAppearance(appearance)` → `ColorTokens`. Named Bismuth color themes (4 total: ink/paper/cathode/riso — the ASCII redesign's scopes). `ColorTokens`: background, foreground, neutral, accent, border, surface, surface2, accentPalette, isLight, plus the structural/category/semantic overrides each scope sets explicitly. DOM-free and unit-tested.
 
 #### `themeColors.ts`
 Derives dynamic theme-aware color values (e.g. ANSI terminal palette from theme). `buildAnsiPalette(tokens)` — maps theme colors to xterm.js ANSI color slots for `Terminal.tsx`.

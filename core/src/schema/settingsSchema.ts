@@ -41,11 +41,12 @@ export const SETTINGS_SCHEMA: Schema = {
     // Bismuth color theme — selects EVERY color in the app + graph (background,
     // surfaces, border, text, muted, accent, and the graph node palette). The theme
     // is the single source of color; app/src/themes.ts holds the token values that
-    // settingsCssVars.ts projects to CSS vars. The app is dark-only.
+    // settingsCssVars.ts projects to CSS vars. Ink and cathode are dark; paper and
+    // riso are light.
     theme: {
       type: enumType(THEME_NAMES),
-      default: "oxide-duotone",
-      doc: "Bismuth color theme: oxide-duotone (default) · gunmetal-teal · rose-gold · indigo-oxide · forest-oxide · full-sheen.",
+      default: "ink",
+      doc: "Bismuth color theme: ink (default) · paper · cathode · riso.",
     },
     // Per-vault app logo mark (favicon + sidebar logo). One of the 14 Bismuth marks.
     icon: {

@@ -22,12 +22,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const THEME_OPTIONS: SelectOption[] = [
-  { value: "oxide-duotone", label: "Oxide Duotone" },
-  { value: "gunmetal-teal", label: "Gunmetal Teal" },
-  { value: "rose-gold", label: "Rose Gold" },
-  { value: "indigo-oxide", label: "Indigo Oxide" },
-  { value: "forest-oxide", label: "Forest Oxide" },
-  { value: "full-sheen", label: "Full Sheen" },
+  { value: "ink", label: "Ink" },
+  { value: "paper", label: "Paper" },
+  { value: "cathode", label: "Cathode" },
+  { value: "riso", label: "Riso" },
 ];
 
 function Controlled(props: { options: SelectOption[]; initial?: string; placeholder?: string }) {
@@ -50,7 +48,7 @@ function Field(props: { label: string; children: JSX.Element }) {
 
 /** A value selected — the trigger shows the chosen label + chevron. */
 export const Default: Story = {
-  render: () => <Controlled options={THEME_OPTIONS} initial="oxide-duotone" />,
+  render: () => <Controlled options={THEME_OPTIONS} initial="ink" />,
 };
 
 /** No value → the muted placeholder is shown instead of a label. */
@@ -67,7 +65,7 @@ export const EmptyDefault: Story = {
 export const Gallery: Story = {
   render: () => (
     <div style={{ display: "flex", "flex-direction": "column", gap: "20px" }}>
-      <Field label="with value"><Controlled options={THEME_OPTIONS} initial="rose-gold" /></Field>
+      <Field label="with value"><Controlled options={THEME_OPTIONS} initial="paper" /></Field>
       <Field label="placeholder"><Controlled options={THEME_OPTIONS} placeholder="Choose a theme…" /></Field>
     </div>
   ),

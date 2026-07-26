@@ -37,53 +37,56 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--fg": a.foreground,
     "--accent": a.accent,
     // Base UI colors come straight from the theme (mockup palette): explicit border,
-    // surfaces, and muted text. The two extra tints (--surface-3, --hover-bg) the theme
-    // doesn't define are derived from the theme's foreground.
+    // surfaces, and muted text. The extra tints below prefer an explicit theme field
+    // (the ASCII redesign's per-scope values) and fall back to the original
+    // color-mix derivation for any theme that doesn't set one.
     "--border": a.border,
     // Hairline border (design's --border2): one notch softer than --border.
-    "--border-soft": `color-mix(in srgb, ${a.foreground} 10%, transparent)`,
+    "--border-soft": a.borderSoft ?? `color-mix(in srgb, ${a.foreground} 10%, transparent)`,
     "--text-muted": a.neutral,
     // Tertiary / disabled text (design's --faint): the .4–.5 opacity-on-fg used app-wide.
-    "--faint": `color-mix(in srgb, ${a.foreground} 42%, transparent)`,
+    "--faint": a.faint ?? `color-mix(in srgb, ${a.foreground} 42%, transparent)`,
     "--panel": a.surface,
-    "--hover-bg": `color-mix(in srgb, ${a.foreground} 8%, transparent)`,
+    "--hover-bg": a.hoverBg ?? `color-mix(in srgb, ${a.foreground} 8%, transparent)`,
     "--surface-1": a.surface,
     "--surface-2": a.surface2,
-    "--surface-3": `color-mix(in srgb, ${a.foreground} 14%, transparent)`,
+    "--surface-3": a.surface3 ?? `color-mix(in srgb, ${a.foreground} 14%, transparent)`,
     // Sidebar + topbar rail (design's --rail). Dark: a notch under the canvas.
     // Light: the design's #EAE7F3 — bg pulled toward the border so the rail reads
     // as a distinct surface, not the flat near-canvas wash a surface2-mix produced.
     // (mix(bg 70%, border) lands on #EBE8F3 for oxide-light ≈ the design value.)
-    "--rail": light ? mix(a.background, 70, a.border) : mix(a.background, 88, "#000"),
+    "--rail": a.rail ?? (light ? mix(a.background, 70, a.border) : mix(a.background, 88, "#000")),
     // Editor / main pane (design's --editor): canvas on dark, lifted toward white on
     // light. mix(surface 64%, bg) ≈ the design's #FAF8FD for oxide-light.
-    "--editor": light ? mix(a.surface, 64, a.background) : a.background,
+    "--editor": a.editor ?? (light ? mix(a.surface, 64, a.background) : a.background),
     // Popover / floating-card surfaces (legends, graph cards, structure picker).
-    "--pop-bg": light ? mix(a.surface, 84, "transparent") : mix(a.background, 82, "transparent"),
-    "--pop-bg-strong": light ? mix(a.surface, 90, "transparent") : mix(a.background, 88, "transparent"),
+    "--pop-bg": a.popBg ?? (light ? mix(a.surface, 84, "transparent") : mix(a.background, 82, "transparent")),
+    "--pop-bg-strong": a.popBgStrong ?? (light ? mix(a.surface, 90, "transparent") : mix(a.background, 88, "transparent")),
     // Modal scrim (command/quick/template overlays). Light: a soft lavender-grey veil
     // from the theme's neutral (design's rgba(120,110,150,.32) ≈ oxide-light neutral),
     // NOT the heavy near-black a foreground-tint gave. Dark: fg-tinted veil.
-    "--scrim-bg": light ? mix(a.neutral, 32, "transparent") : mix(a.foreground, 62, "transparent"),
+    "--scrim-bg": a.scrimBg ?? (light ? mix(a.neutral, 32, "transparent") : mix(a.foreground, 62, "transparent")),
+    // Backdrop scrim behind modals/overlays (design's --overlay-bg): same fallback as
+    // --scrim-bg, since the two coincide in every ASCII scope.
+    "--overlay-bg": a.overlayBg ?? (light ? mix(a.neutral, 32, "transparent") : mix(a.foreground, 62, "transparent")),
     // Graph hub-label halo: near-black on dark, the design's translucent white on light.
-    "--label-halo": light ? mix("#fff", 90, "transparent") : "#05060a",
-    // Graph canvas radial (design's --graph-bg): a soft lavender wash on light, the deep ink
-    // well on dark. Used by the agents-mode backdrop + the depth vignette. Light center lifts
-    // toward white, the edge settles toward the border (oxide-light ≈ design #F3F0FA → #E6E2F2);
-    // dark keeps the near-black well. This is what stops the agents view going half-black on light.
-    "--graph-bg": light
+    "--label-halo": a.labelHalo ?? (light ? mix("#fff", 90, "transparent") : "#05060a"),
+    // Graph canvas backdrop (design's --graph-bg): a FLAT color per theme now, not a
+    // gradient. Falls back to the original radial-gradient derivation for any theme
+    // that doesn't set an explicit graphBg.
+    "--graph-bg": a.graphBg ?? (light
       ? `radial-gradient(120% 90% at 50% 30%, ${mix("#fff", 60, a.background)} 0%, ${mix(a.background, 50, a.border)} 72%)`
-      : `radial-gradient(120% 90% at 50% 30%, ${a.background} 0%, ${mix(a.background, 60, "#000")} 72%)`,
+      : `radial-gradient(120% 90% at 50% 30%, ${a.background} 0%, ${mix(a.background, 60, "#000")} 72%)`),
     // Depth-vignette edge color: fade toward the lavender border on light (a gentle deepening),
     // toward black on dark. The vignette overlay (.graph-vignette) blends from transparent to this.
-    "--vignette-edge": light ? mix(a.background, 50, a.border) : mix(a.background, 70, "#000"),
+    "--vignette-edge": a.vignetteEdge ?? (light ? mix(a.background, 50, a.border) : mix(a.background, 70, "#000")),
     // Graph edges + node tints.
-    "--graph-edge": mix(a.foreground, 18, "transparent"),
-    "--node-cold": mix(a.foreground, 24, a.background),
-    "--node-self": a.foreground,
+    "--graph-edge": a.graphEdge ?? mix(a.foreground, 18, "transparent"),
+    "--node-cold": a.nodeCold ?? mix(a.foreground, 24, a.background),
+    "--node-self": a.nodeSelf ?? a.foreground,
     // Terminal stays a dark ink panel in BOTH modes (intentional per LIGHT_THEMES.md).
-    "--term-bg": light ? "#2B2740" : "#08090E",
-    "--term-fg": light ? "#E3DEF2" : "#C7CCE0",
+    "--term-bg": a.termBg ?? (light ? "#2B2740" : "#08090E"),
+    "--term-fg": a.termFg ?? (light ? "#E3DEF2" : "#C7CCE0"),
     // Bases offline map surfaces.
     "--map-sea": a.surface2,
     "--map-land": a.surface,
@@ -91,16 +94,22 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--map-grid": mix(a.foreground, 12, "transparent"),
     "--accent-purple": accentPurple,
     // Accent tint background (selected tab / row) + text color on a solid accent fill.
-    "--accent-soft": `color-mix(in srgb, ${a.accent} 14%, transparent)`,
+    "--accent-soft": a.accentSoft ?? `color-mix(in srgb, ${a.accent} 14%, transparent)`,
     // Text on a solid accent fill (selected tab, primary button). The light themes use
     // mid-tone accents, so white reads where the dark themes' near-black ink does
     // (matches the design's --on-accent: #fff on light / #08101F on dark).
-    "--on-accent": light ? "#fff" : "#08101F",
-    // Named chrome accents + iridescent gradient (built from the graph ramp).
-    "--teal": teal,
-    "--blue": blue,
-    "--violet": violet,
-    "--grad": `linear-gradient(120deg, ${teal}, ${blue}, ${violet})`,
+    "--on-accent": a.onAccent ?? (light ? "#fff" : "#08101F"),
+    // Named chrome accents + iridescent gradient (built from the graph ramp, unless the
+    // theme pins its own category hues).
+    "--teal": a.categoryTeal ?? teal,
+    "--blue": a.categoryBlue ?? blue,
+    "--violet": a.categoryViolet ?? violet,
+    "--grad": (() => {
+      const g0 = palette[0] ?? a.accent, g1 = palette[1] ?? a.accent, g2 = palette[2] ?? a.accent;
+      const g3 = palette[3] ?? a.accent, g4 = palette[4] ?? a.accent;
+      const gold = a.categoryGold ?? (palette[4] ?? palette[3] ?? a.accent);
+      return `linear-gradient(120deg, ${g0}, ${g1}, ${g2}, ${g3}, ${g4}, ${gold})`;
+    })(),
     // Graph ramp exposed positionally for canvas/legend/tag consumers.
     "--graph-0": palette[0] ?? a.accent,
     "--graph-1": palette[1] ?? a.accent,
@@ -121,6 +130,10 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--danger": sem.danger,
     "--success": sem.success,
     "--warning": sem.warning,
+    // Bloom is a theme decision (only cathode turns it on); components read the token,
+    // never a hardcoded shadow.
+    "--glow-accent": a.glowAccent ?? "none",
+    "--glow-text": a.glowText ?? "none",
     // Elevation shadows (light themes get lighter, smaller-blur shadows, not near-black).
     "--shadow-menu": shadow.menu,
     "--shadow-popup": shadow.popup,

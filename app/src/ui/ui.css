@@ -9,8 +9,6 @@
   /* The UI monospace font stack (Monaspace Xenon) shared by buttons, modal text,
      and select triggers — defined once so the stack can't drift between them. */
   --ui-font-stack: "Monaspace Xenon", ui-monospace, monospace;
-  /* Backdrop scrim behind modals/overlays. */
-  --overlay-bg: rgba(0, 0, 0, 0.5);
 }
 
 /* ── Button ──────────────────────────────────────────────────────────────── */

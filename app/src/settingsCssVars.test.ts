@@ -15,8 +15,8 @@ describe("settingsToCssVars", () => {
     expect(vars["--editor-font"]).toBe("'Lora', serif"); // resolved through FONT_STACKS
   });
 
-  it("derives the color tokens from the default theme (oxide-duotone)", () => {
-    const t = THEMES["oxide-duotone"];
+  it("derives the color tokens from the default theme (ink)", () => {
+    const t = THEMES.ink;
     const vars = settingsToCssVars(DEFAULTS);
     expect(vars["--bg"]).toBe(t.background);
     expect(vars["--fg"]).toBe(t.foreground);
@@ -49,8 +49,8 @@ describe("settingsToCssVars", () => {
 
 describe("settingsToCssVars + themes", () => {
   it("selecting a theme recolors all base + accent vars from that theme", () => {
-    const t = THEMES["indigo-oxide"];
-    const vars = settingsToCssVars(withTheme("indigo-oxide"));
+    const t = THEMES.cathode;
+    const vars = settingsToCssVars(withTheme("cathode"));
     expect(vars["--bg"]).toBe(t.background);
     expect(vars["--accent"]).toBe(t.accent);
     expect(vars["--surface-1"]).toBe(t.surface);
@@ -59,50 +59,47 @@ describe("settingsToCssVars + themes", () => {
 
   it("an unknown theme falls back to the default theme's colors", () => {
     const vars = settingsToCssVars(withTheme("does-not-exist"));
-    expect(vars["--bg"]).toBe(THEMES["oxide-duotone"].background);
+    expect(vars["--bg"]).toBe(THEMES.ink.background);
   });
 });
 
-describe("light themes follow the design's .bis.light block, not a derived dark", () => {
-  const lightVars = settingsToCssVars(withTheme("oxide-duotone-light"));
-  const darkVars = settingsToCssVars(DEFAULTS); // oxide-duotone (dark)
-  const t = THEMES["oxide-duotone-light"];
+describe("light themes read their own explicit ASCII scope values, not a derived dark", () => {
+  const lightVars = settingsToCssVars(withTheme("paper"));
+  const darkVars = settingsToCssVars(DEFAULTS); // ink (dark)
+  const t = THEMES.paper;
 
-  it("pins the showcase accent to the design value (#7A86DE), not a guess", () => {
-    expect(t.accent).toBe("#7A86DE");
-    expect(lightVars["--accent"]).toBe("#7A86DE");
+  it("pins the accent to the design value, not a guess", () => {
+    expect(t.accent).toBe("#4E7F73");
+    expect(lightVars["--accent"]).toBe("#4E7F73");
     // --accent-purple still tracks ramp[1].
     expect(lightVars["--accent-purple"]).toBe(t.accentPalette[1]);
   });
 
-  it("text on a solid accent fill is white on light, near-black on dark", () => {
-    expect(lightVars["--on-accent"]).toBe("#fff");
-    expect(darkVars["--on-accent"]).toBe("#08101F");
+  it("text on a solid accent fill uses each theme's own explicit on-accent token", () => {
+    expect(lightVars["--on-accent"]).toBe(t.onAccent);
+    expect(darkVars["--on-accent"]).toBe(THEMES.ink.onAccent);
   });
 
-  it("the rail is a distinct surface (bg pulled toward border), not the flat canvas wash", () => {
-    // Design target #EAE7F3; mix(bg 70%, border) lands on it. Must reference the border,
-    // and must differ from the canvas.
-    expect(lightVars["--rail"]).toBe(`color-mix(in srgb, ${t.background} 70%, ${t.border})`);
+  it("the rail is the theme's explicit --rail value, not a derived mix", () => {
+    expect(lightVars["--rail"]).toBe(t.rail);
     expect(lightVars["--rail"]).not.toBe(lightVars["--bg"]);
   });
 
-  it("the modal scrim is a soft neutral lavender veil, not a heavy fg-tinted one", () => {
-    expect(lightVars["--scrim-bg"]).toBe(`color-mix(in srgb, ${t.neutral} 32%, transparent)`);
-    // Dark keeps the foreground-tinted veil.
-    expect(darkVars["--scrim-bg"]).toContain(THEMES["oxide-duotone"].foreground);
+  it("the modal scrim uses the theme's explicit scrimBg token", () => {
+    expect(lightVars["--scrim-bg"]).toBe(t.scrimBg);
+    expect(darkVars["--scrim-bg"]).toBe(THEMES.ink.scrimBg);
   });
 
-  it("category swatches derive from the theme's own accent ramp on both light and dark", () => {
-    // Preset category swatches always come from the palette so a category that stores one
-    // of these tokens auto-recolors when the theme changes (only custom hex stays fixed).
-    expect(lightVars["--green"]).toBe(t.accentPalette[1]); // design --green #6FA6E6
-    expect(lightVars["--gold"]).toBe(t.accentPalette[4]); // design --gold  #C08FD8
-    expect(lightVars["--rose"]).toBe(t.accentPalette[3]); // design --rose  #A98FE0
-    // Dark tracks its own theme's ramp the same way (no hardcoded saturated trio).
-    const td = THEMES["oxide-duotone"];
-    expect(darkVars["--green"]).toBe(td.accentPalette[1]);
-    expect(darkVars["--gold"]).toBe(td.accentPalette[4] ?? td.accentPalette[3]);
-    expect(darkVars["--rose"]).toBe(td.accentPalette[3]);
+  it("category swatches use the theme's own explicit category tokens on both light and dark", () => {
+    // Preset category swatches read the theme's explicit categoryX field so a category that
+    // stores one of these tokens auto-recolors when the theme changes (only custom hex stays fixed).
+    expect(lightVars["--green"]).toBe(t.categoryGreen);
+    expect(lightVars["--gold"]).toBe(t.categoryGold);
+    expect(lightVars["--rose"]).toBe(t.categoryRose);
+    // Dark tracks its own theme's explicit tokens the same way.
+    const td = THEMES.ink;
+    expect(darkVars["--green"]).toBe(td.categoryGreen);
+    expect(darkVars["--gold"]).toBe(td.categoryGold);
+    expect(darkVars["--rose"]).toBe(td.categoryRose);
   });
 });

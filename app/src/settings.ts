@@ -16,7 +16,7 @@ import { readCache, writeCache } from "./viewCache";
 import { diffLeaves } from "./settingsDiff";
 import { SETTINGS_FILE } from "./tabIds";
 import { DEFAULTS, type AppSettings as SpineSettings } from "../../core/src/schema/settingsSchema";
-import { SHEEN } from "./themes";
+import { THEMES, DEFAULT_THEME } from "./themes";
 
 // The structural shape the frontend store consumes. Mirrors the spine's
 // SETTINGS_SCHEMA leaf-by-leaf (the spine's derived AppSettings is loosely typed
@@ -204,8 +204,8 @@ export const FONT_STACKS: Record<string, string> = {
 // The fallback accent palette. Categories (graph nodes/clusters/tags, drawing ink
 // swatches, terminal ANSI) normally derive from the selected theme's accentPalette
 // (resolveTheme in themes.ts); this is only used when that ramp is absent/empty.
-// Single-sourced from themes.ts's SHEEN so the values can't drift.
-export const DEFAULT_ACCENT_PALETTE = SHEEN;
+// Single-sourced from themes.ts's default theme so the values can't drift.
+export const DEFAULT_ACCENT_PALETTE = THEMES[DEFAULT_THEME].accentPalette;
 
 /**
  * Merge an already-parsed object over DEFAULTS using a per-key `typeof`-checked

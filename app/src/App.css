@@ -1,60 +1,62 @@
 /* app/src/App.css */
 :root {
   color-scheme: dark;
-  /* Theme tokens are DERIVED in app/src/settingsCssVars.ts from the 5 editable
-     `appearance` tokens (background/foreground/neutral/accent/accentPalette) and
-     set on :root at runtime. The literals below are only first-paint fallbacks and
-     MUST equal the schema defaults (Ink/Paper/Steel/Blue + Oxide). Dark-only. */
-  --bg: #14151B;        /* Ink */
-  --fg: #F4F2EE;        /* Paper */
-  --accent: #3F6BF0;    /* Blue */
-  --border: color-mix(in srgb, #AEB4C2 22%, transparent);      /* Steel */
-  --text-muted: color-mix(in srgb, var(--fg) 60%, transparent);
-  --panel: color-mix(in srgb, #AEB4C2 6%, transparent);
-  --hover-bg: color-mix(in srgb, var(--fg) 8%, transparent);
-  --surface-1: color-mix(in srgb, var(--fg) 5%, transparent);
-  --surface-2: color-mix(in srgb, var(--fg) 9%, transparent);
-  --surface-3: color-mix(in srgb, var(--fg) 14%, transparent);
-  --border-soft: color-mix(in srgb, var(--fg) 10%, transparent);
-  --faint: color-mix(in srgb, var(--fg) 42%, transparent);
-  --rail: color-mix(in srgb, var(--bg) 88%, #000);
+  /* Theme tokens are DERIVED in app/src/settingsCssVars.ts from the selected theme
+     (core/src/theme/tokens.ts) and set on :root at runtime. The literals below are
+     only first-paint fallbacks and MUST equal the "ink" theme (the schema default). */
+  --bg: #15161A;
+  --fg: #E8E3D6;
+  --accent: #93BDB0;
+  --border: #3A3E4A;
+  --text-muted: #9C998E;
+  --panel: #20222A;
+  --hover-bg: rgba(232,227,214,.05);
+  --surface-1: #20222A;
+  --surface-2: #272A33;
+  --surface-3: #31353F;
+  --border-soft: #282B34;
+  --faint: #6A675E;
+  --rail: #101116;
   /* Structural surfaces that branch light/dark at runtime (settingsCssVars); the
-     literals here are dark first-paint fallbacks. See LIGHT_THEMES.md Part B. */
-  --editor: var(--bg);
-  --pop-bg: color-mix(in srgb, var(--bg) 82%, transparent);
-  --pop-bg-strong: color-mix(in srgb, var(--bg) 88%, transparent);
-  --scrim-bg: color-mix(in srgb, var(--fg) 62%, transparent);
-  --label-halo: #05060a;
-  --graph-edge: color-mix(in srgb, var(--fg) 18%, transparent);
-  --node-cold: color-mix(in srgb, var(--fg) 24%, var(--bg));
-  --node-self: var(--fg);
-  --term-bg: #08090E;
-  --term-fg: #C7CCE0;
-  --accent-purple: #9B53E8; /* Oxide purple (accentPalette[1]) */
-  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
-  --on-accent: #08101F;
+     literals here are dark (ink) first-paint fallbacks. See LIGHT_THEMES.md Part B. */
+  --editor: #191A1F;
+  --pop-bg: rgba(25,26,31,.88);
+  --pop-bg-strong: rgba(25,26,31,.94);
+  --scrim-bg: rgba(10,11,14,.6);
+  --overlay-bg: rgba(10,11,14,.6);
+  --label-halo: #15161A;
+  --graph-edge: #3C4048;
+  --node-cold: #4A4E58;
+  --node-self: #E8E3D6;
+  --term-bg: #101116;
+  --term-fg: #C9C4B6;
+  --accent-purple: #A190C4; /* Ink violet (accentPalette[1]) */
+  --accent-soft: rgba(147,189,176,0.12);
+  --on-accent: #15161A;
+  --glow-accent: 0 0 0 1px rgba(147,189,176,0.14);
+  --glow-text: none;
   /* Named chrome accents + iridescent gradient (derived from the graph ramp at runtime). */
-  --teal: #22C6D6;
-  --blue: #5C7BEE;
-  --violet: #8B6CF0;
-  --grad: linear-gradient(120deg, #22C6D6, #5C7BEE, #8B6CF0);
+  --teal: #83B4AE;
+  --blue: #8296C6;
+  --violet: #A190C4;
+  --grad: linear-gradient(120deg,#C98CA8,#A190C4,#8296C6,#83B4AE,#A3BE8C,#CBB27E);
   /* Category hues — Bases statuses / calendar categories / map pins / chart series.
      CATEGORICAL, kept separate from the semantic --success/--danger below. */
-  --green: #43D49A;
-  --gold: #F2C53D;
-  --rose: #F0509B;
+  --green: #A3BE8C;
+  --gold: #CBB27E;
+  --rose: #C98CA8;
   --editor-font: 'Lora', serif;
   --editor-font-size: 16px;
-  /* Semantic status colors + shadows — first-paint DARK fallbacks; settingsCssVars.ts
+  /* Semantic status colors + shadows — first-paint DARK (ink) fallbacks; settingsCssVars.ts
      projects the per-theme (light/dark) values at runtime from core/src/theme/tokens.ts. */
-  --danger: #e5534b;
-  --success: #98c379;
-  --warning: #e0a53f;
-  --shadow-menu: 0 4px 16px rgba(0, 0, 0, 0.3);
-  --shadow-popup: 0 8px 24px rgba(0, 0, 0, 0.25);
+  --danger: #C87F72;
+  --success: #A3BE8C;
+  --warning: #CBB27E;
+  --shadow-menu: 0 4px 16px rgba(0,0,0,.3);
+  --shadow-popup: 0 8px 24px rgba(0,0,0,.4);
   /* Design elevation shadows (cards/popovers vs modals). */
-  --shadow-card: 0 16px 44px rgba(0, 0, 0, 0.45);
-  --shadow-modal: 0 40px 110px rgba(0, 0, 0, 0.6);
+  --shadow-card: 0 1px 0 rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  --shadow-modal: 0 24px 70px rgba(0,0,0,.5);
 }
 * { box-sizing: border-box; }
 /* Buttons don't inherit font-family from ancestors — force it so every button
