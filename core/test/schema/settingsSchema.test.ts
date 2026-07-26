@@ -33,17 +33,13 @@ test("appearance has no flat per-color keys (themes are the single source of col
   expect(appearance.accentPalette).toBeUndefined();
 });
 
-test("appearance.theme is the Bismuth theme enum defaulting to oxide-duotone", () => {
+test("appearance.theme is the Bismuth theme enum defaulting to ink", () => {
   const appearance = objectFields(SETTINGS_SCHEMA.appearance);
   expect(appearance.theme.type).toEqual({
     kind: "enum",
-    values: [
-      "oxide-duotone", "gunmetal-teal", "rose-gold", "indigo-oxide", "forest-oxide", "full-sheen",
-      "oxide-duotone-light", "gunmetal-teal-light", "rose-gold-light",
-      "indigo-oxide-light", "forest-oxide-light", "full-sheen-light",
-    ],
+    values: ["ink", "paper", "cathode", "riso"],
   });
-  expect(appearance.theme.default).toBe("oxide-duotone");
+  expect(appearance.theme.default).toBe("ink");
   expect(appearance.theme.doc).toBeTruthy();
 });
 
@@ -157,7 +153,7 @@ test("DEFAULTS is the plain nested object derived from the schema", () => {
     ["appearance", "attachments", "calendar", "chat", "daemon", "dailyNotes", "editor", "folderIcons", "folderVisibility", "googleCalendar", "graph", "keybindings", "properties", "server", "srs", "tabBar", "templates", "terminal", "toolbar", "ui", "update", "vault"].sort(),
   );
   const d = DEFAULTS as Record<string, Record<string, unknown>>;
-  expect(d.appearance.theme).toBe("oxide-duotone");
+  expect(d.appearance.theme).toBe("ink");
   expect(d.appearance.icon).toBe("hopper-crystal");
   expect(d.appearance.accent).toBeUndefined(); // flat color keys removed; theme owns color
   expect(d.graph.repulsion).toBe(-10);

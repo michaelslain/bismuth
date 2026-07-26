@@ -1192,7 +1192,7 @@ test("GET /settings returns parsed app settings with defaults", async () => {
   const base = `http://localhost:${server.port}`;
   try {
     const s = await (await fetch(`${base}/settings`)).json();
-    expect(s.appearance.theme).toBe("oxide-duotone");
+    expect(s.appearance.theme).toBe("ink");
     expect(s.graph.nodeSize).toBe(6);
     expect(s.properties).toBeUndefined();
   } finally {
@@ -1240,7 +1240,7 @@ test("GET /file materializes settings.yaml from defaults when missing at read ti
     const text = await res.text();
     expect(res.status).toBe(200);
     expect(text).toContain("appearance:"); // default content, not a blank editor
-    expect(text).toContain("theme: oxide-duotone");
+    expect(text).toContain("theme: ink");
     expect(existsSync(join(vault, ".settings"))).toBe(true); // recreated on disk
   } finally {
     server.stop(true);
@@ -1445,7 +1445,7 @@ test("POST /rows notes source serves cached vault rows that a file edit invalida
 test("POST /set-setting merges one key and preserves the rest of settings.yaml", async () => {
   const { vault } = await makeSampleVault();
   // Seed a settings.yaml with a comment + a custom key + the properties registry.
-  await writeNote(vault, ".settings", "# my settings\nappearance:\n  theme: oxide-duotone\n  myCustom: 7\nproperties:\n  due: date\n");
+  await writeNote(vault, ".settings", "# my settings\nappearance:\n  theme: ink\n  myCustom: 7\nproperties:\n  due: date\n");
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -1458,7 +1458,7 @@ test("POST /set-setting merges one key and preserves the rest of settings.yaml",
 
     const settings = await (await fetch(`${base}/settings`)).json();
     expect(settings.appearance.editorFont).toBe("Georgia"); // changed key
-    expect(settings.appearance.theme).toBe("oxide-duotone"); // reconciled default present
+    expect(settings.appearance.theme).toBe("ink"); // reconciled default present
 
     const raw = await readNote(vault, ".settings");
     expect(raw).toContain("# my settings");                // comment preserved
@@ -1695,7 +1695,7 @@ test("a structural mutation invalidates the cached /graph", async () => {
 test("POST /set-setting serializes concurrent requests without clobbering changes", async () => {
   const { vault } = await makeSampleVault();
   // Seed settings with multiple keys
-  await writeNote(vault, ".settings", "appearance:\n  theme: oxide-duotone\n  editorFont: Lora\ngraph:\n  nodeSize: 5\n");
+  await writeNote(vault, ".settings", "appearance:\n  theme: ink\n  editorFont: Lora\ngraph:\n  nodeSize: 5\n");
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -1704,7 +1704,7 @@ test("POST /set-setting serializes concurrent requests without clobbering change
       fetch(`${base}/set-setting`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: ["appearance", "theme"], value: "indigo-oxide" }),
+        body: JSON.stringify({ path: ["appearance", "theme"], value: "cathode" }),
       }),
       fetch(`${base}/set-setting`, {
         method: "POST",
@@ -1723,7 +1723,7 @@ test("POST /set-setting serializes concurrent requests without clobbering change
 
     // Verify all three changes were persisted (none clobbered)
     const settings = await (await fetch(`${base}/settings`)).json();
-    expect(settings.appearance.theme).toBe("indigo-oxide");
+    expect(settings.appearance.theme).toBe("cathode");
     expect(settings.appearance.editorFont).toBe("Georgia");
     expect(settings.graph.nodeSize).toBe(10);
   } finally {

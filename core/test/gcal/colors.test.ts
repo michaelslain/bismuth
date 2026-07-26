@@ -12,18 +12,19 @@ test("hex → nearest Google event color", () => {
 });
 
 test("theme swatch tokens resolve to a sensible Google color", () => {
-  expect(categoryColorId("blue")).toBe("9"); // #5C7BEE → Blueberry
-  expect(categoryColorId("gold")).toBe("5"); // #F2C53D → Banana
-  expect(categoryColorId("rose")).toBe("4"); // #F0509B → Flamingo
-  expect(categoryColorId("green")).toBe("7"); // #43D49A (teal-green) → Peacock
+  expect(categoryColorId("blue")).toBe("9"); // #8296C6 → Blueberry
+  expect(categoryColorId("gold")).toBe("6"); // #CBB27E → Tangerine
+  expect(categoryColorId("rose")).toBe("4"); // #C98CA8 → Flamingo
+  expect(categoryColorId("green")).toBe("2"); // #A3BE8C → Sage
   expect(categoryColorId("#ff2600")).toBe("11"); // custom hex passes through → Tomato
   expect(categoryColorId(undefined)).toBeUndefined();
 });
 
 test("the `accent` token resolves via the active theme", () => {
-  expect(categoryColorId("accent", "rose-gold")).toBe("4"); // #E1748F → Flamingo
-  expect(categoryColorId("accent", "forest-oxide")).toBe("10"); // #3FB87C → Basil
-  expect(categoryColorId("accent")).toBe("9"); // default oxide accent #5E8DE6 → Blueberry
+  expect(categoryColorId("accent", "paper")).toBe("10"); // #4E7F73 → Basil
+  expect(categoryColorId("accent", "cathode")).toBe("7"); // #35F0E0 → Peacock
+  expect(categoryColorId("accent", "riso")).toBe("9"); // #2E36A8 → Blueberry
+  expect(categoryColorId("accent")).toBe("2"); // default ink accent #93BDB0 → Sage
 });
 
 test("toGoogle sets colorId from the category via the color map", async () => {

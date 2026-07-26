@@ -10,10 +10,11 @@ import type { ExportTheme, ThemePalette, PaletteToken } from "./types";
 import { CATEGORY_SWATCHES } from "../themes";
 
 // Default 7-token palette — the headless fallback. accent is the App.css :root default
-// (#3F6BF0); the teal→rose category ramp is sourced from the one source (themes.ts
-// CATEGORY_SWATCHES) so it can't drift from the drawing toolbar / gcal / App.css copies.
+// (#93BDB0, the ink theme's accent); the teal→rose category ramp is sourced from the
+// one source (themes.ts CATEGORY_SWATCHES) so it can't drift from the drawing
+// toolbar / gcal / App.css copies.
 const DEFAULT_TOKENS: Record<PaletteToken, string> = {
-  accent: "#3F6BF0", ...CATEGORY_SWATCHES,
+  accent: "#93BDB0", ...CATEGORY_SWATCHES,
 };
 
 const DEFAULT_FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';

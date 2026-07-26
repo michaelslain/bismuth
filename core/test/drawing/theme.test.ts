@@ -5,12 +5,12 @@ import { THEMES, DEFAULT_THEME } from "../../src/theme/tokens";
 test("themeColors sources paper/ink from the theme tokens (default dark/light themes)", () => {
   // Now tracks the app theme (source of truth) rather than a drifted literal.
   expect(themeColors("dark")).toEqual({
-    bg: THEMES[DEFAULT_THEME].background, // #0D0E16
-    fg: THEMES[DEFAULT_THEME].foreground, // #E7E8F2
+    bg: THEMES[DEFAULT_THEME].background, // #15161A
+    fg: THEMES[DEFAULT_THEME].foreground, // #E8E3D6
   });
   expect(themeColors("light")).toEqual({
-    bg: THEMES["oxide-duotone-light"].background, // #F1EFF7
-    fg: THEMES["oxide-duotone-light"].foreground, // #322D49
+    bg: THEMES["paper"].background, // #E9E6E0
+    fg: THEMES["paper"].foreground, // #2E2C29
   });
 });
 

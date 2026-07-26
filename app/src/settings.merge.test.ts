@@ -22,8 +22,8 @@ describe("mergeServerSettings", () => {
   });
 
   it("does not mutate DEFAULTS", () => {
-    mergeServerSettings({ appearance: { theme: "indigo-oxide" } });
-    expect(DEFAULTS.appearance.theme).toBe("oxide-duotone");
+    mergeServerSettings({ appearance: { theme: "cathode" } });
+    expect(DEFAULTS.appearance.theme).toBe("ink");
   });
 
   it("replaces a top-level list (toolbar) wholesale, honoring arbitrary length", () => {

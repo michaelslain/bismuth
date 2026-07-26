@@ -44,6 +44,8 @@ const REQUIRED_PROJECTED = [
   "--danger", "--success", "--warning",
   // elevation (centralized here — light themes get lighter shadows)
   "--shadow-menu", "--shadow-popup", "--shadow-card", "--shadow-modal",
+  // overlay/glow (Stage 1 additions)
+  "--overlay-bg", "--glow-accent", "--glow-text",
 ];
 
 /** CSS vars intentionally left unprojected (documented escape hatches). */
@@ -99,8 +101,9 @@ describe("theme guard — every theme yields every token", () => {
   });
 
   it("light themes are flagged isLight; dark themes are not", () => {
+    const LIGHT_THEMES = new Set(["paper", "riso"]);
     for (const name of THEME_NAMES) {
-      const isLight = name.endsWith("-light");
+      const isLight = LIGHT_THEMES.has(name);
       expect(!!resolveTheme(name).isLight, name).toBe(isLight);
     }
   });
@@ -129,8 +132,8 @@ describe("theme guard — projection contract", () => {
 });
 
 describe("theme guard — semantic + elevation tokens re-theme (light ≠ dark)", () => {
-  const dark = settingsToCssVars(withTheme("oxide-duotone"));
-  const light = settingsToCssVars(withTheme("oxide-duotone-light"));
+  const dark = settingsToCssVars(withTheme("ink"));
+  const light = settingsToCssVars(withTheme("paper"));
 
   it("danger/success/warning have their own accessible light values, not the dark-tuned ones", () => {
     for (const key of ["--danger", "--success", "--warning"]) {
