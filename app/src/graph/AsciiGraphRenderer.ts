@@ -81,7 +81,9 @@ interface LabelDraw { text: string; col: number; row: number; color: number; acc
 
 /** Wikilink/tag flavouring so a label reads like the vault does (design's `[[note name]]`). */
 function labelText(n: GraphNode): string {
-  if (n.kind === "tag") return "#" + n.label;
+  // vault.ts already builds a tag node's label WITH its "#" (`label: \`#${tag}\``), so prefixing
+  // unconditionally printed "##research" on the field.
+  if (n.kind === "tag") return n.label.startsWith("#") ? n.label : "#" + n.label;
   if (n.kind === "note" || n.kind === "memory") return "[[" + n.label + "]]";
   return n.label;
 }
@@ -411,6 +413,33 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.dirty = true;
   }
 
+  /**
+   * Reconcile the grid with the host's CURRENT box, once per frame.
+   *
+   * measure() is also driven by mount()/render()/the ResizeObserver, but every one of those is a
+   * one-shot: the knowledge graph is a SINGLE floating element that App re-places and re-sizes
+   * across slots (`.graph-floater`, sized inline from a rAF), so mount() and the first render()
+   * both routinely run while the host is still 0×0 — and then the field is pinned to its 1×1
+   * bootstrap grid until a ResizeObserver notification happens to arrive. Any frame that skips
+   * that delivery (a coalesced resize, an observation delivered while the box was still degenerate,
+   * a throttled/occluded window) left the renderer permanently unmeasured: every node off-grid,
+   * every cell empty — a blank canvas under a perfectly populated HUD and cluster legend, which is
+   * exactly the bug this guards. The rAF loop is the one thing that keeps running, so the size is
+   * reconciled here instead of being trusted to arrive.
+   *
+   * Cheap: one getBoundingClientRect of an element whose geometry nothing in the frame has
+   * invalidated (the loop only writes to the canvas), and measure()/fit() only run when the box
+   * actually differs from the grid we last built.
+   */
+  private syncSize() {
+    if (!this.host) return;
+    const r = this.host.getBoundingClientRect();
+    if (!isUsableBox(r.width, r.height)) return;
+    if (this.boxReady && Math.abs(r.width - this.W) < 0.5 && Math.abs(r.height - this.H) < 0.5) return;
+    this.measure();
+    this.fit();
+  }
+
   /** Recompute the world→px fit ("res = 1 fits the whole graph on the grid"). */
   private fit(resetCamera = false) {
     if (!this.boxReady) return;
@@ -433,6 +462,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   private tick = (t: number) => {
     if (!this.running) return;
+    this.syncSize();
     if (this.lastFrameT) {
       this.fpsAccum += t - this.lastFrameT; this.fpsFrames++;
       if (this.fpsAccum >= 500) { this.onFps?.(Math.round((this.fpsFrames * 1000) / this.fpsAccum)); this.fpsAccum = 0; this.fpsFrames = 0; }

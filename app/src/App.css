@@ -549,15 +549,27 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .tally .e b { color: var(--green); }
 .deckctrls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
 
-/* Stage — fills the full pane height and centers the card + grade row vertically. */
+/* Stage — fills the full pane height. The card area (.cardwrap) is the ONLY flexible/scrolling
+   piece (flex: 1 1 auto, min-height: 0) so it shrinks-then-scrolls at a short window height; the
+   grade row is flex: 0 0 auto so it always claims its full natural size and is never squeezed
+   off the bottom (it used to be a `justify-content: center` sibling of the card, which let a
+   short window push it past the fold with no way to scroll it into view — `center`, unlike
+   `safe center`, doesn't extend the scrollable area to cover its own overflow). */
 .stage {
   flex: 1 1 auto; min-height: 0; height: 100%; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 26px; padding: 26px; overflow-y: auto;
+  gap: 26px; padding: 26px; overflow: hidden;
 }
-.grade-row { display: flex; gap: 12px; width: min(680px, 92vw); }
+.grade-row { flex: 0 0 auto; display: flex; gap: 12px; width: min(680px, 92vw); }
 
-/* Flip card: reveal flips to the back; the prompt stays as a small italic caption. */
-.cardwrap { perspective: 1800px; width: min(680px, 92vw); }
+/* Flip card: reveal flips to the back; the prompt stays as a small italic caption.
+   Flexes to fill whatever height the grade row leaves it, and — since .flip-card below carries a
+   hard 420px min-height floor — scrolls (safely centered, so the overflow stays reachable, same
+   idiom as .flip-face's "safe center" below) once the pane is shorter than the card. */
+.cardwrap {
+  perspective: 1800px; width: min(680px, 92vw);
+  flex: 1 1 auto; min-height: 0; display: flex; align-items: safe center; justify-content: center;
+  overflow-y: auto;
+}
 /* Per-card actions pinned to each face's top-right — rendered on BOTH faces so they
    flip with the card. Faint at rest, firm on card hover. */
 .card-actions { position: absolute; top: 10px; right: 12px; z-index: 3; display: flex; gap: 2px; opacity: 0.4; transition: opacity 0.15s; }

@@ -213,6 +213,59 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
     expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
     r.destroy();
   });
+
+  it("writes a tag label exactly once (vault.ts already puts the # on the label)", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = new AsciiGraphRenderer();
+    r.mount(host, () => {});
+    r.setConfig({ ...CONFIG, viewMode: "2d" });
+    r.render({
+      nodes: [
+        { id: "note", label: "note", kind: "note", position: [0, 0, 0], position2d: [0, 0] },
+        { id: "tag:research", label: "#research", kind: "tag", position: [60, 0, 0], position2d: [60, 0] },
+      ],
+      edges: [{ from: "note", to: "tag:research", kind: "tag" }],
+    });
+    ctx.fills.length = 0;
+    frame();
+    expect(ctx.fills.some((f) => f.text === "#research")).toBe(true);
+    expect(ctx.fills.some((f) => f.text.includes("##"))).toBe(false);
+    r.destroy();
+  });
+
+  /** Card: the field rendered NOTHING while the HUD read "8 nodes · 10 edges". The knowledge graph
+   *  is one floating element App sizes from a rAF, so mount() AND the first render() both run
+   *  against a 0×0 host; measure() correctly refuses to fit a degenerate box, and the ONLY thing
+   *  that used to re-measure was a ResizeObserver notification. Miss that one delivery and the
+   *  field stayed pinned to its 1×1 bootstrap grid forever — every node off-grid, every cell empty.
+   *  The loop now reconciles the box itself. (The harness's ResizeObserver is a no-op, so this test
+   *  reproduces exactly the "no RO delivery ever arrives" case.) */
+  it("picks the host box up from the render loop when no ResizeObserver notification arrives", () => {
+    const restoreBox = { ...BOX };
+    BOX.width = 0; BOX.height = 0;
+    try {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      const r = new AsciiGraphRenderer();
+      const painted: number[] = [];
+      r.mount(host, () => {});
+      r.setPaintCallback((n) => painted.push(n));
+      r.setConfig({ ...CONFIG, viewMode: "2d" });
+      r.render(sampleGraph());
+      ctx.fills.length = 0;
+      frame();
+      expect(nodeRuns()).toEqual([]);          // nothing measurable yet — blank, as designed
+
+      BOX.width = 800; BOX.height = 600;       // App places + sizes the floater; no RO callback fires
+      frame(32);
+      expect(nodeRuns().length).toBeGreaterThan(0);
+      expect(painted.at(-1)).toBeGreaterThan(0);
+      r.destroy();
+    } finally {
+      Object.assign(BOX, restoreBox);
+    }
+  });
 });
 
 describe("THE LAW — zoom is resolution, never scale", () => {

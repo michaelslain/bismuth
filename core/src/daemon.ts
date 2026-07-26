@@ -23,7 +23,7 @@ import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync
 import { parse } from "yaml";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { isDaemonAlive, readFrontmatter } from "./daemonState";
-import { isTempPath } from "./pathUtils";
+import { isTempPath } from "./tempPath";
 import { SETTINGS_FILE } from "./settings";
 import { AppError } from "./error";
 
