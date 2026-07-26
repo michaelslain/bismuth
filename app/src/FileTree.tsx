@@ -828,7 +828,9 @@ function Level(props: {
               onContextMenu={(e) => props.onMenu(child, e)}
             >
               <span class="ft-prefix">{prefix}</span>
-              <Icon value={props.open.has(child.path) ? "ChevronDown" : "ChevronRight"} size={14} class="ft-chevron" />
+              {/* One glyph, not two: the folder icon's own shape IS the disclosure state (Folder "▸" /
+                  FolderOpen "▾" — see icons/registry.ts), so there is no separate chevron icon here.
+                  A bare ChevronRight/ChevronDown alongside it drew the same triangle twice. */}
               <Icon value={child.icon} fallback={child.isSystemFolder ? "Settings2" : props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class="ft-icon" />
               <VisibilityBadge visibility={child.visibility} />
               <Show when={props.editing === child.path} fallback={child.label ?? child.name}>
