@@ -2,6 +2,7 @@
 import { test, expect, describe } from "bun:test";
 import { renderExport, renderPreview } from "./exporters";
 import { defaultExportOptions } from "./options";
+import { THEMES } from "../themes";
 import type { ExportDeps, ExportOptions } from "./types";
 
 const opts = (o: Partial<ExportOptions>): ExportOptions => ({ ...defaultExportOptions(), ...o });
@@ -62,8 +63,11 @@ describe("renderExport", () => {
   });
 
   test("html/png exports do NOT force a body font size (font size is PDF-only)", async () => {
+    // Narrowed to the PDF-only conditional rule (pt units) — the stylesheet legitimately
+    // carries other unconditional font-size rules (.fmatter, .pagefoot) unrelated to
+    // pdfFontSize, so a blanket "no font-size anywhere" assertion tests the wrong thing.
     const html = await renderExport("a/note.md", "html", deps(), "dark", opts({ pdfFontSize: 18 }));
-    expect(html.previewHtml).not.toContain("font-size:");
+    expect(html.previewHtml).not.toMatch(/font-size:\s*\d+pt/);
     const png = await renderExport("a/note.md", "png", deps(), "dark", opts({ pdfFontSize: 18 }));
     expect(png.previewImg).toBeDefined();
   });
@@ -139,7 +143,10 @@ describe("renderPreview (no downloadable bytes; PDF paginates for fidelity)", ()
     const dark = await renderPreview("a/note.md", "html", deps(), "dark");
     const light = await renderPreview("a/note.md", "html", deps(), "light");
     expect(dark.previewHtml).not.toBe(light.previewHtml);   // different theme styles
-    expect(light.previewHtml).toContain("#ffffff");
+    // Headless (no DOM), so both fall back to DEFAULT_PALETTE — a NAMED scope's tokens
+    // straight from core/src/theme/tokens.ts (design/ascii-extended PORTING.md §3d):
+    // "light" -> the paper scope's own background, not an arbitrary hardcoded white.
+    expect(light.previewHtml).toContain(THEMES.paper.background);
   });
 });
 
@@ -206,14 +213,21 @@ describe("include/exclude frontmatter", () => {
     expect(text).not.toContain("title: Foo");
   });
 
-  test("html export renders frontmatter (as literal prose text) by default", async () => {
+  test("html export renders frontmatter as its own styled block (single-doc path)", async () => {
+    // The single continuous-document path (bodyHtml) renders frontmatter as a distinct
+    // .fmatter block (design/ascii-extended PORTING.md §3d) rather than letting the raw
+    // `---\nkey: val\n---` fence flow through the markdown renderer as mangled prose —
+    // unlike the page-break-split path below, which still re-prepends it as raw prose
+    // (a marker-delimited section has no single "page 1" HTML doc of its own to hook).
     const r = await renderExport("note.md", "html", withFm());
-    expect(r.previewHtml).toContain("title: Foo");
+    expect(r.previewHtml).toContain('class="fmatter"');
+    expect(r.previewHtml).toContain('<span class="fm-k">title:</span> Foo');
     expect(r.previewHtml).toContain("<h1>Title</h1>");
   });
 
   test("html export excludes frontmatter from the rendered body when off", async () => {
     const r = await renderExport("note.md", "html", withFm(), "dark", opts({ includeFrontmatter: false }));
+    expect(r.previewHtml).not.toContain('class="fmatter"');
     expect(r.previewHtml).not.toContain("title: Foo");
     expect(r.previewHtml).toContain("<h1>Title</h1>");
   });

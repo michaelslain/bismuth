@@ -1,6 +1,6 @@
 // app/src/export/exporters.ts
 import { renderMarkdown } from "../bases/markdown";
-import { wrapHtmlDocument, escapeHtml } from "./htmlTemplate";
+import { wrapHtmlDocument, escapeHtml, frontmatterBlockHtml, type PageInfo } from "./htmlTemplate";
 import { tableToMarkdown } from "./mdTable";
 import { tableToCsv } from "./csvTable";
 import { tableToHtml } from "./rowsHtml";
@@ -52,8 +52,13 @@ async function bodyHtml(
     return { html: tableToHtml(await baseToTable(path, deps, opts.viewIndex)), css: "" };
   }
   if (kind === "md") {
-    const body = opts.includeFrontmatter ? text : stripFrontmatter(text);
-    return { html: renderMarkdown(body), css: "" };
+    if (!opts.includeFrontmatter) return { html: renderMarkdown(stripFrontmatter(text)), css: "" };
+    // Render frontmatter as its own styled block (2px accent left border, design/
+    // ascii-extended PORTING.md §3d) instead of letting the raw `---\nkey: val\n---`
+    // fence flow through the markdown renderer, which has no frontmatter concept of
+    // its own and would render it as a stray <hr> + paragraph text.
+    const { data, body } = parseFrontmatter(text);
+    return { html: frontmatterBlockHtml(data) + renderMarkdown(body), css: "" };
   }
   throw new Error(`No HTML body for ${kind || "this file"}`);
 }
@@ -89,6 +94,9 @@ async function wrapBody(
   deps: ExportDeps,
   extraCss = "",
   fontSizePt?: number,
+  // Real position within a page-broken export when the caller knows it (the PNG
+  // per-section loop below); a single continuous document just gets "1 / 1".
+  page: PageInfo = { index: 1, total: 1 },
 ): Promise<string> {
   // `class="katex` is the marker KaTeX emits around rendered math (display or inline) —
   // far more precise than a bare "katex" substring. The inline CSS comes from
@@ -98,7 +106,7 @@ async function wrapBody(
   const view = extraCss ? `<style>${extraCss}</style>` : "";
   // `fontSizePt` is passed only by the PDF path (the user's chosen body size); other formats
   // leave it undefined so they keep their intrinsic sizing.
-  return wrapHtmlDocument(body, name, palette, view + katex, fontSizePt);
+  return wrapHtmlDocument(body, name, palette, view + katex, fontSizePt, page);
 }
 
 // Render one `<!-- pagebreak -->`-delimited section (raw markdown, from pageSections) to an
@@ -316,7 +324,18 @@ export async function renderExport(
           const files: { filename: string; bytes: Uint8Array }[] = [];
           let firstDataUrl: string | undefined;
           for (let i = 0; i < sections.length; i++) {
-            const doc = await wrapBody(await renderSectionHtml(sections[i]), `${name} (page ${i + 1})`, palette, deps);
+            // `name` alone (not "name (page N)") — the new .pagefoot already carries the
+            // "i / total" position, and this title only ever reaches a <title> tag on a
+            // doc that's about to be rasterized to PNG (never seen), so it stays bare.
+            const doc = await wrapBody(
+              await renderSectionHtml(sections[i]),
+              name,
+              palette,
+              deps,
+              "",
+              undefined,
+              { index: i + 1, total: sections.length },
+            );
             const { bytes, dataUrl } = await deps.htmlToPng(doc);
             if (i === 0) firstDataUrl = dataUrl;
             files.push({ filename: `${name}-${i + 1}.png`, bytes });

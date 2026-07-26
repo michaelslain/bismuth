@@ -6,6 +6,40 @@ import { CALLOUT_TYPES } from "../editor/callout";
 
 export { escapeHtml };
 
+/** Position of the current document within a page-broken export (design/ascii-extended
+ *  PORTING.md §3d's "Page footer: filename left, n / total right"). Callers that don't
+ *  know their real position (a single continuous document — html/pdf, or a one-off PNG)
+ *  omit this and get "1 / 1"; only the PNG-per-section and multi-page-preview paths
+ *  (exporters.ts), which already render one wrapHtmlDocument call per page, know a real
+ *  index/total. */
+export interface PageInfo {
+  index: number;
+  total: number;
+}
+
+/** Ruled-paper HTML: filename left, "n / total" right, --faint-equivalent 9px. Sits on
+ *  the SAME 22px ruling as the rest of the document (one 22px line box). */
+function pageFooterHtml(name: string, page?: PageInfo): string {
+  const pos = page && page.total > 1 ? `${page.index} / ${page.total}` : "1 / 1";
+  return `<div class="pagefoot"><span>${escapeHtml(name)}</span><span>${escapeHtml(pos)}</span></div>`;
+}
+
+/** Render frontmatter data as the register's "fmatter" block (design/ascii-extended
+ *  PORTING.md §3d): one `key: value` line per top-level entry (arrays join with ", "),
+ *  using the 2px accent left border — the one sanctioned left-accent border in the
+ *  system. Callers skip this entirely when a note has no frontmatter (or the user
+ *  excluded it via the Frontmatter chip) rather than emit an empty block. */
+export function frontmatterBlockHtml(data: Record<string, unknown>): string {
+  const keys = Object.keys(data);
+  if (!keys.length) return "";
+  const lines = keys.map((k) => {
+    const v = data[k];
+    const text = Array.isArray(v) ? v.join(", ") : String(v ?? "");
+    return `<span class="fm-k">${escapeHtml(k)}:</span> ${escapeHtml(text)}`;
+  });
+  return `<div class="fmatter">${lines.join("<br>")}</div>`;
+}
+
 /** Per-type callout accent rules, generated from the shared palette (editor/callout.ts) so the
  *  exported PDF/HTML uses the SAME colors as the in-app surfaces. */
 function calloutTypeCss(): string {
@@ -16,6 +50,12 @@ function calloutTypeCss(): string {
     )
     .join("\n  ");
 }
+
+// The ruled-paper baseline (design/ascii-extended PORTING.md §3d): one rule every 22px,
+// and every text-bearing block's line-height is 22px or a whole multiple of it — a single
+// element off that grid walks the rest of the document off the ruling, so this list is
+// deliberately exhaustive rather than just the obvious prose tags.
+const RULE_PX = 22;
 
 function styles(p: ThemePalette, fontSizePt?: number): string {
   // A concrete body font-size (pt) is emitted only when a caller asks for one (the PDF path,
@@ -33,26 +73,54 @@ function styles(p: ThemePalette, fontSizePt?: number): string {
      measureText() — so a concrete named font stack (not a CSS keyword) is required; the
      resolved stack carries its own fallbacks. */
   html, body { margin: 0; background: ${p.bg}; }
-  body { font-family: ${p.font}; ${fontSizeRule}
-         max-width: 760px; margin: 0 auto; padding: 2.5rem 1.5rem 3rem;
-         line-height: 1.6; color: ${p.fg}; }
-  h1,h2,h3 { line-height: 1.25; margin-top: 1.6em; }
+  /* Ruled paper: one rule every ${RULE_PX}px, from the top of the padding box — padding-top
+     below is a whole multiple of ${RULE_PX}px so the first text line lands ON a rule, not
+     between two. p.border is already the app's own (muted) hairline color, used at full
+     opacity elsewhere in this stylesheet (blockquote/table borders) — reused as-is here
+     rather than a separate alpha-tinted literal, since html2canvas can't parse color-mix()/
+     CSS Color 4 functions (see resolvePalette.ts), only rgb()/rgba()/hex — and ${p.border}
+     is guaranteed to already be one of those. */
+  body {
+    font-family: ${p.font}; ${fontSizeRule}
+    max-width: 760px; margin: 0 auto; padding: ${RULE_PX * 2}px 1.5rem ${RULE_PX * 3}px;
+    line-height: ${RULE_PX}px; color: ${p.fg};
+    background-image: linear-gradient(to bottom, ${p.border} 1px, transparent 1px);
+    background-size: 100% ${RULE_PX}px;
+  }
+  h1 { font-size: 1.7em; font-weight: 600; letter-spacing: -0.01em; line-height: ${RULE_PX * 2}px; margin: ${RULE_PX * 2}px 0 0; }
+  h2, h3, h4, h5, h6 { font-weight: 600; line-height: ${RULE_PX}px; margin: ${RULE_PX}px 0 0; }
+  /* Headings below h1 keep their markdown marker, rendered in the muted tone — h1 is the
+     document TITLE (no marker), same distinction the card draws. */
+  h2::before { content: "## "; color: ${p.muted}; font-weight: 400; }
+  h3::before { content: "### "; color: ${p.muted}; font-weight: 400; }
+  h4::before { content: "#### "; color: ${p.muted}; font-weight: 400; }
+  h5::before { content: "##### "; color: ${p.muted}; font-weight: 400; }
+  h6::before { content: "###### "; color: ${p.muted}; font-weight: 400; }
+  p, li { line-height: ${RULE_PX}px; margin: 0; color: ${p.fg}; }
+  ul, ol { margin: 0; padding-left: 1.4em; }
   a { color: ${p.accent}; }
   pre { background: ${p.head}; padding: 1rem; border-radius: 6px; overflow: auto;
-        white-space: pre-wrap; word-break: break-word; }
+        white-space: pre-wrap; word-break: break-word; line-height: ${RULE_PX}px; }
   code { background: ${p.head}; padding: 0.1em 0.35em; border-radius: 4px; }
   pre code { background: none; padding: 0; }
-  blockquote { border-left: 3px solid ${p.border}; margin: 0; padding-left: 1rem; color: ${p.muted}; }
+  blockquote { border-left: 3px solid ${p.border}; margin: 0; padding-left: 1rem;
+               color: ${p.muted}; line-height: ${RULE_PX}px; }
+  /* The frontmatter block (htmlTemplate.ts frontmatterBlockHtml) — the one sanctioned
+     left-accent border in the system, same token the app's own frontmatter/callout gutter
+     uses (ui.css --accent-edge). */
+  .fmatter { border-left: 2px solid ${p.accent}; margin: 0 0 ${RULE_PX}px; padding-left: 0.75rem;
+             font-size: 0.85em; line-height: ${RULE_PX}px; color: ${p.muted}; }
+  .fm-k { color: ${p.muted}; opacity: 0.75; }
   /* Callouts (editor/callout.ts). Neutral translucent fill + a 4px accent left bar; the icon
      inherits the title's accent via currentColor. Concrete per-type accents below so the PDF
      rasterizer (html2canvas) renders them. */
-  .callout { margin: 1em 0; border: 1px solid ${p.border}; border-left-width: 4px; border-radius: 6px;
+  .callout { margin: ${RULE_PX}px 0; border: 1px solid ${p.border}; border-left-width: 4px; border-radius: 6px;
              background: rgba(127,127,127,0.06); padding: 0.55em 0.85em; }
-  .callout-title { display: flex; align-items: center; gap: 0.45em; font-weight: 600; }
+  .callout-title { display: flex; align-items: center; gap: 0.45em; font-weight: 600; line-height: ${RULE_PX}px; }
   .callout-icon { display: inline-flex; flex: 0 0 auto; }
   .callout-icon svg { width: 1.1em; height: 1.1em; }
   .callout-title-inner { min-width: 0; }
-  .callout-content { margin-top: 0.4em; }
+  .callout-content { margin-top: 0.4em; line-height: ${RULE_PX}px; }
   .callout-content > :first-child { margin-top: 0; }
   .callout-content > :last-child { margin-bottom: 0; }
   details.callout > summary { cursor: pointer; list-style: none; }
@@ -62,9 +130,12 @@ function styles(p: ThemePalette, fontSizePt?: number): string {
      rasterizer slices pages at this element explicitly (htmlToPdf.ts). */
   .bismuth-page-break { break-after: page; page-break-after: always; height: 0; }
   table { border-collapse: collapse; width: 100%; }
-  th, td { border: 1px solid ${p.border}; padding: 0.4rem 0.6rem; text-align: left; }
+  th, td { border: 1px solid ${p.border}; padding: 0.4rem 0.6rem; text-align: left; line-height: ${RULE_PX}px; }
   th { background: ${p.head}; }
   img { max-width: 100%; }
+  /* Page footer: filename left, "n / total" right — the ONE footer per document. */
+  .pagefoot { margin-top: ${RULE_PX}px; line-height: ${RULE_PX}px; font-size: 9px;
+              color: ${p.muted}; letter-spacing: 0.04em; display: flex; justify-content: space-between; }
 `;
 }
 
@@ -82,6 +153,9 @@ export function wrapHtmlDocument(
   palette: ThemePalette = DEFAULT_PALETTE.dark,
   extraHead = "",
   fontSizePt?: number,
+  // Opt-in: only the rendered-prose paths (wrapBody, below) pass this, so a raw markdown/
+  // csv text dump or a single rasterized drawing image never grows an out-of-place footer.
+  page?: PageInfo,
 ): string {
   return `<!doctype html>
 <html lang="en">
@@ -93,6 +167,7 @@ export function wrapHtmlDocument(
 ${extraHead}</head>
 <body>
 ${body}
+${page ? pageFooterHtml(title, page) : ""}
 </body>
 </html>`;
 }

@@ -43,7 +43,10 @@ const FORMAT_ICON: Record<ExportFormat, string> = {
 };
 const THEMES: ExportTheme[] = ["light", "dark"];
 const THEME_LABEL: Record<ExportTheme, string> = { dark: "Dark", light: "Light" };
-const THEME_SWATCH: Record<ExportTheme, string> = { light: "#f7f6f2", dark: "#0D0E16" };
+// Light stays print-paper cream — it is not a UI theme. Dark reads the app's OWN active
+// scope's --bg (a live CSS var, not a snapshot) so the swatch isn't lying in cathode/riso
+// (design/ascii-extended PORTING.md §3c2).
+const THEME_SWATCH: Record<ExportTheme, string> = { light: "#f7f6f2", dark: "var(--bg)" };
 
 const MODES: RenderMode[] = ["visual", "data"];
 const MODE_LABEL: Record<RenderMode, string> = { visual: "Visual", data: "Data" };
@@ -318,7 +321,14 @@ export function ExportView(props: { path: string }) {
   return (
     <div class="exp">
       <div class="exppreview">
-        <div class="paper" classList={{ "paper-wide": isBase() && mode() === "visual" }}>
+        <div
+          class="exp-paper"
+          classList={{ "paper-wide": isBase() && mode() === "visual" }}
+          // The wrapper's fill while the iframe is loading/empty follows the CHOSEN export
+          // theme (not the app's own live scope): print-paper cream for "light", the app's
+          // active --bg for "dark" — same source as THEME_SWATCH.dark above.
+          style={{ "--paper-bg": theme() === "dark" ? "var(--bg)" : "#f7f6f2" }}
+        >
           <Show
             when={!result.error}
             fallback={<div class="export-empty">Preview failed: {(result.error as Error)?.message}</div>}

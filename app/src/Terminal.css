@@ -1,8 +1,9 @@
-/* Terminal host — Bismuth reskin.
-   Full-pane terminal on the deep --term-bg, Monaspace Xenon mono at 13px/1.6,
-   padded 16px 18px. xterm.js owns the grid + ANSI palette (wired from the theme
-   in Terminal.tsx so '➜' reads teal, paths blue, git branch gold, success green,
-   dim notes muted). We only theme the host container + the custom cursor. */
+/* Terminal host — ASCII redesign.
+   Full-pane terminal on the deep --term-bg, following the user's chosen UI face
+   (--ui-font-stack) at 13px/1.6, padded 16px 18px. xterm.js owns the grid + the ANSI
+   palette DERIVED from the scope's tokens (Terminal.tsx buildTerminalTheme — see
+   design/ascii-extended/PORTING.md §1a): prompt/errors/paths etc. move with the scope,
+   not hand-picked here. We only theme the host container + the custom cursor. */
 
 .term-host {
   width: 100%;
@@ -11,7 +12,7 @@
   box-sizing: border-box;
   background: var(--term-bg, #08090e);
   color: var(--term-fg, var(--fg));
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack, "Monaspace Xenon"), ui-monospace, monospace;
   font-size: 13px;
   line-height: 1.6;
   padding: 16px 18px;
@@ -46,16 +47,21 @@
   text-rendering: geometricPrecision;
 }
 
-/* Custom gliding cursor overlay. Bismuth terminal cursor is a solid accent
-   block (.cursor in the prototype: width 8px, full cell height, var(--accent)).
-   xterm's native cursor is a class transferred between inline spans, so CSS
-   transitions don't apply — we render our own absolutely-positioned block and
-   animate transform. Widths/glide/blink come from the --term-cursor-* vars. */
+/* Custom gliding cursor overlay — a blinking underline, matching .asc-caret
+   everywhere else in the system (ui.css), not a solid block. xterm's native cursor
+   is a class transferred between inline spans, so CSS transitions don't apply — we
+   render our own absolutely-positioned bar and animate transform. Terminal.tsx sets
+   width to the live cell width (font/zoom-dependent) and height stays CARET_H (2px,
+   see Terminal.tsx); the 8px width below is only the pre-measurement fallback for the
+   very first paint. Glide/blink speed still come from the user's terminal.* settings
+   (--term-cursor-glide/--term-cursor-blink) — unlike .asc-caret's fixed --blink, this
+   one stays user-configurable. */
 .xterm-custom-cursor {
   position: absolute;
   top: 0;
   left: 0;
-  width: var(--term-cursor-width, 8px);
+  width: 8px;
+  height: 2px;
   background: var(--accent);
   pointer-events: none;
   transition: transform var(--term-cursor-glide, 70ms) ease-out;
@@ -71,7 +77,7 @@
 }
 
 /* Hide the custom cursor while the terminal is unfocused (xterm toggles `.focus` on
-   the .xterm root). A blinking accent block in a background pane reads as "active"
+   the .xterm root). A blinking accent underline in a background pane reads as "active"
    and competes with the focused pane's cursor; native terminals dim/hollow theirs. */
 .term-host:has(.xterm:not(.focus)) .xterm-custom-cursor {
   opacity: 0;
