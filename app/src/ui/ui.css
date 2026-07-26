@@ -24,6 +24,15 @@
   --fs-title: 19px;     /* panel titles */
   --fs-display: 24px;   /* note titles, the one big size */
 
+  /* THE app-wide row/line unit. One number, everywhere a row repeats: a sidebar tree
+     row, a tab's hit height, a graph list row, a status/top bar (as a whole multiple),
+     and — via --prose-line-height below — a line of note prose in both editors. Chrome
+     that needs a taller band (top strip, tabbar, view bars) sizes itself to a MULTIPLE
+     of this unit (36px = 2×18) rather than inventing its own number, so a horizontal
+     ruler through the app always lands on a row boundary. Font size is independent of
+     this (see --fs-ui) — only the vertical rhythm is unified. */
+  --row-h: 18px;
+
   --lh-tight: 1.4;
   --lh-ui: 1.7;
   --lh-prose: 1.9;
@@ -171,8 +180,9 @@
   background: var(--overlay-bg);
   /* Modals are portaled to <body>, outside .layout — so re-establish the app's
      Monaspace UI font + color here, or modal text falls back to the browser default
-     (Times serif). Explicit serif elements (titles) still override. */
-  font: var(--fs-ui)/1.5 var(--ui-font-stack);
+     (Times serif). Explicit serif elements (titles) still override. Line-height is
+     the app's row unit (--row-h), matching .app-shell/.layout below the modal. */
+  font: var(--fs-ui)/var(--row-h, 18px) var(--ui-font-stack);
   color: var(--fg);
 }
 

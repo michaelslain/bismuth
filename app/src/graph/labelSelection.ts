@@ -132,3 +132,77 @@ export function selectVisibleLabels(
 
   return accepted;
 }
+
+// ---------------------------------------------------------------------------
+// Zoom-driven label MODE: below a reveal point the field names CLUSTERS, not files — file names
+// crossfade in (and their per-frame budget ramps up) only as the camera keeps zooming in. All of
+// this is keyed off the same continuous "t" AsciiGraphRenderer already computes for its 0–100%
+// resolution readout (see asciiGrid.ts `resolutionT`): 0 = fully zoomed out (res = 1, the whole
+// graph fit to the grid), 1 = max resolution. Pure so the curve shape can be tuned + pinned here
+// without touching the renderer or a canvas.
+// ---------------------------------------------------------------------------
+
+/** t below which NO file label is drawn (forced ones — hover/active/search — are the only
+ *  exception; see AsciiGraphRenderer's `forced()`). Cluster names own the field down here. */
+export const FILE_LABEL_REVEAL_T = 0.3;
+/** Width (in the same t units) of the cluster-name → file-name crossfade that starts at
+ *  `FILE_LABEL_REVEAL_T`. */
+export const FILE_LABEL_FADE_SPAN = 0.22;
+/** t at which the file-label BUDGET (as opposed to the crossfade alpha above) reaches "every
+ *  on-grid candidate". Deliberately later than the crossfade finishes — the crossfade is about
+ *  visibility, the budget is about density, and "full naming only near max resolution" means the
+ *  budget keeps climbing well after files have fully faded in. */
+export const FILE_LABEL_FULL_T = 0.94;
+/** Shape of the budget ramp: `u ** power`, power > 1 → slow-then-fast. Right after the reveal
+ *  point only the highest-ranked (hub) candidates clear a budget of 1–2; the ramp only opens up
+ *  approaching `FILE_LABEL_FULL_T`. */
+export const FILE_LABEL_BUDGET_POWER = 2.6;
+
+/**
+ * How many non-forced file labels the field may draw at zoom fraction `t`, out of
+ * `totalCandidates` on-grid nodes. Zero at/below `revealT`. Grows as `((t - revealT) /
+ * (fullT - revealT)) ** power` beyond that — small for a while after the reveal point (letting
+ * only genuine hubs, which are ranked first by the caller, name themselves early) and only
+ * approaching `totalCandidates` near `fullT`.
+ */
+export function fileLabelBudget(
+  t: number,
+  totalCandidates: number,
+  revealT: number = FILE_LABEL_REVEAL_T,
+  fullT: number = FILE_LABEL_FULL_T,
+  power: number = FILE_LABEL_BUDGET_POWER,
+): number {
+  if (totalCandidates <= 0 || t <= revealT) return 0;
+  const span = Math.max(1e-6, fullT - revealT);
+  const u = Math.max(0, Math.min(1, (t - revealT) / span));
+  return Math.round(Math.pow(u, power) * totalCandidates);
+}
+
+/** Smoothstep crossfade: 0 at/below `revealT`, 1 at `revealT + fadeSpan` and beyond. Drives file
+ *  labels' fade-IN alpha; `clusterLabelAlpha` is its complement. */
+export function fileLabelAlpha(
+  t: number,
+  revealT: number = FILE_LABEL_REVEAL_T,
+  fadeSpan: number = FILE_LABEL_FADE_SPAN,
+): number {
+  if (t <= revealT) return 0;
+  const u = Math.max(0, Math.min(1, (t - revealT) / Math.max(1e-6, fadeSpan)));
+  return u * u * (3 - 2 * u);
+}
+
+/** The complementary cluster-name alpha: clusters own the field at/below `revealT` and fade fully
+ *  out once file labels have crossfaded in. */
+export function clusterLabelAlpha(
+  t: number,
+  revealT: number = FILE_LABEL_REVEAL_T,
+  fadeSpan: number = FILE_LABEL_FADE_SPAN,
+): number {
+  return 1 - fileLabelAlpha(t, revealT, fadeSpan);
+}
+
+/** Eyebrow-register text for a cluster name: upper-cased, matching the design system's
+ *  `.asc-eyebrow` treatment (`--ls-eyebrow` tracking is applied by the canvas caller via
+ *  `ctx.letterSpacing`, not baked into the string). */
+export function clusterLabelText(name: string): string {
+  return name.toUpperCase();
+}

@@ -24,17 +24,19 @@
 import "./asciiGraph.css";
 import type { GraphData, GraphNode } from "../../../core/src/graph";
 import { nodeVisualState } from "../../../core/src/daemonViz";
-import { computeAlwaysOnSet } from "./labelSelection";
+import {
+  computeAlwaysOnSet, clusterLabelAlpha, clusterLabelText, fileLabelAlpha, fileLabelBudget,
+} from "./labelSelection";
 import { hashKey } from "../themeColors";
 import { isUsableBox, finiteVec3, boundingRadius } from "./graphFit";
 import { structuralGraphSig, shouldResetView } from "./graphStability";
 import { noiseField, DEFAULT_NOISE_SEED } from "../ui/ascii/noiseField";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
 import {
-  CELL_H, CELL_H_DENSE, CELL_W, CELL_W_DENSE, FONT_PX, FONT_PX_DENSE,
+  CELL_H, CELL_W, FONT_PX,
   LAYER_EDGE, LAYER_NODE, LAYER_NOISE, PAD_X, PAD_Y,
   depthAlpha, fitPxPerWorld, gridMetrics, mergeEdgeCode, nearestCellNode, nodeGlyph,
-  pxToCell, resolutionPercent, traceEdge, type GridMetrics,
+  pxToCell, resolutionPercent, resolutionT, traceEdge, type GridMetrics,
 } from "./asciiGrid";
 
 const FOV_DEG = 60;              // same camera as the old renderer, so framing carries over
@@ -50,8 +52,9 @@ const DIM_ALPHA = 0.28;          // non-focus dimming on hover / cluster highlig
 const EDGE_ALPHA_2D = 0.7;
 const EDGE_BUDGET = 2600;        // dense-graph edge thinning (stable per-edge rank, like the old renderer)
 const EDGE_FLOOR = 0.12;
-const LABEL_MIN = 6;             // labels shown at 0% zoom (the curated hub set)
 const HIT_RADIUS_CELLS = 2;      // cells searched outward from the cursor for a node
+const CLUSTER_LABEL_TRACKING_EM = 0.14; // tokens/typography.css --ls-eyebrow, applied via ctx.letterSpacing
+const CLUSTER_LABEL_PAD_FRAC = 0.18;    // occupancy cushion for that extra sub-cell tracking width
 
 // Colour slots. Every colour is a CSS custom property read off the host, so a theme switch is a
 // re-read (the old renderer took ints through setConfig; here the tokens ARE the source).
@@ -63,6 +66,7 @@ const RAMP = [C_G0, C_G1, C_G2, C_G3, C_G4];
 
 const DEFAULT_CONFIG: Partial<GraphConfig> = {
   viewMode: "3d", showGraphLabels: true, graphLabelHubCount: 10, spin: true, spinSpeed: 0.0015,
+  backgroundNoise: false,
 };
 
 interface NodeView {
@@ -77,7 +81,11 @@ interface NodeView {
   col: number; row: number; onGrid: boolean;
 }
 interface EdgeView { a: NodeView; b: NodeView; kr: number }
-interface LabelDraw { text: string; col: number; row: number; color: number; accent: boolean }
+interface LabelDraw {
+  text: string; col: number; row: number; color: number; accent: boolean;
+  alpha: number;      // crossfade multiplier — forced file labels and cluster names ignore this differently (see paint())
+  eyebrow?: boolean;  // cluster name: uppercase + tracked, drawn at full brightness × alpha
+}
 
 /** Wikilink/tag flavouring so a label reads like the vault does (design's `[[note name]]`). */
 function labelText(n: GraphNode): string {
@@ -97,7 +105,6 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private dpr = 1;
 
   private cfg: GraphConfig = { ...DEFAULT_CONFIG } as GraphConfig;
-  private dense = false;
 
   // graph data
   private nodes: NodeView[] = [];
@@ -119,6 +126,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private labelOccupied = new Uint8Array(1);
   private labels: LabelDraw[] = [];
   private labelScratch: NodeView[] = [];
+  private clusterAgg = new Map<number, { colSum: number; rowSum: number; n: number }>();
+  // Community → its display name, resolved once per build() (communityLabel is static graph data,
+  // not a per-frame thing) so layoutClusterNames() never has to search for a representative member.
+  private communityNames = new Map<number, string>();
   private boxReady = false;
 
   // camera — rx/ry orbit (3D), res = THE zoom (resolution), pan in px (2D)
@@ -145,6 +156,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private groundColor = "#0b0c11";
   private fontStack = '"Monaspace Xenon", ui-monospace, monospace';
   private cellW = CELL_W; private cellH = CELL_H; private fontPx = FONT_PX;
+  // The pinned per-cell letterSpacing applyFont() computed (so glyphs land exactly on the grid) —
+  // cluster (eyebrow) labels borrow the same ctx property for real tracking, then paint() restores
+  // this value so the next row of field glyphs isn't shorn off its cells.
+  private pinnedLetterSpacing = "0px";
+  private letterSpacingSupported = false;
 
   // callbacks
   private onNodeClick: (id: string) => void = () => {};
@@ -208,17 +224,6 @@ export class AsciiGraphRenderer implements GraphRenderer {
   setZoomCallback(cb: (pct: number) => void) { this.onZoom = cb; }
   setVisible(visible: boolean) { this.visible = visible; if (visible) { this.dirty = true; this.start(); } else this.stop(); }
 
-  /** The sidebar mini-graph draws on the DENSE 7px cell (tokens/ascii.css --cell-*-dense). */
-  setDense(dense: boolean) {
-    if (dense === this.dense) return;
-    this.dense = dense;
-    this.cellW = dense ? CELL_W_DENSE : CELL_W;
-    this.cellH = dense ? CELL_H_DENSE : CELL_H;
-    this.fontPx = dense ? FONT_PX_DENSE : FONT_PX;
-    this.measure();
-    this.fit();
-  }
-
   // ---- data ----------------------------------------------------------------
 
   render(g: GraphData) {
@@ -264,6 +269,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
     });
     this.byId = new Map(this.nodes.map((nv) => [nv.node.id, nv]));
 
+    this.communityNames.clear();
+    for (const nv of this.nodes) {
+      const c = nv.node.community;
+      if (c == null || this.communityNames.has(c)) continue;
+      this.communityNames.set(c, nv.node.communityLabel ?? `cluster ${c}`);
+    }
+
     this.edges = [];
     for (const e of g.edges) {
       const a = this.byId.get(e.from), b = this.byId.get(e.to);
@@ -296,7 +308,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // the ASCII field paints from the CSS custom properties directly, which is the single source of
     // truth for the redesign's four theme scopes.
     this.readTokens();
-    this.restyle();
+    // readTokens() may have picked up a changed --cell-h (the shared --row-h unit) — re-measure so
+    // the grid's row count follows it before fit() recomputes the fit resolution against it.
+    this.measure();
     // 2D and 3D fit different layouts (radius2 vs radius3), so a dimension flip re-fits — and
     // returns the field to 0% so the flipped view opens on the whole graph, not a stale crop.
     if (cfg.viewMode !== prevMode) {
@@ -305,8 +319,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.res = 1; this.goalRes = 1;
       this.target = [0, 0, 0]; this.goalTarget = [0, 0, 0];
       this.userTook = false;
-      this.fit();
     }
+    this.restyle();
+    this.fit();
     this.dirty = true;
   }
 
@@ -324,6 +339,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const gb = read("--graph-bg", "");
     this.groundColor = gb && !gb.includes("gradient") ? gb : read("--bg", "#0b0c11");
     this.fontStack = read("--ui-font-stack", this.fontStack);
+    // The grid row unit — asciiGraph.css's --cell-h resolves to the app-wide --row-h token (ui.css),
+    // so the field's line box (both the main pane AND the sidebar mini-graph — there is no denser
+    // cell any more) always matches the sidebar tree / tabs / tables rhythm. GRID LAW: line-height
+    // == cell height, so this is the ONLY thing that ever changes the row pitch — never the font size.
+    const rowH = parseFloat(read("--cell-h", `${CELL_H}px`));
+    if (Number.isFinite(rowH) && rowH > 0) this.cellH = rowH;
     this.applyFont();
   }
 
@@ -339,15 +360,18 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (!ctx) return;
     ctx.font = `${this.fontPx}px ${this.fontStack}`;
     const ls = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
-    const want = this.dense ? CELL_W_DENSE : CELL_W;
+    const want = CELL_W;
     const supported = typeof ls.letterSpacing === "string";
     if (supported) ls.letterSpacing = "0px";
     const natural = ctx.measureText("0".repeat(64)).width / 64;
     if (supported && natural > 0) {
       ls.letterSpacing = `${(want - natural).toFixed(4)}px`;
       this.cellW = want;
+      this.pinnedLetterSpacing = ls.letterSpacing;
+      this.letterSpacingSupported = true;
     } else {
       this.cellW = natural > 0 ? natural : want;
+      this.letterSpacingSupported = false;
     }
   }
 
@@ -518,14 +542,22 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const m = this.m;
     const cells = m.cols * m.rows;
     const noiseA = Math.round(NOISE_ALPHA * 255);
-    // Layer 1 — the noise field. Static per grid size + seed, laid down first so edges and nodes
-    // can CLEAR it (writing a higher layer over the same cell).
+    // Layer 1 — the noise field (graph.backgroundNoise, off by default — settingsSchema.ts). Static
+    // per grid size + seed, laid down first so edges and nodes can CLEAR it (writing a higher layer
+    // over the same cell). When the setting is off the buffers are just reset to empty — cellNode
+    // still needs clearing every frame regardless, since the hit test reads it.
+    const showNoise = this.cfg.backgroundNoise === true;
     for (let i = 0; i < cells; i++) {
-      const ch = this.noiseBuf[i];
-      this.charBuf[i] = ch;
-      this.layerBuf[i] = ch ? LAYER_NOISE : 0;
-      this.colorBuf[i] = C_FAINT;
-      this.alphaBuf[i] = noiseA;
+      if (showNoise) {
+        const ch = this.noiseBuf[i];
+        this.charBuf[i] = ch;
+        this.layerBuf[i] = ch ? LAYER_NOISE : 0;
+        this.colorBuf[i] = C_FAINT;
+        this.alphaBuf[i] = noiseA;
+      } else {
+        this.charBuf[i] = 0;
+        this.layerBuf[i] = 0;
+      }
       this.cellNode[i] = -1;
     }
 
@@ -610,21 +642,39 @@ export class AsciiGraphRenderer implements GraphRenderer {
     for (const nv of this.nodes) nv.dr = flat ? 1 : (nv.depth - minZ) / span;
   }
 
-  /** Which labels to draw, and where. Labels sit to the node's right on the SAME grid; a label that
-   *  would run off the field flips to the node's left, and one whose cells are already taken by a
-   *  neighbour's label is dropped (unless it's forced — active/hovered/search). The budget grows
-   *  with resolution: 0% keeps the curated hub set, 100% names every node on the grid. */
+  /**
+   * Which labels to draw, and where — a two-tier zoom-driven system (labelSelection.ts owns the
+   * pure curve math):
+   *
+   *   1. CLUSTER NAMES. Below `FILE_LABEL_REVEAL_T` the field names communities, not files — each
+   *      community's projected on-grid centroid gets its `communityLabel` in eyebrow register
+   *      (uppercase + tracked), placed by the same greedy grid-occupancy the file-label pass below
+   *      uses, so cluster names never overlap each other.
+   *   2. FILE NAMES. Labels sit to the node's right on the SAME grid; a label that would run off
+   *      the field flips to the node's left, and one whose cells are already taken (by a cluster
+   *      name or a higher-ranked file label) is dropped unless it's forced (active/hovered/search —
+   *      those always draw, at any zoom). The non-forced budget is intentionally conservative right
+   *      after the reveal point (only the highest-ranked, i.e. hub, candidates clear it) and only
+   *      opens up toward `FILE_LABEL_FULL_T` — "full naming" is a near-max-resolution thing.
+   *
+   * The two tiers crossfade (not switch) across the same span, via `alpha` on each LabelDraw.
+   */
   private layoutLabels(is2d: boolean) {
     this.labels.length = 0;
     if (this.cfg.showGraphLabels === false) return;
     const m = this.m;
     this.labelOccupied.fill(0);
+    const t = resolutionT(this.res, MAX_RES);
+    const cAlpha = clusterLabelAlpha(t);
+    const fAlpha = fileLabelAlpha(t);
+
+    if (cAlpha > 0.01) this.layoutClusterNames(cAlpha);
+
     // Reused scratch array — layoutLabels runs every frame, so it must not allocate one per frame.
     const ordered = this.labelScratch;
     ordered.length = 0;
     for (const nv of this.nodes) if (nv.onGrid) ordered.push(nv);
-    const t = MAX_RES > 1 ? Math.log(Math.max(1, this.res)) / Math.log(MAX_RES) : 0;
-    const budget = Math.round(LABEL_MIN + Math.max(0, Math.min(1, t)) * ordered.length);
+    const budget = fileLabelBudget(t, ordered.length);
 
     const forced = (nv: NodeView) => {
       const id = nv.node.id;
@@ -656,8 +706,57 @@ export class AsciiGraphRenderer implements GraphRenderer {
         if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
       }
       const accent = nv.node.id === this.activeFile || nv.node.id === this.hoveredId || this.searchMatches.has(nv.node.id);
-      this.labels.push({ text, col, row, color: accent ? C_ACCENT : is2d ? C_MUTED : nv.dr > 0.55 ? C_MUTED : C_FAINT, accent });
+      this.labels.push({
+        text, col, row, color: accent ? C_ACCENT : is2d ? C_MUTED : nv.dr > 0.55 ? C_MUTED : C_FAINT,
+        accent, alpha: force ? 1 : fAlpha,
+      });
       drawn++;
+    }
+  }
+
+  /** Cluster-name pass: one label per community, centred on the average grid cell of its
+   *  currently-on-grid members (so it works in 2D and follows the 3D orbit alike), reserved first
+   *  so file labels never draw over a cluster name. Larger clusters (more on-grid members) claim
+   *  contested cells first — same greedy-by-worth idea as the file-label loop, just ranked by
+   *  member count instead of renderedPx. */
+  private layoutClusterNames(alpha: number) {
+    const m = this.m;
+    const agg = this.clusterAgg;
+    agg.clear();
+    for (const nv of this.nodes) {
+      if (!nv.onGrid) continue;
+      const c = nv.node.community;
+      if (c == null) continue;
+      let g = agg.get(c);
+      if (!g) { g = { colSum: 0, rowSum: 0, n: 0 }; agg.set(c, g); }
+      g.colSum += nv.col; g.rowSum += nv.row; g.n++;
+    }
+    if (agg.size === 0) return;
+
+    const items = [...agg.entries()].sort((a, b) => b[1].n - a[1].n || a[0] - b[0]);
+    for (const [community, g] of items) {
+      const row = Math.round(g.rowSum / g.n);
+      if (row < 0 || row >= m.rows) continue;
+      const text = clusterLabelText(this.communityNames.get(community) ?? `cluster ${community}`);
+      const len = text.length;
+      // The tracked (ctx.letterSpacing) draw is a little wider on screen than `len` cells — pad the
+      // reservation so a neighbouring label can't butt right up against the extra sub-cell gap.
+      const pad = Math.max(1, Math.ceil(len * CLUSTER_LABEL_PAD_FRAC));
+      const col0 = Math.round(g.colSum / g.n);
+      let col = col0 - Math.floor(len / 2);
+      if (col < 0) col = 0;
+      if (col + len > m.cols) col = Math.max(0, m.cols - len);
+      let free = true;
+      for (let c = col - pad; c <= col + len + pad && free; c++) {
+        if (c < 0 || c >= m.cols) continue;
+        if (this.labelOccupied[row * m.cols + c]) free = false;
+      }
+      if (!free) continue;
+      for (let c = col - pad; c <= col + len + pad; c++) {
+        if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
+      }
+      const color = RAMP[hashKey("community:" + community) % RAMP.length];
+      this.labels.push({ text, col, row, color, accent: false, alpha, eyebrow: true });
     }
   }
 
@@ -712,18 +811,25 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
 
     // Labels last, each on cleared ground (the design's opaque label plate) so a name is never
-    // read through the field behind it.
+    // read through the field behind it. Cluster (eyebrow) names borrow the pinned cell letterSpacing
+    // for real `--ls-eyebrow` tracking, then hand it back so the next frame's field glyphs (drawn at
+    // the top of THIS function, before labels) still land exactly on their cells.
     ctx.globalAlpha = 1;
+    const ctxLS = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
+    const eyebrowLS = `${(this.fontPx * CLUSTER_LABEL_TRACKING_EM).toFixed(2)}px`;
     for (const l of this.labels) {
+      if (l.alpha <= 0.01) continue; // fully crossfaded out — skip so its ground-clear box doesn't blank the field
       const x = m.padX + l.col * m.cellW;
       const y = m.padY + l.row * m.cellH;
       ctx.fillStyle = this.groundColor;
       ctx.fillRect(x - m.cellW * 0.5, y, (l.text.length + 1) * m.cellW, m.cellH);
       ctx.fillStyle = this.colors[l.color] ?? "#888";
-      ctx.globalAlpha = l.accent ? 1 : 0.9;
+      ctx.globalAlpha = (l.eyebrow ? 1 : l.accent ? 1 : 0.9) * l.alpha;
+      if (this.letterSpacingSupported) ctxLS.letterSpacing = l.eyebrow ? eyebrowLS : this.pinnedLetterSpacing;
       ctx.fillText(l.text, x, y + m.cellH / 2);
       ctx.globalAlpha = 1;
     }
+    if (this.letterSpacingSupported) ctxLS.letterSpacing = this.pinnedLetterSpacing;
     this.onPaint?.(drawnNodes);
   }
 

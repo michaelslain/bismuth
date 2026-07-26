@@ -131,14 +131,18 @@ body { background: var(--bg); color: var(--fg); }
    frame but the viewport unit keeps counting it / lags the resize), so the grid overflowed
    past the bottom of the screen and the bottom of the content was clipped in full-screen. */
 /* ── App shell: top strip + status bar (design/ascii/README.md "Screens -> App shell", §1-2) ──
-   `.app-shell` stacks the 40px top strip, the existing 3-column `.layout` grid (unchanged
-   internally), and the new 26px status bar. height:100% for the same WKWebView-fullscreen
-   reason `.layout` used it (see the comment that used to sit just above `.layout` below) —
-   `.app-shell` is now the top-level element under #root instead. */
-.app-shell { display: flex; flex-direction: column; height: 100%; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; }
+   `.app-shell` stacks the 36px top strip (2×--row-h), the existing 3-column `.layout` grid
+   (unchanged internally), and the 18px status bar (1×--row-h). height:100% for the same
+   WKWebView-fullscreen reason `.layout` used it (see the comment that used to sit just above
+   `.layout` below) — `.app-shell` is now the top-level element under #root instead. */
+/* line-height = --row-h (the ONE app-wide row unit, ui.css :root), not a font-size-relative
+   ratio: every chrome row (sidebar tree, tabs, status bar) shares this same 18px cadence, and
+   any descendant that doesn't set its own line-height inherits it here. Prose (note body text)
+   opts out explicitly via --prose-line-height (Editor.tsx / BlockEditor.css). */
+.app-shell { display: flex; flex-direction: column; height: 100%; font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; }
 .app-shell .layout { height: auto; flex: 1 1 auto; min-height: 0; }
 .top-strip {
-  flex: 0 0 auto; height: 40px; display: flex; align-items: center; gap: 14px; padding: 0 14px;
+  flex: 0 0 auto; height: 36px; display: flex; align-items: center; gap: 14px; padding: 0 14px;
   border-bottom: 1px solid var(--border-soft); color: var(--text-muted); background: var(--bg);
   font-size: var(--fs-ui); -webkit-user-select: none; user-select: none;
 }
@@ -155,7 +159,7 @@ body { background: var(--bg); color: var(--fg); }
 .win-btn:hover { color: var(--fg); background: var(--hover-bg); }
 .win-btn--close:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
 .status-bar {
-  flex: 0 0 auto; height: 26px; display: flex; align-items: center; gap: 16px; padding: 0 14px;
+  flex: 0 0 auto; height: var(--row-h, 18px); display: flex; align-items: center; gap: 16px; padding: 0 14px;
   border-top: 1px solid var(--border-soft); background: var(--rail);
   font-size: var(--fs-micro); color: var(--faint); white-space: nowrap; overflow: hidden;
 }
@@ -179,7 +183,7 @@ body { background: var(--bg); color: var(--fg); }
 @keyframes asc-sheen { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
 @media (prefers-reduced-motion: reduce) { .asc-wordmark { animation: none; } }
 
-.layout { display: grid; --sidebar-w: var(--sidebar-width, 266px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100%; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1), --rail-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+.layout { display: grid; --sidebar-w: var(--sidebar-width, 266px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100%; font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1), --rail-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
 .layout.has-rail { --rail-w: 46px; }
 /* BUG #40: the Cmd+O quick switcher takeover already collapses the LEFT sidebar via
    `.sidebar-hidden` below (`!sidebarVisible() || switcherOpen()`) — the right-edge vertical tab
@@ -199,8 +203,10 @@ body { background: var(--bg); color: var(--fg); }
 .layout.sidebar-hidden { --sidebar-w: 0px; }
 @media (prefers-reduced-motion: reduce) { .layout { transition: none; } }
 /* Section eyebrows above the tree ("VAULT") and the mini-graph slot ("GRAPH") —
-   design/ascii/README.md "Components" + ascii-tree.card.html/spacing-chrome.card.html. */
-.sidebar-eyebrow-row { flex-shrink: 0; padding: 8px 12px 6px; }
+   design/ascii/README.md "Components" + ascii-tree.card.html/spacing-chrome.card.html.
+   Snapped to 2×--row-h (36px) — a fixed box + centered content, not ad-hoc padding,
+   so the eyebrow's baseline lands on the same row grid as the tree rows below it. */
+.sidebar-eyebrow-row { flex-shrink: 0; height: calc(var(--row-h, 18px) * 2); display: flex; align-items: center; padding: 0 12px; }
 .sidebar-files { flex: 1; overflow: auto; padding: 0 8px 8px; min-height: 0; }
 /* width:auto (overriding the `.sidebar > *` pin) keeps the slot at the sidebar's
    content width — one pixel narrower than the box — so the graph floater that snaps
@@ -221,11 +227,12 @@ body { background: var(--bg); color: var(--fg); }
    animating width — var(--sidebar-w) is inherited from .layout and interpolates, so
    the graph collapses/reveals smoothly along with the rest of the sidebar. */
 .graph-floater.docked { clip-path: inset(0 calc(var(--sidebar-width, 266px) - var(--sidebar-w)) 0 0); }
-/* The left "toolzone" of the design's 40px top strip. Height matches .tabbar so the two
+/* The left "toolzone" of the design's top strip. Height matches .tabbar so the two
    top bars' bottom divider lines align into one continuous row across the app.
-   .tabbar's height is its 40px tabs PLUS its own 1px bottom border (= 41px total), so the
-   toolzone must be 41px (border-box) for the two bottom borders to land on the same line. */
-.sidebar-icons { display: flex; align-items: center; gap: 3px; height: 41px; padding: 0 10px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+   .tabbar's height is its 36px (2×--row-h) tabs PLUS its own 1px bottom border
+   (= 37px total), so the toolzone must be 37px (border-box) for the two bottom
+   borders to land on the same line. */
+.sidebar-icons { display: flex; align-items: center; gap: 3px; height: calc(var(--row-h, 18px) * 2 + 1px); padding: 0 10px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
 /* A toolbar button that carries a live count (the daemon inbox): the wrap anchors the badge
    to the button's top-right corner without disturbing the icon row's layout. */
 .toolbar-btn-wrap { position: relative; display: inline-flex; }
@@ -234,6 +241,11 @@ body { background: var(--bg); color: var(--fg); }
    resting color rising to --fg on hover — not full-strength white at rest. Shared by
    the sidebar toolbar, the tab-strip actions, and the empty-pane new-terminal icon. */
 .sidebar-icons .btn--icon, .tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty .btn--icon { width: 28px; height: 28px; padding: 0; border-radius: 7px; color: var(--text-muted); opacity: 1; }
+/* The sidebar toolbar's icon buttons read the settings-driven size (appearance.sidebarIconFontSize,
+   unified with the sidebar tree's --fs-ui rhythm) instead of the generic .btn--icon 14px literal
+   (ui.css) — the icon glyph itself already scales via IconButton's iconSize prop (App.tsx); this
+   also brings the BUTTON element's own font-size in line so nothing inside it silently reverts. */
+.sidebar-icons .btn--icon { font-size: var(--sidebar-icon-font-size); }
 .sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .empty .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 .sidebar-logo { width: 18px; height: 18px; flex-shrink: 0; margin-right: 4px; display: block; }
 .sidebar canvas { display: block; }
@@ -250,10 +262,10 @@ body { background: var(--bg); color: var(--fg); }
    "hidden" reads as more severe (danger tint); "chat-only" stays muted like the rest of the row. */
 .ft-visibility-badge { flex-shrink: 0; display: inline-flex; align-items: center; margin-left: -3px; color: var(--faint); }
 .ft-visibility-badge.hidden { color: var(--danger); opacity: 0.85; }
-/* File-tree rows (folders + files) — the ASCII register's 22px row (tokens/spacing.css), no
-   pill radius. The connector prefix now carries depth; static look lives here, the dynamic
-   drop-target highlight stays inline/classList in FileTree.tsx. */
-.ft-row { display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; font-size: var(--fs-ui); color: var(--text-muted); white-space: nowrap; cursor: pointer; user-select: none; }
+/* File-tree rows (folders + files) — exactly the app's row unit (--row-h, 18px; ui.css
+   :root) tall, no pill radius. The connector prefix now carries depth; static look lives
+   here, the dynamic drop-target highlight stays inline/classList in FileTree.tsx. */
+.ft-row { display: flex; align-items: center; gap: 6px; height: var(--row-h, 18px); padding: 0 8px; font-size: var(--fs-ui); color: var(--text-muted); white-space: nowrap; cursor: pointer; user-select: none; }
 .ft-row .ft-icon { color: var(--text-muted); }
 .ft-row:hover { background: var(--hover-bg); color: var(--fg); }
 .ft-row:hover .ft-icon { color: var(--fg); }
@@ -277,9 +289,10 @@ body { background: var(--bg); color: var(--fg); }
 .ft-root { min-height: 100%; }
 
 /* ── Shared view bar (breadcrumb + right-aligned controls) ─────────────────────
-   The 46px header most content views start with: a breadcrumb on the left, a flexible
+   The 36px (2×--row-h) header most content views start with — graph header + base
+   ViewBar rows both route through this class: a breadcrumb on the left, a flexible
    spacer, then .vseg segmented switchers and .vbtn buttons. New shared primitive. */
-.viewbar { height: 46px; flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 0 18px; border-bottom: 1px solid var(--border-soft); }
+.viewbar { height: calc(var(--row-h, 18px) * 2); flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 0 18px; border-bottom: 1px solid var(--border-soft); }
 .viewbar .crumb { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 7px; white-space: nowrap; min-width: 0; }
 .viewbar .crumb b { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .viewbar .crumb svg { color: var(--faint); }
@@ -311,7 +324,10 @@ body { background: var(--bg); color: var(--fg); }
 .editor-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .editor-body { flex: 1; overflow: auto; min-height: 0; position: relative; }
 .tabbar { display: flex; align-items: stretch; overflow-x: auto; border-bottom: 1px solid var(--border-soft); background: var(--rail); position: relative; }
-.tab { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; font-size: var(--tab-font-size, var(--fs-ui)); cursor: pointer; color: var(--text-muted); border-right: 1px solid var(--border-soft); white-space: nowrap; user-select: none; position: relative; transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), opacity 0.12s ease, color 0.12s ease, background 0.12s ease; }
+/* Tab height is 2×--row-h (36px total) — the bar's minimal padding around an 18px text
+   row, so the tab's hit area sits on the row grid while the label itself lines up with
+   every other 18px row in the app (tree, status bar, prose lines). */
+.tab { display: flex; align-items: center; gap: 8px; height: calc(var(--row-h, 18px) * 2); padding: 0 14px; font-size: var(--tab-font-size, var(--fs-ui)); cursor: pointer; color: var(--text-muted); border-right: 1px solid var(--border-soft); white-space: nowrap; user-select: none; position: relative; transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), opacity 0.12s ease, color 0.12s ease, background 0.12s ease; }
 .tab-icon { color: var(--faint); }
 /* Optical centering: Monaspace caps sit high in the em box, so the label reads as
    floating above the tab's icon / close X. Nudge it down 1px to center it. */
@@ -401,10 +417,11 @@ body { background: var(--bg); color: var(--fg); }
 /* A tab row: icon + (revealed) label + close/pin. margin 5px + padding 10px puts the 16px
    icon's centre at 23px = the middle of the 46px collapsed rail. The label + trailing
    button overflow past 46px and are clipped by .tab-rail-inner until it expands. Radius is
-   the design's --r-card (4px) — nothing in the ASCII register is pill-round. */
+   the design's --r-card (4px) — nothing in the ASCII register is pill-round. Row height is
+   the app's row unit (--row-h, 18px) — same rhythm as a sidebar tree row. */
 .tab-rail-row {
   display: flex; align-items: center; gap: 10px;
-  height: 34px; min-height: 34px; box-sizing: border-box;
+  height: var(--row-h, 18px); min-height: var(--row-h, 18px); box-sizing: border-box;
   margin: 0 5px; padding: 0 10px; border-radius: var(--r-card, 4px);
   color: var(--text-muted); cursor: pointer; user-select: none;
   white-space: nowrap; position: relative;
@@ -479,7 +496,10 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); }
 .palette-input::placeholder { color: var(--fg); opacity: 0.4; }
 .palette-list { overflow-y: auto; padding: 7px; }
-.palette-row { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap; font-size: 13px; color: var(--fg); }
+/* 9px padding + an 18px (--row-h) text line = 36px per row (2×--row-h) — a single-line
+   row snaps exactly to the app's row grid; a row with a .palette-desc second line grows
+   past it, same as a wrapped tree row. */
+.palette-row { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap; font-size: 13px; line-height: var(--row-h, 18px); color: var(--fg); }
 .palette-row .palette-icon { color: var(--text-muted); }
 .palette-row.selected { background: var(--popover-selected-bg); }
 .palette-row.selected .palette-icon { color: var(--accent); }
@@ -877,7 +897,9 @@ html.view-dragging .graph-floater { pointer-events: none; }
    per-row dynamic opacity (disabled → 0.45) + the Processes head's dynamic margin-top
    stay inline; everything static lives here. */
 .daemon-list { display: flex; flex-direction: column; gap: 1px; width: 100%; height: 100%; overflow-y: auto; pointer-events: auto; font-family: inherit; font-size: 11px; }
-.daemon-row { display: flex; align-items: center; gap: 7px; padding: 3px 6px; border-radius: 3px; cursor: pointer; }
+/* Row height is the app's row unit (--row-h, 18px) — same pattern as .ft-row: a fixed
+   box + horizontal-only padding, not vertical padding around free-flowing text. */
+.daemon-row { display: flex; align-items: center; gap: 7px; height: var(--row-h, 18px); padding: 0 6px; border-radius: 3px; cursor: pointer; }
 .daemon-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 .daemon-section-head { padding: 4px 6px 2px; font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
 .graph-legend-rows { max-height: 240px; overflow: auto; }
@@ -887,18 +909,16 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .graph-bottom-narrow { display: flex; gap: 2px; align-items: stretch; background: var(--pop-bg); border-radius: 4px; padding: 1px; pointer-events: auto; flex-shrink: 0; }
 /* Bottom-bar fps readout (paired with .graph-hud-pill; dynamic traffic-light color stays inline). */
 .graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: 10.5px; padding: 2px 7px; }
-/* Narrow (sidebar mini-graph): drop every segment's text label so the toolbar
-   controls collapse to icon-only, and match the main sidebar toolbar
-   (.sidebar-icons) — 18px icons in 28px square buttons with 3px gaps — so the
-   mini-graph chrome reads as the same toolbar. */
+/* Narrow (sidebar mini-graph): the mode switcher stays TEXT — 2ND/3RD/BOTH/AGENTS/DAEMON, no
+   glyph prefix, ever — just free to wrap onto a second row when five segments don't fit one
+   line at --fs-micro (the .btn--text default size). Everything that needs real width (the
+   "Knowledge Graph" crumb, the 2D/3D toggle, the legend/stats cards) hides; the mini-graph is
+   too small for them. */
 @container (max-width: 520px) {
-  .graph-vb-wide, .graph-legend-card, .graph-stats, .graph-seg-label { display: none; }
-  /* Mirror .sidebar-icons chrome exactly (height 41, 10px side padding) so the bar
-     lines up with the main toolbar above it; the spacer keeps the toggle left-aligned. */
-  .graph-viewbar { height: 41px; padding: 0 10px; justify-content: center; border-bottom: none; }
-  .graph-viewbar .segmented, .graph-bottom-narrow .segmented { gap: 3px; }
-  .graph-viewbar .segmented .btn { width: 28px; height: 28px; padding: 0; border-radius: 7px; }
-  .graph-viewbar .segmented .btn svg { width: 18px; height: 18px; }
+  .graph-vb-wide, .graph-legend-card, .graph-stats { display: none; }
+  .graph-viewbar { height: auto; min-height: 41px; padding: 5px 10px; justify-content: center; border-bottom: none; }
+  .graph-viewbar .segmented { flex-wrap: wrap; justify-content: center; gap: 3px; row-gap: 3px; }
+  .graph-bottom-narrow .segmented { gap: 3px; }
 }
 @container (min-width: 521px) { .graph-bottom-narrow, .graph-bottom-fps { display: none; } }
 

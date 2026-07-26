@@ -309,13 +309,13 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 |---|---|---|
 | `appearance.editorFont` | `--editor-font` | `'Monaspace Xenon', ui-monospace, monospace` |
 | `appearance.uiFont` | `--ui-font-stack` | `'Monaspace Xenon', ui-monospace, monospace` |
-| `appearance.editorFontSize` | `--editor-font-size` | `13.5px` |
+| `appearance.editorFontSize` | `--editor-font-size` | `11.5px` |
 | `appearance.sidebarWidth` | `--sidebar-width` | `266px` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
 | `appearance.uiFontSize` | `--ui-font-size` | `11.5px` |
 | `appearance.monoScale` | `--mono-scale` | `1` |
 | `appearance.tabFontSize` | `--tab-font-size` | `11.5px` |
-| `appearance.sidebarIconFontSize` | `--sidebar-icon-font-size` | `15px` |
+| `appearance.sidebarIconFontSize` | `--sidebar-icon-font-size` | `11.5px` |
 | `appearance.paletteInputFontSize` | `--palette-input-font-size` | `15px` |
 
 ### From `ui.*`
@@ -333,7 +333,11 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 
 | Setting | CSS var | Default |
 |---|---|---|
-| `editor.lineHeight` | `--prose-line-height` | `1.65` |
+| `editor.lineHeight` | `--prose-line-height` | `1` |
+
+`--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `ui.css`
+`:root` — not itself settings-driven), consumed as `calc(var(--row-h) * var(--prose-line-height))`
+in both editors (Editor.tsx / BlockEditor.css). Default `1` → 18px exactly.
 
 ### From `calendar.*`
 

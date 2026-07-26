@@ -58,6 +58,7 @@ export interface Settings {
     nodeSizeMaxMult: number;      // ceiling on node size multiplier
     mapDefaultZoom: number;       // default zoom for the Bases map view
     refreshDebounceMs: number;    // ms before rebuilding the graph after edits
+    backgroundNoise: boolean;     // faint ASCII noise texture under the graph field; off by default
   };
   editor: {
     defaultMode: "source" | "visual"; // how a note opens: raw markdown editor vs no-code visual editor
@@ -68,7 +69,7 @@ export interface Settings {
     grammarCheck: boolean; // grammar + style check the note body (Harper); off by default
 
     autoSaveDelay: number; // ms of idle before save
-    lineHeight: number;    // editor prose line height (multiplier)
+    lineHeight: number;    // editor prose line height, as a multiplier of --row-h (18px), not the font size
     mathMacros: string;    // LaTeX \newcommand preamble applied to all math (Obsidian preamble.sty parity)
     wrapSelection: boolean;       // type a wrap char around a selection to surround it
     wrapSelectionChars: string[]; // which chars wrap the selection when typed

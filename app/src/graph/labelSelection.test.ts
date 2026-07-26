@@ -3,6 +3,13 @@ import {
   computeAlwaysOnSet,
   renderedPixelRadius,
   selectVisibleLabels,
+  fileLabelBudget,
+  fileLabelAlpha,
+  clusterLabelAlpha,
+  clusterLabelText,
+  FILE_LABEL_REVEAL_T,
+  FILE_LABEL_FADE_SPAN,
+  FILE_LABEL_FULL_T,
   type LabelCandidate,
 } from "./labelSelection";
 
@@ -120,4 +127,98 @@ test("forced labels survive a contested cell alongside the worthiest", () => {
   const forcedSmall = C({ id: "f", px: 12, py: 12, renderedPx: 1, forced: true });
   const got = selectVisibleLabels([big, forcedSmall], OPTS);
   expect(got.has("f")).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// Zoom-driven cluster-name → file-name crossfade (labels appear later and fewer than the naive
+// linear-from-zero budget the old code used).
+// ---------------------------------------------------------------------------
+
+describe("fileLabelBudget", () => {
+  it("is zero at t = 0 (fully zoomed out) — no file names at all", () => {
+    expect(fileLabelBudget(0, 500)).toBe(0);
+  });
+
+  it("is zero everywhere at/below the reveal threshold", () => {
+    expect(fileLabelBudget(FILE_LABEL_REVEAL_T, 500)).toBe(0);
+    expect(fileLabelBudget(FILE_LABEL_REVEAL_T - 0.1, 500)).toBe(0);
+  });
+
+  it("is zero when there are no candidates, regardless of t", () => {
+    expect(fileLabelBudget(1, 0)).toBe(0);
+  });
+
+  it("stays small for a while right after the reveal point (only genuine hubs)", () => {
+    const justPast = fileLabelBudget(FILE_LABEL_REVEAL_T + 0.05, 1000);
+    // A slow-start curve: nowhere near proportional to how far past reveal we are.
+    expect(justPast).toBeLessThan(50);
+  });
+
+  it("grows monotonically with t", () => {
+    const ts = [0, 0.1, FILE_LABEL_REVEAL_T, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
+    let prev = -1;
+    for (const t of ts) {
+      const b = fileLabelBudget(t, 800);
+      expect(b).toBeGreaterThanOrEqual(prev);
+      prev = b;
+    }
+  });
+
+  it("reaches (essentially) every candidate by FILE_LABEL_FULL_T and stays there through t = 1", () => {
+    expect(fileLabelBudget(FILE_LABEL_FULL_T, 400)).toBe(400);
+    expect(fileLabelBudget(1, 400)).toBe(400);
+  });
+
+  it("is much less aggressive than a naive linear-from-zero ramp partway through", () => {
+    // At the old code's LABEL_MIN=6-style low end, a linear budget would already be well past
+    // zero; the new curve should still be holding back hard at, say, t = 0.5.
+    const total = 1000;
+    const linear = total * 0.5;
+    expect(fileLabelBudget(0.5, total)).toBeLessThan(linear * 0.25);
+  });
+});
+
+describe("fileLabelAlpha / clusterLabelAlpha", () => {
+  it("file alpha is 0 and cluster alpha is 1 at t = 0", () => {
+    expect(fileLabelAlpha(0)).toBe(0);
+    expect(clusterLabelAlpha(0)).toBe(1);
+  });
+
+  it("file alpha is 0 and cluster alpha is 1 at/below the reveal threshold", () => {
+    expect(fileLabelAlpha(FILE_LABEL_REVEAL_T)).toBe(0);
+    expect(clusterLabelAlpha(FILE_LABEL_REVEAL_T)).toBe(1);
+  });
+
+  it("crossfade completes (file=1, cluster=0) by revealT + fadeSpan", () => {
+    const doneT = FILE_LABEL_REVEAL_T + FILE_LABEL_FADE_SPAN;
+    expect(fileLabelAlpha(doneT)).toBe(1);
+    expect(clusterLabelAlpha(doneT)).toBe(0);
+    expect(fileLabelAlpha(1)).toBe(1);
+    expect(clusterLabelAlpha(1)).toBe(0);
+  });
+
+  it("the two always sum to 1 (a true crossfade, not independent fades)", () => {
+    for (const t of [0, 0.1, 0.25, 0.3, 0.35, 0.45, 0.52, 0.7, 1]) {
+      expect(fileLabelAlpha(t) + clusterLabelAlpha(t)).toBeCloseTo(1, 10);
+    }
+  });
+
+  it("file alpha rises monotonically across the fade span", () => {
+    let prev = -1;
+    for (let t = FILE_LABEL_REVEAL_T; t <= FILE_LABEL_REVEAL_T + FILE_LABEL_FADE_SPAN; t += 0.02) {
+      const a = fileLabelAlpha(t);
+      expect(a).toBeGreaterThanOrEqual(prev - 1e-9);
+      prev = a;
+    }
+  });
+});
+
+describe("clusterLabelText", () => {
+  it("upper-cases the community name", () => {
+    expect(clusterLabelText("reading list")).toBe("READING LIST");
+  });
+
+  it("is a no-op on an already-uppercase name", () => {
+    expect(clusterLabelText("PROJECTS")).toBe("PROJECTS");
+  });
 });

@@ -12,7 +12,12 @@
      --fs-ui type, accent-on-accent-soft selection, --shadow-popup, a hairline border. */
   --popover-radius: var(--r-panel);
   --popover-pad: 4px;
-  --popover-row-pad-y: 5px;
+  /* Row height is now the app's row unit (--row-h, ui.css :root) via an explicit height
+     on .bismuth-popover-row below, not vertical padding — pad-y stays 0 so context menu,
+     autocomplete, and the chat history list all snap to the same 18px cadence as the
+     sidebar tree. Kept as a token (rather than inlining 0) so a caller can still widen a
+     specific list without touching the shared row rule. */
+  --popover-row-pad-y: 0px;
   --popover-row-pad-x: 8px;
   --popover-row-radius: 0;
   --popover-row-gap: 8px;
@@ -45,6 +50,7 @@
   display: flex;
   align-items: center;
   gap: var(--popover-row-gap);
+  height: var(--row-h, 18px);
   padding: var(--popover-row-pad-y) var(--popover-row-pad-x);
   border-radius: var(--popover-row-radius);
   cursor: pointer;

@@ -169,8 +169,11 @@ const allText = () => ctx.fills.map((f) => f.text).join("");
 // happy-dom resolves no CSS vars, so the renderer falls back to its literal token table — which
 // makes the fill colour a reliable way to tell a NODE run (the --graph-0..4 ramp) apart from the
 // noise texture and the edges, whose glyph vocabularies overlap ("." "o" "@" are noise chars too).
+// Cluster-name LABELS are drawn in this same ramp (by design — "the cluster's ramp color"), so the
+// glyph-only regex below is what actually separates a node run from a cluster-name fill sharing
+// its color.
 const RAMP_COLORS = new Set(["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a"]);
-const nodeRuns = () => ctx.fills.filter((f) => RAMP_COLORS.has(f.color));
+const nodeRuns = () => ctx.fills.filter((f) => RAMP_COLORS.has(f.color) && /^[.o@ ]+$/.test(f.text));
 const wheelIn = (viewport: HTMLElement, times = 10) => {
   for (let i = 0; i < times; i++) viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, cancelable: true }));
 };
@@ -208,8 +211,14 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
     r.destroy();
   });
 
-  it("names nodes on the grid — labels are cells, not a DOM overlay", () => {
-    const { r } = mountRenderer("2d");
+  it("names nodes on the grid — labels are cells, not a DOM overlay (once zoomed past the cluster-name reveal point)", () => {
+    // At fit (0% zoom) the field names CLUSTERS, not files — see the "cluster names own the field
+    // at 0% zoom" describe block below. frameSubset + a wheel push to saturation deterministically
+    // reaches max resolution centred on n0, regardless of the fixture's ring geometry.
+    const { r, viewport } = mountRenderer("2d");
+    r.frameSubset(["n0"]);
+    wheelIn(viewport, 30);
+    settle(200);
     expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
     r.destroy();
   });
@@ -227,8 +236,15 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
       ],
       edges: [{ from: "note", to: "tag:research", kind: "tag" }],
     });
+    const viewport = host.firstElementChild as HTMLElement;
     ctx.fills.length = 0;
     frame();
+    // Past the cluster-name reveal point — these two nodes carry no community, so file names are
+    // the only kind on offer once zoomed. frameSubset on the tag ITSELF (not the midpoint of the
+    // pair) keeps it dead-centre — and therefore on-grid — even once the wheel saturates resolution.
+    r.frameSubset(["tag:research"]);
+    wheelIn(viewport, 30);
+    settle(200);
     expect(ctx.fills.some((f) => f.text === "#research")).toBe(true);
     expect(ctx.fills.some((f) => f.text.includes("##"))).toBe(false);
     r.destroy();
@@ -265,6 +281,38 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
     } finally {
       Object.assign(BOX, restoreBox);
     }
+  });
+});
+
+describe("semantic zoom — cluster names own the field zoomed out, file names crossfade in on zoom-in", () => {
+  it("shows cluster names and NO file names at fit (0% zoom)", () => {
+    const { r } = mountRenderer("2d");
+    // sampleGraph() gives every node communityLabel `Cluster ${0|1|2}`; the eyebrow register
+    // upper-cases it.
+    expect(ctx.fills.some((f) => f.text.includes("CLUSTER 0"))).toBe(true);
+    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(false);
+    r.destroy();
+  });
+
+  it("crossfades to file names as the field zooms in", () => {
+    const { r, viewport } = mountRenderer("2d");
+    r.frameSubset(["n0"]);
+    wheelIn(viewport, 30);
+    settle(200);
+    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
+    r.destroy();
+  });
+
+  it("hover always names the hovered node, even at fit (0% zoom, where non-forced file names are withheld)", () => {
+    const { r, hovers } = mountRenderer("2d");
+    const run = nodeRuns().find((f) => /[.o@]/.test(f.text));
+    expect(run).toBeDefined();
+    const p = { x: run!.x + run!.text.search(/[.o@]/) * CELL_W + 1, y: run!.y };
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: p.x, clientY: p.y }));
+    expect(hovers.filter(Boolean).length).toBeGreaterThan(0); // sanity: something actually got hovered
+    frame();
+    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true); // forced past the reveal gate
+    r.destroy();
   });
 });
 

@@ -10,7 +10,8 @@
 // extracted, fuller version — CommandPalette should adopt this helper instead
 // of its own inline copy next time it's touched.
 
-/** True on macOS/iPadOS/iOS — decides ⌘/⌥/⇧ glyphs vs Ctrl/Alt/Shift text. */
+/** True on macOS/iPadOS/iOS — decides ⌘/⌥ glyphs vs Ctrl/Alt text. Every other modifier/key
+ *  is plain text or one of the design's sanctioned keyboard caps (⌘ ⌥ ↵ ↑ ↓ — no ⇧/⌫/⇥/←/→). */
 export function isMacPlatform(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform ?? "");
 }
@@ -22,24 +23,24 @@ const TOKEN: Record<string, (mac: boolean) => string> = {
   Ctrl: () => "Ctrl",
   Alt: (mac) => (mac ? "⌥" : "Alt"),
   Option: () => "⌥",
-  Shift: (mac) => (mac ? "⇧" : "Shift"),
+  Shift: () => "Shift",
   Enter: () => "↵",
   Return: () => "↵",
-  Backspace: () => "⌫",
-  Delete: () => "⌫",
+  Backspace: () => "bksp",
+  Delete: () => "del",
   Escape: () => "esc",
   Esc: () => "esc",
-  Tab: () => "⇥",
+  Tab: () => "tab",
   Space: () => "space",
   Up: () => "↑",
   Down: () => "↓",
-  Left: () => "←",
-  Right: () => "→",
+  Left: () => "<",
+  Right: () => ">",
 };
 
 /**
  * Split a stored combo into display caps. Accepts the app's keybinding syntax:
- *   "Mod+Shift+D"        → [["⌘","⇧","D"]]           a chord
+ *   "Mod+Shift+D"        → [["⌘","Shift","D"]]        a chord
  *   "Mod+`, Mod+J"       → [["⌘","`"], ["⌘","J"]]     a sequence (comma-separated)
  * `mac` defaults to the running platform; pass it explicitly to render for a
  * specific platform (tests, or a cross-platform hint list).

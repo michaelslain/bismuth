@@ -22,7 +22,9 @@
   color: color-mix(in srgb, var(--fg) 88%, var(--text-muted));
   font-family: var(--editor-font);
   font-size: var(--editor-font-size);
-  line-height: var(--prose-line-height, 1.9);
+  /* A multiple of the app's row unit (--row-h), not the font size — matches the CodeMirror
+     editor's .cm-scroller exactly (Editor.tsx), so source/visual mode never reflows on toggle. */
+  line-height: calc(var(--row-h, 18px) * var(--prose-line-height, 1));
 }
 
 .block-editor-col {
@@ -212,7 +214,10 @@
    is non-interactive (it has no editable; clicks fall through to a focusById mount on caret). */
 .block-rich--preview {
   padding: 3px 0;
-  min-height: calc(1em * var(--prose-line-height, 1.65));
+  /* Same formula as .block-editor's line-height above (not an em-multiple) — the
+     preview's one-line reservation must match the live surface's ACTUAL line box, not
+     an approximation, or mounting/unmounting nudges scroll position by a pixel or two. */
+  min-height: calc(var(--row-h, 18px) * var(--prose-line-height, 1));
   cursor: text;
 }
 .block-rich--preview > :first-child {

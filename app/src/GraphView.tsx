@@ -9,7 +9,6 @@ import type { Org } from "./graph/agentOrg";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
 import { resolveAppearance } from "./themes";
-import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
 import { readCache, writeCache } from "./viewCache";
 import { DaemonList } from "./DaemonList";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
@@ -17,7 +16,6 @@ import { SegmentedToggle } from "./ui/SegmentedToggle";
 import { IconButton } from "./ui/IconButton";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { IconTextButton } from "./ui/IconTextButton";
-import { Icon } from "./icons/Icon";
 import type { GraphMode } from "./commands";
 
 /** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). */
@@ -60,21 +58,11 @@ const setViewModePersisted = (m: "2d" | "3d") => {
   writeCache(VIEW_MODE_KEY, m);
 };
 
-// One icon per control, SHARED by the two toolbars: the cramped sidebar mini-graph
-// shows the icon alone, the full-pane graph pairs it with the same text label it has
-// today (the `.graph-seg-label` span, hidden by container query when narrow). Same
-// glyph in both so the little and big toolbars read as one control at two sizes.
-const MODE_ICON: Record<GraphMode, string> = {
-  "2nd": "Brain",         // your vault — the 2nd brain
-  "3rd": "BrainCircuit",  // the daemon's memory — the 3rd brain
-  both: "Blend",          // the two brains blended into one graph
-  agents: "Network",      // terminal-tab sessions + their subagents
-  daemon: "Bot",          // the background daemon's crons + processes
-};
-// Current segment text — unchanged; only paired with an icon now.
-const MODE_SHORT: Record<GraphMode, string> = { "2nd": "2nd", "3rd": "3rd", both: "Both", agents: "Agents", daemon: "Daemon" };
-// 2D birdseye (flat) vs 3D orbit (volumetric).
-const DIM_ICON: Record<"2d" | "3d", string> = { "2d": "Square", "3d": "Box" };
+// Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
+// full-pane graph): text-only, uppercase, no glyph prefix — same string in both so the little
+// and big toolbars read as one control at two sizes (the narrow one just wraps to a second row
+// if all five segments don't fit one line; see the @container rule in App.css).
+const MODE_SHORT: Record<GraphMode, string> = { "2nd": "2ND", "3rd": "3RD", both: "BOTH", agents: "AGENTS", daemon: "DAEMON" };
 
 export function GraphView(props: {
   graph: GraphData;
@@ -116,27 +104,14 @@ export function GraphView(props: {
   // Zoom is RESOLUTION, not scale: 0% fits the whole graph on the grid, 100% is maximum
   // resolution with every note named (design/ascii .../guidelines/ascii-zoom.card.html).
   const [zoomPct, setZoomPct] = createSignal(0);
-  const [legendRows, setLegendRows] = createSignal<ClusterRow[]>([]);
-  // The persistently-highlighted cluster (legend click). Toggled off by clicking the same row
-  // again, clicking empty canvas space (renderer.onHighlightCleared), or the search menu close.
-  const [selectedCluster, setSelectedCluster] = createSignal<number | null>(null);
-  const focusCluster = (ids: string[], community: number): void => {
-    if (selectedCluster() === community) {
-      setSelectedCluster(null);
-      renderer.clearHighlight();
-      return;
-    }
-    setSelectedCluster(community);
-    renderer.highlightNodes(ids);
-    renderer.frameSubset(ids);
-  };
   const [searchItems, setSearchItems] = createSignal<SearchItem[]>([]);
 
   // Graph search panel, opened by the FIND / ☰ buttons. Only shown when the graph is a full
-  // pane (props.fill) — the sidebar mini-graph is too small to be worth it. (Clusters have
-  // their own floating legend card; there's no reset-view button.)
+  // pane (props.fill) — the sidebar mini-graph is too small to be worth it. Cluster names now
+  // live IN the field (zoomed-out labels), not a floating legend card; there's no reset-view
+  // button here either.
   const [menuOpen, setMenuOpen] = createSignal(false);
-  const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); renderer.clearHighlight(); setSelectedCluster(null); };
+  const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); renderer.clearHighlight(); };
 
   // The 3rd-brain (memory) + daemon graph modes only exist while the daemon is enabled
   // (the per-vault master switch). When it's off, the 3rd brain carries no nodes and the
@@ -147,14 +122,9 @@ export function GraphView(props: {
     }
   });
 
-  // Rebuild legend rows + search items from the renderer's current node set. Called after each
-  // render() so the cluster directory tracks the live graph.
+  // Rebuild search items from the renderer's current node set. Called after each render() so the
+  // Cmd+O-style graph search tracks the live graph.
   const refreshUiData = () => {
-    const centroids = renderer.getCommunityCentroids();
-    const rows: ClusterRow[] = [...centroids.entries()].map(([community, c]) => ({
-      community, label: c.label, count: c.count, color: c.color, ids: c.ids,
-    }));
-    setLegendRows(rows);
     setSearchItems(
       renderer.getNodesForUI().map((n) => ({ id: n.id, label: n.label, sub: n.communityLabel ?? n.folder })),
     );
@@ -174,8 +144,6 @@ export function GraphView(props: {
     renderer.setFpsCallback(setFps);
     renderer.setZoomCallback?.(setZoomPct);
     if (props.onPaint) renderer.setPaintCallback(props.onPaint);
-    // Empty-canvas click cleared the highlight renderer-side — mirror it in the legend state.
-    renderer.onHighlightCleared = () => setSelectedCluster(null);
     mounted = true;
     if (lastGraph) { renderer.render(rendererGraph()); refreshUiData(); }
   });
@@ -217,6 +185,8 @@ export function GraphView(props: {
       nodeSizeMinMult: gs.nodeSizeMinMult,
       nodeSizeDegreeGain: gs.nodeSizeDegreeGain,
       nodeSizeMaxMult: gs.nodeSizeMaxMult,
+      // The faint ASCII noise texture under the field — off by default (settingsSchema.ts).
+      backgroundNoise: gs.backgroundNoise,
       // On light themes the neutral grey, alpha-blended over the pale canvas, reads as harsh dark
       // lines. Lift the edge color toward the background and drop its opacity so links stay faint.
       edgeColor: ap.isLight
@@ -237,20 +207,15 @@ export function GraphView(props: {
       daemonNeutral: hexToIntT(ap.neutral, 0xaeb4c2),
       daemonFg: hexToIntT(ap.foreground, 0xffffff),
     });
-    // The cluster legend's swatch colors are derived from the renderer's palette (via
-    // getCommunityCentroids → colorFor). This effect can run AFTER the initial render+refresh
-    // (Solid runs effects in creation order, and this one trails the graph-render effect), so
-    // the first legend would otherwise be built from the renderer's DEFAULT_PALETTE and stay
-    // stuck there — visibly snapping to the theme colors only on the next graph re-render (a
-    // view/mode switch). Refresh here too so the legend always tracks the live palette.
+    // Search items' sub-labels are derived from the renderer's live node set. This effect can run
+    // AFTER the initial render+refresh (Solid runs effects in creation order, and this one trails
+    // the graph-render effect), so refresh here too rather than relying solely on the render effect.
     if (mounted) refreshUiData();
   });
 
-  // The one graph instance moves between a full pane and the cramped backdrop/sidebar slot, so the
-  // cell metric follows `mini` reactively: the small slot draws on the DENSE 7px cell
-  // (tokens/ascii.css --cell-w-dense / --cell-h-dense), the full pane on the --fs-ui cell. The
-  // glyphs never scale — a smaller cell just fits more of them (see the zoom law).
-  createEffect(() => renderer.setDense?.(props.mini === true));
+  // The one graph instance moves between a full pane and the cramped backdrop/sidebar slot, but it
+  // draws on the SAME cell in both (the app's unified --row-h rhythm, asciiGraph.css --cell-h) —
+  // there is no denser cell for the mini slot any more. It just fits fewer glyphs; that's expected.
 
   createEffect(() => {
     const a = props.active;
@@ -306,12 +271,7 @@ export function GraphView(props: {
           options={((settings.daemon.enabled ? ["2nd", "3rd", "both", "agents", "daemon"] : ["2nd", "agents"]) as GraphMode[]).map((id) => ({
             id,
             title: MODE_LABEL[id],
-            label: (
-              <>
-                <Icon value={MODE_ICON[id]} size={14} />
-                <span class="graph-seg-label btn-label">{MODE_SHORT[id]}</span>
-              </>
-            ),
+            label: MODE_SHORT[id],
           }))}
         />
         <ViewBarSpacer />
@@ -321,8 +281,8 @@ export function GraphView(props: {
             onChange={setViewMode}
             size="sm"
             options={[
-              { id: "2d", title: "2D", label: <><Icon value={DIM_ICON["2d"]} size={14} /><span class="btn-label">2D</span></> },
-              { id: "3d", title: "3D", label: <><Icon value={DIM_ICON["3d"]} size={14} /><span class="btn-label">3D</span></> },
+              { id: "2d", title: "2D", label: "2D" },
+              { id: "3d", title: "3D", label: "3D" },
             ]}
           />
           <Show when={props.fill}>
@@ -340,15 +300,9 @@ export function GraphView(props: {
         <Show when={props.mode === "agents"}>
           <AgentsGraph agents={props.graph} org={agentOrg()} setOrg={setAgentOrg} />
         </Show>
-        {/* Floating cluster-legend card (non-agents, non-daemon) — hidden in the cramped sidebar via container query. */}
-        <Show when={props.mode !== "agents" && props.mode !== "daemon"}>
-          <div class="graph-legend-card asc-popover">
-            <div class="graph-card-h">{modeLabel()} · clusters</div>
-            <div class="graph-legend-rows">
-              <ClusterLegend rows={legendRows()} selected={selectedCluster()} onFocus={focusCluster} />
-            </div>
-          </div>
-        </Show>
+        {/* No floating cluster-legend card any more — cluster names are drawn IN the field itself
+            (zoomed-out labels; see AsciiGraphRenderer's layoutClusterNames), crossfading to file
+            names as the camera zooms in. ClusterLegend.tsx stays in-tree, just unused here. */}
         {/* Daemon-mode list: crons and processes with live status. */}
         <Show when={props.mode === "daemon"}>
           <div class="graph-legend-card daemon-legend asc-popover">
