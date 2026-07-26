@@ -106,7 +106,7 @@ export const SETTINGS_SCHEMA: Schema = {
     spellcheck: { type: "boolean", default: true, doc: "Spell check the note body (Harper)." },
     grammarCheck: { type: "boolean", default: false, doc: "Grammar + style check the note body (Harper). Independent of spellcheck; off by default." },
     autoSaveDelay: { type: "number", default: 800, min: 200, max: 3000, doc: "Milliseconds of idle before saving." },
-    lineHeight: { type: "number", default: 1.65, min: 1.3, max: 2, doc: "Editor prose line height (multiplier)." },
+    lineHeight: { type: "number", default: 1.9, min: 1.3, max: 2, doc: "Editor prose line height (multiplier)." },
     mathMacros: {
       type: "string",
       default: "",

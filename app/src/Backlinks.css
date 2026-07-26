@@ -1,0 +1,21 @@
+/* app/src/Backlinks.css — the open note's backlinks strip (FileView.tsx, below the editor).
+   Aligned to the SAME 620px prose column + 40px side padding as the editor's own .cm-content /
+   .block-editor-col, on the same --editor ground, separated by a hairline. */
+.backlinks {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 12px 40px 16px;
+  box-sizing: border-box;
+  border-top: var(--rule);
+  background: var(--editor);
+}
+
+.backlinks > .asc-eyebrow {
+  margin-bottom: 8px;
+}
+
+.backlinks-tree {
+  margin: 0 -12px;
+}

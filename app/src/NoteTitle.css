@@ -2,7 +2,7 @@
 
 /* The title now renders as a CodeMirror block widget at the top of the note
    (editor/noteTitleWidget.tsx) so it scrolls with the content. That widget div
-   lives INSIDE .cm-content — which is already the centered ~680px reading column
+   lives INSIDE .cm-content — which is already the centered ~620px reading column
    (the .cm-scroller supplies the 40px side padding). So inside the widget we drop
    the standalone horizontal padding + max-width + auto-centering the title used
    when it was a sibling above the scroller; otherwise the title would be inset an
@@ -16,7 +16,7 @@
 }
 
 /* H1 row (Bismuth redesign): a mono `#` hash in --accent + a mono prose title.
-   Centered in the same 760px reading column as the editor body, baseline-aligned. */
+   Centered in the same 620px reading column as the editor body, baseline-aligned. */
 .note-title {
   display: flex;
   /* flex-start (not baseline): a multi-line <textarea> reports its baseline at
@@ -24,10 +24,10 @@
      Top-align so the `#` sits beside the first line. */
   align-items: flex-start;
   gap: 11px;
-  /* Sit inside the editor's centered 760px column, aligned with the body's
+  /* Sit inside the editor's centered 620px column, aligned with the body's
      left/right padding (.cm-content padding-inline: 40px). */
   width: 100%;
-  max-width: 760px;
+  max-width: 620px;
   margin: 0 auto;
   box-sizing: border-box;
   padding: 24px 40px 6px;
@@ -38,9 +38,9 @@
    the title field is focused (clicked into), mirroring body-heading `#`s. */
 .note-title-hash {
   color: var(--accent);
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 1.94em;
-  font-weight: 500;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-display);
+  font-weight: var(--fw-medium);
   line-height: 1.1;
   user-select: none;
   flex: 0 0 auto;
@@ -52,7 +52,7 @@
   display: none;
 }
 
-/* Editable title text — mono prose font, 600, tight tracking (design: 31px / -.015em).
+/* Editable title text — mono prose font, --fs-display / weight 600 / --ls-display tracking.
    Borderless until focused so it reads as a heading. A <textarea> (not <input>)
    so long titles wrap onto multiple lines instead of being clipped; its height
    is auto-grown to fit the content in JS (see NoteTitle.tsx). */
@@ -64,10 +64,10 @@
   outline: none;
   color: var(--fg);
   font-family: var(--editor-font);
-  font-size: 1.94em;
-  font-weight: 600;
+  font-size: var(--fs-display);
+  font-weight: var(--fw-bold);
   line-height: 1.1;
-  letter-spacing: -0.015em;
+  letter-spacing: var(--ls-display);
   /* Floor the height at one line (line-height 1.1 + the 0.22em descender padding) so the
      JS autosize can never collapse the title to a clipped sliver if it measures scrollHeight
      before layout/font are ready — e.g. when CodeMirror virtualizes this block widget back
@@ -78,7 +78,7 @@
      than the font's glyph box, so without this the tails get cut off. Top padding
      stays 0 so the `#` glyph (flex-start) still aligns to the first line. */
   padding: 0 2px 0.22em;
-  border-radius: 3px;
+  border-radius: var(--r-control);
   /* textarea-specific: wrap freely, no manual resize handle, no scrollbar
      (height is driven from scrollHeight), render as a block heading. */
   display: block;
