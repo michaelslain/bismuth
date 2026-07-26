@@ -1,0 +1,50 @@
+/* app/src/DaemonList.css
+   Presentation for the daemon-mode sidebar panel (DaemonList.tsx). The base .daemon-list/
+   .daemon-row/.daemon-row-label/.daemon-section-head classes live in App.css (out of this
+   lane's file boundary — Stage 3 landed the ASCII chrome tokens there); this file supplies
+   the elements that used to be inline styles (status dot, frequency, status text, empty
+   state) and re-tunes the shared classes' TYPE onto the --fs-ui/--fs-micro register via
+   selectors specific enough to win regardless of stylesheet order. Context menu (right-click)
+   chrome is untouched — it already runs through the shared ContextMenu/popover.css register. */
+
+.daemon-list .daemon-row { font-size: var(--fs-ui); }
+.daemon-list .daemon-section-head { font-size: var(--fs-micro); }
+.daemon-section-count { opacity: 0.6; }
+
+/* A 6px currentColor dot (the shared .status-dot idiom) — its color comes from the row's
+   inline style (STATUS_DOT / the enabled boolean), not a hardcoded fill per state. A live
+   cron/enabled process also picks up the theme's phosphor/accent glow (--glow-accent is
+   `none` outside Cathode, so `.glow` is inert in Ink/Paper/Riso). */
+.daemon-row-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.daemon-row-dot.glow { box-shadow: var(--glow-accent); }
+
+.daemon-row-freq {
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* Status text: faint by default (idle/disabled/off), accent when live, danger when failed —
+   two reusable tone modifiers so CronRow (3-state) and ProcessRow (on/off) share one class. */
+.daemon-row-status {
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.daemon-row-status.tone-accent { color: var(--accent); }
+.daemon-row-status.tone-danger { color: var(--danger); }
+
+.daemon-empty {
+  padding: 8px 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}

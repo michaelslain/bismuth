@@ -10,7 +10,10 @@ export type PaletteItem = {
   label: string;
   sublabel?: string; // muted secondary text (e.g. a folder path)
   description?: string; // optional faint second-line description under the label
-  shortcut?: string; // optional right-aligned shortcut-key hint (already display-formatted)
+  shortcut?: string; // optional keybinding, in the app's OWN combo syntax ("Mod+Shift+D") —
+  // rendered by PaletteModal via the shared Kbd primitive (ui/ascii/Kbd.tsx, parseCombo), not
+  // pre-formatted display text. Only set this from a REAL settings.keybindings entry — never a
+  // fabricated hint (see CommandPalette.tsx's COMMAND_KEYBINDINGS map).
   icon?: string; // optional leading icon (Lucide name or emoji)
 };
 

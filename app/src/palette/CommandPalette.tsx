@@ -19,27 +19,6 @@ const COMMAND_KEYBINDINGS: Record<string, keyof typeof settings.keybindings> = {
   "history-forward": "history-forward",
 };
 
-// Turn a stored combo ("Mod+Shift+D", or "Mod+`, Mod+J") into a compact display
-// hint. Uses the FIRST comma-separated alternative; maps Mod → ⌘ on macOS / Ctrl.
-const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
-function formatShortcut(combo: string | undefined): string | undefined {
-  if (!combo) return undefined;
-  const first = combo.split(",")[0]?.trim();
-  if (!first) return undefined;
-  return first
-    .split("+")
-    .map((t) => {
-      const k = t.trim();
-      if (k === "Mod") return IS_MAC ? "⌘" : "Ctrl";
-      if (k === "Cmd" || k === "Meta") return "⌘";
-      if (k === "Ctrl") return "Ctrl";
-      if (k === "Alt") return IS_MAC ? "⌥" : "Alt";
-      if (k === "Shift") return IS_MAC ? "⇧" : "Shift";
-      return k;
-    })
-    .join(IS_MAC ? "" : "+");
-}
-
 type Props = {
   onClose: () => void;
   commands: Map<string, BoundCommand>;
@@ -47,9 +26,12 @@ type Props = {
 
 export function CommandPalette(props: Props) {
   const list = () => [...props.commands.values()];
+  // The RAW combo string ("Mod+Shift+D") — PaletteModal renders it via the shared Kbd
+  // primitive (ui/ascii/Kbd.tsx, parseCombo), which owns the Mod→⌘/Ctrl mapping this file used
+  // to duplicate inline (formatShortcut, retired).
   const shortcutFor = (id: string): string | undefined => {
     const kb = COMMAND_KEYBINDINGS[id];
-    return kb ? formatShortcut(settings.keybindings[kb]) : undefined;
+    return kb ? settings.keybindings[kb] : undefined;
   };
   const items = (): PaletteItem[] =>
     list().map((c) => ({ id: c.id, label: c.label, icon: c.icon, shortcut: shortcutFor(c.id) }));

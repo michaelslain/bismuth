@@ -2,7 +2,20 @@
 // Pure sorting/grouping logic for the daemon inbox (core/src/daemonPages.ts), split out from the
 // reactive store (daemonInbox.ts) so it's unit-testable headlessly — matches the
 // bases/flashcardsQueue.ts split (pure queue logic vs. the Solid-facing FlashcardsView).
-import type { DaemonPage } from "../../core/src/daemonPages";
+import type { DaemonPage, PageStatus } from "../../core/src/daemonPages";
+
+/** Status → the `currentColor` an inbox row's status dot renders in (InboxView.css
+ *  `.inbox-row-dot { background: currentColor }`) — a pure presentation lookup, not tied to
+ *  Solid, so it lives beside the sort/group helpers rather than in InboxView.tsx. Per the ASCII
+ *  design system's status-dot convention: pending=gold (awaiting review) · working=blue (in
+ *  flight) · done=green · failed=danger · dismissed=faint (settled, no longer live). */
+export const STATUS_COLOR: Record<PageStatus, string> = {
+  pending: "var(--gold)",
+  working: "var(--blue)",
+  done: "var(--green)",
+  failed: "var(--danger)",
+  dismissed: "var(--faint)",
+};
 
 /**
  * Stateless due predicate (no delivery write, no queued/delivered persisted state — see the
