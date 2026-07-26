@@ -1,5 +1,8 @@
 /* app/src/Toast.css
-   Fixed bottom-center toast stack (Toast.tsx). Both selectors are fully static. */
+   Fixed bottom-center toast stack (Toast.tsx). Both selectors are fully static.
+   Flat .asc-card register — pill-NOT: radius 3 (technical corners), a hairline border,
+   --surface-1 fill, --fs-ui type. An action reads as a bracket text button, the same
+   CLI-confirm register the permission/inbox row actions use. */
 .toast-host {
   position: fixed;
   bottom: 16px;
@@ -12,14 +15,19 @@
   align-items: center;
 }
 .toast-pill {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--surface-1);
+  border: var(--rule);
+  border-radius: var(--r-control);
   padding: 8px 14px;
-  box-shadow: var(--shadow-menu);
-  font-size: 13px;
+  box-shadow: var(--shadow-popup);
+  font-size: var(--fs-ui);
   color: var(--fg);
   display: flex;
   align-items: center;
   gap: 12px;
 }
+.toast-pill .btn--text {
+  text-transform: lowercase;
+}
+.toast-pill .btn--text::before { content: "[ "; }
+.toast-pill .btn--text::after { content: " ]"; }

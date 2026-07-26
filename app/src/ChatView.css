@@ -5,11 +5,13 @@
    SAME 680px mono-prose reading column the CodeMirror editor uses (BlockEditor.css: .block-editor
    padding-inline 40px + .block-editor-col max-width 680px). Separation between turns is
    whitespace. Thinking + tool calls are quiet one-line disclosures that expand to left-ruled
-   excerpts; the permission prompt is the one affordance that keeps chrome, as a callout.
-   Theme-aware throughout via App.css custom properties. The only non-token literals are the
-   shared markdown-renderer's code/pre fill rgba(140,140,140,x) (kept verbatim to stay in
-   lockstep with the editor/cards) and the attachment-remove scrim (a control over arbitrary
-   photo pixels, theme-invariant like --term-bg/--term-fg). */
+   excerpts; the permission prompt is the one affordance that keeps chrome, as an .asc-callout
+   (2px accent-edge left rule — see ui/ui.css). Reading-column prose (.chat-bubble) runs the
+   ASCII direction's fixed prose register (--fs-body-lg/--lh-prose, ruled underline), matching
+   the editor lane rather than the settings-driven editor-font-size. Theme-aware throughout via
+   App.css custom properties + the design system's --r-*/--rule-*/--shadow-* tokens. The one
+   remaining non-token literal is the attachment-remove scrim (a control over arbitrary photo
+   pixels, theme-invariant like --term-bg/--term-fg — see the comment at .chat-attachment-remove). */
 
 .chat-host {
   display: flex;
@@ -53,25 +55,33 @@
   z-index: 20;
 }
 
-/* ── Header (ViewBar) extras — quiet metadata, no pills ───────────────────────── */
+/* ── Header (ViewBar) extras — the chip register: small bordered radius-2 tags,
+   not free-floating text. Model/tool/context/auth all read as one family. ───── */
 .chat-model {
+  display: inline-flex;
+  align-items: center;
   font-family: var(--ui-font-stack);
-  font-size: 11.5px;
-  color: var(--faint);
-  margin-left: 10px;
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: var(--rule);
+  border-radius: var(--r-chip);
   white-space: nowrap;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.chat-model::before { content: "· "; }
 .chat-stat {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
-  color: var(--faint);
-  margin-right: 10px;
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  margin-right: 8px;
+  padding: 1px 6px;
+  border: var(--rule);
+  border-radius: var(--r-chip);
   white-space: nowrap;
 }
 .chat-stat svg { opacity: 0.8; }
@@ -403,7 +413,7 @@
   align-items: center;
   gap: 5px;
   font-family: var(--ui-font-stack);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -429,7 +439,7 @@
   font-family: var(--ui-font-stack);
   font-size: 11.5px;
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-popup);
 }
 .chat-jump-bottom:hover { color: var(--fg); background: var(--chat-surface-2); }
 
@@ -450,7 +460,7 @@
   font-size: 11.5px;
   cursor: pointer;
   z-index: 60;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-popup);
 }
 .chat-sel-reply:hover { color: var(--fg); background: var(--chat-surface-2); }
 
@@ -496,14 +506,26 @@
 /* ── Bubbles dissolve: no fill, border, radius, or alignment — both roles are plain note
    prose. Retires the old .chat-bubble.user accent fill + hardcoded #fff (no fill left to
    need --on-accent). .user/.assistant remain as inert hooks. ───────────────────────────── */
+/* The reading-column register (matches the editor lane's prose: 13.5/1.9, ruled-paper
+   underline) — Monaspace, not the retired Lora serif stack. */
 .chat-bubble {
   font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
-  font-size: var(--editor-font-size, 18px);
-  line-height: var(--prose-line-height, 1.65);
+  font-size: var(--fs-body-lg);
+  line-height: var(--lh-prose);
   color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 5px;
+  text-wrap: pretty;
   word-wrap: break-word;
   overflow-wrap: anywhere;
 }
+/* The ruled underline is prose's texture, not structural chrome — headings, code, tables and
+   links carry their own treatment (or none) instead of inheriting the paper rule. */
+.chat-bubble h1, .chat-bubble h2, .chat-bubble h3,
+.chat-bubble h4, .chat-bubble h5, .chat-bubble h6,
+.chat-bubble pre, .chat-bubble code,
+.chat-bubble table, .chat-bubble a { text-decoration: none; }
 
 /* ── Rendered markdown — mirrors the editor's live-preview theme so a message reads exactly
    like a note. Applies to both roles identically. ─────────────────────────────────────── */
@@ -537,35 +559,27 @@
 .chat-bubble a.bismuth-wikilink { cursor: pointer; }
 /* `??slug` memory refs: a link to the THIRD brain — violet, vs blue for a vault wikilink. */
 .chat-bubble a.bismuth-memory-ref { color: var(--violet); border-bottom-color: color-mix(in srgb, var(--violet) 22%, transparent); }
-/* Inline code + fences: the shared renderer's verbatim rgba(140,140,140,x) fill — matches
-   .cardMd / livePreview token-for-token. Do not "fix" to a token; it would desync Chat. */
+/* Inline code + fences: surface-2-based tokens (already tint-aware via --chat-surface-1/2 —
+   see the --chat-* localisation at the top of this file), not a hardcoded grey rgba fill. */
 .chat-bubble code {
   font-family: var(--ui-font-stack);
   font-size: calc(1em * var(--mono-scale, 0.85));
-  background: rgba(140, 140, 140, 0.18);
+  background: var(--chat-surface-2);
   padding: 0 3px;
-  border-radius: 3px;
+  border-radius: var(--r-chip);
 }
 .chat-bubble pre {
   margin: 0.55em 0;
   padding: 10px 12px;
-  background: rgba(140, 140, 140, 0.12);
-  border-radius: 8px;
+  background: var(--chat-surface-1);
+  border: var(--rule-soft);
+  border-radius: var(--r-card);
   overflow-x: auto;
 }
 .chat-bubble pre code {
   background: none;
   padding: 0;
   line-height: 1.5;
-}
-/* In a tinted chat pane, blend the gray code fills with the chat color so they don't read as
-   foreign opaque patches on the tinted background. The literal rgba values above are kept as the
-   shared editor baseline; these overrides mix the tint on top. */
-.chat-host[data-chat-tint] .chat-bubble code {
-  background: color-mix(in oklch, var(--chat-tint) 16%, rgba(140, 140, 140, 0.18));
-}
-.chat-host[data-chat-tint] .chat-bubble pre {
-  background: color-mix(in oklch, var(--chat-tint) 12%, rgba(140, 140, 140, 0.12));
 }
 .chat-bubble blockquote {
   margin: 0.4em 0;
@@ -641,7 +655,7 @@
   margin: 0;
   padding: 2px 0 6px 20px;
   font-family: var(--ui-font-stack);
-  font-size: 12px;
+  font-size: var(--fs-micro);
   line-height: 1.55;
   color: var(--faint);
   white-space: pre-wrap;
@@ -746,10 +760,10 @@
 .chat-tool-pre {
   margin: 0;
   padding: 5px 0 5px 10px;
-  border-left: 2px solid var(--chat-border-soft);
+  border-left: var(--rule-soft);
   border-radius: 0;
   font-family: var(--ui-font-stack);
-  font-size: 11.5px;
+  font-size: var(--fs-ui);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -761,20 +775,22 @@
   border-left-color: color-mix(in srgb, var(--danger) 45%, var(--border-soft));
 }
 
-/* ── Inline permission card — the one affordance that keeps chrome: a callout-style left
-   accent rule + soft fg-tint (the editor's `> [!type]` admonition), not a dialog box. ──── */
+/* ── Inline permission card — the ONE affordance that keeps chrome: .asc-callout's 2px
+   accent-edge left rule, not a dialog box (see .asc-callout in ui/ui.css). Localised to the
+   tint-aware --chat-surface-1 rather than the shared class so a colored chat pane blends it. */
 .chat-permission {
-  border-left: 3px solid var(--accent);
-  border-radius: 0 8px 8px 0;
-  background: var(--chat-fg-mix);
-  padding: 9px 12px 10px;
+  border-left: var(--accent-edge);
+  background: var(--chat-surface-1);
+  padding: 10px 12px;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
 }
 .chat-permission.answered { opacity: 0.65; border-left-color: var(--border); }
 .chat-permission-head {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
+  font-size: var(--fs-ui);
   color: var(--fg);
 }
 .chat-permission-icon { color: var(--accent); }
@@ -802,6 +818,14 @@
   margin-top: 10px;
   flex-wrap: wrap;
 }
+/* Bracket action buttons — "[ allow ]" / "[ always ]" / "[ deny ]", the CLI-confirm register
+   the design system reserves for a callout's own actions. Lowercase-in-brackets is a look, not
+   a label change: the underlying text stays the uppercase TextButton warnNonUppercase expects. */
+.chat-permission-actions .btn--text {
+  text-transform: lowercase;
+}
+.chat-permission-actions .btn--text::before { content: "[ "; }
+.chat-permission-actions .btn--text::after { content: " ]"; }
 .chat-permission-outcome {
   display: inline-flex;
   align-items: center;
@@ -947,7 +971,7 @@
 
 /* The turn's muted footer (turns + cost). */
 .chat-turn-footer {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--faint);
   padding: 2px 0 0;
 }
@@ -1016,10 +1040,9 @@
   padding: 14px 40px 18px;
   border-top: 1px solid var(--border-soft);
 }
-/* The message box: textarea (+ any attachment chips) and the send button inside ONE soft-bordered
-   rounded surface, capped to the 680px reading column. Mirrors .ui-input (surface-2 fill, soft
-   border, accent focus ring) but sized for a multi-line composer; the textarea/send inside stay
-   chromeless so the wrapper is the only visible affordance. */
+/* The message box: textarea (+ any attachment chips) and the send button inside ONE flat
+   .ui-input surface, capped to the 680px reading column — a hairline border, radius 3, no
+   pill/glow. The transcript stays notebook-plain; this is the one bordered field. */
 .chat-composer-inner {
   display: flex;
   align-items: flex-end;
@@ -1030,15 +1053,12 @@
   padding: 5px 6px 5px 14px;
   background: var(--chat-surface-2);
   border: 1px solid var(--chat-border-soft);
-  border-radius: 14px;
-  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+  border-radius: var(--r-control);
+  transition: border-color var(--dur) var(--ease);
 }
 .chat-composer-inner:hover:not(:focus-within) { border-color: var(--chat-border); }
-/* Signature focus treatment, matching .ui-input: accent border + soft accent glow ring — the
-   textarea inside carries the focus, the box shows it. */
 .chat-composer-inner:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .chat-composer-main {
   display: flex;

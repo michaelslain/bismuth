@@ -5,12 +5,15 @@
 // addToOptions (see editor/completionDisplay.ts), reading the same CSS classes.
 import { Show, type JSX } from "solid-js";
 import { Icon } from "../../icons/Icon";
+import { Kbd } from "../ascii/Kbd";
 
 export function MenuRow(props: {
   label: string;
   icon?: string;
   prefix?: JSX.Element;
   detail?: string;
+  /** A real keybinding combo — see PopoverRow.shortcut. Renders right-aligned via Kbd. */
+  shortcut?: string;
   danger?: boolean;
   disabled?: boolean;
   selected?: boolean;
@@ -39,6 +42,13 @@ export function MenuRow(props: {
       <span class="bismuth-popover-label">{props.label}</span>
       <Show when={props.detail}>
         <span class="bismuth-popover-detail">{props.detail}</span>
+      </Show>
+      {/* row-kbd (ui/ui.css): the caps recede to --faint, the same treatment every
+          .asc-menurow shortcut gets. */}
+      <Show when={props.shortcut}>
+        <span class="bismuth-popover-shortcut row-kbd">
+          <Kbd combo={props.shortcut} />
+        </span>
       </Show>
       <Show when={props.hasSubmenu}>
         <span class="bismuth-popover-chev"><Icon value="ChevronRight" size={13} /></span>

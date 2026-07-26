@@ -1,8 +1,23 @@
 /* app/src/palette/palette.css
    Colocated palette detail polish (README §13): right-aligned shortcut-key chips
    on command rows, and a faint second-line description under template names.
-   App.css owns the base .palette-* layout; this file only adds the new elements
-   and the label/description column wrapper. UI chrome uses Monaspace Xenon. */
+   App.css owns the base .palette-* LAYOUT (App.css is out of this lane's file
+   boundary — Stage 3 landed .asc-modal/.asc-popover/.asc-key there); this file adds
+   the new elements AND overrides App.css's finish (background/radius/shadow, row
+   hover/active color, match weight) onto the ASCII register via selectors specific
+   enough to win the cascade regardless of stylesheet order (Modal.tsx's own
+   `.asc-modal` class already supplies the panel chrome — the combined selectors here
+   just stop App.css's older single-class rules from fighting it). */
+
+/* Modal.tsx now stamps every modal panel `.asc-modal` (pop-bg-strong, blur(6px), a
+   hairline border, radius 5, --shadow-modal) — this only cancels App.css's older
+   pill-radius/plain-surface .palette-panel finish so .asc-modal's wins. */
+.palette-panel.asc-modal {
+  background: var(--pop-bg-strong);
+  border: var(--rule);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow-modal);
+}
 
 /* Column wrapper around label + optional description so the description sits on a
    second line. Takes over the flex-fill role the bare label used to have. */
@@ -23,26 +38,42 @@
 /* Faint description second line (template descriptions, etc.). */
 .palette-desc {
   font-family: var(--popover-font);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Right-aligned faint mono key chip for a command's shortcut hint. */
+/* ── .asc-menurow behavior on the shared .palette-row (App.css's base row): flat
+   technical corners, hover/active on --accent-soft with accent text, --fs-ui type. The
+   descendant selector (.palette-list .palette-row) outranks App.css's bare .palette-row
+   regardless of import order. Also applies to SwitcherBar's rows — same class, same list. ── */
+.palette-list .palette-row,
+.switcher-list .palette-row {
+  border-radius: 0;
+  font-size: var(--fs-ui);
+}
+.palette-list .palette-row.selected,
+.switcher-list .palette-row.selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Fuzzy-matched characters: accent color carries the emphasis — no bold-on-top-of-color. */
+.palette-list .palette-match,
+.switcher-list .palette-match {
+  font-weight: var(--fw-regular);
+}
+
+/* Shortcut caps: a layout slot only — the Kbd primitive (`.asc-kbd`/`.asc-key`) supplies the
+   chip look, and `.row-kbd` (ui/ui.css) makes the caps recede to --faint the way a menu row's
+   caps do everywhere else in the system. No bespoke chip background/border here anymore. */
 .palette-shortcut {
   margin-left: auto;
   flex-shrink: 0;
-  font-family: var(--popover-font);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--fg) 7%, transparent);
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  padding: 2px 7px;
-  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
 }
 
 /* When a sublabel is also present, the shortcut keeps its own right-edge spot and
@@ -50,9 +81,4 @@
 .palette-shortcut + .palette-shortcut,
 .palette-sub + .palette-shortcut {
   margin-left: 11px;
-}
-
-.palette-row.selected .palette-shortcut {
-  color: var(--fg);
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-soft));
 }

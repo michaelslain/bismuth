@@ -2,9 +2,10 @@
    The in-window Cmd+O switcher (SwitcherBar.tsx). Unlike the modal palette, this bar is
    NOT a Portal/backdrop overlay — it's an absolutely-positioned top bar inside the editor
    pane, sitting where the tab strip was while the knowledge graph fills the window behind
-   it. Rows reuse the global .palette-* classes (App.css) so they match the command palette.
-   Loaded at boot (SwitcherBar is eagerly imported by App), so the .editor-pane positioning
-   context below is in place before the bar ever renders. */
+   it. Rows reuse the global .palette-* classes (App.css base layout + palette.css's ASCII
+   finish — hover/active accent, --fs-ui, no bold-only match) so they match the command
+   palette. Loaded at boot (SwitcherBar is eagerly imported by App), so the .editor-pane
+   positioning context below is in place before the bar ever renders. */
 
 /* Positioning context for the absolute bar. Harmless when idle (no offset children). */
 .editor-pane { position: relative; }
@@ -29,11 +30,15 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--surface-1) 85%, transparent);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border-right: 1px solid var(--border);
-  box-shadow: 8px 0 30px rgba(0, 0, 0, 0.28);
+  /* The overlay register's floating-panel fill/blur (.asc-modal, ui/ui.css) — not a Portal
+     modal itself (this bar is docked to the editor pane, not a centered scrim), so it takes
+     the tokens directly rather than the class (which also carries an all-round border/radius
+     that would fight this panel's flush left/top/bottom edges). */
+  background: var(--pop-bg-strong);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-right: var(--rule);
+  box-shadow: var(--shadow-popup);
   font-family: var(--popover-font);
   animation: switcher-drop 0.14s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -55,18 +60,10 @@
 }
 .switcher-input::placeholder { color: var(--fg); opacity: 0.4; }
 
-/* Small resting "esc" hint on the right edge of the bar. */
+/* Small resting "esc" hint on the right edge of the bar — a layout slot only, the Kbd
+   primitive (.asc-kbd/.asc-key, ui/ui.css) supplies the cap's own chip look. */
 .switcher-esc {
   flex: none;
-  font-family: var(--popover-font);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--fg) 7%, transparent);
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  padding: 2px 8px;
-  line-height: 1.3;
 }
 
 /* The results list fills the rest of the column below the search row. */
@@ -84,11 +81,12 @@
    reused result cards their own stacking margin here instead of duplicating layout. */
 .switcher-list .sresult { margin-top: 8px; }
 
-/* Tiny section label above the keyword content matches (under the file-name rows). */
+/* Tiny section label above the keyword content matches (under the file-name rows) —
+   --fs-micro uppercase, the group-label register every overlay list uses. */
 .switcher-section {
   margin-top: 10px;
   padding: 4px 11px 2px;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;

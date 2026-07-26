@@ -14,6 +14,7 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { api } from "./api";
 import { pushToast } from "./Toast";
 import { relTimeMs } from "./relTime";
+import "./DaemonList.css";
 
 /** Convert a 5-part cron expression to a short human-readable frequency string. */
 function cronFrequency(expr: string): string {
@@ -71,8 +72,8 @@ function nodeStatus(node: GraphNode): StatusKey {
 const STATUS_DOT: Record<StatusKey, string> = {
   running: "var(--accent)",
   failed: "var(--danger)",
-  idle: "var(--text-muted)",
-  disabled: "var(--text-muted)",
+  idle: "var(--faint)",
+  disabled: "var(--faint)",
 };
 
 function statusLabel(node: GraphNode): string {
@@ -103,44 +104,16 @@ function CronRow(props: {
       onContextMenu={(e) => props.onMenu(props.node, e)}
       style={{ opacity: status() === "disabled" ? 0.45 : 1 }}
     >
-      <span
-        style={{
-          width: "7px",
-          height: "7px",
-          "border-radius": "50%",
-          background: STATUS_DOT[status()],
-          "flex-shrink": 0,
-          "box-shadow": status() === "running" ? "0 0 4px var(--accent)" : "none",
-        }}
-      />
+      <span class="daemon-row-dot" classList={{ glow: status() === "running" }} style={{ color: STATUS_DOT[status()] }} />
       <span class="daemon-row-label">
         {props.node.label}
       </span>
       <Show when={freq()}>
-        <span
-          style={{
-            "font-size": "10px",
-            color: "var(--text-muted)",
-            "white-space": "nowrap",
-            "flex-shrink": 0,
-            opacity: 0.7,
-          }}
-        >
-          {freq()}
-        </span>
+        <span class="daemon-row-freq">{freq()}</span>
       </Show>
       <span
-        style={{
-          "font-size": "10px",
-          color:
-            status() === "running"
-              ? "var(--accent)"
-              : status() === "failed"
-                ? "var(--danger)"
-                : "var(--text-muted)",
-          "white-space": "nowrap",
-          "flex-shrink": 0,
-        }}
+        class="daemon-row-status"
+        classList={{ "tone-accent": status() === "running", "tone-danger": status() === "failed" }}
       >
         {statusLabel(props.node)}
       </span>
@@ -162,26 +135,11 @@ function ProcessRow(props: {
       onContextMenu={(e) => props.onMenu(props.node, e)}
       style={{ opacity: enabled() ? 1 : 0.45 }}
     >
-      <span
-        style={{
-          width: "7px",
-          height: "7px",
-          "border-radius": "50%",
-          background: enabled() ? "var(--accent)" : "var(--text-muted)",
-          "flex-shrink": 0,
-        }}
-      />
+      <span class="daemon-row-dot" classList={{ glow: enabled() }} style={{ color: enabled() ? "var(--accent)" : "var(--faint)" }} />
       <span class="daemon-row-label">
         {props.node.label}
       </span>
-      <span
-        style={{
-          "font-size": "10px",
-          color: enabled() ? "var(--accent)" : "var(--text-muted)",
-          "white-space": "nowrap",
-          "flex-shrink": 0,
-        }}
-      >
+      <span class="daemon-row-status" classList={{ "tone-accent": enabled() }}>
         {enabled() ? "on" : "off"}
       </span>
     </div>
@@ -257,13 +215,11 @@ export function DaemonList(props: {
   return (
     <div class="daemon-list">
       <Show when={empty()}>
-        <div style={{ padding: "8px 6px", color: "var(--text-muted)", "font-size": "11px" }}>
-          No daemons configured
-        </div>
+        <div class="daemon-empty">No daemons configured</div>
       </Show>
       <Show when={crons().length > 0}>
         <div class="daemon-section-head">
-          Crons <span style={{ opacity: 0.6 }}>{crons().length}</span>
+          Crons <span class="daemon-section-count">{crons().length}</span>
         </div>
         <For each={crons()}>{(node) => <CronRow node={node} onFocus={props.onFocus} onMenu={openMenu} />}</For>
       </Show>
@@ -272,7 +228,7 @@ export function DaemonList(props: {
           class="daemon-section-head"
           style={{ "margin-top": crons().length > 0 ? "4px" : "0" }}
         >
-          Processes <span style={{ opacity: 0.6 }}>{processes().length}</span>
+          Processes <span class="daemon-section-count">{processes().length}</span>
         </div>
         <For each={processes()}>{(node) => <ProcessRow node={node} onFocus={props.onFocus} onMenu={openMenu} />}</For>
       </Show>

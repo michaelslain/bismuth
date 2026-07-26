@@ -4,9 +4,9 @@
 // deliverAt, transparency-only), Recently resolved (terminal, collapsed, newest-first). Sorting/
 // grouping is pure (daemonInboxLogic.ts); this component is just the presentation + press wiring.
 import { createMemo, createSignal, For, Show } from "solid-js";
-import type { DaemonPage, PageStatus } from "../../core/src/daemonPages";
+import type { DaemonPage } from "../../core/src/daemonPages";
 import { inboxPages, refreshDaemonPages } from "./daemonInbox";
-import { dueSorted, scheduledSorted, resolvedSorted, sharedPrimaryAction } from "./daemonInboxLogic";
+import { dueSorted, scheduledSorted, resolvedSorted, sharedPrimaryAction, STATUS_COLOR } from "./daemonInboxLogic";
 import { api } from "./api";
 import { pushToast } from "./Toast";
 import { ViewBar, Crumb } from "./ui/ViewBar";
@@ -14,14 +14,6 @@ import { TextButton } from "./ui/TextButton";
 import { EmptyState } from "./ui/EmptyState";
 import { relTimeISO } from "./relTime";
 import "./InboxView.css";
-
-const STATUS_COLOR: Record<PageStatus, string> = {
-  pending: "var(--text-muted)",
-  working: "var(--accent)",
-  done: "var(--green)",
-  failed: "var(--rose)",
-  dismissed: "var(--text-muted)",
-};
 
 /** ~120-char single-line preview of a page's body — collapse whitespace/markdown noise so the
  *  row reads as a snippet, not a wrapped paragraph. */
@@ -48,7 +40,7 @@ function PageRow(props: { page: DaemonPage; onOpen: (path: string) => void; show
 
   return (
     <div class="inbox-row" onClick={() => props.onOpen(props.page.path)}>
-      <span class="inbox-row-dot" style={{ background: STATUS_COLOR[props.page.status] }} />
+      <span class="inbox-row-dot" style={{ color: STATUS_COLOR[props.page.status] }} />
       <div class="inbox-row-main">
         <div class="inbox-row-head">
           <span class="inbox-row-title">{props.page.title}</span>
@@ -123,7 +115,7 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
 
         <Show when={due().length > 0}>
           <div class="inbox-section-head">
-            Needs review <span class="inbox-section-count">{due().length}</span>
+            <span class="asc-eyebrow">Needs review <span class="inbox-section-count">{due().length}</span></span>
             <Show when={approveAllId()}>
               <TextButton size="sm" onClick={approveAll} style={{ "margin-left": "auto" }}>
                 APPROVE ALL
@@ -135,14 +127,14 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
 
         <Show when={scheduled().length > 0}>
           <div class="inbox-section-head">
-            Scheduled <span class="inbox-section-count">{scheduled().length}</span>
+            <span class="asc-eyebrow">Scheduled <span class="inbox-section-count">{scheduled().length}</span></span>
           </div>
           <For each={scheduled()}>{(p) => <PageRow page={p} onOpen={props.onOpen} showActions={false} onChanged={refresh} />}</For>
         </Show>
 
         <Show when={resolved().length > 0}>
           <div class="inbox-section-head inbox-section-head-collapsible" onClick={() => setResolvedOpen((v) => !v)}>
-            Recently resolved <span class="inbox-section-count">{resolved().length}</span>
+            <span class="asc-eyebrow">Recently resolved <span class="inbox-section-count">{resolved().length}</span></span>
             <span class="inbox-section-toggle">{resolvedOpen() ? "hide" : "show"}</span>
           </div>
           <Show when={resolvedOpen()}>
