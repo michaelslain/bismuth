@@ -43,11 +43,12 @@ export interface GraphConfig {
   backgroundNoise?: boolean;
 }
 
-/** The node currently under the cursor, surfaced to GraphView for the hover readout. */
+/** The node currently under the cursor, surfaced to GraphView for the hover readout. "cluster" is
+ *  the ASCII renderer's LOD aggregate entity (a community mass, not a real graph node). */
 export interface HoverNode {
   id: string;
   label: string;
-  kind: NodeKind;
+  kind: NodeKind | "cluster";
   folder?: string;
 }
 import { nodeVisualState } from "../../../core/src/daemonViz";

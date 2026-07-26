@@ -50,7 +50,9 @@ function fpsColor(fps: number): string {
 const VIEW_MODE_KEY = "bismuth:graph:viewMode";
 const readStoredViewMode = (): "2d" | "3d" => {
   const v = readCache<"2d" | "3d">(VIEW_MODE_KEY);
-  return v === "2d" || v === "3d" ? v : "3d";
+  // Default is 2D — the LOD redesign (aggregate cluster entities, cursor-anchored zoom) ships for
+  // the 2D field; 3D keeps its non-LOD orbit behaviour and stays one toggle away.
+  return v === "2d" || v === "3d" ? v : "2d";
 };
 const [graphViewMode, setGraphViewMode] = createSignal<"2d" | "3d">(readStoredViewMode());
 const setViewModePersisted = (m: "2d" | "3d") => {

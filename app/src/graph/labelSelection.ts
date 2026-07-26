@@ -143,8 +143,12 @@ export function selectVisibleLabels(
 // ---------------------------------------------------------------------------
 
 /** t below which NO file label is drawn (forced ones — hover/active/search — are the only
- *  exception; see AsciiGraphRenderer's `forced()`). Cluster names own the field down here. */
-export const FILE_LABEL_REVEAL_T = 0.3;
+ *  exception; see AsciiGraphRenderer's `forced()`). Cluster names own the field down here — and
+ *  since the LOD renderer (lod.ts) keys its GEOMETRY off the same boundary, so do the aggregate
+ *  cluster ENTITIES: real notes and real edges only rasterize past this point, i.e. on the deep
+ *  stops of the zoom ladder. Raised from 0.3 for the LOD redesign: the aggregate view owns the
+ *  majority of the ladder (100%..40%), leaves crossfade in across ~30% and own ~20%..0%. */
+export const FILE_LABEL_REVEAL_T = 0.6;
 /** Width (in the same t units) of the cluster-name → file-name crossfade that starts at
  *  `FILE_LABEL_REVEAL_T`. */
 export const FILE_LABEL_FADE_SPAN = 0.22;
