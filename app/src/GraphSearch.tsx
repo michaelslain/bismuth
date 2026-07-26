@@ -9,6 +9,8 @@
 import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
 import { SearchBar } from "./ui/SearchBar";
 import { IconButton } from "./ui/IconButton";
+// ASCII register: --fs-ui rows on the .asc-popover panel, each carrying the node's own glyph.
+import "./graph/asciiGraph.css";
 
 export interface SearchItem {
   id: string;
@@ -132,6 +134,9 @@ export function GraphSearch(props: {
               // search input focused and avoids text-selection.
               onMouseDown={(e) => { e.preventDefault(); props.onFly(item.id); }}
             >
+              {/* The node glyph from the field's degree ramp, so a row and its node read as
+                  the same object (design/ascii tokens/ascii.css --node-linked). */}
+              <span class="graph-search-glyph" aria-hidden="true">o</span>
               <span class="graph-search-label">
                 {item.label}
               </span>
