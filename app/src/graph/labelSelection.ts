@@ -146,12 +146,25 @@ export function selectVisibleLabels(
  *  exception; see AsciiGraphRenderer's `forced()`). Cluster names own the field down here — and
  *  since the LOD renderer (lod.ts) keys its GEOMETRY off the same boundary, so do the aggregate
  *  cluster ENTITIES: real notes and real edges only rasterize past this point, i.e. on the deep
- *  stops of the zoom ladder. Raised from 0.3 for the LOD redesign: the aggregate view owns the
- *  majority of the ladder (100%..40%), leaves crossfade in across ~30% and own ~20%..0%. */
-export const FILE_LABEL_REVEAL_T = 0.6;
+ *  stops of the zoom ladder.
+ *
+ *  0.75, was 0.6 (and 0.3 before the LOD redesign): "to show the notes inside a cluster the user
+ *  should have to zoom in MORE than now". Because the ladder is logarithmic in resolution
+ *  (`resFromT` = maxRes^t), moving the boundary from 0.6 to 0.75 is not a 25% change — on the
+ *  reference vault (maxRes 68 at the current `DEEPEST_WORLD_PER_CELL`) the leaves now first appear at
+ *  res 23.8 instead of res 8.2, i.e. at 2.9× the magnification, and they only OWN the field from the
+ *  10% stop. Aggregate entities own 100%..20% (was 100%..40%).
+ *
+ *  Everything downstream is derived, not duplicated: `levelBoundaries` re-spreads the hierarchy
+ *  levels evenly across [0, this) — on a 3-level vault, 0.25 per level instead of 0.2 — and
+ *  `lodMix` keys the entity/leaf geometry off the same two curves as the names. */
+export const FILE_LABEL_REVEAL_T = 0.75;
 /** Width (in the same t units) of the cluster-name → file-name crossfade that starts at
- *  `FILE_LABEL_REVEAL_T`. */
-export const FILE_LABEL_FADE_SPAN = 0.22;
+ *  `FILE_LABEL_REVEAL_T`. 0.15, was 0.22: it has to finish BEFORE `FILE_LABEL_FULL_T` (see there —
+ *  the budget is meant to keep climbing after the crossfade is done), and with the reveal point at
+ *  0.75 the old 0.22 would have run to 0.97, past it. 0.15 keeps the same ~60% share of the
+ *  post-reveal span the old pair had. */
+export const FILE_LABEL_FADE_SPAN = 0.15;
 /** t at which the file-label BUDGET (as opposed to the crossfade alpha above) reaches "every
  *  on-grid candidate". Deliberately later than the crossfade finishes — the crossfade is about
  *  visibility, the budget is about density, and "full naming only near max resolution" means the

@@ -123,12 +123,14 @@ function settle(n = 120) { for (let i = 0; i < n; i++) frame(16 * (i + 2)); }
 // zoom law), so this changes NOTHING about on-screen geometry at 100%, only how much further there is to
 // zoom toward 0%. Chosen so maxRes lands on a clean, comfortably-settling value in both 2D and 3D (see
 // AsciiGraphRenderer.ts fit()/asciiGrid.ts maxResFor).
-// 3, was 12: maxRes is proportional to RING_SCALE / DEEPEST_WORLD_PER_CELL, and that constant went
-// 3.125 → 0.8 (a deeper absolute 0%). Left at 12 the fixture's ladder got ~4x deeper, so the level-
-// boundary stops these tests step to (70% = t 0.3) magnified 4 blobs of 6 notes past the whole field
-// and every entity went off-grid. Rescaling by the same factor keeps the ladder — and therefore what
-// each stop MEANS for this fixture — exactly where it was. Retune this whenever that constant moves.
-const RING_SCALE = 3;
+// 1.5, was 3, was 12: maxRes is proportional to RING_SCALE / DEEPEST_WORLD_PER_CELL, and that constant
+// went 3.125 → 0.8 → 0.4 (a deeper absolute 0% each time). Left at 12 the fixture's ladder got ~4x
+// deeper, so the level-boundary stops these tests step to magnified 4 blobs of 6 notes past the whole
+// field and every entity went off-grid. Rescaling by the same factor keeps the ladder — and therefore
+// what each stop MEANS for this fixture — exactly where it was: measured at 800x600, RING_SCALE 1.5
+// with W 0.4 reproduces RING_SCALE 3 with W 0.8 exactly (2D maxRes 8.00 — the MIN_ZOOM_SPAN floor —
+// and 3D maxRes 9.77). Retune this whenever that constant moves.
+const RING_SCALE = 1.5;
 
 /** A ring of notes around one high-degree hub, in three communities. */
 function sampleGraph() {
@@ -213,7 +215,13 @@ const cellPx = (p: LodPriv, i: number) => ({
 function lodGraph() {
   const nodes = [];
   const edges = [];
-  const CENTERS = [[-350, -120], [-350, 120], [350, -120], [350, 120]];
+  // Two top clusters (left/right), each of two blobs (up/down). The VERTICAL offset is bounded by
+  // what the field can still show at the level-1 boundary stop, which is the stop these tests step
+  // to: fit maps the graph's WIDE axis to the field, so at the boundary's resolution the visible
+  // world half-height is ~122 units — a ±120 offset (the original) left both children within a third
+  // of a row of the edge, so which of them counted as "on the grid" came down to rounding. ±80 keeps
+  // ~5 rows of margin. Bounded by the ladder, so re-check it if FILE_LABEL_REVEAL_T moves again.
+  const CENTERS = [[-350, -80], [-350, 80], [350, -80], [350, 80]];
   for (let b = 0; b < 4; b++) {
     for (let k = 0; k < 6; k++) {
       const a = (k / 6) * Math.PI * 2;
@@ -422,7 +430,11 @@ describe("semantic zoom — cluster names own the field zoomed out, file names c
 
 describe("N-level semantic labels — the zoom ladder walks communityPath, coarsest to finest", () => {
   /** Two top-level super-clusters (TOP 0/TOP 1), each split into two finer sub-clusters (SUB
-   *  0..3) — a 2-level hierarchy, communityPath/communityPathLabels coarsest-first per graph.ts. */
+   *  0..3) — a 2-level hierarchy, communityPath/communityPathLabels coarsest-first per graph.ts.
+   *  A FLATTENED ring (y radius 30 against x radius 80), for the same reason as lodGraph's CENTERS:
+   *  the two top halves are the upper/lower arcs, so their centroids sit at 0.62 of the y radius, and
+   *  at the sub-level boundary stop the field only shows the middle ~0.7 of the y extent. On the
+   *  circular ring this put every cluster centroid off the grid at that stop and no name could draw. */
   function twoLevelGraph() {
     const nodes = [];
     const edges = [];
@@ -432,8 +444,8 @@ describe("N-level semantic labels — the zoom ladder walks communityPath, coars
       const sub = top * 2 + (i % 2);
       nodes.push({
         id: `n${i}`, label: `note ${i}`, kind: "note" as const,
-        position: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE, ((i % 5) - 2) * 30 * RING_SCALE] as [number, number, number],
-        position2d: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE] as [number, number],
+        position: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 30 * RING_SCALE, ((i % 5) - 2) * 30 * RING_SCALE] as [number, number, number],
+        position2d: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 30 * RING_SCALE] as [number, number],
         community: sub,
         communityLabel: `Sub ${sub}`,
         communityPath: [top, sub],
@@ -467,10 +479,10 @@ describe("N-level semantic labels — the zoom ladder walks communityPath, coars
 
   it("steps down to the sub-level's names on zooming in, before file names appear", () => {
     const { r, viewport } = mountTwoLevel();
-    // Three notches = 100% -> 70%, i.e. t = 0.3 — exactly the 2-level boundary of the LOD ladder
-    // (levelBoundaries splits [0, FILE_LABEL_REVEAL_T=0.6) evenly), where the SUB level owns the
-    // field outright and the TOP level has fully crossfaded away.
-    wheelIn(viewport, 3);
+    // Four notches = 100% -> 60%, i.e. t = 0.4 — past the 2-level boundary of the LOD ladder
+    // (levelBoundaries splits [0, FILE_LABEL_REVEAL_T=0.75) evenly, so it sits at 0.375), where the
+    // SUB level owns the field outright and the TOP level has fully crossfaded away.
+    wheelIn(viewport, 4);
     settle(200);
     // The settle() glide paints every intermediate frame too (including ones still mid-crossfade
     // from TOP to SUB), so only the FINAL settled frame answers "what does 80% look like" — force
@@ -728,7 +740,7 @@ describe("LEVEL OF DETAIL — coarse stops rasterize aggregate entities, deep st
     const i = p.cellEntity.findIndex((v) => v === leftFlat);
     expect(i).toBeGreaterThanOrEqual(0);
     const at = cellPx(p, i);
-    wheelIn(viewport, 3, at); // 100% -> 70% = t 0.3: the 2-level boundary — level 1 owns the field
+    wheelIn(viewport, 4, at); // 100% -> 60% = t 0.4: past the 2-level boundary (0.375) — level 1 owns it
     settle(200);
     expect(entityLevelsOnGrid(p)).toEqual(new Set([1]));
     // The children on the field are the anchored parent's OWN blobs (0 and 1) — expansion happens
@@ -923,3 +935,4 @@ describe("UI data accessors", () => {
     r.destroy();
   });
 });
+

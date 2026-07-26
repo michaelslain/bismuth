@@ -159,21 +159,24 @@ describe("lodMix — the ladder-onto-levels mapping (level selection per stop)",
   }
 
   it("walks coarsest → finest → leaves across the stops, for the reference 3-level shape", () => {
-    // Stops are t = 0, 0.1, …, 1 (10% each). With FILE_LABEL_REVEAL_T = 0.6 and 3 levels the
-    // segments are 0.2 wide: L0 owns 100–90%, L1 80–70%, L2 60–40%, leaves ~30%–0%.
+    // Stops are t = 0, 0.1, …, 1 (10% each). With FILE_LABEL_REVEAL_T = 0.75 and 3 levels the
+    // segments are 0.25 wide: L0 owns 100–90%, L1 80–60%, L2 50–20%, leaves 10%–0%. (Aggregates
+    // deliberately own the majority of the ladder — see FILE_LABEL_REVEAL_T.)
     expect(owner(0.0, 3)).toBe("L0");   // 100%
     expect(owner(0.1, 3)).toBe("L0");   // 90%
     expect(owner(0.2, 3)).toBe("L1");   // 80%
     expect(owner(0.3, 3)).toBe("L1");   // 70%
-    expect(owner(0.4, 3)).toBe("L2");   // 60%
+    expect(owner(0.4, 3)).toBe("L1");   // 60%
     expect(owner(0.5, 3)).toBe("L2");   // 50%
-    expect(owner(0.6, 3)).toBe("L2");   // 40% — the reveal point itself still belongs to entities
-    expect(owner(0.8, 3)).toBe("leaves"); // 20%
+    expect(owner(0.7, 3)).toBe("L2");   // 30%
+    expect(owner(0.75, 3)).toBe("L2");  // 25% — the reveal point itself still belongs to entities
+    expect(owner(0.8, 3)).toBe("L2");   // 20% — leaves are fading in but do not own the field yet
+    expect(owner(0.9, 3)).toBe("leaves"); // 10%
     expect(owner(1.0, 3)).toBe("leaves"); // 0%
   });
 
   it("entities own everything below the reveal point and are fully gone once leaves saturate", () => {
-    for (const t of [0, 0.2, 0.4, FILE_LABEL_REVEAL_T]) {
+    for (const t of [0, 0.2, 0.4, 0.6, FILE_LABEL_REVEAL_T]) {
       const { levelAlphas, leafAlpha } = lodMix(t, 3);
       expect(leafAlpha).toBe(0);
       expect(levelAlphas.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 8);

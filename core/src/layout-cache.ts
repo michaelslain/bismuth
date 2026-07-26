@@ -24,6 +24,15 @@ interface Layout { pos3d: Positions; pos2d: Positions }
 const to2d = (p: number[]): [number, number] => [p[0], p[1]];
 
 const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache");
+// v17: GRID-ISLAND CONTAINMENT (layout.ts "CONTAINMENT" block) — a per-tick radial constraint now
+//      holds every 2D node inside its island's disc, and island hosting for a too-small top-level
+//      group is decided per GROUP instead of per node. Measured on the reference vault: nodes inside
+//      their island 0.957 → 1.000 (riders 0.500 → 1.000), island pairs overlapping on their settled
+//      p95 radii 42/105 → 0/105. Every 2D coordinate moves (3D is untouched, but the 2D layout is
+//      seeded from it, so the entry is keyed as a whole).
+//      MUST bump — same reasoning as v16/v15/v13/v12 below: graphSig() and seedPath() are both
+//      versioned, so the first build after the bump is a full cold settle under the constraint and no
+//      node stays pinned at a v16 position.
 // v16: GRID ISLANDS (layout.ts "GRID ISLANDS" block) — the 2D layout now anchors every top-level
 //      cluster onto a coarse lattice cell with provable empty lanes, instead of letting the community
 //      forces negotiate cluster positions. Every 2D coordinate moves (3D is untouched, but the 2D
@@ -70,7 +79,7 @@ const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bism
 // v7: stronger small-graph linkDist boost (400/n, cap 8) — much airier small graphs.
 // v6: small-graph linkDist boost added (sqrt(500/n) factor in layout.ts) changes layout output.
 // v5: collide iterations 3→6 + padding 1.25→1.55 (anti-overlap).
-const CACHE_VERSION = "v16"; // v16: grid-island 2D placement + short cluster exemplars
+const CACHE_VERSION = "v17"; // v17: grid-island member containment (+ per-group island hosting)
 const REFINE_TICKS = 120; // PivotMDS-seeded, so this polishes well without a full ~300-tick settle
 // Incremental (pinned add-only) rebuild: only the new nodes move, so far fewer ticks converge (the
 // early-exit in computeLayoutAsync usually stops sooner). Cap the number of added nodes that take this

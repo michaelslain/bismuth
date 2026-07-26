@@ -206,35 +206,41 @@ export function fitPxPerWorld(cols: number, rows: number, m: GridMetrics, radius
  * point of "0% = deepest zoom" is that it does NOT depend on graph size the way `fitPxPerWorld`
  * does.
  *
- * 0.8, was 3.125. The old value was derived from "two touching notes must land on separate cells",
- * which is the wrong bar twice over. It only counted CELL WIDTH (a row is 2.86× a column in world
- * terms, so vertically two adjacent notes were only ~1.6 rows apart), and a mark being merely
- * *distinct* is not the same as its NEIGHBOURHOOD being *readable* — a note carries a label. Measured
- * on the reference 2114-note vault at 1400×900 the old floor put ~170 notes (and their labels) on the
- * field at 0%: a wall of text, i.e. no deep end at all.
+ * 0.4, was 0.8, was 3.125. The ORIGINAL 3.125 was derived from "two touching notes must land on
+ * separate cells", which is the wrong bar twice over. It only counted CELL WIDTH (a row is 2.86× a
+ * column in world terms, so vertically two adjacent notes were only ~1.6 rows apart), and a mark
+ * being merely *distinct* is not the same as its NEIGHBOURHOOD being *readable* — a note carries a
+ * label. Measured on the reference 2114-note vault at 1400×900 it put ~170 notes (and their labels) on
+ * the field at 0%: a wall of text, i.e. no deep end at all.
  *
- * The new value is derived from the target the deep end is actually for — "a readable local
- * neighbourhood of a few dozen notes":
+ * The value is derived from the target the deep end is actually for — "a readable local
+ * neighbourhood of a few dozen notes", now tightened to 15-25 notes ("max zoom still needs to be
+ * greater"):
  *
  *   1. NOTES ON SCREEN. The visible world box at 0% is `cols·W` wide by `rows·W·(cellH/cellW)` tall.
  *      On the reference field (219 cols × 48 rows, cellH/cellW = 2.857) that is 30,033·W² world units².
  *      The vault's own local spacing — set by layout.ts's collide floor, measured, not assumed — has a
- *      median nearest-neighbour distance of 14.1 world units. Sampling 400 windows centred on real
- *      notes of the settled layout gives a median count of 170 at W = 3.125, 42 at W = 1.0, 35 at
- *      W = 0.8 and 20 at W = 0.5. W = 0.8 is the value that lands the median in the 30-60 band
- *      (p10 15, p90 62) — the whole band, not just its middle.
- *   2. LABEL ROOM, the reason that band is the right one. At W the two closest notes sit 14.1/W
- *      columns apart horizontally and 14.1/(W·2.857) ROWS apart vertically. At W = 0.8 that is 17.6
- *      columns and 6.2 rows — so each note has room beside it for a label (a capped cluster name is 26
- *      columns; a file label is placed 2 columns off the glyph and simply drops if it doesn't fit) and
- *      several clear rows above and below. At the old 3.125 it was 4.5 columns and 1.6 rows, which is
- *      exactly the overlapping soup that was reported.
+ *      median nearest-neighbour distance of 14.0 world units. Sampling 400 windows centred on real
+ *      notes of the settled layout (the CONTAINED grid-island layout — layout.ts CONTAINMENT) gives a
+ *      median count of 36 at W = 0.8, 21 at W = 0.5, 15 at W = 0.4 and 9 at W = 0.3.
+ *      W = 0.4 is the value whose whole band lands on the 15-25 target (median 15, p90 25) — and it is
+ *      exactly half the previous floor, so it is also "twice the resolution" in one word.
+ *   2. LABEL ROOM, the reason that band is the right one. At W the two closest notes sit 14.0/W
+ *      columns apart horizontally and 14.0/(W·2.857) ROWS apart vertically. At W = 0.4 that is 35
+ *      columns and 12.3 rows — comfortably more than a label needs beside a glyph (a capped cluster
+ *      name is 26 columns; a file label is placed 2 columns off the glyph and simply drops if it
+ *      doesn't fit). At the old 3.125 it was 4.5 columns and 1.6 rows, which is exactly the
+ *      overlapping soup that was reported.
  *
  * Changing this changes nothing but the ladder's DEPTH: `maxResFor` reaches further, and the 10%
- * steps (`ZOOM_STEP_PCT`) simply each cover more range — on the reference vault maxRes goes 8.6 → 33.7,
- * i.e. ~1.42× per notch.
+ * steps (`ZOOM_STEP_PCT`) simply each cover more range — on the reference vault maxRes goes
+ * 8.6 (at 3.125) → 34 (at 0.8) → 68 (at 0.4), i.e. ~1.52× per notch. It does NOT change what the
+ * field looks like at any other stop, only how far past them the wheel can go.
+ * Two things are pinned to it and must move with it: the `MIN_ZOOM_SPAN` floor below (only if the
+ * FLOORED case needs it — see there, it did not) and `RING_SCALE` in AsciiGraphRenderer.test.ts
+ * (maxRes for a fixture is proportional to RING_SCALE / this, so halving one halves the other).
  */
-export const DEEPEST_WORLD_PER_CELL = 0.8;
+export const DEEPEST_WORLD_PER_CELL = 0.4;
 
 /**
  * The ladder's MINIMUM span, as a multiple of the fit resolution.
@@ -262,6 +268,14 @@ export const DEEPEST_WORLD_PER_CELL = 0.8;
  * Raised in step with `DEEPEST_WORLD_PER_CELL` (3.125 → 0.8, a 3.9× deeper absolute end) so the
  * floored case gets a comparable amount of depth rather than staying at the old shallow span. The
  * steps stay at 10% — 11 stops either way, each just covering more range (~28% per notch at 8).
+ *
+ * DELIBERATELY left at 8 when `DEEPEST_WORLD_PER_CELL` went 0.8 → 0.4, unlike the 3.125 → 0.8 move
+ * above. The two cases are not the same: the absolute target got deeper because a 2000-note vault
+ * needed a deeper end, and a graph sitting on this floor is by definition one that is ALREADY finer
+ * than that target — a small graph, which needs no extra depth to be read (there is nothing left to
+ * resolve). Raising it would also be unfixable for the fixtures: a floored ladder is graph-INDEPENDENT,
+ * so no amount of rescaling a test fixture can restore the ladder depth its stop-by-stop assertions
+ * were written against (see RING_SCALE in AsciiGraphRenderer.test.ts, which is at this floor in 2D).
  */
 export const MIN_ZOOM_SPAN = 8;
 
