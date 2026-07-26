@@ -173,7 +173,7 @@ interface SchemaEntry {
 | `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor prose font — a Monaspace variant; the whole app is one monospace grid. |
 | `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus. |
 | `editorFontSize` | number | `13.5` | 11–28 | Editor font size in px. |
-| `sidebarWidth` | number | `280` | 200–600 | Left sidebar width in px. |
+| `sidebarWidth` | number | `266` | 200–600 | Left sidebar width in px (the ASCII design's 266px vault rail). |
 | `sidebarGraphHeight` | number | `305` | 200–500 | Mini graph panel height in the sidebar in px. |
 | `uiFontSize` | number | `11.5` | 11–16 | Base UI font size (sidebar, tabs, menus) in px (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | 0.6–1.0 | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |

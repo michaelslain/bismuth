@@ -43,7 +43,7 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 | `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor prose font — a Monaspace variant; the whole app is one monospace grid. |
 | `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus. |
 | `editorFontSize` | number | `13.5` | min `11`, max `28` | Editor font size (px). |
-| `sidebarWidth` | number | `280` | min `200`, max `600` | Left sidebar width (px). |
+| `sidebarWidth` | number | `266` | min `200`, max `600` | Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css). |
 | `sidebarGraphHeight` | number | `305` | min `200`, max `500` | Height of the mini graph panel in the sidebar (px). |
 | `uiFontSize` | number | `11.5` | min `11`, max `16` | Base UI font size — sidebar, tabs, menus (px) (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |

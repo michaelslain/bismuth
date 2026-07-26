@@ -66,7 +66,7 @@ export const SETTINGS_SCHEMA: Schema = {
       doc: "UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus.",
     },
     editorFontSize: { type: "number", default: 13.5, min: 11, max: 28, doc: "Editor font size (px)." },
-    sidebarWidth: { type: "number", default: 280, min: 200, max: 600, doc: "Left sidebar width (px)." },
+    sidebarWidth: { type: "number", default: 266, min: 200, max: 600, doc: "Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css)." },
     sidebarGraphHeight: { type: "number", default: 305, min: 200, max: 500, doc: "Height of the mini graph panel in the sidebar (px)." },
     uiFontSize: { type: "number", default: 11.5, min: 11, max: 16, doc: "Base UI font size — sidebar, tabs, menus (px) (the ASCII design's --fs-ui workhorse size)." },
     monoScale: { type: "number", default: 1, min: 0.6, max: 1, doc: "Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; 1 = no correction." },

@@ -1,6 +1,6 @@
 // app/src/icons/iconElement.tsx
 //
-// Render a Lucide icon into a DOM node for IMPERATIVE call sites (e.g. CodeMirror
+// Render an icon glyph into a DOM node for IMPERATIVE call sites (e.g. CodeMirror
 // widgets) that build DOM by hand rather than with JSX. Uses Solid's `render` so
 // it shares the same registry/Icon as the rest of the app; the returned dispose()
 // MUST be called when the host node is torn down to avoid leaking a reactive root.

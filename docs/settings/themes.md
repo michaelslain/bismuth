@@ -310,7 +310,7 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 | `appearance.editorFont` | `--editor-font` | `'Monaspace Xenon', ui-monospace, monospace` |
 | `appearance.uiFont` | `--ui-font-stack` | `'Monaspace Xenon', ui-monospace, monospace` |
 | `appearance.editorFontSize` | `--editor-font-size` | `13.5px` |
-| `appearance.sidebarWidth` | `--sidebar-width` | `280px` |
+| `appearance.sidebarWidth` | `--sidebar-width` | `266px` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
 | `appearance.uiFontSize` | `--ui-font-size` | `11.5px` |
 | `appearance.monoScale` | `--mono-scale` | `1` |
