@@ -49,7 +49,7 @@ appearance:
   theme: ink
   icon: hopper-crystal
   editorFont: Monaspace Xenon
-  editorFontSize: 13.5
+  editorFontSize: 11.5
   ...
 graph:
   spin: true
@@ -172,13 +172,13 @@ interface SchemaEntry {
 | `icon` | enum | `hopper-crystal` | 14 values | App logo mark (favicon + sidebar). Values: `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings`. |
 | `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor prose font — a Monaspace variant; the whole app is one monospace grid. |
 | `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus. |
-| `editorFontSize` | number | `13.5` | 11–28 | Editor font size in px. |
+| `editorFontSize` | number | `11.5` | 11–28 | Editor font size in px. Unified with the sidebar tree's `--fs-ui` workhorse size. |
 | `sidebarWidth` | number | `266` | 200–600 | Left sidebar width in px (the ASCII design's 266px vault rail). |
 | `sidebarGraphHeight` | number | `305` | 200–500 | Mini graph panel height in the sidebar in px. |
 | `uiFontSize` | number | `11.5` | 11–16 | Base UI font size (sidebar, tabs, menus) in px (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | 0.6–1.0 | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | 11–14 | Editor tab label font size in px. |
-| `sidebarIconFontSize` | number | `15` | 12–20 | Sidebar header icon button size in px. |
+| `sidebarIconFontSize` | number | `11.5` | 11–20 | Sidebar header icon button size in px. Unified with the sidebar tree's `--fs-ui` workhorse size. |
 | `paletteInputFontSize` | number | `15` | 13–18 | Command palette search-input font size in px. |
 
 There are **no per-color override keys** in `appearance` — the theme is the single source of color. Flat keys like `background`, `foreground`, `accent`, or `accentPalette` do not exist in the schema and are stripped by the type check in `serializeSettingsForFrontend`.
@@ -214,7 +214,7 @@ The graph's 2D/3D view mode is **intentionally absent** from this section. It is
 | `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper); independent of spellcheck, off by default. |
 | `autoSaveDelay` | number | `800` | 200–3000 | Milliseconds of idle before auto-saving. |
-| `lineHeight` | number | `1.65` | 1.3–2.0 | Editor prose line height multiplier. |
+| `lineHeight` | number | `1` | 0.8–1.8 | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1` -> exactly 18px, the same row cadence as the sidebar tree, tabs, and graph rows. |
 | `defaultMode` | enum | `source` | `source`, `visual` | How every note opens: `source` (raw Markdown editor) or `visual` (the no-code, Notion-like editor). The only control; there is no per-note toggle. |
 | `mathMacros` | string | `""` | — | LaTeX preamble of `\newcommand`/`\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. Available in every `$...$` and `$$...$$` across the vault. |
 | `wrapSelection` | boolean | `true` | — | With text selected, typing a wrapping character surrounds the selection instead of replacing it (e.g. select a word, press `*` → `*word*`). |

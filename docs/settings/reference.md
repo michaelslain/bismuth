@@ -42,13 +42,13 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 | `icon` | enum | `hopper-crystal` | `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings` | App logo mark (favicon + sidebar logo). One of the 14 Bismuth marks. |
 | `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor prose font — a Monaspace variant; the whole app is one monospace grid. |
 | `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus. |
-| `editorFontSize` | number | `13.5` | min `11`, max `28` | Editor font size (px). |
+| `editorFontSize` | number | `11.5` | min `11`, max `28` | Editor font size (px). Unified with the sidebar tree's `--fs-ui` workhorse size. |
 | `sidebarWidth` | number | `266` | min `200`, max `600` | Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css). |
 | `sidebarGraphHeight` | number | `305` | min `200`, max `500` | Height of the mini graph panel in the sidebar (px). |
 | `uiFontSize` | number | `11.5` | min `11`, max `16` | Base UI font size — sidebar, tabs, menus (px) (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | min `11`, max `14` | Editor tab label font size (px). |
-| `sidebarIconFontSize` | number | `15` | min `12`, max `20` | Sidebar header icon button size (px). |
+| `sidebarIconFontSize` | number | `11.5` | min `11`, max `20` | Sidebar header icon button size (px). Unified with the sidebar tree's `--fs-ui` workhorse size. |
 | `paletteInputFontSize` | number | `15` | min `13`, max `18` | Command palette search-input font size (px). |
 
 Example:
@@ -86,6 +86,7 @@ Knowledge-graph rendering and force-layout behavior.
 | `nodeSizeMaxMult` | number | `6` | min `2`, max `12` | Ceiling on node size (biggest hub vs a leaf). |
 | `mapDefaultZoom` | number | `2` | min `1`, max `18` | Default zoom for the Bases map view when it can't fit markers. |
 | `refreshDebounceMs` | number | `300` | min `100`, max `1000` | Delay before rebuilding the graph after an edit burst (ms). |
+| `backgroundNoise` | boolean | `false` | — | The faint ASCII noise texture under the graph field. Off by default. |
 
 Example:
 
@@ -112,7 +113,7 @@ CodeMirror editor behavior.
 | `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper). Independent of spellcheck; off by default. |
 | `autoSaveDelay` | number | `800` | min `200`, max `3000` | Milliseconds of idle before saving. |
-| `lineHeight` | number | `1.65` | min `1.3`, max `2` | Editor prose line height (multiplier). |
+| `lineHeight` | number | `1` | min `0.8`, max `1.8` | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1` → exactly 18px, the same row cadence as the sidebar tree, tabs, and graph rows. |
 | `mathMacros` | string | `""` (empty) | — | LaTeX preamble of `\newcommand` / `\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. e.g. `\newcommand{\R}{\mathbb{R}}`. Available in every `$...$` and `$$...$$` across the vault. |
 | `wrapSelection` | boolean | `true` | — | With text selected, type a wrapping character to surround the selection instead of replacing it (e.g. select a word, press `*` → `*word*`; press again → `**word**`). |
 | `wrapSelectionChars` | list&lt;string&gt; | `["*", "_", "~", "`"]` | — | Characters that wrap the current selection when typed (each surrounds it with itself; `(` `[` `{` `<` pair to `)` `]` `}` `>`). Brackets and quotes `( [ { ' " $` already wrap via auto-close, so they're omitted by default. |

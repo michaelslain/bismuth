@@ -11,15 +11,16 @@
 // (THE LAW: zoom is resolution — the cell never changes size, the grid subdivides), and
 // design/ascii/PORTING.md §4.
 
-/** Cell metrics at --fs-ui (11.5px Monaspace Xenon) — tokens/ascii.css --cell-w / --cell-h. */
+/** Cell metrics at --fs-ui (11.5px Monaspace Xenon) — asciiGraph.css --cell-w / --cell-h. CELL_W is
+ *  the font's own advance width at that size; CELL_H is the app's unified row unit (--row-h, owned
+ *  by ui/ui.css — same rhythm the sidebar tree/tabs/tables use), NOT derived from the font metric.
+ *  Both the main field and the sidebar mini-graph draw on this one cell — there is no denser variant
+ *  any more (killed with setDense; see AsciiGraphRenderer). Fallbacks only: the renderer reads the
+ *  live --cell-h/--row-h off the host at runtime, these are just the pre-mount / test defaults. */
 export const CELL_W = 6.3;
-export const CELL_H = 11;
-/** Dense metrics at 7px — the 1000-node field and the sidebar mini-graph. */
-export const CELL_W_DENSE = 4.2;
-export const CELL_H_DENSE = 7;
-/** Font size that goes WITH each cell pair. Change one, change the other, or the drawing shears. */
+export const CELL_H = 18;
+/** Font size that goes WITH the cell pair above. Change one, change the other, or the drawing shears. */
 export const FONT_PX = 11.5;
-export const FONT_PX_DENSE = 7;
 
 /** The field's inset, matching the reference card (GraphField.tsx uses the same numbers). */
 export const PAD_X = 8;
@@ -199,9 +200,17 @@ export function fitPxPerWorld(cols: number, rows: number, m: GridMetrics, radius
   return (boxPx * fitFraction) / Math.max(1e-6, radius);
 }
 
+/** Resolution multiplier → the continuous 0..1 log-scale progress toward `maxRes` that both the
+ *  0–100% readout (`resolutionPercent`) and the label crossfade math (`labelSelection.ts`
+ *  `fileLabelBudget`/`fileLabelAlpha`) key off. Unrounded, unlike the percent readout, so the
+ *  crossfade stays smooth frame to frame instead of stepping in 1% jumps. */
+export function resolutionT(res: number, maxRes: number): number {
+  if (maxRes <= 1) return 0;
+  const t = Math.log(Math.max(1, res)) / Math.log(maxRes);
+  return Math.max(0, Math.min(1, t));
+}
+
 /** Map a resolution multiplier onto the 0–100 readout the design's viewbar shows. */
 export function resolutionPercent(res: number, maxRes: number): number {
-  if (maxRes <= 1) return 0;
-  const t = (Math.log(Math.max(1, res)) / Math.log(maxRes));
-  return Math.round(Math.max(0, Math.min(1, t)) * 100);
+  return Math.round(resolutionT(res, maxRes) * 100);
 }

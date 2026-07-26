@@ -75,7 +75,10 @@ const editorTheme = EditorView.theme({
   // `overflowAnchor: none` stops the browser's scroll-anchoring from bumping scrollTop when
   // live-preview widgets above the viewport change height (reveal/fold) — that drift is what
   // could nudge a restored position toward the bottom on a tab return; our scroll-restore owns it.
-  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "var(--prose-line-height, 1.9)", overflow: "auto", overflowAnchor: "none", justifyContent: "center", padding: "0 40px" },
+  // Line-height is a multiple of the app's row unit (--row-h, ui.css :root), NOT of the
+  // font size — editor.lineHeight (--prose-line-height) defaults to 1, so prose lines land
+  // exactly on --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
+  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "calc(var(--row-h, 18px) * var(--prose-line-height, 1))", overflow: "auto", overflowAnchor: "none", justifyContent: "center", padding: "0 40px" },
   // The horizontal reading-column inset lives on the SCROLLER (padding), NOT on
   // .cm-content. If it were content padding, CodeMirror's drawSelection would paint
   // multi-line selection across that padding too — a "phantom indent" left of the

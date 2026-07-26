@@ -238,6 +238,115 @@ test("components above the size gate are left untouched (genuine islands aren't 
     .not.toEqual(computeLayout(withOrphan, { dimensions: 3, refineTicks: 100, virtualAnchors: 0 }));
 });
 
+// --- Community-aware clustering (layout.ts COMMUNITY_*) --------------------------------------------
+// The complaint: zoomed out, a real vault's communities intermingled into one blob. The forces are
+// measured with the same statistic used to tune them — mean intra-community spread divided by mean
+// nearest-other-community-centroid distance, weighted by community size. LOWER = clusters read as
+// distinct blobs. On the reference 2248-node vault this goes 1.675 → 0.952 in 3D and 2.999 → 1.058
+// in 2D; the fixture below reproduces the same shape (heterogeneous hub-and-leaf communities, sparse
+// cross-links) small enough to stay a fast test.
+
+/** `sizes.length` planted communities of hub-and-leaf notes, plus ~`cross` cross-community links
+ *  per node. Deterministic (fixed LCG) so the assertions below are stable. */
+function plantedCommunities(sizes: number[], cross: number) {
+  const nodes: { id: string; community: number }[] = [];
+  const edges: { from: string; to: string }[] = [];
+  let s = 12345 >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  sizes.forEach((size, c) => {
+    for (let i = 0; i < size; i++) nodes.push({ id: `c${c}n${i}`, community: c });
+  });
+  sizes.forEach((size, c) => {
+    const hubs = Math.max(2, Math.round(size / 25));
+    for (let h = 1; h < hubs; h++) edges.push({ from: `c${c}n0`, to: `c${c}n${h}` });
+    for (let i = hubs; i < size; i++) {
+      edges.push({ from: `c${c}n${i}`, to: `c${c}n${Math.floor(rnd() * hubs)}` });
+      if (rnd() < 0.45) {
+        const j = hubs + Math.floor(rnd() * (size - hubs));
+        if (j !== i) edges.push({ from: `c${c}n${i}`, to: `c${c}n${j}` });
+      }
+    }
+  });
+  sizes.forEach((size, c) => {
+    for (let i = 0; i < size; i++) {
+      if (rnd() >= cross) continue;
+      let other = Math.floor(rnd() * (sizes.length - 1));
+      if (other >= c) other++;
+      edges.push({ from: `c${c}n${i}`, to: `c${other}n${Math.floor(rnd() * sizes[other])}` });
+    }
+  });
+  return { nodes, edges };
+}
+
+/** Size-weighted (mean intra-community spread) / (mean nearest-other-community-centroid distance),
+ *  plus the raw intra spread so a test can also assert the clusters did not collapse to points. */
+function separation(nodes: { id: string; community: number }[], pos: Positions) {
+  const byComm = new Map<number, string[]>();
+  for (const n of nodes) byComm.set(n.community, [...(byComm.get(n.community) ?? []), n.id]);
+  const cents = [...byComm.entries()]
+    .filter(([, ids]) => ids.length >= 3)
+    .map(([c, ids]) => {
+      const sum = ids.reduce((a, id) => [a[0] + pos[id][0], a[1] + pos[id][1], a[2] + pos[id][2]], [0, 0, 0]);
+      return { c, ids, centroid: sum.map((v) => v / ids.length) as [number, number, number] };
+    });
+  let wIntra = 0, wNear = 0, w = 0;
+  for (const a of cents) {
+    const intra = a.ids.reduce((s, id) => s + dist(pos[id], a.centroid), 0) / a.ids.length;
+    const near = Math.min(...cents.filter((b) => b.c !== a.c).map((b) => dist(a.centroid, b.centroid)));
+    if (!Number.isFinite(near)) continue;
+    wIntra += intra * a.ids.length;
+    wNear += near * a.ids.length;
+    w += a.ids.length;
+  }
+  return { ratio: wIntra / wNear, intra: wIntra / w };
+}
+
+test("community-aware forces separate communities far better, without collapsing them", () => {
+  const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
+  for (const dim of [3, 2] as const) {
+    const seedOff = dim === 2 ? computeLayout(g, { refineTicks: 120, communityForces: false }) : undefined;
+    const seedOn = dim === 2 ? computeLayout(g, { refineTicks: 120 }) : undefined;
+    const off = separation(g.nodes, computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedOff, communityForces: false }));
+    const on = separation(g.nodes, computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedOn }));
+    // Measures ~0.33 vs 0.52 (3D) and ~0.27 vs 0.46 (2D); 25% is the bar the change was held to.
+    expect(on.ratio).toBeLessThan(off.ratio * 0.75);
+    // ...and NOT by crushing each community into a point (the degenerate way to win this metric).
+    expect(on.intra).toBeGreaterThan(off.intra * 0.5);
+  }
+});
+
+test("community forces keep the layout overlap-free (they must not fight forceCollide)", () => {
+  // Regression for the ordering bug: registered AFTER "collide", the community pull lands unchecked
+  // (forceCollide resolves against x+vx and only sees forces that ran before it) and the settle ends
+  // with permanently overlapping nodes. Asserted in 2D, where the collide budget is tightest.
+  const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
+  const n = g.nodes.length;
+  const pos3 = computeLayout(g, { refineTicks: 120 });
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3 });
+  const ids = g.nodes.map((x) => x.id);
+  let minPair = Infinity;
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) minPair = Math.min(minPair, dist(pos[ids[i]], pos[ids[j]]));
+  expect(minPair).toBeGreaterThan(collideFloorFor(n, 2) * 0.9);
+});
+
+test("a graph with no community ids is laid out exactly as before (opt-in by data)", () => {
+  // Embedded graph blocks, the daemon graph and every pre-existing caller pass nodes without
+  // `community` — those must be bit-identical to the community-unaware layout.
+  const g = ring(60);
+  expect(computeLayout(g, { refineTicks: 60 })).toEqual(computeLayout(g, { refineTicks: 60, communityForces: false }));
+  // Same when every node shares ONE community: there is nothing to separate, so nothing changes.
+  const one = { nodes: g.nodes.map((n) => ({ ...n, community: 0 })), edges: g.edges };
+  expect(computeLayout(one, { refineTicks: 60 })).toEqual(computeLayout(g, { refineTicks: 60, communityForces: false }));
+});
+
+test("community-aware layout is deterministic across runs", () => {
+  const g = plantedCommunities([30, 25, 20], 0.25);
+  const a = computeLayout(g, { refineTicks: 80 });
+  expect(a).toEqual(computeLayout(g, { refineTicks: 80 }));
+  expect(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }))
+    .toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }));
+});
+
 test("pivotMDS is deterministic", () => {
   const g = ring(40);
   const index = new Map(g.nodes.map((n, i) => [n.id, i] as const));

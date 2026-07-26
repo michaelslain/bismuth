@@ -6,7 +6,7 @@ import { describe, expect, it } from "bun:test";
 import {
   CELL_H, CELL_W, NODE_GLYPHS, PAD_X, PAD_Y,
   cellToPx, degreeTier, depthAlpha, depthBand, fitPxPerWorld, glyphTier, gridMetrics, inGrid,
-  mergeEdgeChar, mergeEdgeCode, nearestCellNode, nodeGlyph, pxToCell, resolutionPercent, snapToCell, traceEdge,
+  mergeEdgeChar, mergeEdgeCode, nearestCellNode, nodeGlyph, pxToCell, resolutionPercent, resolutionT, snapToCell, traceEdge,
 } from "./asciiGrid";
 
 describe("gridMetrics", () => {
@@ -226,5 +226,15 @@ describe("zoom is resolution", () => {
     expect(resolutionPercent(16, 16)).toBe(100);
     expect(resolutionPercent(4, 16)).toBe(50);
     expect(resolutionPercent(0.1, 16)).toBe(0); // clamped — you cannot zoom out past fit
+  });
+
+  it("resolutionT is the unrounded 0..1 progress resolutionPercent rounds to a percent", () => {
+    expect(resolutionT(1, 16)).toBe(0);
+    expect(resolutionT(16, 16)).toBe(1);
+    expect(resolutionT(4, 16)).toBeCloseTo(0.5, 10);
+    expect(resolutionT(0.1, 16)).toBe(0); // clamped, same as resolutionPercent
+    for (const res of [1, 2, 4, 7, 10, 16]) {
+      expect(Math.round(resolutionT(res, 16) * 100)).toBe(resolutionPercent(res, 16));
+    }
   });
 });

@@ -23,7 +23,11 @@ import {
 } from "d3-force-3d";
 
 export interface LayoutInput {
-  nodes: { id: string }[];
+  /** `community` is the detected community id already stamped on every graph node by
+   *  `engine.ts stampCommunities` (see community.ts). When present on 2+ distinct communities the
+   *  layout adds community-aware forces (see COMMUNITY_* below); when absent the layout is
+   *  byte-identical to the community-unaware behaviour. */
+  nodes: { id: string; community?: number }[];
   edges: { from: string; to: string }[];
 }
 
@@ -69,6 +73,24 @@ export interface LayoutOptions {
    * (real-edge) degree — no extra analysis pass, no change to 2D output or the tick budget.
    */
   discBias?: number;
+  /**
+   * Community-aware clustering forces (default ON). Requires `community` on the input nodes — with
+   * fewer than 2 distinct communities this is a no-op and output is identical either way. Set false
+   * to reproduce the community-unaware layout exactly (used by the tuning harness / A-B tests).
+   */
+  communityForces?: boolean;
+  /** Multiplier on LINK_STRENGTH for edges INSIDE a community (>1 = tighter clusters). */
+  communityIntraLink?: number;
+  /** Multiplier on LINK_STRENGTH for edges BETWEEN communities (<1 = looser coupling). */
+  communityInterLink?: number;
+  /** Multiplier on the link rest length for intra-/inter-community edges. */
+  communityIntraDist?: number;
+  communityInterDist?: number;
+  /** Per-tick pull of each node toward its own community's centroid (0 = off). */
+  communityGravity?: number;
+  /** Strength (0..1, 0 = off) of the community-level collide that pushes whole communities apart
+   *  until their packing radii clear. Same semantics as d3's forceCollide strength. */
+  communitySeparation?: number;
 }
 
 export type Positions = Record<string, [number, number, number]>;
@@ -102,7 +124,15 @@ export type Positions = Record<string, [number, number, number]>;
 // -10/-7/-6/-5, i.e. never violated. Treat -7 as "measured best so far", and re-measure rather than
 // reason from this comment if you change it.
 // NOTE: changing this changes cold-layout output — keep CACHE_VERSION in layout-cache.ts in sync.
-const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -7, linkDistance: 5, centering: 0.13, virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8, discBias: 0 };
+const DEFAULTS = {
+  dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -7, linkDistance: 5, centering: 0.13,
+  virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8, discBias: 0,
+  // --- Community-aware clustering (see the COMMUNITY_* block below) ---
+  communityForces: true,
+  communityIntraLink: 1.6, communityInterLink: 0.35,
+  communityIntraDist: 1.0, communityInterDist: 1.9,
+  communityGravity: 0.4, communitySeparation: 0.6,
+};
 const LINK_STRENGTH = 0.18;
 // 2D-only force tuning (see prepareLayout): the flat layout has one less dimension of room, so without
 // help it collapses into a hairball. Push communities apart (repulsion ×), let them breathe (centering
@@ -158,6 +188,182 @@ function discFlattenForce(nodes: RN[], realDeg: number[], bias: number): (alpha:
     }
   };
 }
+
+// --- Community-aware clustering ------------------------------------------------------------------
+// Zoomed out, a graph whose communities intermingle reads as one undifferentiated blob: the detected
+// communities (community.ts, stamped onto every node by engine.ts BEFORE layout) were used only for
+// COLOR, never for position, so link topology alone had to separate them — and it doesn't, because a
+// handful of inter-community bridges pull clusters into each other while uniform many-body repulsion
+// pushes intra-community members apart just as hard as it pushes whole clusters apart.
+//
+// Three cooperating forces fix that, all gated on `community` being present on 2+ distinct
+// communities — so a community-less caller (embedded graph blocks, the daemon graph, every existing
+// test fixture) gets byte-identical output to before, and `communityForces: false` reproduces the
+// old layout exactly for A/B measurement:
+//   1. Anisotropic links: an intra-community edge gets a stronger spring, an inter-community edge a
+//      weaker + longer one. Turns the modularity structure directly into geometry. Note the intra
+//      REST LENGTH is deliberately left at 1.0× — shortening it to 0.7× measurably improved the
+//      separation ratio but pulled linked pairs inside their collide radii (152 overlapping pairs on
+//      the reference vault's 2D layout, vs 18 at 1.0×), and the extra separation wasn't worth it.
+//   2. Centroid gravity: every member of a >=2-node community is pulled toward that community's
+//      running centroid. This is what actually compacts a cluster (links alone only bind neighbours,
+//      not the community's far side). It is gated by a PACKING FLOOR (packRadius below): a node
+//      already inside its community's jammed-packing radius feels nothing, so gravity gathers a
+//      community's strays without squeezing its core past what forceCollide can resolve. Ungated it
+//      compressed a 650-node community until 2% of ALL the vault's nodes overlapped.
+//      Separation then has to come from communities moving APART (3), not from each one shrinking.
+//   3. Community-level COLLIDE: each community is treated as one soft body of radius packRadius, and
+//      an overlapping pair is pushed apart (mass-weighted, exactly like d3's forceCollide) until
+//      their radii clear with a COMMUNITY_SEP_MULT margin. This is the piece that opens visible lanes.
+//      An inverse-square centroid repulsion was tried first and is strictly worse: a settled layout
+//      is near collide-jammed, so a 1/d² push is immediately balanced by the linear centering spring
+//      (raising it 2×→6× moved the 3D separation ratio by <2%). A bounded overlap-resolving
+//      constraint has no such equilibrium — it dilates the assembly just until the gap exists and
+//      then switches off, so it also can't inflate an already-separated graph. A per-node variant
+//      (evict a node from foreign community discs) was also tried and separated distinctly worse
+//      (vault 3D 41% vs 46% improvement) for no overlap benefit.
+// Only communities of >= COMMUNITY_MIN_SIZE take part in (3): a real vault has a long tail of
+// singleton/pair communities (isolated notes), and pairing all of them would be O(k²) for no visual
+// gain. Gravity applies to any community with >= 2 members. Cost is O(n + k_big²) per tick with
+// k_big in the low tens even on a big vault (28 qualifying communities out of 196 on the reference
+// 2248-node vault) — measured at +7% (3D) / +6% (2D) on total settle time.
+//
+// Measured on the reference 2248-node/4959-edge vault and a 300-node/6-community synthetic, as
+// mean-intra-community-spread / mean-nearest-other-community-centroid-distance (lower = clusters
+// read as distinct blobs), 120 refine ticks, `communityForces:false` vs the defaults below:
+//   vault   3D 1.675 → 0.952 (-43%),  2D 2.999 → 1.058 (-65%)
+//   synth   3D 0.522 → 0.326 (-38%),  2D 0.464 → 0.270 (-42%)
+// with intra-community spread retained at 0.76-0.90× (no degenerate collapse into points) and the
+// collide invariant essentially intact (worst pairwise distance / (rᵢ+rⱼ): vault 3D 0.90 → 0.90,
+// 2D 0.88 → 0.77; synthetic unchanged at 0.94).
+const COMMUNITY_MIN_SIZE = 4; // min members for a community to take part in community-level collide
+// Radius a community occupies once its members are jam-packed at their own collide radii:
+//   R = (Σ rᵢ^dim / φ)^(1/dim),  φ = the fraction a random (not crystalline) packing fills.
+// Summing rᵢ^dim rather than using k·r^dim matters: a community's hubs carry a collide radius up to
+// ~6× a leaf's (degreeScale), so a uniform-radius estimate under-reads a hub-heavy community's real
+// footprint. Gravity is switched off inside this radius, and it is the "body radius" the
+// community-level collide separates on.
+const COMMUNITY_PACK_FILL_2D = 0.55; // random-loose disc packing
+const COMMUNITY_PACK_FILL_3D = 0.5;  // random-loose sphere packing
+// Target clearance between two communities' packing radii — >1 leaves an actual empty lane.
+const COMMUNITY_SEP_MULT = 1.25;
+// Per-tick speed limit for everything this force adds, as a multiple of the node's OWN collide
+// radius. Both community terms can be large on the first ticks (alpha=1, communities still deeply
+// interpenetrating), and an uncapped step drags a whole community across the field faster than the
+// collide relaxation can track. Measured on the reference vault's 2D layout: uncapped, the worst
+// pairwise distance/(rᵢ+rⱼ) is 0.65 and the separation ratio 1.111; at 1.5 they are 0.77 and 1.058
+// (better on both counts). Clamping harder (0.5) is worse again (ratio 1.381) — the communities no
+// longer reach their targets inside the tick budget.
+const COMMUNITY_MAX_STEP = 1.5;
+
+/**
+ * Per-tick community gravity + community-level collide. `comm[i]` is a DENSE community index per
+ * node (-1 = no community / singleton). Pure function of the node array — deterministic, no RNG.
+ * `radii` holds each node's own collide radius (the same values the sim's forceCollide uses); they
+ * set the per-community packing radius, inside which gravity stops pulling (so a community is never
+ * squeezed into an overlap) and which doubles as the community-level collide's body radius.
+ */
+function communityForce(
+  nodes: RN[],
+  comm: Int32Array,
+  numComms: number,
+  dim: 2 | 3,
+  gravity: number,
+  separation: number,
+  radii: Float64Array,
+): (alpha: number) => void {
+  const n = nodes.length;
+  const count = new Float64Array(numComms);
+  for (let i = 0; i < n; i++) if (comm[i] >= 0) count[comm[i]]++;
+  // Per-community packing radius (see COMMUNITY_PACK_FILL_*) — gravity's dead zone and the
+  // community-level collide's body radius.
+  const fill = dim === 2 ? COMMUNITY_PACK_FILL_2D : COMMUNITY_PACK_FILL_3D;
+  const packRadius = new Float64Array(numComms);
+  for (let i = 0; i < n; i++) if (comm[i] >= 0) packRadius[comm[i]] += Math.pow(radii[i], dim);
+  for (let c = 0; c < numComms; c++) packRadius[c] = Math.pow(packRadius[c] / fill, 1 / dim);
+  // Communities big enough to repel each other as coarse bodies (index list, computed once).
+  const big: number[] = [];
+  for (let c = 0; c < numComms; c++) if (count[c] >= COMMUNITY_MIN_SIZE) big.push(c);
+  const cx = new Float64Array(numComms), cy = new Float64Array(numComms), cz = new Float64Array(numComms);
+  // Per-member displacement accumulated by the community-level collide below, per community.
+  const rx = new Float64Array(numComms), ry = new Float64Array(numComms), rz = new Float64Array(numComms);
+
+  return (alpha: number) => {
+    cx.fill(0); cy.fill(0); cz.fill(0);
+    for (let i = 0; i < n; i++) {
+      const c = comm[i];
+      if (c < 0) continue;
+      const nd = nodes[i];
+      cx[c] += nd.x ?? 0; cy[c] += nd.y ?? 0;
+      if (dim === 3) cz[c] += nd.z ?? 0;
+    }
+    for (let c = 0; c < numComms; c++) {
+      const k = count[c];
+      if (k > 0) { cx[c] /= k; cy[c] /= k; cz[c] /= k; }
+    }
+
+    // (3) Community-level collide: resolve the overlap of two soft bodies of radius packRadius,
+    // split between them by MASS (the smaller community yields more), exactly like d3's forceCollide.
+    // Bounded by construction — zero force once the pair clears, so it dilates the assembly just
+    // enough to open a lane and never inflates an already-separated graph.
+    if (separation > 0 && big.length > 1) {
+      rx.fill(0); ry.fill(0); rz.fill(0);
+      for (let a = 0; a < big.length; a++) {
+        const ca = big[a];
+        for (let b = a + 1; b < big.length; b++) {
+          const cb = big[b];
+          const target = (packRadius[ca] + packRadius[cb]) * COMMUNITY_SEP_MULT;
+          let dx = cx[ca] - cx[cb], dy = cy[ca] - cy[cb], dz = dim === 3 ? cz[ca] - cz[cb] : 0;
+          let d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (d >= target) continue;
+          if (d === 0) {
+            // Exactly coincident centroids: deterministic (no RNG) unit axis so they still separate.
+            dx = 1; dy = ca & 1 ? 1 : -1; dz = dim === 3 ? (cb & 1 ? 1 : -1) : 0;
+            d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          }
+          // Displacement vector that would exactly clear the pair, split by mass share.
+          const push = ((target - d) / d) * separation;
+          const total = count[ca] + count[cb];
+          const wa = count[cb] / total, wb = count[ca] / total;
+          rx[ca] += dx * push * wa; ry[ca] += dy * push * wa; rz[ca] += dz * push * wa;
+          rx[cb] -= dx * push * wb; ry[cb] -= dy * push * wb; rz[cb] -= dz * push * wb;
+        }
+      }
+    }
+
+    // (2) Centroid gravity + apply the accumulated (3) push, both scaled by alpha like every d3 force.
+    // Gravity only acts on the part of a node's offset that exceeds the community's packing radius,
+    // so the cluster's already-dense core is left alone (no collide fight, no overlaps).
+    for (let i = 0; i < n; i++) {
+      const c = comm[i];
+      const nd = nodes[i];
+      let gx = 0, gy = 0, gz = 0;
+      if (c >= 0 && count[c] >= 2) {
+        const ox = cx[c] - (nd.x ?? 0), oy = cy[c] - (nd.y ?? 0), oz = dim === 3 ? cz[c] - (nd.z ?? 0) : 0;
+        const d = Math.sqrt(ox * ox + oy * oy + oz * oz);
+        // Fraction of the offset that lies outside the packing radius (0 inside it → no pull at all).
+        const excess = d > packRadius[c] ? (d - packRadius[c]) / d : 0;
+        const g = gravity * alpha * excess;
+        gx = ox * g; gy = oy * g; gz = oz * g;
+      }
+      // Community-level collide (3) is accumulated per community, so every member gets the same push.
+      let vx = gx, vy = gy, vz = gz;
+      if (c >= 0) { vx += rx[c] * alpha; vy += ry[c] * alpha; if (dim === 3) vz += rz[c] * alpha; }
+      if (vx === 0 && vy === 0 && vz === 0) continue;
+      // Speed limit (see COMMUNITY_MAX_STEP) — keeps the motion collide-trackable.
+      const step = Math.sqrt(vx * vx + vy * vy + vz * vz);
+      const cap = COMMUNITY_MAX_STEP * radii[i];
+      if (step > cap) {
+        const k = cap / step;
+        vx *= k; vy *= k; vz *= k;
+      }
+      nd.vx = (nd.vx ?? 0) + vx;
+      nd.vy = (nd.vy ?? 0) + vy;
+      if (dim === 3) nd.vz = (nd.vz ?? 0) + vz;
+    }
+  };
+}
+// -------------------------------------------------------------------------------------------------
 
 /** Deterministic LCG so layouts are reproducible (stable disk cache, testable). */
 function lcg(seed: number): () => number {
@@ -312,8 +518,9 @@ export function pivotMDS(adj: number[][], n: number, dim: number, numPivots: num
 type RN = SimNode & { id: string };
 type RL = SimLink<RN>;
 /** A force-link, with an optional flag marking a layout-only "tether" link that reels a disconnected
- *  component into the main mass (stronger + shorter than a real link; see prepareLayout's reel-in). */
-type VL = RL & { virtual?: boolean };
+ *  component into the main mass (stronger + shorter than a real link; see prepareLayout's reel-in),
+ *  and (when community forces are active) whether both endpoints sit in the SAME community. */
+type VL = RL & { virtual?: boolean; intra?: boolean };
 
 /** All layout setup short of running the tick loop: build the adjacency, seed coordinates
  *  (PivotMDS or `initialPositions`), and construct the stopped d3-force simulation. Shared by the
@@ -326,13 +533,34 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
 
   const index = new Map<string, number>();
   ids.forEach((id, i) => index.set(id, i));
+
+  // Dense per-node community index (-1 = unassigned). Community forces are only armed when the
+  // caller actually supplied 2+ distinct communities — otherwise every knob below is skipped and the
+  // layout is bit-for-bit the community-unaware one.
+  const comm = new Int32Array(n).fill(-1);
+  let numComms = 0;
+  if (o.communityForces) {
+    const dense = new Map<number, number>();
+    for (let i = 0; i < n; i++) {
+      const c = input.nodes[i].community;
+      if (c === undefined || c === null || !Number.isFinite(c)) continue;
+      let d = dense.get(c);
+      if (d === undefined) { d = dense.size; dense.set(c, d); }
+      comm[i] = d;
+    }
+    numComms = dense.size;
+  }
+  const useCommunity = numComms >= 2;
+
   const adj: number[][] = Array.from({ length: n }, () => []);
   const links: VL[] = [];
   for (const e of input.edges) {
     const a = index.get(e.from), b = index.get(e.to);
     if (a === undefined || b === undefined || a === b) continue;
     adj[a].push(b); adj[b].push(a);
-    links.push({ source: e.from, target: e.to });
+    links.push(useCommunity
+      ? { source: e.from, target: e.to, intra: comm[a] >= 0 && comm[a] === comm[b] }
+      : { source: e.from, target: e.to });
   }
 
   // Node spacing (mirrors the renderer): scale link distance UP as the graph shrinks so a handful of
@@ -438,10 +666,19 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
     collideMult * Math.max(collideFloor, drawnNodeRadius(degreeScale(realDeg[i])) * COLLIDE_SIZE_PADDING);
   // One link force over real + tether links. Tethers (virtual) are shorter and stronger so a stray is
   // held inside the cloud against the long-range many-body repulsion; real edges keep their own spacing.
+  // Community-anisotropic springs (see the COMMUNITY_* block): intra-community edges pull harder over
+  // a shorter rest length, inter-community edges are weak + long, so modularity turns into geometry.
+  // Tethers are exempt (they exist to reel orphans in, not to express community structure).
+  const linkDistFor = !useCommunity
+    ? (_l: VL) => linkDist
+    : (l: VL) => linkDist * (l.intra ? o.communityIntraDist : o.communityInterDist);
+  const linkStrengthFor = !useCommunity
+    ? (_l: VL) => LINK_STRENGTH
+    : (l: VL) => LINK_STRENGTH * (l.intra ? o.communityIntraLink : o.communityInterLink);
   const linkForce = forceLink<RN, VL>(links)
     .id((d: RN) => d.id)
-    .distance((l: VL) => (l.virtual ? linkDist * o.virtualDistMult : linkDist))
-    .strength((l: VL) => (l.virtual ? o.virtualLinkStrength : LINK_STRENGTH));
+    .distance((l: VL) => (l.virtual ? linkDist * o.virtualDistMult : linkDistFor(l)))
+    .strength((l: VL) => (l.virtual ? o.virtualLinkStrength : linkStrengthFor(l)));
   // Flattening to 2D loses a whole dimension of room, so the same forces that spread nicely in 3D
   // collapse into a dense blob in 2D. Compensate in 2D: stronger many-body repulsion pushes communities
   // apart (so clusters stay distinct, not one hairball) and weaker pull-to-center lets them breathe into
@@ -451,7 +688,23 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   const sim = forceSimulation<RN>(nodes, dim)
     .alpha(1)
     .force("charge", forceManyBody<RN>().strength(repulsion).theta(MANYBODY_THETA))
-    .force("link", linkForce)
+    .force("link", linkForce);
+  // ORDER MATTERS: the community force must be registered BEFORE "collide". d3 runs forces in
+  // insertion order and forceCollide resolves overlaps against `x + vx` — i.e. it can only see (and
+  // undo) the velocity contributed by forces that ran earlier in the same tick. Registered after
+  // collide, the community pull lands unchecked and only gets corrected a tick late, which on a
+  // dense vault leaves permanently overlapping nodes.
+  if (useCommunity && (o.communityGravity > 0 || o.communitySeparation > 0)) {
+    // The community body radius is derived from the SAME per-node collide radii the sim's own
+    // forceCollide uses, so both community forces automatically track every spacing/size multiplier.
+    sim.force("community", communityForce(
+      nodes, comm, numComms, dim,
+      o.communityGravity,
+      o.communitySeparation,
+      Float64Array.from(nodes, (nd, i) => collideRadiusFor(nd, i)),
+    ));
+  }
+  sim
     .force("collide", forceCollide<RN>(collideRadiusFor).iterations(COLLIDE_ITERATIONS))
     .force("x", forceX<RN>(0).strength(centering))
     .force("y", forceY<RN>(0).strength(centering));

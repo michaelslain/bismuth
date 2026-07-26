@@ -1975,20 +1975,21 @@ export default function App() {
    *  runs the FIRST resolvable one, disabled when none resolve (see resolveButtonCommands).
    *  The inbox button is special-cased as a DAEMON surface: hidden entirely while the daemon
    *  is off, and it carries the live due-count badge the palette command can't. */
-  function CommandButton(props2: { btn: { command?: string; commands?: string[]; icon: string; tooltip?: string } }) {
+  function CommandButton(props2: { btn: { command?: string; commands?: string[]; icon: string; tooltip?: string }; iconSize?: number }) {
     const cmd = () => resolveButtonCommands(props2.btn, commands())[0];
     const hidden = () => cmd()?.id === "open-inbox" && !settings.daemon.enabled;
+    const iconSize = () => props2.iconSize ?? 18;
     return (
       <Show when={!hidden()}>
         <Show
           when={cmd()}
           fallback={
-            <IconButton icon={props2.btn.icon || "CircleHelp"} iconSize={18} disabled label={`Unknown command: ${props2.btn.command}`} />
+            <IconButton icon={props2.btn.icon || "CircleHelp"} iconSize={iconSize()} disabled label={`Unknown command: ${props2.btn.command}`} />
           }
         >
           {(c) => (
             <span class="toolbar-btn-wrap">
-              <IconButton icon={props2.btn.icon} iconSize={18} label={props2.btn.tooltip ?? c().label} onClick={(e) => c().action(e)} />
+              <IconButton icon={props2.btn.icon} iconSize={iconSize()} label={props2.btn.tooltip ?? c().label} onClick={(e) => c().action(e)} />
               <Show when={c().id === "open-inbox" && dueCount() > 0}>
                 <span class="toolbar-badge">{dueCount()}</span>
               </Show>
@@ -2055,11 +2056,23 @@ export default function App() {
     {/* Top strip (design/ascii/README.md "App shell", §1): the wordmark + platform titlebar.
         macOS runs a transparent Overlay titlebar (native traffic lights float over the strip,
         left padding reserves room for them) with no typed controls; Windows/Linux run fully
-        undecorated with typed `[-] [+] [x]` controls; the browser/dev build gets neither. */}
+        undecorated with typed `[-] [+] [x]` controls; the browser/dev build gets neither.
+        `data-tauri-drag-region="deep"` (not a bare/"true" value): Tauri's injected drag script
+        only treats a bare attribute as "this exact element", checked via `el === composedPath[0]`
+        — since the wordmark span and the flex:1 `.top-strip-spacer` (the strip's largest visual
+        area) are child elements that receive the actual click target, a bare attribute here left
+        almost the entire strip undraggable. "deep" lets any non-interactive descendant trigger the
+        drag; the `.win-btn` window-control buttons stay excluded automatically (Tauri's script
+        never treats a clickable tag like <button> as a drag target unless IT carries the
+        attribute itself), so no pointer-events juggling is needed. Also requires
+        `core:window:allow-start-dragging` in capabilities/default.json (silently no-ops without
+        it). Double-click-to-maximize on macOS is Tauri's own built-in behavior for any drag
+        region (fires `internal_toggle_maximize`, already covered by `core:window:default`) — do
+        NOT add a manual dblclick handler here, it would race the native one. */}
     <div
       class="top-strip"
       classList={{ "top-strip--mac": isTauri() && IS_MAC_PLATFORM }}
-      data-tauri-drag-region={isTauri() ? "" : undefined}
+      data-tauri-drag-region={isTauri() ? "deep" : undefined}
     >
       <span class="asc-wordmark">bismuth</span>
       <div class="top-strip-spacer" />
@@ -2074,7 +2087,7 @@ export default function App() {
     <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": settings.ui.verticalTabs }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
-          <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} />}</For>
+          <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} iconSize={settings.appearance.sidebarIconFontSize} />}</For>
         </div>
         <div class="sidebar-eyebrow-row"><span class="asc-eyebrow">VAULT</span></div>
         <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} startItemDrag={startItemDrag} dropHighlight={sidebarDropHighlight} /></div>

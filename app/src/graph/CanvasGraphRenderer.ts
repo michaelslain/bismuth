@@ -38,6 +38,9 @@ export interface GraphConfig {
   daemonNeutral?: number;
   daemonFg?: number;
   transparent?: boolean;
+  /** ASCII renderer only: graph.backgroundNoise (settingsSchema.ts) — the faint ASCII noise texture
+   *  under the field. Off by default; unused by this (legacy) Canvas2D renderer. */
+  backgroundNoise?: boolean;
 }
 
 /** The node currently under the cursor, surfaced to GraphView for the hover readout. */

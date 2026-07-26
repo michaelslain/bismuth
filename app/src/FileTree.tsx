@@ -511,7 +511,8 @@ export function FileTree(props: {
     for (const row of VISIBILITY_ROWS) {
       const active = own === row.value;
       submenu.push({
-        label: active ? `✓ ${row.label}` : row.label,
+        label: row.label,
+        icon: active ? "Check" : undefined,
         onSelect: () => applyVisibility(node, isDir, row.value),
       });
     }

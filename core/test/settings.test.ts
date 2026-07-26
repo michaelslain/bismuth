@@ -207,7 +207,7 @@ test("serializeSettingsForFrontend overlays valid keys, ignoring wrong types", a
   );
   const data = await serializeSettingsForFrontend(vault);
   expect((data.appearance as any).editorFont).toBe("Monaspace Radon");   // valid string, applied
-  expect((data.appearance as any).editorFontSize).toBe(13.5);      // "big" is wrong type → default
+  expect((data.appearance as any).editorFontSize).toBe(11.5);      // "big" is wrong type → default
   expect((data.graph as any).nodeSize).toBe(9);                  // valid number, applied
 });
 
@@ -220,7 +220,7 @@ test("serializeSettingsForFrontend clamps out-of-range numbers and invalid enums
     "appearance:\n  editorFontSize: 999\n  theme: not-a-real-theme\n",
   );
   const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).editorFontSize).toBe(13.5);       // above max → default
+  expect((data.appearance as any).editorFontSize).toBe(11.5);       // above max → default
   expect((data.appearance as any).theme).toBe("ink");   // invalid enum → default
 });
 

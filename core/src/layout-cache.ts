@@ -24,6 +24,17 @@ interface Layout { pos3d: Positions; pos2d: Positions }
 const to2d = (p: number[]): [number, number] => [p[0], p[1]];
 
 const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache");
+// v13: community-aware clustering forces (layout.ts COMMUNITY_* — anisotropic intra/inter-community
+//      links, packing-floored centroid gravity, community-level collide) so communities read as
+//      distinct blobs when zoomed out instead of one intermingled field. Changes 3D AND 2D output for
+//      every graph whose nodes carry a `community` (i.e. every vault graph — engine.ts stamps it).
+//      MUST bump, and the bump alone is sufficient to self-heal: BOTH keys that could otherwise pin
+//      the old physics forever are versioned — graphSig() (the per-graph layout entry) and
+//      seedPath() (the per-vault warm-start seed the incremental path pins nodes AT). A v12 seed is
+//      therefore never read again, so no node is pinned at a v12 position; the first build after the
+//      bump is a full cold PivotMDS settle under the new forces, and every later warm/incremental
+//      rebuild seeds from THAT. (The in-memory lastFullLayout/lastSecondLayout/lastThirdLayout maps
+//      only ever hold layouts produced in the current process, so they carry no stale physics.)
 // v12: repulsion -10→-7 and MODE_2D_COLLIDE_MULT 1.2→0.65 (layout.ts) — shorter 3D edges and a
 //      less uniform 2D packing. MUST bump: graphSig() keys the cache on CACHE_VERSION alone, so
 //      without it every existing user keeps their v11 layout and sees no change whatsoever —
@@ -41,7 +52,7 @@ const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bism
 // v7: stronger small-graph linkDist boost (400/n, cap 8) — much airier small graphs.
 // v6: small-graph linkDist boost added (sqrt(500/n) factor in layout.ts) changes layout output.
 // v5: collide iterations 3→6 + padding 1.25→1.55 (anti-overlap).
-const CACHE_VERSION = "v12";
+const CACHE_VERSION = "v13";
 const REFINE_TICKS = 120; // PivotMDS-seeded, so this polishes well without a full ~300-tick settle
 // Incremental (pinned add-only) rebuild: only the new nodes move, so far fewer ticks converge (the
 // early-exit in computeLayoutAsync usually stops sooner). Cap the number of added nodes that take this

@@ -65,13 +65,13 @@ export const SETTINGS_SCHEMA: Schema = {
       default: "Monaspace Xenon",
       doc: "UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus.",
     },
-    editorFontSize: { type: "number", default: 13.5, min: 11, max: 28, doc: "Editor font size (px)." },
+    editorFontSize: { type: "number", default: 11.5, min: 11, max: 28, doc: "Editor font size (px). Unified with the sidebar tree's --fs-ui workhorse size (11.5px) — notes, tabs, and tree share one rhythm." },
     sidebarWidth: { type: "number", default: 266, min: 200, max: 600, doc: "Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css)." },
     sidebarGraphHeight: { type: "number", default: 305, min: 200, max: 500, doc: "Height of the mini graph panel in the sidebar (px)." },
     uiFontSize: { type: "number", default: 11.5, min: 11, max: 16, doc: "Base UI font size — sidebar, tabs, menus (px) (the ASCII design's --fs-ui workhorse size)." },
     monoScale: { type: "number", default: 1, min: 0.6, max: 1, doc: "Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; 1 = no correction." },
     tabFontSize: { type: "number", default: 11.5, min: 11, max: 14, doc: "Editor tab label font size (px)." },
-    sidebarIconFontSize: { type: "number", default: 15, min: 12, max: 20, doc: "Sidebar header icon button size (px)." },
+    sidebarIconFontSize: { type: "number", default: 11.5, min: 11, max: 20, doc: "Sidebar header icon button size (px). Unified with the sidebar tree's --fs-ui workhorse size (11.5px)." },
     paletteInputFontSize: { type: "number", default: 15, min: 13, max: 18, doc: "Command palette search-input font size (px)." },
   }),
   graph: object({
@@ -93,6 +93,7 @@ export const SETTINGS_SCHEMA: Schema = {
     nodeSizeMaxMult: { type: "number", default: 6, min: 2, max: 12, doc: "Ceiling on node size (biggest hub vs a leaf)." },
     mapDefaultZoom: { type: "number", default: 2, min: 1, max: 18, doc: "Default zoom for the Bases map view when it can't fit markers." },
     refreshDebounceMs: { type: "number", default: 300, min: 100, max: 1000, doc: "Delay before rebuilding the graph after an edit burst (ms)." },
+    backgroundNoise: { type: "boolean", default: false, doc: "The faint ASCII noise texture under the graph field. Off by default." },
   }),
   editor: object({
     defaultMode: {
@@ -106,7 +107,7 @@ export const SETTINGS_SCHEMA: Schema = {
     spellcheck: { type: "boolean", default: true, doc: "Spell check the note body (Harper)." },
     grammarCheck: { type: "boolean", default: false, doc: "Grammar + style check the note body (Harper). Independent of spellcheck; off by default." },
     autoSaveDelay: { type: "number", default: 800, min: 200, max: 3000, doc: "Milliseconds of idle before saving." },
-    lineHeight: { type: "number", default: 1.9, min: 1.3, max: 2, doc: "Editor prose line height (multiplier)." },
+    lineHeight: { type: "number", default: 1, min: 0.8, max: 1.8, doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — ui.css :root), NOT of the font size. Default 1 -> exactly 18px, the same row cadence as the sidebar tree, tabs, and graph rows." },
     mathMacros: {
       type: "string",
       default: "",

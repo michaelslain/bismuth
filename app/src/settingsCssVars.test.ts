@@ -11,7 +11,7 @@ function withTheme(theme: string) {
 describe("settingsToCssVars", () => {
   it("maps non-color appearance settings to CSS custom properties with units", () => {
     const vars = settingsToCssVars(DEFAULTS);
-    expect(vars["--editor-font-size"]).toBe("13.5px");
+    expect(vars["--editor-font-size"]).toBe("11.5px");
     expect(vars["--editor-font"]).toBe("'Monaspace Xenon', ui-monospace, monospace"); // resolved through FONT_STACKS
     expect(vars["--ui-font-stack"]).toBe("'Monaspace Xenon', ui-monospace, monospace"); // resolved through FONT_STACKS
   });

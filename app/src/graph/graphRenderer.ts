@@ -53,8 +53,6 @@ export interface GraphRenderer {
   onHighlightCleared?: () => void;
   /** ASCII renderer only: the 0–100 resolution readout ("zoom is resolution"). */
   setZoomCallback?(cb: (pct: number) => void): void;
-  /** ASCII renderer only: switch to the dense 7px cell (the sidebar mini-graph). */
-  setDense?(dense: boolean): void;
 }
 
 // Compile-time proof the legacy renderer still satisfies the seam. It is unused by GraphView but

@@ -58,6 +58,9 @@ export const completionTheme = EditorView.theme({
   },
   // NOTE: two classes (.cm-tooltip.cm-tooltip-autocomplete) so these match CM's
   // own default li rule specificity and win — a single-class selector loses to it.
+  // CM owns this <ul><li> DOM (no .bismuth-popover-row class to hang a `height` off), so
+  // the row unit is expressed via line-height against a zeroed pad-y instead — the same
+  // 18px (--row-h) total as every other popover/context-menu row.
   ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
     display: "flex",
     alignItems: "center",
@@ -65,7 +68,7 @@ export const completionTheme = EditorView.theme({
     padding: "var(--popover-row-pad-y) var(--popover-row-pad-x)",
     borderRadius: "var(--popover-row-radius)",
     fontSize: "var(--popover-font-size)",
-    lineHeight: "1.5",
+    lineHeight: "var(--row-h, 18px)",
   },
   ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
     backgroundColor: "var(--popover-selected-bg)",

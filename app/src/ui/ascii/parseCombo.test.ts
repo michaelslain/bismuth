@@ -3,7 +3,7 @@ import { parseCombo } from "./parseCombo";
 
 describe("parseCombo", () => {
   it("splits a chord into adjacent caps", () => {
-    expect(parseCombo("Mod+Shift+D", true)).toEqual([["⌘", "⇧", "D"]]);
+    expect(parseCombo("Mod+Shift+D", true)).toEqual([["⌘", "Shift", "D"]]);
     expect(parseCombo("Mod+Shift+D", false)).toEqual([["Ctrl", "Shift", "D"]]);
   });
 
@@ -31,8 +31,8 @@ describe("parseCombo", () => {
     expect(parseCombo("Meta+K", false)).toEqual([["⌘", "K"]]);
   });
 
-  it("maps Alt/Option and Shift per platform", () => {
-    expect(parseCombo("Alt+Shift+X", true)).toEqual([["⌥", "⇧", "X"]]);
+  it("maps Alt/Option per platform; Shift is always text (not a sanctioned keyboard cap)", () => {
+    expect(parseCombo("Alt+Shift+X", true)).toEqual([["⌥", "Shift", "X"]]);
     expect(parseCombo("Alt+Shift+X", false)).toEqual([["Alt", "Shift", "X"]]);
     expect(parseCombo("Option+X", false)).toEqual([["⌥", "X"]]);
   });
@@ -40,15 +40,15 @@ describe("parseCombo", () => {
   it("maps arrow, escape, and enter cap names", () => {
     expect(parseCombo("Up", true)).toEqual([["↑"]]);
     expect(parseCombo("Down", true)).toEqual([["↓"]]);
-    expect(parseCombo("Left", true)).toEqual([["←"]]);
-    expect(parseCombo("Right", true)).toEqual([["→"]]);
+    expect(parseCombo("Left", true)).toEqual([["<"]]);
+    expect(parseCombo("Right", true)).toEqual([[">"]]);
     expect(parseCombo("Escape", true)).toEqual([["esc"]]);
     expect(parseCombo("Esc", true)).toEqual([["esc"]]);
     expect(parseCombo("Enter", true)).toEqual([["↵"]]);
     expect(parseCombo("Return", true)).toEqual([["↵"]]);
-    expect(parseCombo("Backspace", true)).toEqual([["⌫"]]);
-    expect(parseCombo("Delete", true)).toEqual([["⌫"]]);
-    expect(parseCombo("Tab", true)).toEqual([["⇥"]]);
+    expect(parseCombo("Backspace", true)).toEqual([["bksp"]]);
+    expect(parseCombo("Delete", true)).toEqual([["del"]]);
+    expect(parseCombo("Tab", true)).toEqual([["tab"]]);
     expect(parseCombo("Space", true)).toEqual([["space"]]);
   });
 
