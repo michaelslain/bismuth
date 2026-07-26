@@ -7,6 +7,7 @@ import { Icon } from "../icons/Icon";
 import { EmptyState } from "../ui/EmptyState";
 import { Modal } from "../ui/Modal";
 import { TextInput } from "../ui/TextInput";
+import { AsciiMeter } from "../ui/ascii/AsciiMeter";
 import { renderMarkdown } from "./markdown";
 import { EditCardsModal } from "./EditCardsModal";
 import type { BaseConfig, Row } from "../../../core/src/bases/types";
@@ -331,7 +332,7 @@ export function FlashcardsView(props: {
             <Show when={cram()}> · cram</Show>
           </div>
           <div class="fcbar">
-            <i style={{ width: `${progressPct()}%` }} />
+            <AsciiMeter value={progressPct() / 100} width={30} />
           </div>
           <div class="tally">
             <span class="a">HARD <b>{hardCount()}</b></span>
@@ -431,7 +432,9 @@ export function FlashcardsView(props: {
                       <div class="flip-face flip-front">
                         <Show when={props.basePath}>{cardActions()}</Show>
                         <div class="card-md" innerHTML={promptHtml(current()!)} />
-                        <div class="fliphint"><span class="key">Space</span> to reveal answer</div>
+                        <div class="fliphint">
+                          <span class="asc-kbd"><span class="asc-key">SPACE</span></span> to reveal answer
+                        </div>
                       </div>
                       <div class="flip-face flip-back">
                         <Show when={props.basePath}>{cardActions()}</Show>
@@ -450,8 +453,8 @@ export function FlashcardsView(props: {
                 <For each={GRADE_KEYS}>
                   {(g) => (
                     <button class={`grade ${g.cls}`} onClick={() => grade(g.response)}>
-                      <span class="g-key">{g.key}</span>
                       <span class="g-name">{g.response}</span>
+                      <span class="asc-kbd"><span class="asc-key">{g.key}</span></span>
                     </button>
                   )}
                 </For>

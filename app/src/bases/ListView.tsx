@@ -165,7 +165,7 @@ export function ListView(props: { result: ViewResult; config: BaseConfig; onChan
                 const author = authorCol() ? resolveProperty(authorCol()!, row) : null;
                 return (
                   <div class={styles.lrow} onClick={() => open(row)}>
-                    <Icon value="Book" size={15} />
+                    <span class={styles.ltextGlyph} aria-hidden="true">✎</span>
                     <span class={styles.ltext}>
                       {title == null ? row.file.name : String(title)}
                       <Show when={author != null && typeof author !== "object"}>

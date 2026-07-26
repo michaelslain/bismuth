@@ -1,21 +1,25 @@
 import { For, Show, createMemo } from "solid-js";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
-import { buildChartData, buildHeatmapWeeks } from "../../../core/src/bases/chart";
+import { buildChartData, buildHeatmapWeeks, type HeatCell } from "../../../core/src/bases/chart";
 import { todayISO, addDaysISO } from "../../../core/src/dates";
 import styles from "./Charts.module.css";
 
-// Five teal intensity levels from the design (low → high), built from the --teal
-// category token so they re-tint when the theme changes.
-const SHADES = [
-  "color-mix(in srgb, var(--teal) 28%, transparent)",
-  "color-mix(in srgb, var(--teal) 50%, transparent)",
-  "color-mix(in srgb, var(--teal) 75%, transparent)",
-  "var(--teal)",
-];
-// Empty cells use --surface-2 (matches the .cell base in Charts.module.css).
-const EMPTY_CELL = "var(--surface-2, #1a1a22)";
-
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DOW = ["M", "T", "W", "T", "F", "S", "S"];
+
+// Density glyph per intensity tier — a year of activity, one character per day
+// (bases-heatmap.card.html): "intensity is the glyph, never the cell size."
+const GLYPHS = [".", "-", "+", "#"] as const;
+const LEVEL_CLASS = ["lv0", "lv0", "lv1", "lv2", "lv3"]; // index 0 = no data
+
+function levelOf(v: number | null, min: number, max: number): number {
+  if (v === null || v <= 0) return 0;
+  const t = max === min ? 1 : (v - min) / (max - min);
+  return 1 + Math.min(GLYPHS.length - 1, Math.floor(t * GLYPHS.length));
+}
+function glyphOf(level: number): string {
+  return level === 0 ? "." : GLYPHS[Math.min(GLYPHS.length - 1, level - 1)];
+}
 
 export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
   const rows = createMemo<Row[]>(() => props.result.groups.flatMap((g) => g.rows));
@@ -23,11 +27,17 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
   const data = createMemo(() => buildChartData(rows(), { ...props.result.view, bin: "day" }));
   const grid = createMemo(() => buildHeatmapWeeks(data().points));
 
-  const color = (v: number | null): string => {
-    if (v === null) return EMPTY_CELL;
+  // Transpose the column-major week grid (buildHeatmapWeeks: weeks[week][Mon..Sun])
+  // into 7 weekday ROWS spanning every week — the card reads Mon..Sun top-to-bottom.
+  const dowRows = createMemo<(HeatCell | null)[][]>(() => {
+    const weeks = grid().weeks;
+    return DOW.map((_, dow) => weeks.map((week) => week[dow] ?? null));
+  });
+
+  const level = (cell: HeatCell | null): number => {
+    if (!cell) return 0;
     const { min, max } = data();
-    const t = max === min ? 1 : (v - min) / (max - min);
-    return SHADES[Math.min(SHADES.length - 1, Math.floor(t * SHADES.length))];
+    return levelOf(cell.value, min, max);
   };
 
   // One label per week column: the month name when this column is the first to
@@ -74,9 +84,9 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
   const streakCards = createMemo(() => {
     const s = streaks();
     return [
-      { label: "Entries", value: String(s.entries) },
-      { label: "Current streak", value: `${s.current} ${s.current === 1 ? "day" : "days"}` },
-      { label: "Longest streak", value: `${s.longest} ${s.longest === 1 ? "day" : "days"}` },
+      { label: "entries", value: String(s.entries) },
+      { label: "current streak", value: `${s.current} ${s.current === 1 ? "day" : "days"}` },
+      { label: "longest streak", value: `${s.longest} ${s.longest === 1 ? "day" : "days"}` },
     ];
   });
 
@@ -90,43 +100,50 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
           </div>
         }
       >
-        <div class={styles.months}>
-          <For each={monthLabels()}>
-            {(label) => <span class={styles.monthLabel}>{label}</span>}
-          </For>
-        </div>
         <div class={styles.heatmap}>
-          <For each={grid().weeks}>
-            {(week) => (
-              <div class={styles.week}>
-                <For each={week}>
-                  {(cell) => (
-                    <div
-                      class={styles.cell}
-                      style={{ background: color(cell.value) }}
-                      title={`${cell.date}: ${cell.value ?? 0}`}
-                    />
-                  )}
-                </For>
-              </div>
-            )}
-          </For>
-        </div>
-        <div class={styles.legend}>
-          Less
-          <div class={styles.cell} style={{ background: EMPTY_CELL }} />
-          <For each={SHADES}>{(c) => <div class={styles.cell} style={{ background: c }} />}</For>
-          More
-        </div>
-        <div class={`${styles.statgrid} ${styles.streakStats}`}>
-          <For each={streakCards()}>
-            {(card) => (
-              <div class={styles.statCard}>
-                <div class={styles.statLabel}>{card.label}</div>
-                <div class={styles.statValue}>{card.value}</div>
-              </div>
-            )}
-          </For>
+          <div class={styles.heatMonths}>
+            <span style={{ width: "14px", flex: "none" }} />
+            <For each={monthLabels()}>{(label) => <span class={styles.heatMonthCol}>{label}</span>}</For>
+          </div>
+          <div class={styles.heatGrid}>
+            <For each={dowRows()}>
+              {(weekRow, i) => (
+                <div class={styles.heatRow}>
+                  <span class={styles.heatDow}>{DOW[i()]}</span>
+                  <For each={weekRow}>
+                    {(cell) => {
+                      const lv = level(cell);
+                      return (
+                        <span class={`${styles.heatCol} ${styles[LEVEL_CLASS[lv]]}`} title={cell ? `${cell.date}: ${cell.value ?? 0}` : ""}>
+                          {glyphOf(lv)}
+                        </span>
+                      );
+                    }}
+                  </For>
+                </div>
+              )}
+            </For>
+          </div>
+          <div class={styles.legend}>
+            <span>less</span>
+            <span class={`${styles.legendGlyph} ${styles.lv0}`}>.</span>
+            <span class={`${styles.legendGlyph} ${styles.lv1}`}>-</span>
+            <span class={`${styles.legendGlyph} ${styles.lv2}`}>+</span>
+            <span class={`${styles.legendGlyph} ${styles.lv3}`}>#</span>
+            <span>more</span>
+            <div class={styles.legendSpacer} />
+            <span>intensity is the glyph, never the cell size</span>
+          </div>
+          <div class={`${styles.statgrid} ${styles.streakStats}`}>
+            <For each={streakCards()}>
+              {(card) => (
+                <div class={styles.statTile}>
+                  <div class={styles.statValue} style={{ "font-size": "22px" }}>{card.value}</div>
+                  <div class={styles.statLabel}>{card.label}</div>
+                </div>
+              )}
+            </For>
+          </div>
         </div>
       </Show>
     </div>

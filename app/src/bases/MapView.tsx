@@ -1,5 +1,4 @@
 import { createSignal, createMemo, createEffect, For, Show, onMount, onCleanup } from "solid-js";
-import { Plus, Minus, Globe, LocateFixed, WifiOff } from "lucide-solid";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { renderValue } from "./renderValue";
@@ -329,31 +328,23 @@ export function MapView(props: {
                   }}
                 >
                   <span class={styles.mapPinChip}>{title}</span>
-                  <span class={styles.mapPinTeardrop} />
+                  {/* Accent glyph marker — no drawn teardrop shape, per bases-map.card.html
+                      ("@ a record"). */}
+                  <span class={styles.mapPinGlyph} aria-hidden="true">@</span>
                 </div>
               );
             }}
           </For>
         </div>
 
-        {/* Floating controls, top-right. */}
+        {/* Floating controls, top-right — bracket buttons, typed glyphs (no SVG icons). */}
         <div class={styles.mapControls}>
           <div class={styles.mapZoomStack}>
-            <button
-              type="button"
-              class={styles.mapCtrlBtn}
-              title="Zoom in"
-              onClick={() => zoomBy(1)}
-            >
-              <Plus size={15} />
+            <button type="button" class={styles.mapCtrlBtn} title="Zoom in" onClick={() => zoomBy(1)}>
+              +
             </button>
-            <button
-              type="button"
-              class={styles.mapCtrlBtn}
-              title="Zoom out"
-              onClick={() => zoomBy(-1)}
-            >
-              <Minus size={15} />
+            <button type="button" class={styles.mapCtrlBtn} title="Zoom out" onClick={() => zoomBy(-1)}>
+              &minus;
             </button>
           </div>
           <button
@@ -362,7 +353,7 @@ export function MapView(props: {
             title="Reset view"
             onClick={resetView}
           >
-            <Globe size={16} />
+            =
           </button>
           <button
             type="button"
@@ -370,7 +361,7 @@ export function MapView(props: {
             title="Locate notes"
             onClick={locate}
           >
-            <LocateFixed size={15} />
+            @
           </button>
         </div>
 
@@ -382,10 +373,7 @@ export function MapView(props: {
 
         {/* Offline-vector attribution badge. */}
         <div class={styles.mapAttribution}>
-          <span class={styles.mapOfflineBadge}>
-            <WifiOff size={11} />
-            Offline vector
-          </span>
+          <span class={styles.mapOfflineBadge}>offline vector</span>
           <Show when={markers().length > 0}>
             <span class={styles.mapAttrCount}>
               {markers().length} {markers().length === 1 ? "place" : "places"}

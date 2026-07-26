@@ -8,8 +8,8 @@
   display: flex;
   flex-direction: column;
   background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  border: var(--rule);
+  border-radius: var(--r-panel, 5px);
   box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
@@ -78,8 +78,8 @@
   box-sizing: border-box;
   min-height: 96px;
   padding: 9px 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: 9px;
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-control, 3px);
   background: var(--surface-2);
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
   cursor: text;
@@ -88,7 +88,7 @@
 
 /* Drop zone wrapping the rich description surface: an image dragged over it highlights the whole
    field, so it's obvious the picture will land IN the description (and not "attach" invisibly). */
-.mdDropZone { display: block; border-radius: 9px; }
+.mdDropZone { display: block; border-radius: var(--r-control, 3px); }
 .mdDropActive .mdField {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -102,7 +102,7 @@
   max-width: 100%;
   max-height: 260px;
   height: auto;
-  border-radius: 6px;
+  border-radius: var(--r-control, 3px);
   object-fit: contain;
 }
 
@@ -175,4 +175,4 @@
    this one control towered over the multiselect chips directly beneath it, which is the exact
    intra-modal inconsistency this card exists to remove. 26px bridges the two scales. */
 .boolChip { align-self: flex-start; }
-.boolChip :global(.chip-toggle) { height: 26px; font-size: 12px; border-radius: 7px; }
+.boolChip :global(.chip-toggle) { height: 26px; font-size: 12px; border-radius: var(--r-control, 3px); }

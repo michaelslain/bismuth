@@ -23,19 +23,6 @@ export function resolveCategoryColor(color: string | undefined): string {
   return isThemeToken(color) ? `var(--${color})` : color;
 }
 
-/**
- * Resolve to a concrete hex string for the native `<input type="color">` value
- * (which can't display `var(...)`). For theme tokens this reads the live computed
- * var off :root; custom colours pass through.
- */
-export function categoryColorHex(color: string | undefined): string {
-  if (isThemeToken(color)) {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(`--${color}`).trim();
-    return v || "#888888";
-  }
-  return color && color.startsWith("#") ? color : "#888888";
-}
-
 // ── Multi-category support ────────────────────────────────────────────────────
 // An event may belong to several categories. `categories` (array) is authoritative
 // when present; otherwise the legacy single `category` field is used. This keeps

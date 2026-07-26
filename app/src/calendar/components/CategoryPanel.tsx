@@ -7,10 +7,11 @@ import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
 import { IconTextButton } from '../../ui/IconTextButton'
-import { THEME_SWATCHES, isThemeToken, categoryColorHex, resolveCategoryColor } from '../categoryColor'
+import { THEME_SWATCHES, resolveCategoryColor } from '../categoryColor'
 
-/** Palette popover: the theme swatches (stored as tokens so they track the theme)
- *  plus a custom "any colour" well backed by the native picker. */
+/** Palette popover: the six token swatches + accent (PALETTE_TOKENS) — token-driven,
+ *  no custom hex wheel. A category already on a non-token colour (set before this
+ *  redesign) just shows no swatch highlighted; picking any swatch here replaces it. */
 function Palette(props: { value: string; onPick: (c: string) => void; up?: boolean }) {
   return (
     <div class={'cat-pop' + (props.up ? ' up' : '')} onClick={e => e.stopPropagation()}>
@@ -20,11 +21,6 @@ function Palette(props: { value: string; onPick: (c: string) => void; up?: boole
             style={{ color: `var(--${tok})`, background: `var(--${tok})` }}
             title={tok} aria-label={tok} onClick={() => props.onPick(tok)} />
         )}</For>
-        <label class={'cat-sw custom' + (!isThemeToken(props.value) ? ' on' : '')}
-          style={!isThemeToken(props.value) ? { color: props.value, background: props.value } : undefined}
-          title="Custom colour">
-          <input type="color" value={categoryColorHex(props.value)} onInput={e => props.onPick(e.currentTarget.value)} />
-        </label>
       </div>
     </div>
   )

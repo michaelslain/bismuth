@@ -25,7 +25,7 @@
 
 .block {
   background: color-mix(in srgb, var(--fg) 9%, transparent);
-  border-radius: 5px;
+  border-radius: var(--r-control, 3px);
 }
 
 /* ---- table silhouette ---- */
@@ -66,8 +66,8 @@
   flex-direction: column;
   gap: 9px;
   padding: 0 0 13px;
-  border: 1px solid var(--border-soft, var(--border));
-  border-radius: 11px;
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-card, 4px);
   overflow: hidden;
 }
 .cardCover {

@@ -68,7 +68,7 @@
 .cal-viewbar .cal-cta { color: var(--fg); background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
 .cal-viewbar .cal-cta:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--fg); }
 
-.event-chip { display: flex; flex-direction: column; gap: 0; padding: 2px 7px; border-radius: 5px; font-size: 10.5px; color: var(--text-on-accent); cursor: pointer; overflow: hidden; margin-bottom: 2px; font-family: var(--font-text); white-space: nowrap; text-overflow: ellipsis; }
+.event-chip { display: flex; flex-direction: column; gap: 0; padding: 2px 7px; border-radius: var(--r-chip, 2px); font-size: 10.5px; color: var(--text-on-accent); cursor: pointer; overflow: hidden; margin-bottom: 2px; font-family: var(--font-text); white-space: nowrap; text-overflow: ellipsis; }
 .event-chip:hover { filter: brightness(1.1); }
 /* ---- Event pill palette (bismuth .ev.{teal,blue,violet,green,gold,rose}) -----
    Each event's category maps to one of these swatch classes (see EventChip);
@@ -132,7 +132,7 @@
 .time-grid-half-cell { flex: 1; box-sizing: border-box; cursor: pointer; }
 .time-grid-hour-cell:hover, .time-grid-half-cell:hover { background: var(--hover-bg); }
 .time-grid-event { position: absolute; left: 3px; right: 3px; overflow: hidden; z-index: 1; cursor: grab; }
-.time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: 7px; padding: 4px 9px; font-size: 10.5px; }
+.time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: var(--r-chip, 2px); padding: 4px 9px; font-size: 10.5px; }
 .time-grid-event .event-chip-meta { flex-shrink: 0; }
 /* Tighter line spacing in the grid so a 1h block fits time + a 2-line title in its
    vertical space (instead of clipping). */
@@ -151,7 +151,7 @@
 .event-chip-title *, .event-chip-location * { color: inherit; }
 /* Calendar event-create drag preview. NOT `.drag-ghost` — that class belongs to the
    global pane drag-and-drop ghost (App.css, position:fixed) and would override this. */
-.cal-drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: 7px; padding: 6px 9px; font-size: 11px; color: var(--text-on-accent); font-weight: 500; pointer-events: none; }
+.cal-drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: var(--r-chip, 2px); padding: 6px 9px; font-size: 11px; color: var(--text-on-accent); font-weight: 500; pointer-events: none; }
 .event-modal { background: var(--background-primary); border-radius: 8px; padding: 20px; min-width: 340px; max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow-y: auto; }
 /* ============================================================
    Recurrence dialog — redesign on the shared `.evm-modal` chrome
@@ -207,18 +207,16 @@
 
 /* color chip + palette popover */
 .evm-modal .cat-chipwrap { position: relative; flex: 0 0 auto; display: inline-flex; }
-.evm-modal .cat-chip { width: 20px; height: 20px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .16); padding: 0; cursor: pointer; box-shadow: 0 1px 2px rgba(0, 0, 0, .35); transition: filter .12s; }
+.evm-modal .cat-chip { width: 20px; height: 20px; border-radius: var(--r-control, 3px); border: var(--rule-soft, 1px solid var(--border-soft)); padding: 0; cursor: pointer; transition: filter .12s; }
 .evm-modal .cat-chip:hover { filter: brightness(1.1); }
 .evm-modal .cat-chip.open { box-shadow: 0 0 0 2px var(--surface2), 0 0 0 3.5px var(--accent); }
-.evm-modal .cat-pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 18px 44px rgba(0, 0, 0, .55); padding: 8px; }
+/* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
+.evm-modal .cat-pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-panel, 5px); box-shadow: var(--shadow-popup); padding: 8px; }
 .evm-modal .cat-pop.up { top: auto; bottom: calc(100% + 7px); }
 .evm-modal .cat-sws { display: flex; gap: 6px; align-items: center; }
-.evm-modal .cat-sw { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; position: relative; border-radius: 6px; transition: transform .12s; }
+.evm-modal .cat-sw { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; position: relative; border-radius: var(--r-control, 3px); transition: transform .12s; }
 .evm-modal .cat-sw:hover { transform: translateY(-1px); }
 .evm-modal .cat-sw.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px currentColor; }
-/* custom "any colour" well — native picker fills it invisibly */
-.evm-modal .cat-sw.custom { overflow: hidden; background-image: conic-gradient(from 0deg, #f43f5e, #f59e0b, #facc15, #4ade80, #22d3ee, #3b82f6, #a855f7, #f43f5e); }
-.evm-modal .cat-sw.custom input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: none; padding: 0; cursor: pointer; }
 
 /* new category — distinct dashed card */
 .evm-modal .cat-add { margin-top: 18px; border: 1px dashed var(--border); border-radius: 12px; padding: 13px 13px 14px; background: color-mix(in srgb, var(--surface2) 40%, transparent); display: flex; flex-direction: column; gap: 11px; }
@@ -338,13 +336,13 @@
   font-size: 13px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--r-panel, 5px);
   /* This card carries both `.event-modal` and `.evm-modal`. The legacy
      `.event-modal` rule sets padding:20px; the redesigned chrome supplies its own
      padding per section (head/body/foot), so zero it here to avoid double padding. */
   padding: 0;
   overflow: hidden;
-  box-shadow: var(--shadow-modal, 0 40px 110px rgba(0, 0, 0, .6)), 0 8px 24px rgba(0, 0, 0, .4);
+  box-shadow: var(--shadow-modal);
   display: flex;
   flex-direction: column;
 }
@@ -356,7 +354,7 @@
 .evm-modal .evm-title { font-family: var(--evm-font); font-weight: 600; font-size: 19px; letter-spacing: -.01em; color: var(--hi); line-height: 1.1; }
 .evm-modal .evm-sub { font-size: 11px; color: var(--faint); letter-spacing: .02em; }
 .evm-modal .evm-x { margin-left: auto; width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 7px; color: var(--lo); cursor: pointer; appearance: none; background: none; border: none; padding: 0; font: inherit; }
-.evm-modal .evm-x:hover { background: rgba(255, 255, 255, .06); color: var(--hi); }
+.evm-modal .evm-x:hover { background: var(--hover-bg); color: var(--hi); }
 
 /* body (scrolls when tall) — flex:1 1 auto lets it shrink below its content height
    inside the column-flex `.evm-modal` (which caps at max-height: calc(100vh - 48px)),
@@ -406,7 +404,9 @@
 .evm-modal .evm-allday { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 4px; font-size: 12.5px; color: var(--hi); cursor: pointer; white-space: nowrap; }
 .evm-modal .evm-toggle { width: 36px; height: 20px; border-radius: 11px; position: relative; flex: 0 0 auto; background: var(--surface2); border: 1px solid var(--border); transition: background .18s, border-color .18s; }
 .evm-modal .evm-toggle.on { background: var(--accent); border-color: transparent; }
-.evm-modal .evm-toggle i { position: absolute; top: 1.5px; left: 1.5px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .18s; }
+/* Thumb: --fg (not a literal white) — contrasts against both --surface2 (off) and
+   --accent (on) on every theme, light or dark. */
+.evm-modal .evm-toggle i { position: absolute; top: 1.5px; left: 1.5px; width: 15px; height: 15px; border-radius: 50%; background: var(--fg); transition: left .18s; }
 .evm-modal .evm-toggle.on i { left: 18px; }
 
 /* time sub-row */
