@@ -4,9 +4,9 @@
 // children. Used for export Format/Page-size/Theme options and Search match-case/
 // whole-word/regex toggles.
 //
-// ⚠ Port note: `tone` accepts 7 values, but ui.css only defines a DISTINCT selected
-// appearance for `accent` (default) and `teal`. The other five (blue/violet/green/gold/
-// rose) fall through to the accent selected style. The Tones story makes this visible.
+// `tone` accepts 7 values: `accent` (default) plus the six category tones
+// (teal/blue/violet/green/gold/rose), each with its own distinct selected
+// look — 14% fill / 45% border of that tone's color. The Tones story shows all seven.
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
 import { createSignal, For } from "solid-js";
 import { Chip, type ChipTone } from "./Chip";
@@ -61,8 +61,7 @@ export const WithIcon: Story = {
   ),
 };
 
-/** Every tone, unselected then selected. Note only `accent` + `teal` have a distinct
- *  selected look; the rest match the accent selected style (a CSS gap, kept in the API). */
+/** Every tone, unselected then selected — each tone gets its own distinct selected look. */
 export const Tones: Story = {
   render: () => (
     <div style={{ display: "flex", "flex-direction": "column", gap: "16px" }}>
