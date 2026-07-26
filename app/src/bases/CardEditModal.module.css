@@ -1,16 +1,15 @@
 /* CardEditModal — the focused kanban-card edit modal (CardEditModal.tsx). Chrome mirrors the
    app's other modals (Portal-mounted panel over the shared .ui-overlay backdrop). */
 
+/* Chrome (background/border/radius/shadow) comes from the shared `.asc-modal` class every
+   <Modal> panel carries (ui/Modal.tsx) — this rule only supplies sizing/layout, so it doesn't
+   fight `.asc-modal`'s `--pop-bg-strong` + blur chrome for the win. */
 .panel {
   width: 460px;
   max-width: 92vw;
   max-height: 86vh;
   display: flex;
   flex-direction: column;
-  background: var(--surface-1);
-  border: var(--rule);
-  border-radius: var(--r-panel, 5px);
-  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 
@@ -49,7 +48,7 @@
 }
 
 .label {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;

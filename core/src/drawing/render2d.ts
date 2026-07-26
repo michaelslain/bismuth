@@ -1,7 +1,7 @@
 import type { DrawingDoc, Page, Paper, Stroke, ThemeColors } from "./model";
 import { strokeOutline } from "./geometry";
 import { paperLines, paperDots } from "./paper";
-import { makeColorResolver, gridColor } from "./theme";
+import { makeColorResolver, paperLineColor, paperDotColor } from "./theme";
 
 /** The subset of CanvasRenderingContext2D we use — real canvases satisfy it. */
 export interface Ctx2D {
@@ -28,9 +28,10 @@ export type ResolveImage = (src: string) => unknown;
 function drawBackground(ctx: Ctx2D, paper: Paper, t: ThemeColors, w: number, h: number) {
   ctx.save();
   ctx.fillStyle = t.bg; ctx.fillRect(0, 0, w, h);
-  const wash = gridColor(t);
-  ctx.strokeStyle = wash; ctx.fillStyle = wash; ctx.lineWidth = 1;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = paperLineColor(t);
   for (const l of paperLines(paper.bg, w, h)) { ctx.beginPath(); ctx.moveTo(l.x1, l.y1 + 0.5); ctx.lineTo(l.x2, l.y2 + 0.5); ctx.stroke(); }
+  ctx.fillStyle = paperDotColor(t);
   for (const d of paperDots(paper.bg, w, h)) { ctx.beginPath(); ctx.arc(d.x, d.y, 1.3, 0, Math.PI * 2); ctx.fill(); }
   ctx.restore();
 }

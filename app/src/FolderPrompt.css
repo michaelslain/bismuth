@@ -1,15 +1,16 @@
-/* FolderPrompt — small typed-path modal for the "Open folder" command. */
+/* FolderPrompt — small typed-path modal for the "Open folder" command (also the shared
+ * chrome for DaemonOwnerModal/DaemonSetupModal/GcalConnectModal/BismuthInstallModal).
+ * Chrome (background/border/radius/shadow/blur) comes from the shared `.asc-modal` class
+ * every <Modal> panel carries (ui/Modal.tsx) — this rule only supplies content padding
+ * and sizing. It used to re-declare its own 12px radius + `--shadow-card` + a second
+ * blur(12px), fighting `.asc-modal`'s radius 5 / `--shadow-modal` / blur(6px) chrome.
+ */
 .folder-prompt {
-  background: var(--pop-bg-strong, var(--rail));
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
   padding: 18px;
   width: min(460px, 92vw);
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: var(--shadow-card);
-  backdrop-filter: blur(12px);
 }
 
 .folder-prompt-title {

@@ -120,7 +120,7 @@
 .time-grid-time-rows { display: flex; position: relative; min-height: 1200px; padding-bottom: 48px; }
 .time-gutter-col { width: var(--time-gutter-width, 54px); flex-shrink: 0; border-right: 1px solid var(--border-soft); }
 .time-gutter-hour-block { display: flex; flex-direction: column; height: calc(1200px / 24); }
-.time-gutter-hour { flex: 1; font-size: 10px; color: var(--faint); padding: 2px 8px 0 0; text-align: right; box-sizing: border-box; }
+.time-gutter-hour { flex: 1; font-size: 10.5px; color: var(--faint); padding: 2px 8px 0 0; text-align: right; box-sizing: border-box; }
 .time-gutter-half { flex: 1; box-sizing: border-box; }
 .time-grid-day-col { flex: 1; position: relative; border-left: 1px solid var(--border-soft); height: 1200px; user-select: none; }
 .time-grid-day-col.today { background: color-mix(in srgb, var(--accent) 5%, transparent); }
@@ -152,7 +152,10 @@
 /* Calendar event-create drag preview. NOT `.drag-ghost` — that class belongs to the
    global pane drag-and-drop ghost (App.css, position:fixed) and would override this. */
 .cal-drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: var(--r-chip, 2px); padding: 6px 9px; font-size: 11px; color: var(--text-on-accent); font-weight: 500; pointer-events: none; }
-.event-modal { background: var(--background-primary); border-radius: 8px; padding: 20px; min-width: 340px; max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow-y: auto; }
+/* Chrome (background/border/radius/shadow) now comes from the shared `.asc-modal` class every
+   <Modal> panel carries (ui/Modal.tsx) — this legacy rule only supplies layout/sizing so it
+   doesn't fight `.asc-modal` for the background/radius/shadow. */
+.event-modal { min-width: 340px; max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow-y: auto; }
 /* ============================================================
    Recurrence dialog — redesign on the shared `.evm-modal` chrome
    (header/body/footer + tokens defined in the New Event modal block below).
@@ -232,15 +235,15 @@
 .evm-modal.calendar-settings .evm-head { align-items: center; }
 .evm-modal.calendar-settings .evm-mark { height: 24px; }
 
-.evm-modal .set-sect { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 9px; margin: 2px 0; }
+.evm-modal .set-sect { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 9px; margin: 2px 0; }
 .evm-modal .set-sect::after { content: ''; flex: 1; height: 1px; background: var(--border2); }
 .evm-modal .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 18px; }
 .evm-modal .set-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .evm-modal .set-field.span { grid-column: 1 / -1; }
 .evm-modal .set-lab { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--hi); }
 .evm-modal .set-lab svg { color: var(--accent); flex: 0 0 auto; }
-.evm-modal .set-lab .req { margin-left: auto; font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 2px 6px; }
-.evm-modal .set-lab .opt { margin-left: auto; font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 6px; }
+.evm-modal .set-lab .req { margin-left: auto; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 2px 6px; }
+.evm-modal .set-lab .opt { margin-left: auto; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 6px; }
 
 .evm-modal .set-hint { font-size: 10.5px; color: var(--faint); line-height: 1.5; }
 
@@ -280,7 +283,7 @@
 .evm-modal .propset-row.open .propset-chev { transform: rotate(90deg); }
 .evm-modal .propset-name-txt { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; color: var(--hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .evm-modal .propset-name-txt.empty { color: var(--faint); font-style: italic; }
-.evm-modal .propset-kind { flex: 0 0 auto; font-family: var(--mono); font-size: 10px; letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 7px; }
+.evm-modal .propset-kind { flex: 0 0 auto; font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 7px; }
 .evm-modal .propset-eye { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
 .evm-modal .propset-eye:hover { color: var(--hi); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .evm-modal .propset-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -334,15 +337,13 @@
   max-height: calc(100vh - 48px);
   font-family: var(--mono);
   font-size: 13px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-panel, 5px);
-  /* This card carries both `.event-modal` and `.evm-modal`. The legacy
-     `.event-modal` rule sets padding:20px; the redesigned chrome supplies its own
-     padding per section (head/body/foot), so zero it here to avoid double padding. */
+  /* Chrome (background/border/radius/shadow) is `.asc-modal`'s job (ui/Modal.tsx) — this
+     card also always carries that class, so this rule only supplies sizing/layout. It used
+     to re-declare an opaque `background: var(--surface)` here, which — same specificity,
+     later in the cascade than `.asc-modal` — silently defeated `.asc-modal`'s translucent
+     `--pop-bg-strong` + blur(6px) chrome (blurring behind an opaque fill is invisible). */
   padding: 0;
   overflow: hidden;
-  box-shadow: var(--shadow-modal);
   display: flex;
   flex-direction: column;
 }

@@ -32,19 +32,13 @@
 .search-ask-ai-label { font-weight: 500; }
 .search-ask-ai-kbd { margin-left: auto; }
 
-/* A tiny spinner shown while the one-shot AI turn is in flight. */
-.search-spinner {
-  flex: none;
-  width: 12px;
-  height: 12px;
-  border: 2px solid color-mix(in srgb, var(--teal) 30%, transparent);
-  border-top-color: var(--teal);
-  border-radius: 50%;
-  animation: search-spin 0.7s linear infinite;
-}
-/* The larger spinner used in the prominent LOADING panel. */
-.search-spinner-lg { width: 26px; height: 26px; border-width: 3px; }
-@keyframes search-spin { to { transform: rotate(360deg); } }
+/* Live indicator while the one-shot AI turn is in flight — reuses the shared blinking
+   .asc-caret (ui/ui.css). The teal tint + larger size are layered on via this combo
+   selector so they win over .asc-caret's default accent color/size (higher specificity
+   than the bare class, same override pattern as ui/Modal.tsx's `.asc-modal` note). */
+.search-spinner.asc-caret { color: var(--teal); }
+/* The larger caret used in the prominent LOADING panel. */
+.search-spinner-lg.asc-caret { font-size: 26px; }
 
 /* .search-state — the prominent, centered panels for the three "no list yet" states
    (LOADING / ERROR / EMPTY). Big enough that the user is never unsure what happened (BUG #8). */

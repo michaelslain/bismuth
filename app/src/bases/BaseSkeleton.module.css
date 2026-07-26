@@ -1,6 +1,6 @@
 /* Shaped loading placeholder for a BaseView. Mirrors the table / cards silhouettes
    (see BaseView.module.css) closely enough that the pane reads as "this view, loading"
-   rather than a bare spinner. Blocks pulse via a shared shimmer animation. */
+   rather than a bare spinner. Blocks are plain static --faint placeholders — no pulse. */
 
 .skeleton {
   flex: 1;
@@ -9,22 +9,8 @@
   padding: 0;
 }
 
-/* Shimmer: a soft opacity pulse on every block (cheap, reduced-motion-friendly). */
-@keyframes bismuth-skel-pulse {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 0.9; }
-}
-.skeleton .head,
-.skeleton .row,
-.skeleton .card { animation: bismuth-skel-pulse 1.4s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) {
-  .skeleton .head,
-  .skeleton .row,
-  .skeleton .card { animation: none; }
-}
-
 .block {
-  background: color-mix(in srgb, var(--fg) 9%, transparent);
+  background: color-mix(in srgb, var(--faint) 22%, transparent);
   border-radius: var(--r-control, 3px);
 }
 
@@ -41,7 +27,7 @@
   height: 9px;
   flex: 1;
   max-width: 120px;
-  background: color-mix(in srgb, var(--fg) 13%, transparent);
+  background: color-mix(in srgb, var(--faint) 34%, transparent);
 }
 .row {
   display: flex;
@@ -72,7 +58,7 @@
 }
 .cardCover {
   height: 72px;
-  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  background: color-mix(in srgb, var(--faint) 16%, transparent);
   border-bottom: 1px solid var(--border-soft, var(--border));
 }
 .cardLineWide { composes: block; height: 11px; margin: 0 14px; }

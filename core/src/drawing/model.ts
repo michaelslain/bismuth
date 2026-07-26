@@ -12,7 +12,9 @@ export interface ImageEl { src: string; x: number; y: number; w: number; h: numb
 export interface Page { strokes: Stroke[]; images?: ImageEl[]; }
 export interface Paper { bg: PaperBg; }
 export interface DrawingDoc { v: 1; kind: "drawing"; paper: Paper; pages: Page[]; }
-export interface ThemeColors { bg: string; fg: string; }
+// `border`/`borderSoft` feed the paper ground (grid/dot/ruled) so it tracks the theme's
+// own hairline tokens (design/ascii-extended/PORTING.md §2c) instead of a derived wash.
+export interface ThemeColors { bg: string; fg: string; border: string; borderSoft: string; }
 
 export function emptyDoc(): DrawingDoc {
   return { v: 1, kind: "drawing", paper: { bg: "grid" }, pages: [{ strokes: [] }] };

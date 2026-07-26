@@ -2,7 +2,10 @@
    The Edit-Dictionary modal. Mirrors the app's modal chrome (the calendar's
    `.evm-modal` card: header mark + title + scrollable body + footer) using the
    real theme vars directly, so it stays self-contained (no calendar coupling) and
-   re-themes automatically, incl. light mode. Controls are the shared ui/ primitives. */
+   re-themes automatically, incl. light mode. Controls are the shared ui/ primitives.
+   Chrome (background/border/radius/shadow) comes from the shared `.asc-modal` class
+   every <Modal> panel carries (ui/Modal.tsx) — this rule only supplies content
+   sizing/layout, so it doesn't fight `.asc-modal`'s `--pop-bg-strong` + blur chrome. */
 .dict-modal {
   --dict-font: var(--editor-font, 'Monaspace Xenon', monospace);
   --mono: "Monaspace Xenon", ui-monospace, monospace;
@@ -13,11 +16,7 @@
   max-height: calc(100vh - 48px);
   font-family: var(--mono);
   font-size: 13px;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 16px;
   overflow: hidden;
-  box-shadow: var(--shadow-modal, 0 40px 110px rgba(0, 0, 0, 0.6)), 0 8px 24px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
 }

@@ -680,7 +680,7 @@
   gap: 6px;
   padding: 5px 10px;
   border-bottom: 1px solid var(--chat-border-soft);
-  font-size: 10px;
+  font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--faint);
@@ -736,22 +736,13 @@
 .chat-tool-check { color: var(--success); }
 .chat-tool-x { color: var(--danger); }
 .chat-tool-caret { color: var(--faint); flex: 0 0 auto; }
-.chat-tool-spinner {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 2px solid var(--border-soft);
-  border-top-color: var(--accent);
-  animation: chat-spin 0.7s linear infinite;
-  display: inline-block;
-}
-@keyframes chat-spin { to { transform: rotate(360deg); } }
+/* Pending tool call — the shared blinking .asc-caret (ui/ui.css), not a spinner. */
 .chat-tool-detail {
   padding: 2px 0 10px 22px;
   border-top: none;
 }
 .chat-tool-section-label {
-  font-size: 10px;
+  font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--faint);
@@ -976,25 +967,15 @@
   padding: 2px 0 0;
 }
 
-/* ── Pre-first-delta thinking dots — no card. ────────────────────────────────────────── */
+/* ── Pre-first-delta thinking indicator — a static "working" label + the shared
+   blinking .asc-caret (ui/ui.css). No card. ─────────────────────────────────────────── */
 .chat-thinking-dots {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   padding: 4px 0;
-}
-.chat-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--faint);
-  animation: chat-dot-pulse 1.2s ease-in-out infinite;
-}
-.chat-dot:nth-child(2) { animation-delay: 0.15s; }
-.chat-dot:nth-child(3) { animation-delay: 0.3s; }
-@keyframes chat-dot-pulse {
-  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
-  30% { opacity: 1; transform: translateY(-3px); }
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: 0.02em;
 }
 
 /* A recoverable per-turn error — plain danger text + icon, no pill. (was --accent-purple.) */

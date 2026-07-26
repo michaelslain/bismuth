@@ -45,7 +45,7 @@ export function AsciiChart(props: AsciiChartProps) {
   const max = () => chartMax(props.series);
   const pad = () => chartLabelPad(props.series);
   return (
-    <div style={{ "font-size": "var(--fs-micro)", "line-height": "12px", color: "var(--text-muted)" }}>
+    <div style={{ "font-size": "var(--fs-micro)", "line-height": "var(--lh-grid)", color: "var(--text-muted)" }}>
       <For each={props.series}>
         {(s) => {
           const fill = () => chartFill(s.value, max(), width());
