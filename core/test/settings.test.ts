@@ -298,6 +298,121 @@ test("reconcile leaves a corrupt file untouched", async () => {
   expect(readFileSync(join(vault, ".settings"), "utf8")).toBe(before);
 });
 
+import { DEFAULTS } from "../src/schema/settingsSchema";
+const DEFAULT_APPEARANCE = DEFAULTS.appearance as Record<string, unknown>;
+const DEFAULT_EDITOR = DEFAULTS.editor as Record<string, unknown>;
+
+test("reconcile migrates a legacy-theme .settings file exactly once, resetting the type scale", async () => {
+  const vault = await emptyVault();
+  await writeNote(
+    vault,
+    ".settings",
+    [
+      "# my notes",
+      "appearance:",
+      "  theme: oxide-duotone # inline",
+      "  editorFont: Lora",
+      "  editorFontSize: 16",
+      "  uiFontSize: 14",
+      "  tabFontSize: 12",
+      "  sidebarIconFontSize: 18",
+      "  paletteInputFontSize: 17",
+      "  monoScale: 0.85",
+      "  sidebarWidth: 280",
+      "  myCustomKey: 42",
+      "editor:",
+      "  lineHeight: 1.65",
+      "",
+    ].join("\n"),
+  );
+  await reconcileSettings(vault);
+  const raw1 = readFileSync(join(vault, ".settings"), "utf8");
+  const { data } = (await readSettings(vault))!;
+  const appearance = data.appearance as any;
+  expect(appearance.theme).toBe("ink"); // dark legacy name (no "-light" suffix)
+  expect(appearance.editorFont).toBe("Monaspace Xenon");
+  expect(appearance.editorFontSize).toBe(DEFAULT_APPEARANCE.editorFontSize);
+  expect(appearance.uiFontSize).toBe(DEFAULT_APPEARANCE.uiFontSize);
+  expect(appearance.tabFontSize).toBe(DEFAULT_APPEARANCE.tabFontSize);
+  expect(appearance.sidebarIconFontSize).toBe(DEFAULT_APPEARANCE.sidebarIconFontSize);
+  expect(appearance.paletteInputFontSize).toBe(DEFAULT_APPEARANCE.paletteInputFontSize);
+  expect(appearance.monoScale).toBe(DEFAULT_APPEARANCE.monoScale);
+  expect(appearance.sidebarWidth).toBe(DEFAULT_APPEARANCE.sidebarWidth);
+  expect((data.editor as any).lineHeight).toBe(DEFAULT_EDITOR.lineHeight);
+  // Untouched: comments + unknown keys survive the rewrite.
+  expect(appearance.myCustomKey).toBe(42);
+  expect(raw1).toContain("# my notes");
+  expect(raw1).toContain("# inline");
+
+  // Fires exactly once: a second reconcile is a no-op write (theme/editorFont are
+  // now current-era values, so the trigger can never match this file again).
+  await reconcileSettings(vault);
+  const raw2 = readFileSync(join(vault, ".settings"), "utf8");
+  expect(raw2).toBe(raw1);
+});
+
+test("reconcile maps a '-light' legacy theme to 'paper'", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, ".settings", "appearance:\n  theme: rose-gold-light\n");
+  await reconcileSettings(vault);
+  const { data } = (await readSettings(vault))!;
+  expect((data.appearance as any).theme).toBe("paper");
+});
+
+test("reconcile migrates on a legacy editorFont alone, even with an already-valid theme", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, ".settings", "appearance:\n  theme: cathode\n  editorFont: Georgia\n  editorFontSize: 20\n");
+  await reconcileSettings(vault);
+  const { data } = (await readSettings(vault))!;
+  const appearance = data.appearance as any;
+  expect(appearance.theme).toBe("cathode"); // already valid — left alone
+  expect(appearance.editorFont).toBe("Monaspace Xenon");
+  expect(appearance.editorFontSize).toBe(DEFAULT_APPEARANCE.editorFontSize); // still reset
+});
+
+test("reconcile leaves a new-scheme .settings file untouched", async () => {
+  const vault = await emptyVault();
+  await reconcileSettings(vault); // absent -> writes a full, current-era defaults file
+  const before = readFileSync(join(vault, ".settings"), "utf8");
+  const { data: before1 } = (await readSettings(vault))!;
+  expect((before1.appearance as any).theme).toBe("ink");
+  expect((before1.appearance as any).editorFont).toBe("Monaspace Xenon");
+
+  await reconcileSettings(vault); // already fully current-era → no legacy trigger, no missing keys
+  const after = readFileSync(join(vault, ".settings"), "utf8");
+  expect(after).toBe(before); // byte-identical
+});
+
+test("reconcile leaves customized NEW-era appearance values untouched", async () => {
+  const vault = await emptyVault();
+  await writeNote(
+    vault,
+    ".settings",
+    [
+      "appearance:",
+      "  theme: paper",
+      "  editorFont: Monaspace Neon",
+      "  editorFontSize: 20",
+      "  uiFontSize: 13",
+      "  sidebarWidth: 400",
+      "  monoScale: 0.7",
+      "editor:",
+      "  lineHeight: 1.4",
+      "",
+    ].join("\n"),
+  );
+  await reconcileSettings(vault);
+  const { data } = (await readSettings(vault))!;
+  const appearance = data.appearance as any;
+  expect(appearance.theme).toBe("paper");
+  expect(appearance.editorFont).toBe("Monaspace Neon");
+  expect(appearance.editorFontSize).toBe(20);
+  expect(appearance.uiFontSize).toBe(13);
+  expect(appearance.sidebarWidth).toBe(400);
+  expect(appearance.monoScale).toBe(0.7);
+  expect((data.editor as any).lineHeight).toBe(1.4);
+});
+
 import { setSettingInFile } from "../src/settings";
 
 test("setSettingInFile updates a nested key, preserving siblings/comments/unknowns", async () => {

@@ -191,6 +191,64 @@ function fillMissing(doc: Document, map: YAMLMap, schema: Schema): boolean {
   return mutated;
 }
 
+// The 12 pre-ASCII-redesign theme names (6 bases × dark/`-light`), still-valid-looking
+// strings that `resolveTheme()` silently falls back to `ink` for but that a saved
+// `.settings` file keeps verbatim. Drives migrateLegacyAppearance below.
+const LEGACY_THEME_BASES = ["oxide-duotone", "gunmetal-teal", "rose-gold", "indigo-oxide", "forest-oxide", "full-sheen"];
+const LEGACY_THEMES = new Set<string>([...LEGACY_THEME_BASES, ...LEGACY_THEME_BASES.map((n) => `${n}-light`)]);
+// The pre-redesign editorFont options (serif Lora/Georgia + system-ui); the redesign's
+// EDITOR_FONTS enum is Monaspace-only.
+const LEGACY_EDITOR_FONTS = new Set(["Lora", "Georgia", "system-ui"]);
+
+/**
+ * One-time migration for a `.settings` file saved under the pre-ASCII-redesign theme
+ * system + type scale. Both `appearance.theme` and `appearance.editorFont` already
+ * degrade to schema defaults at READ time (serializeSettingsForFrontend: an unknown
+ * enum value never overlays DEFAULTS) — but the FILE keeps the stale value, and the
+ * redesign's new type-scale numbers (font sizes, mono scale, sidebar width, line
+ * height) are all still schema-VALID, so they'd keep winning over the new defaults
+ * forever without an explicit rewrite. The redesign is a clean break, so those keys
+ * are reset outright rather than best-effort translated.
+ *
+ * Trigger: `appearance.theme` is one of the 12 legacy names, OR `appearance.editorFont`
+ * is one of the legacy serif/system fonts. Naturally fires only once — migration always
+ * rewrites both to CURRENT valid values, so the trigger can never match again on a file
+ * this has already touched.
+ */
+function migrateLegacyAppearance(doc: Document): boolean {
+  const appearance = doc.getIn(["appearance"]);
+  if (!isMap(appearance)) return false;
+  const theme = doc.getIn(["appearance", "theme"]);
+  const editorFont = doc.getIn(["appearance", "editorFont"]);
+  const legacyTheme = typeof theme === "string" && LEGACY_THEMES.has(theme) ? theme : undefined;
+  const legacyFont = typeof editorFont === "string" && LEGACY_EDITOR_FONTS.has(editorFont);
+  if (!legacyTheme && !legacyFont) return false;
+
+  if (legacyTheme) {
+    doc.setIn(["appearance", "theme"], legacyTheme.endsWith("-light") ? "paper" : "ink");
+  }
+  if (legacyFont) {
+    doc.setIn(["appearance", "editorFont"], "Monaspace Xenon");
+  }
+  // The redesign's clean type-scale break: reset regardless of the saved value.
+  const RESET_PATHS: Array<[string, string]> = [
+    ["appearance", "editorFontSize"],
+    ["appearance", "uiFontSize"],
+    ["appearance", "tabFontSize"],
+    ["appearance", "sidebarIconFontSize"],
+    ["appearance", "paletteInputFontSize"],
+    ["appearance", "monoScale"],
+    ["appearance", "sidebarWidth"],
+    ["editor", "lineHeight"],
+  ];
+  const defaults = DEFAULTS as Record<string, Record<string, unknown> | undefined>;
+  for (const [section, key] of RESET_PATHS) {
+    const def = defaults[section]?.[key];
+    if (def !== undefined) doc.setIn([section, key], def);
+  }
+  return true;
+}
+
 /**
  * Daemon-config migration hook. Historically normalized the obsolete `daemon.home`
  * default and adopted an installed daemon on first reconcile. Both are gone now: the
@@ -225,7 +283,10 @@ export async function reconcileSettings(vault: string): Promise<void> {
   if (!isMap(doc.contents)) return; // empty/scalar/corrupt — leave alone
   const filled = fillMissing(doc, doc.contents as YAMLMap, SETTINGS_SCHEMA);
   const migrated = migrateDaemonConfig(doc);
-  if (filled || migrated) await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+  const migratedAppearance = migrateLegacyAppearance(doc);
+  if (filled || migrated || migratedAppearance) {
+    await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+  }
 }
 
 /**

@@ -78,8 +78,10 @@
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
 
-    <!-- Boot splash: covers + blocks the UI while the bundle, the lazy App chunk, and the first
-         /graph fetch load. Removed by window.__bismuthBootReady() once App's initial data is in. -->
+    <!-- Boot splash: covers + blocks the UI while the bundle and the lazy App chunk load. Removed
+         by window.__bismuthBootReady() once App's own shell (tree/tabs) has painted its first
+         frame (see App.tsx's bootGate wiring) — NOT gated on the /graph fetch, which can take
+         seconds on a large vault; the graph keeps rasterizing behind the splash and after it. -->
     <div id="boot-splash" role="progressbar" aria-label="Loading Bismuth" aria-busy="true">
       <div class="bs-mark">
         <span class="bs-word">bismuth</span><span class="bs-caret">_</span>
@@ -87,8 +89,8 @@
     </div>
     <script>
       // Define the dismiss hook synchronously (before the deferred module bundle runs) so App can
-      // always find it. App calls it once its initial graph + tree resolve; a safety timeout makes
-      // sure a stuck or backend-down boot can never leave the UI permanently blocked.
+      // always find it. App calls it once its own shell has painted (capped at a hard 1.5s
+      // fallback); this 12s timer is the last-resort safety net if App's JS never even runs.
       (function () {
         var done = false;
         function dismiss() {
