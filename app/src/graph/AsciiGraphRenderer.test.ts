@@ -166,7 +166,11 @@ interface Mounted {
   zooms: number[];
 }
 
-function mountRenderer(viewMode: "2d" | "3d" = "3d", graph: ReturnType<typeof sampleGraph> = sampleGraph()): Mounted {
+function mountRenderer(
+  viewMode: "2d" | "3d" = "3d",
+  graph: ReturnType<typeof sampleGraph> = sampleGraph(),
+  cfgOverrides: Partial<typeof CONFIG & { showLodMasses: boolean; clusterColorsOff: boolean }> = {},
+): Mounted {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const r = new AsciiGraphRenderer();
@@ -175,7 +179,7 @@ function mountRenderer(viewMode: "2d" | "3d" = "3d", graph: ReturnType<typeof sa
   const zooms: number[] = [];
   r.mount(host, (id) => clicks.push(id), (n) => hovers.push(n?.id ?? null));
   r.setZoomCallback((p) => zooms.push(p));
-  r.setConfig({ ...CONFIG, viewMode });
+  r.setConfig({ ...CONFIG, viewMode, ...cfgOverrides });
   r.render(graph);
   ctx.fills.length = 0;
   frame();
@@ -395,10 +399,12 @@ describe("semantic zoom — cluster names own the field zoomed out, file names c
     r.destroy();
   });
 
-  it("hover at fit reports the CLUSTER entity; a hovered NOTE is force-named once leaves are on the field", () => {
-    // At fit the 2D field is AGGREGATE ENTITIES (LOD) — there is no note glyph to hover. Hovering
-    // a mass surfaces the cluster; the forced file-name behaviour now lives at the deep stops.
-    const { r, hovers } = mountRenderer("2d");
+  it("hover at fit reports the CLUSTER entity when LOD masses are opted into; a hovered NOTE is force-named once leaves are on the field", () => {
+    // LOD masses are OFF by default (see the "LEVEL OF DETAIL" describe block further down) — this
+    // test opts in (showLodMasses) to cover the retained aggregate-entity hover path. At fit with
+    // masses on, the 2D field is AGGREGATE ENTITIES — there is no note glyph to hover; hovering a
+    // mass surfaces the cluster, and the forced file-name behaviour still lives at the deep stops.
+    const { r, hovers } = mountRenderer("2d", undefined, { showLodMasses: true });
     const priv = r as unknown as {
       cellEntity: Int32Array;
       m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
@@ -479,10 +485,20 @@ describe("N-level semantic labels — the zoom ladder walks communityPath, coars
 
   it("steps down to the sub-level's names on zooming in, before file names appear", () => {
     const { r, viewport } = mountTwoLevel();
+    // Anchor the wheel zoom ON a real node (n0), not the screen centre: this fixture is a pure RING
+    // with every member at roughly the same radius and NOTHING near the origin (unlike lodGraph's
+    // co-located blobs), so a centre-anchored zoom shrinks the visible window away from every
+    // member simultaneously — with masses off (the default) that leaves layoutClusterNames zero
+    // onGrid members for ANY community, so it draws nothing. Anchoring on n0 instead recentres the
+    // camera toward its neighbourhood as the ladder steps in, keeping its own sub-cluster (and, on
+    // this fixture, every sub-cluster) genuinely on the field to name — the leaf pass now always
+    // runs, so real nodes' screen positions are available right after mount.
+    const n0 = (r as unknown as { nodes: { node: { id: string }; sx: number; sy: number }[] })
+      .nodes.find((n) => n.node.id === "n0")!;
     // Four notches = 100% -> 60%, i.e. t = 0.4 — past the 2-level boundary of the LOD ladder
     // (levelBoundaries splits [0, FILE_LABEL_REVEAL_T=0.75) evenly, so it sits at 0.375), where the
     // SUB level owns the field outright and the TOP level has fully crossfaded away.
-    wheelIn(viewport, 4);
+    wheelIn(viewport, 4, { x: n0.sx, y: n0.sy });
     settle(200);
     // The settle() glide paints every intermediate frame too (including ones still mid-crossfade
     // from TOP to SUB), so only the FINAL settled frame answers "what does 80% look like" — force
@@ -569,9 +585,17 @@ describe("cluster label occupancy — no two eyebrow labels ever overlap (the 's
     expect(stats.labelsDrawn).toBeGreaterThan(1);
     expect(stats.labelOverlaps).toBe(0);
     expect(stats.maxLabelChars).toBeLessThanOrEqual(CLUSTER_LABEL_MAX_CHARS);
-    // At fit (100%), a graph with communities is fully AGGREGATE (LOD) — the leaf pass that would
-    // rasterize real note glyphs does not run at all (see "shows cluster names and NO file names at
-    // fit" above), so no notes are on screen yet.
+    // LOD masses are OFF by default — the leaf pass always runs (see "renders every individual node
+    // as a glyph, even at fit" below), so real notes ARE on screen at fit and no aggregate entity is
+    // drawn at all.
+    expect(stats.notesOnScreen).toBeGreaterThan(0);
+    expect(stats.entitiesDrawn).toBe(0);
+    r.destroy();
+  });
+
+  it("computeStats() shows aggregate entities instead of real notes at fit when LOD masses are opted into", () => {
+    const { r } = mountRenderer("2d", denseClusterGraph(), { showLodMasses: true });
+    const stats = r.computeStats();
     expect(stats.notesOnScreen).toBe(0);
     expect(stats.entitiesDrawn).toBeGreaterThan(0);
     r.destroy();
@@ -697,9 +721,20 @@ describe("THE LAW — zoom is resolution, never scale", () => {
   });
 });
 
-describe("LEVEL OF DETAIL — coarse stops rasterize aggregate entities, deep stops the real graph", () => {
-  it("renders ONE named entity per coarsest community at fit — and no individual notes at all", () => {
+describe("LEVEL OF DETAIL (opt-in, GraphConfig.showLodMasses) — coarse stops rasterize aggregate entities, deep stops the real graph", () => {
+  it("renders every individual node as a glyph even at fit — LOD masses are OFF by default", () => {
     const { r } = mountRenderer("2d", lodGraph());
+    const p = lodPriv(r);
+    // No aggregate entity anywhere on the field...
+    expect([...p.cellEntity].every((v) => v < 0)).toBe(true);
+    // ...every real note IS on the field instead (the leaf pass always runs).
+    expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
+    expect(r.computeStats().notesOnScreen).toBe(24); // all 4 blobs × 6 notes
+    r.destroy();
+  });
+
+  it("renders ONE named entity per coarsest community at fit — and no individual notes at all", () => {
+    const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
     const p = lodPriv(r);
     // No leaf raster work ran: no note occupies any cell.
     expect([...p.cellNode].every((v) => v < 0)).toBe(true);
@@ -722,7 +757,7 @@ describe("LEVEL OF DETAIL — coarse stops rasterize aggregate entities, deep st
   });
 
   it("draws aggregate connectors between entities at fit — the leaf edge pass never ran", () => {
-    const { r } = mountRenderer("2d", lodGraph());
+    const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
     const p = lodPriv(r);
     // Any LAYER_EDGE cell at fit is an aggregate connector (the leaf passes are skipped wholesale).
     let edgeCells = 0;
@@ -732,7 +767,7 @@ describe("LEVEL OF DETAIL — coarse stops rasterize aggregate entities, deep st
   });
 
   it("stepping in over an entity expands it into its CHILDREN near the parent's position", () => {
-    const { r, viewport } = mountRenderer("2d", lodGraph());
+    const { r, viewport } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
     const p = lodPriv(r);
     expect(entityLevelsOnGrid(p)).toEqual(new Set([0]));
     // Wheel ANCHORED on the left top-level mass (community 0 = blobs 0+1).
@@ -755,7 +790,7 @@ describe("LEVEL OF DETAIL — coarse stops rasterize aggregate entities, deep st
   });
 
   it("only the real graph rasterizes at the deep stops — entities are gone, real notes and edges draw", () => {
-    const { r, viewport } = mountRenderer("2d", lodGraph());
+    const { r, viewport } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
     const p = lodPriv(r);
     // Phase 1: into the left top cluster (level 1 active).
     const leftFlat = p.entityFlat.findIndex((e) => e.level === 0 && e.community === 0);
@@ -773,7 +808,7 @@ describe("LEVEL OF DETAIL — coarse stops rasterize aggregate entities, deep st
   });
 
   it("keeps the world point under the cursor fixed through zoom steps (within a cell)", () => {
-    const { r, viewport } = mountRenderer("2d", lodGraph());
+    const { r, viewport } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
     const p = lodPriv(r);
     const m = p.m;
     // A deliberately off-centre cursor point: over the left mass.
@@ -804,8 +839,8 @@ describe("LEVEL OF DETAIL — coarse stops rasterize aggregate entities, deep st
     r.destroy();
   });
 
-  it("3D keeps its full-detail path untouched — no entities, ever", () => {
-    const { r, viewport } = mountRenderer("3d", lodGraph());
+  it("3D keeps its full-detail path untouched — no entities, ever (even with showLodMasses on)", () => {
+    const { r, viewport } = mountRenderer("3d", lodGraph(), { showLodMasses: true });
     const p = lodPriv(r);
     expect([...p.cellEntity].every((v) => v < 0)).toBe(true);
     expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
@@ -846,7 +881,7 @@ describe("interaction", () => {
   });
 
   it("clicking an AGGREGATE ENTITY at fit expands it (zooms toward its members) instead of opening a note", () => {
-    const { r, viewport, clicks, zooms } = mountRenderer("2d", lodGraph());
+    const { r, viewport, clicks, zooms } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
     const p = lodPriv(r);
     const i = p.cellEntity.findIndex((v) => v >= 0);
     expect(i).toBeGreaterThanOrEqual(0);
@@ -860,7 +895,7 @@ describe("interaction", () => {
   });
 
   it("clicking a COARSEST entity centres on it and expands exactly ONE level in — children on-grid, not the leaves yet", () => {
-    const { r, viewport, clicks } = mountRenderer("2d", lodGraph());
+    const { r, viewport, clicks } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
     const p = lodPriv(r);
     // At fit only the coarsest (TOP) level is on-grid — see the LOD describe block above.
     expect(entityLevelsOnGrid(p)).toEqual(new Set([0]));

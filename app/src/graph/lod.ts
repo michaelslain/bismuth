@@ -2,13 +2,20 @@
 //
 // LEVEL-OF-DETAIL for the ASCII knowledge graph (2D): the pure half.
 //
-// THE IDEA (the redesign's summarizing algorithm): zoomed out, the field does NOT rasterize every
-// note and every link. It renders each community of the ACTIVE HIERARCHY LEVEL as one AGGREGATE
-// ENTITY — a compact ASCII mass whose size encodes member count — connected by AGGREGATE EDGES that
-// each summarize every real link between two communities' member sets. Stepping the zoom ladder in
-// replaces a parent entity with its children (they are physically nested — layout.ts's community
-// forces guarantee child centroids sit inside the parent), and only the deepest stops rasterize the
-// actual notes and real edges.
+// STATUS: OPT-IN, not the shipped default. The user-facing default (AsciiGraphRenderer's R2, see
+// rasterize()'s `showLodMasses` gate) renders every individual node as a glyph at EVERY zoom stop —
+// the hierarchy reads through zoom-driven node COLOR + the cluster-name labels instead (see
+// AsciiGraphRenderer.ts's LEVEL-DRIVEN COLOR block), never an aggregate mass. This module's
+// aggregate-entity machinery is kept for comparison/testing (GraphConfig.showLodMasses) —
+// everything below still describes exactly what it does when that flag is on.
+//
+// THE IDEA (the summarizing algorithm, when enabled): zoomed out, the field does NOT rasterize
+// every note and every link. It renders each community of the ACTIVE HIERARCHY LEVEL as one
+// AGGREGATE ENTITY — a compact ASCII mass whose size encodes member count — connected by AGGREGATE
+// EDGES that each summarize every real link between two communities' member sets. Stepping the zoom
+// ladder in replaces a parent entity with its children (they are physically nested — layout.ts's
+// community forces guarantee child centroids sit inside the parent), and only the deepest stops
+// rasterize the actual notes and real edges.
 //
 // LEVEL MAPPING — one source of truth with the label system: the same `resolutionT` progress
 // (0 = fit, 1 = deepest) that drives the cluster-name ladder drives the GEOMETRY. The hierarchy

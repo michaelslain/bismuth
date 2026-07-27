@@ -8,11 +8,16 @@
 //      hubs stay roughly spherical while sparse leaves flatten toward the Y=0 plane.
 //      Starting from PivotMDS means it converges in a fraction of the iterations a
 //      random start needs — that's the whole point, since the force solve is the expensive part.
-//   3. In 2D (the default; LayoutOptions.clusterLayout) a GRID-ISLAND post-pass on the seed: every
-//      top-level cluster is translated rigidly onto a coarse lattice cell with provable empty lanes
-//      between neighbours, and the refine then settles its members around that fixed anchor. See the
+//   3. `LayoutOptions.clusterLayout` picks how the TOP-level clusters are arranged. DEFAULT (both
+//      2D and 3D) is `"organic"` — the plain force settle (community gravity + community-level
+//      collide), which is what the ASCII redesign renders: every individual node as a glyph, with
+//      the hierarchy read through zoom-driven color + labels (AsciiGraphRenderer.ts), not a lattice.
+//      `"grid"` is kept as an explicit 2D-only opt-in: a GRID-ISLAND post-pass on the seed translates
+//      every top-level cluster rigidly onto a coarse lattice cell with provable empty lanes between
+//      neighbours, and the refine then settles its members around that fixed anchor. See the
 //      "GRID ISLANDS" block for why the organic settle alone could not separate this vault's clusters
-//      (measured: it IS clusterable — Q = 0.45 — but 75% of its edges run through shared tag hubs).
+//      (measured: it IS clusterable — Q = 0.45 — but 75% of its edges run through shared tag hubs) —
+//      the grid mode remains available for callers that want that stronger separation.
 //
 // Pure (no DOM, no Bun/fs) so it runs in both Bun (core) and a browser Worker (app).
 import {
@@ -112,10 +117,13 @@ export interface LayoutOptions {
    *                 via the unchanged nested community forces.
    *   - `"organic"` — the pure force settle (islands find their own places via community gravity +
    *                 community-level collide). This is the pre-grid behaviour, bit-for-bit.
-   * DEFAULT: `"grid"` in 2D, `"organic"` in 3D. Grid mode only takes effect in 2D (a flat lattice
-   * would squash a 3D cloud) and only when the nodes actually carry communities; it is also skipped
-   * for an incremental (`fixedIds`) rebuild, where pinned nodes must hold the positions the previous
-   * — already gridded — build gave them.
+   * DEFAULT: `"organic"` in both 2D and 3D (the ASCII redesign's ORGANIC layout — see
+   * design/ascii/redesign — renders every individual node as a glyph, with the hierarchy read
+   * through zoom-driven color + labels rather than a lattice of grid-cell "islands"; see
+   * AsciiGraphRenderer.ts). `"grid"` is kept as an explicit opt-in (only takes effect in 2D — a flat
+   * lattice would squash a 3D cloud — and only when the nodes actually carry communities; it is also
+   * skipped for an incremental (`fixedIds`) rebuild, where pinned nodes must hold the positions the
+   * previous — already gridded — build gave them).
    */
   clusterLayout?: "grid" | "organic";
 }
@@ -338,7 +346,7 @@ const COMMUNITY_MAX_STEP = 1.5;
 //    invariant fell to 0.56. Unpadded, the same run improves every level and holds 0.82.
 // (COMMUNITY_LEVEL_DECAY itself is declared next to DEFAULTS, which needs it at module init.)
 
-// --- GRID ISLANDS (the 2D default; LayoutOptions.clusterLayout) -----------------------------------
+// --- GRID ISLANDS (2D opt-in; LayoutOptions.clusterLayout: "grid") ---------------------------------
 // Measured verdict on the reference vault (2114 nodes / 4535 deduped edges): its Louvain partition
 // has modularity Q = 0.45 at the finest level, 0.57 mid, 0.62 coarsest, against ~0.00 for a random
 // partition of the same group count. The vault is GENUINELY, strongly clusterable — so when the
@@ -1389,7 +1397,7 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
 
   const X = seedCoords({ ids, n, adj }, o);
 
-  // --- Grid islands (2D default — see the GRID_* block) --------------------------------------------
+  // --- Grid islands (2D opt-in — see the GRID_* block) ----------------------------------------------
   // A POST-PASS ON THE SEED, not a second simulation: the 2D seed is the settled 3D layout flattened,
   // so every island already carries its organically-settled internal structure. Each island is
   // translated RIGIDLY onto its lattice cell (structure intact, position imposed), and the settle that
@@ -1565,13 +1573,14 @@ function extractPositions(nodes: RN[], dim: 2 | 3): Positions {
  * `computeLayoutAsync` on the server hot path so a big graph doesn't stall concurrent requests.
  */
 /** DEFAULTS merged with the caller's options, plus the one default that isn't a constant:
- *  `clusterLayout` is dimension-dependent ("grid" in 2D, "organic" in 3D — see LayoutOptions), so it
- *  cannot live in DEFAULTS. Both entry points resolve options through here. */
+ *  `clusterLayout` defaults to `"organic"` in both dimensions (see LayoutOptions) — kept out of
+ *  DEFAULTS only so this stays the one place every entry point resolves it through, same as before
+ *  the dimension-dependent split existed. */
 function withDefaults(options: LayoutOptions): typeof DEFAULTS & LayoutOptions {
   const dimensions = options.dimensions ?? DEFAULTS.dimensions;
   return {
     ...DEFAULTS, ...options, dimensions,
-    clusterLayout: options.clusterLayout ?? (dimensions === 2 ? "grid" : "organic"),
+    clusterLayout: options.clusterLayout ?? "organic",
   };
 }
 

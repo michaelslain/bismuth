@@ -534,11 +534,13 @@ test("gridIslandAnchors is deterministic and order-independent", () => {
   expect(gridIslandAnchors([])).toEqual({ anchors: new Map(), cells: [], pitch: 0, unit: 0, side: 0 });
 });
 
-test("2D defaults to grid: top-level clusters settle ON their lattice, far apart", () => {
+test("grid mode (opt-in): top-level clusters settle ON their lattice, far apart", () => {
   // A 2-level hierarchy, laid out exactly as the backend does it (3D settle → 2D seeded from it).
+  // clusterLayout defaults to "organic" in both dimensions (the ASCII redesign) — grid is an
+  // explicit opt-in here, compared against the (now default) organic settle on the same seed.
   const g = plantedHierarchy(HIER);
   const pos3 = computeLayout(g, { refineTicks: 120 });
-  const grid = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3 });
+  const grid = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3, clusterLayout: "grid" });
   const organic = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3, clusterLayout: "organic" });
 
   /** Per top-level cluster: centroid + the radius containing 95% of its members. */
@@ -574,7 +576,7 @@ test("2D defaults to grid: top-level clusters settle ON their lattice, far apart
 test("grid mode keeps the layout overlap-free (the anchor spring must not beat collide)", () => {
   const g = plantedHierarchy(HIER);
   const pos3 = computeLayout(g, { refineTicks: 120 });
-  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3 });
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3, clusterLayout: "grid" });
   const ids = g.nodes.map((x) => x.id);
   let minPair = Infinity;
   for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) minPair = Math.min(minPair, dist(pos[ids[i]], pos[ids[j]]));
@@ -603,10 +605,10 @@ function hierarchyWithRiders() {
 test("grid mode CONTAINS every member inside its island's disc, riders included", () => {
   const g = hierarchyWithRiders();
   const pos3 = computeLayout(g, { refineTicks: 120 });
-  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3 });
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3, clusterLayout: "grid" });
   // The plan must be the one the settle enforced, so it gets the SAME seed (riders are hosted on the
   // island they seeded nearest to — see gridIslandPlan).
-  const plan = gridIslandPlan(g, { initialPositions: pos3 })!;
+  const plan = gridIslandPlan(g, { initialPositions: pos3, clusterLayout: "grid" })!;
   expect(plan).not.toBeNull();
   expect(plan.islands.length).toBe(HIER.length); // one island per planted super-cluster
   const islandOf = new Map(plan.islands.map((i) => [i.comm, i]));
@@ -642,17 +644,18 @@ test("grid mode CONTAINS every member inside its island's disc, riders included"
 
 test("gridIslandPlan is null exactly where grid mode is", () => {
   const g = plantedHierarchy([[40, 30], [35, 28], [32, 25]]);
-  expect(gridIslandPlan(g, { dimensions: 3 })).toBeNull();
+  expect(gridIslandPlan(g, { dimensions: 3, clusterLayout: "grid" })).toBeNull();
   expect(gridIslandPlan(g, { clusterLayout: "organic" })).toBeNull();
-  expect(gridIslandPlan(ring(80))).toBeNull(); // no communities
-  expect(gridIslandPlan(g)!.islands.length).toBe(3);
+  expect(gridIslandPlan(g)).toBeNull(); // clusterLayout defaults to "organic" now — grid is opt-in
+  expect(gridIslandPlan(ring(80), { clusterLayout: "grid" })).toBeNull(); // no communities
+  expect(gridIslandPlan(g, { clusterLayout: "grid" })!.islands.length).toBe(3);
 });
 
 test("grid mode is deterministic across runs", () => {
   const g = plantedHierarchy([[40, 30], [35, 28], [32, 25], [30, 22]]);
   const seed = computeLayout(g, { refineTicks: 80 });
-  const a = computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: seed });
-  expect(a).toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: seed }));
+  const a = computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: seed, clusterLayout: "grid" });
+  expect(a).toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: seed, clusterLayout: "grid" }));
 });
 
 test("grid mode is 2D-only, opt-outable, and never fires without communities or on a pinned rebuild", () => {
@@ -664,13 +667,15 @@ test("grid mode is 2D-only, opt-outable, and never fires without communities or 
   // ...and asking for "grid" in 3D is a no-op (a flat lattice would squash the cloud).
   expect(computeLayout(g, { dimensions: 3, refineTicks: 60, clusterLayout: "grid" }))
     .toEqual(computeLayout(g, { dimensions: 3, refineTicks: 60 }));
-  // A community-less graph is untouched by the 2D default (opt-in BY DATA, like every community force).
+  // clusterLayout now defaults to "organic" in BOTH dimensions (the ASCII redesign) — asking for
+  // "grid" explicitly in 2D is a no-op on a community-less graph (opt-in BY DATA, like every
+  // community force), same as it always was.
   const plain = ring(80);
-  expect(computeLayout(plain, { dimensions: 2, refineTicks: 60 }))
+  expect(computeLayout(plain, { dimensions: 2, refineTicks: 60, clusterLayout: "grid" }))
     .toEqual(computeLayout(plain, { dimensions: 2, refineTicks: 60, clusterLayout: "organic" }));
   // An incremental (pinned) rebuild must not re-grid: pinned nodes hold the previous build's positions.
   const fixed = g.nodes.slice(0, 100).map((nd) => nd.id);
-  const inc = computeLayout(g, { dimensions: 2, refineTicks: 40, initialPositions: seed, fixedIds: fixed });
+  const inc = computeLayout(g, { dimensions: 2, refineTicks: 40, initialPositions: seed, fixedIds: fixed, clusterLayout: "grid" });
   for (const id of fixed) expect([inc[id][0], inc[id][1]]).toEqual([Math.round(seed[id][0]), Math.round(seed[id][1])]);
 });
 

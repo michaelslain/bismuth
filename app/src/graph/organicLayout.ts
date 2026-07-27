@@ -2,15 +2,18 @@
 //
 // TESTING ONLY — client-side ORGANIC layout for the R1/R3 renderer harness (see rendererKind.ts).
 // R1/R3 mount the pre-ASCII CanvasGraphRenderer, whose whole point is to look like the graph did
-// BEFORE the grid-island backend layout (core/src/layout-cache.ts CACHE_VERSION v16+) shipped: a
-// force-settled cloud where communities find their own place via physics, never a lattice of fixed
-// grid cells. So for canvas kinds GraphView does NOT draw the backend's node.position/position2d
-// (the shared /graph payload, carrying v16+ grid-island positions) — it asks HERE for a fresh
-// settle instead, computed off the main thread (layoutWorker.ts) with the exact layout core the
-// backend precompute uses (core/src/layout.ts), passing `{ communityForces: false, clusterLayout:
-// "organic" }` — which layout.ts's own LayoutOptions docs say reproduces the pre-grid-island,
-// community-unaware physics byte-identically. R2/R4 (AsciiGraphRenderer) are untouched — they keep
-// drawing the backend's positions exactly as shipped.
+// BEFORE community-aware clustering (core/src/layout-cache.ts CACHE_VERSION v13+) existed at all: a
+// force-settled cloud where nothing beyond ordinary link/repulsion physics decides where a node
+// lands — no community gravity/separation, no grid-island lattice either (the backend's
+// `clusterLayout` DEFAULT flipped grid → organic at v18, but organic still runs the community-aware
+// forces; R1/R3 explicitly turn those off too, via `communityForces: false`). So for canvas kinds
+// GraphView does NOT draw the backend's node.position/position2d (the shared /graph payload) — it
+// asks HERE for a fresh settle instead, computed off the main thread (layoutWorker.ts) with the
+// exact layout core the backend precompute uses (core/src/layout.ts), passing `{ communityForces:
+// false, clusterLayout: "organic" }` — which layout.ts's own LayoutOptions docs say reproduces the
+// pre-community-detection, pre-grid-island physics byte-identically. R2/R4 (AsciiGraphRenderer) are
+// untouched — they keep drawing the backend's (now organic-by-default, community-aware) positions
+// exactly as shipped.
 //
 // Results are cached in-memory, keyed by a structural signature of the graph (node ids + edge
 // endpoints) — NOT by renderer kind: R1 and R3 both mount CanvasGraphRenderer with an identical
