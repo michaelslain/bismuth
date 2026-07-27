@@ -1,8 +1,11 @@
 // app/src/GraphView.tsx
-import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
+import { onCleanup, onMount, createEffect, createSignal, Show, untrack } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
-import { AsciiGraphRenderer } from "./graph/AsciiGraphRenderer";
-import type { GraphRenderer, HoverNode } from "./graph/graphRenderer";
+import type { GraphConfig, GraphRenderer, HoverNode } from "./graph/graphRenderer";
+// TESTING ONLY: the renderer A/B harness (RendererKind) — see rendererKind.ts for the kind ->
+// renderer-instance mapping (factored out, pure, unit-tested) and the block just below for the
+// GraphView-owned signal + toolbar wiring. The shipped app only ever mounts AsciiGraphRenderer.
+import { isCanvasKind, isRendererKind, makeRenderer, RENDERER_KIND_OPTIONS, type RendererKind } from "./graph/rendererKind";
 import { AgentsGraph } from "./graph/AgentsGraph";
 import { layoutAgentGraph } from "./graph/agentLayout";
 import type { Org } from "./graph/agentOrg";
@@ -60,6 +63,28 @@ const setViewModePersisted = (m: "2d" | "3d") => {
   writeCache(VIEW_MODE_KEY, m);
 };
 
+// ============================================================================
+// TESTING ONLY — renderer A/B toggle. Lets the ASCII redesign be compared side-by-side against the
+// pre-ASCII CanvasGraphRenderer (and two hybrid combinations) without a real product surface: no
+// settingsSchema entry, no persisted user-facing setting semantics beyond a throwaway localStorage
+// key. See ./graph/rendererKind.ts for the four combinations (R1-R4) and the kind -> renderer
+// mapping. Delete this block + that file + the swap effect in GraphView + the R1-R4 toolbar buttons
+// once the redesign is validated (or the comparison is no longer needed).
+// Module-level (like graphViewMode above) so every GraphView instance shares one value, seeded
+// from localStorage so the choice survives reload without touching the vault.
+// ============================================================================
+const RENDERER_KIND_KEY = "bismuth:graph:rendererKind";
+const ASCII_MONO_STACK = '"Monaspace Xenon", ui-monospace, monospace';
+const readStoredRendererKind = (): RendererKind => {
+  const v = readCache<RendererKind>(RENDERER_KIND_KEY);
+  return isRendererKind(v) ? v : "ascii";
+};
+const [rendererKind, setRendererKindSignal] = createSignal<RendererKind>(readStoredRendererKind());
+const setRendererKindPersisted = (k: RendererKind) => {
+  setRendererKindSignal(k);
+  writeCache(RENDERER_KIND_KEY, k);
+};
+
 // Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
 // full-pane graph): text-only, uppercase, no glyph prefix — same string in both so the little
 // and big toolbars read as one control at two sizes (the narrow one just wraps to a second row
@@ -97,8 +122,12 @@ export function GraphView(props: {
 }) {
   let host!: HTMLDivElement;
   // The ASCII field draws its labels ON the character grid (they're cells like everything else),
-  // so there is no DOM label overlay any more — CanvasGraphRenderer's `labelsEl` argument is gone.
-  const renderer: GraphRenderer = new AsciiGraphRenderer();
+  // so there is no DOM label overlay any more — CanvasGraphRenderer's `labelsEl` argument is gone
+  // (unused by either shipped renderer today; see the TESTING-ONLY overlay re-provided below for
+  // the R1/R3 harness combinations, which is the one caller left that still passes it).
+  // `let`, not `const`: TESTING ONLY — the renderer-toggle harness (RendererKind above) swaps this
+  // out for a fresh instance on every kind change; see mountRenderer + the swap effect below.
+  let renderer: GraphRenderer = makeRenderer(rendererKind());
   let mounted = false;
   let lastGraph: GraphData | null = null;
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);
@@ -144,13 +173,12 @@ export function GraphView(props: {
     props.onOpen(id);
   };
 
+  // mountRenderer is defined further below (after rendererGraph/buildConfig, which it calls) but
+  // referenced here — safe, since this callback only runs once Solid actually mounts the component
+  // (after the whole function body below has already executed and initialized those consts).
   onMount(() => {
-    renderer.mount(host, openNode, (node) => setHovered(node));
-    renderer.setFpsCallback(setFps);
-    renderer.setZoomCallback?.(setZoomPct);
-    if (props.onPaint) renderer.setPaintCallback(props.onPaint);
+    mountRenderer();
     mounted = true;
-    if (lastGraph) { renderer.render(rendererGraph()); refreshUiData(); }
   });
 
   // Agents mode renders through the SAME WebGL graph as the knowledge graph, for BOTH 2D
@@ -167,15 +195,18 @@ export function GraphView(props: {
     if (mounted) { renderer.render(g); refreshUiData(); }
   });
 
-  // Push graph settings to the renderer whenever they change. Colors derive from the
+  // Derive the live GraphConfig from settings + appearance tokens. Colors derive from the
   // centralized `appearance` theme tokens: nodes/clusters from the Oxide accentPalette
   // (by stable hash, inside the renderer), edges = Steel (neutral) at low alpha, the
   // canvas background = Ink (background). No separate graph palette/colors anymore.
-  createEffect(() => {
+  // Extracted into its own function (rather than inlined in the effect below) so the TESTING-ONLY
+  // renderer-swap effect further down can re-push a full config immediately after mounting a fresh
+  // instance (see mountRenderer) without duplicating the settings -> GraphConfig mapping.
+  const buildConfig = (): GraphConfig => {
     const gs = settings.graph;
     const ap = resolveAppearance(settings.appearance);
     const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
-    renderer.setConfig({
+    const cfg: GraphConfig = {
       spin: props.mode === "agents" ? false : gs.spin, // agents = a tidy pyramid; no idle storm-spin
 
       spinSpeed: gs.spinSpeed,
@@ -211,11 +242,87 @@ export function GraphView(props: {
       daemonAccent: hexToIntT(ap.accent, 0x3f6bf0),
       daemonNeutral: hexToIntT(ap.neutral, 0xaeb4c2),
       daemonFg: hexToIntT(ap.foreground, 0xffffff),
-    });
+    };
+    // TESTING ONLY: layer the R3/R4 harness overrides on top of the ordinary settings-derived
+    // config — see the RendererKind block near the top of this module.
+    const kind = rendererKind();
+    if (kind === "canvas-ascii") cfg.labelFontFamily = ASCII_MONO_STACK;
+    if (kind === "ascii-canvas") cfg.disableLod = true;
+    return cfg;
+  };
+
+  createEffect(() => {
+    renderer.setConfig(buildConfig());
     // Search items' sub-labels are derived from the renderer's live node set. This effect can run
     // AFTER the initial render+refresh (Solid runs effects in creation order, and this one trails
     // the graph-render effect), so refresh here too rather than relying solely on the render effect.
     if (mounted) refreshUiData();
+  });
+
+  // ----------------------------------------------------------------------------------------------
+  // TESTING ONLY below (through the swap effect): the renderer-toggle harness. See the RendererKind
+  // block near the top of this module for the four combinations and why this exists.
+  // ----------------------------------------------------------------------------------------------
+
+  // R1/R3 (CanvasGraphRenderer) mount() still accepts a labels-overlay element (see graphRenderer.ts
+  // + CanvasGraphRenderer.mount's `_labelOverlay` param) — a holdover from when it rendered labels
+  // as DOM nodes; it's unused by both shipped renderers today (labels are drawn on-canvas), but this
+  // re-provides one anyway for fidelity with that historical contract. Created lazily per-mount,
+  // torn down on every swap so ascii kinds never carry a stray overlay div around; `renderer.destroy()`
+  // already clears `host`'s children (including this), so teardown here is just resetting the
+  // reference, not a required DOM removal.
+  let labelsOverlayEl: HTMLDivElement | null = null;
+  const ensureLabelsOverlay = (): HTMLDivElement => {
+    if (!labelsOverlayEl) {
+      labelsOverlayEl = document.createElement("div");
+      labelsOverlayEl.className = "graph-labels-overlay-testing";
+      labelsOverlayEl.style.position = "absolute";
+      labelsOverlayEl.style.inset = "0";
+      labelsOverlayEl.style.pointerEvents = "none";
+      host.appendChild(labelsOverlayEl);
+    }
+    return labelsOverlayEl;
+  };
+  const teardownLabelsOverlay = () => { labelsOverlayEl = null; };
+
+  // Mount the CURRENT `renderer` + re-send everything a fresh instance needs to reflect the live
+  // state: config, the current graph, the active file, and any live search-match set. Shared by
+  // onMount (the initial mount) and the swap effect below (a kind change), so a swap can never drift
+  // out of sync with what a first mount does — this function IS "what onMount does".
+  const mountRenderer = () => {
+    const overlay = isCanvasKind(rendererKind()) ? ensureLabelsOverlay() : undefined;
+    renderer.mount(host, openNode, (node) => setHovered(node), overlay);
+    renderer.setFpsCallback(setFps);
+    renderer.setZoomCallback?.(setZoomPct);
+    if (props.onPaint) renderer.setPaintCallback(props.onPaint);
+    renderer.setConfig(buildConfig());
+    if (lastGraph) { renderer.render(rendererGraph()); refreshUiData(); }
+    renderer.setActiveFile(props.active ? props.active.replace(/\.md$/, "") : null);
+    if (switcherHadMatch && props.searchMatchIds?.length) renderer.setSearchMatches(new Set(props.searchMatchIds));
+    renderer.setVisible(props.visible !== false && !docHidden());
+  };
+
+  // Destroy the mounted renderer and mount a fresh instance of the selected kind whenever it
+  // changes. No-ops until the FIRST mount has happened (`mounted`) — the initial kind is already
+  // instantiated by the `let renderer = makeRenderer(rendererKind())` above and mounted by onMount,
+  // so this effect's first (pre-mount) run would otherwise double-mount.
+  //
+  // `untrack`-wrapped: mountRenderer() calls buildConfig()/rendererGraph(), which read settings.*
+  // /graphViewMode()/props.mode/agentOrg() — signals that already have their OWN dedicated effects
+  // above. Without untrack, Solid's dynamic tracking would ALSO make THIS effect depend on all of
+  // those (any nested read during a tracked computation counts, regardless of call depth), so an
+  // ordinary settings change or the 2D/3D toggle would destroy + recreate the whole renderer instead
+  // of just updating the live one. `rendererKind()` — read before entering untrack — must stay the
+  // one and only real dependency.
+  createEffect(() => {
+    const kind = rendererKind();
+    if (!mounted) return;
+    untrack(() => {
+      renderer.destroy();
+      teardownLabelsOverlay();
+      renderer = makeRenderer(kind);
+      mountRenderer();
+    });
   });
 
   // The one graph instance moves between a full pane and the cramped backdrop/sidebar slot, but it
@@ -290,6 +397,17 @@ export function GraphView(props: {
               { id: "3d", title: "3D", label: "3D" },
             ]}
           />
+          {/* TESTING ONLY — renderer A/B toggle (RendererKind, see the block near the top of this
+              file). No settingsSchema entry; delete alongside that block once the ASCII redesign
+              is validated. Full-pane graph only — the cramped sidebar mini-graph skips it. */}
+          <Show when={!props.mini}>
+            <SegmentedToggle
+              value={rendererKind()}
+              onChange={setRendererKindPersisted}
+              size="sm"
+              options={RENDERER_KIND_OPTIONS}
+            />
+          </Show>
           <Show when={props.fill}>
             <IconTextButton icon="Search" size="sm" variant={menuOpen() ? "selected" : "unselected"} onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}>FIND</IconTextButton>
           </Show>
