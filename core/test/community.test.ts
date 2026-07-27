@@ -63,6 +63,28 @@ test("pickExemplar picks the SHORTEST name among the hub pool", () => {
   expect(pick!.label).toBe("Kant");
 });
 
+test("pickExemplar prefers a candidate that FITS the field's cap over a longer non-fitting one", () => {
+  // The field's readability contract is specifically about the FIT cap (EXEMPLAR_FIT_CHARS, mirrors
+  // app/src/graph/labelSelection.ts CLUSTER_LABEL_MAX_CHARS), not raw brevity for its own sake —
+  // pinned explicitly here even though today it coincides with "shortest wins" (see pickExemplar's
+  // doc comment), so a future change to the ranking rule can't silently stop preferring a name the
+  // field never has to cut.
+  const pick = pickExemplar([
+    { id: "long", label: "A Genuinely Very Long Note Title That Exceeds The Field Cap", degree: 40 },
+    { id: "fits", label: "Twenty Chars Exact!!", degree: 25 }, // exactly 20 chars, clears the degree-fraction gate too
+  ]);
+  expect(pick!.label).toBe("Twenty Chars Exact!!");
+  expect(pick!.label.length).toBeLessThanOrEqual(20);
+});
+
+test("pickExemplar falls back to the shortest overall when NOTHING in the pool fits the cap", () => {
+  const pick = pickExemplar([
+    { id: "a", label: "A Reasonably Long Note Title Here", degree: 10 }, // 34 chars
+    { id: "b", label: "An Even Longer Note Title Than That One Indeed", degree: 20 }, // 47 chars
+  ]);
+  expect(pick!.label).toBe("A Reasonably Long Note Title Here"); // shortest of the two, even past the cap
+});
+
 test("pickExemplar excludes members below the degree fraction (a leaf never names a cluster)", () => {
   const pick = pickExemplar([
     { id: "hub", label: "Bibliography", degree: 100 },

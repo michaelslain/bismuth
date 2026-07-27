@@ -169,6 +169,56 @@ export function traceEdge(
 }
 
 /**
+ * Liang-Barsky clip of the segment (x0,y0)-(x1,y1) — grid CELL-index space, not px — against the
+ * rectangle [0, cols-1] x [0, rows-1]. Used to draw the ON-SCREEN portion of an edge whose far
+ * endpoint is off the field, instead of dropping the whole edge: the old rule ("skip unless BOTH
+ * endpoints are on-grid") reads as "edges vanish at deep zoom" — every hub's links to off-screen
+ * neighbours simply disappeared, when what a zoomed-in field should show is each visible node's
+ * local edges running off-field as partial lines. Returns `null` when the segment never crosses the
+ * rectangle at all (both endpoints off-grid on the same side), so a genuinely invisible edge still
+ * draws nothing. Endpoints are already-rounded cell coordinates; the clipped result is re-rounded
+ * for `traceEdge`'s Bresenham walk (a sub-cell clip point isn't itself a cell).
+ */
+export function clipSegmentToGrid(
+  x0: number, y0: number, x1: number, y1: number, m: GridMetrics,
+): { x0: number; y0: number; x1: number; y1: number } | null {
+  const dx = x1 - x0, dy = y1 - y0;
+  const xMax = m.cols - 1, yMax = m.rows - 1;
+  let tMin = 0, tMax = 1;
+  // p/q per Liang-Barsky: p<0 is an ENTERING boundary (raises tMin), p>0 is EXITING (lowers tMax),
+  // p===0 means the segment runs parallel to that boundary — reject only if it's outside on that axis.
+  const clipEdge = (p: number, q: number): boolean => {
+    if (p === 0) return q >= 0;
+    const r = q / p;
+    if (p < 0) { if (r > tMax) return false; if (r > tMin) tMin = r; }
+    else { if (r < tMin) return false; if (r < tMax) tMax = r; }
+    return true;
+  };
+  if (!clipEdge(-dx, x0) || !clipEdge(dx, xMax - x0) || !clipEdge(-dy, y0) || !clipEdge(dy, yMax - y0)) return null;
+  if (tMin > tMax) return null;
+  return {
+    x0: Math.round(x0 + tMin * dx), y0: Math.round(y0 + tMin * dy),
+    x1: Math.round(x0 + tMax * dx), y1: Math.round(y0 + tMax * dy),
+  };
+}
+
+/**
+ * Split a continuous pan offset into a WHOLE-CELL part (fed into the world→cell projection so the
+ * phase between world space and cell space never shifts) and the sub-cell residual (applied as a
+ * plain canvas translate at paint time, for smooth motion). This is the pan-jitter fix: with a
+ * screen-anchored grid, every sub-cell pan re-phases the world→cell rounding, so the SAME world-space
+ * line rasterizes into a DIFFERENT discrete cell path from one drag frame to the next — the lines
+ * visibly wiggle while panning. Quantizing pan to whole cells keeps that phase fixed (identical world
+ * geometry always produces the identical discrete raster); the residual keeps the on-screen motion
+ * continuous instead of stepping in whole-cell jumps.
+ */
+export function quantizePan(pan: number, cell: number): { whole: number; frac: number } {
+  if (!Number.isFinite(pan) || !(cell > 0)) return { whole: 0, frac: 0 };
+  const whole = Math.round(pan / cell) * cell;
+  return { whole, frac: pan - whole };
+}
+
+/**
  * Nearest node to a cell, searching outward in square rings up to `radius` cells. `cellNode` is a
  * cols*rows Int32Array of node indices (-1 = no node), rebuilt on every rasterization. Returns -1
  * when nothing is within the radius. Rings mean the closest hit wins, so a dense field doesn't

@@ -285,27 +285,35 @@ export function clusterLevelAlphas(
   return Array.from({ length: n }, (_, i) => entered(i) - entered(i + 1));
 }
 
-/** Hard cap (TOTAL characters, including the ".." tail) on a cluster label's text — see
- *  `clusterLabelText`. Cluster names are free-form note-title-ish sentences pulled from the vault's
- *  community detector, but the field draws them on a fixed-width monospace GRID at coarse zoom
- *  stops: an uncapped label spills across neighbouring cells and paints over whatever else the
- *  aggregate view put there (the "soup" — see AsciiGraphRenderer's `eyebrowWidthCells` and its
- *  occupancy reservation, which assumes a label's length is bounded by this constant). */
+/** Hard cap (TOTAL characters) on a cluster label's text — see `clusterLabelText`. Cluster names are
+ *  free-form note-title-ish sentences pulled from the vault's community detector, but the field
+ *  draws them on a fixed-width monospace GRID at coarse zoom stops: an uncapped label spills across
+ *  neighbouring cells and paints over whatever else the aggregate view put there (the "soup" — see
+ *  AsciiGraphRenderer's `eyebrowWidthCells` and its occupancy reservation, which assumes a label's
+ *  length is bounded by this constant). */
 export const CLUSTER_LABEL_MAX_CHARS = 20;
 
 /** Eyebrow-register text for a cluster name: upper-cased, matching the design system's
  *  `.asc-eyebrow` treatment (`--ls-eyebrow` tracking is applied by the canvas caller via
  *  `ctx.letterSpacing`, not baked into the string), then hard-capped to `maxChars` TOTAL characters
- *  (default `CLUSTER_LABEL_MAX_CHARS`) — long names are truncated to `maxChars - 2` characters (with
- *  any trailing whitespace/punctuation trimmed so the cut doesn't read as mid-word-then-dangling-
- *  punctuation) and suffixed with ASCII ".." — NEVER the Unicode "…" ellipsis, since the field is a
- *  monospace ASCII grid and a non-ASCII glyph doesn't share the font's fixed per-cell advance,
- *  shearing the rest of the line off its cells. */
+ *  (default `CLUSTER_LABEL_MAX_CHARS`) by dropping trailing WORDS — never mid-word, and never with an
+ *  ASCII ".." or Unicode "…" tail (both read as nonsense on a field of real vault names: ".." looks
+ *  like a broken path, and a non-ASCII glyph doesn't share the font's fixed per-cell advance,
+ *  shearing the rest of the line off its cells anyway). A single word that alone exceeds `maxChars`
+ *  renders WHOLE rather than being chopped into an unreadable fragment (rare — `pickExemplar` in
+ *  core/src/community.ts already prefers a hub-pool candidate that fits outright, so this only fires
+ *  when nothing in the pool does). */
 export function clusterLabelText(name: string, maxChars: number = CLUSTER_LABEL_MAX_CHARS): string {
   const upper = name.toUpperCase();
   if (upper.length <= maxChars) return upper;
-  const head = upper.slice(0, Math.max(0, maxChars - 2)).replace(/[\s.,;:!?-]+$/, "");
-  return head + "..";
+  const words = upper.split(/\s+/).filter(Boolean);
+  let out = "";
+  for (const w of words) {
+    const next = out ? `${out} ${w}` : w;
+    if (next.length > maxChars) return out || w; // out="" → first word alone exceeds the cap, whole
+    out = next;
+  }
+  return out;
 }
 
 /**

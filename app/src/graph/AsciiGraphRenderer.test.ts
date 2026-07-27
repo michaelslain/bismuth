@@ -859,6 +859,24 @@ describe("interaction", () => {
     r.destroy();
   });
 
+  it("clicking a COARSEST entity centres on it and expands exactly ONE level in — children on-grid, not the leaves yet", () => {
+    const { r, viewport, clicks } = mountRenderer("2d", lodGraph());
+    const p = lodPriv(r);
+    // At fit only the coarsest (TOP) level is on-grid — see the LOD describe block above.
+    expect(entityLevelsOnGrid(p)).toEqual(new Set([0]));
+    const i = p.cellEntity.findIndex((v) => v >= 0);
+    const { x, y } = cellPx(p, i);
+    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: x, clientY: y }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x, clientY: y }));
+    settle(300);
+    expect(clicks).toEqual([]);
+    // The child level now owns the field — the coarsest level has fully crossfaded away, and real
+    // notes are NOT on the field yet (one click expands one level, not straight to the leaves).
+    expect(entityLevelsOnGrid(p)).toEqual(new Set([1]));
+    expect([...p.cellNode].every((v) => v < 0)).toBe(true);
+    r.destroy();
+  });
+
   it("orbiting in 3D re-rasterizes the field, and a drag never opens a note", () => {
     const { r, viewport, clicks } = mountRenderer("3d");
     const before = allText();
@@ -932,6 +950,89 @@ describe("UI data accessors", () => {
     expect(painted.at(-1)).toBe(0);
     expect(nodeRuns()).toEqual([]);
     expect(r.getCommunityCentroids().size).toBe(0);
+    r.destroy();
+  });
+});
+
+describe("edge clipping — an edge with an off-field endpoint still draws (the 'edges vanish at deep zoom' fix)", () => {
+  it("keeps n0's local edges numerous at maximum zoom, even though most neighbours project off the tiny visible field", () => {
+    const { r, viewport } = mountRenderer("2d");
+    // frameSubset on n0 ALONE zooms to the maximum resolution centred exactly on it (a 1-point
+    // subset has ~zero radius, so the frame ratio saturates at maxRes) — the same deterministic
+    // "reach 0%" pattern other tests in this file use. n0 is the 24-spoke hub; every one of its 23
+    // neighbours has a real edge to it, and at this resolution almost all of them project well off
+    // the field. The OLD rule ("skip an edge unless BOTH endpoints are on-grid") dropped every one
+    // of those — QA measured edgesDrawn:2 at 0%. The fix clips each edge to its on-screen portion
+    // instead, so n0's own local edges should still be numerous.
+    r.frameSubset(["n0"]);
+    wheelIn(viewport, 30);
+    settle(300);
+    const stats = r.computeStats();
+    expect(stats.zoomPct).toBe(0);
+    expect(stats.notesOnScreen).toBeGreaterThanOrEqual(1); // at least the hub itself is on the field
+    expect(stats.edgesDrawn).toBeGreaterThan(5);
+    r.destroy();
+  });
+});
+
+describe("pan anchoring — the raster is WORLD-anchored, not screen-anchored (the pan-jitter fix)", () => {
+  it("keeps the field's discrete char raster byte-identical across several different sub-cell pans", () => {
+    const { r, viewport } = mountRenderer("2d");
+    const priv = r as unknown as { charBuf: Uint16Array };
+
+    // Engage dragging (crosses DRAG_THRESHOLD) with one bigger move, then snapshot.
+    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 410, clientY: 300 }));
+    frame(32);
+    const snapshot = Array.from(priv.charBuf);
+
+    // Several FOLLOW-UP sub-cell moves (well under one cell — CELL_W ~6.3px / CELL_H 18px), all
+    // landing in the SAME whole-cell pan bucket as the snapshot above. Under the old screen-anchored
+    // grid every one of these re-phased the world->cell rounding and reshaped every Bresenham line on
+    // the field — "dragging makes lines wiggle". Quantizing pan to whole cells means the RASTER must
+    // not change at all here; only a paint-time canvas translate (not exercised by this fake 2D
+    // context) would move.
+    let x = 410, y = 300;
+    for (const [dx, dy] of [[1, 0], [1, 1], [-1, -1], [-1, 1]] as const) {
+      x += dx; y += dy;
+      window.dispatchEvent(new PointerEvent("pointermove", { clientX: x, clientY: y }));
+      frame(32);
+      expect(Array.from(priv.charBuf)).toEqual(snapshot);
+    }
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x, clientY: y }));
+    r.destroy();
+  });
+
+  it("shifts the raster by an exact whole cell when panned by one cell width — same shape, translated", () => {
+    const { r, viewport } = mountRenderer("2d");
+    const priv = r as unknown as { charBuf: Uint16Array; m: { cols: number; rows: number } };
+    const { cols } = priv.m;
+
+    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 410, clientY: 300 })); // engage
+    frame(32);
+    const before = Array.from(priv.charBuf);
+
+    // One more whole CELL_W of horizontal pan (rounds to +1 column), no vertical change.
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 410 + Math.round(CELL_W), clientY: 300 }));
+    frame(32);
+    const after = Array.from(priv.charBuf);
+
+    // Every non-empty cell should have moved exactly one column right (dropping whatever scrolled
+    // off the left edge, and leaving the new rightmost column however it lands) — the same discrete
+    // SHAPE, not a reshaped line.
+    let matched = 0, checked = 0;
+    for (let r2 = 0; r2 < priv.m.rows; r2++) {
+      for (let c = 0; c < cols - 1; c++) {
+        const i = r2 * cols + c;
+        if (!before[i]) continue;
+        checked++;
+        if (after[i + 1] === before[i]) matched++;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+    expect(matched).toBe(checked);
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 410, clientY: 300 }));
     r.destroy();
   });
 });
