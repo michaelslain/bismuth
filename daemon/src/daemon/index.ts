@@ -40,8 +40,12 @@ async function ensureVaultDirs(ctx: VaultContext): Promise<void> {
 
   // Seed every registered default that's MISSING (identity, the default crons, and any seedable
   // added in future versions) in one declarative, incremental pass — a new default lands here on
-  // the next brain-start for already-set-up vaults too, existing files untouched. See seeds.ts.
-  await reconcileSeeds(ctx)
+  // the next brain-start for already-set-up vaults too. Refreshable seeds (the default crons) also
+  // get upgraded in place IF the on-disk file still matches a known prior stock version — a
+  // user-customized cron is never touched. See seeds.ts.
+  const seeded = await reconcileSeeds(ctx)
+  if (seeded.refreshed.length > 0) log(`[${ctx.name}] upgraded seeded crons: ${seeded.refreshed.join(", ")}`)
+  if (seeded.customized.length > 0) log(`[${ctx.name}] left customized crons untouched: ${seeded.customized.join(", ")}`)
 }
 
 async function writePid(): Promise<void> {
