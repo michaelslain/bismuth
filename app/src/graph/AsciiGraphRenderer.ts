@@ -854,7 +854,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.cellEntity[i] = -1;
     }
 
-    const lodOn = is2d && this.levelCount > 0 && this.entityLevels.length > 0;
+    // TESTING ONLY: GraphConfig.disableLod (the renderer-toggle harness's "R4") force-disables LOD
+    // summarization so this field behaves like the pre-LOD/legacy renderer — real notes/edges/
+    // labels rasterized at every zoom stop, never an aggregate cluster mass. No settingsSchema
+    // entry; real callers never set it.
+    const lodOn = !this.cfg.disableLod && is2d && this.levelCount > 0 && this.entityLevels.length > 0;
     this.lodOn = lodOn;
     const mix = lodOn ? lodMix(resolutionT(this.res, this.maxRes), this.levelCount) : null;
     const leafA = mix ? mix.leafAlpha : 1;

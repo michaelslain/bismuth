@@ -41,6 +41,16 @@ export interface GraphConfig {
   /** ASCII renderer only: graph.backgroundNoise (settingsSchema.ts) — the faint ASCII noise texture
    *  under the field. Off by default; unused by this (legacy) Canvas2D renderer. */
   backgroundNoise?: boolean;
+  // --- TESTING ONLY below: app/src/GraphView.tsx's renderer A/B harness (RendererKind). Neither
+  // field has a settingsSchema entry and no real caller sets them — delete both alongside the
+  // harness once the ASCII redesign is validated. ---
+  /** CanvasGraphRenderer only: override the label font's FAMILY (weight/size untouched) so the
+   *  harness's "R3" combination can preview this renderer with the ASCII redesign's mono stack. */
+  labelFontFamily?: string;
+  /** AsciiGraphRenderer only: force LOD cluster summarization off, so the harness's "R4"
+   *  combination rasterizes real notes/edges/labels at every zoom stop instead of aggregate
+   *  cluster masses — i.e. this renderer behaving like the pre-LOD/legacy one. */
+  disableLod?: boolean;
 }
 
 /** The node currently under the cursor, surfaced to GraphView for the hover readout. "cluster" is
@@ -285,9 +295,11 @@ export class CanvasGraphRenderer {
   private raf = 0; private running = false; private visible = true; private dirty = true;
   private lastFrameT = 0; private fpsAccum = 0; private fpsFrames = 0; private nowMs = 0;
 
-  // label fonts (hoisted so the label loop doesn't rebuild the font string every label every frame)
-  private readonly FONT_SELF = "700 14px ui-sans-serif, system-ui, -apple-system, sans-serif";
-  private readonly FONT_NODE = "500 11px ui-sans-serif, system-ui, -apple-system, sans-serif";
+  // label fonts. Family is normally the sans-serif stack; TESTING ONLY — GraphConfig.labelFontFamily
+  // (the renderer-toggle harness's "R3") can override just the family, weight/size untouched.
+  private readonly FONT_FAMILY_DEFAULT = "ui-sans-serif, system-ui, -apple-system, sans-serif";
+  private get FONT_SELF() { return `700 14px ${this.cfg.labelFontFamily ?? this.FONT_FAMILY_DEFAULT}`; }
+  private get FONT_NODE() { return `500 11px ${this.cfg.labelFontFamily ?? this.FONT_FAMILY_DEFAULT}`; }
 
   // ---- lifecycle -----------------------------------------------------------
 
