@@ -68,6 +68,13 @@ export interface HierarchicalCommunityAssignment extends CommunityAssignment {
 // though "L1" is shorter.
 const EXEMPLAR_POOL = 8;
 const EXEMPLAR_DEGREE_FRAC = 0.5;
+// Mirrors app/src/graph/labelSelection.ts CLUSTER_LABEL_MAX_CHARS — the field's hard per-label cap.
+// core has no dependency on app (the reverse is true), so this is a plain duplicated constant, not
+// an import; keep the two in sync if the cap ever moves. Preferring a hub-pool candidate that
+// already FITS this cap outright means the renderer almost never has to cut the exemplar's own
+// name — see the block below and clusterLabelText's word-boundary trim for the rare case where
+// nothing in the pool fits.
+const EXEMPLAR_FIT_CHARS = 20;
 
 /** One candidate member for `pickExemplar`. `kind` is the graph node kind ("tag" gets the override
  *  above); anything else, or absent, is treated as a plain note. */
@@ -83,7 +90,11 @@ export interface ExemplarCandidate {
  *   1. keep the members whose degree is >= `degreeFrac` × the community's max degree, ranked by degree
  *      DESC (ties → shorter label, then id ASC), at most `poolSize` of them — the hub pool;
  *   2. if any of those is a `kind: "tag"`, consider only the tags;
- *   3. among the survivors pick the SHORTEST label (ties → higher degree, then id ASC).
+ *   3. among the survivors, prefer whichever ones already FIT the field's hard cap
+ *      (`EXEMPLAR_FIT_CHARS`) outright, then pick the SHORTEST label among THOSE (ties → higher
+ *      degree, then id ASC); only when NOTHING in the field fits does the shortest-overall label
+ *      win instead, and the renderer's `clusterLabelText` then trims it at a WORD boundary (no
+ *      ellipsis — see labelSelection.ts).
  * Deterministic and total: returns `undefined` only for an empty candidate list. Exported for
  * community.test.ts — the ranking rule is the whole readability contract, so it is pinned directly.
  */
@@ -102,12 +113,15 @@ export function pickExemplar(
   const pool = byDegree.filter((m) => m.degree >= cut).slice(0, Math.max(1, poolSize));
   const tags = pool.filter((m) => m.kind === "tag");
   const field = tags.length > 0 ? tags : pool;
-  return field.reduce((best, m) =>
-    m.label.length < best.label.length ||
-    (m.label.length === best.label.length && (m.degree > best.degree || (m.degree === best.degree && m.id < best.id)))
-      ? m
-      : best,
-  );
+  const shortest = (candidates: ExemplarCandidate[]): ExemplarCandidate =>
+    candidates.reduce((best, m) =>
+      m.label.length < best.label.length ||
+      (m.label.length === best.label.length && (m.degree > best.degree || (m.degree === best.degree && m.id < best.id)))
+        ? m
+        : best,
+    );
+  const fitting = field.filter((m) => m.label.length <= EXEMPLAR_FIT_CHARS);
+  return shortest(fitting.length > 0 ? fitting : field);
 }
 // -------------------------------------------------------------------------------------------------
 

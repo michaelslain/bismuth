@@ -29,7 +29,7 @@ import type { GraphData, GraphNode } from "../../../core/src/graph";
 import { nodeVisualState } from "../../../core/src/daemonViz";
 import {
   clusterLabelAlpha, clusterLabelText, clusterLevelAlphas, computeAlwaysOnSet, eyebrowWidthCells,
-  fileLabelAlpha, fileLabelBudget,
+  FILE_LABEL_FADE_SPAN, fileLabelAlpha, fileLabelBudget, FILE_LABEL_REVEAL_T, levelBoundaries,
 } from "./labelSelection";
 import { hashKey } from "../themeColors";
 import { isUsableBox, finiteVec3, boundingRadius, boundingHalfExtents, fitScaleForBox } from "./graphFit";
@@ -57,15 +57,24 @@ export interface AsciiGraphStats {
 import {
   CELL_H, CELL_W, FONT_PX,
   LAYER_EDGE, LAYER_NODE, LAYER_NOISE, PAD_X, PAD_Y, ZOOM_STEP_PCT,
-  depthAlpha, fitPxPerWorld, gridMetrics, maxResFor, mergeEdgeCode, nearestCellNode, nodeGlyph,
-  pxToCell, resFromPercent, resolutionPercent, resolutionT, snapZoomPercent, traceEdge,
+  clipSegmentToGrid, depthAlpha, fitPxPerWorld, gridMetrics, maxResFor, mergeEdgeCode, nearestCellNode,
+  nodeGlyph, pxToCell, quantizePan, resFromPercent, resFromT, resolutionPercent, resolutionT,
+  snapZoomPercent, traceEdge,
   type GridMetrics,
 } from "./asciiGrid";
 
 const FOV_DEG = 60;              // same camera as the old renderer, so framing carries over
 const ORBIT_SPEED = 0.005;       // rad per px of drag (copied)
 const DRAG_THRESHOLD = 5;        // px before a press becomes an orbit/pan rather than a click
-const GLIDE = 0.18;              // per-frame easing toward the camera goal
+// TIME-based (not frame-rate dependent) exponential ease-out toward the camera goal (resolution +
+// target): factor = 1 - exp(-dt/GLIDE_TAU_MS) applied each tick, so the SAME real-world settle time
+// results regardless of the host's refresh rate. 110ms: at dt-accumulated 300ms (a comfortable
+// "~250-350ms per stop" feel) the glide is ~95% converged — reads as settled, not a snap. Replaces
+// the old per-FRAME constant (`res += (goal-res)*0.18` every tick call, independent of elapsed time)
+// which was tuned back when a 10% zoom-ladder notch was a small magnification step; now that a notch
+// is ~1.5x (asciiGrid.ts DEEPEST_WORLD_PER_CELL's deeper absolute floor widened the ladder's range),
+// the same per-frame catch-up snapped to each stop in only a few frames, reading as a jump cut.
+const GLIDE_TAU_MS = 110;
 const FALLBACK_MAX_RES = 16;     // pre-fit() bootstrap value for `maxRes` (real one is graph/box-derived — see fit())
 const WHEEL_NOTCH_PX = 120;      // one physical mouse-wheel click (the Windows WHEEL_DELTA convention most
                                   // browsers report a notch as); each notch moves ZOOM_STEP_PCT, trackpad
@@ -104,6 +113,12 @@ interface NodeView {
   // per-frame scratch
   sx: number; sy: number; depth: number; dr: number;
   col: number; row: number; onGrid: boolean;
+  // Perspective validity (3D): the projected point is in FRONT of the camera / past the near-clip —
+  // meaningful independent of whether it lands inside the grid's col/row bounds. `onGrid` above is
+  // `projValid && within bounds`; edges gate on `projValid` alone (then CLIP to the grid — see
+  // clipSegmentToGrid) so an edge whose far endpoint is merely off-field still draws its on-screen
+  // portion instead of being dropped entirely. Always true in 2D (no perspective to fail).
+  projValid: boolean;
 }
 interface EdgeView { a: NodeView; b: NodeView; kr: number }
 /** One LOD aggregate entity on the field — a hierarchy-level community rendered as a single ASCII
@@ -222,6 +237,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private res = 1; private goalRes = 1;
   private target: Vec3 = [0, 0, 0]; private goalTarget: Vec3 = [0, 0, 0];
   private panX = 0; private panY = 0;
+  // WORLD-anchored raster grid (the pan-jitter fix — see asciiGrid.ts quantizePan): `panX`/`panY`
+  // above stay the continuous drag accumulator, but the world→cell PROJECTION uses the quantized
+  // whole-cell `panXQ`/`panYQ` so the world→cell rounding phase never shifts mid-drag — the same
+  // world-space line always rasterizes to the same discrete cells regardless of how far the field
+  // has been panned. `panXFrac`/`panYFrac` are the leftover sub-cell remainder, applied only as a
+  // paint-time canvas translate so the ON-SCREEN motion still tracks the cursor smoothly. Recomputed
+  // once per rasterize() (panX/panY only change on a drag, not every frame).
+  private panXQ = 0; private panYQ = 0;
+  private panXFrac = 0; private panYFrac = 0;
   private pxPerWorld = 1; private P = 1;
   // The zoom LADDER, recomputed every fit() from the graph's own bounding radius (see
   // asciiGrid.ts maxResFor) — a bigger graph needs a bigger multiplier to reach the same fixed
@@ -373,7 +397,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         p2: [p2[0] - c2[0], -(p2[1] - c2[1]), 0] as Vec3,
         deg: deg.get(node.id) ?? 0,
         color: C_FG, dim: false,
-        sx: 0, sy: 0, depth: 0, dr: 1, col: -1, row: -1, onGrid: false,
+        sx: 0, sy: 0, depth: 0, dr: 1, col: -1, row: -1, onGrid: false, projValid: false,
       } satisfies NodeView;
     });
     this.byId = new Map(this.nodes.map((nv) => [nv.node.id, nv]));
@@ -685,6 +709,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private tick = (t: number) => {
     if (!this.running) return;
     this.syncSize();
+    // Real elapsed ms since the last tick — clamped to [1, 100]: never zero/negative (defensive
+    // against a non-monotonic or repeated rAF timestamp, which would otherwise divide-by-zero-ish or
+    // run the ease backwards) and capped so one slow/late frame can't snap the glide most of the way
+    // to its goal in a single jump (a genuinely backgrounded tab is handled by setVisible()/stop(),
+    // not this clamp).
+    const dt = this.lastFrameT ? Math.max(1, Math.min(100, t - this.lastFrameT)) : 16.67;
     if (this.lastFrameT) {
       this.fpsAccum += t - this.lastFrameT; this.fpsFrames++;
       if (this.fpsAccum >= 500) { this.onFps?.(Math.round((this.fpsFrames * 1000) / this.fpsAccum)); this.fpsAccum = 0; this.fpsFrames = 0; }
@@ -700,11 +730,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // what the HUD percent is derived from — leaving it permanently `RES_EPS` short of the step the
     // user selected reads out as 91% for a 90% stop (worse the shorter the ladder, since RES_EPS is
     // absolute while a step's size shrinks with `maxRes`). Landing exactly makes the readout the
-    // step, without giving up the animated approach.
-    if (Math.abs(this.goalRes - this.res) > RES_EPS) { this.res += (this.goalRes - this.res) * GLIDE; this.dirty = true; }
+    // step, without giving up the animated approach. `glide` is TIME-based (GLIDE_TAU_MS), so
+    // re-rasterization during the glide happens every frame at the CURRENT eased resolution — the
+    // field never jumps straight from one endpoint to the other — and the real-world settle time is
+    // the same regardless of the host's refresh rate.
+    const glide = 1 - Math.exp(-dt / GLIDE_TAU_MS);
+    if (Math.abs(this.goalRes - this.res) > RES_EPS) { this.res += (this.goalRes - this.res) * glide; this.dirty = true; }
     else if (this.res !== this.goalRes) { this.res = this.goalRes; this.dirty = true; }
     if (Math.hypot(this.goalTarget[0] - this.target[0], this.goalTarget[1] - this.target[1], this.goalTarget[2] - this.target[2]) > 0.3) {
-      for (let i = 0; i < 3; i++) this.target[i] += (this.goalTarget[i] - this.target[i]) * GLIDE;
+      for (let i = 0; i < 3; i++) this.target[i] += (this.goalTarget[i] - this.target[i]) * glide;
       this.dirty = true;
     }
 
@@ -793,6 +827,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.entitiesDrawnFrame = 0;
     this.notesOnScreenFrame = 0;
     this.edgesDrawnFrame = 0;
+    // WORLD-anchored pan (the jitter fix): split into a whole-cell part (fed into the projection
+    // below, so the world→cell rounding phase never shifts) and a sub-cell residual (applied as a
+    // paint-time canvas translate — see paint()). Recomputed once per rasterize(), not per node.
+    const qx = quantizePan(this.panX, m.cellW);
+    const qy = quantizePan(this.panY, m.cellH);
+    this.panXQ = qx.whole; this.panYQ = qy.whole;
+    this.panXFrac = qx.frac; this.panYFrac = qy.frac;
     // Layer 1 — the noise field (graph.backgroundNoise, off by default — settingsSchema.ts). Static
     // per grid size + seed, laid down first so edges and nodes can CLEAR it (writing a higher layer
     // over the same cell). When the setting is off the buffers are just reset to empty — cellNode
@@ -831,7 +872,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
       for (const e of this.edges) {
         if (e.kr >= keepFrac) continue;
         const { a, b } = e;
-        if (!a.onGrid || !b.onGrid) continue;
+        // `projValid` gates whether a node's projection means anything AT ALL (3D: in front of the
+        // camera, past the near-clip) — separate from grid-bounds visibility, which is now a
+        // per-edge CLIP (clipSegmentToGrid) rather than an all-or-nothing "both endpoints on-grid"
+        // requirement. That old requirement is the "edges vanish at deep zoom" bug: an edge whose
+        // far endpoint sat just off the field used to be dropped WHOLE, when what a zoomed-in field
+        // should show is every visible node's local edges running off-field as partial lines.
+        if (!a.projValid || !b.projValid) continue;
+        const clipped = clipSegmentToGrid(a.col, a.row, b.col, b.row, m);
+        if (!clipped) continue;
         const incident = this.hoveredId != null && (a.node.id === this.hoveredId || b.node.id === this.hoveredId);
         const inFocus = !focus || focus.has(a.node.id) || focus.has(b.node.id);
         let alpha = is2d ? EDGE_ALPHA_2D : EDGE_ALPHA_2D * depthAlpha((a.dr + b.dr) / 2);
@@ -840,7 +889,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         alpha *= leafA;
         this.edgeColor = incident ? C_ACCENT : C_MUTED;
         this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
-        traceEdge(a.col, a.row, b.col, b.row, this.putEdge);
+        traceEdge(clipped.x0, clipped.y0, clipped.x1, clipped.y1, this.putEdge);
         this.edgesDrawnFrame++;
       }
 
@@ -887,8 +936,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const m = this.m;
     const s = this.pxPerWorld * this.res;
     const tx = this.target[0], ty = this.target[1];
-    const ox = m.padX + (m.cols / 2) * m.cellW + this.panX;
-    const oy = m.padY + (m.rows / 2) * m.cellH + this.panY;
+    // The QUANTIZED pan (see rasterize()/asciiGrid.ts quantizePan) — same world→cell phase the node
+    // projection below uses, so entity masses never wiggle relative to the notes they summarize.
+    const ox = m.padX + (m.cols / 2) * m.cellW + this.panXQ;
+    const oy = m.padY + (m.rows / 2) * m.cellH + this.panYQ;
     const capRow = Math.max(1, (m.rows / 7) | 0);
     const capCol = Math.max(2, (m.cols / 7) | 0);
     for (const ev of this.entityLevels[level]) {
@@ -912,17 +963,24 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const lv = this.lodLevels[level];
     const evs = this.entityLevels[level];
     if (!lv) return;
+    const m = this.m;
     this.edgeColor = C_MUTED;
     for (const e of lv.edges) {
       const a = evs[e.a], b = evs[e.b];
-      if (!a.onGrid && !b.onGrid) continue;
+      // Same clip as the real-edge pass (see rasterize()'s edge loop) rather than an all-or-nothing
+      // "at least one endpoint on-grid" gate: a connector between two coarse masses can span a huge
+      // world distance, so tracing its RAW (unclipped) endpoints risked the Bresenham guard-cap
+      // truncating the line before it ever reached the visible field.
+      const clipped = clipSegmentToGrid(a.col, a.row, b.col, b.row, m);
+      if (!clipped) continue;
       const alpha = EDGE_ALPHA_2D * (AGG_EDGE_ALPHA_MIN + (1 - AGG_EDGE_ALPHA_MIN) * e.w) * levelAlpha;
       this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
-      traceEdge(a.col, a.row, b.col, b.row, this.putEdge);
+      traceEdge(clipped.x0, clipped.y0, clipped.x1, clipped.y1, this.putEdge);
       this.edgesDrawnFrame++;
       if (e.w >= AGG_EDGE_DOUBLE_W) {
-        if (Math.abs(b.col - a.col) >= Math.abs(b.row - a.row)) traceEdge(a.col, a.row + 1, b.col, b.row + 1, this.putEdge);
-        else traceEdge(a.col + 1, a.row, b.col + 1, b.row, this.putEdge);
+        if (Math.abs(clipped.x1 - clipped.x0) >= Math.abs(clipped.y1 - clipped.y0))
+          traceEdge(clipped.x0, clipped.y0 + 1, clipped.x1, clipped.y1 + 1, this.putEdge);
+        else traceEdge(clipped.x0 + 1, clipped.y0, clipped.x1 + 1, clipped.y1, this.putEdge);
       }
     }
   }
@@ -973,8 +1031,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const rx = is2d ? 0 : this.rx, ry = is2d ? 0 : this.ry;
     const cyr = Math.cos(ry), syr = Math.sin(ry), cxr = Math.cos(rx), sxr = Math.sin(rx);
     const P = this.P;
-    const ox = m.padX + (m.cols / 2) * m.cellW + this.panX;
-    const oy = m.padY + (m.rows / 2) * m.cellH + this.panY;
+    // The QUANTIZED pan (see rasterize()/asciiGrid.ts quantizePan) — the pan-jitter fix: `panXQ`/
+    // `panYQ` are always a whole multiple of the cell size, so the world→cell rounding PHASE below
+    // never shifts mid-drag. The leftover sub-cell remainder (`panXFrac`/`panYFrac`) is applied only
+    // as a canvas translate at paint time, never here.
+    const ox = m.padX + (m.cols / 2) * m.cellW + this.panXQ;
+    const oy = m.padY + (m.rows / 2) * m.cellH + this.panYQ;
     let minZ = Infinity, maxZ = -Infinity;
     for (const nv of this.nodes) {
       const p = is2d ? nv.p2 : nv.p3;
@@ -991,7 +1053,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const col = Math.round((nv.sx - m.padX) / m.cellW);
       const row = Math.round((nv.sy - m.padY) / m.cellH);
       nv.col = col; nv.row = row;
-      nv.onGrid = persp > 0.05 && zc < P * 0.985 && col >= 0 && col < m.cols && row >= 0 && row < m.rows;
+      // `projValid`: the projection is meaningful at all (in front of the camera / past the near
+      // clip) — independent of grid bounds, so edges can gate on it alone and then CLIP to the grid
+      // (see rasterize()'s edge loop) instead of requiring both endpoints already on-screen.
+      const projValid = persp > 0.05 && zc < P * 0.985;
+      nv.projValid = projValid;
+      nv.onGrid = projValid && col >= 0 && col < m.cols && row >= 0 && row < m.rows;
       if (zc < minZ) minZ = zc;
       if (zc > maxZ) maxZ = zc;
     }
@@ -1188,9 +1255,19 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private paint() {
     const ctx = this.ctx;
     if (!ctx) return;
+    // Clear at the IDENTITY transform (no pan residual) first — clearing under a translated
+    // transform would leave an uncleared sliver at whichever edge the translate shifted content
+    // AWAY from. The residual pan translate is applied AFTER, for every draw below.
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.W, this.H);
     if (!this.boxReady) return;
+    // The pan-jitter fix's other half: `panXFrac`/`panYFrac` (computed once per rasterize(), see
+    // asciiGrid.ts quantizePan) are the sub-cell remainder the world→cell projection deliberately
+    // ignores (it uses the whole-cell `panXQ`/`panYQ` instead, so the raster never re-phases). A
+    // plain canvas translate re-applies that remainder to every subsequent draw — field glyphs AND
+    // labels move together — so the on-screen motion still tracks the cursor smoothly between
+    // whole-cell raster updates, instead of stepping in visible whole-cell jumps.
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, this.panXFrac * this.dpr, this.panYFrac * this.dpr);
     ctx.font = `${this.fontPx}px ${this.fontStack}`;
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
@@ -1277,11 +1354,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   private onPointerLeave = () => { if (this.hoveredId || this.hoverEntityIdx >= 0) this.applyHover(null, -1); this.dirty = true; };
 
-  /** Cell under the cursor → the node that owns it (or a node within a couple of cells). */
+  /** Cell under the cursor → the node that owns it (or a node within a couple of cells). Subtracts
+   *  the pan-jitter fix's sub-cell canvas translate (`panXFrac`/`panYFrac` — see paint()) so the hit
+   *  test lines back up with what's actually drawn on screen, not the untranslated raster. */
   private pick(clientX: number, clientY: number): NodeView | null {
     if (!this.viewport) return null;
     const r = this.viewport.getBoundingClientRect();
-    const { col, row } = pxToCell(clientX - r.left, clientY - r.top, this.m);
+    const { col, row } = pxToCell(clientX - r.left - this.panXFrac, clientY - r.top - this.panYFrac, this.m);
     const idx = nearestCellNode(col, row, this.m, this.cellNode, HIT_RADIUS_CELLS);
     return idx >= 0 ? this.nodes[idx] ?? null : null;
   }
@@ -1291,7 +1370,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private pickEntityIdx(clientX: number, clientY: number): number {
     if (!this.viewport || !this.lodOn) return -1;
     const r = this.viewport.getBoundingClientRect();
-    const { col, row } = pxToCell(clientX - r.left, clientY - r.top, this.m);
+    const { col, row } = pxToCell(clientX - r.left - this.panXFrac, clientY - r.top - this.panYFrac, this.m);
     return nearestCellNode(col, row, this.m, this.cellEntity, 1);
   }
 
@@ -1329,10 +1408,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const hit = this.pick(e.clientX, e.clientY);
     if (hit) this.onNodeClick(hit.node.id);
     else {
-      // Clicking an AGGREGATE ENTITY expands it: frame its members, which raises the resolution
-      // into the next level of the ladder (never onNodeClick — a cluster id is not a note).
+      // Clicking an AGGREGATE ENTITY (an island) recentres on it and expands it one hierarchy level
+      // (see clickEntity) — never onNodeClick, a cluster id is not a note.
       const evIdx = this.pickEntityIdx(e.clientX, e.clientY);
-      if (evIdx >= 0) { this.applyHover(null, -1); this.frameSubset(this.entityFlat[evIdx].memberIds); }
+      if (evIdx >= 0) { this.applyHover(null, -1); this.clickEntity(evIdx); }
       else if (this.highlightSet) { this.clearHighlight(); this.onHighlightCleared?.(); }
     }
   };
@@ -1447,6 +1526,40 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // Framing isn't a zoom STEP — it's a continuous camera command — but resync the durable percent
     // state to wherever it landed, so the next wheel notch / +- press steps from there.
     this.zoomPct = resolutionPercent(this.goalRes, this.maxRes);
+    this.userTook = true;
+    this.dirty = true;
+  }
+
+  /**
+   * Clicking an AGGREGATE ENTITY (an island): centre the camera on its members' 2D world centroid
+   * and step the zoom ladder IN just far enough to reveal its CHILD hierarchy level —
+   * labelSelection.ts `levelBoundaries`, the SAME boundaries the cluster-name crossfade uses, so
+   * geometry and naming always agree on where a level "owns" the field.
+   *
+   * Landing EXACTLY at `levelBoundaries()[childLevel]` (rather than somewhere deeper inside the
+   * child's segment) is deliberate: per `clusterLevelAlphas`, the child level's own alpha is
+   * already FULLY IN right at that boundary (its crossfade completes there, it doesn't start
+   * there) — so that boundary is the MINIMUM resolution increase that reveals it. Going deeper only
+   * shrinks the visible world window further, which can push the child's own members back OFF the
+   * grid on a widely-spread hierarchy without buying anything for the crossfade (already at full
+   * strength). The LEAF pseudo-level is the one exception: the file-label alpha — and the leaf
+   * raster pass, gated the same way — is exactly 0 AT `FILE_LABEL_REVEAL_T` and only rises past it,
+   * so landing there wouldn't reveal anything; nudge half the fade span in instead.
+   *
+   * Only sets the GOAL state (`goalTarget`/`zoomPct`/`goalRes`); the normal per-frame glide in
+   * tick() carries the camera there. Never steps OUT: the target percent is clamped so a click
+   * always zooms IN (or holds), even in a degenerate ladder with very few stops.
+   */
+  private clickEntity(evIdx: number) {
+    const ev = this.entityFlat[evIdx];
+    this.goalTarget = [ev.wx, ev.wy, 0];
+    const bounds = levelBoundaries(this.levelCount); // length levelCount+1, coarsest→finest, ends at FILE_LABEL_REVEAL_T
+    const childLevel = Math.min(ev.level + 1, this.levelCount);
+    const isLeaf = childLevel >= this.levelCount;
+    const targetT = isLeaf ? FILE_LABEL_REVEAL_T + FILE_LABEL_FADE_SPAN * 0.5 : bounds[childLevel];
+    const targetPct = snapZoomPercent(resolutionPercent(resFromT(targetT, this.maxRes), this.maxRes));
+    this.zoomPct = Math.min(this.zoomPct, targetPct);
+    this.goalRes = resFromPercent(this.zoomPct, this.maxRes);
     this.userTook = true;
     this.dirty = true;
   }

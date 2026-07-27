@@ -5,9 +5,10 @@
 import { describe, expect, it } from "bun:test";
 import {
   CELL_H, CELL_W, DEEPEST_WORLD_PER_CELL, MIN_ZOOM_SPAN, NODE_GLYPHS, PAD_X, PAD_Y, ZOOM_STEP_PCT,
-  cellToPx, degreeTier, depthAlpha, depthBand, fitPxPerWorld, glyphTier, gridMetrics, inGrid,
-  maxResFor, mergeEdgeChar, mergeEdgeCode, nearestCellNode, nodeGlyph, pxToCell, resFromPercent,
-  resFromT, resolutionPercent, resolutionT, snapToCell, snapZoomPercent, traceEdge,
+  cellToPx, clipSegmentToGrid, degreeTier, depthAlpha, depthBand, fitPxPerWorld, glyphTier,
+  gridMetrics, inGrid, maxResFor, mergeEdgeChar, mergeEdgeCode, nearestCellNode, nodeGlyph,
+  pxToCell, quantizePan, resFromPercent, resFromT, resolutionPercent, resolutionT, snapToCell,
+  snapZoomPercent, traceEdge,
 } from "./asciiGrid";
 
 describe("gridMetrics", () => {
@@ -175,6 +176,91 @@ describe("traceEdge", () => {
     const out: unknown[] = [];
     traceEdge(0, 0, 1e9, 1, () => out.push(1), 50);
     expect(out.length).toBeLessThanOrEqual(50);
+  });
+});
+
+describe("clipSegmentToGrid (the 'edges vanish at deep zoom' fix)", () => {
+  const m = gridMetrics(200, 200, CELL_W, CELL_H); // some cols x rows rectangle, cell-index space
+
+  it("leaves a segment already fully inside the grid unchanged", () => {
+    const clipped = clipSegmentToGrid(2, 3, m.cols - 3, m.rows - 3, m);
+    expect(clipped).toEqual({ x0: 2, y0: 3, x1: m.cols - 3, y1: m.rows - 3 });
+  });
+
+  it("clips a segment with ONE endpoint far off-grid down to the on-screen portion", () => {
+    // Far endpoint sits way past the right edge — the old rule ("skip unless BOTH endpoints are
+    // on-grid") dropped this edge entirely; the fix draws its visible portion instead.
+    const clipped = clipSegmentToGrid(0, Math.floor(m.rows / 2), m.cols * 50, Math.floor(m.rows / 2), m);
+    expect(clipped).not.toBeNull();
+    expect(clipped!.x0).toBe(0);
+    expect(clipped!.x1).toBe(m.cols - 1);
+    expect(clipped!.y0).toBe(Math.floor(m.rows / 2));
+    expect(clipped!.y1).toBe(Math.floor(m.rows / 2));
+  });
+
+  it("clips a segment with BOTH endpoints off-grid but crossing straight through it", () => {
+    const row = Math.floor(m.rows / 2);
+    const clipped = clipSegmentToGrid(-1000, row, m.cols + 1000, row, m);
+    expect(clipped).not.toBeNull();
+    expect(clipped!.x0).toBe(0);
+    expect(clipped!.x1).toBe(m.cols - 1);
+  });
+
+  it("returns null for a segment that never crosses the grid at all", () => {
+    // Both endpoints are past the right edge, moving further right — never touches the rectangle.
+    expect(clipSegmentToGrid(m.cols + 10, 0, m.cols + 20, m.rows - 1, m)).toBeNull();
+    // Same idea, entirely above the top edge.
+    expect(clipSegmentToGrid(0, -50, m.cols - 1, -20, m)).toBeNull();
+  });
+
+  it("a clipped segment always lands inside the grid's cell-index bounds", () => {
+    const cases: [number, number, number, number][] = [
+      [-500, -500, 500, 500], [1000, 5, -1000, 5], [5, -1000, 5, 1000], [-1000, 1000, 1000, -1000],
+    ];
+    for (const [x0, y0, x1, y1] of cases) {
+      const c = clipSegmentToGrid(x0, y0, x1, y1, m);
+      if (!c) continue;
+      for (const [x, y] of [[c.x0, c.y0], [c.x1, c.y1]] as const) {
+        expect(x).toBeGreaterThanOrEqual(0); expect(x).toBeLessThanOrEqual(m.cols - 1);
+        expect(y).toBeGreaterThanOrEqual(0); expect(y).toBeLessThanOrEqual(m.rows - 1);
+      }
+    }
+  });
+});
+
+describe("quantizePan (the pan-jitter fix)", () => {
+  it("a pan of exactly zero quantizes to zero, no residual", () => {
+    expect(quantizePan(0, CELL_W)).toEqual({ whole: 0, frac: 0 });
+  });
+
+  it("an exact whole-cell multiple has no residual", () => {
+    expect(quantizePan(CELL_W * 4, CELL_W)).toEqual({ whole: CELL_W * 4, frac: 0 });
+    expect(quantizePan(-CELL_W * 3, CELL_W)).toEqual({ whole: -CELL_W * 3, frac: 0 });
+  });
+
+  it("splits a sub-cell pan into the nearest whole cell + a small residual", () => {
+    const { whole, frac } = quantizePan(CELL_W * 2 + CELL_W * 0.3, CELL_W);
+    expect(whole).toBeCloseTo(CELL_W * 2, 6);
+    expect(frac).toBeCloseTo(CELL_W * 0.3, 6);
+  });
+
+  it("whole + frac always reconstructs the original pan exactly", () => {
+    for (const pan of [0, 1.3, -1.3, 47.8, -999.25, CELL_W * 10.7]) {
+      const { whole, frac } = quantizePan(pan, CELL_W);
+      expect(whole + frac).toBeCloseTo(pan, 9);
+    }
+  });
+
+  it("the whole part is always an exact multiple of the cell size (the phase never shifts)", () => {
+    for (const pan of [3, -3, 0.1, 100.9, -250.4]) {
+      const { whole } = quantizePan(pan, CELL_W);
+      expect(Math.round(whole / CELL_W)).toBeCloseTo(whole / CELL_W, 9);
+    }
+  });
+
+  it("degrades to a no-op residual on a non-finite pan or a degenerate cell size", () => {
+    expect(quantizePan(NaN, CELL_W)).toEqual({ whole: 0, frac: 0 });
+    expect(quantizePan(5, 0)).toEqual({ whole: 0, frac: 0 });
   });
 });
 

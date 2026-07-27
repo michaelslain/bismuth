@@ -232,17 +232,26 @@ describe("clusterLabelText", () => {
     expect(clusterLabelText(exact)).toBe(exact);
   });
 
-  it("caps a long name to exactly maxChars ending in '..'", () => {
+  it("caps a long name at a WORD boundary, never mid-word, and never with an ellipsis", () => {
     const long = "A Very Long Cluster Name About Reading";
     const capped = clusterLabelText(long);
-    expect(capped.length).toBe(CLUSTER_LABEL_MAX_CHARS);
-    expect(capped.endsWith("..")).toBe(true);
+    expect(capped.length).toBeLessThanOrEqual(CLUSTER_LABEL_MAX_CHARS);
+    expect(capped).toBe("A VERY LONG CLUSTER");
+    expect(capped.endsWith("..")).toBe(false);
+    // Every dropped trailing word is dropped WHOLE — the cut never lands inside a word.
+    expect("A VERY LONG CLUSTER NAME ABOUT READING".startsWith(capped)).toBe(true);
   });
 
-  it("never emits the unicode ellipsis, only ASCII '..'", () => {
+  it("never emits an ellipsis, ASCII or unicode", () => {
     const capped = clusterLabelText("A Very Long Cluster Name About Reading And Writing Things");
     expect(capped.includes("…")).toBe(false);
-    expect(capped.endsWith("..")).toBe(true);
+    expect(capped.includes("..")).toBe(false);
+  });
+
+  it("renders a single word whole when it alone exceeds the cap (rare)", () => {
+    const capped = clusterLabelText("Supercalifragilisticexpialidocious");
+    expect(capped).toBe("SUPERCALIFRAGILISTICEXPIALIDOCIOUS");
+    expect(capped.length).toBeGreaterThan(CLUSTER_LABEL_MAX_CHARS);
   });
 
   it("is deterministic across calls", () => {
@@ -250,10 +259,11 @@ describe("clusterLabelText", () => {
     expect(clusterLabelText(name)).toBe(clusterLabelText(name));
   });
 
-  it("respects a custom maxChars", () => {
+  it("respects a custom maxChars, still cutting at a word boundary with no ellipsis", () => {
     const capped = clusterLabelText("Reading List Projects", 10);
     expect(capped.length).toBeLessThanOrEqual(10);
-    expect(capped.endsWith("..")).toBe(true);
+    expect(capped).toBe("READING");
+    expect(capped.endsWith("..")).toBe(false);
   });
 });
 
