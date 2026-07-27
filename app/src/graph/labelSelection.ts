@@ -143,21 +143,25 @@ export function selectVisibleLabels(
 // ---------------------------------------------------------------------------
 
 /** t below which NO file label is drawn (forced ones — hover/active/search — are the only
- *  exception; see AsciiGraphRenderer's `forced()`). Cluster names own the field down here — and
- *  since the LOD renderer (lod.ts) keys its GEOMETRY off the same boundary, so do the aggregate
- *  cluster ENTITIES: real notes and real edges only rasterize past this point, i.e. on the deep
- *  stops of the zoom ladder.
+ *  exception; see AsciiGraphRenderer's `forced()`). Cluster names own the field down here, and node
+ *  COLOR reads by the coarser end of the hierarchy too (AsciiGraphRenderer's LEVEL-DRIVEN COLOR
+ *  block keys its active level off this same boundary math). When LOD masses are opted into
+ *  (GraphConfig.showLodMasses, off by default — see lod.ts) they key their GEOMETRY off the same
+ *  boundary too: aggregate cluster ENTITIES own the field down here and real notes/edges only
+ *  rasterize past this point; in the shipped default (masses off) real notes/edges rasterize at
+ *  EVERY zoom stop instead — only the LABELS and node COLOR are what change at this boundary.
  *
  *  0.75, was 0.6 (and 0.3 before the LOD redesign): "to show the notes inside a cluster the user
  *  should have to zoom in MORE than now". Because the ladder is logarithmic in resolution
  *  (`resFromT` = maxRes^t), moving the boundary from 0.6 to 0.75 is not a 25% change — on the
  *  reference vault (maxRes 68 at the current `DEEPEST_WORLD_PER_CELL`) the leaves now first appear at
  *  res 23.8 instead of res 8.2, i.e. at 2.9× the magnification, and they only OWN the field from the
- *  10% stop. Aggregate entities own 100%..20% (was 100%..40%).
+ *  10% stop. Aggregate entities (when opted into) own 100%..20% (was 100%..40%).
  *
  *  Everything downstream is derived, not duplicated: `levelBoundaries` re-spreads the hierarchy
  *  levels evenly across [0, this) — on a 3-level vault, 0.25 per level instead of 0.2 — and
- *  `lodMix` keys the entity/leaf geometry off the same two curves as the names. */
+ *  `lodMix` keys the (opt-in) entity/leaf geometry off the same two curves as the names, exactly as
+ *  AsciiGraphRenderer's node-color block keys its level pick off `clusterLevelAlphas`. */
 export const FILE_LABEL_REVEAL_T = 0.75;
 /** Width (in the same t units) of the cluster-name → file-name crossfade that starts at
  *  `FILE_LABEL_REVEAL_T`. 0.15, was 0.22: it has to finish BEFORE `FILE_LABEL_FULL_T` (see there —

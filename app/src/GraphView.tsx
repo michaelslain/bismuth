@@ -304,7 +304,7 @@ export function GraphView(props: {
     // config — see the RendererKind block near the top of this module.
     const kind = rendererKind();
     if (kind === "canvas-ascii") cfg.labelFontFamily = ASCII_MONO_STACK;
-    if (kind === "ascii-canvas") cfg.disableLod = true;
+    if (kind === "ascii-canvas") cfg.clusterColorsOff = true;
     return cfg;
   };
 

@@ -97,6 +97,47 @@ const C_FG = 5, C_MUTED = 6, C_FAINT = 7, C_ACCENT = 8;
 const COLOR_VARS = ["--graph-0", "--graph-1", "--graph-2", "--graph-3", "--graph-4", "--fg", "--text-muted", "--faint", "--accent"];
 const COLOR_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a", "#e8e8ee", "#9aa0b4", "#6b7086", "#3f6bf0"];
 const RAMP = [C_G0, C_G1, C_G2, C_G3, C_G4];
+// LEVEL-DRIVEN NODE COLOR (see colorLevelsFor/restyle + rasterize's colour block): during a
+// crossfade between two adjacent hierarchy levels, `colorBuf` needs a blended RGB that plain/faint
+// slots (0..8, resolved through `this.colors`) can't express. `BLEND_BASE + a*RAMP.length + b`
+// (a/b are RAMP slots 0..4) indexes a small per-frame palette built fresh only WHILE actually
+// crossfading (rasterize() skips it entirely at a settled zoom stop — see the `colorW1` gate) —
+// at most RAMP.length² = 25 entries, well inside the Uint8Array `colorBuf` already uses for slots.
+const BLEND_BASE = 16;
+
+/** Parse a CSS colour STRING (the tokens table only ever holds `#rgb`/`#rrggbb` hex — see
+ *  theme/tokens.ts — or, defensively, `rgb()`/`rgba()`) into 0..255 channels for the LEVEL-DRIVEN
+ *  colour blend's per-tick RGB lerp. Returns null on anything else so the caller can fall back to a
+ *  neutral colour instead of propagating a NaN into the paint. */
+function parseColorToRGB(css: string): [number, number, number] | null {
+  const s = css.trim();
+  if (s[0] === "#") {
+    const h = s.slice(1);
+    if (h.length === 3) {
+      const r = parseInt(h[0] + h[0], 16), g = parseInt(h[1] + h[1], 16), b = parseInt(h[2] + h[2], 16);
+      return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? [r, g, b] : null;
+    }
+    if (h.length >= 6) {
+      const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+      return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? [r, g, b] : null;
+    }
+    return null;
+  }
+  const m = s.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+  return m ? [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])] : null;
+}
+
+/** R4 ("cluster colours off" — GraphConfig.clusterColorsOff): a PLAIN ramp keyed by DEGREE instead
+ *  of community — leaves near C_G0, hubs near C_G4 — so the R1-R4 toggle still shows something
+ *  visually distinct from R2's regional read now that masses are off in both. Same coarse tiers the
+ *  glyph ramp already reads by eye (nodeGlyph/asciiGrid.ts); flat, not zoom-driven, by design. */
+function degreeRampColor(deg: number): number {
+  if (deg <= 0) return C_G0;
+  if (deg < 3) return C_G1;
+  if (deg < 8) return C_G2;
+  if (deg < 20) return C_G3;
+  return C_G4;
+}
 
 const DEFAULT_CONFIG: Partial<GraphConfig> = {
   viewMode: "3d", showGraphLabels: true, graphLabelHubCount: 10, spin: true, spinSpeed: 0.0015,
@@ -108,7 +149,16 @@ interface NodeView {
   p3: Vec3;
   p2: Vec3;
   deg: number;
-  color: number;   // index into this.colors
+  color: number;   // index into this.colors — the FINEST-level (or fixed-kind) slot; see colorByLevel
+  /** RAMP slot (0..4) the node would show at EACH hierarchy level, coarsest → finest — precomputed
+   *  once in restyle() (colorLevelsFor), never re-hashed per frame. Length 1 for a node with no
+   *  community at all (self/daemon/cron/process, or community-less legacy data): every consumer
+   *  treats that as "fixed colour, never blended". See rasterize()'s LEVEL-DRIVEN COLOR block. */
+  colorByLevel: number[];
+  /** The node's own communityPath (coarsest → finest), when it has one — kept alongside colorByLevel
+   *  for the edge-tint IDENTITY check (two nodes tint an edge only when they share the same actual
+   *  community at the active level, not merely the same — collision-prone — ramp slot). */
+  path?: number[];
   dim: boolean;    // daemon-disabled → drawn faint
   // per-frame scratch
   sx: number; sy: number; depth: number; dr: number;
@@ -272,6 +322,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   // theme tokens
   private colors: string[] = [...COLOR_FALLBACK];
+  // RAMP slots (0..4) parsed to 0..255 RGB channels — the LEVEL-DRIVEN COLOR blend's lerp inputs
+  // (see rasterize()/buildBlendPalette). Re-derived from `this.colors` in readTokens(), so a theme
+  // switch keeps the blend consistent with everything else the tokens drive.
+  private rampRGB: [number, number, number][] = RAMP.map((_, i) => parseColorToRGB(COLOR_FALLBACK[i]) ?? [255, 255, 255]);
+  // Per-frame blend palette (RAMP.length² entries, `BLEND_BASE`-offset — see colorBuf's sentinel
+  // scheme), rebuilt only while a level crossfade is actually in progress (rasterize()'s `colorW1`
+  // gate) — most frames never touch this.
+  private blendColors: string[] = [];
   private groundColor = "#0b0c11";
   private fontStack = '"Monaspace Xenon", ui-monospace, monospace';
   private cellW = CELL_W; private cellH = CELL_H; private fontPx = FONT_PX;
@@ -396,7 +454,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         p3: [p[0] - c3[0], -(p[1] - c3[1]), p[2] - c3[2]] as Vec3,
         p2: [p2[0] - c2[0], -(p2[1] - c2[1]), 0] as Vec3,
         deg: deg.get(node.id) ?? 0,
-        color: C_FG, dim: false,
+        color: C_FG, colorByLevel: [C_FG], path: undefined, dim: false,
         sx: 0, sy: 0, depth: 0, dr: 1, col: -1, row: -1, onGrid: false, projValid: false,
       } satisfies NodeView;
     });
@@ -528,6 +586,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
       return v || fallback;
     };
     this.colors = COLOR_VARS.map((v, i) => read(v, COLOR_FALLBACK[i]));
+    // RAMP is C_G0..C_G4 (indices 0..4 of `this.colors`, coincidentally identical to the RAMP array's
+    // own values) — re-parse whenever the tokens are (re-)read so a theme switch keeps the LEVEL-
+    // DRIVEN COLOR blend (rasterize()/buildBlendPalette) in sync with the rest of the field.
+    this.rampRGB = RAMP.map((slot) => parseColorToRGB(this.colors[slot]) ?? [255, 255, 255]);
     // The label's cleared ground. --graph-bg may still be a gradient on a non-ASCII theme, and a
     // gradient string is not a valid fillStyle — fall back to the flat page background there.
     const gb = read("--graph-bg", "");
@@ -571,25 +633,53 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   private restyle() {
     for (const nv of this.nodes) {
-      nv.color = this.colorSlot(nv.node);
+      const { levels, path } = this.colorLevelsFor(nv.node);
+      nv.colorByLevel = levels;
+      nv.path = path;
+      nv.color = levels[levels.length - 1]; // finest/fixed slot — unchanged meaning for existing consumers
       nv.dim = this.isDimmed(nv.node);
     }
     this.dirty = true;
   }
 
-  private colorSlot(n: GraphNode): number {
+  /** Level-by-level RAMP colour for one node — hashed ONCE here (build()/restyle(), never per
+   *  frame; see rasterize()'s LEVEL-DRIVEN COLOR block for the per-frame lookup+lerp that consumes
+   *  it). `levels[L]` is the ramp slot (0..4, same numbering `this.colors` uses for C_G0..C_G4) the
+   *  node would show if hierarchy level `L` (coarsest → finest) were the ACTIVE one; `path[L]` is the
+   *  community id itself, carried alongside for the edge-tint IDENTITY check (two nodes tint an edge
+   *  only when they share the SAME community, not merely a colliding ramp slot — 5 slots, many more
+   *  communities). Keys mirror the ones `entityLevels`/`layoutClusterNames` hash for the SAME
+   *  level+community, so a node's colour, the mass that would summarize it (LOD masses, opt-in), and
+   *  the cluster-name label naming it all agree — "the cluster's ramp colour" is one hash, not three.
+   *
+   *  A node with no community at all (self/daemon/cron/process, or community-less legacy data) gets
+   *  a length-1 `levels` array and no `path`: every consumer treats that as "fixed colour, never
+   *  blended" — degenerating to exactly the pre-hierarchy single-colour-per-node behaviour. */
+  private colorLevelsFor(n: GraphNode): { levels: number[]; path?: number[] } {
     switch (n.kind) {
-      case "self": return C_FG;
-      case "daemon": return C_ACCENT;
+      case "self": return { levels: [C_FG] };
+      case "daemon": return { levels: [C_ACCENT] };
       case "cron":
       case "process": {
         const vs = nodeVisualState(n.daemon ?? { enabled: true, running: false, lastResult: null, lastFiredMs: null });
-        return vs.fill === "palette" || vs.border === "palette" ? RAMP[hashKey(n.id) % RAMP.length] : C_FAINT;
+        return { levels: [vs.fill === "palette" || vs.border === "palette" ? RAMP[hashKey(n.id) % RAMP.length] : C_FAINT] };
       }
-      case "tag": return RAMP[hashKey("tag:" + n.label) % RAMP.length];
       default: {
-        const key = n.community != null ? "community:" + n.community : (n.kind === "note" ? "folder:" + (n.folder ?? "(root)") : n.kind + ":" + n.label);
-        return RAMP[hashKey(key) % RAMP.length];
+        const path = nodePath(n);
+        if (path && path.length) {
+          const levels = path.map((c, L) => {
+            const isFinest = L === path.length - 1;
+            const key = isFinest ? "community:" + c : `community:L${L}:${c}`;
+            return RAMP[hashKey(key) % RAMP.length];
+          });
+          return { levels, path };
+        }
+        // No community at all (a community-less fixture, or a graph mode that never stamps one) —
+        // the pre-hierarchy fixed colour: tags by their own label (so the same tag always reads the
+        // same colour across views), everything else by folder/kind.
+        if (n.kind === "tag") return { levels: [RAMP[hashKey("tag:" + n.label) % RAMP.length]] };
+        const key = n.kind === "note" ? "folder:" + (n.folder ?? "(root)") : n.kind + ":" + n.label;
+        return { levels: [RAMP[hashKey(key) % RAMP.length]] };
       }
     }
   }
@@ -854,17 +944,41 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.cellEntity[i] = -1;
     }
 
-    // TESTING ONLY: GraphConfig.disableLod (the renderer-toggle harness's "R4") force-disables LOD
-    // summarization so this field behaves like the pre-LOD/legacy renderer — real notes/edges/
-    // labels rasterized at every zoom stop, never an aggregate cluster mass. No settingsSchema
-    // entry; real callers never set it.
-    const lodOn = !this.cfg.disableLod && is2d && this.levelCount > 0 && this.entityLevels.length > 0;
+    const t = resolutionT(this.res, this.maxRes);
+
+    // TESTING ONLY: GraphConfig.showLodMasses opts IN to the LOD aggregate-entity/edge passes below
+    // — OFF by default. The shipped ASCII redesign renders every individual node as a glyph at every
+    // zoom stop; the hierarchy still reads through node COLOR (see the LEVEL-DRIVEN COLOR block
+    // below) + the existing cluster-name labels, never an aggregate mass. The mass/aggregate-edge
+    // code stays for comparison/testing (this flag, formerly the harness's "R4" via disableLod); no
+    // real caller sets it.
+    const lodOn = this.cfg.showLodMasses === true && is2d && this.levelCount > 0 && this.entityLevels.length > 0;
     this.lodOn = lodOn;
-    const mix = lodOn ? lodMix(resolutionT(this.res, this.maxRes), this.levelCount) : null;
+    const mix = lodOn ? lodMix(t, this.levelCount) : null;
     const leafA = mix ? mix.leafAlpha : 1;
     this.leafAlpha = leafA;
 
-    // ---- LEAF passes (real notes + real edges) — skipped wholesale at coarse LOD stops. --------
+    // ---- LEVEL-DRIVEN COLOR: which (at most two, adjacent) hierarchy levels are "active" this ----
+    // ---- frame, and the crossfade weight between them — off the SAME clusterLevelAlphas the -------
+    // ---- cluster-name labels use, so a node's colour and the label naming its region always -------
+    // ---- agree on which level owns the field. Zoomed out every node reads by its TOP-level -------
+    // ---- cluster; zooming in re-colours it by sub-cluster, then sub-sub-cluster, crossfading at ---
+    // ---- the same boundaries the labels already cross at (labelSelection.ts levelBoundaries). -----
+    // GraphConfig.clusterColorsOff (the harness's "R4") turns this off for a plain degree ramp
+    // instead; a 0/1-level graph has nothing to blend regardless (every colorByLevel is length 1).
+    const clusterColorsOn = this.cfg.clusterColorsOff !== true && this.levelCount > 0;
+    let colorL0 = 0, colorL1 = 0, colorW1 = 0;
+    if (clusterColorsOn && this.levelCount > 1) {
+      const picked = this.activeColorLevels(clusterLevelAlphas(t, this.levelCount));
+      colorL0 = picked.L0; colorL1 = picked.L1; colorW1 = picked.w1;
+      // Only build the (RAMP.length² entry) blend palette while an actual crossfade is in progress —
+      // most frames sit settled at one level (w1 ≈ 0) and skip this entirely; nodeColorSlotForFrame
+      // falls back to the plain per-level slot (an exact `this.colors` hex, not an rgb() string) then.
+      if (colorW1 > LOD_ALPHA_EPS) this.buildBlendPalette(colorW1);
+    }
+
+    // ---- LEAF passes (real notes + real edges) — DEFAULT: always on (see showLodMasses above); ---
+    // ---- skipped only while an OPT-IN coarse LOD stop's masses own the field instead. ------------
     if (leafA > LOD_ALPHA_EPS) {
       this.projectNodes(is2d);
 
@@ -891,7 +1005,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
         if (focus && !inFocus) alpha *= DIM_ALPHA;
         if (incident) alpha = 1;
         alpha *= leafA;
-        this.edgeColor = incident ? C_ACCENT : C_MUTED;
+        // Tint an edge by its endpoints' SHARED active-level community colour when both agree, else
+        // the neutral muted colour — a cheap identity check (see edgeTintColor), big legibility win:
+        // an edge reads as "inside a region" or "crossing one" at a glance, matching how the field's
+        // colour already reads as ~15 regions at fit.
+        this.edgeColor = incident ? C_ACCENT : this.edgeTintColor(a, b, clusterColorsOn, colorL0);
         this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
         traceEdge(clipped.x0, clipped.y0, clipped.x1, clipped.y1, this.putEdge);
         this.edgesDrawnFrame++;
@@ -914,7 +1032,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         const glyph = nv.node.kind === "self" ? "@" : nodeGlyph(nv.deg, nv.dr, !is2d, DEPTH_BANDS);
         this.charBuf[idx] = glyph.charCodeAt(0);
         this.layerBuf[idx] = LAYER_NODE;
-        this.colorBuf[idx] = hot ? C_ACCENT : nv.color;
+        this.colorBuf[idx] = hot ? C_ACCENT : this.nodeColorSlotForFrame(nv, clusterColorsOn, colorL0, colorL1, colorW1);
         this.alphaBuf[idx] = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
         this.cellNode[idx] = i;
       }
@@ -932,6 +1050,78 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
 
     this.layoutLabels(is2d);
+  }
+
+  // ---- LEVEL-DRIVEN COLOR (see rasterize()'s block + colorLevelsFor/restyle) -----------------------
+
+  /** Which (at most two) hierarchy levels are "active" this frame per `levelAlphas` (the SAME
+   *  partition-of-unity `clusterLevelAlphas` computes for the cluster-name crossfade), and the
+   *  crossfade weight between them. L0 is the dominant level; `w1` is L1's share, renormalized over
+   *  just the two so it stays exactly the blend weight even on a boundary frame where a third level
+   *  carries a sub-epsilon residual. Degenerates to `w1 = 0` (pure L0, no blend) whenever only one
+   *  level is actually active — which is exactly what `clusterLevelAlphas` returns at/after the
+   *  file-label reveal point ([0,...,0,1]), so "keep the finest-level colour" falls out for free. */
+  private activeColorLevels(levelAlphas: number[]): { L0: number; L1: number; w1: number } {
+    let L0 = 0, a0 = -1;
+    for (let i = 0; i < levelAlphas.length; i++) if (levelAlphas[i] > a0) { a0 = levelAlphas[i]; L0 = i; }
+    let L1 = L0, a1 = 0;
+    for (let i = 0; i < levelAlphas.length; i++) {
+      if (i === L0) continue;
+      if (levelAlphas[i] > a1) { a1 = levelAlphas[i]; L1 = i; }
+    }
+    const total = a0 + a1;
+    return { L0, L1, w1: total > 1e-6 ? a1 / total : 0 };
+  }
+
+  /** Rebuild the `BLEND_BASE`-offset per-frame palette: every (L0 slot, L1 slot) pair's RGB, lerped
+   *  by `w1` — RAMP.length² = 25 entries, cheap to redo in full every time it's called (only while a
+   *  crossfade is actually in progress; see the `colorW1` gate in rasterize()). */
+  private buildBlendPalette(w1: number) {
+    const n = RAMP.length;
+    if (this.blendColors.length !== n * n) this.blendColors = new Array(n * n).fill("");
+    for (let a = 0; a < n; a++) {
+      const ca = this.rampRGB[a] ?? [255, 255, 255];
+      for (let b = 0; b < n; b++) {
+        const cb = this.rampRGB[b] ?? [255, 255, 255];
+        const r = Math.round(ca[0] + (cb[0] - ca[0]) * w1);
+        const g = Math.round(ca[1] + (cb[1] - ca[1]) * w1);
+        const bl = Math.round(ca[2] + (cb[2] - ca[2]) * w1);
+        this.blendColors[a * n + b] = `rgb(${r},${g},${bl})`;
+      }
+    }
+  }
+
+  /** The colorBuf value for one on-grid node this frame: R4 (`clusterColorsOff`) substitutes a plain
+   *  degree ramp for any node that WOULD have used community colour (self/daemon/cron/process keep
+   *  their own fixed identity colour regardless — "cluster colours off" only means the community
+   *  ramp). Otherwise: a node with no hierarchy (`colorByLevel.length <= 1`) keeps its one fixed
+   *  slot; settled (non-crossfading, `w1 ≈ 0`) frames resolve the plain L0 slot too (an exact
+   *  `this.colors` hex — see BLEND_BASE's comment for why that matters); only an in-progress
+   *  crossfade actually indexes into the blend palette. */
+  private nodeColorSlotForFrame(nv: NodeView, clusterColorsOn: boolean, L0: number, L1: number, w1: number): number {
+    if (this.cfg.clusterColorsOff === true) return nv.path ? degreeRampColor(nv.deg) : nv.color;
+    const cbl = nv.colorByLevel;
+    if (!clusterColorsOn || cbl.length <= 1) return nv.color;
+    const a = cbl[Math.min(L0, cbl.length - 1)];
+    if (w1 <= LOD_ALPHA_EPS) return a;
+    const b = cbl[Math.min(L1, cbl.length - 1)];
+    if (a === b) return a; // same community both sides (or a hash collision) — nothing to blend
+    return BLEND_BASE + a * RAMP.length + b;
+  }
+
+  /** An edge's tint: the shared active-level (L0 — the DOMINANT one; edges don't crossfade, they're
+   *  a binary "inside a region" / "crossing one" read) community colour when both endpoints actually
+   *  belong to the SAME community there, else the neutral muted colour. Community IDENTITY
+   *  (`nv.path`), not colour-slot equality — two different communities can hash to the same slot. */
+  private edgeTintColor(a: NodeView, b: NodeView, clusterColorsOn: boolean, level: number): number {
+    if (!clusterColorsOn) return C_MUTED;
+    const pa = a.path, pb = b.path;
+    if (!pa || !pb) return C_MUTED;
+    const ca = pa[Math.min(level, pa.length - 1)];
+    const cb = pb[Math.min(level, pb.length - 1)];
+    if (ca !== cb) return C_MUTED;
+    const cbl = a.colorByLevel;
+    return cbl[Math.min(level, cbl.length - 1)];
   }
 
   /** Project one level's entities (2D only — the flat pipeline with rx = ry = 0, i.e. two
@@ -1253,6 +1443,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   // ---- painting ------------------------------------------------------------
 
+  /** `colorBuf`'s sentinel scheme: a plain slot (0..8) resolves through `this.colors`/
+   *  COLOR_FALLBACK as always; `BLEND_BASE` and above indexes the per-frame LEVEL-DRIVEN COLOR
+   *  blend palette (buildBlendPalette) instead. */
+  private resolveFillColor(slot: number): string {
+    if (slot >= BLEND_BASE) return this.blendColors[slot - BLEND_BASE] ?? "#888";
+    return this.colors[slot] ?? COLOR_FALLBACK[slot] ?? "#888";
+  }
+
   /** One fillText per colour+alpha RUN per row. Runs keep the character count per call high (a
    *  13k-cell field costs a few hundred calls, not 13k) while staying exactly on the cell grid,
    *  because the advance is pinned by letterSpacing in applyFont(). */
@@ -1289,7 +1487,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         if (!run) return;
         const trimmed = run.replace(/ +$/, "");
         if (trimmed) {
-          ctx.fillStyle = this.colors[runColor] ?? COLOR_FALLBACK[runColor] ?? "#888";
+          ctx.fillStyle = this.resolveFillColor(runColor);
           ctx.globalAlpha = runAlpha / 255;
           ctx.fillText(trimmed, m.padX + runCol * m.cellW, y);
         }

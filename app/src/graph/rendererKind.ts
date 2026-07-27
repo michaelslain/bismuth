@@ -8,12 +8,16 @@
 // renderer-toggle block + the R1-R4 toolbar buttons once the ASCII redesign is validated.
 //
 //   R1 "canvas"        — CanvasGraphRenderer, unmodified. The pre-ASCII renderer.
-//   R2 "ascii"         — AsciiGraphRenderer, unmodified. The shipped default.
+//   R2 "ascii"         — AsciiGraphRenderer, unmodified. The shipped default: the ORGANIC layout,
+//                        every node rendered as a glyph (LOD masses OFF), hierarchy read through
+//                        zoom-driven node COLOR (communityPath[activeLevel]) + the cluster-name
+//                        labels — see AsciiGraphRenderer.ts's LEVEL-DRIVEN COLOR block.
 //   R3 "canvas-ascii"  — CanvasGraphRenderer + labels forced onto the ASCII mono stack
 //                        (GraphConfig.labelFontFamily, set by GraphView's buildConfig).
-//   R4 "ascii-canvas"  — AsciiGraphRenderer + LOD cluster summarization disabled
-//                        (GraphConfig.disableLod, set by GraphView's buildConfig) — real
-//                        notes/edges/labels at every zoom stop, never an aggregate cluster mass.
+//   R4 "ascii-canvas"  — AsciiGraphRenderer with the level-driven CLUSTER COLOR turned off
+//                        (GraphConfig.clusterColorsOff, set by GraphView's buildConfig) — otherwise
+//                        identical to R2 (organic layout, masses off), but nodes fall back to a
+//                        plain DEGREE ramp instead of their community's colour.
 import { AsciiGraphRenderer } from "./AsciiGraphRenderer";
 import { CanvasGraphRenderer } from "./CanvasGraphRenderer";
 import type { GraphRenderer } from "./graphRenderer";
@@ -46,7 +50,7 @@ export function isCanvasKind(kind: RendererKind): boolean {
  *  SegmentedToggle. */
 export const RENDERER_KIND_OPTIONS: { id: RendererKind; title: string; label: string }[] = [
   { id: "canvas", title: "R1 — CanvasGraphRenderer, unmodified (pre-ASCII)", label: "R1" },
-  { id: "ascii", title: "R2 — AsciiGraphRenderer, unmodified (shipped default)", label: "R2" },
+  { id: "ascii", title: "R2 — AsciiGraphRenderer, unmodified (shipped default: organic + zoom-colored regions)", label: "R2" },
   { id: "canvas-ascii", title: "R3 — CanvasGraphRenderer with ASCII mono-stack labels", label: "R3" },
-  { id: "ascii-canvas", title: "R4 — AsciiGraphRenderer with LOD summarization disabled", label: "R4" },
+  { id: "ascii-canvas", title: "R4 — AsciiGraphRenderer with cluster colors off (plain degree ramp)", label: "R4" },
 ];

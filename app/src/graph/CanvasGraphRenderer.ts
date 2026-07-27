@@ -41,16 +41,24 @@ export interface GraphConfig {
   /** ASCII renderer only: graph.backgroundNoise (settingsSchema.ts) — the faint ASCII noise texture
    *  under the field. Off by default; unused by this (legacy) Canvas2D renderer. */
   backgroundNoise?: boolean;
-  // --- TESTING ONLY below: app/src/GraphView.tsx's renderer A/B harness (RendererKind). Neither
-  // field has a settingsSchema entry and no real caller sets them — delete both alongside the
-  // harness once the ASCII redesign is validated. ---
+  // --- TESTING ONLY below: app/src/GraphView.tsx's renderer A/B harness (RendererKind). No field
+  // has a settingsSchema entry and no real caller sets them — delete all alongside the harness once
+  // the ASCII redesign is validated. ---
   /** CanvasGraphRenderer only: override the label font's FAMILY (weight/size untouched) so the
    *  harness's "R3" combination can preview this renderer with the ASCII redesign's mono stack. */
   labelFontFamily?: string;
-  /** AsciiGraphRenderer only: force LOD cluster summarization off, so the harness's "R4"
-   *  combination rasterizes real notes/edges/labels at every zoom stop instead of aggregate
-   *  cluster masses — i.e. this renderer behaving like the pre-LOD/legacy one. */
-  disableLod?: boolean;
+  /** AsciiGraphRenderer only: opt IN to LOD cluster summarization (aggregate entity masses +
+   *  aggregate edges) at coarse zoom stops — OFF by default. The shipped ASCII field renders every
+   *  individual node as a glyph at every zoom stop instead, with the hierarchy read through
+   *  zoom-driven node COLOR + the cluster-name labels (see AsciiGraphRenderer.ts colorLevelsFor /
+   *  the LEVEL-DRIVEN COLOR block) rather than an aggregate mass. Kept for comparison/testing
+   *  (this was formerly the harness's "R4" via the now-inverted `disableLod`); no real caller sets it. */
+  showLodMasses?: boolean;
+  /** AsciiGraphRenderer only: turn OFF the level-driven CLUSTER color (node/edge colour keyed by
+   *  communityPath[activeLevel], crossfaded on zoom) and fall back to a plain DEGREE ramp instead —
+   *  the harness's "R4" combination, so the R1-R4 toggle still spans something visually distinct now
+   *  that masses are off in both R2 and R4. No settingsSchema entry; real callers never set it. */
+  clusterColorsOff?: boolean;
 }
 
 /** The node currently under the cursor, surfaced to GraphView for the hover readout. "cluster" is

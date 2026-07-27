@@ -24,6 +24,15 @@ interface Layout { pos3d: Positions; pos2d: Positions }
 const to2d = (p: number[]): [number, number] => [p[0], p[1]];
 
 const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache");
+// v18: ASCII redesign — LayoutOptions.clusterLayout's DEFAULT flips from "grid" (2D only) to
+//      "organic" (both dimensions): every top-level cluster now finds its own place via the existing
+//      community gravity + community-level collide forces instead of being anchored onto a lattice
+//      cell. "grid" is unchanged and stays available as an explicit opt-in. Every 2D coordinate moves
+//      (3D was already organic by default, so 3D output is untouched) — the hierarchy now reads
+//      through the ASCII renderer's zoom-driven node color + labels instead of grid-cell islands (see
+//      AsciiGraphRenderer.ts). MUST bump — same reasoning as v17/v16/v15/v13/v12 below: graphSig()
+//      and seedPath() are both versioned, so the first build after the bump is a full cold settle
+//      under the new default and no node stays pinned at a v17 (gridded) position.
 // v17: GRID-ISLAND CONTAINMENT (layout.ts "CONTAINMENT" block) — a per-tick radial constraint now
 //      holds every 2D node inside its island's disc, and island hosting for a too-small top-level
 //      group is decided per GROUP instead of per node. Measured on the reference vault: nodes inside
@@ -79,7 +88,7 @@ const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bism
 // v7: stronger small-graph linkDist boost (400/n, cap 8) — much airier small graphs.
 // v6: small-graph linkDist boost added (sqrt(500/n) factor in layout.ts) changes layout output.
 // v5: collide iterations 3→6 + padding 1.25→1.55 (anti-overlap).
-const CACHE_VERSION = "v17"; // v17: grid-island member containment (+ per-group island hosting)
+const CACHE_VERSION = "v18"; // v18: clusterLayout default grid → organic (ASCII redesign)
 const REFINE_TICKS = 120; // PivotMDS-seeded, so this polishes well without a full ~300-tick settle
 // Incremental (pinned add-only) rebuild: only the new nodes move, so far fewer ticks converge (the
 // early-exit in computeLayoutAsync usually stops sooner). Cap the number of added nodes that take this
