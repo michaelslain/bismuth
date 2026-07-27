@@ -1,11 +1,25 @@
 // The default crons every vault's daemon ships with — the bismuth equivalent of claude-bot's
 // defaults/crons/. Embedded as string constants (NOT files) so they survive `bun build --compile`
 // into the daemon binary. Seeded into <vault>/.daemon/crons on setup, non-clobbering (see
-// ensureVaultDirs in index.ts) — the user can edit or disable them freely.
+// seeds.ts's reconcileSeeds) — the user can edit or disable them freely. seeds.ts ALSO knows how
+// to safely upgrade an existing vault's copy in place when it still matches a known prior stock
+// version (see PRIOR_SEED_HASHES there) — that's how existing installs pick up changes made here.
 //
 // Both are adapted for bismuth's per-vault model: memory is `$BISMUTH_MEMORY_DIR`
 // (= <vault>/.daemon/memory, injected by the daemon), the vault is the working directory, and the
 // memory tools are bismuth's recall/remember/forget (there is no dream_run).
+//
+// Both opt into INCREMENTAL scoping (`incremental: true` frontmatter — see cron.ts / incrementalCron.ts):
+// before firing, the daemon itself diffs `refs/bismuth/cron-<name>` against the job's checkpoint
+// repo (dream: the memory dir; vault-review: the vault root) and skips the session entirely when
+// nothing relevant changed since the last successful run — a cron that would otherwise re-read an
+// unchanged vault/memory graph every tick now costs nothing. When there IS something to look at,
+// `{{changedSinceLastRun}}` in the prompt below is replaced with either a "first run" note or the
+// concrete list of changed files + when the last run happened. Neither prompt runs `bismuth
+// checkpoint diff/advance` itself anymore — that bookkeeping moved OUT of the session and into the
+// daemon (Bug #105 was the old failure mode: the model's own Bash call silently no-op'ing when the
+// bismuth CLI wasn't on PATH, so the "incremental" scoping quietly degraded to a full re-survey
+// every run; doing it in the daemon removes that failure mode entirely).
 
 /** dream — hourly memory consolidation of this vault's 3rd brain. */
 const DREAM = `---
@@ -13,21 +27,17 @@ name: dream
 schedule: 0 * * * *
 timeout: 1800
 catchup: true
+incremental: true
+checkpointDir: memory
 ---
 
 Consolidate this vault's memory graph (at \`$BISMUTH_MEMORY_DIR\`) into an atomic, densely-linked zettelkasten. The graph may be in a broken state (oversized files, OOM-causing notes) — be defensive. Walk the directory file-by-file via Bash; do NOT call \`recall\` with empty/broad queries (it materializes all results and OOMs on bloated graphs).
 
-## Step 0: Scope to what changed since the last dream
+## Scope for this run
 
-Before surveying everything, get just the notes that changed since the previous dream run, so you focus on new material instead of re-reading the whole graph every hour:
+{{changedSinceLastRun}}
 
-\`\`\`bash
-bismuth checkpoint diff dream --dir "$BISMUTH_MEMORY_DIR"
-\`\`\`
-
-This prints JSON \`{ base, head, files: [{status, path}, …] }\` (it also snapshots the memory dir to git first, so it's revertable). If \`base\` is \`null\` this is the first run — treat every note as new and do the full pass below. Otherwise **prioritize the listed \`files\`** (the added/modified/deleted notes) for consolidation, merging, and backlinking; you do NOT need to re-examine unchanged notes. The size/bloat defense in Steps 1–2 is still a safety net — run it whenever the graph looks bloated.
-
-If \`bismuth\` isn't found on PATH, skip this step and fall back to the full survey below.
+If the note above says this is the first run, do the full survey below (Steps 1–5 over the whole graph). Otherwise focus your consolidation, merging, and backlinking on the LISTED changed notes — you do NOT need to re-examine notes that aren't listed. The size/bloat defense in Steps 1–2 is still a safety net regardless — run it whenever the graph looks bloated (see the size check below).
 
 ## Step 1: Survey by size
 
@@ -43,7 +53,7 @@ Note the total disk footprint:
 du -sh "$BISMUTH_MEMORY_DIR"
 \`\`\`
 
-If total footprint > 50 MB or any single note > 100 KB, the graph is BLOATED and Step 2 is your priority.
+If total footprint > 50 MB or any single note > 100 KB, the graph is BLOATED and Step 2 is your priority (regardless of what's listed in your scope above — bloat cleanup always applies).
 
 ## Step 2: Triage oversized notes (>100 KB)
 
@@ -58,7 +68,7 @@ After Step 2, re-run \`du -sh "$BISMUTH_MEMORY_DIR"\` to confirm the graph is ba
 
 ## Step 3: Process auto notes (small ones, <100 KB)
 
-Glob for \`auto-*.md\`. For each:
+Glob for \`auto-*.md\` among your scoped notes (or the whole graph on a first/full run). For each:
 
 - Read it via the Read tool (it's small now).
 - These notes are raw session transcripts with BOTH sides of the conversation, PAIRED per
@@ -76,11 +86,11 @@ Glob for \`auto-*.md\`. For each:
 - Then \`forget\` the auto note.
 - If the auto note has nothing extractable → just \`forget\` it.
 
-Aim for zero \`type: auto\` notes when done.
+Aim for zero \`type: auto\` notes among your scoped notes when done.
 
 ## Step 4: Use \`recall\` for targeted consolidation (now safe)
 
-Now that the graph is sane, use targeted \`recall\` queries to find work:
+For the notes in scope, use targeted \`recall\` queries to find related work to merge with:
 
 - \`recall("type:fact")\` — look for duplicate facts to merge
 - \`recall("type:preference")\` — look for duplicate preferences to merge
@@ -91,23 +101,13 @@ For each cluster:
 - Improve unclear notes → \`remember\` with clearer/tighter content (one concept per note, ~300–500 chars).
 - Split notes >1 KB covering multiple ideas → \`remember\` each piece as its own atomic note with backlinks, then \`forget\` the original.
 
-## Step 5: Delete stale isolated notes
+## Step 5: Delete stale isolated notes (only on a full/first run, or if one of your scoped notes looks abandoned)
 
 A note is a candidate for deletion if BOTH:
 - It hasn't been updated recently (\`updated:\` frontmatter), AND
 - Nothing links to it (no \`[[backlinks]]\` from other notes — check via \`grep -l "\\[\\[<name>\\]\\]" "$BISMUTH_MEMORY_DIR"/*.md\`).
 
 Connected notes survive longer because they're part of the graph. Don't delete just because old — only if old AND isolated AND not timeless.
-
-## Step 6: Advance the checkpoint
-
-Do this LAST, after all consolidation — it records how far you got so the next dream only sees newer changes:
-
-\`\`\`bash
-bismuth checkpoint advance dream --dir "$BISMUTH_MEMORY_DIR"
-\`\`\`
-
-(Skip if \`bismuth\` isn't on PATH.)
 
 ## Naming
 
@@ -120,7 +120,6 @@ You may ONLY touch notes under \`$BISMUTH_MEMORY_DIR\`. You may:
 - Split, merge, reorganize, rename
 - Add backlinks
 - Run \`ls\`, \`du\`, \`head\`, \`tail\`, \`grep\`, \`wc\` against the memory dir for triage
-- Run \`bismuth checkpoint diff/advance dream --dir "$BISMUTH_MEMORY_DIR"\` (Steps 0 + 6 — it only reads/snapshots the memory dir)
 
 DO NOT under any circumstances:
 - Modify files in \`.daemon/crons/\` (do not enable, disable, or edit cron jobs)
@@ -143,23 +142,20 @@ schedule: 0 */4 * * *
 timeout: 900
 catchup: true
 notify: true
+incremental: true
 ---
 
 Review this vault (your current working directory) to build and maintain a deep understanding of the user — their beliefs, reading, projects, preferences, and intellectual trajectory — so future sessions don't treat them as a stranger.
 
 Some notes are marked off-limits by the vault's visibility settings (a per-file/folder control the user sets from the file tree) — a Read/Grep/Glob/Bash access to one of those will come back denied. That's expected and by design, not a bug or a missing file: skip it and move on without guessing at its contents or retrying.
 
-## Step 0: Scope to what changed since the last review
+## Scope for this run
 
-Get exactly the files that changed since your previous review, so you don't re-read the whole vault every time:
+{{changedSinceLastRun}}
 
-\`\`\`bash
-bismuth checkpoint diff vault-review --dir . --no-commit
-\`\`\`
+If the note above says this is the first run, review the vault broadly (see the survey areas below). Otherwise focus your reading on the LISTED changed files — you don't need to re-read notes that aren't listed.
 
-This prints JSON \`{ base, head, files: [{status, path}, …] }\` measured from your last review. \`--no-commit\` means it never writes to the vault — it diffs the vault's existing git history. If \`base\` is \`null\`, this is your first review — review broadly. Otherwise **focus on the changed \`files\`**. Also peek at \`git status --porcelain\` for any not-yet-committed edits. If \`bismuth\` isn't on PATH, fall back to file mtimes + \`git log\`.
-
-Survey the vault's structure first (\`ls\`, and the folder layout) — vaults differ. Common areas worth attention, where they exist:
+Survey the vault's structure first (\`ls\`, and the folder layout) — vaults differ. Common areas worth attention, where they exist, AND where your scope above lists a changed file:
 
 1. **Journal / daily notes** — what has the user been thinking about, struggling with, planning?
 2. **Tasks** — completions, new priorities, shifts in focus.
@@ -176,16 +172,6 @@ When saving with \`remember\`:
 - If you find a gap where memory contradicts the vault, fix the memory.
 
 Focus on what's new, surprising, or shifts a prior understanding. Don't just summarize everything — the goal is a living model of the user, not a vault changelog.
-
-## Last step: Advance the checkpoint
-
-After reviewing, record your position so the next run only sees newer changes:
-
-\`\`\`bash
-bismuth checkpoint advance vault-review --dir . --no-commit
-\`\`\`
-
-(Skip if \`bismuth\` isn't on PATH.)
 `;
 
 export interface DefaultCron {

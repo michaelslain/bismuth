@@ -135,6 +135,45 @@ test("updateCronJob can flip a schedule cron into a file-change cron in place", 
   expect((jobs[0] as any).schedule).toBeUndefined()
 })
 
+test("loadCronJobs parses `incremental: true` + `checkpointDir: memory` frontmatter", async () => {
+  cronFile("dream", "name: dream\nschedule: 0 * * * *\nincremental: true\ncheckpointDir: memory")
+  const jobs = await loadCronJobs(ctx)
+  expect(jobs).toHaveLength(1)
+  expect(jobs[0]).toMatchObject({ incremental: true, checkpointDir: "memory" })
+})
+
+test("loadCronJobs defaults incremental to false and checkpointDir to undefined when absent (ordinary cron unaffected)", async () => {
+  cronFile("hourly", "name: hourly\nschedule: 0 * * * *")
+  const jobs = await loadCronJobs(ctx)
+  expect(jobs[0]).toMatchObject({ incremental: false })
+  expect((jobs[0] as any).checkpointDir).toBeUndefined()
+})
+
+test("loadCronJobs treats any checkpointDir value other than \"memory\" as the vault default (undefined)", async () => {
+  cronFile("weird", "name: weird\nschedule: 0 * * * *\nincremental: true\ncheckpointDir: vault")
+  const jobs = await loadCronJobs(ctx)
+  expect(jobs[0]).toMatchObject({ incremental: true })
+  expect((jobs[0] as any).checkpointDir).toBeUndefined()
+})
+
+test("updateCronJob preserves an existing cron's `incremental`/`checkpointDir` frontmatter across an UNRELATED update (e.g. toggling enabled)", async () => {
+  cronFile("dream", "name: dream\nschedule: 0 * * * *\nincremental: true\ncheckpointDir: memory")
+  const res = await updateCronJob("dream", { enabled: false }, ctx)
+  expect(res.ok).toBe(true)
+  const jobs = await loadCronJobs(ctx)
+  expect(jobs[0]).toMatchObject({ enabled: false, incremental: true, checkpointDir: "memory" })
+})
+
+test("createCronJob + loadCronJobs round-trips `incremental`/`checkpointDir`", async () => {
+  const res = await createCronJob(
+    { name: "consolidate", schedule: "0 * * * *", prompt: "do it", incremental: true, checkpointDir: "memory" },
+    ctx,
+  )
+  expect(res.ok).toBe(true)
+  const jobs = await loadCronJobs(ctx)
+  expect(jobs[0]).toMatchObject({ incremental: true, checkpointDir: "memory" })
+})
+
 test("updateCronJob rejects flipping to file-change without supplying `watch`", async () => {
   cronFile("solo", "name: solo\nschedule: 0 * * * *")
   const res = await updateCronJob("solo", { on: "file-change" }, ctx)

@@ -4,6 +4,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { sendMessage } from "./session"
 import { processPageTriggers } from "./pages"
+import { resolveIncrementalRun, advanceIncrementalCheckpoint, type CheckpointDirKind } from "./incrementalCron"
 
 const execFileAsync = promisify(execFile)
 import { notify } from "../lib/platform"
@@ -31,6 +32,15 @@ interface CronJobBase {
   timeout: number
   /** Process pattern to monitor after session ends (matched via pgrep -f). */
   waitFor?: string
+  /** Opt-in incremental scoping (see incrementalCron.ts): before firing, the daemon diffs
+   *  `refs/bismuth/cron-<name>` against the job's checkpoint repo and SKIPS the session entirely
+   *  when nothing relevant changed since the last successful run, instead of spinning up a
+   *  session that just re-reads everything. Off by default — an ordinary cron parses exactly as
+   *  before. The two seeded crons (dream, vault-review) opt in — see defaultCrons.ts. */
+  incremental: boolean
+  /** Which repo `incremental`'s checkpoint lives against: "vault" (ctx.root, the default) or
+   *  "memory" (ctx.memoryDir). Ignored when `incremental` is false. */
+  checkpointDir?: CheckpointDirKind
 }
 
 /** Fires on a cron-expression schedule — the original, still-default trigger. */
@@ -89,6 +99,8 @@ function parseCronFrontmatter(name: string, frontmatter: Record<string, string>,
     effort: frontmatter.effort,
     timeout: parseTimeoutSecs(frontmatter.timeout),
     waitFor: frontmatter.waitFor,
+    incremental: frontmatter.incremental === "true",
+    checkpointDir: frontmatter.checkpointDir?.trim() === "memory" ? ("memory" as const) : undefined,
   }
 
   // `on: file-change` is opt-in and explicit — everything else (including the absence of `on`)
@@ -211,7 +223,13 @@ const jobAbortControllers = new Map<string, AbortController>()
 
 export interface LastFiredEntry {
   timestamp: string
-  result: "success" | "failed" | "unknown" | "killed"
+  /** "skipped" = an `incremental` cron's pre-fire checkpoint diff found nothing relevant changed
+   *  since the last successful run — no session was ever started. See `detail`. */
+  result: "success" | "failed" | "unknown" | "killed" | "skipped"
+  /** Present only when `result === "skipped"`: the human-readable reason (e.g. "skipped: no
+   *  changes since 2026-07-20T10:00:00Z"), surfaced verbatim as the daemon graph's `lastResult`
+   *  so a skip is visible in `bismuth daemon graph` / the sidebar, not silent. */
+  detail?: string
 }
 
 export async function loadLastFired(ctx: VaultContext): Promise<Record<string, LastFiredEntry>> {
@@ -459,8 +477,31 @@ async function waitForProcessPattern(
  * Start a cron job for a vault: marks it as running (in-memory + on-disk)
  * synchronously, then runs the session in the background. Callers should await
  * this to ensure .running.json is written before proceeding.
+ *
+ * `incremental` crons get an extra pre-fire gate (see incrementalCron.ts): the daemon diffs the
+ * job's checkpoint ref against its repo BEFORE any of the running-state bookkeeping below, and
+ * when there's nothing relevant to look at, returns immediately having only updated `lastFired`
+ * (result "skipped") — no session, no PTY, no running-jobs entry, no cost. When there IS
+ * something to review (or this is the first run), the job's `{{changedSinceLastRun}}` placeholder
+ * is resolved before the prompt is sent, and — only after the session reports SUCCESS — the
+ * checkpoint ref is advanced to HEAD so the next run only sees newer changes.
  */
 async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string, LastFiredEntry>, opts?: { triggerContext?: string }): Promise<void> {
+  let promptOverride: string | undefined
+  let checkpoint: { dir: string; ref: string } | undefined
+  if (job.incremental) {
+    const plan = await resolveIncrementalRun(ctx, job)
+    if (plan.skip) {
+      const entry: LastFiredEntry = { timestamp: new Date().toISOString(), result: "skipped", detail: plan.note }
+      lastFired[job.name] = entry
+      await updateLastFired(ctx, job.name, entry)
+      console.log(`[cron] "${job.name}": ${plan.note}`)
+      return
+    }
+    promptOverride = plan.prompt
+    checkpoint = { dir: plan.dir, ref: plan.ref }
+  }
+
   const key = jobKey(ctx, job.name)
   const ac = new AbortController()
   runningJobs.add(key)
@@ -481,7 +522,7 @@ async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string
   const sessionPromise = (async () => {
     try {
       const triggerNote = opts?.triggerContext ? `\n\nTriggered by change to: ${opts.triggerContext}` : ""
-      const prompt = `[Cron: ${job.name}] ${job.prompt}${triggerNote}${CRON_RESULT_INSTRUCTION}${job.notify ? CRON_NOTIFY_INSTRUCTION : ""}`
+      const prompt = `[Cron: ${job.name}] ${promptOverride ?? job.prompt}${triggerNote}${CRON_RESULT_INSTRUCTION}${job.notify ? CRON_NOTIFY_INSTRUCTION : ""}`
       const response = await sendMessage(prompt, ctx, { model: job.model, effort: job.effort, abortController: ac, timeoutSecs: job.timeout, newSession: true })
 
       if (job.waitFor) {
@@ -500,6 +541,12 @@ async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string
       const entry: LastFiredEntry = { timestamp: new Date().toISOString(), result }
       lastFired[job.name] = entry
       await updateLastFired(ctx, job.name, entry)
+      // Advance the checkpoint ONLY on a reported success — not "unknown" (the model may not have
+      // actually finished reviewing) and not failed/killed (see the catch branch below). A missed
+      // advance just means the next run re-diffs from the same base: over-inclusive, never lossy.
+      if (checkpoint && result === "success") {
+        await advanceIncrementalCheckpoint(checkpoint.dir, checkpoint.ref)
+      }
       if (job.notify) {
         const status = result === "success" ? "completed" : result === "failed" ? "failed" : "completed (unknown result)"
         const notifyMsg = parseNotifyMessage(response.result) || `Cron job ${status}.`
@@ -801,7 +848,7 @@ export async function stopCronJob(name: string, ctx: VaultContext): Promise<{ ok
   return { ok: true }
 }
 
-function buildCronFile(opts: { name: string; on?: "file-change"; schedule?: string; watch?: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; enabled?: boolean; timeout?: number; waitFor?: string; prompt: string }): string {
+function buildCronFile(opts: { name: string; on?: "file-change"; schedule?: string; watch?: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; enabled?: boolean; timeout?: number; waitFor?: string; incremental?: boolean; checkpointDir?: CheckpointDirKind; prompt: string }): string {
   const lines = ["---"]
   lines.push(`name: ${opts.name}`)
   if (opts.on === "file-change") {
@@ -818,6 +865,8 @@ function buildCronFile(opts: { name: string; on?: "file-change"; schedule?: stri
   if (opts.catchup === false) lines.push(`catchup: false`)
   if (opts.notify) lines.push(`notify: true`)
   if (opts.enabled === false) lines.push(`enabled: false`)
+  if (opts.incremental) lines.push(`incremental: true`)
+  if (opts.checkpointDir === "memory") lines.push(`checkpointDir: memory`)
   lines.push("---")
   lines.push("")
   lines.push(opts.prompt)
@@ -825,7 +874,7 @@ function buildCronFile(opts: { name: string; on?: "file-change"; schedule?: stri
   return lines.join("\n")
 }
 
-export async function createCronJob(opts: { name: string; on?: "file-change"; schedule?: string; watch?: string; prompt: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; enabled?: boolean }, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+export async function createCronJob(opts: { name: string; on?: "file-change"; schedule?: string; watch?: string; prompt: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; enabled?: boolean; incremental?: boolean; checkpointDir?: CheckpointDirKind }, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
   const nameCheck = validateCronName(opts.name, ctx)
   if (!nameCheck.ok) return nameCheck
 
@@ -855,7 +904,7 @@ export async function deleteCronJob(name: string, ctx: VaultContext): Promise<{ 
   }
 }
 
-export async function updateCronJob(name: string, updates: { enabled?: boolean; schedule?: string; on?: "schedule" | "file-change"; watch?: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; waitFor?: string; prompt?: string }, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+export async function updateCronJob(name: string, updates: { enabled?: boolean; schedule?: string; on?: "schedule" | "file-change"; watch?: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; waitFor?: string; incremental?: boolean; checkpointDir?: CheckpointDirKind; prompt?: string }, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
   const nameCheck = validateCronName(name, ctx)
   if (!nameCheck.ok) return nameCheck
   const filePath = join(ctx.cronsDir, `${name}.md`)
@@ -880,6 +929,8 @@ export async function updateCronJob(name: string, updates: { enabled?: boolean; 
   if (updates.catchup !== undefined) frontmatter.catchup = String(updates.catchup)
   if (updates.notify !== undefined) frontmatter.notify = String(updates.notify)
   if (updates.waitFor !== undefined) frontmatter.waitFor = updates.waitFor
+  if (updates.incremental !== undefined) frontmatter.incremental = String(updates.incremental)
+  if (updates.checkpointDir !== undefined) frontmatter.checkpointDir = updates.checkpointDir
 
   const newPrompt = updates.prompt ?? body
   const isFileChange = frontmatter.on?.trim() === "file-change"
@@ -898,6 +949,11 @@ export async function updateCronJob(name: string, updates: { enabled?: boolean; 
     notify: frontmatter.notify === "true",
     enabled: frontmatter.enabled !== "false",
     waitFor: frontmatter.waitFor,
+    // `incremental`/`checkpointDir` round-trip through frontmatter (not just `updates`) so an
+    // UNRELATED update (e.g. toggling `enabled`) never silently strips a seeded cron's
+    // incremental scoping — see cron.test.ts.
+    incremental: frontmatter.incremental === "true",
+    checkpointDir: frontmatter.checkpointDir?.trim() === "memory" ? "memory" : undefined,
     prompt: newPrompt,
   }))
   return { ok: true }

@@ -96,6 +96,32 @@ test("daemonSnapshot merges schedule, enabled, last-fired, and running state", (
   expect(by["running-cron"].startedAt).toBe(RECENT);
 });
 
+test("daemonSnapshot reads a `skipped` result's `detail` field from .last-fired.json", () => {
+  const skipHome = mkdtempSync(join(tmpdir(), "claude-bot-skip-fixture-"));
+  try {
+    mkdirSync(join(skipHome, "crons"), { recursive: true });
+    writeFileSync(
+      join(skipHome, "crons", "vault-review.md"),
+      "---\nname: vault-review\nschedule: 0 */4 * * *\nincremental: true\n---\n\nbody\n",
+    );
+    writeFileSync(
+      join(skipHome, "crons", ".last-fired.json"),
+      JSON.stringify({
+        "vault-review": { timestamp: RECENT, result: "skipped", detail: "skipped: no changes since 2026-07-20T10:00:00Z" },
+      }),
+    );
+    const snap = daemonSnapshot(skipHome);
+    const cron = snap.crons.find((c) => c.name === "vault-review")!;
+    expect(cron.lastFired).toEqual({
+      timestamp: RECENT,
+      result: "skipped",
+      detail: "skipped: no changes since 2026-07-20T10:00:00Z",
+    });
+  } finally {
+    rmSync(skipHome, { recursive: true, force: true });
+  }
+});
+
 test("daemonSnapshot reads processes (filename fallback when no `name`), enabled by default", () => {
   const snap = daemonSnapshot(home);
   expect(snap.processes).toEqual([{ name: "my-proc", enabled: true, running: false }]);
@@ -187,6 +213,57 @@ test("buildDaemonGraph: one hub + a node per cron/process, all edges from the hu
   // Process node carries viz state too (no last-fired info).
   const proc = g.nodes.find((n) => n.id === "process:my-proc")!;
   expect(proc.daemon).toEqual({ enabled: true, running: false, lastResult: null, lastFiredMs: null });
+});
+
+test("buildDaemonGraph: a 'skipped' incremental-cron result surfaces its `detail` verbatim as lastResult", () => {
+  const snap: DaemonSnapshot = {
+    daemon: { label: "daemon", running: true, home: "/tmp/x" },
+    crons: [
+      {
+        name: "vault-review",
+        schedule: "0 */4 * * *",
+        on: "schedule",
+        watch: null,
+        enabled: true,
+        lastFired: {
+          timestamp: RECENT,
+          result: "skipped",
+          detail: "skipped: no changes since 2026-07-20T10:00:00Z",
+        },
+        running: false,
+        startedAt: null,
+      },
+    ],
+    processes: [],
+  };
+
+  const g = buildDaemonGraph(snap);
+  const cron = g.nodes.find((n) => n.id === "cron:vault-review")!;
+  // The UI-visible field carries the full human-readable reason, not the bare "skipped" enum.
+  expect(cron.daemon?.lastResult).toBe("skipped: no changes since 2026-07-20T10:00:00Z");
+});
+
+test("buildDaemonGraph: a 'skipped' result WITHOUT a detail (malformed/legacy) falls back to the bare enum, never throws", () => {
+  const snap: DaemonSnapshot = {
+    daemon: { label: "daemon", running: true, home: "/tmp/x" },
+    crons: [
+      {
+        name: "dream",
+        schedule: "0 * * * *",
+        on: "schedule",
+        watch: null,
+        enabled: true,
+        lastFired: { timestamp: RECENT, result: "skipped" },
+        running: false,
+        startedAt: null,
+      },
+    ],
+    processes: [],
+  };
+
+  const g = buildDaemonGraph(snap);
+  const cron = g.nodes.find((n) => n.id === "cron:dream")!;
+  expect(cron.daemon?.lastResult).toBe("skipped");
 });
 
 test("daemonGraph(home) end-to-end: reads the fixture and builds the graph", () => {

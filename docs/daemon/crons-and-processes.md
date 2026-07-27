@@ -61,14 +61,17 @@ Machine-level identity/runtime state (`daemon.pid`, `devices.json`, `owner.json`
 ```ts
 ScheduleCronJob {
   on: "schedule", name, schedule, cron /* parsed CronExpression */, prompt /* = markdown body */,
-  catchup, enabled, notify, model?, effort?, timeout /* s; 0 = no timeout */, waitFor?
+  catchup, enabled, notify, model?, effort?, timeout /* s; 0 = no timeout */, waitFor?,
+  incremental /* default false */, checkpointDir? /* "vault" | "memory"; incremental only */
 }
 FileChangeCronJob {
   on: "file-change", name, watch /* vault-relative path or Bun.Glob pattern */, prompt,
   catchup: false /* always — see File-change crons below */, enabled, notify, model?, effort?,
-  timeout, waitFor?
+  timeout, waitFor?, incremental /* default false */, checkpointDir?
 }
 ```
+
+`incremental`/`checkpointDir` are shared by both shapes (see [Incremental crons](#incremental-crons) below) — a plain cron simply never sets them and fires exactly as before.
 
 ### `parseCronFrontmatter`
 
@@ -88,6 +91,8 @@ FileChangeCronJob {
 | `effort` | passthrough → `thinkingBudget` | `undefined` |
 | `timeout` | `parseTimeoutSecs` | `300` |
 | `waitFor` | passthrough — a `pgrep -f` pattern to wait on after the session ends | `undefined` |
+| `incremental` | `frontmatter.incremental === "true"` — opts into the pre-fire checkpoint-diff skip gate (see [Incremental crons](#incremental-crons)) | `false` (opt-in) |
+| `checkpointDir` | `"memory"` selects `ctx.memoryDir` as the checkpoint repo; anything else (including absent) → `ctx.root` (the vault). Ignored when `incremental` is false | `undefined` (→ vault root) |
 
 `parseTimeoutSecs`: empty → `300`; `"none"` or `"0"` → `0` (explicit no-timeout); otherwise `parseInt` if finite and `> 0`, else `300`.
 
@@ -121,6 +126,23 @@ items untouched.
 
 **Self-trigger loop hazard.** `.daemon/**` churn (the daemon's own `.last-fired.json`/`.running.json`/logs/memory/session-state writes) is UNCONDITIONALLY excluded from every batch (`isDaemonInternalPath`) — the daemon's own bookkeeping can never retrigger a file-change cron. This does **not** protect against a cron whose prompt edits an ordinary vault file that matches its own `watch` pattern: that cron will refire itself on its own edit (subject only to the debounce window), forever. If you author a cron that both watches and writes vault files, either point `watch` at a different file than the one it edits, or make the edit idempotent (a second identical write is a harmless no-op) so a self-retrigger costs a wasted run rather than compounding.
 
+### Incremental crons
+
+`incremental: true` opts a SCHEDULE cron into a pre-fire gate: before a session is ever started, the daemon itself checks whether anything relevant changed since the cron's last successful run and, if not, skips the session entirely. This replaces an older pattern where the model's OWN Bash step ran `bismuth checkpoint diff/advance` as the first/last thing it did in the session — that still paid for a full session every time (context load, tool calls, tokens) even when nothing had changed, and silently degraded to a full re-survey whenever the bundled `bismuth` CLI wasn't resolvable on the daemon's PATH (Bug #105). Moving the check into the daemon removes both problems: a no-op run now costs nothing, and the scoping no longer depends on a subprocess the daemon can't guarantee.
+
+**Mechanism** (`daemon/src/daemon/incrementalCron.ts` + `daemon/src/lib/checkpointRef.ts`, called from `cron.ts`'s `fireJob` before ANY of the running-state bookkeeping):
+
+1. **Resolve the checkpoint repo.** `checkpointDir: "memory"` → `ctx.memoryDir`; anything else (including absent) → `ctx.root`, the vault. Each is (or gets, on first touch) its own local git repo — same `refs/bismuth/<ref>` bookmark mechanism `core/src/backup.ts` and the `bismuth checkpoint` CLI already use, but reimplemented standalone here (plain `git` subprocesses) because the daemon workspace must not depend on `@bismuth/core` (see `lib/visibility.ts`/`lib/claudeWhich.ts` for the same constraint elsewhere). The ref name is **`refs/bismuth/cron-<job.name>`** — a distinct namespace from any ref a cron's own Bash step may have advanced by hand in the past, so upgrading to this feature always starts from a clean "first incremental run" rather than trusting an LLM-authored checkpoint of uncertain provenance.
+2. **Diff.** `checkpointDelta(dir, ref)` unions two things, and never commits anything itself: (a) `git diff --name-status` between the ref and HEAD (committed history), and (b) the CURRENT working tree vs HEAD — tracked modifications/deletions plus untracked-but-not-`.gitignore`d new files. No ref yet (first run for this cron) → every tracked file at HEAD counts as the delta and `base` is `null`.
+3. **Filter.** `filterCronPaths` narrows the raw delta to `*.md` files outside `.daemon/` — the only things either seeded cron's review cares about.
+4. **Decide** (`decideIncrementalRun`, pure): no ref yet → never skip (first-run note). Ref exists + filtered list empty → **skip**, recording `result: "skipped"` + `detail: "skipped: no changes since <ISO time of the ref's commit>"` into `.last-fired.json` (see [storage.md](storage.md)) and returning WITHOUT ever calling `sendMessage` — no PTY, no running-jobs entry, no cost. Ref exists + something changed → run, with the changed-file list + last-run time formatted for injection.
+5. **Inject.** If the cron's prompt body contains the literal placeholder `{{changedSinceLastRun}}`, it's replaced with either the first-run note or the changed-file block (`applyIncrementalPlaceholder`); a prompt without the placeholder is left byte-identical (silent no-op, so `incremental: true` on a cron that forgot the placeholder just never gets the injected text — it's not an error).
+6. **Advance on success only.** After the session completes, if it reported `[CRON_RESULT:SUCCESS]` (never on failure/kill/unknown/timeout), `advanceCheckpointRef` moves `refs/bismuth/cron-<name>` to current HEAD. Advancing can only ever mark COMMITTED state — an uncommitted change that was reviewed this run but committed only later (by the app's own autosave `scheduleBackup`, or the user's own git flow) will resurface on the NEXT diff too, because the working-tree half of the diff is always measured live. This is a deliberate, documented trade-off (occasional redundant review beats missing a change), not a bug — see `checkpointRef.test.ts` for the exact behavior it locks in.
+
+**Visibility.** A skip is not silent: `daemonGraph.ts` composes a cron node's `daemon.lastResult` as the `detail` string verbatim when `result === "skipped"` (falling back to the bare `"skipped"` enum if `detail` is somehow absent), so `bismuth daemon graph` / the app's daemon sidebar show e.g. `"skipped: no changes since 2026-07-20T10:00:00Z"` instead of a bare enum value. `lastFiredMs` is updated on a skip exactly like a real run, so the sidebar's relative-time label ("5m", "2h", …) reflects "last checked" regardless of whether that check found anything.
+
+**The two shipped defaults** (`dream`, `vault-review` — see below) both ship `incremental: true`. Existing vaults that already had the pre-incremental version of either seed pick up the upgrade automatically via `seeds.ts`'s versioned refresh — see [Seeding](#seeding-daemonseedsts--reconcileseedsctx) below.
+
 ### Schedule parsing — hand-rolled, no library
 
 `parseCronExpression`: trim, split on whitespace, require **exactly 5 fields** or return null. Fields stored verbatim as strings: `minute hour dayOfMonth month dayOfWeek`.
@@ -142,16 +164,17 @@ items untouched.
 ### `.last-fired.json` — exact shape
 
 ```ts
-LastFiredEntry { timestamp: string, result: "success" | "failed" | "unknown" | "killed" }
+LastFiredEntry { timestamp: string, result: "success" | "failed" | "unknown" | "killed" | "skipped", detail?: string }
 ```
 
 Object keyed by `job.name` (frontmatter name, fallback filename):
 
 ```json
 { "dream": { "timestamp": "2026-06-08T14:00:03.123Z", "result": "success" } }
+{ "vault-review": { "timestamp": "2026-07-25T14:00:00.500Z", "result": "skipped", "detail": "skipped: no changes since 2026-07-20T10:00:00Z" } }
 ```
 
-`loadLastFired(ctx)` **migrates legacy** data: a plain-string value becomes `{ timestamp: <string>, result: "success" }`. Missing/unreadable → `{}`. Written via `updateLastFired(ctx, name, entry)`: read-modify-write under a per-file serial queue (`enqueueWrite`, keyed by absolute file path — already vault-unique) plus `atomicWriteJson` (temp `${file}.${pid}.${ts}.${rand}.tmp`, then rename, `JSON.stringify(..., null, 2)`).
+`loadLastFired(ctx)` **migrates legacy** data: a plain-string value becomes `{ timestamp: <string>, result: "success" }`. Missing/unreadable → `{}`. Written via `updateLastFired(ctx, name, entry)`: read-modify-write under a per-file serial queue (`enqueueWrite`, keyed by absolute file path — already vault-unique) plus `atomicWriteJson` (temp `${file}.${pid}.${ts}.${rand}.tmp`, then rename, `JSON.stringify(..., null, 2)`). `result: "skipped"` + `detail` is written by an `incremental` cron's pre-fire checkpoint-diff gate INSTEAD of ever starting a session — see [Incremental crons](#incremental-crons).
 
 ### `.running.json` — exact shape
 
@@ -184,15 +207,16 @@ In-memory runtime state — the `runningJobs` Set and the `jobAbortControllers` 
 
 ### Firing — `fireJob(ctx, job, lastFired)`
 
+0. **Incremental pre-check** (only when `job.incremental`, and BEFORE any of steps 1–3 below — see [Incremental crons](#incremental-crons)): resolve the checkpoint plan via `resolveIncrementalRun`. If it says skip, write the `"skipped"` `LastFiredEntry` and `return` immediately — no running-state bookkeeping ever happens, so a skip is a true no-op. Otherwise capture the resolved prompt (placeholder substituted) and the `{ dir, ref }` to advance later.
 1. Compute `key = jobKey(ctx, job.name)`; create an `AbortController`; add `key` to the in-memory `runningJobs` Set and the `jobAbortControllers` Map.
 2. `await markRunning(ctx, job.name)` — so `.running.json` is on disk before the caller proceeds.
 3. Snapshot the job's **own** cron file (`<ctx.cronsDir>/<name>.md`) and the **entire** `ctx.processesDir` (self-modification guards — see below).
-4. Start a **background, not-awaited** session. The prompt is `[Cron: ${name}] ${prompt}` + (for a file-change fire only) `\n\nTriggered by change to: <path1>, <path2>, …` + `CRON_RESULT_INSTRUCTION` (the model must print exactly `[CRON_RESULT:SUCCESS]` or `[CRON_RESULT:FAILURE]` as its last line) + `CRON_NOTIFY_INSTRUCTION` if `notify`.
+4. Start a **background, not-awaited** session. The prompt is `[Cron: ${name}] ${prompt}` (the incremental-resolved prompt when step 0 ran) + (for a file-change fire only) `\n\nTriggered by change to: <path1>, <path2>, …` + `CRON_RESULT_INSTRUCTION` (the model must print exactly `[CRON_RESULT:SUCCESS]` or `[CRON_RESULT:FAILURE]` as its last line) + `CRON_NOTIFY_INSTRUCTION` if `notify`.
 5. `sendMessage(prompt, ctx, { model, effort, abortController, timeoutSecs: timeout, newSession: true })` — **each cron runs in a NEW session**, not the vault's persistent one. `sendMessage` supplies the per-call `cwd` = `ctx.root`, `env.BISMUTH_MEMORY_DIR` = `ctx.memoryDir`, and the vault's daemon identity, so concurrent vault sessions never race.
 6. If `waitFor` is set: after the session ends, poll `pgrep -f <pattern>` every 5 s until the pattern is gone or the remaining time is exhausted (`remaining = timeout*1000 - elapsed`, or `MAX_SAFE_INTEGER` if `timeout === 0`).
-7. `parseCronResult` finds the **last** marker in the output; if neither marker is present → `"unknown"`. Write the `LastFiredEntry` via `updateLastFired`.
+7. `parseCronResult` finds the **last** marker in the output; if neither marker is present → `"unknown"`. Write the `LastFiredEntry` via `updateLastFired`. If step 0 ran AND the result is `"success"` (never on `"failed"`/`"unknown"`), advance the checkpoint ref to HEAD (`advanceIncrementalCheckpoint`).
 8. If `notify`: parse the last `[NOTIFY: ...]` line and call `notify("${ctx.name}: ${name}", msg)`.
-9. `catch`: if the signal aborted → result `"killed"` (re-stamped with a fresh timestamp even on consecutive kills, so catch-up arithmetic isn't stuck on a stale time); otherwise `"failed"`.
+9. `catch`: if the signal aborted → result `"killed"` (re-stamped with a fresh timestamp even on consecutive kills, so catch-up arithmetic isn't stuck on a stale time); otherwise `"failed"`. Neither branch advances the checkpoint.
 10. `finally`: revert the job's own cron file if the session modified or deleted it; `restoreDir(ctx.processesDir, …)` reverting any process-def changes; delete the abort controller; `await markDone(ctx, name)`; remove `key` from `runningJobs`.
 
 > **Self-modification guard:** only the running cron's OWN definition file is reverted — sibling crons and external edits are left alone (an earlier whole-directory snapshot wrongly reverted legitimate concurrent edits). Process definitions are still broadly guarded via `restoreDir` (rarely edited externally): modified files are restored, deleted files re-created, and any `.md` the session newly created is removed.
@@ -205,7 +229,7 @@ In-memory runtime state — the `runningJobs` Set and the `jobAbortControllers` 
 - `!catchup` → `false`.
 - never fired → `true`.
 - result `"killed"`/`"failed"` → catch up if `elapsed > retryCooldownMs(interval)`, where `retryCooldownMs = max(5min, floor(interval/12))` (daily ≈ 2 h, weekly ≈ 14 h, hourly → 5-min floor).
-- result `"success"`/`"unknown"` → catch up if `elapsed > interval * 1.01` (tight multiplier so a daily cron fires on wake from sleep rather than waiting hours).
+- result `"success"`/`"unknown"`/`"skipped"` → catch up if `elapsed > interval * 1.01` (tight multiplier so a daily cron fires on wake from sleep rather than waiting hours). A `"skipped"` run is treated exactly like a completed run here, not a failure — the pre-fire check DID run, it just found nothing to do, so there's nothing to retry sooner for.
 
 ### Scheduler lifecycle — the multiplex
 
@@ -240,7 +264,7 @@ There are two paths because the **MCP server is a separate process from the daem
 
 ### The two shipped default crons (`daemon/defaultCrons.ts`)
 
-The defaults are **embedded string constants** (not files), so they survive `bun build --compile` into the daemon binary, and are seeded non-clobbering by `reconcileSeeds` (see below). Both are adapted for Bismuth's per-vault model: memory is `$BISMUTH_MEMORY_DIR` (= `<vault>/.daemon/memory`, injected by the daemon), the vault is the working directory, and the memory tools are Bismuth's `recall`/`remember`/`forget` (there is **no** `dream_run` tool).
+The defaults are **embedded string constants** (not files), so they survive `bun build --compile` into the daemon binary, and are seeded — and, uniquely among seeds, **version-upgraded** — by `reconcileSeeds` (see [Seeding](#seeding-daemonseedsts--reconcileseedsctx) below). Both are adapted for Bismuth's per-vault model: memory is `$BISMUTH_MEMORY_DIR` (= `<vault>/.daemon/memory`, injected by the daemon), the vault is the working directory, and the memory tools are Bismuth's `recall`/`remember`/`forget` (there is **no** `dream_run` tool). Both ship `incremental: true` (see [Incremental crons](#incremental-crons)) — neither one runs `bismuth checkpoint diff/advance` itself anymore; the daemon does that scoping BEFORE the session even starts.
 
 **`dream`** — hourly memory consolidation. Frontmatter:
 
@@ -249,17 +273,11 @@ name: dream
 schedule: 0 * * * *
 timeout: 1800
 catchup: true
+incremental: true
+checkpointDir: memory
 ```
 
-Hourly at minute 0, 30-minute timeout, catch-up on, enabled, `notify` false. Its **body** consolidates this vault's memory graph at `$BISMUTH_MEMORY_DIR` into an atomic, densely-linked zettelkasten, walking the directory file-by-file via Bash (deliberately defensive against a bloated / OOM graph — it must **not** call `recall` with empty/broad queries). It first scopes to what changed since the last run by wrapping the pass in checkpoints:
-
-```bash
-bismuth checkpoint diff dream --dir "$BISMUTH_MEMORY_DIR"   # Step 0: only the changed notes (snapshots first)
-# … survey by size, triage >100 KB notes, process auto-* notes, targeted recall to merge dupes, delete stale isolated notes …
-bismuth checkpoint advance dream --dir "$BISMUTH_MEMORY_DIR" # Step 6 (LAST): record how far it got
-```
-
-The scope is **strict** — memory only; it must not touch `.daemon/crons/`, `.daemon/processes/`, daemon config, `identity.md`, or the vault's notes, must not act on recommendations inside notes, and must not read any single file >50 KB with the Read tool. It ends with a one-line report:
+Hourly at minute 0, 30-minute timeout, catch-up on, enabled, `notify` false, checkpointed against `ctx.memoryDir`. Its **body** consolidates this vault's memory graph at `$BISMUTH_MEMORY_DIR` into an atomic, densely-linked zettelkasten, walking the directory file-by-file via Bash (deliberately defensive against a bloated / OOM graph — it must **not** call `recall` with empty/broad queries). Its "Scope for this run" section is the `{{changedSinceLastRun}}` placeholder: on an incremental run it's the changed-file list (focus consolidation/merging/backlinking there); on the first run it's a note to do the full survey. The size/bloat triage (Steps 1–2) always runs regardless of scope, as a safety net. It ends with a one-line report:
 
 ```
 bloat-deleted=N auto-processed=N merged=N improved=N stale-deleted=N final-size=XMB
@@ -273,15 +291,22 @@ schedule: 0 */4 * * *
 timeout: 900
 catchup: true
 notify: true
+incremental: true
 ```
 
-Its body reviews the vault (its working directory) — journal/daily notes, tasks, reading, the user's own essays vs quoted material, projects, school/work — and `remember`s a consolidated model of the user (checking `recall` first to update rather than duplicate). It scopes to what changed with `bismuth checkpoint diff vault-review --dir . --no-commit` (`--no-commit` diffs the vault's existing git history without writing to it) and ends with `bismuth checkpoint advance vault-review --dir . --no-commit`.
+(No `checkpointDir` — defaults to the vault root.) Its body reviews the vault (its working directory) — journal/daily notes, tasks, reading, the user's own essays vs quoted material, projects, school/work — and `remember`s a consolidated model of the user (checking `recall` first to update rather than duplicate). Its "Scope for this run" section is likewise `{{changedSinceLastRun}}`: the changed-file list on an incremental run, a "review broadly" note on the first run.
 
 `DEFAULT_CRONS` (the `{ name, content }[]` array) is what `seedsFor` maps into `<vault>/.daemon/crons`.
 
 ### Seeding (`daemon/seeds.ts` → `reconcileSeeds(ctx)`)
 
-`reconcileSeeds(ctx)` is the daemon's declarative analog of core's `reconcileSettings`. It runs every time a vault's brain comes online (boot or runtime-enable, via `ensureVaultDirs`) and writes only what's **MISSING** — `existsSync(seed.path)` → skip. `seedsFor(ctx)` returns the full set: the editable `identity.md` (`---\nname: daemon\n---` + the default personality body) and one seed per entry in `DEFAULT_CRONS` (written to `<ctx.cronsDir>/<name>.md`). So a fresh vault gets the full set; an already-set-up vault that predates a newly-added default gets just that new piece on next boot; existing files (including a user's `enabled: false` edits) are never clobbered. To add a future seedable, append one entry to `seedsFor()`.
+`reconcileSeeds(ctx)` is the daemon's declarative analog of core's `reconcileSettings`. It runs every time a vault's brain comes online (boot or runtime-enable, via `ensureVaultDirs`) and, for each registered `Seed`:
+
+- **missing** → write it. `seedsFor(ctx)` returns the full set: the editable `identity.md` (`---\nname: daemon\n---` + the default personality body), one seed per `DEFAULT_CRONS` entry (written to `<ctx.cronsDir>/<name>.md`), and `PAGES.md`. So a fresh vault gets the full set, and an already-set-up vault that predates a newly-added default gets just that new piece on next boot.
+- **present + versioned** (`Seed.refreshKey` — currently only the two default crons) → compare its on-disk SHA-256 against `PRIOR_SEED_HASHES[refreshKey]`, a hand-maintained, append-only list of every PRIOR stock version's hash. A match → **upgrade it in place** to the current `DEFAULT_CRONS` content (this is how an existing vault's `dream`/`vault-review` picks up the incremental-scoping change automatically, without ever touching a file the user customized). No match (and not byte-identical to the CURRENT version either) → leave it untouched, record it in `result.customized`.
+- **present + not versioned** (`identity.md`, `PAGES.md`) → leave it untouched, exactly as before — these are never auto-upgraded.
+
+`reconcileSeeds` returns `{ written, refreshed, customized }` (arrays of absolute paths); `daemon/index.ts`'s `ensureVaultDirs` logs `refreshed`/`customized` via the boot log. Best-effort per file — one failure never blocks the rest, and is simply retried on the next brain-start. To add a future non-versioned seedable, append one entry to `seedsFor()`; to ship a content change to an EXISTING versioned seed, push the outgoing content's hash onto `PRIOR_SEED_HASHES` before changing `defaultCrons.ts` — see that constant's doc comment in `seeds.ts` for the exact append-only discipline.
 
 ---
 
@@ -383,4 +408,4 @@ This is the symmetric counterpart of cron triggers but with **different semantic
 - [communication.md](communication.md) — sessions, identity, and the MCP/relay surface.
 - [../README.md](../README.md) — the docs root.
 
-Source: `daemon/src/daemon/cron.ts`, `daemon/src/daemon/fileWatch.ts`, `daemon/src/daemon/process.ts`, `daemon/src/daemon/defaultCrons.ts`, `daemon/src/daemon/seeds.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/index.ts`, `daemon/src/lib/config.ts`, `daemon/src/lib/registry.ts`, `daemon/src/lib/frontmatter.ts`
+Source: `daemon/src/daemon/cron.ts`, `daemon/src/daemon/fileWatch.ts`, `daemon/src/daemon/process.ts`, `daemon/src/daemon/defaultCrons.ts`, `daemon/src/daemon/seeds.ts`, `daemon/src/daemon/incrementalCron.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/index.ts`, `daemon/src/lib/config.ts`, `daemon/src/lib/registry.ts`, `daemon/src/lib/frontmatter.ts`, `daemon/src/lib/checkpointRef.ts`, `core/src/backup.ts` (the byte-identical CLI-facing checkpoint mechanism), `core/src/daemonGraph.ts` (surfaces `lastResult`)
