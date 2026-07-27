@@ -7,6 +7,8 @@ import type { GraphConfig, GraphRenderer, HoverNode } from "./graph/graphRendere
 // GraphView-owned signal + toolbar wiring. The shipped app only ever mounts AsciiGraphRenderer.
 import { isCanvasKind, isRendererKind, makeRenderer, RENDERER_KIND_OPTIONS, type RendererKind } from "./graph/rendererKind";
 import { AgentsGraph } from "./graph/AgentsGraph";
+import { GraphAtmosphere } from "./graph/GraphAtmosphere";
+import { getOrganicLayout, peekOrganicLayout, withOrganicPositions } from "./graph/organicLayout";
 import { layoutAgentGraph } from "./graph/agentLayout";
 import type { Org } from "./graph/agentOrg";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
@@ -19,6 +21,7 @@ import { SegmentedToggle } from "./ui/SegmentedToggle";
 import { IconButton } from "./ui/IconButton";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { IconTextButton } from "./ui/IconTextButton";
+import { Loading } from "./ui/EmptyState";
 import type { GraphMode } from "./commands";
 
 /** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). */
@@ -189,10 +192,64 @@ export function GraphView(props: {
   const rendererGraph = (): GraphData =>
     props.mode === "agents" ? layoutAgentGraph(props.graph, agentOrg()) : props.graph;
 
+  // TESTING ONLY — R1/R3 organic-layout harness (see organicLayout.ts for why). "agents" mode is
+  // excluded: layoutAgentGraph already assigns every node an explicit pyramid position itself (no
+  // backend layout involved at all), so there's no grid-island bug to route around there and running
+  // a force settle on top would just fight that intentional shape.
+  // `organicGen` is a monotonic counter guarding against a stale async resolution (e.g. the mode
+  // flipped away and back while a settle for the FIRST mode was still in flight) overwriting a
+  // newer render with old positions — only the callback whose `gen` still matches the current
+  // counter is allowed to call `renderer.render()`.
+  let organicGen = 0;
+  const [organicPending, setOrganicPending] = createSignal(false);
+  const wantsOrganicLayout = (g: GraphData, kind: RendererKind) =>
+    props.mode !== "agents" && isCanvasKind(kind) && g.nodes.length > 0;
+
+  /** Render `g` on the CURRENT `renderer`, going through the organic-layout override for canvas
+   *  kinds (see wantsOrganicLayout) and refreshing the search/legend UI data once the actual
+   *  positions land. Shared by the graph-render effect below and mountRenderer (a fresh renderer
+   *  instance needs the exact same treatment on every kind swap). Reads `rendererKind()` — the
+   *  ONE caller that runs inside a tracked effect (the render effect just below) wraps this in
+   *  `untrack` first so an ordinary kind swap doesn't ALSO retrigger that effect (the swap effect
+   *  already handles kind changes on its own, via mountRenderer). */
+  const renderGraphNow = (g: GraphData) => {
+    const kind = rendererKind();
+    if (!wantsOrganicLayout(g, kind)) {
+      setOrganicPending(false);
+      renderer.render(g);
+      refreshUiData();
+      return;
+    }
+    const gen = ++organicGen;
+    const cached = peekOrganicLayout(g);
+    if (cached) {
+      setOrganicPending(false);
+      renderer.render(withOrganicPositions(g, cached));
+      refreshUiData();
+      return;
+    }
+    setOrganicPending(true);
+    getOrganicLayout(g)
+      .then((layout) => {
+        if (gen !== organicGen) return; // superseded by a later graph/mode/kind change
+        setOrganicPending(false);
+        renderer.render(withOrganicPositions(g, layout));
+        refreshUiData();
+      })
+      .catch(() => {
+        if (gen !== organicGen) return;
+        setOrganicPending(false);
+        // Worker failure (or a browser without module-worker support) — fall back to whatever
+        // positions the graph already carries rather than leaving the renderer showing nothing.
+        renderer.render(g);
+        refreshUiData();
+      });
+  };
+
   createEffect(() => {
     lastGraph = props.graph;
     const g = rendererGraph();
-    if (mounted) { renderer.render(g); refreshUiData(); }
+    if (mounted) untrack(() => renderGraphNow(g));
   });
 
   // Derive the live GraphConfig from settings + appearance tokens. Colors derive from the
@@ -285,18 +342,33 @@ export function GraphView(props: {
   };
   const teardownLabelsOverlay = () => { labelsOverlayEl = null; };
 
+  // Atmosphere glow-lobe callback (see GraphAtmosphere.tsx's GlowRenderer contract). <GraphAtmosphere>
+  // below calls `glowRendererProxy.setGlowCallback(cb)` exactly ONCE, in its own onMount, the first
+  // time a canvas kind is active — captured here rather than handed straight to `renderer` because
+  // `renderer` is a plain swappable variable (R1<->R3 destroys + recreates it; see the swap effect),
+  // not a reactive prop <GraphAtmosphere> could re-subscribe to. mountRenderer re-arms the SAME
+  // callback onto whichever instance is actually live every time it (re)mounts, so a swap never
+  // leaves the glow silently pointed at a destroyed renderer.
+  type GlowCallback = (g: { lobes: { x: number; y: number }[] }) => void;
+  let glowCb: GlowCallback | undefined;
+  const glowRendererProxy = { setGlowCallback: (cb: GlowCallback) => { glowCb = cb; } };
+
   // Mount the CURRENT `renderer` + re-send everything a fresh instance needs to reflect the live
   // state: config, the current graph, the active file, and any live search-match set. Shared by
   // onMount (the initial mount) and the swap effect below (a kind change), so a swap can never drift
   // out of sync with what a first mount does — this function IS "what onMount does".
   const mountRenderer = () => {
-    const overlay = isCanvasKind(rendererKind()) ? ensureLabelsOverlay() : undefined;
+    const kind = rendererKind();
+    const overlay = isCanvasKind(kind) ? ensureLabelsOverlay() : undefined;
     renderer.mount(host, openNode, (node) => setHovered(node), overlay);
     renderer.setFpsCallback(setFps);
     renderer.setZoomCallback?.(setZoomPct);
     if (props.onPaint) renderer.setPaintCallback(props.onPaint);
+    if (isCanvasKind(kind) && glowCb) {
+      (renderer as unknown as { setGlowCallback?: (cb: GlowCallback) => void }).setGlowCallback?.(glowCb);
+    }
     renderer.setConfig(buildConfig());
-    if (lastGraph) { renderer.render(rendererGraph()); refreshUiData(); }
+    if (lastGraph) renderGraphNow(rendererGraph());
     renderer.setActiveFile(props.active ? props.active.replace(/\.md$/, "") : null);
     if (switcherHadMatch && props.searchMatchIds?.length) renderer.setSearchMatches(new Set(props.searchMatchIds));
     renderer.setVisible(props.visible !== false && !docHidden());
@@ -413,11 +485,35 @@ export function GraphView(props: {
           </Show>
         </span>
       </ViewBar>
-      <div class="graph-area" style={{ ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
+      <div
+        class="graph-area"
+        style={{
+          ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }),
+          // TESTING ONLY — R1/R3 want the pre-ASCII dark radial "ground" (a gradient), not the
+          // shipped ASCII scopes' flat --graph-bg. Reproduced here as a scoped inline override
+          // (reads the live --bg theme var) rather than touching settingsCssVars.ts/theme tokens,
+          // which every OTHER surface (incl. R2/R4) still reads unmodified.
+          ...(isCanvasKind(rendererKind())
+            ? { background: "radial-gradient(120% 90% at 50% 30%, var(--bg) 0%, color-mix(in srgb, var(--bg) 60%, #000) 72%)" }
+            : {}),
+        }}
+      >
         <div class="graph-canvas-host" ref={host} />
-        {/* No label overlay and no atmosphere layer: labels are cells on the character grid, and
-            the design's ground is a FLAT --graph-bg field — no glow lobes, no vignette.
-            GraphAtmosphere.tsx stays in the tree, just out of the render path. */}
+        {/* No label overlay and no atmosphere layer for the shipped ASCII renderer: labels are
+            cells on the character grid, and the design's ground is a FLAT --graph-bg field — no
+            glow lobes, no vignette. TESTING ONLY: R1/R3 (CanvasGraphRenderer) re-mount the
+            atmosphere (see glowRendererProxy above) to match the pre-ASCII look. */}
+        <Show when={isCanvasKind(rendererKind())}>
+          <GraphAtmosphere renderer={glowRendererProxy} mode={props.mode} />
+        </Show>
+        {/* TESTING ONLY: the client-side organic-layout settle (see organicLayout.ts) blocks
+            interaction with the stale render underneath while it computes — ~5-10s on 2k nodes,
+            instant on a cache hit (so this rarely shows at all once a graph shape's been seen). */}
+        <Show when={isCanvasKind(rendererKind()) && organicPending()}>
+          <div class="graph-organic-loading">
+            <Loading>Settling organic layout…</Loading>
+          </div>
+        </Show>
         {/* Agents mode: the character field renders the nodes (2D pyramid / 3D molecule); this
             overlay adds the status card + organization picker on top. */}
         <Show when={props.mode === "agents"}>
