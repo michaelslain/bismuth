@@ -52,14 +52,36 @@ function sha256(content: string): string {
  * keep matching). The current content itself is never listed here — reconcileSeeds compares
  * against `seed.content` (the live DEFAULT_CRONS export) directly for the "already up to date"
  * case, so listing it here too would just be redundant, not wrong.
+ *
+ * EVERY version we ever shipped must appear here, not just the immediately-preceding one. Listing
+ * only the last version silently strands every vault that skipped a release: the file is pristine
+ * stock, but because its hash is unlisted reconcileSeeds classifies it as "user-customized" and
+ * never upgrades it again — for the rest of that vault's life. That is exactly what happened to
+ * the first real install: it sat on the 2026-06-28 `dream` (751039…) while only the 2026-07-06
+ * version was listed, so the incremental-scoping upgrade could never reach it.
+ * `daemon/test/defaultCrons.test.ts` now walks this file's git history and fails the build if any
+ * historical shipped body hashes to something that is neither the current content nor listed here,
+ * so the omission cannot recur — but only if you keep this list append-only.
  */
-const PRIOR_SEED_HASHES: Record<string, string[]> = {
-  // v1: pre-incremental. No `incremental: true` frontmatter, no `{{changedSinceLastRun}}`; the
-  // prompt itself ran `bismuth checkpoint diff/advance` as its first/last Bash step, which quietly
-  // degraded to a full re-survey every run whenever the bismuth CLI wasn't resolvable on PATH
-  // (Bug #105). v2 (the current DEFAULT_CRONS content) moved that scoping into the daemon itself.
-  dream: ["302a7a4eafa8a5ba956ebb278462d47adf57daa8ad12bb7c098a2b7587c2aa63"],
-  "vault-review": ["7cd2b6ddef11d432b17510271e952830ac58f9ca0c53f0c261d7494ca7e0c060"],
+export const PRIOR_SEED_HASHES: Record<string, string[]> = {
+  // Oldest → newest, one entry per DISTINCT shipped body (a release that didn't touch a given
+  // cron adds no entry for it). v1 = the original 2026-06-28 ship. v2 = still pre-incremental:
+  // no `incremental: true` frontmatter, no `{{changedSinceLastRun}}`; the prompt itself ran `bismuth
+  // checkpoint diff/advance` as its first/last Bash step, which quietly degraded to a full
+  // re-survey every run whenever the bismuth CLI wasn't resolvable on PATH (Bug #105). v3 moved
+  // that scoping into the daemon. v4 (the current DEFAULT_CRONS content) stopped dream writing a
+  // memory note about its own runs, fixed its bloat gate to measure notes instead of .git, and
+  // made both prompts forbid dated snapshot notes.
+  dream: [
+    "751039390e12c74e9bb98044b97eb7bf508e5ec2a73dc71a42942eb61121e870", // v1 — 2026-06-28
+    "302a7a4eafa8a5ba956ebb278462d47adf57daa8ad12bb7c098a2b7587c2aa63", // v2 — 2026-07-06
+    "d324876622fd7a3453217a90605521f13f17e538ac10da8cbf36464e7c559a1c", // v3 — 2026-07-27, incremental scoping
+  ],
+  "vault-review": [
+    "355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39", // v1 — 2026-06-28 (unchanged through f48076b)
+    "7cd2b6ddef11d432b17510271e952830ac58f9ca0c53f0c261d7494ca7e0c060", // v2 — 2026-07-06, vault-visibility note
+    "fade0b08ac5c1bc2dbf4b702e310b5348716dc3d5ad5f7c43db8d74459c1292d", // v3 — 2026-07-27, incremental scoping
+  ],
 }
 
 /** Everything the daemon seeds for one vault, resolved to absolute paths. The ONE place to add

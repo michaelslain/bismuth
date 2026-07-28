@@ -221,6 +221,29 @@ let triggerInterval: ReturnType<typeof setInterval> | null = null
 const runningJobs = new Set<string>()
 const jobAbortControllers = new Map<string, AbortController>()
 
+/**
+ * WHY a failed run needs a cause, not just a "it failed" bit: over 29 days of real logs the two
+ * seeded crons fired 1.7x and 3.0x their schedule, and 397 of those extra runs died on errors that
+ * had nothing to do with the job — 207x "Unable to connect to API (ConnectionRefused)", 113x
+ * "Connection closed mid-response", 65x FailedToOpenSocket, plus session-limit/529/ENOTFOUND. That
+ * is a laptop asleep or offline, or a temporary API outage. Retrying those on the same short
+ * cooldown as a job-level bug turns one outage into a retry storm, because every retry inside the
+ * outage also fails and immediately re-arms the next one.
+ *
+ *  - "environment" — the run never got to do work: network/API unreachable, connection dropped
+ *    mid-response, provider overloaded, usage/session limit, request timed out. Backs off hardest
+ *    (see ENVIRONMENT_BACKOFF_BIAS): nothing we do fixes an offline machine sooner.
+ *  - "timeout"     — WE killed a session that was running fine, on its own wall-clock deadline (or
+ *    via cron_stop). The user's invariant is "if a process was killed, that means it didn't run",
+ *    so this still earns a retry well before the next scheduled tick — just not a hot loop.
+ *  - "job"         — anything else: the job's own work errored. Treated like a timeout for backoff
+ *    purposes (it produced a real session), but the streak still grows so a permanently broken
+ *    cron stops burning a session every cooldown.
+ */
+export type FailureCause = "environment" | "timeout" | "job"
+
+const FAILURE_CAUSES = new Set<string>(["environment", "timeout", "job"] satisfies FailureCause[])
+
 export interface LastFiredEntry {
   timestamp: string
   /** "skipped" = an `incremental` cron's pre-fire checkpoint diff found nothing relevant changed
@@ -230,25 +253,188 @@ export interface LastFiredEntry {
    *  changes since 2026-07-20T10:00:00Z"), surfaced verbatim as the daemon graph's `lastResult`
    *  so a skip is visible in `bismuth daemon graph` / the sidebar, not silent. */
   detail?: string
+  /** Why the last run did not succeed. Present only on "failed"/"killed". ABSENT on every entry
+   *  written before this field existed — an old `.last-fired.json` therefore takes the un-biased
+   *  backoff path, which reproduces the pre-backoff cooldown exactly (see backoffCooldownMs). */
+  cause?: FailureCause
+  /** How many runs IN A ROW have now ended in "failed"/"killed"; drives the exponential backoff.
+   *  Reset (omitted) by any non-failure outcome. Absent on legacy entries → treated as 1, i.e. the
+   *  original single-cooldown behavior. */
+  consecutiveFailures?: number
+}
+
+/**
+ * What an uninterpretable on-disk value becomes: an entry with NO parseable timestamp, so `elapsed`
+ * computes to NaN and every comparison against it is false. The job is therefore neither overdue
+ * nor inside a backoff window — the schedule alone drives it. Fresh object per call; entries are
+ * mutated in place elsewhere.
+ */
+const INERT_ENTRY = (): LastFiredEntry => ({ timestamp: "", result: "unknown" })
+
+/**
+ * Pure half of `loadLastFired` — kept separate so the on-disk compatibility contract is directly
+ * testable without touching a filesystem.
+ *
+ * Real `.last-fired.json` files in the wild contain a mix of shapes: plain string timestamps from
+ * the very first format, `{timestamp, result}` objects with none of the fields added since, and
+ * entries for crons that were deleted long ago. All of them must keep loading and behaving exactly
+ * as before, so unknown keys are preserved verbatim and only the two NEW fields are validated —
+ * a garbage `cause`/`consecutiveFailures` is dropped rather than allowed to poison the backoff math.
+ *
+ * A value we cannot interpret AT ALL (a number, a boolean, `null`) is RETAINED as an INERT_ENTRY
+ * rather than skipped. Skipping it looks conservative and is the exact opposite: `shouldCatchUp`
+ * opens with `if (!last) return true` ("never fired ⇒ catch up"), so dropping the key promotes a
+ * garbage byte on disk from inert to catch-up-eligible — i.e. it makes garbage FIRE a session.
+ */
+export function normalizeLastFired(parsed: unknown): Record<string, LastFiredEntry> {
+  const out: Record<string, LastFiredEntry> = {}
+  if (!parsed || typeof parsed !== "object") return out
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    // Migrate the oldest format (plain string timestamps) to the entry shape.
+    if (typeof value === "string") {
+      out[key] = { timestamp: value, result: "success" }
+      continue
+    }
+    if (!value || typeof value !== "object") {
+      out[key] = INERT_ENTRY()
+      continue
+    }
+    const v = value as Record<string, unknown>
+    // Spread first: anything a NEWER daemon wrote survives a round-trip through an older one.
+    const entry = { ...v } as unknown as LastFiredEntry
+    // `timestamp` is the one field the spread cannot be trusted with. Everything downstream does
+    // `Date.now() - new Date(entry.timestamp).getTime()`, and a NUMBER survives that arithmetic
+    // instead of producing NaN: `{"timestamp": 5}` parses as 5ms after the epoch, so `elapsed`
+    // comes out at ~56 years and the job reads as catastrophically overdue — a garbage byte on
+    // disk fires a session. Only a string can be a timestamp; anything else degrades the whole
+    // entry to INERT_ENTRY, which is the shape whose NaN comparisons are false in both directions
+    // (neither overdue nor inside a backoff window), leaving the schedule alone to drive the job.
+    if (typeof v.timestamp !== "string") {
+      out[key] = INERT_ENTRY()
+      continue
+    }
+    if (typeof v.cause !== "string" || !FAILURE_CAUSES.has(v.cause)) delete entry.cause
+    const streak = typeof v.consecutiveFailures === "number" ? Math.floor(v.consecutiveFailures) : NaN
+    if (Number.isFinite(streak) && streak > 0) entry.consecutiveFailures = streak
+    else delete entry.consecutiveFailures
+    out[key] = entry
+  }
+  return out
 }
 
 export async function loadLastFired(ctx: VaultContext): Promise<Record<string, LastFiredEntry>> {
   try {
-    const raw = await readFile(ctx.lastFiredFile, "utf-8")
-    const parsed = JSON.parse(raw)
-    // Migrate old format (plain string timestamps) to new format
-    const result: Record<string, LastFiredEntry> = {}
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === "string") {
-        result[key] = { timestamp: value, result: "success" }
-      } else {
-        result[key] = value as LastFiredEntry
-      }
-    }
-    return result
+    return normalizeLastFired(JSON.parse(await readFile(ctx.lastFiredFile, "utf-8")))
   } catch {
     return {}
   }
+}
+
+/**
+ * The Agent SDK wraps essentially EVERY provider failure — a dead socket, a 400 with a malformed
+ * request, an expired key — into the same envelope:
+ *   `Claude Code returned an error result: API Error: <detail>`
+ * so the literal substring "API Error" carries ZERO classification signal. An earlier revision
+ * matched on it and therefore filed "400 invalid_request_error prompt too long" and
+ * "401 authentication_error invalid x-api-key" as "environment", handing permanent, job-shaped,
+ * entirely non-environmental errors the harshest ENVIRONMENT_BACKOFF_BIAS treatment and collapsing
+ * a three-way enum into a two-way one. Everything below therefore classifies the DETAIL that
+ * follows the prefix, never the prefix.
+ */
+const API_ERROR_PREFIX = /api error:\s*/i
+
+/** Detail patterns that mean "this request could never have succeeded, network or no network":
+ *  the Anthropic API's own permanent error `type` names. Checked BEFORE the environment patterns so
+ *  a 4xx whose message happens to contain an environment-ish word (a validation message quoting a
+ *  URL, say) can't be mistaken for an outage. */
+const PERMANENT_REQUEST_ERROR_TYPES = /\b(invalid_request_error|authentication_error|permission_error|not_found_error|request_too_large)\b/i
+
+/** 4xx codes that ARE transient despite being client-class — checked before the "any other 4xx is
+ *  permanent" rule below. 429 is the rate limit (the single most common one on this machine's
+ *  logs), 408/425 are timing, 409 is a retryable conflict. */
+const TRANSIENT_4XX = new Set([408, 409, 425, 429])
+
+/** Substrings/codes that mark a failure as environmental rather than the job's fault. Every entry
+ *  is drawn from an error string actually observed in the daemon's 29 days of logs (or is its
+ *  obvious sibling). Matched against the DETAIL (see API_ERROR_PREFIX), or against the whole string
+ *  when there is no SDK envelope (a bare "Request timed out", a session-limit notice, a raw errno). */
+const ENVIRONMENT_ERROR_PATTERNS: RegExp[] = [
+  /unable to connect/i,
+  /connection (refused|closed|reset|error)/i,
+  /socket hang up|failedtoopensocket|fetch failed|network (error|is unreachable)/i,
+  /\b(ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ENETDOWN|ENETUNREACH|EHOSTUNREACH|EPIPE)\b/i,
+  // `rate_limit_error` (underscored) is the API's own type name; "session limit" / "usage limit" are
+  // the plan-limit notices the CLI prints. All three are "come back later", i.e. environmental.
+  /(session|usage|rate)[ _-]?limit/i,
+  /\boverloaded\b|\bapi_error\b/i,
+  /request timed out/i,
+]
+
+/**
+ * Classify a thrown session error. PURE — string matching only, deliberately no probing/DNS/ping:
+ * an outage must cost us LESS I/O, not more, and any new network call here would itself hang on
+ * exactly the offline machine we're trying to detect.
+ *
+ * WHY a permanent 4xx is "job" and not "environment" — this is a deliberate choice, not a fallthrough:
+ *  - It is genuinely not the environment. A 400 "prompt is too long" or a 401 "invalid x-api-key"
+ *    says the machine reached the API perfectly well and the REQUEST was wrong. Filing it under
+ *    "environment" would be a lie in the on-disk record a post-mortem reads.
+ *  - It still earns a long backoff, but reached by the honest path: the streak. A permanently
+ *    broken cron fails every attempt, so `consecutiveFailures` climbs and backoffCooldownMs doubles
+ *    each time until it saturates at the job's interval — an hourly cron is down to "no extra
+ *    retries at all, just its schedule" after four failures. The cost of a permanently broken cron
+ *    is therefore a handful of sessions ONCE, then nothing.
+ *  - It deliberately does NOT get ENVIRONMENT_BACKOFF_BIAS's 4x head start, because these errors
+ *    are fixed by a HUMAN editing a key or a prompt — and when they do, we want the retry that
+ *    notices to land at the base cooldown (5 min for an hourly job) rather than 20 minutes later.
+ *    An offline laptop, by contrast, fixes itself on its own schedule and gains nothing from a
+ *    fast first retry.
+ *
+ * Errs toward "job" (the cheaper-to-retry class) when nothing matches, so an unrecognized error
+ * keeps the pre-existing cooldown rather than being silently starved.
+ */
+export function classifyFailure(err: unknown): Exclude<FailureCause, "timeout"> {
+  const text = err instanceof Error ? `${err.name}: ${err.message} ${String(err.cause ?? "")}` : String(err)
+  const envelope = API_ERROR_PREFIX.exec(text)
+  const detail = envelope ? text.slice(envelope.index + envelope[0].length) : text
+
+  if (PERMANENT_REQUEST_ERROR_TYPES.test(detail)) return "job"
+
+  // The SDK's detail almost always leads with the HTTP status ("400 {…}", "529 Overloaded…").
+  // Anchored so a three-digit number elsewhere in a message can't be misread as a status.
+  const status = /^\s*([45]\d\d)\b/.exec(detail)
+  if (status) {
+    const code = Number(status[1])
+    if (code >= 500 || TRANSIENT_4XX.has(code)) return "environment" // server-side / come-back-later
+    return "job" // every other 4xx: we asked for something the API will keep refusing
+  }
+
+  return ENVIRONMENT_ERROR_PATTERNS.some((re) => re.test(detail)) ? "environment" : "job"
+}
+
+/**
+ * Build the entry to record for a finished run, carrying the consecutive-failure streak forward.
+ * PURE (the clock is injectable) so the streak arithmetic is testable without a session.
+ *
+ * Any non-failure outcome breaks the streak — a success/unknown means a session actually ran to
+ * completion, and a "skipped" means the incremental gate did its bookkeeping fine; in neither case
+ * is the environment still broken. A legacy failed entry with no counter counts as a streak of 1.
+ */
+export function nextLastFired(
+  prev: LastFiredEntry | undefined,
+  outcome: { result: LastFiredEntry["result"]; cause?: FailureCause; detail?: string },
+  now: Date = new Date(),
+): LastFiredEntry {
+  const entry: LastFiredEntry = { timestamp: now.toISOString(), result: outcome.result }
+  if (outcome.detail !== undefined) entry.detail = outcome.detail
+  if (outcome.result !== "failed" && outcome.result !== "killed") return entry
+
+  if (outcome.cause) entry.cause = outcome.cause
+  const prevStreak = prev && (prev.result === "failed" || prev.result === "killed")
+    ? Math.max(1, Math.floor(prev.consecutiveFailures ?? 1) || 1)
+    : 0
+  entry.consecutiveFailures = prevStreak + 1
+  return entry
 }
 
 // Per-file serial write queue. Without this, two concurrent saves race on the
@@ -279,12 +465,23 @@ async function atomicWriteJson(file: string, data: unknown): Promise<void> {
 /**
  * Read-modify-write a vault's last-fired file under that file's serial queue.
  * Always uses fresh on-disk state so concurrent updates merge instead of clobbering.
+ *
+ * Takes a BUILDER rather than a finished entry because the consecutive-failure streak has to be
+ * derived from the freshest on-disk predecessor: a cron session can run for half an hour, by which
+ * time the in-memory `lastFired` snapshot the tick loaded is long stale, and computing the streak
+ * from that snapshot would silently reset the backoff on every long-running job.
  */
-async function updateLastFired(ctx: VaultContext, name: string, entry: LastFiredEntry): Promise<void> {
-  await enqueueWrite(ctx.lastFiredFile, async () => {
+async function updateLastFired(
+  ctx: VaultContext,
+  name: string,
+  build: (prev: LastFiredEntry | undefined) => LastFiredEntry,
+): Promise<LastFiredEntry> {
+  return enqueueWrite(ctx.lastFiredFile, async () => {
     const data = await loadLastFired(ctx)
+    const entry = build(data[name])
     data[name] = entry
     await atomicWriteJson(ctx.lastFiredFile, data)
+    return entry
   })
 }
 
@@ -321,7 +518,7 @@ async function markDone(ctx: VaultContext, name: string): Promise<void> {
   })
 }
 
-function getIntervalMs(cron: CronExpression): number {
+export function getIntervalMs(cron: CronExpression): number {
   // Estimate the interval from the cron expression for catch-up decisions
   if (cron.minute.startsWith("*/")) return parseInt(cron.minute.slice(2), 10) * 60_000
   if (cron.hour.startsWith("*/")) return parseInt(cron.hour.slice(2), 10) * 3600_000
@@ -343,16 +540,115 @@ function getIntervalMs(cron: CronExpression): number {
 }
 
 /**
- * Catchup cooldown for non-success results (killed/failed). A killed run
- * means the work didn't complete, so we want to retry — but with a floor
- * to avoid hot-loops on persistently-broken crons. Scales with interval:
+ * BASE catchup cooldown for non-success results (killed/failed) — the cooldown after the FIRST
+ * failure in a streak. A killed run means the work didn't complete, so we want to retry — but with
+ * a floor to avoid hot-loops on persistently-broken crons. Scales with interval:
  * daily → 2h, hourly → 5min, weekly → 14h.
  */
-function retryCooldownMs(intervalMs: number): number {
+export function retryCooldownMs(intervalMs: number): number {
   return Math.max(5 * 60_000, Math.floor(intervalMs / 12))
 }
 
-export function shouldCatchUp(job: CronJob, lastFired: Record<string, LastFiredEntry>): boolean {
+/** Ceiling on the doublings, so an ancient streak can't overflow into an absurd exponent. The
+ *  interval clamp below almost always binds first; this only guards the arithmetic. */
+const BACKOFF_MAX_DOUBLINGS = 6
+
+/**
+ * An "environment" failure starts the backoff two doublings in instead of at the base cooldown.
+ *
+ * WHY not start at 1x like every other failure: an unreachable API means the machine is asleep,
+ * offline, or the provider is down — states that are measured in tens of minutes, never in the
+ * 5 minutes an hourly job's base cooldown gives you. Starting at 1x is precisely what produced the
+ * observed storm (dream at 1.7x its schedule, vault-review at 3.0x): the retry lands while the
+ * machine is still offline, fails, and re-arms. Starting at 4x means an 8-hour offline window costs
+ * an hourly cron 10 attempts (its 9 scheduled ticks plus ONE catch-up retry) instead of the 81 the
+ * old flat 5-minute cooldown burned — while a genuine one-off blip still gets retried 20 minutes
+ * later, well inside the hour, rather than waiting for the next tick.
+ */
+const ENVIRONMENT_BACKOFF_BIAS = 2
+
+/**
+ * Exponential backoff on CONSECUTIVE failures. PURE.
+ *
+ * SCOPE — read this before changing anything: this value gates ONLY the catch-up retries a failing
+ * job layers ON TOP of its schedule (see shouldCatchUp). It is NOT, and must never become, a gate
+ * on the scheduled tick itself; see shouldFireOnTick for why that distinction is load-bearing.
+ *
+ * The clamps, stated exactly (the previous wording claimed the ceiling was always the interval,
+ * which is false for sub-5-minute schedules and is what let a regression through):
+ *  - Ceiling = `max(intervalMs, base)`. For every job whose interval is at least the 5-minute base
+ *    — every-5-minutes and slower, i.e. all the real ones (hourly, 4-hourly, daily, weekly) — that
+ *    IS the interval: a persistent failure settles at "at most one catch-up per schedule cycle",
+ *    never slower than the schedule.
+ *  - For a SUB-5-minute job (every-minute, every-2-minutes) the interval is SHORTER than the base,
+ *    so the ceiling is the base (5 min) and the returned cooldown can exceed the job's own interval
+ *    by up to 5x. Clamping down to the interval instead would reintroduce the hot retry loop the
+ *    5-minute floor exists to prevent. This costs such a job nothing, because its catch-up is the
+ *    only thing suppressed — its schedule still fires it every single minute.
+ *  - Growth stops at BACKOFF_MAX_DOUBLINGS or the ceiling, whichever binds first (the ceiling
+ *    almost always does).
+ *
+ * A legacy entry (no `cause`, no `consecutiveFailures`) resolves to bias 0 / streak 1 / exponent 0
+ * — i.e. the base cooldown, byte-for-byte the pre-backoff behavior.
+ */
+export function backoffCooldownMs(
+  intervalMs: number,
+  cause: FailureCause | undefined,
+  consecutiveFailures: number | undefined,
+): number {
+  const base = retryCooldownMs(intervalMs)
+  const streak = Math.max(1, Math.floor(consecutiveFailures ?? 1) || 1)
+  const bias = cause === "environment" ? ENVIRONMENT_BACKOFF_BIAS : 0
+  const doublings = Math.min(streak - 1 + bias, BACKOFF_MAX_DOUBLINGS)
+  return Math.min(Math.max(intervalMs, base), base * 2 ** doublings)
+}
+
+/** The backoff window a schedule cron is currently serving, or null when its last run didn't fail
+ *  (or it has never run / isn't schedule-based). */
+function backoffWindow(
+  job: CronJob,
+  lastFired: Record<string, LastFiredEntry>,
+  now: number,
+): { elapsed: number; cooldown: number } | null {
+  if (job.on !== "schedule") return null
+  const last = lastFired[job.name]
+  if (!last) return null
+  if (last.result !== "killed" && last.result !== "failed") return null
+  return {
+    elapsed: now - new Date(last.timestamp).getTime(),
+    cooldown: backoffCooldownMs(getIntervalMs(job.cron), last.cause, last.consecutiveFailures),
+  }
+}
+
+/** The single definition of "inside the window". A NaN elapsed (unparseable timestamp — see
+ *  INERT_ENTRY) compares false, matching the pre-backoff behavior of letting the schedule drive
+ *  such an entry. */
+const inBackoffWindow = (w: { elapsed: number; cooldown: number }): boolean => w.elapsed <= w.cooldown
+
+/**
+ * True while a schedule cron is still serving the backoff window from its last FAILED run —
+ * i.e. while its EXTRA catch-up retry is suppressed.
+ *
+ * This is the catch-up gate and nothing more. Stated exactly, because "who calls this" is the whole
+ * safety argument: it has NO production caller at all. `shouldCatchUp` does not delegate to it — it
+ * applies the same `inBackoffWindow` predicate to the same `backoffWindow` inline — so this function
+ * exists to give that predicate a name the tests and any future reader can assert against. Nothing
+ * on the scheduled-fire path consults it, and `shouldFireOnTick` must never start.
+ *
+ * An earlier revision DID gate the scheduled tick on it, reasoning that "an offline machine's hourly
+ * tick is just as pointless as an offline machine's retry"; that reasoning is wrong twice over — the
+ * cooldown can exceed the interval for sub-5-minute jobs, and a `catchup: false` job has no catch-up
+ * path to recover a suppressed tick — and it measurably starved crons below their own schedules.
+ * See shouldFireOnTick.
+ */
+export function isBackingOff(job: CronJob, lastFired: Record<string, LastFiredEntry>, now: number = Date.now()): boolean {
+  const w = backoffWindow(job, lastFired, now)
+  return w !== null && inBackoffWindow(w)
+}
+
+/** `now` is injectable (epoch ms) purely so the decision stays testable against a virtual clock;
+ *  every production caller uses the default. */
+export function shouldCatchUp(job: CronJob, lastFired: Record<string, LastFiredEntry>, now: number = Date.now()): boolean {
   // File-change crons have no time-based schedule to be "overdue" against — they only fire
   // when their watched path actually changes. A change missed while the daemon was down is
   // simply not retroactively fired (unlike a missed schedule tick).
@@ -360,20 +656,62 @@ export function shouldCatchUp(job: CronJob, lastFired: Record<string, LastFiredE
   if (!job.catchup) return false
   const last = lastFired[job.name]
   if (!last) return true // never fired — catch up
-  const elapsed = Date.now() - new Date(last.timestamp).getTime()
+  const elapsed = now - new Date(last.timestamp).getTime()
   const interval = getIntervalMs(job.cron)
 
   // Killed/failed = the run didn't complete. The user's invariant:
   // "if a process was killed, that means it didn't run" — so retry sooner
-  // than the next scheduled tick, but with a cooldown to prevent hot loops.
-  if (last.result === "killed" || last.result === "failed") {
-    return elapsed > retryCooldownMs(interval)
-  }
+  // than the next scheduled tick, but on a cooldown that GROWS with the
+  // consecutive-failure streak, so a persistent outage backs off toward the
+  // job's own interval instead of hot-looping at the base cooldown.
+  // This is the ONLY place the backoff suppresses anything: what it holds back is this EXTRA
+  // retry, never the scheduled fire (see shouldFireOnTick).
+  const w = backoffWindow(job, lastFired, now)
+  if (w) return !inBackoffWindow(w)
 
   // Successful (or unknown) runs: missed if more than 1.01x the interval
   // has passed. Tight multiplier because this runs on a laptop that sleeps —
   // a daily cron at midnight needs to fire on wake, not wait hours.
   return elapsed > interval * 1.01
+}
+
+/**
+ * THE per-job decision the scheduler tick makes, extracted so the invariant below is provable
+ * against a virtual clock instead of only being asserted in a comment (it was, and it was false).
+ *
+ * THE INVARIANT: backoff may only ever SUPPRESS EXTRA RETRIES. It must never make a cron fire fewer
+ * times than its own cron expression would have fired it. A scheduled tick is the FLOOR; catch-up
+ * is the throttled layer on top. That is why `shouldFire` is short-circuited FIRST here and no
+ * backoff gate precedes it — the property holds structurally, not by arithmetic that happens to
+ * work out.
+ *
+ * WHY it is spelled out this loudly: a previous revision added `if (isBackingOff(job, lastFired))
+ * continue` ahead of this decision in the tick, to stop a persistent outage burning one session per
+ * interval on top of its retries. Replaying the real decision path minute by minute under a
+ * persistent failure measured what that actually cost:
+ * (Counts below are what THIS repo's replay measures — cron.test.ts's `replayFailing`, which ticks
+ * both endpoints of the window inclusively, so a 4h window is 241 ticks, not 240. They are the
+ * numbers the tests next to it assert; re-run that replay before editing any of them.)
+ *   - every-minute over 4h: 241 scheduled fires collapsed to 41 — the backoff window's 5-minute
+ *     floor is LONGER than the interval, so the gate ate 5 ticks out of every 6.
+ *   - every-2-minutes over 4h: 121 → 41. Every-5-minutes: 49 → 41.
+ *   - hourly + `catchup: false` over 24h: 14 fires vs 25 scheduled; a daily 3am cron with
+ *     `catchup: false` over 14 days: 8 vs 14. With catch-up disabled (real, user-settable
+ *     frontmatter) there is no path that recovers a suppressed tick at all — the fire is lost.
+ * Over-firing became under-firing. The correct target for the extra sessions is the catch-up path,
+ * which is where the backoff now lives exclusively — `shouldCatchUp` applies `inBackoffWindow` to
+ * `backoffWindow` inline (`isBackingOff` is that same predicate under a name, for tests to assert
+ * against; it has no production caller).
+ */
+export function shouldFireOnTick(job: CronJob, lastFired: Record<string, LastFiredEntry>, now: Date): boolean {
+  // file-change crons never fire off the tick — fileWatch.ts's per-vault watcher fires them
+  // directly (via fireFileChangeCron) when their watched path actually changes.
+  if (job.on === "file-change") return false
+  // The schedule floor. Ungated, unconditionally.
+  if (shouldFire(job.cron, now)) return true
+  // ...and the throttled extra: without this, a missed/failed/killed run would wait until the next
+  // daemon restart to be retried.
+  return shouldCatchUp(job, lastFired, now.getTime())
 }
 
 const CRON_RESULT_INSTRUCTION = `\n\nIMPORTANT: When you are done, print exactly [CRON_RESULT:SUCCESS] if the task completed successfully, or [CRON_RESULT:FAILURE] if it failed. This must be the last thing you print.`
@@ -492,9 +830,8 @@ async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string
   if (job.incremental) {
     const plan = await resolveIncrementalRun(ctx, job)
     if (plan.skip) {
-      const entry: LastFiredEntry = { timestamp: new Date().toISOString(), result: "skipped", detail: plan.note }
-      lastFired[job.name] = entry
-      await updateLastFired(ctx, job.name, entry)
+      lastFired[job.name] = await updateLastFired(ctx, job.name, (prev) =>
+        nextLastFired(prev, { result: "skipped", detail: plan.note }))
       console.log(`[cron] "${job.name}": ${plan.note}`)
       return
     }
@@ -538,9 +875,7 @@ async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string
       }
 
       const result = parseCronResult(response.result)
-      const entry: LastFiredEntry = { timestamp: new Date().toISOString(), result }
-      lastFired[job.name] = entry
-      await updateLastFired(ctx, job.name, entry)
+      lastFired[job.name] = await updateLastFired(ctx, job.name, (prev) => nextLastFired(prev, { result }))
       // Advance the checkpoint ONLY on a reported success — not "unknown" (the model may not have
       // actually finished reviewing) and not failed/killed (see the catch branch below). A missed
       // advance just means the next run re-diffs from the same base: over-inclusive, never lossy.
@@ -558,15 +893,16 @@ async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string
         // previous result was also "killed". Without this, consecutive kills
         // leave lastFired stuck at the first kill's timestamp, which breaks
         // catchup (elapsed computed from a stale timestamp).
-        const entry: LastFiredEntry = { timestamp: new Date().toISOString(), result: "killed" }
-        lastFired[job.name] = entry
-        await updateLastFired(ctx, job.name, entry)
+        lastFired[job.name] = await updateLastFired(ctx, job.name, (prev) =>
+          nextLastFired(prev, { result: "killed", cause: "timeout" }))
         return
       }
-      console.error(`[cron] Failed to fire job "${job.name}":`, err)
-      const entry: LastFiredEntry = { timestamp: new Date().toISOString(), result: "failed" }
-      lastFired[job.name] = entry
-      await updateLastFired(ctx, job.name, entry)
+      // The cause is logged, not just stored: the on-disk entry only keeps the LATEST outcome, so
+      // the log is the only place a post-mortem can see which class of failure drove a backoff.
+      const cause = classifyFailure(err)
+      console.error(`[cron] Failed to fire job "${job.name}" (${cause}):`, err)
+      lastFired[job.name] = await updateLastFired(ctx, job.name, (prev) =>
+        nextLastFired(prev, { result: "failed", cause }))
       if (job.notify) {
         notify(`${ctx.name}: ${job.name}`, `Failed: ${err}`)
       }
@@ -686,13 +1022,10 @@ export function startCronScheduler(): void {
       const [jobs, lastFired] = await Promise.all([loadCronJobs(ctx), loadLastFired(ctx)])
       for (const job of jobs) {
         if (!job.enabled || runningJobs.has(jobKey(ctx, job.name))) continue
-        // file-change crons never fire off the tick — fileWatch.ts's per-vault watcher fires
-        // them directly (via fireFileChangeCron) when their watched path actually changes.
-        if (job.on === "file-change") continue
-        // Fire on schedule OR when overdue (catchup). Without the catchup
-        // check here, a missed/failed/killed run waits until the next daemon
-        // restart to be retried.
-        if (shouldFire(job.cron, now) || shouldCatchUp(job, lastFired)) {
+        // Fire on schedule OR when overdue (catchup). The whole decision — including where the
+        // backoff is and, crucially, is NOT applied — lives in shouldFireOnTick, which the replay
+        // tests drive directly; do not re-add gates here.
+        if (shouldFireOnTick(job, lastFired, now)) {
           fireJob(ctx, job, lastFired)
         }
       }
@@ -838,8 +1171,10 @@ export async function stopCronJob(name: string, ctx: VaultContext): Promise<{ ok
 
   ac.abort()
 
-  // Record as killed
-  await updateLastFired(ctx, name, { timestamp: new Date().toISOString(), result: "killed" })
+  // Record as killed. Same cause as a wall-clock kill: from the entry's point of view a session we
+  // aborted is a session that started fine and didn't get to finish, so it earns the un-biased
+  // (fast) retry rather than the environment backoff.
+  await updateLastFired(ctx, name, (prev) => nextLastFired(prev, { result: "killed", cause: "timeout" }))
 
   // Clean up running state (fireJob's finally block will also run, but we do it eagerly)
   await markDone(ctx, name)
