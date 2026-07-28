@@ -160,7 +160,10 @@ The production app ships an icon **registry** (`app/src/icons/registry.ts` +
   one glyph per surface, used in both the tab rail and the vault tree:
   `⁘` graph · `✎` note · `▤` base · `▦` calendar · `◈` agent · `✳` daemon · `▸` folder.
 - **Keyboard caps** use `⌘ ⌥ ↵ ↑ ↓ esc` in a `.asc-kbd`.
-- **No icon font, no sprite, no SVG set ships in this system.** Nothing is hand-drawn.
+- **No icon font and no sprite ships in this system.** Beyond the surface glyphs above, icons
+  are inlined 24px-grid pixel art (HackerNoon Pixel Icon Library, CC BY 4.0 — see
+  `THIRD-PARTY-NOTICES.md`), rendered with `shape-rendering: crispEdges` so the bitmap grid
+  stays as hard as the character grid. Nothing is hand-drawn.
 - **No emoji**, ever, in chrome.
 - **No brand mark.** The app selects one of 14 runtime marks and none of them are committed.
   The one SVG in the repo — `app/src/assets/logo.svg` — is the **SolidJS framework logo** left

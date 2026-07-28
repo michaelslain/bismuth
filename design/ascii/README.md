@@ -182,11 +182,25 @@ hover wash, active row accent), `AsciiMeter` (`[####......]`, filled accent / em
 junctions, cleared under every edge and label), `TabRail` (vertical right-hand strip, glyphs
 collapsed, names expanded).
 
-**Iconography** — no icon font, no sprite, no SVG set, no emoji. Window controls are `[-] [+]
-[x]`; collapse handles `<<` / `>>`; close is `x`; buttons are bracketed lowercase
-`[ accept ]`. One small Unicode glyph carries each surface's identity in both the tab rail and
-the vault tree: `⁘` graph · `✎` note · `▤` base · `▦` calendar · `◈` agent · `✳` daemon ·
-`▸` folder. Keyboard caps use `⌘ ⌥ ↵ ↑ ↓ esc`.
+**Iconography** — two registers, and which one a name lands in is a deliberate call
+(`app/src/icons/registry.ts`).
+
+*Typed characters* carry **surface identity and chrome**. One small Unicode glyph names each
+surface in both the tab rail and the vault tree: `⁘` graph · `✎` note · `▤` base · `▦` calendar
+· `◈` agent · `✳` daemon · `▸` folder. Window controls are `[-] [+] [x]`; collapse handles
+`<<` / `>>`; close is `x`; buttons are bracketed lowercase `[ accept ]`; keyboard caps use
+`⌘ ⌥ ↵ ↑ ↓ esc`. A few semantic names keep their ASCII form too, because the literal syntax IS
+the better drawing: `[ ]` / `[x]` task checkboxes, `.*` regex, `Aa` case-sensitive, `S` sigma.
+No emoji, ever.
+
+*Pixel art* carries **everything else** — toolbar, command catalog, palettes, pickers, view
+toolbars. 112 icons from HackerNoon's Pixel Icon Library (CC BY 4.0, see
+`THIRD-PARTY-NOTICES.md`), drawn on a 24px grid, flattened to single paths and inlined by
+`app/scripts/build-pixel-icons.ts` — no icon font, no sprite, no runtime dependency. They fill
+with `currentColor` and render with `shape-rendering: crispEdges`, which is what keeps the
+pixels hard at the 12–18px boxes the app actually asks for; it is safe only because every path
+in the set is axis-aligned. The bitmap grid is the same discipline as the character grid, which
+is why this reads as one system rather than as icons bolted onto a text UI.
 
 ---
 
@@ -245,8 +259,9 @@ position, inbox section collapse). The one genuinely new piece of persisted stat
   `tokens/fonts.css` (`design-system/monaspace-family.css` carries the `@font-face` set). Lora
   is referenced only as a legacy stack. **A local-first desktop build should bundle these
   locally** and swap the `@font-face` rules.
-- **Icons / images**: none. No icon font, no sprite, no SVG set, no photography, no
-  illustration. Everything is typed.
+- **Icons / images**: no icon font, no sprite, no photography, no illustration. Surface
+  identity and chrome are typed characters; every other icon is inlined pixel art on a 24px
+  grid (CC BY 4.0, `THIRD-PARTY-NOTICES.md`) — see **Iconography** above.
 - **Brand mark**: none exists in the repo. `app/src/assets/logo.svg` is the **SolidJS starter
   logo** left over from Vite, not a Bismuth mark — do not treat it as branding. The wordmark
   is rendered in type.
