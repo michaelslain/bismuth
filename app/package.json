@@ -13,6 +13,7 @@
     "build:core-sidecar": "bun run scripts/build-core-sidecar.ts",
     "build:bismuth-tools": "bun run scripts/build-bismuth-tools.ts",
     "build:daemon-sidecar": "bun run scripts/build-daemon-sidecar.ts",
+    "icons:build": "bun run scripts/build-pixel-icons.ts",
     "installer": "bun run tauri build && bun run scripts/open-installer.ts",
     "tauri": "bun run scripts/tauri.ts",
     "storybook": "storybook dev -p 6006",
@@ -89,6 +90,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@hackernoon/pixel-icon-library": "^1.1.0",
     "@resvg/resvg-js": "^2.6.2",
     "@tauri-apps/cli": "^2",
     "@types/bun": "latest",
