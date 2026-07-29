@@ -19,7 +19,7 @@
 // that has never run yet, or a partially-written file, degrades to empty/null).
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync, renameSync, appendFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync, statSync, renameSync, appendFileSync } from "node:fs";
 import { parse } from "yaml";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { isDaemonAlive, readFrontmatter } from "./daemonState";
@@ -302,6 +302,97 @@ function ageSince(iso: string | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+// ── Two cheap, certain rules IN FRONT OF the 30-day TTL ────────────────────────────────────────
+//
+// The TTL is a heuristic about DISUSE, so it is deliberately slow and deliberately timid. But two
+// kinds of junk entry are not ambiguous at all, and making them wait a month is pure cost: the
+// daemon iterates every registered root on every cron tick, and a human reading vaults.json has to
+// work out which of these paths are even real.
+//
+//   1. A root that has been DELETED — the daemon's pointer is dangling; there is no brain there to
+//      serve, this month or next.
+//   2. A root that was never a user's vault to begin with — an agent's scratch tree or a test
+//      sandbox that some short-lived core booted against once. (The real case that motivated this:
+//      `~/.claude/jobs/<id>/tmp/verify-vault` pinned into a user's machine registry by a test run.)
+//
+// Neither rule REPLACES the TTL. They run ahead of it and only ever fire on a certainty; everything
+// they cannot decide falls through to the TTL logic unchanged.
+
+/** Consecutive path-segment PAIRS that mark a tooling-owned scratch tree rather than a place a
+ *  human keeps a vault. `.claude/jobs/<id>/…` is a Claude Code agent job's working dir — everything
+ *  under it is deleted when the job ends, so a vault there is scaffolding by construction.
+ *
+ *  A PAIR, not a single segment, on purpose: `.claude` alone also covers `.claude/worktrees/…`,
+ *  which is a real checkout a user may legitimately open, and this very repo lives under one. */
+const EPHEMERAL_SEGMENT_PAIRS: ReadonlyArray<readonly [string, string]> = [[".claude", "jobs"]];
+
+/**
+ * Is this vault root throwaway scaffolding that must never reach the PERSISTENT machine registry?
+ * PURE and total (string in, boolean out) — no IO, no clock — so the rule set is directly testable
+ * and extending it is a one-line change rather than a new branch in registerVaultRoot.
+ *
+ * Two sources of scaffolding today: the OS temp dir (mkdtemp sandboxes, a dev server pointed at
+ * /tmp) via the shared {@link isTempPath} guard — reused rather than re-derived so the run registry
+ * and this registry cannot grow drifting copies of the same rule — and agent scratch trees (see
+ * {@link EPHEMERAL_SEGMENT_PAIRS}).
+ *
+ * Used in BOTH directions by {@link registerVaultRoot}: it declines to add such a root, AND prunes
+ * any that an earlier build (or an earlier version of this guard) already persisted.
+ */
+export function isEphemeralVaultRoot(root: string): boolean {
+  if (isTempPath(root)) return true;
+  const segments = root.split(/[/\\]+/);
+  return EPHEMERAL_SEGMENT_PAIRS.some(([first, second]) =>
+    segments.some((seg, i) => seg === first && segments[i + 1] === second),
+  );
+}
+
+/** Mount roots beneath which "nothing is at this path" is at least as likely to mean "the volume is
+ *  not attached right now" as "the user deleted it": macOS `/Volumes`, the usual Linux automount
+ *  points, and NFS `/net`. A vault on an external drive is a completely ordinary setup. */
+const REMOVABLE_MOUNT_ROOTS = ["/Volumes", "/mnt", "/media", "/net", "/run/media"];
+
+/** Does this path live on something that might simply be unplugged? Pure string test — deliberately
+ *  NOT a check that the mount point exists, because the answer we want is "could this reasonably
+ *  come back?", and the safe answer for anything under a mount root is yes. */
+function isRemovableMountPath(root: string): boolean {
+  return REMOVABLE_MOUNT_ROOTS.some((r) => root === r || root.startsWith(r + "/"));
+}
+
+/** What {@link vaultRootPresence} could establish about a registered root. `unknown` is a first-class
+ *  answer, not a failure: it is what stops a stat we could not perform from reading as a deletion. */
+export type VaultRootPresence = "present" | "missing" | "unknown";
+
+/**
+ * Three-valued existence check for a registered vault root — the input to the "the directory is
+ * gone" prune, and the reason that prune is safe.
+ *
+ * `existsSync` cannot back this decision: it collapses EVERY stat failure into `false`, so a vault
+ * behind a locked parent dir (EACCES), on a wedged network mount (EIO/ETIMEDOUT), or reached
+ * through a symlink cycle (ELOOP) reads exactly like a deleted one. Pruning on that is a silent,
+ * unrecoverable kill: the registry is the daemon's ONLY pointer at a vault, so a mis-prune stops
+ * every one of that vault's crons forever, with the user's data sitting untouched on disk.
+ *
+ * So only a clean "nothing is at this path" answers `missing`; every other errno answers `unknown`,
+ * which keeps the entry and leaves it to the TTL. Never throws.
+ */
+export function vaultRootPresence(root: string): VaultRootPresence {
+  try {
+    statSync(root);
+    return "present";
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    // ENOENT = nothing there. ENOTDIR = a component of the path is a FILE, so nothing can be there
+    // either. Everything else is a read we FAILED to perform, which says nothing about the vault.
+    if (code !== "ENOENT" && code !== "ENOTDIR") return "unknown";
+    // A clean ENOENT under a removable mount is the ambiguous case that actually matters: an
+    // unplugged external drive and a deleted vault are byte-for-byte identical from here. Plugging
+    // the drive back in has to find the crons still registered, so we decline to judge and let the
+    // TTL (which the daemon's own refreshVaultsSeen keeps honest) be the only thing that retires it.
+    return isRemovableMountPath(root) ? "unknown" : "missing";
+  }
+}
+
 /**
  * Register this vault's absolute root in the machine-level `vaults.json` registry — the
  * list the daemon's `loadEnabledVaults()` (daemon/src/lib/registry.ts) iterates every cron
@@ -323,11 +414,12 @@ function ageSince(iso: string | undefined): number | null {
 export function registerVaultRoot(vault: string, home: string = daemonMachineDir()): void {
   const root = resolve(vault);
   // Guard a PERSISTENT machine registry against throwaway vaults: every `bun test core` boot
-  // (and any dev server pointed at a temp dir) used to append its ephemeral mkdtemp vault
-  // here, bloating vaults.json into hundreds of dead entries the daemon skipped every tick.
-  // A temp-dir HOME is itself throwaway (a test sandbox), so it keeps full mechanics.
+  // (and any dev server pointed at a temp dir, or a vault inside an agent job's scratch tree)
+  // used to append its ephemeral vault here, bloating vaults.json with dead entries the daemon
+  // walks every tick. A temp-dir HOME is itself throwaway (a test sandbox), so it keeps full
+  // mechanics.
   const realHome = !isTempPath(resolve(home));
-  if (realHome && isTempPath(root)) return;
+  if (realHome && isEphemeralVaultRoot(root)) return;
   const file = join(home, "vaults.json");
   try {
     let onDisk: unknown[] = [];
@@ -371,14 +463,18 @@ export function registerVaultRoot(vault: string, home: string = daemonMachineDir
         if (seen[e.path]) nextSeen[e.path] = seen[e.path];
         continue;
       }
-      // Self-healing (real home only): drop temp-dir strays from before this guard, vanished
+      // Self-healing (real home only): drop scratch strays from before the guard above, vanished
       // vaults, and vaults not seen in VAULT_REGISTRY_TTL_MS — the registry stays a small list of
       // real, ACTIVE brains. Retirement is a DELETION of the daemon's only pointer at a vault, and
       // getting it wrong stops that vault's crons forever, so it is biased hard toward keeping:
+      // only a CERTAINTY fires the two fast rules (see isEphemeralVaultRoot + vaultRootPresence),
       // an opt-in (or an unreadable `.settings`) outranks the clock, and every retirement is
       // logged where the user can find it (see logVaultRegistryChange).
-      if (isTempPath(e.path)) continue; // throwaway stray from before the temp guard
-      if (!existsSync(e.path)) {
+      if (isEphemeralVaultRoot(e.path)) {
+        logVaultRegistryChange(home, `dropping throwaway (temp/agent-scratch) vault: ${e.path}`);
+        continue;
+      }
+      if (vaultRootPresence(e.path) === "missing") {
         logVaultRegistryChange(home, `dropping vault whose directory no longer exists: ${e.path}`);
         continue;
       }
