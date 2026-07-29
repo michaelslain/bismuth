@@ -66,6 +66,32 @@ A backend does not need all six. Each is judged independently: a CLI with no mac
 can still be a perfectly good terminal integration, and a CLI that is a poor chat backend can still
 be worth registering MCP with.
 
+### What each backend supports today
+
+Run **`bismuth backends`** for the live version of this table, including which binaries are actually
+installed on your machine and their versions. The catalog is a claim about each CLI; that command
+tells you what is true here.
+
+| Backend | Chat | Terminal | Agents graph | Daemon | MCP | Memory |
+| --- | --- | --- | --- | --- | --- | --- |
+| `claude` | ✓ delta | ✓ | hooks (+ subagents) | ✓ | `mcp add` | hooks |
+| `opencode` | ✓ delta | ✓ | — | — | config merge | per-turn system prompt |
+| `cline` | ✓ ACP | ✓ | — | — | `mcp add` | MCP tools |
+| `gemini` | ✓ ACP | ✓ | — | — | `mcp add` | MCP tools |
+| `goose` | ✓ ACP | ✓ | — | — | config merge | MCP tools |
+| `openclaw` | ✓ ACP | ✓ | — | — | `mcp set` | MCP tools |
+| `claude-code-acp` | ✓ ACP | — | — | — | per-session | MCP tools |
+| `codex-acp` | ✓ ACP | — | — | — | per-session | MCP tools |
+
+Claude Code is the only backend that supports all six, and the only one that can enforce the vault
+visibility gate — see the daemon section below for why that is a constraint rather than a gap.
+
+Beyond the chat backends above, Bismuth can register its MCP server with **ten** CLIs, including ones
+it never drives as a chat backend: Codex, Cline, OpenClaw, Gemini, Qwen, Copilot, Amp, Droid, Crush
+and Goose. OpenClaw is the clearest example of why that is worth doing on its own — a weak chat
+backend (no per-call cwd or system prompt, and its session/subagent hook events are documented as
+not yet implemented) whose MCP story is excellent.
+
 ### Two industry standards do most of the work
 
 Rather than N bespoke integrations, two cross-agent standards carry most of the load:
@@ -163,3 +189,27 @@ reason rather than throwing, because the daemon is always-on and its crons must 
 
 A missing binary must produce the setup screen, never a crash and never a silent fallback to a
 different backend: a user who picked Codex and silently got Claude has been lied to about what ran.
+
+## Verifying a backend, and the failure mode to watch for
+
+Most of these drivers were written on a machine where their CLI was not installed, so
+**`bismuth backends`** exists to close the gap between "the catalog claims this works" and "this
+answered here". It is deliberately inert — it resolves binaries and reads version strings, never runs
+a turn, authenticates, spends money, starts a daemon, or writes config.
+
+The recurring failure mode across this whole feature has been **a signal claiming more than it
+knows**, and it has shown up four times:
+
+1. A single `permissionModes` flag covering both approval prompts and the mode picker, so an ACP
+   backend rendered a picker whose selections went nowhere. Fixed by splitting the flag.
+2. The relay heartbeat omitting `backend`, which would have silently relabelled a Codex tab as
+   Claude mid-session. Fixed by preserving the existing value, as the registry already did for `cwd`.
+3. `bismuth backends` reporting npm's own version (`11.11.0`) for the npx-invoked ACP adapters,
+   behind a confident ✓, because their `binary` is the package runner. Fixed by naming the package
+   instead and never claiming a version for an adapter fetched on demand.
+4. `@opencode-ai/sdk`'s generated types disagreeing with the running server about both the delta
+   event and the permission event. Fixed by reading those events as untyped JSON.
+
+The lesson generalises: when a flag, a payload field, or a generated type asserts a capability,
+prefer the version of the code that can be wrong *loudly*. A missing control is a small annoyance; a
+control that looks present and does nothing costs someone an afternoon.
