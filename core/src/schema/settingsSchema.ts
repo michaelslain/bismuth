@@ -8,6 +8,7 @@ import type { Schema, SchemaEntry, PropertyType } from "./types";
 import { COMMAND_IDS } from "../commands";
 import { KEYBINDING_CATALOG } from "../keybindings";
 import { THEME_NAMES as THEME_NAME_TUPLE } from "../theme/tokens";
+import { BACKEND_IDS, BACKEND_LIST, DEFAULT_BACKEND } from "../agentBackends/catalog";
 
 // Kept in lockstep with app/src/settings.ts EDITOR_FONTS.
 const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
@@ -23,6 +24,14 @@ const ICON_NAMES = [
 // CALENDAR_VIEWS must stay in sync with `ViewType` in app/src/calendar/types.ts
 // (currently 'month' | 'week' | '3day' | 'day'). If ViewType changes, update here.
 const CALENDAR_VIEWS = ["month", "week", "3day", "day"];
+// The chat-provider enum is sourced from the agent-backend catalog
+// (core/src/agentBackends/catalog.ts) — the same source the router, the frontend picker and the
+// capability gating read, so adding a backend never needs a schema edit. catalog.ts is import-free
+// by design, so pulling it in here keeps this module bundle-safe for the app.
+const CHAT_PROVIDER_IDS = [...BACKEND_IDS];
+const CHAT_PROVIDER_DOC =
+  `Default chat provider for NEW chat tabs: ${BACKEND_LIST.map((b) => `"${b.id}" runs ${b.label}`).join(", ")}. ` +
+  "Each chat can still pick its own provider in the header.";
 
 const enumType = (values: string[]): PropertyType => ({ kind: "enum", values });
 const object = (fields: Schema): SchemaEntry => ({ type: { kind: "object", fields } });
@@ -201,8 +210,8 @@ export const SETTINGS_SCHEMA: Schema = {
   }),
   chat: object({
     computerUse: { type: "boolean", default: false, doc: "Enable Claude's browser/computer-use capability (--chrome) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave). Claude Code provider only." },
-    // Coupled to ChatProviderId in core/src/chatProviders/index.ts.
-    provider: { type: enumType(["claude", "opencode"]), default: "claude", doc: "Default chat provider for NEW chat tabs: \"claude\" runs Claude Code, \"opencode\" runs the opencode CLI. Each chat can still pick its own provider in the header." },
+    // Derived from the agent-backend catalog — no hand-maintained copy to drift from BACKEND_IDS.
+    provider: { type: enumType(CHAT_PROVIDER_IDS), default: DEFAULT_BACKEND, doc: CHAT_PROVIDER_DOC },
   }),
   srs: object({
     baseEase: { type: "number", default: 250, min: 130, max: 400, doc: "Starting ease factor for a new flashcard (SM-2; higher = longer intervals)." },

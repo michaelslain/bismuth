@@ -5,8 +5,10 @@ import {
   modelStorageKeys,
   opencodeAuthSummary,
   OPENCODE_LOGIN_COMMAND,
+  providerCan,
+  providerInstallHint,
+  providerLabel,
   providerStorageKey,
-  providerSupportsClaudeControls,
   sanitizeChatProvider,
 } from "./chatProvider";
 
@@ -39,12 +41,38 @@ describe("model persistence keys", () => {
 });
 
 describe("header gating + options", () => {
-  test("Claude-specific controls render only for claude", () => {
-    expect(providerSupportsClaudeControls("claude")).toBe(true);
-    expect(providerSupportsClaudeControls("opencode")).toBe(false);
+  // Each header control asks for the capability it actually needs, so the degradation profile is
+  // per-capability data (core/src/agentBackends/catalog.ts) rather than a `provider === "claude"`
+  // check that would give every future backend Claude's exact profile whether or not it applied.
+  test("Claude declares the interactive capabilities its header controls need", () => {
+    expect(providerCan("claude", "permissionModes")).toBe(true);
+    expect(providerCan("claude", "computerUse")).toBe(true);
+    expect(providerCan("claude", "sessionPicker")).toBe(true);
+    expect(providerCan("claude", "effort")).toBe(true);
   });
-  test("both providers are offered, claude first (the default)", () => {
+  test("opencode hides exactly the controls `opencode run` cannot drive", () => {
+    expect(providerCan("opencode", "permissionModes")).toBe(false);
+    expect(providerCan("opencode", "computerUse")).toBe(false);
+    expect(providerCan("opencode", "sessionPicker")).toBe(false);
+    expect(providerCan("opencode", "effort")).toBe(false);
+    expect(providerCan("opencode", "images")).toBe(false);
+  });
+  test("resume and sessionPicker are distinct: opencode resumes per tab with no cross-session list", () => {
+    expect(providerCan("opencode", "resume")).toBe(true);
+    expect(providerCan("opencode", "historyReplay")).toBe(true);
+    expect(providerCan("opencode", "sessionPicker")).toBe(false);
+  });
+  test("an unknown backend id degrades to the default's capabilities instead of throwing", () => {
+    expect(providerCan("gpt-cli" as never, "permissionModes")).toBe(true);
+  });
+  test("every known backend is offered, claude first (the default)", () => {
     expect(CHAT_PROVIDER_OPTIONS.map((o) => o.value)).toEqual(["claude", "opencode"]);
+    expect(CHAT_PROVIDER_OPTIONS[0]?.label).toBe("Claude Code");
+  });
+  test("labels + install hints come from the catalog", () => {
+    expect(providerLabel("opencode")).toBe("opencode");
+    expect(providerInstallHint("opencode")).toContain("opencode.ai");
+    expect(providerInstallHint("claude")).toContain("claude");
   });
   test("provider key is per-tab", () => {
     expect(providerStorageKey("a")).not.toBe(providerStorageKey("b"));
