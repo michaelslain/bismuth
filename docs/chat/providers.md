@@ -1,6 +1,16 @@
 # Chat providers (Claude Code / opencode)
 
-Each chat tab runs on a **provider** — the CLI that actually drives the conversation. Two are supported:
+> **Scope.** This page is the deep reference for the two **natively driven** providers below. The
+> backend model that governs all of them — the catalog, the capability flags that decide which header
+> controls render, the other five integration surfaces, and the shared ACP driver that covers
+> additional CLIs — is in [backends.md](backends.md). Read that first if you are adding a backend.
+>
+> Where this page says a control is hidden "for opencode", the mechanism is now a capability flag on
+> the backend descriptor, not a provider comparison: `providerCan(provider, "permissionModes")` and
+> friends. The *behaviour* described here is unchanged; only what decides it moved.
+
+Each chat tab runs on a **provider** — the CLI that actually drives the conversation. Two are driven
+by a bespoke native driver:
 
 | Provider | Binary | Driver | Session model |
 | --- | --- | --- | --- |
