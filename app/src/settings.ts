@@ -118,6 +118,7 @@ export interface Settings {
     enabled: boolean;    // master switch: per-vault daemon (background runtime + memory injection + 3rd-brain)
     // the daemon's NAME lives in .daemon/identity.md frontmatter, not in settings
     inboxRetentionDays: number; // days a resolved daemon-inbox page stays listed before GC
+    backend: string; // which agent CLI runs this vault's brain: "claude" (default) | "codex" — a REQUEST; resolveDaemonBackend gates it on the vault's visibility settings
   };
   update: {
     autoUpdate: boolean; // auto-apply Bismuth app updates on launch (auto-relaunch when ready)
@@ -132,6 +133,20 @@ export interface Settings {
   chat: {
     computerUse: boolean; // --chrome capability for visual chat sessions (Claude provider only)
     provider: string;     // default provider for NEW chats: "claude" | "opencode"
+  };
+  mcp: {
+    // Additional agent CLIs (besides Claude Code, which always auto-registers) to also register
+    // Bismuth's MCP server with, e.g. ["codex", "gemini"] — see core/src/agentBackends/mcpRegistrars.ts.
+    // Empty by default; trigger registration via `bismuth install --mcp <cli>` (or `--mcp all`).
+    registerWith: string[];
+  };
+  codex: {
+    // Opt-in: let Bismuth write/refresh a managed block in this vault's AGENTS.md with a persona/
+    // memory note for the Codex CLI (no system-prompt flag exists; AGENTS.md is its own channel).
+    writeAgentsMd: boolean;
+    // Opt-in: let Bismuth write a project-scoped .codex/hooks.json (+ script) so Codex sessions
+    // report into the in-app agents graph, mirroring Claude Code's relay plugin.
+    installRelayHooks: boolean;
   };
   srs: {
     baseEase: number;

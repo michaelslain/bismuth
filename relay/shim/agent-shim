@@ -1,0 +1,49 @@
+#!/bin/bash
+# Generic PTY PATH shim for non-zsh shells and any agent-CLI backend beyond `claude` (which keeps
+# its own dedicated shim/claude file, unchanged — see below). A MULTI-CALL script: one symlink per
+# resolvable "wrapper"-mode backend is created at runtime by core/src/terminal.ts
+# (buildWrapperShimDir), each named after that backend's binary and pointing HERE. The script reads
+# its own invoked name ($0's basename) to decide which backend it's standing in for, then looks
+# that name up in BISMUTH_SHIM_SPECS — the SAME delimited spec relay/shim/zdotdir/.zshrc parses for
+# the zsh-function path (see core/src/terminal.ts SHIM_FIELD_SEP/SHIM_RECORD_SEP for the delimiter
+# choice) — to find its real binary path + mode ("hooks" or "wrapper").
+#
+# `claude` is never resolved through here: it is "hooks" mode and gets its own file
+# (relay/shim/claude) fed by BISMUTH_REAL_CLAUDE/BISMUTH_RELAY_PLUGIN directly, so there is no
+# symlink named "claude" pointing at this script. If a future "hooks"-mode entry other than claude
+# ever needed the non-zsh path, this script already knows how to serve it (branch below) — it's
+# simply never wired up today.
+#
+# No jq/python dependency: parsed with plain shell word-splitting via IFS, same as any other POSIX
+# shim in this dir.
+name="${0##*/}"
+
+if [ -z "$BISMUTH_SHIM_SPECS" ]; then
+  echo "bismuth agent-shim: no BISMUTH_SHIM_SPECS; cannot resolve '$name'" >&2
+  exit 127
+fi
+
+real_path=""
+mode=""
+resolved_id=""
+IFS=$'\x1e'
+for rec in $BISMUTH_SHIM_SPECS; do
+  IFS=$'\x1f' read -r rec_id rec_bin rec_path rec_mode <<<"$rec"
+  if [ "$rec_bin" = "$name" ]; then
+    real_path="$rec_path"
+    mode="$rec_mode"
+    resolved_id="$rec_id"
+    break
+  fi
+done
+
+if [ -z "$real_path" ]; then
+  echo "bismuth agent-shim: no resolved path for '$name'" >&2
+  exit 127
+fi
+
+if [ "$mode" = "wrapper" ]; then
+  exec bun run "$BISMUTH_RELAY_PLUGIN/bin/wrap.ts" "$resolved_id" "$real_path" "$@"
+else
+  exec "$real_path" --plugin-dir "$BISMUTH_RELAY_PLUGIN" "$@"
+fi

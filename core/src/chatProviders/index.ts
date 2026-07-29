@@ -1,20 +1,28 @@
 // core/src/chatProviders/index.ts
-// The chat PROVIDER router: one seam that lets each chat session run on Claude Code
-// (core/src/chat.ts — the Agent-SDK driver) OR opencode (./opencode.ts — the per-turn
-// `opencode run --format json` driver), both speaking the same ChatFrame wire protocol.
+// The chat PROVIDER router: one seam that lets each chat session run on any backend in the
+// registry (./backends.ts) — Claude Code (core/src/chat.ts, the Agent-SDK driver), opencode
+// (./opencode.ts, the per-turn `opencode run --format json` driver), and whatever is added next —
+// all speaking the same ChatFrame wire protocol so ChatView renders any of them unchanged.
 //
 // Routing rule: a chatId that already has a live session anywhere routes to THAT backend
 // (conversation continuity beats a stale provider field); otherwise the creation verbs
-// (open/send/resume) honor the requested provider. Claude-only verbs (permissions, questions,
-// permission mode, effort) go straight to chat.ts — they no-op for a chatId it doesn't own,
-// which is exactly the graceful degradation an opencode session needs.
-import * as claude from "../chat";
-import * as opencode from "./opencode";
+// (open/send/resume) honor the requested provider.
+//
+// Interactive verbs (permissions, questions, permission mode, effort) dispatch to the owning
+// backend and are simply DROPPED when that backend doesn't implement them — the graceful
+// degradation a non-interactive CLI needs, now declared as data (`capabilities.permissionModes` /
+// `.effort` in agentBackends/catalog.ts) instead of implied by a `provider === "claude"` check.
+//
+// Public signatures are unchanged from the two-backend era, so core/src/server.ts needs no edits.
 import type { ChatFrame, ChatImage, ChatSink } from "../chat";
+import { CHAT_BACKENDS, CHAT_BACKEND_LIST, type ChatBackend } from "./backends";
+import { BACKEND_IDS, DEFAULT_BACKEND, resolveBackendId, type BackendId } from "../agentBackends/catalog";
 
-export type ChatProviderId = "claude" | "opencode";
-export const CHAT_PROVIDERS: readonly ChatProviderId[] = ["claude", "opencode"] as const;
-export const DEFAULT_CHAT_PROVIDER: ChatProviderId = "claude";
+/** Kept as an alias so existing imports (server.ts, tests, docs) keep working — the ids now come
+ *  from the backend catalog, which is also what the `chat.provider` settings enum derives from. */
+export type ChatProviderId = BackendId;
+export const CHAT_PROVIDERS: readonly ChatProviderId[] = BACKEND_IDS;
+export const DEFAULT_CHAT_PROVIDER: ChatProviderId = DEFAULT_BACKEND;
 
 /**
  * Pure: resolve which provider a chat should run on. `requested` is what the client sent on the
@@ -22,17 +30,30 @@ export const DEFAULT_CHAT_PROVIDER: ChatProviderId = "claude";
  * unrecognized (absent, a typo, a future provider this build doesn't know) degrades to the next
  * tier, bottoming out at Claude — never throws, never spawns the wrong binary on garbage input.
  */
-export function resolveChatProvider(requested: unknown, fallback?: unknown): ChatProviderId {
-  if (requested === "claude" || requested === "opencode") return requested;
-  if (fallback === "claude" || fallback === "opencode") return fallback;
-  return DEFAULT_CHAT_PROVIDER;
+export const resolveChatProvider = resolveBackendId;
+
+/** The backend holding a live session for this chat id, or null. Iterates CHAT_BACKEND_LIST, whose
+ *  order preserves the original opencode-then-claude ownership resolution. */
+function owningBackend(chatId: string): ChatBackend | null {
+  for (const b of CHAT_BACKEND_LIST) if (b.hasSession(chatId)) return b;
+  return null;
 }
 
 /** Which backend currently owns this chatId, if any. */
 function owner(chatId: string): ChatProviderId | null {
-  if (opencode.hasSession(chatId)) return "opencode";
-  if (claude.hasSession(chatId)) return "claude";
-  return null;
+  return owningBackend(chatId)?.id ?? null;
+}
+
+/** The backend a chat should run on: whoever already owns a live session for it, else the
+ *  requested/default one. One lookup, replacing the per-verb if/else chain. */
+function target(chatId: string, provider: ChatProviderId): ChatBackend {
+  return owningBackend(chatId) ?? CHAT_BACKENDS[resolveChatProvider(provider)];
+}
+
+/** The backend for a chatId with no live session — where an unowned verb lands. Matches the old
+ *  behaviour, where an unowned id fell through to Claude's own no-op-on-unknown-id handling. */
+function fallbackBackend(chatId: string): ChatBackend {
+  return owningBackend(chatId) ?? CHAT_BACKENDS[DEFAULT_CHAT_PROVIDER];
 }
 
 export function openSession(
@@ -43,9 +64,7 @@ export function openSession(
   computerUse: boolean,
   provider: ChatProviderId,
 ): void {
-  const target = owner(chatId) ?? provider;
-  if (target === "opencode") opencode.openSession(chatId, cwd, sink);
-  else void claude.openSession(chatId, cwd, sink, memoryDir, computerUse);
+  target(chatId, provider).openSession({ chatId, cwd, sink, memoryDir, computerUse });
 }
 
 export function sendMessage(
@@ -58,9 +77,7 @@ export function sendMessage(
   computerUse: boolean,
   provider: ChatProviderId,
 ): void {
-  const target = owner(chatId) ?? provider;
-  if (target === "opencode") opencode.sendMessage(chatId, text, cwd, sink, images);
-  else void claude.sendMessage(chatId, text, cwd, sink, images, memoryDir, computerUse);
+  target(chatId, provider).sendMessage({ chatId, text, cwd, sink, images, memoryDir, computerUse });
 }
 
 export function resumeSession(
@@ -73,59 +90,71 @@ export function resumeSession(
   provider: ChatProviderId,
 ): void {
   // A resume is a deliberate re-bind — the REQUESTED provider wins (the session id belongs to that
-  // provider's store); each backend tears down any existing session for the chatId itself.
-  if (provider === "opencode") {
-    if (claude.hasSession(chatId)) claude.closeChat(chatId);
-    opencode.resumeSession(chatId, sessionId, cwd, sink);
-  } else {
-    if (opencode.hasSession(chatId)) opencode.closeChat(chatId);
-    void claude.resumeSession(chatId, sessionId, cwd, sink, memoryDir, computerUse);
-  }
+  // provider's store). Tear down any OTHER backend's session for this chat id first; the chosen
+  // backend tears down its own (each driver's resumeSession is idempotent).
+  const chosen = CHAT_BACKENDS[resolveChatProvider(provider)];
+  for (const b of CHAT_BACKEND_LIST) if (b !== chosen && b.hasSession(chatId)) b.closeChat(chatId);
+  chosen.resumeSession({ chatId, sessionId, cwd, sink, memoryDir, computerUse });
 }
 
-/** Replay a past session as ChatFrames — dispatched by the id's PROVIDER (the two stores are
- *  disjoint; an opencode id is `ses_…` but the caller tells us explicitly). */
-export async function sessionHistoryFrames(sessionId: string, cwd: string, provider: ChatProviderId): Promise<ChatFrame[]> {
-  return provider === "opencode"
-    ? opencode.sessionHistoryFrames(sessionId, cwd)
-    : claude.sessionHistoryFrames(sessionId, cwd);
+/** Replay a past session as ChatFrames — dispatched by the id's PROVIDER (each backend's store is
+ *  its own id namespace, and the caller tells us explicitly which one this id came from). */
+export async function sessionHistoryFrames(
+  sessionId: string,
+  cwd: string,
+  provider: ChatProviderId,
+): Promise<ChatFrame[]> {
+  return CHAT_BACKENDS[resolveChatProvider(provider)].sessionHistoryFrames(sessionId, cwd);
 }
 
 export function abortTurn(chatId: string): void {
-  if (owner(chatId) === "opencode") opencode.abortTurn(chatId);
-  else claude.abortTurn(chatId);
+  fallbackBackend(chatId).abortTurn(chatId);
 }
 
 export function setModel(chatId: string, model: string): void {
-  if (owner(chatId) === "opencode") opencode.setModel(chatId, model);
-  else claude.setModel(chatId, model);
+  fallbackBackend(chatId).setModel(chatId, model);
 }
 
-// Claude-only verbs: chat.ts no-ops on a chatId it doesn't own, so routing straight through is
-// already the graceful degradation for opencode sessions (which never raise these frames).
-export const respondPermission = claude.respondPermission;
-export const respondQuestion = claude.respondQuestion;
-export const setPermissionMode = claude.setPermissionMode;
-export const setEffort = claude.setEffort;
+// Interactive verbs: routed to the OWNING backend, dropped when it doesn't implement them. A
+// non-interactive backend never raises the frames these answer, so there is nothing to answer.
+export function respondPermission(
+  chatId: string,
+  id: string,
+  behavior: "allow" | "deny",
+  always?: boolean,
+): void {
+  fallbackBackend(chatId).respondPermission?.(chatId, id, behavior, always);
+}
+
+export function respondQuestion(chatId: string, id: string, answers: Record<string, string> | null): void {
+  fallbackBackend(chatId).respondQuestion?.(chatId, id, answers);
+}
+
+export function setPermissionMode(chatId: string, mode: string): void {
+  fallbackBackend(chatId).setPermissionMode?.(chatId, mode);
+}
+
+export function setEffort(chatId: string, effort: string): void {
+  fallbackBackend(chatId).setEffort?.(chatId, effort);
+}
 
 export function closeChat(chatId: string): void {
-  if (opencode.hasSession(chatId)) opencode.closeChat(chatId);
-  if (claude.hasSession(chatId)) claude.closeChat(chatId);
+  // Every backend that holds this id, not just the first owner: a resume can leave a torn-down
+  // session behind, and closing twice is a no-op per driver.
+  for (const b of CHAT_BACKEND_LIST) if (b.hasSession(chatId)) b.closeChat(chatId);
 }
 
 export function scheduleClose(chatId: string, ms: number): void {
-  if (opencode.hasSession(chatId)) opencode.scheduleClose(chatId, ms);
-  else claude.scheduleClose(chatId, ms);
+  fallbackBackend(chatId).scheduleClose(chatId, ms);
 }
 
 export function rebindSink(chatId: string, sink: ChatSink): boolean {
-  if (opencode.hasSession(chatId)) return opencode.rebindSink(chatId, sink);
-  return claude.rebindSink(chatId, sink);
+  return fallbackBackend(chatId).rebindSink(chatId, sink);
 }
 
 export function detachSink(chatId: string): void {
-  if (opencode.hasSession(chatId)) opencode.detachSink(chatId);
-  else claude.detachSink(chatId);
+  fallbackBackend(chatId).detachSink(chatId);
 }
 
+export { owner };
 export { newChatId } from "../chat";

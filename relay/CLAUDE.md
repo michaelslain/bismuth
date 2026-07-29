@@ -8,11 +8,19 @@ removed when it merged into Bismuth). The relay registry now lives **in core**
 
 ## How it works
 
-1. `core/src/terminal.ts` spawns each terminal tab's pty with a PATH shim
-   (`shim/claude`) that makes a bare `claude` run `claude --plugin-dir <this dir>`, plus
-   env: `CLAUDE_TERMINAL_ID` (the tab's pty id) and `CLAUDE_RELAY_URL` (this app's core
-   server). So the plugin loads **per-session, only inside Bismuth terminals** — nothing
-   is installed in `~/.claude`.
+1. `core/src/terminal.ts` spawns each terminal tab's pty with per-backend shims (one shell
+   function per entry defined by `relay/shim/zdotdir/.zshrc`, generated from
+   `BISMUTH_SHIM_SPECS`; `shim/claude` as the non-zsh fallback for `claude` specifically,
+   `shim/agent-shim` as its generic multi-call equivalent for other backends) — a bare
+   `claude` runs `claude --plugin-dir <this dir>`, plus env: `CLAUDE_TERMINAL_ID` (the tab's
+   pty id) and `CLAUDE_RELAY_URL` (this app's core server). So the plugin loads
+   **per-session, only inside Bismuth terminals** — nothing is installed in `~/.claude`.
+   Other agent-CLI backends (`core/src/agentBackends/catalog.ts`) whose `agentsGraph`
+   capability is `"wrapper"` — no hook system of their own — are, when enabled
+   (`WRAPPER_REPORTING_ENABLED` in `core/src/terminal.ts`, default OFF), routed through
+   `bin/wrap.ts` instead: it runs the real binary with inherited stdio, forwards
+   `SIGINT`/`SIGTERM`, and reports session start/end itself. Claude is never wrapped this
+   way — it has real hooks (below) and needs none of it.
 2. The hooks (`hooks/hooks.json`) fire and POST to core's `/relay/*` routes:
    - `SessionStart` → `bin/session-start-hook.ts` → `POST /relay/session` (register this
      terminal-tab session as a root node).
@@ -39,9 +47,12 @@ relay/
   .claude-plugin/plugin.json   # plugin manifest (no `commands` — there are no slash commands)
   .mcp.json                    # declares the bismuth MCP server (dev repo); loaded per-session with the plugin (see docs/mcp/overview.md)
   hooks/hooks.json             # SessionStart / UserPromptSubmit / SubagentStart / SubagentStop / SessionEnd
-  bin/                         # the 5 hook scripts (the only live code)
-  lib/report.ts                # readHookInput + postRelay (best-effort) + runHook + gating
-  shim/claude                  # PATH shim: exec real claude --plugin-dir <relay>
+  bin/                         # the 5 hook scripts + wrap.ts (the generic wrapper-mode session reporter)
+  lib/report.ts                # readHookInput + postRelay (best-effort) + runHook + gating — reused by wrap.ts too
+  shim/claude                  # PATH shim: exec real claude --plugin-dir <relay> (unchanged, claude-only)
+  shim/agent-shim               # generic multi-call PATH shim for other ("wrapper"-mode) backends
+  shim/zdotdir/.zshrc           # defines one shell function per BISMUTH_SHIM_SPECS entry (claude + wrapper backends)
+  test/wrap.test.ts             # exercises wrap.ts's signal-forwarding + exit-code fidelity + never-wrap-claude guard
   package.json tsconfig.json
 ```
 
