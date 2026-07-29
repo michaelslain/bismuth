@@ -60,7 +60,7 @@ import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarge
 import { UI_CONTROL_BLOCKLIST } from "./commands";
 import { writeRunRecord } from "./runRegistry";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, type AppConfig, SETTINGS_FILE, setFolderIcon, setFolderVisibility, readDailyNotes } from "./settings";
+import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, readMcpRegisterWith, type AppConfig, SETTINGS_FILE, setFolderIcon, setFolderVisibility, readDailyNotes } from "./settings";
 import { resolveVisibility, resolveFolderVisibility, type Visibility } from "./visibility";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
@@ -2082,7 +2082,12 @@ if (import.meta.main) {
   // staged tools resource (BISMUTH_INSTALL_SRC). Version-gated → no-op when unchanged.
   // Best-effort + non-blocking; never crashes the server.
   if (process.env.BISMUTH_INSTALL_SRC) {
-    ensureBismuthInstalled(process.env.BISMUTH_INSTALL_SRC)
+    // `mcp.registerWith` names the OTHER agent CLIs the user opted into (Claude always registers).
+    // Read here rather than inside the installer so bismuthInstall.ts stays settings-agnostic and
+    // unit-testable; an unreadable settings file yields [] and changes nothing.
+    readMcpRegisterWith(vault)
+      .catch(() => [] as string[])
+      .then((registerWith) => ensureBismuthInstalled(process.env.BISMUTH_INSTALL_SRC, undefined, { registerWith }))
       .then((r) => {
         console.log(`bismuth tools: ${r.action}`);
         for (const w of r.warnings) console.warn(`bismuth tools: ${w}`);

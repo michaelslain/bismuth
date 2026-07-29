@@ -62,9 +62,16 @@ export function claudeLookupPath(env: Record<string, string | undefined> = proce
     .join(":");
 }
 
+// Resolve any binary by name against the augmented PATH (see claudeLookupPath), or null when not
+// found. Shared by every agent-CLI detector (core/src/agentBackends/mcpRegistrars.ts) so they all
+// see the same nvm/homebrew/launchd-minimal-PATH augmentation `whichClaude` already needed.
+export function whichBinary(name: string): string | null {
+  return Bun.which(name, { PATH: claudeLookupPath() });
+}
+
 // Resolve the real `claude` binary against the augmented PATH, or null when not found.
 export function whichClaude(): string | null {
-  return Bun.which("claude", { PATH: claudeLookupPath() });
+  return whichBinary("claude");
 }
 
 // Real OS username, independent of $USER/$LOGNAME. node:os's `userInfo().username` looks robust

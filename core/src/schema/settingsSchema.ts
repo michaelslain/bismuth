@@ -213,6 +213,20 @@ export const SETTINGS_SCHEMA: Schema = {
     // Derived from the agent-backend catalog — no hand-maintained copy to drift from BACKEND_IDS.
     provider: { type: enumType(CHAT_PROVIDER_IDS), default: DEFAULT_BACKEND, doc: CHAT_PROVIDER_DOC },
   }),
+  // Multi-CLI MCP registration (core/src/agentBackends/mcpRegistrars.ts): which OTHER agent CLIs,
+  // besides Claude Code (which always auto-registers on boot via bismuthInstall.ts), also get
+  // Bismuth's stdio MCP server (docs + bismuth CLI + memory tools) written into their own global
+  // config. Deliberately opt-in and empty by default — writing into a user's Codex/Cline/OpenClaw/
+  // Gemini/Qwen/Copilot/Amp/Droid/Crush/Goose config uninvited is intrusive in a way `claude mcp
+  // add` isn't for a Claude-first app. Register via `bismuth install --mcp <cli>` (or `--mcp
+  // all`); this setting just records the user's chosen set for a future UI toggle to read/write.
+  mcp: object({
+    registerWith: {
+      type: { kind: "list", item: "string" },
+      default: [],
+      doc: 'Additional agent CLIs (besides Claude Code, which always auto-registers) to register Bismuth\'s MCP server with, e.g. ["codex", "gemini"] — so those CLIs get Bismuth\'s docs/CLI/memory tools. Registrar ids: codex, cline, openclaw, gemini, qwen, copilot, amp, droid, crush, goose. Listing a CLI here IS the opt-in: registration runs on the next app start (and on demand via `bismuth install --mcp <cli>` / `--mcp all`). Empty by default, so Bismuth never writes into another CLI\'s config uninvited. Registration is idempotent and never clobbers an entry it didn\'t write.',
+    },
+  }),
   srs: object({
     baseEase: { type: "number", default: 250, min: 130, max: 400, doc: "Starting ease factor for a new flashcard (SM-2; higher = longer intervals)." },
     easyBonus: { type: "number", default: 1.3, min: 1, max: 2, doc: "Extra interval multiplier when a card is rated 'easy'." },

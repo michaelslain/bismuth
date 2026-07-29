@@ -132,6 +132,27 @@ export function readDaemonEnabledSync(vault: string): boolean {
   return fallback;
 }
 
+/**
+ * The `mcp.registerWith` list: which OTHER agent CLIs the user opted into registering Bismuth's
+ * MCP server with (Claude Code always registers; see core/src/bismuthInstall.ts). Naming a CLI
+ * there is the consent, so boot acts on it — a setting that only recorded the choice would silently
+ * ignore a user who added one and restarted.
+ *
+ * Tolerant by design: a missing/corrupt file, a non-list value, or non-string entries all yield the
+ * safe empty list rather than throwing. Unknown ids are harmless — they simply match no registrar.
+ */
+export async function readMcpRegisterWith(vault: string): Promise<string[]> {
+  try {
+    const res = await readSettings(vault);
+    const mcp = res?.data?.mcp as { registerWith?: unknown } | undefined;
+    const list = mcp?.registerWith;
+    if (!Array.isArray(list)) return [];
+    return list.filter((v): v is string => typeof v === "string" && v.trim() !== "");
+  } catch {
+    return [];
+  }
+}
+
 /** Parse the `properties:` section of settings.yaml into a validation Schema,
  *  merged over the built-in properties (tags/aliases/cssclasses). */
 export async function getVaultSchema(vault: string): Promise<Schema> {

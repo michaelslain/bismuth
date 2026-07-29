@@ -133,6 +133,12 @@ export interface Settings {
     computerUse: boolean; // --chrome capability for visual chat sessions (Claude provider only)
     provider: string;     // default provider for NEW chats: "claude" | "opencode"
   };
+  mcp: {
+    // Additional agent CLIs (besides Claude Code, which always auto-registers) to also register
+    // Bismuth's MCP server with, e.g. ["codex", "gemini"] — see core/src/agentBackends/mcpRegistrars.ts.
+    // Empty by default; trigger registration via `bismuth install --mcp <cli>` (or `--mcp all`).
+    registerWith: string[];
+  };
   srs: {
     baseEase: number;
     easyBonus: number;
