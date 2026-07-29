@@ -1,14 +1,18 @@
 // core/src/chatProviders/codex/protocol.ts
 //
-// The PURE half of the Codex chat backend: translates `@openai/codex-sdk`'s ThreadEvent/ThreadItem
-// JSON union into Bismuth's ChatFrame union. No I/O, no process spawning — mirrors the split
-// chatProviders/acp/protocol.ts + driver.ts already use (and chatProviders/opencodeTranslate.ts +
-// opencode.ts before it). Unit-tested in core/test/chatProviders/codexProtocol.test.ts against
-// captured/hand-built event shapes — never against a real `codex` process (none is installed here).
+// The PURE half of the Codex chat backend: translates the `codex exec --json`/`--experimental-json`
+// ThreadEvent/ThreadItem JSON union (the CLI's own NDJSON wire event stream — see ./driver.ts, which
+// spawns `codex exec` directly rather than depending on `@openai/codex-sdk`) into Bismuth's
+// ChatFrame union. No I/O, no process spawning — mirrors the split chatProviders/acp/protocol.ts +
+// driver.ts already use (and chatProviders/opencodeTranslate.ts + opencode.ts before it).
+// Unit-tested in core/test/chatProviders/codexProtocol.test.ts against captured/hand-built event
+// shapes — never against a real `codex` process (none is installed here).
 //
-// Shape verified DIRECTLY from the shipped @openai/codex-sdk@0.146.0 `dist/index.d.ts` (read
-// verbatim, not from docs — see this task's research report). Two things that .d.ts does NOT say,
-// so this translator is defensive about both rather than assuming the friendlier case:
+// Shape verified DIRECTLY from `@openai/codex-sdk@0.146.0`'s shipped `dist/index.d.ts` (read
+// verbatim, not from docs — see this task's research report) — the same wire protocol `codex exec`
+// itself emits on stdout, which is what this translator actually consumes; the SDK was only the
+// evidence source for the shape, not a runtime dependency. Two things that .d.ts does NOT say, so
+// this translator is defensive about both rather than assuming the friendlier case:
 //
 //  1. Whether `item.updated` for an `agent_message`/`reasoning` item carries the FULL text seen so
 //     far, or just the newly-added chunk. The one real captured sample only shows

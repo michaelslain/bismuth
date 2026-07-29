@@ -15,8 +15,9 @@
 /** Every backend id this build knows. The source of truth for the `chat.provider` settings enum
  *  and for `BackendId`, so adding a backend is a one-line change here rather than a union edit in
  *  a dozen files. Order matters: it is the display order of the chat header's provider picker.
- *  "codex" drives OpenAI's CLI directly via the official `@openai/codex-sdk` (chatProviders/codex/)
- *  — distinct from "codex-acp" below, which bridges the SAME CLI through a third-party ACP adapter.
+ *  "codex" drives OpenAI's own `codex` binary directly (chatProviders/codex/, a Bun.spawn subprocess
+ *  driver, deliberately not the `@openai/codex-sdk` npm package — see that driver's header) —
+ *  distinct from "codex-acp" below, which bridges the SAME CLI through a third-party ACP adapter.
  *  The last six are ACP (Agent Client Protocol) agents — one hand-rolled JSON-RPC driver
  *  (chatProviders/acp/driver.ts) covers all of them; see chatProviders/acp/agents.ts for exactly
  *  what's verified vs guessed per CLI. */
@@ -246,33 +247,41 @@ const OPENCODE: BackendDescriptor = {
 };
 
 /**
- * OpenAI Codex — driven by core/src/chatProviders/codex/ over the official, version-locked
- * `@openai/codex-sdk` (Codex.startThread/resumeThread + Thread.runStreamed). Architecturally closer
- * to opencode than to Claude: `Thread.runStreamed` spawns a FRESH `codex exec` subprocess per turn
- * (verified by reading the shipped SDK's dist/index.js — there is no long-lived session process),
- * continued turn-to-turn via the SDK's own thread id, not a persistent connection.
+ * OpenAI Codex — driven by core/src/chatProviders/codex/, which spawns the user's OWN `codex`
+ * binary directly (`codex exec --json`/`--experimental-json` via Bun.spawn), NOT the
+ * `@openai/codex-sdk` npm package. That SDK was evaluated and dropped: reading its compiled source
+ * showed `Thread.runStreamed()` spawns a FRESH `codex exec` subprocess per turn anyway (no
+ * lifecycle win over driving the CLI ourselves), it has no per-session MCP field, and — the
+ * decisive issue — its own binary resolution has NO PATH lookup, instead resolving a BUNDLED
+ * platform binary (~310MB on disk) unless given an override. Every other backend here drives the
+ * user's own installed CLI through the same augmented-PATH `whichBinary()`; see
+ * chatProviders/codex/driver.ts's file header for the full writeup, including the resulting
+ * `--json`/`--experimental-json` flag-spelling fallback.
  *
- * Capability rationale (every flag below is either directly evidenced by the shipped
- * `@openai/codex-sdk@0.146.0` dist/index.d.ts, or explicitly a "no" because the research found
- * nothing to back a "yes" — see docs/chat/backends.md and this backend's own driver comments):
+ * Architecturally closer to opencode than to Claude either way: one subprocess per turn, continued
+ * turn-to-turn via `codex exec resume <threadId>` rather than a persistent connection.
+ *
+ * Capability rationale (every flag below is either directly evidenced by the CLI's own `--help`/
+ * documented JSONL event shapes (`codex exec --json`), or explicitly a "no" because the research
+ * found nothing to back a "yes" — see docs/chat/backends.md and this backend's own driver comments):
  *  - streaming: "part" — item.started/updated/completed carry whole (cumulative) text per item,
  *    not token-level deltas; the driver diffs cumulative text into a delta so the UI still streams,
  *    but the underlying granularity is item-sized, same tier as opencode.
- *  - effort: true — ThreadOptions.modelReasoningEffort is a real, stable 5-value enum in the
- *    shipped types (minimal/low/medium/high/xhigh) — unlike model ids, this doesn't churn.
+ *  - effort: true — `--config model_reasoning_effort=…` is a real, stable 5-value enum
+ *    (minimal/low/medium/high/xhigh) — unlike model ids, this doesn't churn.
  *  - models: FALSE — no `codex models`/model-list subcommand exists (confirmed: an open GitHub
- *    feature request, still unresolved at research time) and the SDK exposes no listing call
- *    either, so there is nothing honest to populate a picker from. Model ids are still settable as
- *    a free-form string via setModel (no UI surfaces it without the picker).
- *  - images: true — ThreadItem input accepts `{type:"local_image", path}`; the driver writes each
- *    attachment's base64 payload to a temp file (the SDK takes a path, not raw bytes) and cleans it
- *    up after the turn.
- *  - permissionPrompts/permissionModes: false — `codex exec` (what the SDK always drives) is
- *    fundamentally non-interactive; the ThreadEvent union has no approval-request event to park as
- *    a live permission frame, and the driver runs `approvalPolicy:"never"` explicitly.
- *  - auth/cost/contextUsage: false — no credential-list command evidenced; Usage carries token
- *    COUNTS but no dollar cost, and no per-model max-context figure is available to compute a
- *    percentage from without a guessed price/context table.
+ *    feature request, still unresolved at research time), so there is nothing honest to populate a
+ *    picker from. Model ids are still settable as a free-form string via setModel (no UI surfaces
+ *    it without the picker).
+ *  - images: true — `--image <path>` is a real CLI flag; the driver writes each attachment's
+ *    base64 payload to a temp file (the flag takes a path, not raw bytes) and cleans it up after
+ *    the turn.
+ *  - permissionPrompts/permissionModes: false — `codex exec` is fundamentally non-interactive; the
+ *    JSONL event union has no approval-request event to park as a live permission frame, and the
+ *    driver runs `--config approval_policy="never"` explicitly.
+ *  - auth/cost/contextUsage: false — no credential-list command evidenced; the turn-completion
+ *    event carries token COUNTS but no dollar cost, and no per-model max-context figure is
+ *    available to compute a percentage from without a guessed price/context table.
  *  - historyReplay/sessionPicker: false — no transcript-export or session-list command was
  *    confirmed (the `~/.codex/sessions` rollout JSONL could in principle be tailed, but its exact
  *    shape was only medium-confidence-verified — see chatProviders/codex/driver.ts — so this stays
@@ -281,16 +290,17 @@ const OPENCODE: BackendDescriptor = {
  *    isomorphic to Claude Code's, including SubagentStart/SubagentStop with real agent_id/agent_type
  *    — see agentBackends/codexHooks.ts's project-scoped `.codex/hooks.json` generator.
  *  - daemon: true, visibilityGate: FALSE — a Codex daemon backend exists
- *    (daemon/src/daemon/codexSession.ts), but it can only ever be SELECTED for a vault with zero
- *    hidden notes: resolveDaemonBackend (daemon/src/daemon/session.ts) is the one chokepoint that
- *    enforces this and refuses Codex (degrading to Claude) the moment any note is hidden, because
- *    Codex has no equivalent of Claude's managedSettings/sandbox/disallowedTools triple.
+ *    (daemon/src/daemon/codexSession.ts, also a direct subprocess driver — no SDK there either,
+ *    which matters even more for a workspace that compiles to a standalone binary), but it can
+ *    only ever be SELECTED for a vault with zero hidden notes: resolveDaemonBackend
+ *    (daemon/src/daemon/session.ts) is the one chokepoint that enforces this and refuses Codex
+ *    (degrading to Claude) the moment any note is hidden, because Codex has no equivalent of
+ *    Claude's managedSettings/sandbox/disallowedTools triple.
  *  - mcp: "cli" — `codex mcp add` already exists (agentBackends/mcpRegistrars.ts, pre-existing —
  *    not duplicated here).
- *  - memory: "agentsMd" — no system-prompt flag exists (confirmed absent from ThreadOptions); a
- *    managed block in the vault's AGENTS.md is Codex's designed channel for this
- *    (agentBackends/agentsMd.ts, shared with any future AGENTS.md-convention backend), opt-in via
- *    `settings.codex.writeAgentsMd`.
+ *  - memory: "agentsMd" — no system-prompt flag exists on `codex exec`; a managed block in the
+ *    vault's AGENTS.md is Codex's designed channel for this (agentBackends/agentsMd.ts, shared with
+ *    any future AGENTS.md-convention backend), opt-in via `settings.codex.writeAgentsMd`.
  */
 const CODEX: BackendDescriptor = {
   id: "codex",
