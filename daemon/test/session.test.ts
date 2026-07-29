@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { buildQueryOptions, DEFAULT_DAEMON_IDENTITY } from "../src/daemon/session.ts"
+import { buildQueryOptions, DEFAULT_DAEMON_IDENTITY, resolveDaemonBackend } from "../src/daemon/session.ts"
 import type { VaultContext } from "../src/lib/config.ts"
 
 const ctx = {
@@ -90,4 +90,37 @@ test("DEFAULT_DAEMON_IDENTITY does not present claude-bot / a built-in store as 
   if (lower.includes("claude-bot") || lower.includes("built-in memory")) {
     expect(disregardClause.test(DEFAULT_DAEMON_IDENTITY)).toBe(true)
   }
+})
+
+// --- the visibility-gate guardrail on backend choice ---------------------------------------------
+// The gate is enforced by three Claude-Code-specific mechanisms together (managedSettings deny,
+// sandbox denyRead, disallowedTools). No other CLI has them, so a vault with hidden notes may not
+// run its brain on another backend — the advisory system-prompt appendix is NOT the gate.
+
+test("claude is always allowed, hidden notes or not", () => {
+  expect(resolveDaemonBackend("claude", 0)).toEqual({ backend: "claude" })
+  expect(resolveDaemonBackend("claude", 7)).toEqual({ backend: "claude" })
+})
+
+test("an unset backend defaults to claude", () => {
+  expect(resolveDaemonBackend(undefined, 0)).toEqual({ backend: "claude" })
+  expect(resolveDaemonBackend("", 3)).toEqual({ backend: "claude" })
+  expect(resolveDaemonBackend("   ", 3)).toEqual({ backend: "claude" })
+})
+
+test("a non-claude backend is allowed only when the vault hides nothing", () => {
+  expect(resolveDaemonBackend("codex", 0)).toEqual({ backend: "codex" })
+})
+
+test("a non-claude backend is REFUSED when any note is hidden, degrading to claude with a reason", () => {
+  const r = resolveDaemonBackend("codex", 1)
+  expect(r.backend).toBe("claude")
+  expect(r.refusal).toContain("codex")
+  expect(r.refusal).toContain("visibility gate")
+  // Degrades rather than throwing: the daemon is always-on and its crons must keep firing.
+  expect(r.refusal).toContain("1 hidden note")
+})
+
+test("the refusal pluralises the hidden-note count", () => {
+  expect(resolveDaemonBackend("codex", 4).refusal).toContain("4 hidden notes")
 })

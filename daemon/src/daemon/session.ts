@@ -115,6 +115,47 @@ export interface BotResponse {
   sessionId: string
 }
 
+/**
+ * Which agent CLI may run a vault's daemon brain — and the one hard constraint on that choice.
+ *
+ * The vault VISIBILITY GATE (docs/vault/visibility.md) is enforced by three Claude-Code-specific
+ * mechanisms that buildQueryOptions sets together: `managedSettings.permissions.deny`,
+ * `sandbox.filesystem.denyRead`, and `disallowedTools`. The system-prompt appendix that names the
+ * hidden notes is explicitly ADVISORY — "defense-in-depth ONLY … never the gate".
+ *
+ * No other agent CLI has an equivalent triple. So for a vault with ANY hidden note, a non-Claude
+ * backend cannot enforce the gate, and running one would quietly convert a real security boundary
+ * into a polite request the model is free to ignore. This function is the chokepoint that refuses
+ * that combination: it is deliberately pure so the rule is unit-tested, and it MUST be the only way
+ * a daemon backend is chosen — any future non-Claude backend has to come through here.
+ *
+ * The refusal degrades to Claude rather than throwing: the daemon is an always-on service whose
+ * crons must keep firing, and Claude is both the default and the only backend that can enforce the
+ * gate. The caller logs `refusal` so the choice is never silent.
+ *
+ * NOTE: no non-Claude daemon backend is implemented yet, and `settings.daemon.backend` does not
+ * exist yet — this guardrail lands BEFORE the first alternative backend on purpose, so the
+ * constraint exists before there is anything tempting to point at it.
+ */
+export function resolveDaemonBackend(
+  requested: string | undefined,
+  hiddenNoteCount: number,
+): { backend: string; refusal?: string } {
+  const want = (requested || "claude").trim() || "claude"
+  if (want === "claude") return { backend: "claude" }
+  if (hiddenNoteCount > 0) {
+    return {
+      backend: "claude",
+      refusal:
+        `daemon.backend "${want}" cannot enforce this vault's visibility gate ` +
+        `(${hiddenNoteCount} hidden note${hiddenNoteCount === 1 ? "" : "s"}); ` +
+        `only the Claude Code backend can. Running on "claude" instead — ` +
+        `clear the vault's hidden/chat-only notes to use another backend.`,
+    }
+  }
+  return { backend: want }
+}
+
 export interface SendOptions {
   model?: string
   effort?: string
@@ -238,6 +279,17 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
   // macOS. Passed into buildQueryOptions (which folds it into managedSettings/sandbox/
   // disallowedTools) + into the advisory system-prompt appendix.
   const denyEntries = await buildDenyPaths(ctx.root)
+
+  // Backend choice passes through the visibility-gate guardrail (see resolveDaemonBackend). Today
+  // `requested` is always undefined — there is no `settings.daemon.backend` and no non-Claude daemon
+  // backend — so this always resolves to "claude" and changes nothing. It is wired now so that
+  // adding a backend later cannot bypass the gate by forgetting to ask.
+  const { backend, refusal } = resolveDaemonBackend(undefined, denyEntries.length)
+  if (refusal) console.error(`[session:${ctx.name}] ${refusal}`)
+  if (backend !== "claude") {
+    throw new Error(`daemon backend "${backend}" is not implemented — only "claude" can run a vault brain today`)
+  }
+
   const options = buildQueryOptions(ctx, opts, existingSessionId, {
     claudeBin: claudeBin(),
     systemPrompt: await buildSystemPrompt(ctx, denyEntries),
