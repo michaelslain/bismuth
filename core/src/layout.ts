@@ -293,7 +293,43 @@ const COMMUNITY_MIN_SIZE = 4; // min members for a community to take part in com
 const COMMUNITY_PACK_FILL_2D = 0.55; // random-loose disc packing
 const COMMUNITY_PACK_FILL_3D = 0.5;  // random-loose sphere packing
 // Target clearance between two communities' packing radii — >1 leaves an actual empty lane.
-const COMMUNITY_SEP_MULT = 1.6; // 1.25 → 1.6 (2026-07-25): visibly wider empty lanes between clusters
+// 1.6 → 2.4 (2026-07-27, ASCII redesign: "things more separated and clustered", edges now drawn as
+// real vector lines rather than character-grid glyphs — see AsciiGraphRenderer.ts / docs/design/ascii).
+//
+// CORRECTION (an adversarial review caught this): this was originally swept ONLY on
+// plantedCommunities([80,70,60,40,30,20], cross=0.25) — a FLAT, single-level partition — measuring
+// intra-community nearest-neighbour distance (a) vs. inter-centroid distance (b). On that fixture (a)
+// held flat across the whole sweep and the comment claimed intra-cluster spacing was "untouched by
+// construction". That claim is only true for a single-level partition: the constant enters the
+// separation-force target at EVERY level of a real hierarchy (finest + every ancestor, decayed — see
+// the "Nesting" block below), and a flat fixture has no ancestor level to expose that. Re-swept
+// 1.6/2.0/2.4/2.8 on the REAL reference vault (2121 nodes / 3-level Louvain hierarchy) at the
+// PRODUCTION tick budget (240 — see REFINE_TICKS in layout-cache.ts), measuring mean distance from a
+// member to its OWN level-community centroid (intra) vs. mean distance to the NEAREST OTHER
+// level-community's centroid (inter), per hierarchy level L0 (coarsest) / L1 / L2 (finest):
+//   3D intra        L0      L1      L2     3D inter (nearest centroid)   L0      L1      L2
+//   1.6             53.46   43.91   33.83                                69.34   59.50   40.50
+//   2.0             60.82   48.69   37.22                                84.69   69.26   48.24
+//   2.4             68.84   54.00   41.49                                99.84   80.82   54.42
+//   2.8             76.73   59.69   45.98                               113.03   93.41   61.51
+//   2D intra        L0      L1      L2     2D inter                     L0      L1      L2
+//   1.6            164.36  132.95  101.11                               181.74  126.38   77.89
+//   2.0            181.60  148.40  112.79                               213.77  145.02   88.58
+//   2.4            203.82  166.13  126.84                               246.83  163.36   97.48
+//   2.8            226.79  182.53  139.94                               283.91  179.25  113.52
+// Both columns grow substantially with the multiplier at EVERY level, in both dimensions — intra by
+// +36% to +44% (1.6→2.8), inter by +42% to +63%. So the honest statement is: raising this constant
+// widens spacing everywhere a real hierarchy has more than one level, not just the gaps between
+// clusters — DELETE the old "untouched by construction" claim, it does not hold once communities nest.
+// What still justifies the change: intra grows more slowly than inter at every level/dimension sampled,
+// so the RATIO the tests actually assert on (separation() — lower is clusters reading as distinct
+// blobs) keeps improving rather than standing still. Confirmed through the full production pipeline on
+// this same vault (see REFINE_TICKS's comment in layout-cache.ts for the paired tick-budget measurement
+// this depends on): coarsest-level 2D ratio 0.851 (1.6@120, pre-change) → 0.700 (2.4@240, shipped). 2.4
+// is kept as a comfortable middle value rather than the most extreme sampled: both columns keep scaling
+// smoothly out to 2.8 with no sign of instability, so 2.4 is "a clear, wide-enough step" rather than
+// "the ceiling before something breaks".
+const COMMUNITY_SEP_MULT = 2.4;
 // Per-tick speed limit for everything this force adds, as a multiple of the node's OWN collide
 // radius. Both community terms can be large on the first ticks (alpha=1, communities still deeply
 // interpenetrating), and an uncapped step drags a whole community across the field faster than the

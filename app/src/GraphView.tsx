@@ -1,14 +1,9 @@
 // app/src/GraphView.tsx
-import { onCleanup, onMount, createEffect, createSignal, Show, untrack } from "solid-js";
+import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import type { GraphConfig, GraphRenderer, HoverNode } from "./graph/graphRenderer";
-// TESTING ONLY: the renderer A/B harness (RendererKind) — see rendererKind.ts for the kind ->
-// renderer-instance mapping (factored out, pure, unit-tested) and the block just below for the
-// GraphView-owned signal + toolbar wiring. The shipped app only ever mounts AsciiGraphRenderer.
-import { isCanvasKind, isRendererKind, makeRenderer, RENDERER_KIND_OPTIONS, type RendererKind } from "./graph/rendererKind";
+import { AsciiGraphRenderer } from "./graph/AsciiGraphRenderer";
 import { AgentsGraph } from "./graph/AgentsGraph";
-import { GraphAtmosphere } from "./graph/GraphAtmosphere";
-import { getOrganicLayout, peekOrganicLayout, withOrganicPositions } from "./graph/organicLayout";
 import { layoutAgentGraph } from "./graph/agentLayout";
 import type { Org } from "./graph/agentOrg";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
@@ -21,7 +16,6 @@ import { SegmentedToggle } from "./ui/SegmentedToggle";
 import { IconButton } from "./ui/IconButton";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { IconTextButton } from "./ui/IconTextButton";
-import { Loading } from "./ui/EmptyState";
 import type { GraphMode } from "./commands";
 
 /** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). */
@@ -66,28 +60,6 @@ const setViewModePersisted = (m: "2d" | "3d") => {
   writeCache(VIEW_MODE_KEY, m);
 };
 
-// ============================================================================
-// TESTING ONLY — renderer A/B toggle. Lets the ASCII redesign be compared side-by-side against the
-// pre-ASCII CanvasGraphRenderer (and two hybrid combinations) without a real product surface: no
-// settingsSchema entry, no persisted user-facing setting semantics beyond a throwaway localStorage
-// key. See ./graph/rendererKind.ts for the four combinations (R1-R4) and the kind -> renderer
-// mapping. Delete this block + that file + the swap effect in GraphView + the R1-R4 toolbar buttons
-// once the redesign is validated (or the comparison is no longer needed).
-// Module-level (like graphViewMode above) so every GraphView instance shares one value, seeded
-// from localStorage so the choice survives reload without touching the vault.
-// ============================================================================
-const RENDERER_KIND_KEY = "bismuth:graph:rendererKind";
-const ASCII_MONO_STACK = '"Monaspace Xenon", ui-monospace, monospace';
-const readStoredRendererKind = (): RendererKind => {
-  const v = readCache<RendererKind>(RENDERER_KIND_KEY);
-  return isRendererKind(v) ? v : "ascii";
-};
-const [rendererKind, setRendererKindSignal] = createSignal<RendererKind>(readStoredRendererKind());
-const setRendererKindPersisted = (k: RendererKind) => {
-  setRendererKindSignal(k);
-  writeCache(RENDERER_KIND_KEY, k);
-};
-
 // Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
 // full-pane graph): text-only, uppercase, no glyph prefix — same string in both so the little
 // and big toolbars read as one control at two sizes (the narrow one just wraps to a second row
@@ -125,12 +97,9 @@ export function GraphView(props: {
 }) {
   let host!: HTMLDivElement;
   // The ASCII field draws its labels ON the character grid (they're cells like everything else),
-  // so there is no DOM label overlay any more — CanvasGraphRenderer's `labelsEl` argument is gone
-  // (unused by either shipped renderer today; see the TESTING-ONLY overlay re-provided below for
-  // the R1/R3 harness combinations, which is the one caller left that still passes it).
-  // `let`, not `const`: TESTING ONLY — the renderer-toggle harness (RendererKind above) swaps this
-  // out for a fresh instance on every kind change; see mountRenderer + the swap effect below.
-  let renderer: GraphRenderer = makeRenderer(rendererKind());
+  // so there is no DOM label overlay — the vestigial `labelOverlay` argument on the renderer seam
+  // (graphRenderer.ts) goes unpassed.
+  const renderer: GraphRenderer = new AsciiGraphRenderer();
   let mounted = false;
   let lastGraph: GraphData | null = null;
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);
@@ -192,73 +161,25 @@ export function GraphView(props: {
   const rendererGraph = (): GraphData =>
     props.mode === "agents" ? layoutAgentGraph(props.graph, agentOrg()) : props.graph;
 
-  // TESTING ONLY — R1/R3 organic-layout harness (see organicLayout.ts for why). "agents" mode is
-  // excluded: layoutAgentGraph already assigns every node an explicit pyramid position itself (no
-  // backend layout involved at all), so there's no grid-island bug to route around there and running
-  // a force settle on top would just fight that intentional shape.
-  // `organicGen` is a monotonic counter guarding against a stale async resolution (e.g. the mode
-  // flipped away and back while a settle for the FIRST mode was still in flight) overwriting a
-  // newer render with old positions — only the callback whose `gen` still matches the current
-  // counter is allowed to call `renderer.render()`.
-  let organicGen = 0;
-  const [organicPending, setOrganicPending] = createSignal(false);
-  const wantsOrganicLayout = (g: GraphData, kind: RendererKind) =>
-    props.mode !== "agents" && isCanvasKind(kind) && g.nodes.length > 0;
-
-  /** Render `g` on the CURRENT `renderer`, going through the organic-layout override for canvas
-   *  kinds (see wantsOrganicLayout) and refreshing the search/legend UI data once the actual
-   *  positions land. Shared by the graph-render effect below and mountRenderer (a fresh renderer
-   *  instance needs the exact same treatment on every kind swap). Reads `rendererKind()` — the
-   *  ONE caller that runs inside a tracked effect (the render effect just below) wraps this in
-   *  `untrack` first so an ordinary kind swap doesn't ALSO retrigger that effect (the swap effect
-   *  already handles kind changes on its own, via mountRenderer). */
+  /** Render `g` on the renderer and refresh the search/legend UI data from its new node set.
+   *  Shared by the graph-render effect below and mountRenderer. */
   const renderGraphNow = (g: GraphData) => {
-    const kind = rendererKind();
-    if (!wantsOrganicLayout(g, kind)) {
-      setOrganicPending(false);
-      renderer.render(g);
-      refreshUiData();
-      return;
-    }
-    const gen = ++organicGen;
-    const cached = peekOrganicLayout(g);
-    if (cached) {
-      setOrganicPending(false);
-      renderer.render(withOrganicPositions(g, cached));
-      refreshUiData();
-      return;
-    }
-    setOrganicPending(true);
-    getOrganicLayout(g)
-      .then((layout) => {
-        if (gen !== organicGen) return; // superseded by a later graph/mode/kind change
-        setOrganicPending(false);
-        renderer.render(withOrganicPositions(g, layout));
-        refreshUiData();
-      })
-      .catch(() => {
-        if (gen !== organicGen) return;
-        setOrganicPending(false);
-        // Worker failure (or a browser without module-worker support) — fall back to whatever
-        // positions the graph already carries rather than leaving the renderer showing nothing.
-        renderer.render(g);
-        refreshUiData();
-      });
+    renderer.render(g);
+    refreshUiData();
   };
 
   createEffect(() => {
     lastGraph = props.graph;
     const g = rendererGraph();
-    if (mounted) untrack(() => renderGraphNow(g));
+    if (mounted) renderGraphNow(g);
   });
 
   // Derive the live GraphConfig from settings + appearance tokens. Colors derive from the
   // centralized `appearance` theme tokens: nodes/clusters from the Oxide accentPalette
   // (by stable hash, inside the renderer), edges = Steel (neutral) at low alpha, the
   // canvas background = Ink (background). No separate graph palette/colors anymore.
-  // Extracted into its own function (rather than inlined in the effect below) so the TESTING-ONLY
-  // renderer-swap effect further down can re-push a full config immediately after mounting a fresh
-  // instance (see mountRenderer) without duplicating the settings -> GraphConfig mapping.
+  // Extracted into its own function (rather than inlined in the effect below) so mountRenderer can
+  // push a full config the moment it mounts, without duplicating the settings -> GraphConfig mapping.
   const buildConfig = (): GraphConfig => {
     const gs = settings.graph;
     const ap = resolveAppearance(settings.appearance);
@@ -300,11 +221,6 @@ export function GraphView(props: {
       daemonNeutral: hexToIntT(ap.neutral, 0xaeb4c2),
       daemonFg: hexToIntT(ap.foreground, 0xffffff),
     };
-    // TESTING ONLY: layer the R3/R4 harness overrides on top of the ordinary settings-derived
-    // config — see the RendererKind block near the top of this module.
-    const kind = rendererKind();
-    if (kind === "canvas-ascii") cfg.labelFontFamily = ASCII_MONO_STACK;
-    if (kind === "ascii-canvas") cfg.clusterColorsOff = true;
     return cfg;
   };
 
@@ -316,86 +232,20 @@ export function GraphView(props: {
     if (mounted) refreshUiData();
   });
 
-  // ----------------------------------------------------------------------------------------------
-  // TESTING ONLY below (through the swap effect): the renderer-toggle harness. See the RendererKind
-  // block near the top of this module for the four combinations and why this exists.
-  // ----------------------------------------------------------------------------------------------
-
-  // R1/R3 (CanvasGraphRenderer) mount() still accepts a labels-overlay element (see graphRenderer.ts
-  // + CanvasGraphRenderer.mount's `_labelOverlay` param) — a holdover from when it rendered labels
-  // as DOM nodes; it's unused by both shipped renderers today (labels are drawn on-canvas), but this
-  // re-provides one anyway for fidelity with that historical contract. Created lazily per-mount,
-  // torn down on every swap so ascii kinds never carry a stray overlay div around; `renderer.destroy()`
-  // already clears `host`'s children (including this), so teardown here is just resetting the
-  // reference, not a required DOM removal.
-  let labelsOverlayEl: HTMLDivElement | null = null;
-  const ensureLabelsOverlay = (): HTMLDivElement => {
-    if (!labelsOverlayEl) {
-      labelsOverlayEl = document.createElement("div");
-      labelsOverlayEl.className = "graph-labels-overlay-testing";
-      labelsOverlayEl.style.position = "absolute";
-      labelsOverlayEl.style.inset = "0";
-      labelsOverlayEl.style.pointerEvents = "none";
-      host.appendChild(labelsOverlayEl);
-    }
-    return labelsOverlayEl;
-  };
-  const teardownLabelsOverlay = () => { labelsOverlayEl = null; };
-
-  // Atmosphere glow-lobe callback (see GraphAtmosphere.tsx's GlowRenderer contract). <GraphAtmosphere>
-  // below calls `glowRendererProxy.setGlowCallback(cb)` exactly ONCE, in its own onMount, the first
-  // time a canvas kind is active — captured here rather than handed straight to `renderer` because
-  // `renderer` is a plain swappable variable (R1<->R3 destroys + recreates it; see the swap effect),
-  // not a reactive prop <GraphAtmosphere> could re-subscribe to. mountRenderer re-arms the SAME
-  // callback onto whichever instance is actually live every time it (re)mounts, so a swap never
-  // leaves the glow silently pointed at a destroyed renderer.
-  type GlowCallback = (g: { lobes: { x: number; y: number }[] }) => void;
-  let glowCb: GlowCallback | undefined;
-  const glowRendererProxy = { setGlowCallback: (cb: GlowCallback) => { glowCb = cb; } };
-
-  // Mount the CURRENT `renderer` + re-send everything a fresh instance needs to reflect the live
-  // state: config, the current graph, the active file, and any live search-match set. Shared by
-  // onMount (the initial mount) and the swap effect below (a kind change), so a swap can never drift
-  // out of sync with what a first mount does — this function IS "what onMount does".
+  // Mount the renderer + send it everything it needs to reflect the live state: config, the
+  // current graph, the active file, and any live search-match set. This function IS "what onMount
+  // does".
   const mountRenderer = () => {
-    const kind = rendererKind();
-    const overlay = isCanvasKind(kind) ? ensureLabelsOverlay() : undefined;
-    renderer.mount(host, openNode, (node) => setHovered(node), overlay);
+    renderer.mount(host, openNode, (node) => setHovered(node));
     renderer.setFpsCallback(setFps);
     renderer.setZoomCallback?.(setZoomPct);
     if (props.onPaint) renderer.setPaintCallback(props.onPaint);
-    if (isCanvasKind(kind) && glowCb) {
-      (renderer as unknown as { setGlowCallback?: (cb: GlowCallback) => void }).setGlowCallback?.(glowCb);
-    }
     renderer.setConfig(buildConfig());
     if (lastGraph) renderGraphNow(rendererGraph());
     renderer.setActiveFile(props.active ? props.active.replace(/\.md$/, "") : null);
     if (switcherHadMatch && props.searchMatchIds?.length) renderer.setSearchMatches(new Set(props.searchMatchIds));
     renderer.setVisible(props.visible !== false && !docHidden());
   };
-
-  // Destroy the mounted renderer and mount a fresh instance of the selected kind whenever it
-  // changes. No-ops until the FIRST mount has happened (`mounted`) — the initial kind is already
-  // instantiated by the `let renderer = makeRenderer(rendererKind())` above and mounted by onMount,
-  // so this effect's first (pre-mount) run would otherwise double-mount.
-  //
-  // `untrack`-wrapped: mountRenderer() calls buildConfig()/rendererGraph(), which read settings.*
-  // /graphViewMode()/props.mode/agentOrg() — signals that already have their OWN dedicated effects
-  // above. Without untrack, Solid's dynamic tracking would ALSO make THIS effect depend on all of
-  // those (any nested read during a tracked computation counts, regardless of call depth), so an
-  // ordinary settings change or the 2D/3D toggle would destroy + recreate the whole renderer instead
-  // of just updating the live one. `rendererKind()` — read before entering untrack — must stay the
-  // one and only real dependency.
-  createEffect(() => {
-    const kind = rendererKind();
-    if (!mounted) return;
-    untrack(() => {
-      renderer.destroy();
-      teardownLabelsOverlay();
-      renderer = makeRenderer(kind);
-      mountRenderer();
-    });
-  });
 
   // The one graph instance moves between a full pane and the cramped backdrop/sidebar slot, but it
   // draws on the SAME cell in both (the app's unified --row-h rhythm, asciiGraph.css --cell-h) —
@@ -469,17 +319,6 @@ export function GraphView(props: {
               { id: "3d", title: "3D", label: "3D" },
             ]}
           />
-          {/* TESTING ONLY — renderer A/B toggle (RendererKind, see the block near the top of this
-              file). No settingsSchema entry; delete alongside that block once the ASCII redesign
-              is validated. Full-pane graph only — the cramped sidebar mini-graph skips it. */}
-          <Show when={!props.mini}>
-            <SegmentedToggle
-              value={rendererKind()}
-              onChange={setRendererKindPersisted}
-              size="sm"
-              options={RENDERER_KIND_OPTIONS}
-            />
-          </Show>
           <Show when={props.fill}>
             <IconTextButton icon="Search" size="sm" variant={menuOpen() ? "selected" : "unselected"} onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}>FIND</IconTextButton>
           </Show>
@@ -487,33 +326,13 @@ export function GraphView(props: {
       </ViewBar>
       <div
         class="graph-area"
-        style={{
-          ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }),
-          // TESTING ONLY — R1/R3 want the pre-ASCII dark radial "ground" (a gradient), not the
-          // shipped ASCII scopes' flat --graph-bg. Reproduced here as a scoped inline override
-          // (reads the live --bg theme var) rather than touching settingsCssVars.ts/theme tokens,
-          // which every OTHER surface (incl. R2/R4) still reads unmodified.
-          ...(isCanvasKind(rendererKind())
-            ? { background: "radial-gradient(120% 90% at 50% 30%, var(--bg) 0%, color-mix(in srgb, var(--bg) 60%, #000) 72%)" }
-            : {}),
-        }}
+        style={{ ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}
       >
         <div class="graph-canvas-host" ref={host} />
-        {/* No label overlay and no atmosphere layer for the shipped ASCII renderer: labels are
-            cells on the character grid, and the design's ground is a FLAT --graph-bg field — no
-            glow lobes, no vignette. TESTING ONLY: R1/R3 (CanvasGraphRenderer) re-mount the
-            atmosphere (see glowRendererProxy above) to match the pre-ASCII look. */}
-        <Show when={isCanvasKind(rendererKind())}>
-          <GraphAtmosphere renderer={glowRendererProxy} mode={props.mode} />
-        </Show>
-        {/* TESTING ONLY: the client-side organic-layout settle (see organicLayout.ts) blocks
-            interaction with the stale render underneath while it computes — ~5-10s on 2k nodes,
-            instant on a cache hit (so this rarely shows at all once a graph shape's been seen). */}
-        <Show when={isCanvasKind(rendererKind()) && organicPending()}>
-          <div class="graph-organic-loading">
-            <Loading>Settling organic layout…</Loading>
-          </div>
-        </Show>
+        {/* No label overlay and no atmosphere layer: labels are cells on the character grid, and
+            the design's ground is a FLAT --graph-bg field — no glow lobes, no vignette.
+            GraphAtmosphere.tsx stays in the tree, just out of the render path here — it's still
+            used by the first-run Vault Intro. */}
         {/* Agents mode: the character field renders the nodes (2D pyramid / 3D molecule); this
             overlay adds the status card + organization picker on top. */}
         <Show when={props.mode === "agents"}>

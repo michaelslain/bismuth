@@ -1,11 +1,16 @@
 // app/src/graph/AsciiGraphRenderer.ts
 //
 // The knowledge graph as a CHARACTER FIELD. Same job as the old CanvasGraphRenderer (project a
-// graph, orbit it, hover/click it) but the output is a fixed grid of monospace characters:
-// "- | / \ +" for edges, the degree ramp "." leaf → "o" linked → "@" hub for nodes, a sparse
-// deterministic noise texture underneath, and plain text labels on the grid. It still draws onto a
-// Canvas2D context — one fillText per colour RUN per row — so it keeps canvas performance while
-// looking like a terminal. Nothing is ever CSS/ctx-scaled.
+// graph, orbit it, hover/click it) but the output is a fixed grid of monospace characters for
+// nodes — the degree ramp "." leaf → "o" linked → "@" hub — a sparse deterministic noise texture
+// underneath, and plain text labels on the grid. EDGES are the one exception: real anti-aliased
+// vector strokes (see strokeEdges()), drawn straight onto the canvas beneath every glyph and every
+// label plate — a deliberate divergence from the character-edge vocabulary the design card
+// originally specified (design/ascii/design-system/guidelines/ascii-graph.card.html), because the
+// user asked for "the lines how they were in the original" (a real Canvas2D stroke), just with
+// ASCII nodes/labels. It still draws onto a Canvas2D context — one fillText per colour RUN per row
+// for glyphs/labels, a handful of batched `stroke()` calls for edges — so it keeps canvas
+// performance while looking like a terminal. Nothing is ever CSS/ctx-scaled.
 //
 // THE LAW (design/ascii/design-system/guidelines/ascii-zoom.card.html, PORTING.md §4):
 //   ZOOM IS RESOLUTION. The cell is a constant size at every zoom level. What zooming changes is
@@ -19,10 +24,13 @@
 // The 3D mode is the same grid: the camera math is lifted verbatim from CanvasGraphRenderer's
 // project()/projectPositions() (worldScale/target subtract → yaw → pitch → perspective divide),
 // and the projected points are snapped onto cells and re-rasterized every frame. Depth is encoded
-// by shifting the DEGREE RAMP between bands and fading alpha — never by changing the font size.
+// by shifting the DEGREE RAMP between bands and fading alpha — never by changing the font size —
+// and, for edges, by the same depth-banded alpha falloff the old renderer used (see strokeEdges()).
 //
-// The pure arithmetic (grid sizing, world→cell snapping, the glyph ramp, the Bresenham trace with
-// "+" junctions, the cell hit test) lives in ./asciiGrid.ts and is unit-tested there.
+// The pure arithmetic (grid sizing, world→cell snapping, the glyph ramp, the cell hit test) lives
+// in ./asciiGrid.ts and is unit-tested there. Its Bresenham trace ("- | / \" with "+" junctions) is
+// now used only by the opt-in LOD AGGREGATE connectors (drawAggregateEdges) — real leaf edges are
+// vector-stroked instead (see strokeEdges()).
 
 import "./asciiGraph.css";
 import type { GraphData, GraphNode } from "../../../core/src/graph";
@@ -51,8 +59,9 @@ export interface AsciiGraphStats {
   labelOverlaps: number;   // count of label PAIRS on the same row whose [col, col+widthCells] spans intersect
   maxLabelChars: number;   // longest label's text.length this frame
   notesOnScreen: number;   // leaf (real) nodes rasterized this frame
-  edgesDrawn: number;      // real + aggregate edges traced this frame
-  inkCoverage: number;     // bounding-box area of non-empty cells / (cols*rows)
+  edgesDrawn: number;      // real edges STROKED (vector) + aggregate connectors traced (grid) this frame
+  inkCoverage: number;     // bounding-box area of non-empty cells / (cols*rows) — glyph/label ink only;
+                           // edges no longer occupy cells, so this reads lower than before the vector-edge pass
 }
 import {
   CELL_H, CELL_W, FONT_PX,
@@ -83,19 +92,44 @@ const RES_EPS = 0.002;           // below this the resolution glide is considere
 const NOISE_DENSITY = 0.08;      // texture, never the signal (the design card defaults GLYPHS to 0%)
 const NOISE_ALPHA = 0.45;        // tokens/ascii.css --field-noise-op
 const DEPTH_BANDS = 3;           // "." far / "o" mid / "@" near — the ramp shift, not a font change
-const DIM_ALPHA = 0.28;          // non-focus dimming on hover / cluster highlight
+export const DIM_ALPHA = 0.28;   // NODE non-focus dimming on hover / cluster highlight — glyphs read fine
+                                  // much dimmer than lines do, so this is deliberately NOT shared with
+                                  // edges (see EDGE_DIM_ALPHA below — reusing this one for edges was bug).
 const EDGE_ALPHA_2D = 0.7;
 const EDGE_BUDGET = 2600;        // dense-graph edge thinning (stable per-edge rank, like the old renderer)
 const EDGE_FLOOR = 0.12;
 const HIT_RADIUS_CELLS = 2;      // cells searched outward from the cursor for a node
 const CLUSTER_LABEL_TRACKING_EM = 0.14; // tokens/typography.css --ls-eyebrow, applied via ctx.letterSpacing
 
+// VECTOR EDGE STROKING (see strokeEdges()) — the pre-redesign CanvasGraphRenderer's edge appearance,
+// ported onto this field's camera/culling instead of drawn as grid characters.
+// EDGE_DIM_ALPHA is its own constant (NOT the node DIM_ALPHA above, 0.28 — a past bug reused it and
+// made a dimmed edge read BRIGHTER than an in-focus depth band in 3D) — CanvasGraphRenderer.ts:847/851
+// dims non-focus/non-incident edges to `op * 0.05`; --graph-edge already bakes `op` in (see
+// deriveEdgeBaseAlpha()'s derivation below), so the faithful multiplier here is bare 0.05.
+export const EDGE_DIM_ALPHA = 0.05;
+// `EDGE_BASE_ALPHA_FALLBACK` is the pre-first-restyle() default for the per-theme `edgeBaseAlpha`
+// instance field (see deriveEdgeBaseAlpha() + readTokens()) — NOT a fixed "1" for every theme. Measured
+// (see AsciiGraphRenderer.test.ts "edge base alpha"): a flat alpha of 1 is correct on ink/cathode (their
+// --graph-edge token already composites close to the original CanvasGraphRenderer's neutral-at-opacity
+// weight — ink ratio ~0.92, cathode ~1.0, both cheaply within rounding of "no attenuation needed") but
+// is badly wrong on paper/riso, where the original's LIGHT-theme dampening (a 45%-toward-background
+// colour mix at a lower 0.2 opacity — GraphView.tsx buildConfig()) made the original's line far
+// fainter than --graph-edge stroked at full alpha (paper needs ~0.47, riso ~0.34 — see
+// deriveEdgeBaseAlpha()'s doc comment for the derivation). So this is NOT "the single knob to nudge if
+// lines read heavy/faint" any more — it is a computed-once-per-theme value; nudge deriveEdgeBaseAlpha
+// (or its inputs, --graph-edge/--text-muted/--graph-bg) instead.
+const EDGE_BASE_ALPHA_FALLBACK = 1;
+export const EDGE_W_GAIN = 0.4, EDGE_W_MIN = 0.08, EDGE_W_MAX = 1.6; // CanvasGraphRenderer.ts drawCanvas()
+const EDGE_DEPTH_MIN = 0.04, EDGE_DEPTH_CURVE = 2.4;          // CanvasGraphRenderer.ts DEPTH_MIN_OPACITY/DEPTH_CURVE
+const EDGE_DEPTH_BANDS = 6;                                   // CanvasGraphRenderer.ts drawCanvas()'s 3D depth banding
+
 // Colour slots. Every colour is a CSS custom property read off the host, so a theme switch is a
 // re-read (the old renderer took ints through setConfig; here the tokens ARE the source).
 const C_G0 = 0, C_G1 = 1, C_G2 = 2, C_G3 = 3, C_G4 = 4;
-const C_FG = 5, C_MUTED = 6, C_FAINT = 7, C_ACCENT = 8;
-const COLOR_VARS = ["--graph-0", "--graph-1", "--graph-2", "--graph-3", "--graph-4", "--fg", "--text-muted", "--faint", "--accent"];
-const COLOR_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a", "#e8e8ee", "#9aa0b4", "#6b7086", "#3f6bf0"];
+const C_FG = 5, C_MUTED = 6, C_FAINT = 7, C_ACCENT = 8, C_EDGE = 9;
+const COLOR_VARS = ["--graph-0", "--graph-1", "--graph-2", "--graph-3", "--graph-4", "--fg", "--text-muted", "--faint", "--accent", "--graph-edge"];
+const COLOR_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a", "#e8e8ee", "#9aa0b4", "#6b7086", "#3f6bf0", "#3C4048"];
 const RAMP = [C_G0, C_G1, C_G2, C_G3, C_G4];
 // LEVEL-DRIVEN NODE COLOR (see colorLevelsFor/restyle + rasterize's colour block): during a
 // crossfade between two adjacent hierarchy levels, `colorBuf` needs a blended RGB that plain/faint
@@ -127,16 +161,80 @@ function parseColorToRGB(css: string): [number, number, number] | null {
   return m ? [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])] : null;
 }
 
-/** R4 ("cluster colours off" — GraphConfig.clusterColorsOff): a PLAIN ramp keyed by DEGREE instead
- *  of community — leaves near C_G0, hubs near C_G4 — so the R1-R4 toggle still shows something
- *  visually distinct from R2's regional read now that masses are off in both. Same coarse tiers the
- *  glyph ramp already reads by eye (nodeGlyph/asciiGrid.ts); flat, not zoom-driven, by design. */
-function degreeRampColor(deg: number): number {
-  if (deg <= 0) return C_G0;
-  if (deg < 3) return C_G1;
-  if (deg < 8) return C_G2;
-  if (deg < 20) return C_G3;
-  return C_G4;
+type RGB = [number, number, number];
+const rgbDist = (a: RGB, b: RGB) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+const mixRGB = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+/** Standard (ungamma-corrected — plenty precise for a light/dark call, not colour-managed output)
+ *  sRGB relative luminance, 0..255 scale. Used only to classify a resolved background as light or
+ *  dark from its ACTUAL colour, never a theme name — see deriveEdgeBaseAlpha(). */
+const srgbLuminance = (c: RGB) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+
+/**
+ * The per-theme scalar `strokeEdges()` multiplies onto its --graph-edge stroke so the composited
+ * result MATCHES the pre-redesign CanvasGraphRenderer's edge weight for the theme currently resolved
+ * — not a flat "1" (see EDGE_BASE_ALPHA_FALLBACK's comment for why that was wrong on light themes).
+ *
+ * GraphView.tsx's buildConfig() is the fidelity reference: dark scopes stroke the theme's raw neutral
+ * (`--text-muted`) colour at `edgeOpacity` 0.32; light scopes first blend neutral 45% toward the
+ * background (a raw grey line reads far heavier on a pale canvas than a dark one) and stroke at a
+ * lower 0.2 — see its `ap.isLight` branch. "Light" here is derived from the resolved background's OWN
+ * luminance (srgbLuminance), not a theme-name lookup, so this is one formula for any theme, present or
+ * future — never a per-theme branch.
+ *
+ * Canvas src-over compositing is LINEAR in alpha (composite = bg + alpha*(fg-bg)), so the visual
+ * "distance from background" a stroke produces is directly proportional to alpha. That makes solving
+ * for the equivalent alpha one division: the original's composited distance (at ITS colour+opacity)
+ * divided by --graph-edge's distance from the SAME background at alpha 1. Clamped to [0,1] — a theme
+ * whose --graph-edge is already fainter than the original's target needs no attenuation (>1 would mean
+ * "boost it past full alpha", which a plain stroke can't do and shouldn't need to: 1 is already a very
+ * close match on the two themes measured that way — see the test).
+ */
+export function deriveEdgeBaseAlpha(neutralCss: string, bgCss: string, edgeCss: string): number {
+  const neutral = parseColorToRGB(neutralCss), bg = parseColorToRGB(bgCss), edge = parseColorToRGB(edgeCss);
+  if (!neutral || !bg || !edge) return EDGE_BASE_ALPHA_FALLBACK;
+  const isLight = srgbLuminance(bg) > 127.5;
+  const origColor = isLight ? mixRGB(neutral, bg, 0.45) : neutral;
+  const origOpacity = isLight ? 0.2 : 0.32;
+  const origDist = rgbDist(origColor, bg) * origOpacity;
+  const edgeDist = rgbDist(edge, bg);
+  if (edgeDist <= 0) return EDGE_BASE_ALPHA_FALLBACK;
+  return Math.max(0, Math.min(1, origDist / edgeDist));
+}
+
+/**
+ * The two endpoints `strokeEdges()` actually `moveTo`/`lineTo` for one edge segment, each pulled
+ * back `clearance` px along the segment from its raw cell-centre point — see strokeEdges()'s doc
+ * comment (CanvasGraphRenderer painted an OPAQUE node disc over its endpoints; a thin glyph doesn't,
+ * so an untrimmed vector line runs straight through the glyph's interior/counters).
+ *
+ * Segments no more than `2 * clearance` apart are returned UNTRIMMED rather than pulled back — two
+ * clearances that size would meet or cross, inverting the segment's direction and drawing it
+ * backwards (near-coincident or overlapping nodes, e.g. two notes at the same LOD cell). Pure +
+ * unit-tested (AsciiGraphRenderer.test.ts "segment clearance").
+ */
+export function trimSegmentForClearance(
+  ax: number, ay: number, bx: number, by: number, clearance: number,
+): [number, number, number, number] {
+  const dx = bx - ax, dy = by - ay;
+  const len = Math.hypot(dx, dy);
+  if (len <= clearance * 2) return [ax, ay, bx, by];
+  const ux = dx / len, uy = dy / len;
+  return [ax + ux * clearance, ay + uy * clearance, bx - ux * clearance, by - uy * clearance];
+}
+
+/**
+ * Clamp a 3D edge's average depth-fraction (`(a.dr+b.dr)/2`, nominally 0..1) into a valid
+ * `edgeBands` index. A non-finite midpoint — one endpoint's `dr` going NaN, which projectNodes()
+ * CAN produce from a degenerate camera/projection state (e.g. `minZ`/`maxZ` themselves hitting an
+ * infinity, poisoning `(depth-minZ)/span` for every node sharing that frame's span) — must NOT
+ * propagate into the index: `Math.floor`/`Math.min`/`Math.max` all return NaN once fed one, and
+ * `this.edgeBands[NaN]` is `undefined`, so `.push()` throws inside the rAF tick and the render loop
+ * dies (the field freezes). Falls back to band 0 (farthest) instead. Pure + unit-tested
+ * (AsciiGraphRenderer.test.ts "safe depth band").
+ */
+export function safeDepthBand(mid: number, bands: number): number {
+  if (!Number.isFinite(mid)) return 0;
+  return Math.max(0, Math.min(bands - 1, Math.floor(mid * bands)));
 }
 
 const DEFAULT_CONFIG: Partial<GraphConfig> = {
@@ -155,19 +253,17 @@ interface NodeView {
    *  community at all (self/daemon/cron/process, or community-less legacy data): every consumer
    *  treats that as "fixed colour, never blended". See rasterize()'s LEVEL-DRIVEN COLOR block. */
   colorByLevel: number[];
-  /** The node's own communityPath (coarsest → finest), when it has one — kept alongside colorByLevel
-   *  for the edge-tint IDENTITY check (two nodes tint an edge only when they share the same actual
-   *  community at the active level, not merely the same — collision-prone — ramp slot). */
-  path?: number[];
   dim: boolean;    // daemon-disabled → drawn faint
   // per-frame scratch
   sx: number; sy: number; depth: number; dr: number;
   col: number; row: number; onGrid: boolean;
   // Perspective validity (3D): the projected point is in FRONT of the camera / past the near-clip —
   // meaningful independent of whether it lands inside the grid's col/row bounds. `onGrid` above is
-  // `projValid && within bounds`; edges gate on `projValid` alone (then CLIP to the grid — see
-  // clipSegmentToGrid) so an edge whose far endpoint is merely off-field still draws its on-screen
-  // portion instead of being dropped entirely. Always true in 2D (no perspective to fail).
+  // `projValid && within bounds`; edges (real, vector-stroked — see strokeEdges()) gate on
+  // `projValid` alone, exactly like the pre-redesign CanvasGraphRenderer's `onScreen` — the canvas's
+  // own paint-time clip handles an edge whose far endpoint is merely off-field, so its on-screen
+  // portion still draws instead of the edge being dropped entirely. Always true in 2D (no
+  // perspective to fail).
   projValid: boolean;
 }
 interface EdgeView { a: NodeView; b: NodeView; kr: number }
@@ -282,6 +378,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private notesOnScreenFrame = 0;
   private edgesDrawnFrame = 0;
 
+  // Per-frame edge STROKE BUCKETS — rasterize() sorts surviving edges into these (by the alpha
+  // they'll be stroked at), and paint()'s strokeEdges() issues one batched `stroke()` call per
+  // bucket. Reused across frames (`.length = 0`, never reassigned), so the vector-edge pass
+  // allocates nothing, same discipline as the old `putEdge` closure it replaces.
+  private edgeAccent: EdgeView[] = [];                                   // hovered-incident, full alpha
+  private edgeDim: EdgeView[] = [];                                      // dimmed by an active focus/highlight set
+  private edgeMain: EdgeView[] = [];                                     // 2D, no depth fade
+  private edgeBands: EdgeView[][] = Array.from({ length: EDGE_DEPTH_BANDS }, () => []); // 3D, far→near
+
   // camera — rx/ry orbit (3D), res = THE zoom (resolution), pan in px (2D)
   private rx = -0.5; private ry = 0;
   private res = 1; private goalRes = 1;
@@ -331,6 +436,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
   // gate) — most frames never touch this.
   private blendColors: string[] = [];
   private groundColor = "#0b0c11";
+  // Per-theme edge-stroke alpha (see deriveEdgeBaseAlpha()) — recomputed in readTokens() whenever the
+  // theme's colour tokens are (re-)read, from THIS renderer's own resolved --text-muted/--graph-bg/
+  // --graph-edge, never a per-theme-name branch.
+  private edgeBaseAlpha = EDGE_BASE_ALPHA_FALLBACK;
   private fontStack = '"Monaspace Xenon", ui-monospace, monospace';
   private cellW = CELL_W; private cellH = CELL_H; private fontPx = FONT_PX;
   // The pinned per-cell letterSpacing applyFont() computed (so glyphs land exactly on the grid) —
@@ -454,7 +563,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         p3: [p[0] - c3[0], -(p[1] - c3[1]), p[2] - c3[2]] as Vec3,
         p2: [p2[0] - c2[0], -(p2[1] - c2[1]), 0] as Vec3,
         deg: deg.get(node.id) ?? 0,
-        color: C_FG, colorByLevel: [C_FG], path: undefined, dim: false,
+        color: C_FG, colorByLevel: [C_FG], dim: false,
         sx: 0, sy: 0, depth: 0, dr: 1, col: -1, row: -1, onGrid: false, projValid: false,
       } satisfies NodeView;
     });
@@ -594,6 +703,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // gradient string is not a valid fillStyle — fall back to the flat page background there.
     const gb = read("--graph-bg", "");
     this.groundColor = gb && !gb.includes("gradient") ? gb : read("--bg", "#0b0c11");
+    // Recompute the per-theme edge-stroke alpha from the SAME resolved tokens above (neutral/ground/
+    // edge) — see deriveEdgeBaseAlpha()'s doc comment. A gradient ground (falls through to `groundColor`
+    // above) still parses fine here: `read("--bg", ...)` already resolved to a flat colour in that case.
+    this.edgeBaseAlpha = deriveEdgeBaseAlpha(this.colors[C_MUTED], this.groundColor, this.colors[C_EDGE]);
     this.fontStack = read("--ui-font-stack", this.fontStack);
     // The grid row unit — asciiGraph.css's --cell-h resolves to the app-wide --row-h token (ui.css),
     // so the field's line box (both the main pane AND the sidebar mini-graph — there is no denser
@@ -633,9 +746,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   private restyle() {
     for (const nv of this.nodes) {
-      const { levels, path } = this.colorLevelsFor(nv.node);
+      const levels = this.colorLevelsFor(nv.node);
       nv.colorByLevel = levels;
-      nv.path = path;
       nv.color = levels[levels.length - 1]; // finest/fixed slot — unchanged meaning for existing consumers
       nv.dim = this.isDimmed(nv.node);
     }
@@ -645,41 +757,38 @@ export class AsciiGraphRenderer implements GraphRenderer {
   /** Level-by-level RAMP colour for one node — hashed ONCE here (build()/restyle(), never per
    *  frame; see rasterize()'s LEVEL-DRIVEN COLOR block for the per-frame lookup+lerp that consumes
    *  it). `levels[L]` is the ramp slot (0..4, same numbering `this.colors` uses for C_G0..C_G4) the
-   *  node would show if hierarchy level `L` (coarsest → finest) were the ACTIVE one; `path[L]` is the
-   *  community id itself, carried alongside for the edge-tint IDENTITY check (two nodes tint an edge
-   *  only when they share the SAME community, not merely a colliding ramp slot — 5 slots, many more
-   *  communities). Keys mirror the ones `entityLevels`/`layoutClusterNames` hash for the SAME
-   *  level+community, so a node's colour, the mass that would summarize it (LOD masses, opt-in), and
-   *  the cluster-name label naming it all agree — "the cluster's ramp colour" is one hash, not three.
+   *  node would show if hierarchy level `L` (coarsest → finest) were the ACTIVE one. Keys mirror the
+   *  ones `entityLevels`/`layoutClusterNames` hash for the SAME level+community, so a node's colour,
+   *  the mass that would summarize it (LOD masses, opt-in), and the cluster-name label naming it all
+   *  agree — "the cluster's ramp colour" is one hash, not three.
    *
    *  A node with no community at all (self/daemon/cron/process, or community-less legacy data) gets
-   *  a length-1 `levels` array and no `path`: every consumer treats that as "fixed colour, never
-   *  blended" — degenerating to exactly the pre-hierarchy single-colour-per-node behaviour. */
-  private colorLevelsFor(n: GraphNode): { levels: number[]; path?: number[] } {
+   *  a length-1 `levels` array: every consumer treats that as "fixed colour, never blended" —
+   *  degenerating to exactly the pre-hierarchy single-colour-per-node behaviour. */
+  private colorLevelsFor(n: GraphNode): number[] {
     switch (n.kind) {
-      case "self": return { levels: [C_FG] };
-      case "daemon": return { levels: [C_ACCENT] };
+      case "self": return [C_FG];
+      case "daemon": return [C_ACCENT];
       case "cron":
       case "process": {
         const vs = nodeVisualState(n.daemon ?? { enabled: true, running: false, lastResult: null, lastFiredMs: null });
-        return { levels: [vs.fill === "palette" || vs.border === "palette" ? RAMP[hashKey(n.id) % RAMP.length] : C_FAINT] };
+        return [vs.fill === "palette" || vs.border === "palette" ? RAMP[hashKey(n.id) % RAMP.length] : C_FAINT];
       }
       default: {
         const path = nodePath(n);
         if (path && path.length) {
-          const levels = path.map((c, L) => {
+          return path.map((c, L) => {
             const isFinest = L === path.length - 1;
             const key = isFinest ? "community:" + c : `community:L${L}:${c}`;
             return RAMP[hashKey(key) % RAMP.length];
           });
-          return { levels, path };
         }
         // No community at all (a community-less fixture, or a graph mode that never stamps one) —
         // the pre-hierarchy fixed colour: tags by their own label (so the same tag always reads the
         // same colour across views), everything else by folder/kind.
-        if (n.kind === "tag") return { levels: [RAMP[hashKey("tag:" + n.label) % RAMP.length]] };
+        if (n.kind === "tag") return [RAMP[hashKey("tag:" + n.label) % RAMP.length]];
         const key = n.kind === "note" ? "folder:" + (n.folder ?? "(root)") : n.kind + ":" + n.label;
-        return { levels: [RAMP[hashKey(key) % RAMP.length]] };
+        return [RAMP[hashKey(key) % RAMP.length]];
       }
     }
   }
@@ -881,7 +990,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   // ---- rasterization -------------------------------------------------------
 
-  // Scratch read by putEdge (see rasterize) — the alternative was a closure per edge per frame.
+  // Scratch read by putEdge — the alternative was a closure per edge per frame. Real (leaf) edges no
+  // longer go through putEdge (see strokeEdges() — they're vector-stroked straight onto the canvas);
+  // this is now exercised only by the opt-in LOD AGGREGATE connectors (drawAggregateEdges), which
+  // still trace onto the character grid like every other aggregate-mode primitive.
   private edgeColor = C_MUTED;
   private edgeAlpha = 255;
   private putEdge = (x: number, y: number, ch: string) => {
@@ -900,13 +1012,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   /** Project every ACTIVE primitive onto the grid, then draw the layers into the cell buffers.
    *
-   *  LEVEL OF DETAIL (2D + a community hierarchy): the zoom ladder maps onto the hierarchy —
-   *  coarse stops rasterize the active level's AGGREGATE ENTITIES + AGGREGATE EDGES only (a frame
-   *  costs O(clusters + inter-cluster connectors)); the leaf passes below — per-node projection,
-   *  the real edge loop, the real node loop — simply do not run until `lodMix`'s leaf alpha comes
-   *  up near the deep stops. Crossfades between adjacent levels (and between the finest level and
-   *  the leaves) reuse the exact alphas of the cluster-name/file-name label crossfade, so geometry
-   *  and naming always move together. 3D keeps the original full-detail path untouched. */
+   *  LEVEL OF DETAIL (2D + a community hierarchy) — OPT-IN via GraphConfig.showLodMasses, off in
+   *  the shipped app (see the `lodOn` gate below). When enabled, the zoom ladder maps onto the
+   *  hierarchy: coarse stops rasterize the active level's AGGREGATE ENTITIES + AGGREGATE EDGES only
+   *  (a frame costs O(clusters + inter-cluster connectors)); the leaf passes below — per-node
+   *  projection, the real edge loop, the real node loop — simply do not run until `lodMix`'s leaf
+   *  alpha comes up near the deep stops. Crossfades between adjacent levels (and between the finest
+   *  level and the leaves) reuse the exact alphas of the cluster-name/file-name label crossfade, so
+   *  geometry and naming always move together. 3D keeps the original full-detail path untouched.
+   *  By default (flag off), every node rasterizes as a glyph at every zoom stop. */
   private rasterize(is2d: boolean) {
     const m = this.m;
     const cells = m.cols * m.rows;
@@ -917,6 +1031,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.entitiesDrawnFrame = 0;
     this.notesOnScreenFrame = 0;
     this.edgesDrawnFrame = 0;
+    // Clear the vector-edge stroke buckets (see the field decls + strokeEdges()) UNCONDITIONALLY —
+    // not just inside the `leafA > LOD_ALPHA_EPS` gate below — so a frame where an opt-in coarse LOD
+    // stop's masses own the field instead doesn't leave last frame's edges stroked over it.
+    this.edgeAccent.length = 0; this.edgeDim.length = 0; this.edgeMain.length = 0;
+    for (const band of this.edgeBands) band.length = 0;
     // WORLD-anchored pan (the jitter fix): split into a whole-cell part (fed into the projection
     // below, so the world→cell rounding phase never shifts) and a sub-cell residual (applied as a
     // paint-time canvas translate — see paint()). Recomputed once per rasterize(), not per node.
@@ -946,12 +1065,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
     const t = resolutionT(this.res, this.maxRes);
 
-    // TESTING ONLY: GraphConfig.showLodMasses opts IN to the LOD aggregate-entity/edge passes below
-    // — OFF by default. The shipped ASCII redesign renders every individual node as a glyph at every
-    // zoom stop; the hierarchy still reads through node COLOR (see the LEVEL-DRIVEN COLOR block
-    // below) + the existing cluster-name labels, never an aggregate mass. The mass/aggregate-edge
-    // code stays for comparison/testing (this flag, formerly the harness's "R4" via disableLod); no
-    // real caller sets it.
+    // GraphConfig.showLodMasses opts IN to the LOD aggregate-entity/edge passes below — OFF by
+    // default. The shipped ASCII redesign renders every individual node as a glyph at every zoom
+    // stop; the hierarchy still reads through node COLOR (see the LEVEL-DRIVEN COLOR block below)
+    // + the existing cluster-name labels, never an aggregate mass. The mass/aggregate-edge code
+    // is retained but unreachable from the app — only AsciiGraphRenderer.test.ts sets this flag.
     const lodOn = this.cfg.showLodMasses === true && is2d && this.levelCount > 0 && this.entityLevels.length > 0;
     this.lodOn = lodOn;
     const mix = lodOn ? lodMix(t, this.levelCount) : null;
@@ -964,9 +1082,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // ---- agree on which level owns the field. Zoomed out every node reads by its TOP-level -------
     // ---- cluster; zooming in re-colours it by sub-cluster, then sub-sub-cluster, crossfading at ---
     // ---- the same boundaries the labels already cross at (labelSelection.ts levelBoundaries). -----
-    // GraphConfig.clusterColorsOff (the harness's "R4") turns this off for a plain degree ramp
-    // instead; a 0/1-level graph has nothing to blend regardless (every colorByLevel is length 1).
-    const clusterColorsOn = this.cfg.clusterColorsOff !== true && this.levelCount > 0;
+    // A 0/1-level graph has nothing to blend regardless (every colorByLevel is length 1).
+    const clusterColorsOn = this.levelCount > 0;
     let colorL0 = 0, colorL1 = 0, colorW1 = 0;
     if (clusterColorsOn && this.levelCount > 1) {
       const picked = this.activeColorLevels(clusterLevelAlphas(t, this.levelCount));
@@ -983,36 +1100,39 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.projectNodes(is2d);
 
       const focus = this.focusSet();
-      // Layer 2 — edges. Bresenham between the two snapped cells; crossing runs merge into "+".
-      // `putEdge` is a single hoisted closure reading two scratch fields, so the per-frame edge loop
-      // allocates nothing (2.6k closures a frame was the obvious thing to get wrong here).
+      // Layer 2 — edges. No longer grid characters: each surviving edge is bucketed by the alpha
+      // it will be STROKED at (paint()'s strokeEdges() issues the actual `beginPath/moveTo/lineTo/
+      // stroke` calls, one batched `stroke()` per bucket, real anti-aliased vector lines beneath the
+      // glyph/label passes below). This loop only classifies — see the field decls for the four
+      // reused bucket arrays.
       const keepFrac = this.edges.length > EDGE_BUDGET ? Math.max(EDGE_FLOOR, EDGE_BUDGET / this.edges.length) : 1;
       for (const e of this.edges) {
         if (e.kr >= keepFrac) continue;
         const { a, b } = e;
         // `projValid` gates whether a node's projection means anything AT ALL (3D: in front of the
-        // camera, past the near-clip) — separate from grid-bounds visibility, which is now a
-        // per-edge CLIP (clipSegmentToGrid) rather than an all-or-nothing "both endpoints on-grid"
-        // requirement. That old requirement is the "edges vanish at deep zoom" bug: an edge whose
-        // far endpoint sat just off the field used to be dropped WHOLE, when what a zoomed-in field
-        // should show is every visible node's local edges running off-field as partial lines.
+        // camera, past the near-clip) — independent of grid-bounds visibility. A vector line needs no
+        // grid clip (the canvas clips at paint time, exactly like the pre-redesign renderer's
+        // `onScreen`), so an edge whose far endpoint sits off the field still strokes its on-screen
+        // portion instead of being dropped whole — the "edges vanish at deep zoom" fix, ported.
         if (!a.projValid || !b.projValid) continue;
-        const clipped = clipSegmentToGrid(a.col, a.row, b.col, b.row, m);
-        if (!clipped) continue;
-        const incident = this.hoveredId != null && (a.node.id === this.hoveredId || b.node.id === this.hoveredId);
-        const inFocus = !focus || focus.has(a.node.id) || focus.has(b.node.id);
-        let alpha = is2d ? EDGE_ALPHA_2D : EDGE_ALPHA_2D * depthAlpha((a.dr + b.dr) / 2);
-        if (focus && !inFocus) alpha *= DIM_ALPHA;
-        if (incident) alpha = 1;
-        alpha *= leafA;
-        // Tint an edge by its endpoints' SHARED active-level community colour when both agree, else
-        // the neutral muted colour — a cheap identity check (see edgeTintColor), big legibility win:
-        // an edge reads as "inside a region" or "crossing one" at a glance, matching how the field's
-        // colour already reads as ~15 regions at fit.
-        this.edgeColor = incident ? C_ACCENT : this.edgeTintColor(a, b, clusterColorsOn, colorL0);
-        this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
-        traceEdge(clipped.x0, clipped.y0, clipped.x1, clipped.y1, this.putEdge);
         this.edgesDrawnFrame++;
+        const hov = this.hoveredId;
+        if (hov != null) {
+          // hover = ONE degree: only edges directly incident to the hovered node light up — strict
+          // INCIDENCE, not `focus` (focusSet() also carries the hovered node's NEIGHBOURS, needed
+          // below for the node dimming/ring pass — using that broader set here spared every edge
+          // between two of the hovered node's neighbours from dimming, a past bug).
+          // CanvasGraphRenderer.ts:847-848.
+          if (a.node.id === hov || b.node.id === hov) { this.edgeAccent.push(e); continue; }
+          this.edgeDim.push(e); continue;
+        }
+        if (focus) {
+          // persistent cluster highlight (search matches / daemon-list focus, no hover in play): dim
+          // only when NEITHER endpoint is in the highlighted set. CanvasGraphRenderer.ts:851.
+          if (!(focus.has(a.node.id) || focus.has(b.node.id))) { this.edgeDim.push(e); continue; }
+        }
+        if (is2d) { this.edgeMain.push(e); continue; }
+        this.edgeBands[safeDepthBand((a.dr + b.dr) / 2, EDGE_DEPTH_BANDS)].push(e);
       }
 
       // Layer 3 — nodes. Weight is the glyph (degree ramp, shifted by depth band in 3D), colour is
@@ -1091,15 +1211,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
   }
 
-  /** The colorBuf value for one on-grid node this frame: R4 (`clusterColorsOff`) substitutes a plain
-   *  degree ramp for any node that WOULD have used community colour (self/daemon/cron/process keep
-   *  their own fixed identity colour regardless — "cluster colours off" only means the community
-   *  ramp). Otherwise: a node with no hierarchy (`colorByLevel.length <= 1`) keeps its one fixed
-   *  slot; settled (non-crossfading, `w1 ≈ 0`) frames resolve the plain L0 slot too (an exact
-   *  `this.colors` hex — see BLEND_BASE's comment for why that matters); only an in-progress
-   *  crossfade actually indexes into the blend palette. */
+  /** The colorBuf value for one on-grid node this frame: a node with no hierarchy
+   *  (`colorByLevel.length <= 1`) keeps its one fixed slot; settled (non-crossfading, `w1 ≈ 0`)
+   *  frames resolve the plain L0 slot too (an exact `this.colors` hex — see BLEND_BASE's comment
+   *  for why that matters); only an in-progress crossfade actually indexes into the blend palette. */
   private nodeColorSlotForFrame(nv: NodeView, clusterColorsOn: boolean, L0: number, L1: number, w1: number): number {
-    if (this.cfg.clusterColorsOff === true) return nv.path ? degreeRampColor(nv.deg) : nv.color;
     const cbl = nv.colorByLevel;
     if (!clusterColorsOn || cbl.length <= 1) return nv.color;
     const a = cbl[Math.min(L0, cbl.length - 1)];
@@ -1107,21 +1223,6 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const b = cbl[Math.min(L1, cbl.length - 1)];
     if (a === b) return a; // same community both sides (or a hash collision) — nothing to blend
     return BLEND_BASE + a * RAMP.length + b;
-  }
-
-  /** An edge's tint: the shared active-level (L0 — the DOMINANT one; edges don't crossfade, they're
-   *  a binary "inside a region" / "crossing one" read) community colour when both endpoints actually
-   *  belong to the SAME community there, else the neutral muted colour. Community IDENTITY
-   *  (`nv.path`), not colour-slot equality — two different communities can hash to the same slot. */
-  private edgeTintColor(a: NodeView, b: NodeView, clusterColorsOn: boolean, level: number): number {
-    if (!clusterColorsOn) return C_MUTED;
-    const pa = a.path, pb = b.path;
-    if (!pa || !pb) return C_MUTED;
-    const ca = pa[Math.min(level, pa.length - 1)];
-    const cb = pb[Math.min(level, pb.length - 1)];
-    if (ca !== cb) return C_MUTED;
-    const cbl = a.colorByLevel;
-    return cbl[Math.min(level, cbl.length - 1)];
   }
 
   /** Project one level's entities (2D only — the flat pipeline with rx = ry = 0, i.e. two
@@ -1451,6 +1552,76 @@ export class AsciiGraphRenderer implements GraphRenderer {
     return this.colors[slot] ?? COLOR_FALLBACK[slot] ?? "#888";
   }
 
+  /** Vector-stroke every surviving edge BENEATH the glyph/label passes — real anti-aliased 1px
+   *  lines, the pre-redesign CanvasGraphRenderer's edge appearance (width/alpha falloff, colour
+   *  source, batching) ported onto this field's own camera/culling instead of rasterized as grid
+   *  characters. rasterize()'s edge loop already sorted survivors into the four bucket arrays below
+   *  (by the alpha they'll be stroked at); this only issues the batched `stroke()` calls — at most 9
+   *  a frame (dim + flat-2D + 6 depth bands + accent), each one `beginPath()` + its bucket's
+   *  `moveTo`/`lineTo` pairs + one `stroke()` — the same "one path per alpha tier" batching the old
+   *  renderer used to keep thousands of edges cheap.
+   *
+   *  Endpoints snap to the node's CELL CENTRE, not the raw sub-pixel projection (`nv.sx`/`nv.sy`):
+   *  glyphs are drawn at the cell lattice (see the row loop below), so the cell centre is exactly
+   *  where a node's ink sits — a line to the true projected point would miss the glyph by up to half
+   *  a cell. Called from paint() AFTER the pan-residual `setTransform`, so these endpoints ride the
+   *  same panXFrac/panYFrac translate the glyphs do — lines and glyphs never drift apart mid-drag. */
+  private strokeEdges() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const base = this.edgeBaseAlpha * this.leafAlpha;
+    if (base <= 0.004) return;
+    const m = this.m;
+    const cx = (nv: NodeView) => m.padX + nv.col * m.cellW + m.cellW / 2;
+    const cy = (nv: NodeView) => m.padY + nv.row * m.cellH + m.cellH / 2;
+    // Width follows the RESOLUTION stop (0=fit .. 1=deepest), not `this.res` raw — `res` ranges
+    // 1..maxRes and real vaults run maxRes into the teens/twenties, so gating on it directly saturated
+    // the 1.6 ceiling almost immediately (a past bug: `EDGE_W_GAIN * this.res` clamped to 1.6 at
+    // res>=4). This still grows lines on the dolly-in the way CanvasGraphRenderer's own zoomScale grew
+    // both its lines AND its node dots together — glyphs stay a constant cell size either way (THE LAW,
+    // top of file), so only the vector edges (their one stated exception) get thicker — but the ceiling
+    // is now reached only at the actual deepest zoom stop. Sane at both ends: EDGE_W_GAIN (0.4) at fit
+    // (t=0), EDGE_W_MAX (1.6) at the deepest stop (t=1) — see AsciiGraphRenderer.test.ts "edge width".
+    const t = resolutionT(this.res, this.maxRes);
+    ctx.lineWidth = Math.max(EDGE_W_MIN, Math.min(EDGE_W_MAX, EDGE_W_GAIN + (EDGE_W_MAX - EDGE_W_GAIN) * t));
+    const edgeHex = this.colors[C_EDGE] ?? COLOR_FALLBACK[C_EDGE];
+    // Hovered-incident edges stroke in --accent, not the original's neutral-at-2.2x-alpha
+    // (CanvasGraphRenderer.ts:848) — an INTENTIONAL, user-chosen deviation (the user was asked and
+    // chose to keep the accent tint for hover). Do not "restore fidelity" here.
+    const accentHex = this.colors[C_ACCENT] ?? COLOR_FALLBACK[C_ACCENT];
+    // A stroked line runs straight through its endpoint glyph's cell centre; CanvasGraphRenderer got
+    // away with centre-to-centre because its node pass painted an OPAQUE filled disc over the endpoint
+    // (CanvasGraphRenderer.ts:898-904) — a thin fillText glyph covers almost none of its cell, so an
+    // untrimmed line would muddy the glyph's interior/counters. Pull each endpoint back along the
+    // segment instead. Segments shorter than twice the clearance are drawn UNTRIMMED rather than
+    // inverted — trimming a near-coincident pair would flip the direction and draw backwards.
+    const CLEARANCE = 0.55 * m.cellW;
+    const pass = (list: EdgeView[], alpha: number, color: string) => {
+      if (!list.length || alpha <= 0.004) return;
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = Math.min(1, alpha);
+      ctx.beginPath();
+      for (const e of list) {
+        const [ax, ay, bx, by] = trimSegmentForClearance(cx(e.a), cy(e.a), cx(e.b), cy(e.b), CLEARANCE);
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+      }
+      ctx.stroke();
+    };
+    // Dim (non-focus) and flat-2D edges first, then 3D depth bands far→near (so alpha compositing
+    // order matches the old renderer's back-to-front pass), then the hovered-incident accent on top.
+    pass(this.edgeDim, base * EDGE_DIM_ALPHA, edgeHex);
+    pass(this.edgeMain, base, edgeHex);
+    for (let bi = 0; bi < EDGE_DEPTH_BANDS; bi++) {
+      const fade = EDGE_DEPTH_MIN + (1 - EDGE_DEPTH_MIN) * Math.pow((bi + 0.5) / EDGE_DEPTH_BANDS, EDGE_DEPTH_CURVE);
+      pass(this.edgeBands[bi], base * fade, edgeHex);
+    }
+    // `base`, not the bare `leafAlpha` — see EDGE_BASE_ALPHA_FALLBACK's comment: base already folds in
+    // the per-theme edgeBaseAlpha, so every pass (including this one) stays keyed to the one knob.
+    pass(this.edgeAccent, base, accentHex);
+    ctx.globalAlpha = 1; // leave clean for the row loop + label pass right after
+  }
+
   /** One fillText per colour+alpha RUN per row. Runs keep the character count per call high (a
    *  13k-cell field costs a few hundred calls, not 13k) while staying exactly on the cell grid,
    *  because the advance is pinned by letterSpacing in applyFont(). */
@@ -1470,6 +1641,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // labels move together — so the on-screen motion still tracks the cursor smoothly between
     // whole-cell raster updates, instead of stepping in visible whole-cell jumps.
     ctx.setTransform(this.dpr, 0, 0, this.dpr, this.panXFrac * this.dpr, this.panYFrac * this.dpr);
+    // Vector edge lines, stroked BEFORE any glyph/label draw so they sit beneath every node and
+    // every label plate — the same paint order the pre-redesign renderer used (edges, then opaque
+    // node dots on top). See strokeEdges()'s doc comment for the bucket/batching design.
+    this.strokeEdges();
     ctx.font = `${this.fontPx}px ${this.fontStack}`;
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
