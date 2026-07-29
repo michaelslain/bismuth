@@ -194,10 +194,21 @@ const CLAUDE: BackendDescriptor = {
 };
 
 /**
- * opencode — driven by core/src/chatProviders/opencode.ts, one `opencode run --format json`
- * subprocess per turn continued with `-s <sessionID>`. Capability flags below encode exactly the
- * "Graceful degradation" list in docs/chat/providers.md, which until now lived as a single
- * `provider === "claude"` check in the frontend.
+ * opencode — driven by core/src/chatProviders/opencode.ts. PREFERS one persistent `opencode serve`
+ * process shared across every opencode chat (chatProviders/opencodeServer.ts), falling back to the
+ * original one `opencode run --format json` subprocess per turn when the installed opencode can't
+ * serve (see opencodeServer.ts's startup-banner detection). Capability flags below assume server
+ * mode, which is what any currently-shipping opencode install gets — a fallback to run mode degrades
+ * the LIVE session to run mode's narrower behavior at runtime without lying about what this build
+ * can do when server mode IS available, the same way Claude's flags assume a logged-in `claude`
+ * rather than caveating every flag for a logged-out one.
+ *
+ * Every flag flipped from the original per-turn-subprocess-only profile below was independently
+ * verified live against opencode 1.18.4 + @opencode-ai/sdk 1.18.9 (see opencode.ts/opencodeServer.ts/
+ * opencodeTranslate.ts's top-of-file notes for the exact requests/responses observed) — not inferred
+ * from the SDK's generated types alone, which were confirmed to have real drift from live behavior
+ * (see opencodeServer.ts's top-of-file note on "permission.asked" vs the documented
+ * "permission.updated", and the separate "message.part.delta" event type).
  */
 const OPENCODE: BackendDescriptor = {
   id: "opencode",
@@ -207,38 +218,70 @@ const OPENCODE: BackendDescriptor = {
   loginCommand: "opencode auth login",
   capabilities: {
     chat: true,
-    // `opencode run` emits whole text parts, not token deltas.
-    streaming: "part",
+    // Server mode streams real token-level deltas — verified live: `message.part.delta` events with
+    // {partID,field:"text",delta} arrived incrementally for a real turn (run mode's `opencode run`
+    // still only emits whole text parts per part, but that's now the fallback path, not the norm).
+    streaming: "delta",
     resume: true,
-    // `opencode export <sessionID>` replays a transcript…
+    // Server mode replays via `GET /session/{id}/message` (typed, no export subprocess); run mode
+    // still falls back to `opencode export <sessionID>` — either way a transcript replays.
     historyReplay: true,
-    // …but there is no cross-session list, so the history picker stays Claude-only.
+    // …but there is still no cross-session list, so the history picker stays Claude-only.
     sessionPicker: false,
     models: true,
-    // opencode models report no effort levels (the models frame carries effortLevels: []).
+    // opencode models report no effort levels (the models frame carries effortLevels: []) in EITHER
+    // mode — server mode's config.providers() has no per-model effort field either.
     effort: false,
-    // `opencode run` has no attachment flag.
-    images: false,
-    // Runs are `--auto`; a non-interactive run can never park on a permission prompt, so it has
-    // neither the prompt nor the mode picker.
-    permissionPrompts: false,
+    // Server mode accepts a real attachment: verified live with an actual POST — a FilePartInput
+    // {type:"file",mime,url:"data:image/png;base64,..."} was accepted (HTTP 200) and a vision-capable
+    // free model (opencode/mimo-v2.5-free) read genuine pixel content back. Run mode still has no
+    // attachment flag and refuses images with a friendly error (opencode.ts's dispatchTurn).
+    images: true,
+    // Server mode raises a real approval request mid-turn and answers it: verified live for BOTH
+    // allow ("once", the tool ran) and deny ("reject", the tool errored with the model seeing "The
+    // user rejected permission..."). Run mode's `--auto` still can't park on a prompt at all — a
+    // session that falls back to run mode simply never raises a `permission` frame, same as before.
+    permissionPrompts: true,
+    // NOT raised: no verified way to switch a live session's permission MODE (there is no
+    // Default/Plan/AcceptEdits/Bypass vocabulary in the server API — only per-permission-kind
+    // ask/allow/deny rules in config, which is a different axis). Raising this without a real
+    // set_permission_mode-equivalent would render a picker whose selections silently do nothing —
+    // exactly the ACP `permissionModes` defect this flag split exists to prevent (see
+    // ACP_SHARED_CAPABILITIES's comment above).
     permissionModes: false,
     computerUse: false,
-    // opencode's own command registry rides the manifest (`opencode debug config` + built-ins).
+    // opencode's own command registry rides the manifest — server mode reads it off the typed
+    // `GET /command`; run mode still parses `opencode debug config`.
     slashCommands: true,
-    // `opencode auth list` → the header's auth pill.
+    // `opencode auth list` → the header's auth pill (a plain CLI spawn, unaffected by which mode a
+    // session is running in — verified live it doesn't contend with a running server's sqlite).
     auth: true,
-    // step_finish carries cost, though free/subscription models report 0.
+    // Server mode reads the turn's authoritative cost off session.prompt()'s response (info.cost);
+    // run mode still accumulates step_finish's cost. Free/subscription models report 0 either way.
     cost: true,
     contextUsage: false,
     terminal: true,
-    // No session telemetry today: an opencode session does not appear in the agents graph.
+    // No session telemetry: an opencode session still does not appear in the agents graph. Server
+    // mode's session.children()/session lifecycle events COULD feed this, but wiring it into
+    // core/src/relay.ts's registry is a separate surface this task didn't build — raising this flag
+    // without that wiring would be exactly the "claims something that doesn't work" trap the task
+    // brief warns against, so it stays false until that integration exists.
     agentsGraph: "none",
     subagents: false,
     daemon: false,
     visibilityGate: false,
+    // Server mode COULD register MCP dynamically per session (POST /mcp, no config file) instead of
+    // a static config-file merge — not wired up here (out of scope for this backend-upgrade task);
+    // the mechanism stays "config" until that's built.
     mcp: "config",
-    memory: "mcpOnly",
+    // Server mode injects a FRESH recalled-memory digest EVERY turn via session.prompt's `system`
+    // field (recallMemory(memoryDir, text) — the same recall Claude's UserPromptSubmit hook uses),
+    // verified as a genuine per-call override by the SDK's own request shape. "systemPrompt" is the
+    // closest existing enum value (a system-prompt-flag injection) — note it's actually PER-TURN
+    // here, strictly better than the "once per session" the enum's own doc comment describes for
+    // the daemon's spawn-fixed appendSystemPrompt. Run mode still has no such hook and stays
+    // MCP-tool-only for memory.
+    memory: "systemPrompt",
   },
 };
 

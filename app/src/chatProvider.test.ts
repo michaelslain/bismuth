@@ -50,12 +50,16 @@ describe("header gating + options", () => {
     expect(providerCan("claude", "sessionPicker")).toBe(true);
     expect(providerCan("claude", "effort")).toBe(true);
   });
-  test("opencode hides exactly the controls `opencode run` cannot drive", () => {
+  test("opencode hides exactly the controls neither server nor run mode can drive", () => {
+    // permissionModes/computerUse/sessionPicker/effort stay hidden either way (no drivable mode
+    // switch, no --chrome equivalent, no cross-session list, no effort levels reported). images
+    // flipped to true once server mode's real FilePartInput attachment path was verified live —
+    // see catalog.ts's OPENCODE descriptor.
     expect(providerCan("opencode", "permissionModes")).toBe(false);
     expect(providerCan("opencode", "computerUse")).toBe(false);
     expect(providerCan("opencode", "sessionPicker")).toBe(false);
     expect(providerCan("opencode", "effort")).toBe(false);
-    expect(providerCan("opencode", "images")).toBe(false);
+    expect(providerCan("opencode", "images")).toBe(true);
   });
   test("resume and sessionPicker are distinct: opencode resumes per tab with no cross-session list", () => {
     expect(providerCan("opencode", "resume")).toBe(true);
@@ -66,10 +70,12 @@ describe("header gating + options", () => {
     // These were one flag. An ACP backend can park a session/request_permission as a live
     // `permission` frame but has no mode picker, so the single flag rendered a picker whose
     // selections silently went nowhere — a capability claiming something the backend cannot do.
-    // Claude has both; opencode (`--auto`, non-interactive) has neither; ACP has prompts only.
+    // Claude has both. opencode's server mode raises a real `permission` ask/respond cycle
+    // (verified live for both allow and deny) but still has no MODE-switch equivalent, so it now
+    // matches ACP's split exactly: prompts true, modes false.
     expect(providerCan("claude", "permissionPrompts")).toBe(true);
     expect(providerCan("claude", "permissionModes")).toBe(true);
-    expect(providerCan("opencode", "permissionPrompts")).toBe(false);
+    expect(providerCan("opencode", "permissionPrompts")).toBe(true);
     expect(providerCan("opencode", "permissionModes")).toBe(false);
     expect(providerCan("cline", "permissionPrompts")).toBe(true);
     expect(providerCan("cline", "permissionModes")).toBe(false);

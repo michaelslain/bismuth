@@ -71,7 +71,9 @@ export interface ChatBackend {
   detachSink(chatId: string): void;
 
   // --- optional: interactive surfaces a non-interactive CLI cannot offer -------------------
-  /** Answer a `permission` frame. Present iff capabilities.permissionModes. */
+  /** Answer a `permission` frame. Present iff capabilities.permissionPrompts (NOT permissionModes —
+   *  see catalog.ts's note on why the two are separate flags; opencode's server mode is the
+   *  concrete case that has one without the other). */
   respondPermission?(chatId: string, id: string, behavior: "allow" | "deny", always?: boolean): void;
   /** Answer a `question` frame (AskUserQuestion). Present iff capabilities.permissionModes. */
   respondQuestion?(chatId: string, id: string, answers: Record<string, string> | null): void;
@@ -101,13 +103,15 @@ const claudeBackend: ChatBackend = {
   setEffort: claude.setEffort,
 };
 
-/** opencode — core/src/chatProviders/opencode.ts (one `opencode run --format json` per turn). */
+/** opencode — core/src/chatProviders/opencode.ts. Server mode (preferred: one persistent
+ *  `opencode serve` shared across every opencode chat) falls back to the original one
+ *  `opencode run --format json` subprocess per turn when the installed opencode can't serve. */
 const opencodeBackend: ChatBackend = {
   id: "opencode",
   hasSession: opencode.hasSession,
-  openSession: (c) => opencode.openSession(c.chatId, c.cwd, c.sink),
-  sendMessage: (c) => opencode.sendMessage(c.chatId, c.text, c.cwd, c.sink, c.images),
-  resumeSession: (c) => opencode.resumeSession(c.chatId, c.sessionId, c.cwd, c.sink),
+  openSession: (c) => opencode.openSession(c.chatId, c.cwd, c.sink, c.memoryDir),
+  sendMessage: (c) => opencode.sendMessage(c.chatId, c.text, c.cwd, c.sink, c.images, c.memoryDir),
+  resumeSession: (c) => opencode.resumeSession(c.chatId, c.sessionId, c.cwd, c.sink, c.memoryDir),
   sessionHistoryFrames: opencode.sessionHistoryFrames,
   abortTurn: opencode.abortTurn,
   setModel: opencode.setModel,
@@ -115,8 +119,11 @@ const opencodeBackend: ChatBackend = {
   scheduleClose: opencode.scheduleClose,
   rebindSink: opencode.rebindSink,
   detachSink: opencode.detachSink,
-  // No permission/question/effort verbs: `opencode run` is non-interactive (`--auto`), which is
-  // exactly what capabilities.permissionModes / .effort = false advertise to the frontend.
+  // respondPermission is a real, live-verified server-mode surface (permissionPrompts:true) — see
+  // catalog.ts. No setPermissionMode/respondQuestion/setEffort: opencode has no drivable permission
+  // MODE switch (permissionModes stays false), no AskUserQuestion equivalent, and no per-turn effort
+  // control (opencode models report no effort levels either way).
+  respondPermission: opencode.respondPermission,
 };
 
 /**

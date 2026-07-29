@@ -15,7 +15,13 @@
 //     suffix, so a repeated part id with growing text still renders exactly once.
 //  2. `opencode export <sessionID>` — the full session JSON (info + messages[].parts) used to
 //     replay history when a chat tab reopens on an opencode conversation.
-import type { ChatFrame } from "../chat";
+//  3. `opencode serve`'s event/response surfaces (server mode — see ./opencode.ts,
+//     ./opencodeServer.ts) — real token-level `message.part.delta` events, full `message.part.
+//     updated` snapshots (tool lifecycle + text/reasoning parts that never streamed), and
+//     `permission.asked`/`permission.replied`. Verified LIVE against opencode 1.18.4 to differ from
+//     @opencode-ai/sdk@1.18.9's generated types.gen.d.ts in real ways — see the "opencode SERVER
+//     mode" section below and opencodeServer.ts's top-of-file note for exactly what was checked.
+import type { ChatFrame, ChatImage } from "../chat";
 import { stripEditorContext } from "../chat";
 import { titleFromPrompt } from "./titleFromPrompt";
 
@@ -69,11 +75,42 @@ export function opencodeErrorMessage(ev: Record<string, unknown>): string {
 /** Suffix-only text emission: given a part id and its text-so-far, return the not-yet-emitted
  *  tail ("" when nothing new). Handles both the observed complete-part shape AND a hypothetical
  *  cumulative-streaming shape with one rule. */
-function unseenSuffix(state: OpencodeTurnState, partId: string, text: string): string {
+function unseenSuffix(state: OpencodeTurnState | OpencodeServerTurnState, partId: string, text: string): string {
   const seen = state.emitted.get(partId) ?? 0;
   if (text.length <= seen) return "";
   state.emitted.set(partId, text.length);
   return text.slice(seen);
+}
+
+/**
+ * Shared tool-part -> ChatFrame(s) translation: a tool part arrives with its state already resolved
+ * (status:"pending"/"running"/"completed"/"error") in BOTH surfaces this file translates —
+ * `opencode run --format json`'s `tool_use` events (run mode) and `opencode serve`'s
+ * `message.part.updated` events where `part.type === "tool"` (server mode, verified live: the SAME
+ * pending -> running -> completed/error lifecycle on the SAME field names). One `tool-use` chip per
+ * callID, resolved by exactly one later `tool-result` — repeated/updated events for an
+ * already-started or already-finished callID contribute nothing more.
+ */
+function toolPartFrames(part: Record<string, unknown>, toolsStarted: Set<string>, toolsFinished: Set<string>): ChatFrame[] {
+  const frames: ChatFrame[] = [];
+  const callId = typeof part.callID === "string" && part.callID ? part.callID : typeof part.id === "string" ? part.id : "tool";
+  const name = typeof part.tool === "string" && part.tool ? part.tool : "tool";
+  const st = (part.state && typeof part.state === "object" ? part.state : {}) as Record<string, unknown>;
+  const status = typeof st.status === "string" ? st.status : "";
+  if (!toolsStarted.has(callId)) {
+    toolsStarted.add(callId);
+    frames.push({ type: "tool-use", id: callId, name, input: st.input });
+  }
+  if ((status === "completed" || status === "error") && !toolsFinished.has(callId)) {
+    toolsFinished.add(callId);
+    frames.push({
+      type: "tool-result",
+      id: callId,
+      content: toolContent(status === "error" ? st.error ?? st.output : st.output),
+      isError: status === "error",
+    });
+  }
+  return frames;
 }
 
 /**
@@ -104,29 +141,11 @@ export function translateOpencodeEvent(raw: unknown, state: OpencodeTurnState): 
       if (delta) frames.push({ type: "thinking", text: delta });
       return frames;
     }
-    case "tool_use": {
+    case "tool_use":
       // Tool events arrive with their state already resolved (status:"completed"/"error") in run
       // mode — emit the tool-use chip AND its result together. A pending status emits only the
       // chip; a later event for the same callID then resolves it.
-      const callId = typeof part.callID === "string" && part.callID ? part.callID : typeof part.id === "string" ? part.id : "tool";
-      const name = typeof part.tool === "string" && part.tool ? part.tool : "tool";
-      const st = (part.state && typeof part.state === "object" ? part.state : {}) as Record<string, unknown>;
-      const status = typeof st.status === "string" ? st.status : "";
-      if (!state.toolsStarted.has(callId)) {
-        state.toolsStarted.add(callId);
-        frames.push({ type: "tool-use", id: callId, name, input: st.input });
-      }
-      if ((status === "completed" || status === "error") && !state.toolsFinished.has(callId)) {
-        state.toolsFinished.add(callId);
-        frames.push({
-          type: "tool-result",
-          id: callId,
-          content: toolContent(status === "error" ? st.error ?? st.output : st.output),
-          isError: status === "error",
-        });
-      }
-      return frames;
-    }
+      return toolPartFrames(part, state.toolsStarted, state.toolsFinished);
     case "step_finish": {
       const cost = typeof part.cost === "number" ? part.cost : 0;
       if (cost > 0) state.costUsd = (state.costUsd ?? 0) + cost;
@@ -150,12 +169,31 @@ export function translateOpencodeEvent(raw: unknown, state: OpencodeTurnState): 
  * frames:[] }.
  */
 export function translateOpencodeExport(raw: unknown): { title: string | null; frames: ChatFrame[] } {
-  const out: ChatFrame[] = [];
-  if (!raw || typeof raw !== "object") return { title: null, frames: out };
+  if (!raw || typeof raw !== "object") return { title: null, frames: [] };
   const doc = raw as { info?: { title?: unknown }; messages?: unknown };
   const title = typeof doc.info?.title === "string" && doc.info.title.trim() ? doc.info.title.trim() : null;
-  if (!Array.isArray(doc.messages)) return { title, frames: out };
-  for (const msg of doc.messages) {
+  return { title, frames: framesFromOpencodeMessages(doc.messages) };
+}
+
+/**
+ * Translate `GET /session/{id}/message`'s response (server mode's typed history endpoint —
+ * `Array<{info: Message, parts: Part[]}>`, verified live to carry the SAME per-message
+ * `{info:{role}, parts}` shape `opencode export`'s JSON does) into replayable ChatFrames. Shares
+ * `framesFromOpencodeMessages` with `translateOpencodeExport` so both surfaces stay in lockstep —
+ * the only difference is where the session's title comes from (export's own `info.title` vs a
+ * separate `session.get()` call in server mode), which the caller supplies itself.
+ */
+export function translateOpencodeSessionMessages(messages: unknown): ChatFrame[] {
+  return framesFromOpencodeMessages(messages);
+}
+
+/** Shared per-message loop backing translateOpencodeExport + translateOpencodeSessionMessages: user
+ *  prose becomes user-message bubbles (editor-context preamble stripped), assistant text/reasoning/
+ *  tool parts replay in order. Tolerant of a malformed/missing messages array (yields []). */
+function framesFromOpencodeMessages(messages: unknown): ChatFrame[] {
+  const out: ChatFrame[] = [];
+  if (!Array.isArray(messages)) return out;
+  for (const msg of messages) {
     if (!msg || typeof msg !== "object") continue;
     const m = msg as { info?: { role?: unknown }; parts?: unknown };
     const role = m.info?.role;
@@ -179,22 +217,11 @@ export function translateOpencodeExport(raw: unknown): { title: string | null; f
       } else if (pp.type === "reasoning" && typeof pp.text === "string" && pp.text) {
         out.push({ type: "thinking", text: pp.text });
       } else if (pp.type === "tool") {
-        const st = (pp.state && typeof pp.state === "object" ? pp.state : {}) as Record<string, unknown>;
-        const id = typeof pp.callID === "string" && pp.callID ? pp.callID : typeof pp.id === "string" ? (pp.id as string) : "tool";
-        out.push({ type: "tool-use", id, name: typeof pp.tool === "string" && pp.tool ? pp.tool : "tool", input: st.input });
-        const status = typeof st.status === "string" ? st.status : "";
-        if (status === "completed" || status === "error") {
-          out.push({
-            type: "tool-result",
-            id,
-            content: toolContent(status === "error" ? st.error ?? st.output : st.output),
-            isError: status === "error",
-          });
-        }
+        out.push(...toolPartFrames(pp, new Set(), new Set()));
       }
     }
   }
-  return { title, frames: out };
+  return out;
 }
 
 /** One entry of the chat `models` frame, opencode-side. `free` (card #90: "show which one free
@@ -267,8 +294,15 @@ export function parseOpencodeModelsVerbose(stdout: string): OpencodeModelEntry[]
     }
     entries.push({ id, name, free });
   }
-  // Disambiguate display-name collisions across providers (e.g. "Kimi K2.5" is served by both
-  // opencode/ and moonshotai/) — every collided entry shows its provider.
+  return finalizeModelEntries(entries);
+}
+
+/** Disambiguate display-name collisions across providers (e.g. "Kimi K2.5" is served by both
+ *  opencode/ and moonshotai/ — every collided entry shows its provider) and shape the final
+ *  `OpencodeModelEntry[]`. Shared by `parseOpencodeModelsVerbose` (CLI text, run-mode fallback) and
+ *  `modelEntriesFromProviders` (server mode's typed `config.providers()` — no text parsing at all)
+ *  so the two never drift on labeling/badge behavior. */
+function finalizeModelEntries(entries: { id: string; name: string | null; free?: boolean }[]): OpencodeModelEntry[] {
   const nameCount = new Map<string, number>();
   for (const e of entries) if (e.name) nameCount.set(e.name, (nameCount.get(e.name) ?? 0) + 1);
   return entries.map((e) => {
@@ -276,6 +310,49 @@ export function parseOpencodeModelsVerbose(stdout: string): OpencodeModelEntry[]
     const label = e.name ? (collided ? `${e.name} (${e.id.split("/")[0]})` : e.name) : e.id;
     return { value: e.id, label, description: e.id, effortLevels: [], ...(e.free === undefined ? {} : { free: e.free }) };
   });
+}
+
+/** One provider's model catalog off `GET /config/providers` (server mode) — the fields this file
+ *  actually reads, verified live against a real response (opencode 1.18.4): each provider nests its
+ *  models under `models: {[modelId]: Model}`, `Model.cost.{input,output}` classify free vs paid
+ *  (same $0/$0 rule the CLI-text path uses), `Model.name` is the display name. Deliberately NOT the
+ *  SDK's generated `Provider`/`Model` types — those are a fine additional check but this file already
+ *  treats every opencode surface as untyped JSON on principle (see opencodeServer.ts's top-of-file
+ *  note on verified drift between the generated types and live behavior), so the fields we don't use
+ *  are simply never named here. */
+export interface OpencodeApiModel {
+  id: string;
+  name?: string;
+  cost?: { input: number; output: number };
+}
+export interface OpencodeApiProvider {
+  id: string;
+  models?: Record<string, OpencodeApiModel>;
+}
+
+/**
+ * Build the `models` frame's entries straight from server mode's typed `GET /config/providers`
+ * response — no CLI text parsing at all, and RICHER than the run-mode fallback (real cost/name
+ * fields instead of a pretty-printed-JSON scrape). Verified live: `opencode/big-pickle` and six other
+ * `opencode/*` ids report `cost.input === 0 && cost.output === 0` (Zen's free tier — same models the
+ * CLI-text path's Zen-rotation feature already discovers), `moonshotai/*` reports real paid costs.
+ */
+export function modelEntriesFromProviders(providers: OpencodeApiProvider[]): OpencodeModelEntry[] {
+  const seen = new Set<string>();
+  const entries: { id: string; name: string | null; free?: boolean }[] = [];
+  for (const p of providers) {
+    if (!p || typeof p.id !== "string" || !p.models) continue;
+    for (const m of Object.values(p.models)) {
+      if (!m || typeof m.id !== "string") continue;
+      const id = `${p.id}/${m.id}`;
+      if (!MODEL_ID_RE.test(id) || seen.has(id)) continue;
+      seen.add(id);
+      const name = typeof m.name === "string" && m.name.trim() ? m.name.trim() : null;
+      const free = m.cost && typeof m.cost.input === "number" && typeof m.cost.output === "number" ? m.cost.input === 0 && m.cost.output === 0 : undefined;
+      entries.push({ id, name, free });
+    }
+  }
+  return finalizeModelEntries(entries);
 }
 
 /** Session tab title from the user's first prompt: preamble stripped, whitespace collapsed,
@@ -335,6 +412,31 @@ export function parseOpencodeDebugConfigCommands(stdout: string): OpencodeComman
     const description = typeof entry.description === "string" && entry.description.trim() ? entry.description.trim() : "";
     const template = typeof entry.template === "string" ? entry.template.split("\n")[0].trim() : "";
     out.push({ name, description: description || template });
+  }
+  return out;
+}
+
+/** One command off server mode's `GET /command` — the fields this file reads (name/description/
+ *  template), verified live against a real response (opencode 1.18.4). */
+export interface OpencodeApiCommand {
+  name: string;
+  description?: string;
+  template?: string;
+}
+
+/**
+ * Build the composer's "/" autocomplete registry straight from server mode's typed `GET /command`
+ * — the direct replacement for `parseOpencodeDebugConfigCommands`'s `opencode debug config` JSON
+ * scrape, same precedence rules (description wins, else the template's first line, a command name
+ * must be one "/"-typable token). Verified live: returns the SAME merged registry (config-dir +
+ * opencode.json(c) + plugin-registered commands) the CLI text path parses out of `debug config`.
+ */
+export function commandEntriesFromApi(commands: OpencodeApiCommand[]): OpencodeCommandEntry[] {
+  const out: OpencodeCommandEntry[] = [];
+  for (const c of commands) {
+    if (!c || typeof c.name !== "string" || !c.name.trim() || /\s/.test(c.name)) continue;
+    const description = typeof c.description === "string" && c.description.trim() ? c.description.trim() : typeof c.template === "string" ? c.template.split("\n")[0].trim() : "";
+    out.push({ name: c.name, description });
   }
   return out;
 }
@@ -441,4 +543,177 @@ export function withZenFreeRotate(models: OpencodeModelEntry[]): OpencodeModelEn
 export function pickZenFreeModel(freeIds: string[], turnIndex: number): string | null {
   if (!freeIds.length) return null;
   return freeIds[((turnIndex % freeIds.length) + freeIds.length) % freeIds.length];
+}
+
+// ── opencode SERVER mode (`opencode serve` + @opencode-ai/sdk) ──────────────────────────────────────
+//
+// Translation for the persistent-server surface (chatProviders/opencodeServer.ts +
+// chatProviders/opencode.ts's server-mode turn path), replacing the per-turn `opencode run --format
+// json` subprocess's NDJSON above. Two real, load-bearing differences from the run-mode CLI's event
+// shapes were confirmed by capturing a live `GET /event` stream (opencode 1.18.4) — NEITHER matches
+// what @opencode-ai/sdk@1.18.9's generated types.gen.d.ts declares:
+//   1. Token-level deltas arrive as a SEPARATE event type, "message.part.delta"
+//      ({sessionID,messageID,partID,field,delta}) — NOT a `delta` field nested inside
+//      "message.part.updated" the way the generated Event union claims.
+//   2. A permission ask arrives as "permission.asked" ({id,permission,patterns,metadata,always,
+//      tool:{messageID,callID}}) — NOT "permission.updated" with a Permission{type,pattern,title}
+//      shape. ("permission.replied" similarly carries `requestID`/`reply`, not `permissionID`/
+//      `response`.)
+// So every event here is read as untyped JSON, matching this file's existing tolerance for the
+// run-mode CLI's own NDJSON.
+
+/** Mutable per-TURN accounting for translateOpencodeServerEvent — the server-mode analogue of
+ *  OpencodeTurnState. Extra bookkeeping vs. the run-mode state: `partKind` remembers which frame
+ *  kind a part id maps to (learned off its FIRST "message.part.updated", since a later
+ *  "message.part.delta" for the same part carries no `type` of its own) and `messageRoles` remembers
+ *  which messageIds are the user's OWN echoed turn (learned off "message.updated") so those never
+ *  get re-rendered as assistant output — the server's event bus reports the full session lifecycle,
+ *  not just the turn's assistant output the way run-mode's NDJSON does. Cost/tokens are NOT
+ *  accumulated here in server mode: the awaited `session.prompt()`/`session.command()` HTTP response
+ *  carries the turn's authoritative `info.cost`, which is simpler and can't double-count multi-step
+ *  turns the way summing every `step-finish` event would. */
+export interface OpencodeServerTurnState {
+  emitted: Map<string, number>;
+  partKind: Map<string, "text" | "reasoning">;
+  messageRoles: Map<string, "user" | "assistant">;
+  toolsStarted: Set<string>;
+  toolsFinished: Set<string>;
+}
+
+export function newOpencodeServerTurnState(): OpencodeServerTurnState {
+  return { emitted: new Map(), partKind: new Map(), messageRoles: new Map(), toolsStarted: new Set(), toolsFinished: new Set() };
+}
+
+/**
+ * Translate ONE raw event off the server's global event stream into the ChatFrame(s) it produces for
+ * the CURRENT turn, updating `state`. Deliberately does NOT handle "permission.asked" — that's
+ * parsed by `parseOpencodePermissionAsk` instead (chatProviders/opencode.ts calls both per event: a
+ * permission ask needs the id echoed back later by `respondPermission`, which doesn't fit this
+ * function's stateless-per-event shape as cleanly). Tolerant of anything — never throws.
+ */
+export function translateOpencodeServerEvent(raw: unknown, state: OpencodeServerTurnState): ChatFrame[] {
+  if (!raw || typeof raw !== "object") return [];
+  const ev = raw as Record<string, unknown>;
+  const props = (ev.properties && typeof ev.properties === "object" ? ev.properties : {}) as Record<string, unknown>;
+
+  if (ev.type === "message.updated") {
+    const info = (props.info && typeof props.info === "object" ? props.info : {}) as Record<string, unknown>;
+    const id = typeof info.id === "string" ? info.id : null;
+    if (id && info.role === "user") state.messageRoles.set(id, "user");
+    else if (id && info.role === "assistant") state.messageRoles.set(id, "assistant");
+    return [];
+  }
+
+  if (ev.type === "message.part.delta") {
+    const messageId = typeof props.messageID === "string" ? props.messageID : "";
+    if (state.messageRoles.get(messageId) === "user") return []; // never re-echo the user's own prompt
+    if (props.field !== "text") return [];
+    const partId = typeof props.partID === "string" ? props.partID : "";
+    const delta = typeof props.delta === "string" ? props.delta : "";
+    if (!partId || !delta) return [];
+    state.emitted.set(partId, (state.emitted.get(partId) ?? 0) + delta.length);
+    const kind = state.partKind.get(partId) ?? "text";
+    return [kind === "reasoning" ? { type: "thinking", text: delta } : { type: "assistant-text", text: delta }];
+  }
+
+  if (ev.type === "message.part.updated") {
+    const part = (props.part && typeof props.part === "object" ? props.part : {}) as Record<string, unknown>;
+    const messageId = typeof part.messageID === "string" ? part.messageID : "";
+    if (state.messageRoles.get(messageId) === "user") return [];
+    if (part.type === "tool") return toolPartFrames(part, state.toolsStarted, state.toolsFinished);
+    if (part.type === "text" || part.type === "reasoning") {
+      const id = typeof part.id === "string" ? part.id : "";
+      if (!id) return [];
+      state.partKind.set(id, part.type);
+      // A full-text snapshot: emit only what message.part.delta hasn't already streamed (covers a
+      // model/tool that never streams deltas at all, and de-dupes the FINAL settled snapshot against
+      // whatever deltas already went out).
+      const text = typeof part.text === "string" ? part.text : "";
+      const delta = unseenSuffix(state, id, text);
+      if (!delta) return [];
+      return [part.type === "reasoning" ? { type: "thinking", text: delta } : { type: "assistant-text", text: delta }];
+    }
+    return []; // step-start/step-finish/snapshot/patch/agent/retry/compaction: no UI frame
+  }
+
+  return []; // session.*/permission.*/todo.*/etc: not this function's concern
+}
+
+/** One pending approval ask, normalized out of whichever shape the live server emits (see the
+ *  top-of-section note on "permission.asked" vs the SDK-declared "permission.updated"/Permission —
+ *  this reads BOTH the observed live field names ("permission"/"patterns") and the SDK-declared ones
+ *  ("type"/"pattern"/"title") so a future server release that reverts to the documented shape still
+ *  works without a code change. */
+export interface OpencodePermissionAsk {
+  id: string;
+  toolName: string;
+  input: unknown;
+}
+
+/**
+ * Parse a raw event into a permission ask, or null when it isn't one / is malformed. Verified live
+ * (opencode 1.18.4): `{type:"permission.asked", properties:{id,permission:"bash",
+ * patterns:["echo hi"], metadata:{command:"echo hi"}, always:["echo *"], tool:{...}}}` — `metadata`
+ * (when non-empty) is the richest `input` for the permission card's summary (e.g. `{command:...}`,
+ * which `summarizeInput` on the frontend already knows how to render); `patterns`/`pattern` is the
+ * fallback when metadata is empty.
+ */
+export function parseOpencodePermissionAsk(raw: unknown): OpencodePermissionAsk | null {
+  if (!raw || typeof raw !== "object") return null;
+  const ev = raw as Record<string, unknown>;
+  if (ev.type !== "permission.asked" && ev.type !== "permission.updated") return null;
+  const props = (ev.properties && typeof ev.properties === "object" ? ev.properties : ev) as Record<string, unknown>;
+  const id = typeof props.id === "string" && props.id ? props.id : null;
+  if (!id) return null;
+  const toolName = (typeof props.permission === "string" && props.permission) || (typeof props.type === "string" && props.type) || "tool";
+  const metadata = (props.metadata && typeof props.metadata === "object" ? props.metadata : {}) as Record<string, unknown>;
+  if (Object.keys(metadata).length) return { id, toolName, input: metadata };
+  const patterns = props.patterns ?? props.pattern;
+  return { id, toolName, input: patterns !== undefined ? { pattern: patterns } : {} };
+}
+
+/**
+ * Map the chat's generic permission-answer verb onto the server's `{response: "once"|"always"|
+ * "reject"}` body (verified live: both "once" and "reject" produced the expected effect — the tool
+ * ran, or errored with "The user rejected permission to use this specific tool call."). "always"
+ * covers the header's future "always allow this tool" affordance, if one is ever added; today the
+ * client only ever sends allow/deny (see app/src/ChatView.tsx's PermissionCard), so `always` stays
+ * plumbed through but effectively unused until then.
+ */
+export function opencodePermissionResponse(behavior: "allow" | "deny", always?: boolean): "once" | "always" | "reject" {
+  if (behavior === "deny") return "reject";
+  return always ? "always" : "once";
+}
+
+/** Split a `provider/model` id into the `{providerID, modelID}` object `session.prompt`/
+ *  `session.create` expect — the FIRST "/" is the split point (a modelID may itself contain "/" or
+ *  "." per MODEL_ID_RE, e.g. some Zen ids), never `.split("/")`. Null for anything that doesn't look
+ *  like a model id (mirrors setModel's own validation), so a stale/garbage model can never reach the
+ *  server as a malformed body. */
+export function splitOpencodeModelId(model: string): { providerID: string; modelID: string } | null {
+  if (!MODEL_ID_RE.test(model)) return null;
+  const i = model.indexOf("/");
+  if (i < 0) return null;
+  return { providerID: model.slice(0, i), modelID: model.slice(i + 1) };
+}
+
+/** One part of `session.prompt`'s body — the request-shape subset this file builds (text + file
+ *  attachments only; opencode's SDK also allows agent/subtask parts this driver never sends). */
+export type OpencodePromptPart = { type: "text"; text: string } | { type: "file"; mime: string; url: string; filename?: string };
+
+/**
+ * Build `session.prompt`'s `parts` array from a turn's text + image attachments. An image rides as a
+ * `data:` URL (verified live: `POST /session/{id}/message` accepted a `FilePartInput{type:"file",
+ * mime,url:"data:image/png;base64,..."}` with HTTP 200, and a vision-capable free model
+ * (`opencode/mimo-v2.5-free`) genuinely read pixel content back — this was NOT assumed from the SDK
+ * types, it was independently confirmed with one real call per this task's brief). Text-less image
+ * turns still carry a (possibly empty) leading text part, matching the CLI path's own "always send
+ * something" convention.
+ */
+export function buildOpencodePromptParts(text: string, images?: ChatImage[]): OpencodePromptPart[] {
+  const parts: OpencodePromptPart[] = [{ type: "text", text }];
+  for (const im of images ?? []) {
+    parts.push({ type: "file", mime: im.media_type, url: `data:${im.media_type};base64,${im.data}` });
+  }
+  return parts;
 }
