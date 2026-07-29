@@ -12,6 +12,7 @@
 
 import "./graphCanvas.css";
 import type { GraphData, GraphNode, NodeKind } from "../../../core/src/graph";
+import { nodeGlyph } from "./asciiGrid";
 
 /** Live graph settings pushed by GraphView (mirrors settings.graph + appearance tokens). */
 export interface GraphConfig {
@@ -85,6 +86,21 @@ const NODE_MAX_FRAC = 0.6;    // cap: a hub never exceeds ~0.6 of the spacing
 const SELF_FRAC = 0.5;        // the "you" hub's diameter as a fraction of spacing
 const MIN_DOT_PX = 1.6;       // below this projected diameter a node is hidden
 const MAX_DOT_PX = 60;        // cap the resting diameter so tiny graphs (1 "you" node) don't blow up
+// --- ASCII node marks ---------------------------------------------------------
+// Nodes are drawn as monospace glyphs ("." / "o" / "@", the degree+depth ramp from asciiGrid) rather
+// than filled dots. Everything else about the node pass is unchanged: TRUE float screen positions
+// (no cell snapping — this renderer has no character grid), and the mark scales with the perspective
+// dolly exactly where the dot radius used to.
+//
+// A glyph's INK is much smaller than its em box (a "." is a couple of px in a 12px cell), so the font
+// size is a multiple of the dot diameter it replaces rather than equal to it. And unlike a dot, a
+// glyph has a legibility floor well above MIN_DOT_PX: at 1.6px a monospace character is an
+// indistinguishable smudge, so zoomed-out marks bottom out at MIN_GLYPH_PX instead.
+const GLYPH_SIZE_MULT = 2.2;  // font px per unit of the dot diameter this mark replaces
+const MIN_GLYPH_PX = 6;       // a mono char below this reads as noise, not a character
+const MAX_GLYPH_PX = 72;      // cap so a 1-node graph doesn't render one screen-filling "@"
+/** The mono family every ASCII mark and label uses (Monaspace Xenon, bundled — see design/ascii). */
+const MONO_STACK = '"Monaspace Xenon", ui-monospace, SFMono-Regular, Menlo, monospace';
 // Breathing room kept clear around the "you" hub (see clearAroundSelf). The RADIUS is a
 // world-space quantity — expressed as a fraction of the fitted graph radius and projected
 // through the hub's own perspective scale — so the cleared region zooms WITH the graph like any
@@ -297,8 +313,12 @@ export class CanvasGraphRenderer {
   private lastFrameT = 0; private fpsAccum = 0; private fpsFrames = 0; private nowMs = 0;
 
   // label fonts (hoisted so the label loop doesn't rebuild the font string every label every frame)
-  private readonly FONT_SELF = "700 14px ui-sans-serif, system-ui, -apple-system, sans-serif";
-  private readonly FONT_NODE = "500 11px ui-sans-serif, system-ui, -apple-system, sans-serif";
+  private readonly FONT_SELF = `700 14px ${MONO_STACK}`;
+  private readonly FONT_NODE = `500 11px ${MONO_STACK}`;
+  /** Glyph font strings, keyed by quantised px size — the node pass would otherwise build a fresh
+   *  font string per node per frame (~2k concats/frame). Bounded: sizes are quantised to 0.5px
+   *  between MIN_GLYPH_PX and MAX_GLYPH_PX, so this holds ~130 entries at most. */
+  private glyphFonts = new Map<number, string>();
 
   // ---- lifecycle -----------------------------------------------------------
 
@@ -707,6 +727,27 @@ export class CanvasGraphRenderer {
     return Math.max(MIN_DOT_PX, nv.baseDiameter * nv.pscale);
   }
 
+  /** Font size (px) for a node's ASCII mark. Tracks the perspective dolly through baseDiameter ×
+   *  pscale — the SAME quantity the dot radius used — with its own legibility floor (see
+   *  MIN_GLYPH_PX): a glyph scaled all the way down to MIN_DOT_PX would be unreadable. */
+  private glyphSize(nv: NodeView): number {
+    const raw = nv.baseDiameter * nv.pscale * GLYPH_SIZE_MULT;
+    return Math.max(MIN_GLYPH_PX, Math.min(MAX_GLYPH_PX, raw));
+  }
+
+  /** Half-height of a node's drawn mark, in px — what the dot's radius was. Used for the hover/
+   *  neighbour rings and the label offset so they sit off the GLYPH, not off the vanished dot. */
+  private markRadius(nv: NodeView): number {
+    return this.glyphSize(nv) * 0.42; // ~cap-height/2 of the mono face
+  }
+
+  private glyphFont(px: number): string {
+    const q = Math.round(px * 2) / 2;
+    let f = this.glyphFonts.get(q);
+    if (f === undefined) { f = `500 ${q}px ${MONO_STACK}`; this.glyphFonts.set(q, f); }
+    return f;
+  }
+
   // ---- camera / fit --------------------------------------------------------
 
   private measure() {
@@ -889,18 +930,23 @@ export class CanvasGraphRenderer {
       for (const nv of this.nodes) { if (nv.onScreen) this.drawOrder.push(nv); }
       this.drawOrder.sort((a, b) => a.depth - b.depth);
       const order = this.drawOrder;
+      // ASCII marks: each node is a monospace glyph off the degree/depth ramp, painted at its TRUE
+      // float screen position (no cell snapping) and sized off the same perspective-scaled quantity
+      // that drove the dot radius. Hollow daemon nodes keep their "outline" reading via strokeText.
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
       for (const nv of order) {
-        const ds = this.nodeDiameter(nv);
         let alpha = this.depthFade(nv, is2d);
         if (focus && !focus.has(nv.node.id)) alpha *= 0.13; // dim non-focus on hover/highlight
         else if (this.hoveredId && focus?.has(nv.node.id)) alpha = Math.max(alpha, 0.95); // connected nodes pop to full brightness on hover
         ctx.globalAlpha = alpha;
-        ctx.beginPath();
-        ctx.arc(nv.sx, nv.sy, ds / 2, 0, Math.PI * 2);
-        if (nv.node.kind === "self" || this.isHollow(nv.node)) {
-          ctx.lineWidth = Math.max(1.5, ds * 0.12); ctx.strokeStyle = nv.colorHex; ctx.stroke();
+        const gs = this.glyphSize(nv);
+        ctx.font = this.glyphFont(gs);
+        const glyph = nv.node.kind === "self" ? "@" : nodeGlyph(nv.deg, nv.dr, !is2d);
+        if (this.isHollow(nv.node)) {
+          ctx.lineWidth = Math.max(0.75, gs * 0.06); ctx.strokeStyle = nv.colorHex;
+          ctx.strokeText(glyph, nv.sx, nv.sy);
         } else {
-          ctx.fillStyle = nv.colorHex; ctx.fill();
+          ctx.fillStyle = nv.colorHex; ctx.fillText(glyph, nv.sx, nv.sy);
         }
       }
       // hovered node: a bright ring; its neighbours: a thinner ring so connected NODES read as
@@ -912,16 +958,14 @@ export class CanvasGraphRenderer {
             if (id === this.hoveredId) continue;
             const nb = this.byId.get(id);
             if (!nb || !nb.onScreen) continue;
-            const nds = this.nodeDiameter(nb);
             ctx.globalAlpha = 0.85; ctx.strokeStyle = nb.colorHex;
-            ctx.beginPath(); ctx.arc(nb.sx, nb.sy, nds / 2 + 2.5, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(nb.sx, nb.sy, this.markRadius(nb) + 2.5, 0, Math.PI * 2); ctx.stroke();
           }
         }
         const nv = this.byId.get(this.hoveredId);
         if (nv && nv.onScreen) {
-          const ds = this.nodeDiameter(nv);
           ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = nv.colorHex;
-          ctx.beginPath(); ctx.arc(nv.sx, nv.sy, ds / 2 + 3, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(nv.sx, nv.sy, this.markRadius(nv) + 3, 0, Math.PI * 2); ctx.stroke();
         }
       }
       // labels (canvas) — only the visible set (hubs + active + hovered + neighbours), so it's cheap
@@ -931,11 +975,10 @@ export class CanvasGraphRenderer {
         const self = nv.node.kind === "self";
         ctx.font = self ? this.FONT_SELF : this.FONT_NODE;
         const text = self ? "You" : nv.node.label;
-        const ds = this.nodeDiameter(nv);
         if (nv.labelW < 0) { nv.labelW = ctx.measureText(text).width; }
         const tw = nv.labelW;
         const fh = self ? 14 : 11, padX = 6, padY = 2;
-        const bx = nv.sx - tw / 2 - padX, by = nv.sy + ds / 2 + 4, bw = tw + padX * 2, bh = fh + padY * 2;
+        const bx = nv.sx - tw / 2 - padX, by = nv.sy + this.markRadius(nv) + 4, bw = tw + padX * 2, bh = fh + padY * 2;
         ctx.fillStyle = this.cfg.labelBgColor;
         ctx.beginPath();
         if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 5); else ctx.rect(bx, by, bw, bh);

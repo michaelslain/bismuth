@@ -2,7 +2,7 @@
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import type { GraphConfig, GraphRenderer, HoverNode } from "./graph/graphRenderer";
-import { AsciiGraphRenderer } from "./graph/AsciiGraphRenderer";
+import { CanvasGraphRenderer } from "./graph/CanvasGraphRenderer";
 import { AgentsGraph } from "./graph/AgentsGraph";
 import { layoutAgentGraph } from "./graph/agentLayout";
 import type { Org } from "./graph/agentOrg";
@@ -96,10 +96,12 @@ export function GraphView(props: {
   onPaint?: (nodeCount: number) => void;
 }) {
   let host!: HTMLDivElement;
-  // The ASCII field draws its labels ON the character grid (they're cells like everything else),
-  // so there is no DOM label overlay — the vestigial `labelOverlay` argument on the renderer seam
-  // (graphRenderer.ts) goes unpassed.
-  const renderer: GraphRenderer = new AsciiGraphRenderer();
+  // The graph is the ORIGINAL Canvas-2D renderer — its camera, continuous perspective zoom,
+  // orbit/pan and vector edges — with ASCII marks instead of dots and the mono face on labels
+  // (see CanvasGraphRenderer's "ASCII node marks"). It draws its labels on the same canvas, so the
+  // vestigial `labelOverlay` argument on the renderer seam (graphRenderer.ts) goes unpassed.
+  // AsciiGraphRenderer (the character-grid field) stays in the tree, unmounted.
+  const renderer: GraphRenderer = new CanvasGraphRenderer();
   let mounted = false;
   let lastGraph: GraphData | null = null;
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);
