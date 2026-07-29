@@ -75,16 +75,29 @@ tells you what is true here.
 | Backend | Chat | Terminal | Agents graph | Daemon | MCP | Memory |
 | --- | --- | --- | --- | --- | --- | --- |
 | `claude` | ✓ delta | ✓ | hooks (+ subagents) | ✓ | `mcp add` | hooks |
+| `codex` | ✓ part | ✓ | hooks (+ subagents) | ✓ | `mcp add` | AGENTS.md block |
 | `opencode` | ✓ delta | ✓ | — | — | config merge | per-turn system prompt |
 | `cline` | ✓ ACP | ✓ | — | — | `mcp add` | MCP tools |
 | `gemini` | ✓ ACP | ✓ | — | — | `mcp add` | MCP tools |
 | `goose` | ✓ ACP | ✓ | — | — | config merge | MCP tools |
 | `openclaw` | ✓ ACP | ✓ | — | — | `mcp set` | MCP tools |
-| `claude-code-acp` | ✓ ACP | — | — | — | per-session | MCP tools |
-| `codex-acp` | ✓ ACP | — | — | — | per-session | MCP tools |
+| `claude-code-acp` * | ✓ ACP | — | — | — | per-session | MCP tools |
+| `codex-acp` * | ✓ ACP | — | — | — | per-session | MCP tools |
 
-Claude Code is the only backend that supports all six, and the only one that can enforce the vault
-visibility gate — see the daemon section below for why that is a constraint rather than a gap.
+\* **Hidden from the provider picker** (`hidden: true` in the catalog), still selectable by id. Both
+bridge an agent that already has a native driver here, so offering them as peers is a trap: an
+npx-fetched third-party adapter with fewer capabilities reads, in a list, as if it were newer. They
+remain in the catalog as documentation and as an escape hatch if a native driver ever breaks.
+
+Claude Code and Codex are the only backends covering all six surfaces. Claude Code is the only one
+that can enforce the vault visibility gate — see the daemon section below for why that is a
+constraint rather than a gap.
+
+Note that Codex is driven by spawning the user's own `codex` binary, **not** via `@openai/codex-sdk`.
+That package vendors a platform binary measured at 310MB in `node_modules`, and since it spawns a
+fresh subprocess per turn anyway it was only buying typed events — which the driver's own translator
+provides. Shipping a second copy of a coding agent the user already has, capable of drifting from the
+version they actually run, is the wrong shape for this app.
 
 Beyond the chat backends above, Bismuth can register its MCP server with **ten** CLIs, including ones
 it never drives as a chat backend: Codex, Cline, OpenClaw, Gemini, Qwen, Copilot, Amp, Droid, Crush
