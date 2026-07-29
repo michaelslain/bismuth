@@ -3,7 +3,7 @@
 // BISMUTH_DAEMON_DIR at a fresh tmp dir and writes fake state files (device-id /
 // devices.json / owner.json), then asserts the contract-exact shapes.
 import { test, expect, afterEach } from "bun:test";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -25,6 +25,8 @@ import {
   readDaemonSessionIds,
   vaultSessionIdsFile,
   parseSessionIds,
+  isEphemeralVaultRoot,
+  vaultRootPresence,
 } from "../src/daemon";
 import { daemonSnapshot } from "../src/daemonGraph";
 
@@ -715,6 +717,147 @@ test("registering the same vault again refreshes its sidecar stamp", () => {
   const stamp = readVaultsSeen(home)![vault];
   expect(stamp).not.toBe(stale);
   expect(Date.parse(stamp)).toBeGreaterThan(Date.parse(stale));
+});
+
+// ── The two fast rules in front of the TTL: deleted roots, and roots that were never vaults ────
+//
+// The TTL is a 30-day heuristic about disuse. Two kinds of entry are certain rather than probable —
+// a DELETED directory (nothing to serve, this month or next) and a root that was never a user's
+// vault at all (agent scratch, test sandbox) — and making those wait a month costs a cron-tick walk
+// over junk plus a vaults.json a human cannot read.
+//
+// Both rules are biased the same way the TTL is: they fire ONLY on a certainty. The registry is the
+// daemon's only pointer at a vault, so a wrong drop stops that vault's crons forever while its data
+// sits untouched on disk — which is why "I could not stat it" must never be read as "it is gone".
+
+/** A symlink cycle at `<dir>/loop-a` — stat'ing it fails with ELOOP, i.e. a real, reproducible
+ *  "I could not perform this read" that is NOT a plain missing path. Stands in for the production
+ *  cases (EACCES behind a locked parent, EIO on a wedged network mount) that cannot be staged
+ *  portably in a unit test. */
+function makeUnstatablePath(dir: string): string {
+  const a = join(dir, "loop-a");
+  symlinkSync("loop-b", a);
+  symlinkSync("loop-a", join(dir, "loop-b"));
+  return a;
+}
+
+test("vaultRootPresence: present / missing / unknown — a failed stat is NEVER 'missing'", () => {
+  const dir = realHome("presence");
+  expect(vaultRootPresence(dir)).toBe("present");
+  expect(vaultRootPresence(join(dir, "no-such-vault"))).toBe("missing");
+  // The distinction the whole prune rests on: `existsSync` reports this one as false (= would be
+  // pruned); a three-valued check reports "unknown" (= kept, left to the TTL).
+  expect(vaultRootPresence(makeUnstatablePath(dir))).toBe("unknown");
+  // A vault on an unplugged external drive is ENOENT too, and indistinguishable from a deleted one.
+  // Attaching the drive again must find its crons still registered, so removable mounts never prune.
+  expect(vaultRootPresence("/Volumes/NoSuchDrive-9f2a/vault")).toBe("unknown");
+  expect(vaultRootPresence("/mnt/nfs-not-mounted-9f2a/vault")).toBe("unknown");
+});
+
+test("registerVaultRoot prunes a DELETED vault at once, but keeps one it merely failed to stat", () => {
+  const home = realHome("presence-prune");
+  const alive = realHome("presence-prune-alive");
+  const deleted = realHome("presence-prune-deleted");
+  const unstatable = makeUnstatablePath(realHome("presence-prune-loop"));
+  rmSync(deleted, { recursive: true, force: true }); // the user deleted this vault
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([alive, deleted, unstatable]));
+  // Recent stamps all round, so the TTL cannot be what removes anything here.
+  seedSeen(home, { [alive]: daysAgo(1), [deleted]: daysAgo(1), [unstatable]: daysAgo(1) });
+
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    registerVaultRoot(realHome("presence-prune-trigger"), home);
+  } finally {
+    console.log = origLog;
+  }
+  expect(readVaultPaths(home)).not.toContain(deleted);
+  expect(readVaultPaths(home)).toContain(alive);
+  expect(readVaultPaths(home)).toContain(unstatable); // unknown ≠ gone
+  expect(readFileSync(vaultRegistryLogFile(home), "utf8")).toContain(deleted);
+});
+
+test("isEphemeralVaultRoot: OS temp + .claude/jobs scratch are throwaway; real paths are not", () => {
+  expect(isEphemeralVaultRoot(join(tmpdir(), "vault-abc"))).toBe(true);
+  expect(isEphemeralVaultRoot("/private/tmp/vault-abc")).toBe(true);
+  expect(isEphemeralVaultRoot("/Users/u/.claude/jobs/fe1a462d/tmp/verify-vault")).toBe(true);
+  expect(isEphemeralVaultRoot("/Users/u/.claude/jobs")).toBe(true);
+  // `.claude` alone must NOT be the rule: a git worktree under `.claude/worktrees` is a real
+  // checkout a user can legitimately open — and this repo itself lives in one.
+  expect(isEphemeralVaultRoot("/Users/u/dev/bismuth/.claude/worktrees/wt/vault")).toBe(false);
+  expect(isEphemeralVaultRoot("/Users/u/Documents/library of alexandria")).toBe(false);
+  expect(isEphemeralVaultRoot("/Users/u/jobs/.claude")).toBe(false); // pair, not two loose segments
+});
+
+test("registerVaultRoot refuses ephemeral roots (temp dir, agent scratch) but registers a real one", () => {
+  const home = realHome("ephemeral-refuse");
+  const tempVault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
+  created.push(tempVault);
+  registerVaultRoot(tempVault, home);
+  expect(existsSync(join(home, "vaults.json"))).toBe(false); // not even created for a temp vault
+
+  // The exact shape that leaked into the user's machine registry: a throwaway vault a core booted
+  // against once, inside a Claude Code job's scratch tree. It EXISTS on disk, so only the ephemeral
+  // rule (not the deleted-directory rule) can be what declines it.
+  const scratch = join(realHome("ephemeral-refuse-jobs"), ".claude", "jobs", "fe1a462d", "tmp", "verify-vault");
+  mkdirSync(scratch, { recursive: true });
+  registerVaultRoot(scratch, home);
+  expect(existsSync(join(home, "vaults.json"))).toBe(false);
+
+  // A normal, persistent vault root under the user's home registers exactly as before.
+  const normal = realHome("ephemeral-refuse-normal");
+  registerVaultRoot(normal, home);
+  expect(readVaultPaths(home)).toEqual([normal]);
+});
+
+test("registerVaultRoot prunes an agent-scratch stray an earlier build already persisted (and logs it)", () => {
+  // The reported defect: ~/.bismuth/daemon/vaults.json carrying
+  // "/Users/…/.claude/jobs/<id>/tmp/verify-vault" forever, walked on every cron tick, because the
+  // only garbage collector was a 30-day TTL that its recent stamp kept resetting.
+  const home = realHome("ephemeral-prune");
+  const stray = join(realHome("ephemeral-prune-jobs"), ".claude", "jobs", "fe1a462d", "tmp", "verify-vault");
+  mkdirSync(stray, { recursive: true });
+  const real = realHome("ephemeral-prune-real");
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([stray, real]));
+  seedSeen(home, { [stray]: daysAgo(1), [real]: daysAgo(1) }); // fresh: the TTL would keep both
+
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    registerVaultRoot(real, home);
+  } finally {
+    console.log = origLog;
+  }
+  expect(readVaultPaths(home)).toEqual([real]);
+  expect(readVaultsSeen(home)![stray]).toBeUndefined(); // sidecar pruned with the registry
+  expect(readFileSync(vaultRegistryLogFile(home), "utf8")).toContain(stray);
+});
+
+test("pruning never changes vaults.json's element shape — still a plain array of strings", () => {
+  // The contract regression guard for the new rules: the installed daemon binary parses these
+  // elements as plain path STRINGS, so a prune pass must rewrite the survivors in exactly that
+  // shape. Anything else is a silent machine-wide kill switch for an older binary.
+  const home = realHome("prune-shape");
+  const alive = realHome("prune-shape-alive");
+  const deleted = realHome("prune-shape-deleted");
+  const stray = join(realHome("prune-shape-jobs"), ".claude", "jobs", "abc", "tmp", "v");
+  mkdirSync(stray, { recursive: true });
+  rmSync(deleted, { recursive: true, force: true });
+  writeFileSync(join(home, "vaults.json"), JSON.stringify([alive, deleted, stray]));
+
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    registerVaultRoot(realHome("prune-shape-trigger"), home);
+  } finally {
+    console.log = origLog;
+  }
+  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8")) as unknown[];
+  expect(Array.isArray(written)).toBe(true);
+  for (const entry of written) expect(typeof entry).toBe("string");
+  expect(readFileSync(join(home, "vaults.json"), "utf8")).not.toContain("lastSeenISO");
+  // The exact filter an old installed binary applies still yields the surviving vault.
+  expect(written.filter((r): r is string => typeof r === "string")).toContain(alive);
 });
 
 // ── readDaemonSessionIds: the daemon-session membership test ────────────────────────────────

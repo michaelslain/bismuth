@@ -283,6 +283,8 @@ Hourly at minute 0, 30-minute timeout, catch-up on, enabled, `notify` false, che
 bloat-deleted=N auto-processed=N merged=N improved=N stale-deleted=N final-size=XMB
 ```
 
+> **Known divergence in Step 3.** The prompt ships a `sed` pipeline for finding duplicate clusters and a worked example it calls "ONE note, not seven". The pipeline only strips date/month tokens from the *right* of a filename — it never normalizes a leading qualifier — so `michael-vault-review-july-22-2026-final.md` reduces to the stem `michael-vault-review` while `vault-review-2026-07-24-checkpoint.md` reduces to `vault-review`, and that example actually comes back as **two** clusters. The prose after the command still covers the gap (the model is separately told to treat "several notes that clearly share a topic once you strip the above" as one cluster), so behavior is not broken — but the command does not produce the result its own example claims. `defaultCrons.test.ts` runs the shipped command against the shipped example and **pins** this, so the mismatch is tracked rather than folklore; fix the pipeline and the pinned expectation fails, telling you to update it.
+
 **`vault-review`** — every-4-hours pass over the vault to keep a living model of the user in memory. Frontmatter:
 
 ```yaml
@@ -303,10 +305,31 @@ incremental: true
 `reconcileSeeds(ctx)` is the daemon's declarative analog of core's `reconcileSettings`. It runs every time a vault's brain comes online (boot or runtime-enable, via `ensureVaultDirs`) and, for each registered `Seed`:
 
 - **missing** → write it. `seedsFor(ctx)` returns the full set: the editable `identity.md` (`---\nname: daemon\n---` + the default personality body), one seed per `DEFAULT_CRONS` entry (written to `<ctx.cronsDir>/<name>.md`), and `PAGES.md`. So a fresh vault gets the full set, and an already-set-up vault that predates a newly-added default gets just that new piece on next boot.
-- **present + versioned** (`Seed.refreshKey` — currently only the two default crons) → compare its on-disk SHA-256 against `PRIOR_SEED_HASHES[refreshKey]`, a hand-maintained, append-only list of every PRIOR stock version's hash. A match → **upgrade it in place** to the current `DEFAULT_CRONS` content (this is how an existing vault's `dream`/`vault-review` picks up the incremental-scoping change automatically, without ever touching a file the user customized). No match (and not byte-identical to the CURRENT version either) → leave it untouched, record it in `result.customized`.
+- **present + versioned** (`Seed.refreshKey` — currently only the two default crons) → compare its on-disk SHA-256 against `PRIOR_SEED_HASHES[refreshKey]`, an append-only list of **every** PRIOR stock version's hash. It is written by hand but **enforced mechanically** — see [The `PRIOR_SEED_HASHES` git-history guard](#the-prior_seed_hashes-git-history-guard) below. A match → **upgrade it in place** to the current `DEFAULT_CRONS` content (this is how an existing vault's `dream`/`vault-review` picks up the incremental-scoping change automatically, without ever touching a file the user customized). No match (and not byte-identical to the CURRENT version either) → leave it untouched, record it in `result.customized`.
 - **present + not versioned** (`identity.md`, `PAGES.md`) → leave it untouched, exactly as before — these are never auto-upgraded.
 
-`reconcileSeeds` returns `{ written, refreshed, customized }` (arrays of absolute paths); `daemon/index.ts`'s `ensureVaultDirs` logs `refreshed`/`customized` via the boot log. Best-effort per file — one failure never blocks the rest, and is simply retried on the next brain-start. To add a future non-versioned seedable, append one entry to `seedsFor()`; to ship a content change to an EXISTING versioned seed, push the outgoing content's hash onto `PRIOR_SEED_HASHES` before changing `defaultCrons.ts` — see that constant's doc comment in `seeds.ts` for the exact append-only discipline.
+`reconcileSeeds` returns `{ written, refreshed, customized }` (arrays of absolute paths); `daemon/index.ts`'s `ensureVaultDirs` logs `refreshed`/`customized` via the boot log. Best-effort per file — one failure never blocks the rest, and is simply retried on the next brain-start. To add a future non-versioned seedable, append one entry to `seedsFor()`; to ship a content change to an EXISTING versioned seed, follow the checklist in the next section.
+
+### The `PRIOR_SEED_HASHES` git-history guard
+
+`daemon/test/defaultCrons.test.ts`.
+
+**The bug it exists to prevent.** `reconcileSeeds` can only upgrade an existing vault's cron file when that file's SHA-256 appears in `PRIOR_SEED_HASHES`. A hash that is missing does not produce an error, a warning, or a diff — the file is pristine stock, but `reconcileSeeds` classifies it as *user-customized* and **never touches it again, for the life of that vault**. This is not hypothetical: the first real install sat on stock **v1** of `dream` (2026-06-28) for a month because only **v2**'s hash had ever been listed, so the incremental-scoping upgrade could not reach it. Nothing about the failure is visible at review time — the code compiles, every unit test passes, and fresh vaults get the new prompt — which is why the discipline cannot be a doc comment alone.
+
+**What the guard checks.** It walks `defaultCrons.ts`'s own git history (`git log --follow`, resolving each commit's own path so a future rename cannot truncate the walk), reconstructs every version of `DEFAULT_CRONS` the repo ever shipped by importing that revision of the module, and asserts each historical body hashes to **either** the current `DEFAULT_CRONS` content **or** an entry in `PRIOR_SEED_HASHES`. Anything else fails the test, naming the cron, the commit, the hash, and the line to add. Alongside it: the specific hashes from the original incident are pinned literally, the current content must *not* appear in `PRIOR_SEED_HASHES`, and every entry must be a unique lowercase hex SHA-256.
+
+The guard is deliberately loud about its own blind spots, because a check that silently skips its work while reporting green is worse than no check. A revision that exists in git but cannot be reconstructed (e.g. `defaultCrons.ts` grew a **value** import and no longer loads standalone from a temp dir — `import type` is erased and stays harmless) is a hard failure, not a skip; if that fires, teach the loader to materialize what the module needs rather than relaxing the assertion. The **only** legitimate skip is a checkout with no usable git history at all (shallow clone, tarball export, CI without `.git`) — the guard is a regression net for developers, not a build requirement.
+
+**Changing a default cron's content — the checklist.**
+
+1. Compute the SHA-256 of the **outgoing** body (the current `DEFAULT_CRONS` entry, exactly as it is about to stop being current).
+2. **Append** it to `PRIOR_SEED_HASHES[<cron name>]` in `daemon/src/daemon/seeds.ts`, with a `// vN — <date>, <what changed>` comment. Never remove or reorder an existing entry — a vault still running an even older stock version must keep matching.
+3. Then edit `defaultCrons.ts`.
+4. Run `bun test daemon`. If you did step 2 wrong or skipped it, the guard fails with the exact hash to add.
+
+Never list the *current* content in `PRIOR_SEED_HASHES` — `reconcileSeeds` compares against the live `DEFAULT_CRONS` export directly for the "already up to date" case, and a current hash listed as a prior would make an up-to-date file look stale.
+
+**One version vocabulary.** Stock versions are numbered the way `PRIOR_SEED_HASHES` numbers them, everywhere — comments, test names, and the `daemon/test/fixtures/oldSeedContent.ts` fixtures (`DREAM_V2_CONTENT`, `VAULT_REVIEW_V2_HASH`, …). Today: **v1** = 2026-06-28 (the original ship), **v2** = 2026-07-06, **v3** = 2026-07-27 (incremental scoping moved into the daemon), **v4** = the current `DEFAULT_CRONS` content. `seeds.test.ts` re-derives each fixture's hash and asserts it equals the corresponding `PRIOR_SEED_HASHES` entry, so the labels cannot drift from the bytes. Two competing names for the same body ("old" vs "prior") is the exact fog the original defect hid in — do not reintroduce one.
 
 ---
 

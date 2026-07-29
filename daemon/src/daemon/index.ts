@@ -6,7 +6,7 @@ import { startProcesses, stopProcesses, stopProcessesForVault, reapOrphans, star
 import { startFileWatch, stopFileWatch, stopAllFileWatches } from "./fileWatch.ts"
 import { heartbeatDevice, isOwner } from "../lib/owner.ts"
 import { loadEnabledVaults, loadAllVaults } from "../lib/registry.ts"
-import { daemonConfigPath, generateDaemonConfig, installDaemon, reloadDaemon } from "../lib/platform.ts"
+import { daemonConfigPath, generateDaemonConfig, installDaemon, reloadDaemon, planEnsureInstalled } from "../lib/platform.ts"
 import { augmentPath } from "../lib/childEnv.ts"
 import { MACHINE_DIR, MACHINE_PID_FILE, MACHINE_LOGS_DIR, SHUTDOWN_TIMEOUT_MS, CRON_CHECK_INTERVAL_MS, LAUNCHD_LABEL, vaultPaths, type VaultContext } from "../lib/config.ts"
 
@@ -221,24 +221,40 @@ async function ensureInstalled(): Promise<void> {
     // session.ts. See childEnv.ts (Bug #105).
     envPath: augmentPath(process.env.PATH || "/usr/bin:/bin:/usr/sbin:/sbin"),
   })
-  const res = existsSync(configPath) ? await reloadDaemon(configPath, config) : await installDaemon(configPath, config)
+  // Never bounce a healthy, already-correct service — see planEnsureInstalled. core runs this on
+  // every app boot, so an unconditional unload/load meant opening Bismuth killed any in-flight
+  // cron session and re-armed it on the short retry cooldown.
+  let existingConfig: string | null = null
+  try { existingConfig = readFileSync(configPath, "utf8") } catch { /* absent or unreadable → null */ }
+  const plan = planEnsureInstalled({ existingConfig, desiredConfig: config, running: isDaemonRunning() })
+  if (plan === "skip") {
+    console.log(`[daemon] service already current and running — leaving it alone (${LAUNCHD_LABEL})`)
+    return
+  }
+  const res = plan === "reload" ? await reloadDaemon(configPath, config) : await installDaemon(configPath, config)
   if (!res.ok) { console.error(`[daemon] install failed: ${res.error}`); process.exit(1) }
-  console.log(`[daemon] service installed: ${configPath} (${LAUNCHD_LABEL})`)
+  console.log(`[daemon] service ${plan === "reload" ? "reloaded" : "installed"}: ${configPath} (${LAUNCHD_LABEL})`)
+}
+
+/**
+ * Is a daemon process actually alive right now? Liveness, not mere presence: the pid file
+ * survives a crash / SIGKILL (removePid only runs on graceful shutdown), so check the pid is
+ * actually alive — matching how core's daemon.ts / daemonGraph.ts gate "running". Shared by
+ * `--status` and by ensureInstalled's decision not to bounce a healthy service.
+ */
+function isDaemonRunning(): boolean {
+  try {
+    const pid = Number(readFileSync(MACHINE_PID_FILE, "utf8").trim())
+    if (pid > 0) {
+      try { process.kill(pid, 0); return true } catch { return false }
+    }
+  } catch { /* no pid file → not running */ }
+  return false
 }
 
 function printStatus(): void {
   const installed = existsSync(daemonConfigPath())
-  let running = false
-  try {
-    // Liveness, not mere presence: the pid file survives a crash / SIGKILL (removePid only
-    // runs on graceful shutdown), so check the pid is actually alive — matching how core's
-    // daemon.ts / daemonGraph.ts gate "running".
-    const pid = Number(readFileSync(MACHINE_PID_FILE, "utf8").trim())
-    if (pid > 0) {
-      try { process.kill(pid, 0); running = true } catch { running = false }
-    }
-  } catch { /* no pid file → not running */ }
-  console.log(JSON.stringify({ installed, running, label: LAUNCHD_LABEL }))
+  console.log(JSON.stringify({ installed, running: isDaemonRunning(), label: LAUNCHD_LABEL }))
 }
 
 const mode = process.argv[2]

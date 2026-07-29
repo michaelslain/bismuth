@@ -96,6 +96,44 @@ export function unloadDaemon(configPath: string): void {
   }
 }
 
+// ── Deciding whether `--ensure-installed` may bounce the service ─────────────
+//
+// `--ensure-installed` is run by core on EVERY app boot (installDaemonFromBundle → runSetup),
+// not just when a new daemon binary ships. It used to unconditionally `launchctl unload` +
+// `load`, so simply OPENING Bismuth restarted the daemon — 176 restarts / 165 SIGTERMs in one
+// 29-day sample. That is not cosmetic: a restart kills whatever cron session is mid-flight
+// (shutdown gives running jobs SHUTDOWN_TIMEOUT_MS and then aborts them), the abort records
+// result "killed", and shouldCatchUp then re-arms the job on the short retry cooldown. Opening
+// the app during an hourly `dream` run therefore destroyed that run AND queued a premature retry.
+//
+// The version gate in core's installDaemonFromBundle only guards the COPY of the binary; nothing
+// guarded the reload. This does. The rule: bounce the service only when there is an actual reason
+// to — the config changed, or the service is not running. An unchanged config plus a live daemon
+// means the running process is already exactly what we would install, so leave it alone.
+export type EnsurePlan = "install" | "reload" | "skip"
+
+/**
+ * Decide what `--ensure-installed` should do. PURE — the IO (reading the existing config, probing
+ * liveness, writing, launchctl) stays in the caller so this rule is directly unit-testable.
+ *
+ * `existingConfig` is the config file's current contents, or null when it is absent OR unreadable.
+ * Unreadable is deliberately treated the same as absent-but-present: we cannot prove the running
+ * service matches, so we reload rather than assume. Erring toward one extra bounce is safe; erring
+ * toward "skip" when the config really did change would leave the daemon running stale forever.
+ */
+export function planEnsureInstalled(opts: {
+  existingConfig: string | null
+  desiredConfig: string
+  /** Is a daemon process actually alive right now (pid file + signal-0 probe, not mere presence)? */
+  running: boolean
+}): EnsurePlan {
+  if (opts.existingConfig === null) return "install"
+  if (opts.existingConfig !== opts.desiredConfig) return "reload"
+  // Config is byte-identical to what we would write. Only bounce if nothing is actually running —
+  // that is the case where the service is installed but dead and genuinely needs kicking.
+  return opts.running ? "skip" : "reload"
+}
+
 export async function reloadDaemon(configPath: string, config: string): Promise<{ ok: boolean; error?: string }> {
   await Bun.write(configPath, config)
   if (IS_LINUX) {
