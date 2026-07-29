@@ -11,6 +11,7 @@
 // interface to implement.
 import * as claude from "../chat";
 import * as opencode from "./opencode";
+import { codexBackend } from "./codex/driver";
 import {
   ACP_BACKEND_LIST,
   claudeCodeAcpBackend,
@@ -124,13 +125,14 @@ const opencodeBackend: ChatBackend = {
  *
  * ORDER MATTERS for ownership resolution (see ./index.ts `owner()`): the old code asked opencode
  * first and Claude second, and that order is preserved so a chat id somehow live in both registries
- * resolves the same way it always did. The six ACP backends (chatProviders/acp/driver.ts) are new
- * ids nothing pre-dates, so where they land in the resolution order can't disturb that history —
- * appended after opencode/claude.
+ * resolves the same way it always did. "codex" and the six ACP backends (chatProviders/acp/driver.ts)
+ * are new ids nothing pre-dates, so where they land in the resolution order can't disturb that
+ * history — appended after opencode/claude.
  */
 export const CHAT_BACKENDS: Record<BackendId, ChatBackend> = {
   opencode: opencodeBackend,
   claude: claudeBackend,
+  codex: codexBackend,
   cline: clineBackend,
   gemini: geminiBackend,
   goose: gooseBackend,
@@ -139,6 +141,6 @@ export const CHAT_BACKENDS: Record<BackendId, ChatBackend> = {
   "codex-acp": codexAcpBackend,
 };
 
-/** In ownership-resolution order (opencode first, then claude, then every ACP backend) — see
- *  CHAT_BACKENDS. */
-export const CHAT_BACKEND_LIST: readonly ChatBackend[] = [opencodeBackend, claudeBackend, ...ACP_BACKEND_LIST];
+/** In ownership-resolution order (opencode first, then claude, then codex, then every ACP backend)
+ *  — see CHAT_BACKENDS. */
+export const CHAT_BACKEND_LIST: readonly ChatBackend[] = [opencodeBackend, claudeBackend, codexBackend, ...ACP_BACKEND_LIST];

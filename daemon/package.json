@@ -8,6 +8,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.96",
     "@bismuth/memory": "workspace:*",
+    "@openai/codex-sdk": "^0.146.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

@@ -153,6 +153,30 @@ export async function readMcpRegisterWith(vault: string): Promise<string[]> {
   }
 }
 
+/**
+ * The `codex.*` opt-ins (core/src/agentBackends/agentsMd.ts + codexHooks.ts): whether Bismuth may
+ * write a managed AGENTS.md block and/or a project-scoped `.codex/hooks.json` into this vault.
+ * Naming precedent: `readMcpRegisterWith` above — writing into a file the user may hand-edit is
+ * opt-in, so a missing/corrupt file or a non-boolean value all degrade to "off" rather than "on".
+ */
+export interface CodexOptIns {
+  writeAgentsMd: boolean;
+  installRelayHooks: boolean;
+}
+
+export async function readCodexOptIns(vault: string): Promise<CodexOptIns> {
+  try {
+    const res = await readSettings(vault);
+    const codex = res?.data?.codex as { writeAgentsMd?: unknown; installRelayHooks?: unknown } | undefined;
+    return {
+      writeAgentsMd: codex?.writeAgentsMd === true,
+      installRelayHooks: codex?.installRelayHooks === true,
+    };
+  } catch {
+    return { writeAgentsMd: false, installRelayHooks: false };
+  }
+}
+
 /** Parse the `properties:` section of settings.yaml into a validation Schema,
  *  merged over the built-in properties (tags/aliases/cssclasses). */
 export async function getVaultSchema(vault: string): Promise<Schema> {

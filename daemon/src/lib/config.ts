@@ -31,6 +31,18 @@ export interface VaultContext {
   root: string
   /** Daemon display name (settings.daemon.name; "" falls back to "daemon"). */
   name: string
+  /**
+   * The REQUESTED daemon backend (settings.daemon.backend — "claude" default, or e.g. "codex").
+   * NOT the security gate: session.ts's sendMessage still routes every choice through
+   * resolveDaemonBackend, which refuses any non-Claude backend for a vault with hidden notes and
+   * degrades to "claude" regardless of what this field says. Defaults to "claude" so every
+   * existing caller that builds a VaultContext without naming one keeps today's exact behavior.
+   */
+  backend: string
+  /** settings.codex.writeAgentsMd — opt-in, default false. Only consulted when {@link backend} is
+   *  actually "codex" (buildQueryOptions has no equivalent need for Claude, which gets its persona
+   *  via appendSystemPrompt instead). */
+  codexWriteAgentsMd: boolean
   daemonDir: string
   memoryDir: string
   cronsDir: string
@@ -51,7 +63,12 @@ export interface VaultContext {
 }
 
 /** Compute a vault's brain paths under <root>/.daemon. */
-export function vaultPaths(root: string, name: string = "daemon"): VaultContext {
+export function vaultPaths(
+  root: string,
+  name: string = "daemon",
+  backend: string = "claude",
+  codexWriteAgentsMd: boolean = false,
+): VaultContext {
   const daemonDir = join(root, ".daemon")
   const cronsDir = join(daemonDir, "crons")
   const processesDir = join(daemonDir, "processes")
@@ -59,6 +76,8 @@ export function vaultPaths(root: string, name: string = "daemon"): VaultContext 
   return {
     root,
     name: name.trim() || "daemon",
+    backend: backend.trim() || "claude",
+    codexWriteAgentsMd,
     daemonDir,
     memoryDir: join(daemonDir, "memory"),
     cronsDir,

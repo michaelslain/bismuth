@@ -78,11 +78,13 @@ describe("header gating + options", () => {
     expect(providerCan("gpt-cli" as never, "permissionModes")).toBe(true);
   });
   test("every known backend is offered, claude first (the default)", () => {
-    // Grew from ["claude","opencode"] once the ACP agents (chatProviders/acp/) landed —
-    // core/src/agentBackends/catalog.ts BACKEND_IDS is the single source of truth this list mirrors.
+    // Grew from ["claude","opencode"] once the ACP agents (chatProviders/acp/) landed, then grew
+    // again with the native "codex" backend (chatProviders/codex/) — core/src/agentBackends/
+    // catalog.ts BACKEND_IDS is the single source of truth this list mirrors.
     expect(CHAT_PROVIDER_OPTIONS.map((o) => o.value)).toEqual([
       "claude",
       "opencode",
+      "codex",
       "cline",
       "gemini",
       "goose",
