@@ -12,9 +12,13 @@
 // module top level) and exactly what we added is deleted in afterAll.
 import { GlobalWindow } from "happy-dom";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { AsciiGraphRenderer } from "./AsciiGraphRenderer";
+import {
+  AsciiGraphRenderer, DIM_ALPHA, EDGE_DIM_ALPHA, EDGE_W_GAIN, EDGE_W_MAX,
+  deriveEdgeBaseAlpha, safeDepthBand, trimSegmentForClearance,
+} from "./AsciiGraphRenderer";
 import { CELL_W, LAYER_EDGE } from "./asciiGrid";
 import { CLUSTER_LABEL_MAX_CHARS } from "./labelSelection";
+import { THEMES } from "../../../core/src/theme/tokens";
 
 const DOM_GLOBALS = [
   "document", "window", "navigator", "Node", "Element", "HTMLElement", "HTMLDivElement",
@@ -30,10 +34,16 @@ const BOX = { width: 800, height: 600 };
 
 interface FakeCtx {
   fills: { text: string; x: number; y: number; color: string }[];
+  /** Every batched `stroke()` call the vector-edge pass (strokeEdges()) issued this paint — one
+   *  entry per `pass()` bucket, each carrying every `moveTo/lineTo` segment traced between its
+   *  `beginPath()` and its `stroke()`. */
+  strokes: { color: string; width: number; alpha: number; segs: [number, number, number, number][] }[];
   fonts: string[];
   font: string;
   letterSpacing: string;
   fillStyle: string;
+  strokeStyle: string;
+  lineWidth: number;
   globalAlpha: number;
   textBaseline: string;
   textAlign: string;
@@ -42,19 +52,26 @@ interface FakeCtx {
   fillRect(): void;
   fillText(t: string, x: number, y: number): void;
   measureText(s: string): { width: number };
+  beginPath(): void;
+  moveTo(x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  stroke(): void;
 }
 
 /** A 2D context that records what was drawn. Its advance ratio (0.6em) deliberately does NOT equal
  *  the design's 6.3px cell, so applyFont()'s letterSpacing correction is genuinely exercised. */
 function makeCtx(): FakeCtx {
   let font = "11.5px monospace";
+  let pendingPoint: [number, number] | null = null;
+  let pendingSegs: [number, number, number, number][] = [];
   const ctx = {
     fills: [] as { text: string; x: number; y: number; color: string }[],
+    strokes: [] as { color: string; width: number; alpha: number; segs: [number, number, number, number][] }[],
     fonts: [] as string[],
     get font() { return font; },
     set font(v: string) { font = v; ctx.fonts.push(v); },
     letterSpacing: "0px",
-    fillStyle: "", globalAlpha: 1, textBaseline: "", textAlign: "",
+    fillStyle: "", strokeStyle: "", lineWidth: 1, globalAlpha: 1, textBaseline: "", textAlign: "",
     setTransform() {},
     clearRect() {},
     fillRect() {},
@@ -63,6 +80,16 @@ function makeCtx(): FakeCtx {
       const px = parseFloat((font.match(/^([\d.]+)px/) ?? ["", "11.5"])[1]);
       const ls = parseFloat(ctx.letterSpacing) || 0;
       return { width: s.length * (px * 0.6 + ls) };
+    },
+    beginPath() { pendingPoint = null; pendingSegs = []; },
+    moveTo(x: number, y: number) { pendingPoint = [x, y]; },
+    lineTo(x: number, y: number) {
+      if (pendingPoint) pendingSegs.push([pendingPoint[0], pendingPoint[1], x, y]);
+      pendingPoint = [x, y];
+    },
+    stroke() {
+      ctx.strokes.push({ color: ctx.strokeStyle, width: ctx.lineWidth, alpha: ctx.globalAlpha, segs: pendingSegs });
+      pendingSegs = [];
     },
   };
   return ctx as unknown as FakeCtx;
@@ -169,7 +196,7 @@ interface Mounted {
 function mountRenderer(
   viewMode: "2d" | "3d" = "3d",
   graph: ReturnType<typeof sampleGraph> = sampleGraph(),
-  cfgOverrides: Partial<typeof CONFIG & { showLodMasses: boolean; clusterColorsOff: boolean }> = {},
+  cfgOverrides: Partial<typeof CONFIG & { showLodMasses: boolean }> = {},
 ): Mounted {
   const host = document.createElement("div");
   document.body.appendChild(host);
@@ -182,6 +209,7 @@ function mountRenderer(
   r.setConfig({ ...CONFIG, viewMode, ...cfgOverrides });
   r.render(graph);
   ctx.fills.length = 0;
+  ctx.strokes.length = 0;
   frame();
   return { r, viewport: host.firstElementChild as HTMLElement, clicks, hovers, zooms };
 }
@@ -249,6 +277,9 @@ function lodGraph() {
 }
 
 const allText = () => ctx.fills.map((f) => f.text).join("");
+/** Every line segment the vector-edge pass (strokeEdges()) actually stroked this paint, flattened
+ *  across all batched `stroke()` calls. */
+const strokeSegs = () => ctx.strokes.flatMap((s) => s.segs);
 // happy-dom resolves no CSS vars, so the renderer falls back to its literal token table — which
 // makes the fill colour a reliable way to tell a NODE run (the --graph-0..4 ramp) apart from the
 // noise texture and the edges, whose glyph vocabularies overlap ("." "o" "@" are noise chars too).
@@ -270,11 +301,23 @@ const wheelIn = (viewport: HTMLElement, times = 10, at = { x: BOX.width / 2, y: 
 };
 
 describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
-  it("draws edge runs and the node degree ramp", () => {
+  it("strokes edges as vector lines and draws the node degree ramp as glyphs", () => {
     const { r } = mountRenderer("3d");
-    const text = allText();
     expect(ctx.fills.length).toBeGreaterThan(0);
-    expect(/[-|/\\+]/.test(text)).toBe(true);          // "- | / \" with "+" junctions
+    // Edges are real Canvas2D strokes now, not grid characters — a regression lock that the deleted
+    // character-edge path doesn't come back: no fillText run is purely edge glyphs ("- | / \ +").
+    expect(ctx.fills.some((f) => /^[-|/\\+]+$/.test(f.text))).toBe(false);
+    const segs = strokeSegs();
+    expect(segs.length).toBeGreaterThan(0);
+    for (const s of ctx.strokes) {
+      expect(s.width).toBeGreaterThanOrEqual(0.08);
+      expect(s.width).toBeLessThanOrEqual(1.6);
+    }
+    // At fit (t == 0, the shallowest resolution stop) the width law (EDGE_W_GAIN + (EDGE_W_MAX -
+    // EDGE_W_GAIN) * resolutionT(res, maxRes)) lands exactly on EDGE_W_GAIN, its unclamped floor —
+    // see AsciiGraphRenderer.ts's strokeEdges() and the "edge width follows the resolution stop, not
+    // raw res" describe block below for the deepest-stop end of this same law.
+    expect(ctx.strokes[0]?.width).toBeCloseTo(EDGE_W_GAIN, 5);
     const glyphs = nodeRuns().map((f) => f.text).join("");
     expect(glyphs.includes("@")).toBe(true);           // the 24-spoke hub
     expect(/[.o]/.test(glyphs)).toBe(true);            // leaves / linked notes
@@ -334,6 +377,7 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
     });
     const viewport = host.firstElementChild as HTMLElement;
     ctx.fills.length = 0;
+  ctx.strokes.length = 0;
     frame();
     // Past the cluster-name reveal point — these two nodes carry no community, so file names are
     // the only kind on offer once zoomed. frameSubset on the tag ITSELF (not the midpoint of the
@@ -366,6 +410,7 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
       r.setConfig({ ...CONFIG, viewMode: "2d" });
       r.render(sampleGraph());
       ctx.fills.length = 0;
+  ctx.strokes.length = 0;
       frame();
       expect(nodeRuns()).toEqual([]);          // nothing measurable yet — blank, as designed
 
@@ -424,6 +469,7 @@ describe("semantic zoom — cluster names own the field zoomed out, file names c
     const nv = priv.nodes.find((n) => n.onGrid);
     expect(nv).toBeDefined();
     ctx.fills.length = 0;
+  ctx.strokes.length = 0;
     window.dispatchEvent(new PointerEvent("pointermove", {
       clientX: m.padX + nv!.col * m.cellW + 1, clientY: m.padY + nv!.row * m.cellH + m.cellH / 2,
     }));
@@ -472,6 +518,7 @@ describe("N-level semantic labels — the zoom ladder walks communityPath, coars
     r.setConfig({ ...CONFIG, viewMode: "2d" });
     r.render(twoLevelGraph());
     ctx.fills.length = 0;
+  ctx.strokes.length = 0;
     frame();
     return { r, viewport: host.firstElementChild as HTMLElement, clicks: [], hovers: [], zooms };
   }
@@ -504,6 +551,7 @@ describe("N-level semantic labels — the zoom ladder walks communityPath, coars
     // from TOP to SUB), so only the FINAL settled frame answers "what does 80% look like" — force
     // one more repaint at the now-converged camera via a harmless no-op mutation.
     ctx.fills.length = 0;
+  ctx.strokes.length = 0;
     r.setSearchMatches(new Set());
     frame();
     expect(ctx.fills.some((f) => f.text.startsWith("SUB "))).toBe(true);
@@ -620,6 +668,7 @@ describe("THE LAW — zoom is resolution, never scale", () => {
     wheelIn(viewport, 12);
     settle();
     ctx.fills.length = 0;
+  ctx.strokes.length = 0;
     frame(9999);
     expect(allText()).not.toBe(before);
     r.destroy();
@@ -681,6 +730,7 @@ describe("THE LAW — zoom is resolution, never scale", () => {
     });
     const viewport = host.firstElementChild as HTMLElement;
     ctx.fills.length = 0;
+  ctx.strokes.length = 0;
     frame();
     expect(zooms.at(-1)).toBe(100); // sanity: we start at fit
 
@@ -868,6 +918,7 @@ describe("interaction", () => {
     settle(200);
     // The settled loop is idle (dirty=false) — force one repaint so nodeHit() reads a fresh frame.
     ctx.fills.length = 0;
+  ctx.strokes.length = 0;
     r.setSearchMatches(new Set());
     frame(9999);
     const p = nodeHit();
@@ -918,6 +969,7 @@ describe("interaction", () => {
     viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
     window.dispatchEvent(new PointerEvent("pointermove", { clientX: 500, clientY: 340 }));
     ctx.fills.length = 0;
+  ctx.strokes.length = 0;
     frame(32);
     const after = allText();
     window.dispatchEvent(new PointerEvent("pointerup", { clientX: 500, clientY: 340 }));
@@ -936,6 +988,7 @@ describe("interaction", () => {
     viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
     window.dispatchEvent(new PointerEvent("pointermove", { clientX: 300, clientY: 250 }));
     ctx.fills.length = 0;
+  ctx.strokes.length = 0;
     frame(32);
     window.dispatchEvent(new PointerEvent("pointerup", { clientX: 300, clientY: 250 }));
     expect(snap()).not.toBe(before);
@@ -981,6 +1034,7 @@ describe("UI data accessors", () => {
     r.setConfig({ ...CONFIG });
     r.render({ nodes: [], edges: [] });
     ctx.fills.length = 0;
+  ctx.strokes.length = 0;
     frame();
     expect(painted.at(-1)).toBe(0);
     expect(nodeRuns()).toEqual([]);
@@ -989,7 +1043,7 @@ describe("UI data accessors", () => {
   });
 });
 
-describe("edge clipping — an edge with an off-field endpoint still draws (the 'edges vanish at deep zoom' fix)", () => {
+describe("edge clipping — an edge with an off-field endpoint still strokes (a vector line needs no grid clip)", () => {
   it("keeps n0's local edges numerous at maximum zoom, even though most neighbours project off the tiny visible field", () => {
     const { r, viewport } = mountRenderer("2d");
     // frameSubset on n0 ALONE zooms to the maximum resolution centred exactly on it (a 1-point
@@ -997,8 +1051,9 @@ describe("edge clipping — an edge with an off-field endpoint still draws (the 
     // "reach 0%" pattern other tests in this file use. n0 is the 24-spoke hub; every one of its 23
     // neighbours has a real edge to it, and at this resolution almost all of them project well off
     // the field. The OLD rule ("skip an edge unless BOTH endpoints are on-grid") dropped every one
-    // of those — QA measured edgesDrawn:2 at 0%. The fix clips each edge to its on-screen portion
-    // instead, so n0's own local edges should still be numerous.
+    // of those — QA measured edgesDrawn:2 at 0%. Edges are vector strokes now, gated on `projValid`
+    // alone (exactly the pre-redesign renderer's `onScreen`) — the canvas's own paint-time clip
+    // handles the off-field portion, so n0's own local edges should still be numerous.
     r.frameSubset(["n0"]);
     wheelIn(viewport, 30);
     settle(300);
@@ -1006,6 +1061,7 @@ describe("edge clipping — an edge with an off-field endpoint still draws (the 
     expect(stats.zoomPct).toBe(0);
     expect(stats.notesOnScreen).toBeGreaterThanOrEqual(1); // at least the hub itself is on the field
     expect(stats.edgesDrawn).toBeGreaterThan(5);
+    expect(strokeSegs().length).toBeGreaterThan(5);
     r.destroy();
   });
 });
@@ -1068,6 +1124,145 @@ describe("pan anchoring — the raster is WORLD-anchored, not screen-anchored (t
     expect(checked).toBeGreaterThan(0);
     expect(matched).toBe(checked);
     window.dispatchEvent(new PointerEvent("pointerup", { clientX: 410, clientY: 300 }));
+    r.destroy();
+  });
+});
+
+// ---- vector-edge fidelity (the batched-stroke edge pass ported from CanvasGraphRenderer) --------
+// These cover the adversarial-review fixes to strokeEdges()/its bucket classification: the pure
+// helpers get direct unit tests (no DOM needed); the DOM-dependent ones reuse mountRenderer() above.
+
+describe("vector-edge fidelity — deriveEdgeBaseAlpha (a flat EDGE_BASE_ALPHA=1 was wrong on light themes)", () => {
+  // The SAME background strokeEdges() actually composites onto — readTokens() prefers --graph-bg
+  // (ColorTokens.graphBg) over --bg when present, exactly like this helper.
+  const alphaFor = (name: keyof typeof THEMES) => {
+    const t = THEMES[name];
+    return deriveEdgeBaseAlpha(t.neutral, t.graphBg ?? t.background, t.graphEdge ?? t.neutral);
+  };
+
+  it("keeps ~full strength on the two DARK ascii themes (ink, cathode) — --graph-edge already composites close to the original's neutral-at-opacity weight", () => {
+    expect(alphaFor("ink")).toBeCloseTo(0.92, 2);
+    expect(alphaFor("cathode")).toBe(1); // raw ratio computes slightly ABOVE 1 (~1.06) — clamped
+  });
+
+  it("attenuates the two LIGHT ascii themes (paper, riso) — the original dampened light-theme lines far more (a colour mix toward background + a lower opacity) than a flat alpha of 1 would", () => {
+    const paper = alphaFor("paper"), riso = alphaFor("riso");
+    expect(paper).toBeCloseTo(0.47, 2);
+    expect(riso).toBeCloseTo(0.34, 2);
+    // Both meaningfully below the dark themes' ~1 — this gap is exactly the bug finding #3 fixes.
+    expect(paper).toBeLessThan(0.6);
+    expect(riso).toBeLessThan(0.6);
+  });
+
+  it("classifies light/dark from the resolved background's OWN luminance, not a theme-name lookup — a hypothetical future light theme gets the same dampening with no code change", () => {
+    const hypotheticalLightTheme = deriveEdgeBaseAlpha("#665544", "#f0ede6", "#c8c0b0");
+    expect(hypotheticalLightTheme).toBeGreaterThan(0);
+    expect(hypotheticalLightTheme).toBeLessThan(1);
+  });
+
+  it("clamps to [0,1] and never NaNs, even on unparsuable or fully degenerate input", () => {
+    expect(deriveEdgeBaseAlpha("not-a-color", "#000000", "#3C4048")).toBe(1); // unparsable → fallback
+    const degenerate = deriveEdgeBaseAlpha("#000000", "#000000", "#000000"); // neutral==bg==edge
+    expect(Number.isFinite(degenerate)).toBe(true);
+    expect(degenerate).toBeGreaterThanOrEqual(0);
+    expect(degenerate).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("vector-edge fidelity — trimSegmentForClearance (a line ran straight through its endpoint glyph)", () => {
+  it("pulls a horizontal segment's endpoints back by the clearance, keeping its direction", () => {
+    expect(trimSegmentForClearance(0, 0, 100, 0, 10)).toEqual([10, 0, 90, 0]);
+  });
+
+  it("pulls a diagonal segment back along its OWN unit vector, not axis-aligned (3-4-5 triangle, len 50)", () => {
+    const [ax, ay, bx, by] = trimSegmentForClearance(0, 0, 30, 40, 5);
+    expect(ax).toBeCloseTo(3, 5);  // 5 * (30/50)
+    expect(ay).toBeCloseTo(4, 5);  // 5 * (40/50)
+    expect(bx).toBeCloseTo(27, 5);
+    expect(by).toBeCloseTo(36, 5);
+  });
+
+  it("leaves a segment no more than twice the clearance apart UNTRIMMED, rather than inverting its direction", () => {
+    expect(trimSegmentForClearance(0, 0, 10, 0, 6)).toEqual([0, 0, 10, 0]);   // len 10 < 2*6
+    expect(trimSegmentForClearance(0, 0, 12, 0, 6)).toEqual([0, 0, 12, 0]);   // len 12 == 2*6, the boundary
+  });
+
+  it("handles a zero-length (coincident-node) segment without dividing by zero into NaN", () => {
+    const result = trimSegmentForClearance(5, 5, 5, 5, 3);
+    expect(result).toEqual([5, 5, 5, 5]);
+    expect(result.every(Number.isFinite)).toBe(true);
+  });
+});
+
+describe("vector-edge fidelity — safeDepthBand (a NaN band index threw inside the rAF tick and froze the field)", () => {
+  it("clamps a normal 0..1 midpoint into the band range", () => {
+    expect(safeDepthBand(0, 6)).toBe(0);
+    expect(safeDepthBand(0.999, 6)).toBe(5);
+    expect(safeDepthBand(0.5, 6)).toBe(3);
+  });
+
+  it("falls back to band 0 for a non-finite midpoint instead of indexing an array with NaN", () => {
+    expect(safeDepthBand(NaN, 6)).toBe(0);
+    expect(safeDepthBand(Infinity, 6)).toBe(0);
+    expect(safeDepthBand(-Infinity, 6)).toBe(0);
+  });
+
+  it("clamps an out-of-[0,1] but finite midpoint too", () => {
+    expect(safeDepthBand(-1, 6)).toBe(0);
+    expect(safeDepthBand(5, 6)).toBe(5);
+  });
+});
+
+describe("vector-edge fidelity — hover dims by strict incidence, at the EDGE constant (not the node's, and not focusSet()'s neighbour-expanded set)", () => {
+  it("dims every edge not directly incident to the hovered hub — including 2nd-degree ring edges between two of its own neighbours — at EDGE_DIM_ALPHA, and strokes the hovered-incident tier at `base`", () => {
+    const { r } = mountRenderer("2d");
+    const priv = r as unknown as {
+      m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
+      nodes: { col: number; row: number; node: { id: string } }[];
+      edgeBaseAlpha: number; leafAlpha: number;
+    };
+    const hub = priv.nodes.find((n) => n.node.id === "n0")!;
+    const x = priv.m.padX + hub.col * priv.m.cellW + 1;
+    const y = priv.m.padY + hub.row * priv.m.cellH + priv.m.cellH / 2;
+    ctx.strokes.length = 0;
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x, clientY: y }));
+    frame();
+
+    // n0 is the 24-spoke hub — sampleGraph()'s ring edges (n1-n2 .. n22-n23) have NEITHER endpoint
+    // equal to the hovered id, but BOTH endpoints ARE n0's neighbours (n0 links to every note):
+    // exactly the case `focusSet()`'s neighbour-expanded set used to spare from dimming. With no
+    // persistent highlight in play, hover now produces exactly two batched strokes — dim, then
+    // accent (edgeMain/the depth bands are unreachable while hovering; see rasterize()'s edge loop).
+    expect(ctx.strokes.length).toBe(2);
+    const [dimStroke, accentStroke] = ctx.strokes;
+    expect(dimStroke.segs.length).toBeGreaterThan(0); // the ring edges actually landed in the dim bucket
+    const base = priv.edgeBaseAlpha * priv.leafAlpha;
+    expect(dimStroke.alpha).toBeCloseTo(Math.min(1, base * EDGE_DIM_ALPHA), 5);
+    // ...and specifically NOT the node constant (0.28, a past bug reused it — 5.6x too strong).
+    expect(dimStroke.alpha).toBeLessThan(base * DIM_ALPHA);
+
+    // The accent (hovered-incident) pass strokes at `base`, not the bare leafAlpha they're equal
+    // only while edgeBaseAlpha is 1. happy-dom resolves no CSS vars, so this renderer's edgeBaseAlpha
+    // is computed off the FALLBACK token table (not 1 — see deriveEdgeBaseAlpha), which is exactly
+    // what makes this assertion meaningful: the old bug read alpha===leafAlpha (here, exactly 1).
+    expect(priv.edgeBaseAlpha).toBeLessThan(1);
+    expect(accentStroke.alpha).toBeCloseTo(Math.min(1, base), 5);
+    expect(accentStroke.alpha).not.toBeCloseTo(priv.leafAlpha, 3);
+    expect(accentStroke.alpha).toBeGreaterThan(dimStroke.alpha);
+    r.destroy();
+  });
+});
+
+describe("vector-edge fidelity — edge width follows the resolution STOP, not raw `res`", () => {
+  it("reaches EDGE_W_MAX only at the deepest zoom stop, not almost immediately", () => {
+    const { r, viewport } = mountRenderer("2d");
+    r.frameSubset(["n0"]);
+    wheelIn(viewport, 30); // saturate toward the deepest (0%) stop
+    settle(300);
+    ctx.strokes.length = 0;
+    r.setSearchMatches(new Set()); // harmless dirty-forcing mutation (same pattern used elsewhere)
+    frame(9999);
+    expect(ctx.strokes[0]?.width).toBeCloseTo(EDGE_W_MAX, 1);
     r.destroy();
   });
 });

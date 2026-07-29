@@ -1,5 +1,8 @@
 import { test, expect } from "bun:test";
 import { computeLayout, computeLayoutAsync, gridIslandAnchors, gridIslandPlan, pivotMDS, type Positions } from "../src/layout";
+// The production tick budget, imported (not a literal) so a test that means "the shipped budget" can
+// never silently pass at a value production doesn't actually use (see REFINE_TICKS's comment there).
+import { REFINE_TICKS } from "../src/layout-cache";
 
 function ring(n: number) {
   return {
@@ -308,7 +311,10 @@ test("community-aware forces separate communities far better, without collapsing
     const seedOn = dim === 2 ? computeLayout(g, { refineTicks: 120 }) : undefined;
     const off = separation(g.nodes, computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedOff, communityForces: false }));
     const on = separation(g.nodes, computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedOn }));
-    // Measures ~0.33 vs 0.52 (3D) and ~0.27 vs 0.46 (2D); 25% is the bar the change was held to.
+    // Measured ~0.33 vs 0.52 (3D) and ~0.27 vs 0.46 (2D) at COMMUNITY_SEP_MULT 1.6; re-measured at the
+    // current 2.4 (2026-07-27, "more separated and clustered") as ~0.17 vs 0.52 (3D) and ~0.14 vs 0.46
+    // (2D) — off is unchanged (it doesn't use the constant) and on nearly halved again, so the 25% bar
+    // below is left as-is: it was never close to binding and still isn't.
     expect(on.ratio).toBeLessThan(off.ratio * 0.75);
     // ...and NOT by crushing each community into a point (the degenerate way to win this metric).
     expect(on.intra).toBeGreaterThan(off.intra * 0.5);
@@ -413,6 +419,11 @@ test("nesting separates the COARSE level too, without undoing the fine level", (
     const flat = computeLayout(g, { ...organic, dimensions: dim, refineTicks: 120, initialPositions: seedFlat, communityLevelDecay: 0 });
     const nest = computeLayout(g, { ...organic, dimensions: dim, refineTicks: 120, initialPositions: seedNest });
     // The super-clusters (level 0) read as distinct groups only once the coarse forces are on.
+    // Re-measured after COMMUNITY_SEP_MULT 1.6 -> 2.4 (2026-07-27): L0 nest/flat is 0.352/0.672 (3D,
+    // bound 0.504) and 0.261/0.501 (2D, bound 0.376); L1 nest/flat is 0.170/0.172 (3D, bound 0.197)
+    // and 0.140/0.161 (2D, bound 0.186) — both bounds below hold with the same comfortable margin as
+    // before (the constant only touches the COARSEST level's inter-community collide target here; L1
+    // separation is barely moved, as expected).
     expect(separationAtLevel(g.nodes, nest, 0).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 0).ratio * 0.75);
     // ...and the finest level is not sacrificed for it (it stays at least as separated as flat).
     expect(separationAtLevel(g.nodes, nest, 1).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 1).ratio * 1.15);
@@ -473,6 +484,63 @@ test("nested layout is deterministic across runs", () => {
   expect(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }))
     .toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }));
 });
+
+// --- Vault-scale convergence regression (the fixture every test above is too small to need) --------
+// Every separation test above uses a fixture small/well-separated enough to fully converge inside the
+// tick budget regardless of COMMUNITY_SEP_MULT — measured directly: plantedCommunities([80,70,60,40,
+// 30,20], 0.25) moves its L0 ratio by <1% between 120 and 600 ticks. None of them could have caught the
+// real regression an adversarial review found (COMMUNITY_SEP_MULT 1.6→2.4 made the DEFAULT 2D view
+// WORSE at the then-120-tick budget, because the wider target no longer converged in time — see
+// REFINE_TICKS's comment in layout-cache.ts). The missing ingredient is the real vault's TAG-MEDIATED
+// hub-and-spoke structure (see the "GRID ISLANDS" comment below: 75% of edges touch a tag, top 1% of
+// nodes by degree touch 73% of edges) — a few very-high-degree nodes bridging many communities resist
+// the separation forces far more stubbornly than same-community hub links do, and take many more ticks
+// to lose that fight. `plantedHierarchy` alone (even scaled to ~2000 nodes — measured) doesn't reproduce
+// this: its hubs are per-community, not cross-cutting, so it fully converges by 120 ticks regardless.
+
+/** `plantedHierarchy`, plus `globalHubs` extra nodes each linked to a random `hubDegFrac` fraction of
+ *  every other node — emulating a vault's tag nodes, which bridge many communities at once instead of
+ *  sitting inside one. Hub nodes carry no `community`/`communityPath` (opt out of gravity/collide
+ *  entirely, like a real tag might), so every link touching one is scored INTER-community by construction
+ *  (see `l.intra` in `layoutGeometry`) — a real bridging edge, not a fabricated same-community one. */
+function plantedHierarchyWithHubs(supers: number[][], globalHubs: number, hubDegFrac: number, cross = 0.02) {
+  const g = plantedHierarchy(supers, cross);
+  const nodes: { id: string; community?: number; communityPath?: number[] }[] = [...g.nodes];
+  const edges = [...g.edges];
+  let s = 13579 >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const allIds = g.nodes.map((n) => n.id);
+  const deg = Math.round(allIds.length * hubDegFrac);
+  for (let h = 0; h < globalHubs; h++) {
+    const hubId = `hub${h}`;
+    nodes.push({ id: hubId });
+    for (let k = 0; k < deg; k++) edges.push({ from: hubId, to: allIds[Math.floor(rnd() * allIds.length)] });
+  }
+  return { nodes, edges };
+}
+
+// 12 super-clusters x 3 sub-clusters x 55 notes = 1980, plus 20 tag-like hubs each touching 40% of
+// every node = ~2000 nodes / ~19,100 edges — vault scale (the reference vault: 2121 nodes / ~4560
+// edges; this fixture trades fewer, denser bridging edges for a bigger, more resistant hub effect at a
+// similar node count, which is what actually reproduces the convergence gap — see the comment above).
+const VAULT_SCALE_HIER = Array.from({ length: 12 }, () => Array.from({ length: 3 }, () => 55));
+
+test("vault-scale hierarchy with cross-cutting hubs: coarse separation holds at the PRODUCTION tick budget", () => {
+  const g = plantedHierarchyWithHubs(VAULT_SCALE_HIER, 20, 0.4);
+  const pos3 = computeLayout(g, { refineTicks: REFINE_TICKS });
+  const pos2 = computeLayout(g, { dimensions: 2, refineTicks: REFINE_TICKS, initialPositions: pos3 });
+  const l0Nodes = g.nodes
+    .filter((n): n is { id: string; community: number; communityPath: number[] } => Array.isArray(n.communityPath))
+    .map((n) => ({ id: n.id, community: n.communityPath[0] }));
+  const sep = separation(l0Nodes, pos2);
+  // Measured at the production budget (240): ratio 0.392, intra 149.4. At the OLD 120-tick budget the
+  // IDENTICAL fixture measures ratio 0.581 (+48%) — this is the exact shape of regression the smaller
+  // fixtures above cannot exhibit (see comment above): a bound recorded here at the shipped budget would
+  // have caught reverting REFINE_TICKS back to 120 (0.581 comfortably fails a 0.45 bound).
+  expect(sep.ratio).toBeLessThan(0.45);
+  // ...and not by collapsing communities into points (the degenerate way to win the ratio).
+  expect(sep.intra).toBeGreaterThan(50);
+}, 45000); // measured ~19s locally (3D + 2D @ 240 ticks over 2000 nodes / ~19k edges)
 
 // --- Grid islands (layout.ts GRID_*) ---------------------------------------------------------------
 // The 2D default: every top-level cluster is anchored on a coarse lattice cell with provable empty
@@ -605,7 +673,15 @@ function hierarchyWithRiders() {
 test("grid mode CONTAINS every member inside its island's disc, riders included", () => {
   const g = hierarchyWithRiders();
   const pos3 = computeLayout(g, { refineTicks: 120 });
-  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3, clusterLayout: "grid" });
+  // 2D ticks 120 -> REFINE_TICKS (production budget, now 240): after COMMUNITY_SEP_MULT 1.6 -> 2.4
+  // (2026-07-27) the 3D seed's communities start farther apart, so the containment projection has
+  // farther to pull riders in from and 120 ticks no longer fully converges (measured: inside 0.907,
+  // worst 1.09 at 120 vs. inside 1.00, worst 0.93 at 240 — see the throwaway sweep behind the
+  // COMMUNITY_SEP_MULT comment in layout.ts). Production's own tick budget was ALSO raised to 240 for
+  // exactly this reason (see REFINE_TICKS's comment in layout-cache.ts) — this asserts AT that budget
+  // by construction (imported, not a literal), so it can never again pass at a number production
+  // doesn't actually ship.
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: REFINE_TICKS, initialPositions: pos3, clusterLayout: "grid" });
   // The plan must be the one the settle enforced, so it gets the SAME seed (riders are hosted on the
   // island they seeded nearest to — see gridIslandPlan).
   const plan = gridIslandPlan(g, { initialPositions: pos3, clusterLayout: "grid" })!;

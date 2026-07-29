@@ -2,11 +2,12 @@
 //
 // LEVEL-OF-DETAIL for the ASCII knowledge graph (2D): the pure half.
 //
-// STATUS: OPT-IN, not the shipped default. The user-facing default (AsciiGraphRenderer's R2, see
+// STATUS: OPT-IN, not the shipped default. The shipped ASCII field (AsciiGraphRenderer, see
 // rasterize()'s `showLodMasses` gate) renders every individual node as a glyph at EVERY zoom stop —
 // the hierarchy reads through zoom-driven node COLOR + the cluster-name labels instead (see
 // AsciiGraphRenderer.ts's LEVEL-DRIVEN COLOR block), never an aggregate mass. This module's
-// aggregate-entity machinery is kept for comparison/testing (GraphConfig.showLodMasses) —
+// aggregate-entity machinery is retained but unreachable from the app — only
+// AsciiGraphRenderer.test.ts / lod.test.ts exercise it via GraphConfig.showLodMasses —
 // everything below still describes exactly what it does when that flag is on.
 //
 // THE IDEA (the summarizing algorithm, when enabled): zoomed out, the field does NOT rasterize

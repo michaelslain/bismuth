@@ -100,7 +100,10 @@
 /* normal = neutral text. unselected = dimmed to --faint. selected = accent text
    on an accent-soft fill with an accent border. All labels UPPERCASE. */
 .btn--text {
-  padding: 2px 9px;
+  /* Vertical padding must clear the cap-height of an UPPERCASE Monaspace label at
+     --fs-micro/--lh-tight — at 1–2px the caps sit on the hairline border and read
+     as clipped (the graph-mode switcher made this obvious). 4px is the floor. */
+  padding: 4px 9px;
   border-radius: var(--r-control);
   border: var(--rule);
   background: transparent;
@@ -144,7 +147,7 @@
 .btn--icon.btn--danger { color: var(--danger); }
 
 /* sizes (text buttons) */
-.btn--text.btn--sm { padding: 1px 7px; }
+.btn--text.btn--sm { padding: 3px 8px; }
 .btn--text.btn--lg { padding: 5px 14px; font-size: var(--fs-ui); }
 
 /* ── SegmentedToggle: buttons butted together, sharing one rule ───────────── */

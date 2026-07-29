@@ -41,24 +41,17 @@ export interface GraphConfig {
   /** ASCII renderer only: graph.backgroundNoise (settingsSchema.ts) — the faint ASCII noise texture
    *  under the field. Off by default; unused by this (legacy) Canvas2D renderer. */
   backgroundNoise?: boolean;
-  // --- TESTING ONLY below: app/src/GraphView.tsx's renderer A/B harness (RendererKind). No field
-  // has a settingsSchema entry and no real caller sets them — delete all alongside the harness once
-  // the ASCII redesign is validated. ---
-  /** CanvasGraphRenderer only: override the label font's FAMILY (weight/size untouched) so the
-   *  harness's "R3" combination can preview this renderer with the ASCII redesign's mono stack. */
-  labelFontFamily?: string;
+  // --- Not a settings-backed field: no settingsSchema entry, and no real caller sets it. Retained
+  // implementation of the aggregate-mass LOD; unreachable from the app — only
+  // AsciiGraphRenderer.test.ts / lod.test.ts set it. ---
   /** AsciiGraphRenderer only: opt IN to LOD cluster summarization (aggregate entity masses +
    *  aggregate edges) at coarse zoom stops — OFF by default. The shipped ASCII field renders every
    *  individual node as a glyph at every zoom stop instead, with the hierarchy read through
    *  zoom-driven node COLOR + the cluster-name labels (see AsciiGraphRenderer.ts colorLevelsFor /
-   *  the LEVEL-DRIVEN COLOR block) rather than an aggregate mass. Kept for comparison/testing
-   *  (this was formerly the harness's "R4" via the now-inverted `disableLod`); no real caller sets it. */
+   *  the LEVEL-DRIVEN COLOR block) rather than an aggregate mass. Retained implementation of the
+   *  aggregate-mass LOD; unreachable from the app — only AsciiGraphRenderer.test.ts / lod.test.ts
+   *  set it. */
   showLodMasses?: boolean;
-  /** AsciiGraphRenderer only: turn OFF the level-driven CLUSTER color (node/edge colour keyed by
-   *  communityPath[activeLevel], crossfaded on zoom) and fall back to a plain DEGREE ramp instead —
-   *  the harness's "R4" combination, so the R1-R4 toggle still spans something visually distinct now
-   *  that masses are off in both R2 and R4. No settingsSchema entry; real callers never set it. */
-  clusterColorsOff?: boolean;
 }
 
 /** The node currently under the cursor, surfaced to GraphView for the hover readout. "cluster" is
@@ -303,11 +296,9 @@ export class CanvasGraphRenderer {
   private raf = 0; private running = false; private visible = true; private dirty = true;
   private lastFrameT = 0; private fpsAccum = 0; private fpsFrames = 0; private nowMs = 0;
 
-  // label fonts. Family is normally the sans-serif stack; TESTING ONLY — GraphConfig.labelFontFamily
-  // (the renderer-toggle harness's "R3") can override just the family, weight/size untouched.
-  private readonly FONT_FAMILY_DEFAULT = "ui-sans-serif, system-ui, -apple-system, sans-serif";
-  private get FONT_SELF() { return `700 14px ${this.cfg.labelFontFamily ?? this.FONT_FAMILY_DEFAULT}`; }
-  private get FONT_NODE() { return `500 11px ${this.cfg.labelFontFamily ?? this.FONT_FAMILY_DEFAULT}`; }
+  // label fonts (hoisted so the label loop doesn't rebuild the font string every label every frame)
+  private readonly FONT_SELF = "700 14px ui-sans-serif, system-ui, -apple-system, sans-serif";
+  private readonly FONT_NODE = "500 11px ui-sans-serif, system-ui, -apple-system, sans-serif";
 
   // ---- lifecycle -----------------------------------------------------------
 

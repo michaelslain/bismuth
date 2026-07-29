@@ -858,21 +858,14 @@ html.view-dragging .graph-floater { pointer-events: none; }
    resize can't flash a scrollbar on the pane-body (which would reflow the box every frame
    and make the resize jitter). */
 .graph-root { container-type: inline-size; overflow: hidden; display: flex; flex-direction: column; width: 100%; height: 100%; }
-/* Iridescent cluster glows (screen-blended over the canvas) + a depth vignette —
-   the design's BigGraph atmosphere. Colors come from the theme graph ramp and shift
-   per mode. Pointer-events off so they never intercept graph interaction. */
-/* .graph-glow + .graph-vignette moved to graph/graphAtmosphere.css (shared by GraphView +
-   the first-run intro via <GraphAtmosphere>). */
+/* .graph-glow + .graph-vignette live in graph/graphAtmosphere.css — used only by the first-run
+   Vault Intro (app/src/intro/VaultIntro.tsx); the shipped ASCII graph draws a FLAT --graph-bg field
+   with no glow or vignette. */
 .graph-viewbar { gap: 8px; padding: 0 12px; background: var(--pop-bg); backdrop-filter: blur(8px); }
 .graph-vb-right { display: inline-flex; align-items: center; gap: 8px; }
 .graph-area { container-type: inline-size; position: relative; width: 100%; }
 /* The WebGL canvas host fills the graph area; the renderer mounts its <canvas> here. */
 .graph-canvas-host { width: 100%; height: 100%; }
-/* TESTING ONLY (R1/R3 organic-layout harness, app/src/graph/organicLayout.ts): blocks interaction
-   with the stale render underneath while a client-side force settle computes. Sits above the
-   atmosphere (z-index 1) and the labels layer (z-index 2) but below nothing else needs to draw
-   while it's up — the graph is the only thing on screen during a settle. */
-.graph-organic-loading { position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: var(--pop-bg); }
 /* Shared pill recipe for the hover / fps HUD readouts (theme-aware). The dynamic text
    color (hover = --fg, fps = traffic-light) stays inline in GraphView. */
 .graph-hud-pill { background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 5px; font-family: inherit; }
