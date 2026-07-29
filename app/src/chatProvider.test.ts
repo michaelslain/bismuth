@@ -84,19 +84,33 @@ describe("header gating + options", () => {
     expect(providerCan("gpt-cli" as never, "permissionModes")).toBe(true);
   });
   test("every known backend is offered, claude first (the default)", () => {
-    // Grew from ["claude","opencode"] once the ACP agents (chatProviders/acp/) landed —
-    // core/src/agentBackends/catalog.ts BACKEND_IDS is the single source of truth this list mirrors.
+    // Grew from ["claude","opencode"] once the ACP agents (chatProviders/acp/) landed, then grew
+    // again with the native "codex" backend (chatProviders/codex/) — core/src/agentBackends/
+    // catalog.ts BACKEND_IDS is the single source of truth this list mirrors.
     expect(CHAT_PROVIDER_OPTIONS.map((o) => o.value)).toEqual([
       "claude",
       "opencode",
+      "codex",
       "cline",
       "gemini",
       "goose",
       "openclaw",
-      "claude-code-acp",
-      "codex-acp",
     ]);
     expect(CHAT_PROVIDER_OPTIONS[0]?.label).toBe("Claude Code");
+  });
+  test("the ACP adapters are hidden from the picker but still selectable by id", () => {
+    // "Claude Code (ACP)" beside "Claude Code" is a trap: strictly worse (a third-party bridge
+    // fetched by npx, fewer capabilities) while reading as though it were newer. Same for
+    // "Codex (ACP)" now that a native codex driver exists. They stay resolvable so a hand-edited
+    // .settings or an existing per-tab key keeps working.
+    const offered = CHAT_PROVIDER_OPTIONS.map((o) => o.value);
+    expect(offered).not.toContain("claude-code-acp");
+    expect(offered).not.toContain("codex-acp");
+    expect(sanitizeChatProvider("claude-code-acp")).toBe("claude-code-acp");
+    expect(sanitizeChatProvider("codex-acp")).toBe("codex-acp");
+  });
+  test("native codex is offered, and it is NOT the ACP bridge", () => {
+    expect(CHAT_PROVIDER_OPTIONS.find((o) => o.value === "codex")?.label).toBe("OpenAI Codex");
   });
   test("labels + install hints come from the catalog", () => {
     expect(providerLabel("opencode")).toBe("opencode");

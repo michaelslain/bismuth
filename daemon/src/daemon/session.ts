@@ -8,6 +8,7 @@ import { augmentPath } from "../lib/childEnv.ts"
 import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, type DenyEntry } from "../lib/visibility.ts"
 import { mcpBin, cliBin, docsDir } from "../lib/bismuthPaths.ts"
 import { recordDaemonSessionId } from "./sessionIds.ts"
+import { sendCodexMessage } from "./codexSession.ts"
 
 // The compiled daemon binary doesn't bundle the Agent SDK's native CLI, and runs under launchd with
 // a minimal PATH, so the SDK can't find `claude` on its own — resolve the user's real binary once
@@ -133,9 +134,11 @@ export interface BotResponse {
  * crons must keep firing, and Claude is both the default and the only backend that can enforce the
  * gate. The caller logs `refusal` so the choice is never silent.
  *
- * NOTE: no non-Claude daemon backend is implemented yet, and `settings.daemon.backend` does not
- * exist yet — this guardrail lands BEFORE the first alternative backend on purpose, so the
- * constraint exists before there is anything tempting to point at it.
+ * This guardrail deliberately landed BEFORE the first alternative backend existed, so the
+ * constraint was in place before there was anything tempting to point at it. There is now one:
+ * `settings.daemon.backend` may be `"codex"` (see ./codexSession.ts), which reaches this function as
+ * a REQUEST, never a grant. `codex` runs only for a vault that hides nothing; add a single hidden
+ * note and the very next cron silently runs on Claude with the refusal logged.
  */
 export function resolveDaemonBackend(
   requested: string | undefined,
@@ -280,14 +283,18 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
   // disallowedTools) + into the advisory system-prompt appendix.
   const denyEntries = await buildDenyPaths(ctx.root)
 
-  // Backend choice passes through the visibility-gate guardrail (see resolveDaemonBackend). Today
-  // `requested` is always undefined — there is no `settings.daemon.backend` and no non-Claude daemon
-  // backend — so this always resolves to "claude" and changes nothing. It is wired now so that
-  // adding a backend later cannot bypass the gate by forgetting to ask.
-  const { backend, refusal } = resolveDaemonBackend(undefined, denyEntries.length)
+  // Backend choice passes through the visibility-gate guardrail (see resolveDaemonBackend).
+  // `ctx.backend` is settings.daemon.backend as read by registry.ts's readDaemonSettings — a
+  // REQUEST, not a grant: any vault with a hidden note is refused a non-Claude backend and
+  // degraded to "claude" here regardless of what was asked for.
+  const { backend, refusal } = resolveDaemonBackend(ctx.backend, denyEntries.length)
   if (refusal) console.error(`[session:${ctx.name}] ${refusal}`)
+
+  if (backend === "codex") {
+    return await sendCodexMessage(message, ctx, opts)
+  }
   if (backend !== "claude") {
-    throw new Error(`daemon backend "${backend}" is not implemented — only "claude" can run a vault brain today`)
+    throw new Error(`daemon backend "${backend}" is not implemented — only "claude" and "codex" can run a vault brain today`)
   }
 
   const options = buildQueryOptions(ctx, opts, existingSessionId, {

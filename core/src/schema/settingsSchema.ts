@@ -10,6 +10,13 @@ import { KEYBINDING_CATALOG } from "../keybindings";
 import { THEME_NAMES as THEME_NAME_TUPLE } from "../theme/tokens";
 import { BACKEND_IDS, BACKEND_LIST, DEFAULT_BACKEND } from "../agentBackends/catalog";
 
+// Which backends can run a vault's daemon brain at all — derived from the catalog (today: just
+// "claude" and "codex"), so this enum never drifts from BackendCapabilities.daemon. Note this is
+// NOT the security gate: resolveDaemonBackend (daemon/src/daemon/session.ts) still refuses any
+// non-Claude backend for a vault with hidden notes regardless of what's picked here — this enum
+// only bounds the settings UI to backends that HAVE a daemon implementation at all.
+const DAEMON_BACKEND_IDS = BACKEND_LIST.filter((b) => b.capabilities.daemon).map((b) => b.id);
+
 // Kept in lockstep with app/src/settings.ts EDITOR_FONTS.
 const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
 // The theme enum is sourced directly from the color source of truth
@@ -195,6 +202,11 @@ export const SETTINGS_SCHEMA: Schema = {
   daemon: object({
     enabled: { type: "boolean", default: false, doc: "Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the .daemon folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (.daemon/identity.md frontmatter), not here." },
     inboxRetentionDays: { type: "number", default: 7, min: 1, max: 90, doc: "How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker." },
+    backend: {
+      type: enumType(DAEMON_BACKEND_IDS),
+      default: DEFAULT_BACKEND,
+      doc: 'Which agent CLI runs this vault\'s daemon brain (unattended, resumable, headless): "claude" (default) or "codex". This is a REQUEST, not a guarantee — resolveDaemonBackend (daemon/src/daemon/session.ts) refuses any non-Claude backend for a vault with even one hidden/chat-only note (only Claude Code can enforce the visibility gate) and degrades to "claude" instead, logging why. Clear the vault\'s hidden notes to actually run another backend.',
+    },
   }),
   // Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself
   // (see core/src/selfUpdate.ts); by default that's manual via the update banner.
@@ -225,6 +237,23 @@ export const SETTINGS_SCHEMA: Schema = {
       type: { kind: "list", item: "string" },
       default: [],
       doc: 'Additional agent CLIs (besides Claude Code, which always auto-registers) to register Bismuth\'s MCP server with, e.g. ["codex", "gemini"] — so those CLIs get Bismuth\'s docs/CLI/memory tools. Registrar ids: codex, cline, openclaw, gemini, qwen, copilot, amp, droid, crush, goose. Listing a CLI here IS the opt-in: registration runs on the next app start (and on demand via `bismuth install --mcp <cli>` / `--mcp all`). Empty by default, so Bismuth never writes into another CLI\'s config uninvited. Registration is idempotent and never clobbers an entry it didn\'t write.',
+    },
+  }),
+  // OpenAI Codex-specific opt-ins (core/src/agentBackends/agentsMd.ts + codexHooks.ts). Codex has no
+  // system-prompt flag and no PATH-shim hook mechanism — AGENTS.md and a project-scoped
+  // .codex/hooks.json are its OWN designed channels for memory + session telemetry, but both mean
+  // writing into files the user may hand-edit, so — same precedent as mcp.registerWith — both
+  // default off and are opt-in.
+  codex: object({
+    writeAgentsMd: {
+      type: "boolean",
+      default: false,
+      doc: "Let Bismuth write/refresh a managed block in this vault's AGENTS.md with a short persona/memory note for the Codex CLI (its chat + daemon sessions have no system-prompt flag — AGENTS.md is Codex's own designed channel for this, and Cursor/Amp/Droid share the same convention). The block is delimited by markers and never touches surrounding prose; off by default because writing into a file you may hand-edit is opt-in.",
+    },
+    installRelayHooks: {
+      type: "boolean",
+      default: false,
+      doc: "Let Bismuth write a project-scoped .codex/hooks.json (+ its small reporting script) into this vault so a Codex session run in a Bismuth terminal tab or chat reports its lifecycle into the in-app agents graph — the same role Claude Code's relay plugin plays. Off by default: writing into the vault is opt-in.",
     },
   }),
   srs: object({

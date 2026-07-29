@@ -124,3 +124,17 @@ test("a non-claude backend is REFUSED when any note is hidden, degrading to clau
 test("the refusal pluralises the hidden-note count", () => {
   expect(resolveDaemonBackend("codex", 4).refusal).toContain("4 hidden notes")
 })
+
+test("codex is refused for a vault with hidden notes — the ONE path that must never regress", () => {
+  // The security property, asserted end-to-end at the chokepoint sendMessage actually calls: with a
+  // hidden note present, no request for codex can produce a codex run. sendMessage dispatches on
+  // THIS return value (`if (backend === "codex")`), so a "claude" result here is what makes the
+  // codex branch unreachable for a restricted vault.
+  for (const hidden of [1, 2, 50]) {
+    const r = resolveDaemonBackend("codex", hidden)
+    expect(r.backend).toBe("claude")
+    expect(r.refusal).toBeDefined()
+  }
+  // And it IS allowed once nothing is hidden — otherwise the setting would be dead weight.
+  expect(resolveDaemonBackend("codex", 0)).toEqual({ backend: "codex" })
+})

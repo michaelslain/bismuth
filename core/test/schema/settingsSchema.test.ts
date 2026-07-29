@@ -12,7 +12,7 @@ function objectFields(entry: SchemaEntry): Schema {
 
 test("SETTINGS_SCHEMA nests the app sections, calendar, ui, server, folderIcons and properties", () => {
   expect(Object.keys(SETTINGS_SCHEMA).sort()).toEqual(
-    ["appearance", "attachments", "calendar", "chat", "daemon", "dailyNotes", "editor", "folderIcons", "folderVisibility", "googleCalendar", "graph", "keybindings", "mcp", "properties", "server", "srs", "tabBar", "templates", "terminal", "toolbar", "ui", "update", "vault"].sort(),
+    ["appearance", "attachments", "calendar", "chat", "codex", "daemon", "dailyNotes", "editor", "folderIcons", "folderVisibility", "googleCalendar", "graph", "keybindings", "mcp", "properties", "server", "srs", "tabBar", "templates", "terminal", "toolbar", "ui", "update", "vault"].sort(),
   );
 });
 
@@ -95,13 +95,17 @@ test("calendar section mirrors the calendar defaults", () => {
   expect(cal.militaryTime.default).toBe(false);
 });
 
-test("daemon section is exactly { enabled, inboxRetentionDays } (name moved to identity.md; home + autoUpdate dropped)", () => {
+test("daemon section is exactly { enabled, inboxRetentionDays, backend } (name moved to identity.md; home + autoUpdate dropped)", () => {
   const daemon = objectFields(SETTINGS_SCHEMA.daemon);
-  expect(Object.keys(daemon).sort()).toEqual(["enabled", "inboxRetentionDays"]);
+  expect(Object.keys(daemon).sort()).toEqual(["backend", "enabled", "inboxRetentionDays"]);
   expect(daemon.enabled.type).toBe("boolean");
   expect(daemon.enabled.default).toBe(false);
   expect(daemon.inboxRetentionDays.type).toBe("number");
   expect(daemon.inboxRetentionDays.default).toBe(7);
+  // The backend enum is derived from the catalog's daemon capability — "claude" today, plus
+  // "codex" once its daemon backend lands (this is a REQUEST; resolveDaemonBackend is the gate).
+  expect(daemon.backend.default).toBe("claude");
+  expect(daemon.backend.type).toEqual({ kind: "enum", values: expect.arrayContaining(["claude", "codex"]) });
   // The obsolete keys are gone: name now lives in .daemon/identity.md frontmatter; daemon is
   // bundled (home is fixed); no git-pull self-update.
   expect(daemon.name).toBeUndefined();
@@ -154,7 +158,7 @@ test("properties section is an empty object schema (the registry placeholder)", 
 test("DEFAULTS is the plain nested object derived from the schema", () => {
   // Structural (robust to added settings): section set + representative leaves.
   expect(Object.keys(DEFAULTS).sort()).toEqual(
-    ["appearance", "attachments", "calendar", "chat", "daemon", "dailyNotes", "editor", "folderIcons", "folderVisibility", "googleCalendar", "graph", "keybindings", "mcp", "properties", "server", "srs", "tabBar", "templates", "terminal", "toolbar", "ui", "update", "vault"].sort(),
+    ["appearance", "attachments", "calendar", "chat", "codex", "daemon", "dailyNotes", "editor", "folderIcons", "folderVisibility", "googleCalendar", "graph", "keybindings", "mcp", "properties", "server", "srs", "tabBar", "templates", "terminal", "toolbar", "ui", "update", "vault"].sort(),
   );
   const d = DEFAULTS as Record<string, Record<string, unknown>>;
   expect(d.appearance.theme).toBe("oxide-duotone");

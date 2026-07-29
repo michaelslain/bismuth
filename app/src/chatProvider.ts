@@ -22,11 +22,19 @@ import {
 /** The id of the backend a chat runs on. Alias of the shared BackendId so the two can't drift. */
 export type ChatProviderChoice = BackendId;
 
-/** The header Select's options — every backend this build can drive, in catalog order. */
-export const CHAT_PROVIDER_OPTIONS: { value: ChatProviderChoice; label: string }[] = BACKEND_LIST.map((b) => ({
-  value: b.id,
-  label: b.label,
-}));
+/**
+ * The header Select's options — every backend this build can drive, in catalog order, minus the
+ * ones the catalog marks `hidden`.
+ *
+ * Hidden backends are still fully selectable by id (a hand-edited `.settings`, or a per-tab key that
+ * already names one); they are only kept out of the list. Today that means the two ACP adapter
+ * entries whose underlying agent has a native driver: offering "Claude Code (ACP)" as a peer of
+ * "Claude Code" is a trap, since it is strictly worse — a third-party bridge fetched by npx with
+ * fewer capabilities — while reading in a list as though it were newer.
+ */
+export const CHAT_PROVIDER_OPTIONS: { value: ChatProviderChoice; label: string }[] = BACKEND_LIST.filter(
+  (b) => !b.hidden,
+).map((b) => ({ value: b.id, label: b.label }));
 
 /** Coerce a persisted / settings value to a known backend, else the fallback (default claude) —
  *  a stale or future value can never leave the header showing something this build can't run. */

@@ -53,3 +53,11 @@ export function claudeLookupPath(env: Record<string, string | undefined> = proce
 export function whichClaude(): string | null {
   return Bun.which("claude", { PATH: claudeLookupPath() })
 }
+
+/** Resolve any binary by name against the same augmented PATH (see claudeLookupPath), or null when
+ *  not found. Mirrors core/src/claudeWhich.ts's whichBinary — kept here too since the daemon is a
+ *  separate workspace + separately-bundled binary that must not import across into @bismuth/core
+ *  (same rationale as bismuthPaths.ts). Used by codexSession.ts to locate `codex`. */
+export function whichBinary(name: string): string | null {
+  return Bun.which(name, { PATH: claudeLookupPath() })
+}
