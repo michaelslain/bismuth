@@ -31,6 +31,12 @@ export interface GraphNode {
    *  it undefined and render exactly as before. Drives the special-looking workflow lane
    *  in agents mode. */
   workflow?: string;
+  /** For session-tier "agent" nodes only: which agent CLI is running in that tab (a backend id
+   *  from agentBackends/catalog.ts — "claude", "codex", …). Several CLIs now report into one relay
+   *  registry, so the label alone (a cwd basename) no longer says WHAT is running; the frontend
+   *  renders this as a per-backend badge/tint. Absent on subagent nodes (they inherit their
+   *  parent's backend) and on every non-agent node kind. */
+  backend?: string;
   /** Precomputed 3D layout coordinate [x,y,z], attached by the backend (see layout-cache.ts). */
   position?: [number, number, number];
   /** Precomputed flat 2D layout coordinate [x,y] (z=0), for an instant + smooth 2D↔3D morph. */

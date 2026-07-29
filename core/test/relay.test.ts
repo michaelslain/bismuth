@@ -132,3 +132,32 @@ test("prune drops orphaned subagents whose parent session is gone (even if not d
   prune(new Set(), 1200);
   expect(snapshot(1200).subagents).toHaveLength(0);
 });
+
+// --- multi-backend provenance -------------------------------------------------------------------
+// Several agent CLIs now report into this one registry, so a session carries WHICH one it is.
+
+test("an omitted backend defaults to claude (the original Claude-only hooks send no backend)", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj" }, 1000);
+  expect(snapshot(1000).sessions[0]?.backend).toBe("claude");
+});
+
+test("an explicit backend is recorded", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", backend: "codex" }, 1000);
+  expect(snapshot(1000).sessions[0]?.backend).toBe("codex");
+});
+
+test("a heartbeat that omits the backend does NOT downgrade an identified session to claude", () => {
+  // Same hazard as cwd: the heartbeat payload may carry less than the registration did, and losing
+  // the backend would silently relabel a codex tab as claude mid-session.
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", backend: "codex" }, 1000);
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "" }, 5000);
+  expect(snapshot(5000).sessions[0]).toMatchObject({ backend: "codex", cwd: "/x/proj", lastSeen: 5000 });
+});
+
+test("re-running a DIFFERENT CLI in the same tab replaces the session (one session per tab)", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", backend: "claude" }, 1000);
+  registerSession({ sessionId: "s2", terminalId: "tab-1", cwd: "/x/proj", backend: "codex" }, 2000);
+  const s = snapshot(2000);
+  expect(s.sessions).toHaveLength(1);
+  expect(s.sessions[0]).toMatchObject({ sessionId: "s2", backend: "codex" });
+});

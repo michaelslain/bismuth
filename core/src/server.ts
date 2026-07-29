@@ -815,10 +815,12 @@ export function createServer(cfg: CoreConfig) {
     // update the in-process agent registry; they are NOT vault mutations, so they
     // live in the read table (no cache invalidation). All are best-effort: the hooks
     // never block the user, so a 400 here is silently swallowed client-side.
+    // `backend` names which agent CLI is reporting (a backend id — "claude", "codex", …). Optional:
+    // the original Claude-only hooks don't send it, and the registry defaults it to "claude".
     "POST /relay/session": async (req) => {
-      const { sessionId, terminalId, cwd } = (await req.json()) as { sessionId?: string; terminalId?: string; cwd?: string };
+      const { sessionId, terminalId, cwd, backend } = (await req.json()) as { sessionId?: string; terminalId?: string; cwd?: string; backend?: string };
       if (!sessionId || !terminalId) return error("missing sessionId/terminalId", 400);
-      registerSession({ sessionId, terminalId, cwd: cwd ?? "" });
+      registerSession({ sessionId, terminalId, cwd: cwd ?? "", backend });
       return ok({ ok: true });
     },
 
