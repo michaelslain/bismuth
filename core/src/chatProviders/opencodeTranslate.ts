@@ -17,6 +17,7 @@
 //     replay history when a chat tab reopens on an opencode conversation.
 import type { ChatFrame } from "../chat";
 import { stripEditorContext } from "../chat";
+import { titleFromPrompt } from "./titleFromPrompt";
 
 /** Mutable per-TURN accounting for translateOpencodeEvent: which part ids have emitted how much
  *  text (suffix-only re-emission), which tool callIDs already produced a tool-use frame, the
@@ -278,11 +279,11 @@ export function parseOpencodeModelsVerbose(stdout: string): OpencodeModelEntry[]
 }
 
 /** Session tab title from the user's first prompt: preamble stripped, whitespace collapsed,
- *  truncated with an ellipsis — mirrors opencode's own truncated-prompt titling. */
+ *  truncated with an ellipsis — mirrors opencode's own truncated-prompt titling. Thin wrapper over
+ *  the shared ./titleFromPrompt helper (also used by the ACP driver) — kept under its original
+ *  name so existing imports/tests are untouched. */
 export function opencodeTitleFromPrompt(text: string, max = 48): string {
-  const clean = stripEditorContext(text).replace(/\s+/g, " ").trim();
-  if (!clean) return "";
-  return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}…`;
+  return titleFromPrompt(text, max);
 }
 
 // ── opencode commands (RE-FIX #90: "i dont see any opencode commands autocompleting") ────────────

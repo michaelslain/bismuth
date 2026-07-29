@@ -14,8 +14,20 @@
 
 /** Every backend id this build knows. The source of truth for the `chat.provider` settings enum
  *  and for `BackendId`, so adding a backend is a one-line change here rather than a union edit in
- *  a dozen files. Order matters: it is the display order of the chat header's provider picker. */
-export const BACKEND_IDS = ["claude", "opencode"] as const;
+ *  a dozen files. Order matters: it is the display order of the chat header's provider picker.
+ *  The last six are ACP (Agent Client Protocol) agents — one hand-rolled JSON-RPC driver
+ *  (chatProviders/acp/driver.ts) covers all of them; see chatProviders/acp/agents.ts for exactly
+ *  what's verified vs guessed per CLI. */
+export const BACKEND_IDS = [
+  "claude",
+  "opencode",
+  "cline",
+  "gemini",
+  "goose",
+  "openclaw",
+  "claude-code-acp",
+  "codex-acp",
+] as const;
 
 export type BackendId = (typeof BACKEND_IDS)[number];
 
@@ -78,7 +90,21 @@ export interface BackendCapabilities {
   effort: boolean;
   /** Image attachments can ride a turn. */
   images: boolean;
-  /** Live permission prompts + a permission-mode picker (interactive approval mid-turn). */
+  /**
+   * The backend can raise a live approval request mid-turn (a `permission` ChatFrame the user
+   * answers). Claude Code does this through the SDK's canUseTool; an ACP agent does it through
+   * `session/request_permission`.
+   *
+   * Deliberately SEPARATE from {@link permissionModes}: these were one flag, and conflating them
+   * produced exactly the defect this split fixes — an ACP backend that can prompt for approval but
+   * has no mode picker rendered a picker that silently did nothing.
+   */
+  permissionPrompts: boolean;
+  /**
+   * A permission-MODE picker is drivable — the header's "default / acceptEdits / bypassPermissions"
+   * Select, pushed to the live session with `set_permission_mode`. Requires the backend to accept a
+   * mode change, which is narrower than merely being able to ask for approval.
+   */
   permissionModes: boolean;
   /** Browser/computer-use (`--chrome`). */
   computerUse: boolean;
@@ -147,6 +173,8 @@ const CLAUDE: BackendDescriptor = {
     models: true,
     effort: true,
     images: true,
+    // canUseTool raises the approval request; the header's mode Select pushes a mode change.
+    permissionPrompts: true,
     permissionModes: true,
     computerUse: true,
     slashCommands: true,
@@ -191,7 +219,9 @@ const OPENCODE: BackendDescriptor = {
     effort: false,
     // `opencode run` has no attachment flag.
     images: false,
-    // Runs are `--auto`; a non-interactive run can never park on a permission prompt.
+    // Runs are `--auto`; a non-interactive run can never park on a permission prompt, so it has
+    // neither the prompt nor the mode picker.
+    permissionPrompts: false,
     permissionModes: false,
     computerUse: false,
     // opencode's own command registry rides the manifest (`opencode debug config` + built-ins).
@@ -212,10 +242,141 @@ const OPENCODE: BackendDescriptor = {
   },
 };
 
+/**
+ * Every ACP agent shares ONE capability profile — verified against the ACP research report backing
+ * chatProviders/acp/: per-turn deltas + thinking + tool calls-with-results + resume + cancel +
+ * images + slash commands all ride the same session/update stream, and session/new.mcpServers gives
+ * every one of them per-session MCP injection with zero global config file (mcp: "cli" here really
+ * means "the driver builds the mcpServers array itself" — there's no `<bin> mcp add` involved, but
+ * it's the same "no config-file surgery" story the mcp:"cli" flag exists to signal for Claude).
+ *
+ * Capabilities NOT claimed, and why:
+ *  - historyReplay/sessionPicker: false — ACP has no transcript-export or cross-session-list method
+ *    (confirmed absent in the research report). Claiming either would populate a history picker /
+ *    reopened tab with nothing.
+ *  - cost/contextUsage: false for EVERY agent here, not just the two 0.14.1-pinned adapters — the
+ *    research report confirms usage_update (which carries both) is an SDK ~1.x-only session/update
+ *    kind, and cline (native, not an adapter) was independently confirmed to use the OLDER
+ *    model-selection shape too; gemini/goose/openclaw's exact pinned SDK version was never verified
+ *    live, so claiming cost/contextUsage there would be a guess this driver cannot back — false
+ *    across the board is the honest default until a specific agent is verified to emit it.
+ *  - computerUse: false — no `--chrome`-equivalent capability exists in the verified ACP surface.
+ *  - agentsGraph/subagents/daemon/visibilityGate: false — Surface 3/4 dead ends per the research
+ *    report (no session-lifecycle telemetry, no systemPrompt field for the daemon's persona
+ *    injection, and visibilityGate specifically requires Claude Code's own
+ *    managedSettings/sandbox/disallowedTools trio, which no ACP agent exposes).
+ *
+ *  - effort: true — the driver implements session/set_config_option for a "thought_level" category
+ *    option (see driver.ts setEffort).
+ *  - permissionPrompts: true, permissionModes: FALSE. The driver parks session/request_permission as
+ *    a live `permission` frame, so approval prompts work; but there is no ACP-verified equivalent of
+ *    Claude's permission-MODE picker, and `setPermissionMode` is deliberately not implemented. These
+ *    started as ONE flag set to `true`, which rendered a mode picker whose selections silently went
+ *    nowhere — a capability claiming something the backend cannot do, which is worse than a missing
+ *    control. Splitting the flag is the fix. (ACP does define session/set_mode with `modes` on the
+ *    session/new result; wiring that up is the way to make this `true` honestly, later.)
+ *  - respondQuestion is likewise unimplemented — ACP has no AskUserQuestion equivalent — but no
+ *    capability advertises it, so nothing renders for it.
+ */
+const ACP_SHARED_CAPABILITIES: BackendCapabilities = {
+  chat: true,
+  streaming: "delta",
+  resume: true,
+  historyReplay: false,
+  sessionPicker: false,
+  models: true,
+  effort: true,
+  images: true,
+  permissionPrompts: true,
+  permissionModes: false,
+  computerUse: false,
+  slashCommands: true,
+  auth: false,
+  cost: false,
+  contextUsage: false,
+  terminal: true,
+  agentsGraph: "none",
+  subagents: false,
+  daemon: false,
+  visibilityGate: false,
+  mcp: "cli",
+  memory: "mcpOnly",
+};
+
+/** Cline — native ACP support (`cline --acp`), verified directly from the compiled binary. */
+const CLINE: BackendDescriptor = {
+  id: "cline",
+  label: "Cline",
+  binary: "cline",
+  installHint: "Install Cline (cline.bot) — Bismuth spawns `cline --acp` automatically when you pick this provider.",
+  capabilities: ACP_SHARED_CAPABILITIES,
+};
+
+/** Gemini CLI — `gemini --experimental-acp` (long-documented flag; a newer stable `--acp` spelling
+ *  is unconfirmed, so the driver tries the documented one first and falls back once — see
+ *  chatProviders/acp/agents.ts). */
+const GEMINI: BackendDescriptor = {
+  id: "gemini",
+  label: "Gemini CLI",
+  binary: "gemini",
+  installHint: "Install the Gemini CLI (`npm i -g @google/gemini-cli`) to use this provider.",
+  capabilities: ACP_SHARED_CAPABILITIES,
+};
+
+/** Goose — `goose acp`; Goose's own docs confirm it MERGES our session/new mcpServers with its own
+ *  configured extensions rather than replacing them. */
+const GOOSE: BackendDescriptor = {
+  id: "goose",
+  label: "Goose",
+  binary: "goose",
+  installHint: "Install Goose (goose-docs.ai) to use this provider.",
+  capabilities: ACP_SHARED_CAPABILITIES,
+};
+
+/** OpenClaw — `openclaw acp`. Confirmed identical wire format to Zed's ACP (OpenClaw's own docs:
+ *  "speaks ACP over stdio for IDEs"); the session runs against whatever Gateway/model the user has
+ *  OpenClaw configured with. */
+const OPENCLAW: BackendDescriptor = {
+  id: "openclaw",
+  label: "OpenClaw",
+  binary: "openclaw",
+  installHint: "Install OpenClaw to use this provider — it runs against your own configured Gateway/model.",
+  capabilities: ACP_SHARED_CAPABILITIES,
+};
+
+/** Claude Code via Zed's `@zed-industries/claude-code-acp` adapter — an ADAPTER, not native ACP
+ *  support (built on the Claude Agent SDK). Spawned on demand via `npx`; pinned to
+ *  `@agentclientprotocol/sdk@0.14.1`, the OLD model-selection shape (driver.ts branches on this via
+ *  detectModelShape). Distinct from the "claude" backend above, which drives `claude` directly
+ *  through the Agent SDK with no ACP in between. */
+const CLAUDE_CODE_ACP: BackendDescriptor = {
+  id: "claude-code-acp",
+  label: "Claude Code (ACP)",
+  binary: "npx",
+  installHint: "Runs Claude Code through Zed's ACP adapter (`npx @zed-industries/claude-code-acp`) — requires Node/npx and your own Claude Code login.",
+  capabilities: ACP_SHARED_CAPABILITIES,
+};
+
+/** Codex CLI via `@agentclientprotocol/codex-acp` — an ADAPTER bridging Codex's App Server onto
+ *  ACP, already listed in Zed's own agent catalog. Spawned on demand via `npx`. */
+const CODEX_ACP: BackendDescriptor = {
+  id: "codex-acp",
+  label: "Codex (ACP)",
+  binary: "npx",
+  installHint: "Runs the Codex CLI through its ACP adapter (`npx @agentclientprotocol/codex-acp`) — requires Node/npx and your own Codex/ChatGPT login.",
+  capabilities: ACP_SHARED_CAPABILITIES,
+};
+
 /** Every backend, keyed by id. */
 export const BACKENDS: Record<BackendId, BackendDescriptor> = {
   claude: CLAUDE,
   opencode: OPENCODE,
+  cline: CLINE,
+  gemini: GEMINI,
+  goose: GOOSE,
+  openclaw: OPENCLAW,
+  "claude-code-acp": CLAUDE_CODE_ACP,
+  "codex-acp": CODEX_ACP,
 };
 
 /** In BACKEND_IDS order — the display order of the provider picker. */

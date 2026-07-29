@@ -114,8 +114,10 @@ export type ChatFrame =
   | { type: "auth"; providers: { name: string; kind: string }[] }
   /** A fatal problem. `no-claude` = the `claude` CLI isn't installed (surface setup, never fall
    *  back to an API); `no-opencode` = the `opencode` CLI isn't installed (the opencode provider —
-   *  see chatProviders/); `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
-  | { type: "error"; code: "no-claude" | "no-opencode" | "spawn" | "exit" | "error"; message: string };
+   *  see chatProviders/); `no-binary` = an ACP agent's CLI isn't installed (chatProviders/acp/ —
+   *  `binary` names which one, e.g. "cline"/"gemini"); `spawn`/`exit` = the child failed; `error` =
+   *  an SDK/turn error. */
+  | { type: "error"; code: "no-claude" | "no-opencode" | "no-binary" | "spawn" | "exit" | "error"; message: string; binary?: string };
 
 export type ChatSink = (frame: ChatFrame) => void;
 

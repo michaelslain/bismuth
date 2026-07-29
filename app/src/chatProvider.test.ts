@@ -62,11 +62,34 @@ describe("header gating + options", () => {
     expect(providerCan("opencode", "historyReplay")).toBe(true);
     expect(providerCan("opencode", "sessionPicker")).toBe(false);
   });
+  test("permission PROMPTS and permission MODES are separate capabilities", () => {
+    // These were one flag. An ACP backend can park a session/request_permission as a live
+    // `permission` frame but has no mode picker, so the single flag rendered a picker whose
+    // selections silently went nowhere — a capability claiming something the backend cannot do.
+    // Claude has both; opencode (`--auto`, non-interactive) has neither; ACP has prompts only.
+    expect(providerCan("claude", "permissionPrompts")).toBe(true);
+    expect(providerCan("claude", "permissionModes")).toBe(true);
+    expect(providerCan("opencode", "permissionPrompts")).toBe(false);
+    expect(providerCan("opencode", "permissionModes")).toBe(false);
+    expect(providerCan("cline", "permissionPrompts")).toBe(true);
+    expect(providerCan("cline", "permissionModes")).toBe(false);
+  });
   test("an unknown backend id degrades to the default's capabilities instead of throwing", () => {
     expect(providerCan("gpt-cli" as never, "permissionModes")).toBe(true);
   });
   test("every known backend is offered, claude first (the default)", () => {
-    expect(CHAT_PROVIDER_OPTIONS.map((o) => o.value)).toEqual(["claude", "opencode"]);
+    // Grew from ["claude","opencode"] once the ACP agents (chatProviders/acp/) landed —
+    // core/src/agentBackends/catalog.ts BACKEND_IDS is the single source of truth this list mirrors.
+    expect(CHAT_PROVIDER_OPTIONS.map((o) => o.value)).toEqual([
+      "claude",
+      "opencode",
+      "cline",
+      "gemini",
+      "goose",
+      "openclaw",
+      "claude-code-acp",
+      "codex-acp",
+    ]);
     expect(CHAT_PROVIDER_OPTIONS[0]?.label).toBe("Claude Code");
   });
   test("labels + install hints come from the catalog", () => {
