@@ -158,6 +158,11 @@ export function stopSubagent(s: { agentId: string; lastMessage?: string }, now =
   sub.done = true;
   sub.doneAt = now;
   if (s.lastMessage !== undefined) sub.lastMessage = s.lastMessage;
+  // stopSubagent's only caller is the SubagentStop hook, which fires per-tab throughout a
+  // terminal's entire life — prune() only runs on tab close (terminal.ts). Without this, a
+  // long-lived tab accumulates one done RelaySubagent (carrying its full lastMessage) per
+  // Task call for as long as the tab stays open, since nothing else sweeps them in between.
+  sweepDoneSubagents(now);
 }
 
 /**

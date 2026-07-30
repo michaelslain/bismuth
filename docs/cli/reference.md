@@ -1,6 +1,6 @@
 # Bismuth CLI Reference
 
-The `bismuth` CLI ("control every aspect of a Bismuth vault from the shell") is the `@bismuth/cli` workspace. It is a thin shell wrapper over the `@bismuth/core` library: nearly every command calls a core function directly against the vault's files on disk, with **no running HTTP server required** — the running app's file watcher picks up writes live. The exceptions all need a live server: the two commands that read the server process's in-memory state (`agent-graph`, `api`), the **`app`-control commands** (`app windows/tabs/open/close/focus/run/commands`, which drive a *running* Bismuth window over `/ui/*` — see the App-control commands section below for their own discovery precedence), and the `serve` command which *starts* the server. This page documents every command (one per `cli/src/commands/*.ts`), every flag, the global flags + environment variables, output conventions, and the dispatch model.
+The `bismuth` CLI ("control every aspect of a Bismuth vault from the shell") is the `@bismuth/cli` workspace. It is a thin shell wrapper over the `@bismuth/core` library: nearly every command calls a core function directly against the vault's files on disk, with **no running HTTP server required** — the running app's file watcher picks up writes live. The exceptions all need a live server: `api` (reads the server process's in-memory state / any route), the **`app`-control commands** (`app windows/tabs/open/close/focus/run/commands`, which drive a *running* Bismuth window over `/ui/*` — see the App-control commands section below for their own discovery precedence), and the `serve` command which *starts* the server. This page documents every command (one per `cli/src/commands/*.ts`), every flag, the global flags + environment variables, output conventions, and the dispatch model.
 
 ## Invocation & Binary
 
@@ -47,7 +47,7 @@ Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flag
 | `--memory <dir>` | Memory (3rd-brain) directory. **Optional.** Resolution: `--memory` flag → `BISMUTH_MEMORY` env. Used only by `graph` and `serve`. |
 | `BISMUTH_MEMORY` | Env fallback for the memory dir. |
 | `--pretty` | Boolean. Pretty-prints JSON output with 2-space indentation. Accepted by every command (it is only consulted by the shared `out()` helper). |
-| `--api <url>` | (api/agent-graph/app only) Base URL of a running server. `api`/`agent-graph`: `--api` → `BISMUTH_API` → `:4321`. The `app` group adds two more fallbacks: `--api` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry (`~/.bismuth/run`) → `:4321`. |
+| `--api <url>` | (api/app only) Base URL of a running server. `api`: `--api` → `BISMUTH_API` → `:4321`. The `app` group adds two more fallbacks: `--api` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry (`~/.bismuth/run`) → `:4321`. |
 | `--off` | (daemon toggles only) boolean — disable instead of enable. |
 | `--clear` | (folder-icon only) boolean — clear the icon instead of setting one. |
 | `--regex` / `--case` / `--word` | (search/replace only) booleans — regex mode, case-sensitive, whole-word. |
@@ -496,14 +496,7 @@ bismuth export "Notes/Essay.md" --format pdf --vault ~/vault     # ERRORS — pd
 
 ## Server-passthrough commands (`commands/api.ts`)
 
-These reach a **running** bismuth server for capabilities that live in the server process's memory and can't be computed headlessly (notably the in-memory relay/agent graph). API base resolution: `--api <url>` → `BISMUTH_API` env → `http://localhost:4321`. If the server is unreachable, the command fails with *"could not reach a running server at <base> — start one with `bismuth serve` (or pass --api <url>)"*. Non-2xx responses fail with `<METHOD> <path> → <status>: <body…>` (body truncated to 200 chars). JSON responses are parsed; non-JSON bodies are returned as text.
-
-### `agent-graph [--api <url>]`
-Fetch the live agents graph (terminal sessions + subagents) from a running server (`GET /agent-graph`). See the [agents/relay integration](../terminal/overview.md).
-```bash
-bismuth agent-graph --pretty
-bismuth agent-graph --api http://localhost:4322
-```
+These reach a **running** bismuth server for capabilities that live in the server process's memory and can't be computed headlessly (e.g. `/ui/*` app control, or any route backed by in-memory state). API base resolution: `--api <url>` → `BISMUTH_API` env → `http://localhost:4321`. If the server is unreachable, the command fails with *"could not reach a running server at <base> — start one with `bismuth serve` (or pass --api <url>)"*. Non-2xx responses fail with `<METHOD> <path> → <status>: <body…>` (body truncated to 200 chars). JSON responses are parsed; non-JSON bodies are returned as text.
 
 ### `api <GET|POST|PUT> <path> [--json '<body>'] [--api <url>]`
 Call any server route directly. `<method>` is upper-cased; `<path>` is appended to the base (a leading `/` is added if missing). With `--json`, the value is `JSON.parse`d and sent as the request body with `content-type: application/json`. Missing method/path → `usage: bismuth api <GET|POST|PUT> <path> [--json '<body>']`.
@@ -742,7 +735,7 @@ bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault
 | `render` | draw.ts | **no** (filesystem path) | `wrote <file>` |
 | `serve` `backup` | serve.ts | yes (+optional memory) | string |
 | `export` | export.ts | yes (no for `.draw`) | `wrote <file>` |
-| `agent-graph` `api` | api.ts | **no** (needs running server) | JSON / text |
+| `api` | api.ts | **no** (needs running server) | JSON / text |
 | `app windows/tabs/open/close/focus/run/commands` | app.ts | **no** (needs running app; discovery via `BISMUTH_API`/`CLAUDE_RELAY_URL`/run-registry) | JSON |
 | `page list/create/resolve/mark-failed` | page.ts | **yes** (per-vault `<vault>/.daemon/pages`) | JSON |
 | `install` `install --mcp <cli>` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + per-CLI MCP config) | JSON |

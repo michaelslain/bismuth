@@ -66,6 +66,13 @@ layout as the knowledge graph (`core/src/layout.ts`), so the same markdown alway
 the same picture and positions are not part of the DSL. Node drag-repositioning is
 therefore intentionally not an edit tool.
 
+**Known limitation**: unlike the knowledge graph, an embedded block carries no
+`community`/`communityPath` data (a hand-authored block has no Louvain detection run over
+it), so it gets none of the layout's community-separation forces. For small,
+community-less graphs this means visually distinct clusters can interpenetrate rather than
+separate cleanly — see `app/src/graph/EmbeddedGraph.tsx`'s `layoutGraphData` JSDoc for the
+measured ratios. This is a documented, accepted trade-off, not a bug.
+
 ## Notes
 
 - `computeBlockRegions` (livePreview) skips ` ```graph ` fences the same way it skips

@@ -86,7 +86,14 @@ import "./ui/popover/popover.css";
 // layout still loads; opened windows carry a distinct id via `?w=`. See windowId.ts.
 const TABS_STORAGE_KEY = tabsStorageKey(resolveWindowId());
 const SIDEBAR_STORAGE_KEY = "bismuth-sidebar-visible-v1";
-const GRAPH_CACHE_KEY = "bismuth-graph-cache-v1";
+// Bump this whenever core/src/layout-cache.ts's CACHE_VERSION changes in a way that moves
+// positions: this cache seeds the graph() signal directly from localStorage on boot (below),
+// and CanvasGraphRenderer/AsciiGraphRenderer early-return on unchanged structural signature
+// (graphStability.ts, which deliberately excludes positions) — so a stale-but-structurally-
+// identical cached layout silently survives a server-side CACHE_VERSION bump until the NEXT
+// launch. Bumping this key forces one cold boot (no instant-paint) that repaints with the
+// new positions immediately instead of self-healing a launch late.
+const GRAPH_CACHE_KEY = "bismuth-graph-cache-v2";
 // Mirrors the key the inline <head> script in index.html reads to apply the theme before
 // the bundle loads. Bump both together if the var map shape changes.
 const THEME_VARS_KEY = "bismuth-theme-vars-v1";

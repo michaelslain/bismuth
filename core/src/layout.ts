@@ -68,9 +68,17 @@ export interface LayoutOptions {
    * Tuning for the disconnected-component "reel-in" (see prepareLayout). A note with no in-view links is
    * its own connected component; without this it gets flung into an empty direction at the cloud edge.
    * Each node of a SMALL non-main component gets `virtualAnchors` layout-only virtual links to the main
-   * mass — springs of rest length `linkDistance·virtualDistMult` and strength `virtualLinkStrength` —
-   * so the force solve pulls it into the cloud (the existing collide force keeps it overlap-free).
-   * Defaults reel orphan memory notes into the 3rd-brain cloud; set virtualAnchors to 0 to disable.
+   * mass — strength `virtualLinkStrength`, and (under the "spring" energy model only — see `energyModel`
+   * below) rest length `linkDistance·virtualDistMult` — so the force solve pulls it into the cloud (the
+   * existing collide force keeps it overlap-free). Defaults reel orphan memory notes into the 3rd-brain
+   * cloud; set virtualAnchors to 0 to disable.
+   *
+   * `virtualDistMult` only has an effect under `energyModel: "spring"`. Under the shipped default,
+   * `"linlog"`, the tether's rest length is never consulted (`linkForce.distance()` is built but never
+   * attached to the sim — see the `energyModel` branch around line 981) — LinLog attraction has no rest
+   * length, only strength (`ln(1+d)`), so `virtualLinkStrength` alone governs a tether under the default;
+   * `virtualDistMult` is inert dead weight there. See the "One link force" comment near `linkStrengthFor`
+   * for the general strength-vs-distance split.
    */
   virtualLinkStrength?: number;
   virtualAnchors?: number;
@@ -81,11 +89,20 @@ export interface LayoutOptions {
    * to reproduce the community-unaware layout exactly (used by the tuning harness / A-B tests).
    */
   communityForces?: boolean;
-  /** Multiplier on LINK_STRENGTH for edges INSIDE a community (>1 = tighter clusters). */
+  /** Multiplier on LINK_STRENGTH for edges INSIDE a community (>1 = tighter clusters). LIVE under
+   *  both energy models — under "linlog" (the shipped default) this feeds `linLogLinkForce`'s
+   *  `strength` option directly (see `linkStrengthFor`, used at line ~984); under "spring" it feeds
+   *  `forceLink.strength()`. */
   communityIntraLink?: number;
-  /** Multiplier on LINK_STRENGTH for edges BETWEEN communities (<1 = looser coupling). */
+  /** Multiplier on LINK_STRENGTH for edges BETWEEN communities (<1 = looser coupling). Same
+   *  live-under-both-models note as `communityIntraLink` above. */
   communityInterLink?: number;
-  /** Multiplier on the link rest length for intra-/inter-community edges. */
+  /** Multiplier on the link rest length for intra-/inter-community edges. INERT under the shipped
+   *  default (`energyModel: "linlog"`): rest length is a "spring" (`forceLink.distance()`) concept
+   *  only — LinLog has no rest length, just `ln(1+d)` attraction scaled by strength. The `forceLink`
+   *  instance that reads this (`linkDistFor`, built at line ~955) is constructed unconditionally but
+   *  only ever attached to the simulation in the "spring" branch (line ~981); under "linlog" it's
+   *  built and discarded. Only takes effect if `energyModel` is explicitly set to `"spring"`. */
   communityIntraDist?: number;
   communityInterDist?: number;
   /** Per-tick pull of each node toward its own community's centroid (0 = off). */
@@ -131,6 +148,10 @@ export type Positions = Record<string, [number, number, number]>;
 // without overlaps, while small multi-node clusters stay recognizable lobes. Short (0.8× linkDist) +
 // strong (1.2) + 4 anchors: short/strong beats the long-range repulsion; the extra anchors distribute
 // each stray around the mass instead of piling it at one point. See prepareLayout's "Reel in" block.
+// NOTE: "short" (virtualDistMult 0.8, i.e. the rest-length half of that tuning) was measured under the
+// "spring" energy model and is INERT under the shipped default, "linlog" — LinLog has no rest length,
+// so only "strong" (virtualLinkStrength 1.2, still live under both models) actually governs a tether's
+// pull today. See LayoutOptions.virtualDistMult's doc for the mechanism.
 // repulsion -7 (was -10): "edges extend too far out" on a real 2246-node/4957-edge vault, measured
 // against the actual /graph output (core/test/layout.test.ts documents the measurement method).
 // Linked-pair distance was ~5× the local nearest-neighbour spacing (mean 69 vs 13 in 3D) — most edges
@@ -159,6 +180,10 @@ const DEFAULTS = {
   communityForces: true,
   // Cranked 2026-07-25 (user: tighter clumps, wider lanes, "like the design example"):
   // gravity .4→.6, separation .6→.85, inter links .35→.2 @ 1.9→2.6× rest length.
+  // The "@ 1.9→2.6× rest length" (communityIntraDist/communityInterDist) half of that tuning is INERT
+  // under the shipped default, energyModel "linlog" — LinLog has no rest length concept, only strength.
+  // Only "inter links .35→.2" (communityInterLink, and communityIntraLink alongside it) is live under
+  // the default; the *Dist pair below only takes effect if energyModel is explicitly set to "spring".
   communityIntraLink: 1.8, communityInterLink: 0.2,
   communityIntraDist: 1.0, communityInterDist: 2.6,
   communityGravity: 0.6, communitySeparation: 0.85,
@@ -219,6 +244,11 @@ const drawnNodeRadius = (scale: number) => (NODE_SIZE * scale * Math.tan(((NODE_
 //      REST LENGTH is deliberately left at 1.0× — shortening it to 0.7× measurably improved the
 //      separation ratio but pulled linked pairs inside their collide radii (152 overlapping pairs on
 //      the reference vault's 2D layout, vs 18 at 1.0×), and the extra separation wasn't worth it.
+//      NOTE: this whole rest-length half (the "weaker + longer"/"REST LENGTH" part, i.e.
+//      communityIntraDist/communityInterDist) was measured under and only applies to the "spring"
+//      energy model — it's INERT under the shipped default, "linlog", which has no rest-length concept.
+//      The "stronger/weaker" STRENGTH half (communityIntraLink/communityInterLink) is unaffected and
+//      remains live under both models — see linkStrengthFor and the energyModel branch below.
 //   2. Centroid gravity: every member of a >=2-node community is pulled toward that community's
 //      running centroid. This is what actually compacts a cluster (links alone only bind neighbours,
 //      not the community's far side). It is gated by a PACKING FLOOR (packRadius below): a node
@@ -940,18 +970,33 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   // Community-anisotropic springs (see the COMMUNITY_* block): intra-community edges pull harder over
   // a shorter rest length, inter-community edges are weak + long, so modularity turns into geometry.
   // Tethers are exempt (they exist to reel orphans in, not to express community structure).
+  // NOTE (rest length vs strength under the shipped "linlog" default): the "shorter rest length"/
+  // "long" half of that description is a "spring"-model-only effect — `linkDistFor` below (and
+  // `.distance()` on `linkForce`) is built unconditionally but only ever attached to the sim in the
+  // "spring" branch a little further down; under "linlog" it's computed and discarded. `linkStrengthFor`
+  // is the live half under BOTH models — it feeds `linLogLinkForce`'s `strength` option directly under
+  // the default. So today, "harder pull" (communityIntraLink/communityInterLink via linkStrengthFor) is
+  // load-bearing; "shorter/longer rest length" (communityIntraDist/communityInterDist via linkDistFor)
+  // is not.
   const links: VL[] = edgePairs.map(({ a, b }) => {
     const l: VL = { source: ids[a], target: ids[b] };
     if (useCommunity) l.intra = comm[a] >= 0 && comm[a] === comm[b];
     return l;
   });
   for (const { a, b } of tetherPairs) links.push({ source: ids[a], target: ids[b], virtual: true });
+  // INERT under the shipped "linlog" default — see the NOTE above. Only consulted by `linkForce`'s
+  // `.distance()`, which is built below but only attached to the sim under `energyModel: "spring"`.
   const linkDistFor = !useCommunity
     ? (_l: VL) => linkDist
     : (l: VL) => linkDist * (l.intra ? o.communityIntraDist : o.communityInterDist);
+  // LIVE under both energy models — feeds `forceLink.strength()` under "spring" AND
+  // `linLogLinkForce`'s `strength` option directly under "linlog" (see below).
   const linkStrengthFor = !useCommunity
     ? (_l: VL) => LINK_STRENGTH
     : (l: VL) => LINK_STRENGTH * (l.intra ? o.communityIntraLink : o.communityInterLink);
+  // Built unconditionally (cheap), but only ATTACHED to the sim under `energyModel: "spring"` — see
+  // the branch below. Under the shipped "linlog" default this whole force object, and therefore its
+  // `.distance()`/`linkDistFor`, is discarded unused.
   const linkForce = forceLink<RN, VL>(links)
     .id((d: RN) => d.id)
     .distance((l: VL) => (l.virtual ? linkDist * o.virtualDistMult : linkDistFor(l)))

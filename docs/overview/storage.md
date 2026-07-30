@@ -192,7 +192,7 @@ The filename is the `graphSig`:
 <CACHE_VERSION>-<16-hex-chars>
 ```
 
-Current `CACHE_VERSION = "v9"`. The version prefix is bumped whenever the layout algorithm or cache shape changes (e.g. v9 added the persisted full-layout warm-seed that powers incremental add-only relayout) — bumping the version causes all existing cached files to be ignored on the next run (stale files are never explicitly deleted).
+Current `CACHE_VERSION = "v20"`. The version prefix is bumped whenever the layout algorithm or cache shape changes (e.g. v9 added the persisted full-layout warm-seed that powers incremental add-only relayout; v20 is the LinLog energy model + degree-proportional repulsion default) — bumping the version causes all existing cached files to be ignored on the next run (stale files are never explicitly deleted). See `core/src/layout-cache.ts`'s inline comments for the full per-version history.
 
 The SHA-1 is computed over the `vaultKey` string + sorted node ids + sorted `from|to|kind` edge triples. This means retargeting a wikilink (same node set and edge count, different connectivity) correctly busts the cache.
 

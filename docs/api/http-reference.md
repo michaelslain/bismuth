@@ -155,12 +155,6 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Response:** a small self-contained **HTML page** (`text/html`, status 200) — a green checkmark "Connected as `<account>`…" on success, or a red ✕ with the error/missing-code message. The message text is HTML-escaped. (Never JSON — it's rendered in the system browser.)
 - **Cache/SSE:** none.
 
-### `GET /agent-graph`
-- **Params:** none.
-- **Action:** `relayPrune(live)` against the live PTY set (`listSessionIds()`) — closed tabs leave no terminal-close hook, so this is where stale sessions are dropped — then `buildAgentGraph(relaySnapshot(), live)`.
-- **Response:** a `GraphData`-shaped object (`{ nodes, edges }`) of the "agents" graph: you → terminal-tab sessions → subagents. Session node id pattern `agent:sess:<sessionId>` (`kind:"agent"`, `label` derived from cwd basename); subagent node id `agent:sub:<agentId>` (`kind:"agent"`, `label` = agentType, `parent` = the session node id). Session→subagent edges are `{ from, to, kind: "message" }`.
-- **Cache/SSE:** none (polled by the frontend while agents mode is active).
-
 ### `GET /tasks`
 - **Params:** none.
 - **Response:** all vault tasks (`collectVaultTasks(vault)`) — extracted checkbox tasks with status/dates/recurrence/tags.
@@ -547,7 +541,6 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/config` | read | no |
 | GET | `/settings` | read | no |
 | GET | `/schema` | read | no |
-| GET | `/agent-graph` | read | no |
 | GET | `/chat/sessions` | read | no |
 | GET | `/chat/session-messages` | read | no |
 | GET | `/gcal/status` | read | no |

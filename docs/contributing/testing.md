@@ -206,20 +206,19 @@ try {
 
 - `GET /graph` returns merged brain graph with correct nodes and edges
 - `GET /config` returns `{ vault, memory }` launch paths
-- `GET /agent-graph` returns `{ nodes: [], edges: [] }` shape
-- Relay ingest routes (`POST /relay/session`, `POST /relay/subagent/start`) return `400` when required fields are missing
+- Relay ingest routes (`POST /relay/session`, `POST /relay/subagent/start`) return `400` when required fields are missing; a well-formed POST reaches the relay registry (asserted by reading `relay.ts`'s `snapshot()` directly — `GET /agent-graph`, which used to render this end-to-end, is gone along with the agents graph)
 - `GET /daemon/graph` always returns `200` with a graph shape (never throws, even with no daemon home)
 
 ### `core/test/relay.test.ts`
 
-Tests the in-process relay registry (`core/src/relay.ts`) that powers the agents graph. Uses `beforeEach(() => resetRelay())` for isolation. Covers the full session/subagent lifecycle:
+Tests the in-process relay registry (`core/src/relay.ts`) — session/subagent bookkeeping populated by the relay plugin's hooks; it used to power the now-removed agents graph and today has no reader at all. Uses `beforeEach(() => resetRelay())` for isolation. Covers the full session/subagent lifecycle:
 
 - `registerSession` + `snapshot` roundtrip
 - Re-registering the same `sessionId` is a heartbeat: bumps `lastSeen`, preserves subagents and `cwd`
 - Re-running claude in the same `terminalId` with a new `sessionId` evicts the old session and its subagents
 - `endSession` removes session and its subagents
 - Subagent `startSubagent`/`stopSubagent` stores `lastMessage`, sets `done: true`, records `doneAt`
-- Finished subagents are pruned after a 60-second TTL (`snapshot(now + 61_000)` drops them)
+- Finished subagents are pruned after the `DONE_SUBAGENT_TTL_MS` (8s) linger — both via `snapshot()`/`prune()`'s own sweep and eagerly as a side effect of a later `stopSubagent` call, so a long-lived terminal tab that never closes doesn't accumulate done subagents indefinitely
 - `prune(openTabIds, now)` drops sessions whose terminal tab has closed, plus orphaned subagents
 
 ### `core/test/terminal.test.ts`
@@ -271,23 +270,13 @@ Tests `extractFingerprint` / `diffFingerprints` / `createChangeTracker`. Key beh
 - Changing the icon produces `{ graph: false, tree: true }`
 - Tags/links inside fenced code blocks are stripped from fingerprints
 
-### `core/test/agents.test.ts`
-
-Tests `buildAgentGraph()` from `core/src/agents.ts`:
-
-- Empty snapshot → empty graph
-- A live terminal session (tab present in the open-tab set) becomes a root agent node with `kind: "agent"` and a `cwd`-derived label (basename of the working directory)
-- A session whose `terminalId` is not in the open-tab set is dropped at read time
-- Subagents attach with a `"message"` edge: `{ from: "agent:sess:s1", to: "agent:sub:a1", kind: "message" }`
-- Stale (idle >10 minutes) sessions get `state: "idle"` vs active `state: "awake"`
-
 ### `core/test/layout.test.ts`
 
 Tests `computeLayout` and `pivotMDS`:
 
 - Every node gets a finite `[x, y, z]` position
 - 2D mode (`dimensions: 2`) forces `z = 0` for all nodes
-- Two well-connected clusters separated by a bridge end up with distinct spatial centroids (spatial separation test)
+- Community-tagged clusters separate far better under community-aware forces than without them (see "community-aware clustering" tests). The topology-only version of this assertion (two well-connected clusters joined by a bridge, no `community` field) was **removed** under the LinLog + degree-repulsion default — it no longer reliably holds (see the `REMOVED (Task 5)` comment in the test file for the measured ratios); this is the same known limitation documented for the ` ```graph ` embedded block (`docs/editor/graph-block.md`) and applies to the daemon graph too.
 
 ### `core/test/layout-cache.test.ts`
 
@@ -491,4 +480,4 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/agents.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/collide.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/collide.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`

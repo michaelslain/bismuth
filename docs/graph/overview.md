@@ -1,6 +1,8 @@
 # Graph Overview
 
-This document is the canonical reference for Bismuth's knowledge graph data model: the eight node kinds, six edge kinds, five graph modes (2nd/3rd/both/agents/daemon), the "you" self hub, backend-precomputed 2D/3D layout, and the daemon-mode node-visual encoding. The graph is a shared data structure built by backend modules in `core/src/` and rendered by the Canvas-2D `CanvasGraphRenderer` in `app/src/graph/` (a plain `getContext("2d")` canvas — not WebGL/GPU, not DOM nodes; nodes, edges, and labels are all rasterized in one draw pass per frame). "Agents" mode additionally gets a small pure-DOM overlay (`AgentsGraph.tsx`) layered on top of the canvas for its status card + organization picker — it draws no graph itself.
+This document is the canonical reference for Bismuth's knowledge graph data model: the eight node kinds, six edge kinds, the graph modes (2nd/3rd/both/daemon), backend-precomputed 2D/3D layout, and the daemon-mode node-visual encoding. The graph is a shared data structure built by backend modules in `core/src/` and rendered by the Canvas-2D `CanvasGraphRenderer` in `app/src/graph/` (a plain `getContext("2d")` canvas — not WebGL/GPU, not DOM nodes; nodes, edges, and labels are all rasterized in one draw pass per frame).
+
+> **The "agents" graph mode was removed.** `core/src/agents.ts` (`buildAgentGraph`), `GET /agent-graph`, `app/src/graph/AgentsGraph.tsx`, `app/src/graph/agentLayout.ts`, and `app/src/graph/agentOrg.ts` are all gone; `GraphMode` no longer has an `"agents"` value. The `"agent"` node kind and the `"open"`/`"message"`-for-agents edge usage described below still exist in the TYPE system and are still handled defensively by `CanvasGraphRenderer` (see "Vestigial code"), but nothing in the current app produces an `agent` node or a `"self"` node for the live knowledge graph anymore — see "The 'You' Self Node" below.
 
 ---
 
@@ -12,16 +14,16 @@ Every node in the graph carries these fields:
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `id` | `string` | yes | Unique identifier. Note nodes: vault-relative path without `.md` (e.g. `"reading/My Note"`). Tag nodes: `"tag:<name>"`. Memory nodes: `"mem:<basename>"`. Agent sessions: `"agent:sess:<sessionId>"`. Subagents: `"agent:sub:<agentId>"`. Daemon hub: `"::daemon"`. Crons: `"cron:<name>"`. Processes: `"process:<name>"`. Self: `"::you"`. |
+| `id` | `string` | yes | Unique identifier. Note nodes: vault-relative path without `.md` (e.g. `"reading/My Note"`). Tag nodes: `"tag:<name>"`. Memory nodes: `"mem:<basename>"`. Daemon hub: `"::daemon"`. Crons: `"cron:<name>"`. Processes: `"process:<name>"`. Self: `"::you"` (vestigial — see "The 'You' Self Node"). Agent sessions/subagents (`"agent:sess:<sessionId>"` / `"agent:sub:<agentId>"`) are a vestigial id format too — nothing produces `agent` nodes anymore. |
 | `label` | `string` | yes | Human-readable display name. |
-| `kind` | `NodeKind` | yes | One of eight values (see Node Kinds below). |
-| `state` | `"idle" \| "awake"` | no | Live activity state, used on `agent` nodes only. |
+| `kind` | `NodeKind` | yes | One of eight values (see Node Kinds below); `"agent"` and `"self"` are currently vestigial (type-level only, never produced for the live graph). |
+| `state` | `"idle" \| "awake"` | no | Live activity state; was used on `agent` nodes only, which no longer occur. |
 | `folder` | `string` | no | Top-level folder name for `note` nodes (e.g. `"reading"` for `reading/quotes/x.md`). Root-level notes get `"(root)"`. |
-| `parent` | `string` | no | `agent` subagent nodes only: the node id of the spawning session node. Absent on root (terminal-tab) sessions. |
+| `parent` | `string` | no | Was `agent` subagent nodes only: the node id of the spawning session node. No longer occurs. |
 | `position` | `[number, number, number]` | no | Precomputed 3D layout coordinate `[x,y,z]`, attached by the backend (see Layout section). Integer-rounded. |
 | `position2d` | `[number, number]` | no | Precomputed flat 2D coordinate `[x,y]` (z is always 0 and is dropped), for a smooth 2D/3D morph. |
-| `community` | `number` | no | Louvain community id — a stable integer used as a color/group key. Absent on subgraphs (agents, daemon). |
-| `communityLabel` | `string` | no | Label of the highest-degree member of the node's community (the exemplar). Absent on subgraphs. |
+| `community` | `number` | no | Louvain community id — a stable integer used as a color/group key. Absent on the daemon subgraph. |
+| `communityLabel` | `string` | no | Label of the highest-degree member of the node's community (the exemplar). Absent on the daemon subgraph. |
 | `daemon` | `DaemonVizState` | no | Cron/process nodes only. Carries `enabled`, `running`, `lastResult`, `lastFiredMs`, and (crons only) `schedule`. Absent on all other node kinds. |
 
 ### `GraphEdge`
@@ -44,7 +46,7 @@ interface GraphData {
 }
 ```
 
-`views` carries per-brain-view precomputed layouts (see Layout section). Absent on subgraph responses (agents, daemon mode).
+`views` carries per-brain-view precomputed layouts (see Layout section). Absent on the daemon-mode graph response.
 
 ### `ViewLayout`
 
@@ -88,24 +90,26 @@ A note from the daemon's memory directory (`<vault>/.daemon/memory`). Created by
 - **label**: the memory note's basename without `.md`.
 - Exists in the 3rd-brain and "both" views only.
 
-### `"self"`
+### `"self"` (vestigial)
 
-The synthetic "you" hub that represents the user. **It appears in "agents" mode only** — "2nd", "3rd", "both", and "daemon" show no self node at all (previously "2nd"/"3rd"/"both" also injected one via `withYouNode()`/`youNode.ts`; that call was removed — it read as frontend noise next to real vault/memory structure and gave every non-agents view a permanent dot at the origin with no real relationship to the content around it).
+The synthetic "you" hub that used to represent the user in the graph. **No live mode injects it anymore.** It used to appear in "2nd"/"3rd"/"both" via a `withYouNode()` helper (`app/src/graph/youNode.ts`, now deleted — it read as frontend noise next to real vault/memory structure), and later, after that removal, in "agents" mode only (`layoutAgentGraph()`); the "agents" mode itself was subsequently removed too. `app/src/graph/displayGraph.ts`'s header comment states the current invariant directly: "NO mode carries a 'you'/self node."
 
-- **id**: always `"::you"` (the exported constant `SELF_NODE_ID`).
+- **id**: `"::you"` (the exported constant `SELF_NODE_ID`, still exported from `core/src/graph.ts`).
 - **label**: `"You"`.
-- **position**: always `[0, 0, 0]` — the center of the graph.
-- **position2d**: always `[0, 0]`.
-- **Critical**: the self node is injected entirely on the **frontend**, and only for "agents" mode (`layoutAgentGraph()` in `app/src/graph/agentLayout.ts`). The backend graph builders never emit it. Its `::` prefix can never collide with a vault note id.
+- **position**: `[0, 0, 0]` — the center of the graph, when present.
+- **position2d**: `[0, 0]`.
+- The renderer (`CanvasGraphRenderer`/`AsciiGraphRenderer`) still special-cases `kind === "self"` nodes defensively (pins to origin, never depth-fades, wins label occlusion — see "Rendering" below), and `app/src/intro/VaultIntro.tsx` hand-builds one literal `self` node for its static first-run demo graph. That demo use is the only place a `"self"` node is constructed anywhere in the app today; no backend builder and no live graph-mode path emits one.
 
-### `"agent"`
+### `"agent"` (vestigial)
 
-A Claude Code session or subagent running inside one of Bismuth's terminal tabs. Created by `buildAgentGraph()` in `agents.ts`. Appears only in "agents" mode.
+Used to represent a Claude Code session or subagent running inside one of Bismuth's terminal tabs, created by `buildAgentGraph()` in `core/src/agents.ts` for the now-removed "agents" graph mode. `core/src/agents.ts` still exists on disk but is entirely orphaned — nothing imports it, and its own test file (`core/test/agents.test.ts`) is gone too. `NodeKind` still includes `"agent"`, but nothing in the current app produces one. The id/label/state shape below is preserved here for historical/type reference only:
 
 - **Session nodes** — id: `"agent:sess:<sessionId>"`. Label: `basename(cwd)`, falling back to `terminalId`. No `parent` field.
 - **Subagent nodes** — id: `"agent:sub:<agentId>"`. Label: the `agentType` string (e.g. `"Explore"`, `"Plan"`, `"general-purpose"`). `parent` is the session's node id.
 - **state**: `"awake"` if the session heartbeat within the last 10 minutes OR has a running (non-done) subagent; `"idle"` otherwise. Subagents: `"awake"` if not done, `"idle"` if done.
 - No `community`, no `daemon`, no `folder`.
+
+The relay registry that used to feed this (`core/src/relay.ts` — `RelaySession`/`RelaySubagent`, populated by the relay plugin's hooks POSTing to `/relay/*`) is still alive and still populated/pruned (see `docs/terminal/overview.md`); it simply has no reader now that `buildAgentGraph()`/`GET /agent-graph` are gone.
 
 ### `"daemon"`
 
@@ -151,9 +155,9 @@ There are six edge kinds (`EdgeKind`):
 |---|---|---|---|
 | `"link"` | `note` | `note` | A `[[WikiLink]]` from one vault note to another. Resolved by `resolveLinkTarget()` — path-qualified `[[folder/Note]]` wins, then basename `[[Note]]`. Only created when the target note exists. |
 | `"tag"` | `note` | `tag` | A note references a `#tag` (in frontmatter or body). |
-| `"message"` | `memory` | `memory` | An inter-memory edge built by `buildMemoryGraph()`. Also used for `agent session → subagent` edges in agents mode. |
+| `"message"` | `memory` | `memory` | An inter-memory edge built by `buildMemoryGraph()`. Was also used for `agent session → subagent` edges in the now-removed "agents" mode; that usage is vestigial. |
 | `"about"` | `memory` | `note` | A cross-brain edge from a memory node to a vault note. Created when a memory note's wikilinks resolve to vault note ids. Resolution follows the same `byPath` then `byBase` logic as vault wikilinks. |
-| `"open"` | `self` | `agent` | Created on the frontend by `layoutAgentGraph()` (agents mode only) from the self node to every root session. There is no `"open"` edge in "2nd"/"3rd"/"both" — those modes have no self node to hang one off of. |
+| `"open"` | `self` | `agent` | Vestigial — was created on the frontend by `layoutAgentGraph()` (agents mode only, now removed) from the self node to every root session. No mode currently produces `"open"` edges (no mode has a self node — see "The 'You' Self Node"). |
 | `"supervises"` | `daemon` | `cron` / `process` | Daemon hub to each cron or process child. The only edge kind in daemon mode. |
 
 ---
@@ -196,23 +200,9 @@ No `"self"` node is added in "2nd" mode either — the filtered graph is rendere
 
 Analogous to 2nd-brain mode. The backend's full "both" graph is filtered by `THIRD_BRAIN_KINDS` (`"memory"`). Sub-view layout is in `GraphData.views.third`. No `"self"` node is added here either.
 
-### Mode 4: `"agents"` — Live Claude Sessions
+> There used to be a Mode 4, `"agents"` (live Claude terminal sessions, built by `buildAgentGraph()` in `agents.ts` over a `RelaySnapshot`). It was removed along with `GET /agent-graph` and its frontend rendering path (`layoutAgentGraph()`, `AgentsGraph.tsx`). See the note at the top of this document and `docs/terminal/overview.md`.
 
-Completely separate graph from the vault/memory graph. Built by `buildAgentGraph()` in `agents.ts` over a `RelaySnapshot`:
-
-1. The relay plugin running inside each terminal tab's Claude process POSTs to `/relay/*` as hooks fire.
-2. `relay.ts` maintains an in-process registry of `RelaySession` and `RelaySubagent` objects.
-3. At read time (GET `/agent-graph`), `prune()` is called with the live PTY id set, removing sessions whose terminal tab has closed and orphaned/expired subagents.
-4. `buildAgentGraph(snapshot, liveTerminalIds, now)` filters sessions to those whose `terminalId` is in `liveTerminalIds`, then builds one `agent` node per session and one `agent` node per subagent whose parent session survived.
-5. Session-to-subagent edges use kind `"message"`.
-6. A session past the awake threshold (10 min since last heartbeat) is `"idle"` — but stays `"awake"` if it has a running (not-done) subagent.
-7. **The `"self"` node in agents mode is NOT the shared frontend hub the other modes used to share** — `App.tsx`'s per-mode content switch hands `GraphView` the raw agent graph straight from `GET /agent-graph` for `"agents"` (no `self`, no positions). Instead `GraphView`'s `rendererGraph()` runs it through `layoutAgentGraph()` (`app/src/graph/agentLayout.ts`), which manufactures its own literal `self` node and lays out every session/subagent explicitly (pyramid in 2D, cone/tree in 3D) before handing the result to the renderer. See "Agents Mode Layout & Overlay" below for the full pipeline.
-
-**No community detection** is run on the *backend* agents graph (`buildAgentGraph()`). No `community`/`communityLabel` fields, no `views` field on the `GET /agent-graph` response. (`layoutAgentGraph()` does stamp a sequential `community` index on the frontend afterward, but only as a palette-index hack for per-agent coloring — not Louvain detection.)
-
-**Node ids are stable** for a given session/subagent pair. Session nodes: `"agent:sess:<sessionId>"`. Subagent nodes: `"agent:sub:<agentId>"`.
-
-### Mode 5: `"daemon"` — Per-Vault Daemon
+### Mode 4: `"daemon"` — Per-Vault Daemon
 
 Built by `daemonGraph()` in `daemonGraph.ts` from the daemon's on-disk state files. Never throws; degrades gracefully to an empty/partial snapshot on missing or malformed files. Crons/processes are read from the active vault's `.daemon` dir (`<home>` = `vaultDaemonDir(vault)`); the daemon's liveness pid is **machine-level** (`daemonMachineDir()/daemon.pid` = `~/.bismuth/daemon/daemon.pid`), since one machine process multiplexes every vault's brain.
 
@@ -230,13 +220,13 @@ The backend serves this at `GET /daemon/graph` (polled only while daemon mode is
 
 ## The "You" Self Node
 
-The `"you"` hub is entirely a frontend construct, and today it exists **only in "agents" mode** — `App.tsx`'s `displayGraph` memo builds "2nd"/"3rd"/"both" straight from the fetched graph (subgraph-filtered + view-positioned, for the two brain-restricted modes) with no self-node injection step at all, and "daemon" mode was already self-node-free. There used to be a shared `withYouNode()` helper (`app/src/graph/youNode.ts`) that injected the hub into "2nd"/"3rd"/"both", plus an `"open"` edge to every open note tab/pane; it was removed (#graph-you-node-scope) because the hub read as noise floating at the origin of otherwise-real vault/memory structure. It is NOT coming back for those modes — if you're looking for where the self node comes from now, it's agents-only.
+**No graph mode injects a self node today.** `app/src/graph/displayGraph.ts` (the pure per-mode graph selector behind `App.tsx`'s `displayGraph` memo) states the current invariant directly in its header comment: "NO mode carries a 'you'/self node."
 
-For "agents" mode, `layoutAgentGraph()` (`app/src/graph/agentLayout.ts`) manufactures its own literal self node — id `"::you"`, `label: "You"`, `kind: "self"`, pinned at `position: [0,0,0]` / `position2d: [0,0]` — and links it to every root session (see "Agents Mode Layout & Overlay" below). That is the sole source of the self node in the app today.
+History, for context: there used to be a shared `withYouNode()` helper (`app/src/graph/youNode.ts`, now deleted) that injected the hub into "2nd"/"3rd"/"both", plus an `"open"` edge to every open note tab/pane; it was removed because the hub read as noise floating at the origin of otherwise-real vault/memory structure. After that removal, "agents" mode was, for a time, the one remaining place a self node appeared — `layoutAgentGraph()` (`app/src/graph/agentLayout.ts`) manufactured its own literal self node and linked it to every root session. The "agents" mode itself was subsequently removed too, taking that last live producer with it.
 
-The self node, wherever it's injected, is pinned at the layout origin. There is no client-side force simulation to fix it in place with (that's backend-only, `core/src/layout.ts`) — instead `CanvasGraphRenderer`'s `scaleToSpacing()` special-cases `kind === "self"` and always maps it to `[0, 0, 0]` regardless of its (absent) backend position, while every other node is rescaled about the self-excluded content centroid. The "clearing" around the hub is a **screen-space** pass, not a physics collision radius: every frame, `clearAroundSelf()` pushes any node whose drawn circle would overlap the hub's (plus a constant `SELF_CLEAR_GAP` px) radially outward until it clears — see "Rendering" below.
+`core/src/graph.ts` still exports `SELF_NODE_ID = "::you"` and `NodeKind` still includes `"self"`, and the renderers still handle it defensively wherever it might appear: `CanvasGraphRenderer`'s `scaleToSpacing()` special-cases `kind === "self"` and always maps it to `[0, 0, 0]`, excludes it from the content centroid, and `clearAroundSelf()` pushes any node whose drawn circle would overlap the hub's radially outward in screen space (see "Rendering" below) — none of this currently fires on the live knowledge graph since no `"self"` node reaches it. The one place a `"self"` node is still constructed at all is `app/src/intro/VaultIntro.tsx`'s static first-run demo graph — cosmetic, not real data.
 
-**The self node is NOT injected in "2nd", "3rd", "both", or "daemon" mode.** In "2nd"/"3rd"/"both" there is simply no hub. In daemon mode the daemon hub (`"::daemon"`) serves as the center instead.
+**The self node is NOT injected in "2nd", "3rd", "both", or "daemon" mode** (nor any other current mode). In daemon mode the daemon hub (`"::daemon"`) serves as the center instead.
 
 ---
 
@@ -310,9 +300,11 @@ collideRadius(node, i) = max(linkDistance * 1.25, drawnNodeRadius(degreeScale(ad
 Two-tier:
 
 1. **In-memory**: `Map<sig, Layout>` within a server run.
-2. **On-disk**: JSON files in `~/.bismuth/layout-cache/<sig>.json` (durable app dir, not `os.tmpdir()`; override with `BISMUTH_LAYOUT_CACHE_DIR`), versioned by `CACHE_VERSION` (currently `"v9"`).
+2. **On-disk**: JSON files in `~/.bismuth/layout-cache/<sig>.json` (durable app dir, not `os.tmpdir()`; override with `BISMUTH_LAYOUT_CACHE_DIR`), versioned by `CACHE_VERSION` (currently `"v20"`).
 
-`CACHE_VERSION` **must be bumped whenever the layout output changes** (constants, the small-graph boost, the reel-in, the incremental-rebuild scheme) — a stale cached layout computed under different rules would mismatch what the renderer settles to. The version comments record the history: `v5` = collide iterations 3→6 + padding 1.25→1.55; `v6` = small-graph linkDist boost added; `v7` = stronger `400/n` (cap 8) boost; `v8` = reel disconnected components into the main mass via virtual tether links; `v9` = incremental "add-only" rebuilds pin pre-existing nodes (`layout.ts` `fixedIds`) so only newly-added nodes settle — different output than the old whole-graph warm re-settle.
+`CACHE_VERSION` **must be bumped whenever the layout output changes** (constants, the small-graph boost, the reel-in, the incremental-rebuild scheme) — a stale cached layout computed under different rules would mismatch what the renderer settles to. The version comments record the full history in `layout-cache.ts` itself (not duplicated here, to avoid this doc drifting stale again): `v5` = collide iterations 3→6 + padding 1.25→1.55; `v6` = small-graph linkDist boost added; `v7` = stronger `400/n` (cap 8) boost; `v8` = reel disconnected components into the main mass via virtual tether links; `v9` = incremental "add-only" rebuilds pin pre-existing nodes; `v10`–`v20` = disc-flatten bias, repulsion/collide tuning, community-aware clustering forces, and — most recently — the LinLog energy model + degree-proportional repulsion default (`v20`; see `layout-cache.ts`'s inline history for each step and exactly what it changed).
+
+> **Also note**: `app/src/App.tsx`'s `GRAPH_CACHE_KEY` (a separate, frontend-only localStorage cache of the last-rendered graph, used to instant-paint on boot) must be bumped in lockstep whenever a `CACHE_VERSION` bump moves positions — otherwise the first launch after the bump instant-paints stale cached coordinates before the fresh `/graph` fetch lands, and the renderer's structural-signature dedup (which deliberately ignores positions) can drop the incoming new layout. See the comment at `GRAPH_CACHE_KEY`'s definition.
 
 Cache key (`graphSig`): SHA-1 of `vaultKey + sorted node ids + sorted "from|to|kind" edges`. Retargeting a wikilink (same node set, same edge count, different endpoint) still busts the cache.
 
@@ -326,13 +318,13 @@ Cache key (`graphSig`): SHA-1 of `vaultKey + sorted node ids + sorted "from|to|k
 
 ### Attaching Positions
 
-`attachLayout(graph, vaultKey)` mutates each node to add `position: [x,y,z]` and `position2d: [x,y]`. The `position2d` field is always two elements (the trailing `z=0` is stripped). Nodes not in the backend's computed layout (i.e. the `"self"` node in agents mode, added client-side after `attachLayout()` has already run) get no position from this step — but `layoutAgentGraph()` sets its own explicit `position`/`position2d` fields directly (a full pyramid layout for every node it emits, including `self`). `CanvasGraphRenderer` additionally special-cases `kind === "self"` in `scaleToSpacing()` to always resolve to the origin regardless of whatever position field it carries in.
+`attachLayout(graph, vaultKey)` mutates each node to add `position: [x,y,z]` and `position2d: [x,y]`. The `position2d` field is always two elements (the trailing `z=0` is stripped). Nodes not in the backend's computed layout get no position from this step. `CanvasGraphRenderer` additionally special-cases `kind === "self"` in `scaleToSpacing()` to always resolve to the origin regardless of whatever position field it carries in — vestigial defensive handling, since no current mode emits a `"self"` node (see "The 'You' Self Node").
 
 ---
 
 ## Rendering (`CanvasGraphRenderer`)
 
-`app/src/graph/CanvasGraphRenderer.ts` is the single renderer for every graph mode (2nd/3rd/both/agents/daemon) and both graph hosts (the full-pane graph and the sidebar mini-graph). It is a **plain Canvas-2D context** (`canvas.getContext("2d")`) — explicitly **not WebGL/GPU and not DOM nodes** (`CanvasGraphRenderer.ts:1-6`). It hand-rolls the 3D camera math (orbit + zoom + perspective) in JS and rasterizes nodes, edges, and labels onto one `<canvas>` in a single pass per frame.
+`app/src/graph/CanvasGraphRenderer.ts` is the single renderer for every graph mode (2nd/3rd/both/daemon) and both graph hosts (the full-pane graph and the sidebar mini-graph). It is a **plain Canvas-2D context** (`canvas.getContext("2d")`) — explicitly **not WebGL/GPU and not DOM nodes** (`CanvasGraphRenderer.ts:1-6`). It hand-rolls the 3D camera math (orbit + zoom + perspective) in JS and rasterizes nodes, edges, and labels onto one `<canvas>` in a single pass per frame.
 
 ### No client-side force simulation
 
@@ -341,7 +333,7 @@ The renderer never runs a physics settle. `render(g)` (`:306`) computes a struct
 1. Builds an adjacency map + undirected degree per node (`:340-347`).
 2. Centers node coordinates on the content centroid, **excluding** the injected `"self"` node — it sits at the backend's origin and would bias the centroid (`:349-370`).
 3. Calls `settlePositions()` (`:425-437`), which — for ordinary vault/memory graphs — rescales the backend's already-settled `position`/`position2d` via `scaleToSpacing()` (`:123-185`) instead of re-running a force sim. `scaleToSpacing()` uniformly scales every non-self node about the centroid by the ratio of the renderer's wider, node-count-independent spacing (`linkDistance × LINK_SPREAD`) to the backend's `linkDistance × smallBoost` spacing (mirroring `BACKEND_SMALL_BOOST`/`BACKEND_2D_SPACING`, `:119-121`, which copy `core/src/layout.ts`'s own constants), then pins `"self"` at `[0, 0, 0]`. Settled positions are cached per graph signature (`p3Cache`/`p2Cache`, capped at 8 entries, `:439-442`), so revisiting a mode is free.
-4. `agent`/`daemon`/`cron`/`process` nodes are treated as having an "intentional" pre-supplied layout (`hasIntentionalLayout()`, `:447-449`) — for those, `settlePositions()`/`ensure2D()` are no-ops and the node's own `position`/`position2d` (set by `layoutAgentGraph()` or the daemon graph builder) are used verbatim.
+4. `agent`/`daemon`/`cron`/`process` nodes are treated as having an "intentional" pre-supplied layout (`hasIntentionalLayout()`, `:447-449`) — for those, `settlePositions()`/`ensure2D()` are no-ops and the node's own `position`/`position2d` (set by the daemon graph builder; `agent` handling is vestigial, nothing emits one anymore) are used verbatim.
 
 This is why a 2D↔3D mode switch, which used to re-run a client force sim (~1.2s at 2k nodes), is now an O(n) rescale.
 
@@ -356,7 +348,7 @@ A hand-rolled perspective camera (`project()`, `:550-560`): world coordinates ar
 - **Zoom**: the mouse wheel drives a `goalZoom` (`onWheel`, `:924-931`) that the render loop glides toward every frame (`GLIDE`, `:57`), not an instant jump.
 - **Keyboard** (`onKeyDown`, `:933-940`): `z` frames the hovered node + its neighbours (`focusNode()`), or resets the camera if nothing is hovered; `Escape` always resets.
 - **Camera commands**: `focusNode(id)` / `frameSubset(ids)` (`:981-1000`) compute a bounding centroid + radius for a node set and glide the camera's target/zoom to frame it (used by cluster-legend clicks and search "fly to"); `resetView()` (`:1002-1007`) glides back to the whole-graph overview.
-- **Idle spin**: `ry` auto-increments in 3D while the graph has ≤`SPIN_MAX_NODES` (350) nodes, the user hasn't grabbed the camera, and nothing is being dragged (`:695-697`) — disabled outright in agents mode by `GraphView` (`spin: props.mode === "agents" ? false : gs.spin`, `GraphView.tsx:184`) so the pyramid/molecule shape holds still.
+- **Idle spin**: `ry` auto-increments in 3D while the graph has ≤`SPIN_MAX_NODES` (350) nodes, the user hasn't grabbed the camera, and nothing is being dragged (`:695-697`).
 
 ### Depth cue, node sizing, hub clearance
 
@@ -378,25 +370,6 @@ Labels are drawn as canvas text (`ctx.fillText`), not DOM, each with a rounded b
 ### Vestigial code
 
 `app/src/graph/LabelLayer.ts` — a DOM-overlay label layer built on `THREE.Vector3` screen projection — and the `three`/`d3-force-3d` npm packages still exist on disk but are **dead code**: `LabelLayer.ts` is not imported by `CanvasGraphRenderer` or `GraphView.tsx`; the only remaining reference to it is a stale comment in `app/src/App.css:649`. `GraphView` still passes a `labelsEl` DOM ref into `renderer.mount(...)` (`GraphView.tsx:149-154`), but `CanvasGraphRenderer.mount()` accepts and ignores it (the `_labelOverlay` parameter, `:254`) — a leftover from the old DOM-overlay design.
-
----
-
-## Agents Mode Layout & Overlay
-
-Agents mode routes through the *same* `CanvasGraphRenderer` as every other mode, but its graph is built and laid out differently before it ever reaches the renderer:
-
-1. `App.tsx`'s `displayGraph` memo hands `GraphView` the raw `agents()` signal straight from `GET /agent-graph` for `"agents"` mode (session/subagent nodes only: no `self`, no positions) — unlike `"2nd"`/`"3rd"`/`"both"`, which are rendered straight from the fetched graph too, but without ever gaining a self node.
-2. `GraphView`'s `rendererGraph()` (`GraphView.tsx:165-167`) instead runs the graph through `layoutAgentGraph(raw, org)` (`app/src/graph/agentLayout.ts`) whenever `mode === "agents"`. This function:
-   - Manufactures its own literal `"self"` node, pinned at the world origin (`position: [0, 0, 0]`, `position2d: [0, 0]`, `:29`) — the pyramid's apex.
-   - Gives every session and subagent an explicit `position`/`position2d` (`:35-50`): a flat top-down pyramid in 2D (sessions spread along a row below the apex, each session's subagents fanned in a narrower row below that) and a cone/tree in 3D (sessions on a ring below the apex, subagents on a wider ring below each session, fanned by angle). Supplying explicit positions for every node keeps `CanvasGraphRenderer` in its "intentional layout" path (`hasIntentionalLayout()` returns `true` for `agent` nodes) — no rescale, no force sim.
-   - Assigns each session/subagent a sequential `community` index (`palIdx`, `:33-47`) purely so the renderer's per-community palette coloring (`colorFor()`, `CanvasGraphRenderer.ts:526-538`) gives every agent a visually distinct color — this is **not** Louvain community detection, just a palette-index counter.
-   - Emits the ownership edges itself (`:40,48`): `"open"` from `self` to each root session, `"message"` from each session to its own subagents.
-   - Adds extra `"message"` edges for the chosen organization's communication channels via `commChannels()` (`:52-54`, `app/src/graph/agentOrg.ts`): `"democracy"` = every session/subagent pair (full mesh), `"republic"` = sessions mesh with each other + each session's own subagents mesh with each other (no cross-session links), `"dictatorship"` = no extra channels (only the ownership tree survives).
-3. `AgentsGraph.tsx` is a **pure-DOM overlay** layered on top of the canvas (`GraphView.tsx:301-303`, shown only `when={props.mode === "agents"}`) — it draws no graph itself. It renders:
-   - An "Agent Network" status card: live counts of terminal sessions vs. subagents, and how many sessions are `"awake"` vs `"idle"`.
-   - An "Organization" picker (democracy / republic / dictatorship, `ORGS` in `AgentsGraph.tsx:11-15`) that flips the `agentOrg` signal (`GraphView.tsx:165`), causing `layoutAgentGraph()` to re-run with the new channel set on the next render effect.
-   - A footer showing the active organization's name + its live channel count (via the same `commChannels()`).
-4. Idle spin is disabled outright in agents mode (`GraphView.tsx:184`) so the pyramid/molecule shape holds still instead of orbiting.
 
 ---
 
@@ -515,7 +488,7 @@ Returns `{ nodes: [], edges: [] }`.
 
 ### `graphSig(graph, vaultKey)` (`layout-cache.ts`)
 
-Returns a string cache key `"v9-<16-char-sha1>"` from the node id set, edge `from|to|kind` triples, and vault path. Stable across content-only file edits (which don't change node/edge structure).
+Returns a string cache key `"v20-<16-char-sha1>"` from the node id set, edge `from|to|kind` triples, and vault path. Stable across content-only file edits (which don't change node/edge structure).
 
 ---
 
@@ -553,37 +526,22 @@ For daemon mode (`<home>` = `<vault>/.daemon`, the per-vault brain; the pid is m
   DaemonList + CanvasGraphRenderer  [frontend, no self node]
 ```
 
-For agents mode:
-
-```
-terminal tab (PTY) → relay plugin hooks
-      |
-  relay.ts registry (registerSession, startSubagent, stopSubagent, prune)
-      |
-  buildAgentGraph()  (agents.ts)
-      |
-  GET /agent-graph
-      |
-  layoutAgentGraph()   [frontend, agentLayout.ts — builds its own self node + pyramid/cone positions + org channels]
-      |
-  AgentsGraph overlay (status card + org picker)  +  CanvasGraphRenderer
-```
+The relay registry (`core/src/relay.ts`) is still populated the same way (terminal tab → relay plugin hooks → `registerSession`/`startSubagent`/`stopSubagent`/`prune`), but nothing downstream of it builds or serves a graph anymore — `buildAgentGraph()` (`agents.ts`), `GET /agent-graph`, and the frontend `layoutAgentGraph()`/`AgentsGraph` overlay pipeline that used to consume it are all gone. See `docs/terminal/overview.md`.
 
 ---
 
 ## Key Invariants and Gotchas
 
-- **The `"self"` node is frontend-only, and agents-only.** Never emitted by backend graph builders. `layoutAgentGraph()` manufactures it (its own literal `self` node, pinned to the pyramid apex — see "Agents Mode Layout & Overlay") for `"agents"` mode. It is NOT present in `"2nd"`, `"3rd"`, `"both"`, or `"daemon"` mode.
-- **Layout is backend-only for the vault/memory graph.** The browser never runs a force simulation over it — `CanvasGraphRenderer` only rescales the backend's settled positions (`scaleToSpacing()`) or morphs between the 3D/2D coordinate sets. Agents-mode positions are the one exception: they're computed entirely on the frontend by `layoutAgentGraph()` (a fixed pyramid/cone formula, not a force sim either).
-- **`app/src/graph/LabelLayer.ts` and the `three`/`d3-force-3d` npm packages are dead code**, left over from the pre-Canvas2D renderer. Nothing in `CanvasGraphRenderer.ts` or `GraphView.tsx` imports them; don't assume they're on the live render path.
+- **No graph mode currently injects a `"self"` node.** `NodeKind` still has `"self"` and `core/src/graph.ts` still exports `SELF_NODE_ID`, but no backend graph builder and no live frontend mode-selection path (`displayGraph.ts`) emits one — see "The 'You' Self Node". The renderer's `"self"`-handling (pinning to origin, hub clearance) is dead code on the live render path; the only place a `"self"` node is actually constructed is `app/src/intro/VaultIntro.tsx`'s static demo graph.
+- **Layout is backend-only for the vault/memory graph.** The browser never runs a force simulation over it — `CanvasGraphRenderer` only rescales the backend's settled positions (`scaleToSpacing()`) or morphs between the 3D/2D coordinate sets.
+- **`app/src/graph/LabelLayer.ts` and the `three`/`d3-force-3d` npm packages are dead code**, left over from the pre-Canvas2D renderer. Nothing in `CanvasGraphRenderer.ts` or `GraphView.tsx` imports them; don't assume they're on the live render path. `core/src/agents.ts` and the `"agent"` node kind are dead in the same sense — see "Node Kinds" above.
 - **Sub-view layouts may be absent on first load.** `GET /graph` only includes `views.second`/`views.third` if already cached. The frontend falls back to full-graph positions until `GET /graph/views` responds.
 - **Cache is written to `~/.bismuth/layout-cache/`, not the vault.** Writing inside the vault would trigger the fs watcher and cause an infinite invalidate→rebuild loop. The durable app dir (not `os.tmpdir()`, which macOS purges) keeps reopens as cache hits; override with `BISMUTH_LAYOUT_CACHE_DIR`.
 - **`mergeGraphs` keeps duplicate edges.** Two memory notes can both reference the same vault note and both produce `"about"` edges to it — this is by design.
-- **Agent graph drops closed-tab sessions.** A session whose terminal tab is closed is dropped at `GET /agent-graph` read time (prune against live PTY ids). There is no terminal-close hook in Claude Code; cleanup happens lazily.
 - **Wikilink resolution is basename-first.** `[[My Note]]` matches `My Note.md` anywhere in the vault. `[[reading/My Note]]` matches by full path first, then falls back to basename. Ambiguous basename matches are undefined.
-- **`CACHE_VERSION` must be bumped when layout output changes** — not just force constants, but the small-graph boost and the disconnected-component reel-in too. The current version is `"v9"`. A stale cached layout computed under different rules would mismatch the renderer's forces.
+- **`CACHE_VERSION` must be bumped when layout output changes** — not just force constants, but the small-graph boost and the disconnected-component reel-in too. The current version is `"v20"`. A stale cached layout computed under different rules would mismatch the renderer's forces.
 - **`now` in `nodeVisualState` is a no-op.** `lastResult` and `lastFiredMs` do not drive the visual encoding — only `enabled` and `running` matter.
 
 ---
 
-Source: `core/src/graph.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/engine.ts`, `core/src/daemon.ts`, `core/src/daemonViz.ts`, `core/src/daemonGraph.ts`, `core/src/agents.ts`, `app/src/graph/CanvasGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src/graph/AgentsGraph.tsx`, `app/src/graph/agentLayout.ts`, `app/src/graph/agentOrg.ts`, `app/src/graph/labelSelection.ts`, `app/src/GraphView.tsx`, `app/src/App.tsx`, `core/src/relay.ts`, `core/src/vault.ts`, `core/test/graph.test.ts`, `core/test/daemonViz.test.ts`, `core/test/agents.test.ts`, `core/test/engine.test.ts`
+Source: `core/src/graph.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/engine.ts`, `core/src/daemon.ts`, `core/src/daemonViz.ts`, `core/src/daemonGraph.ts`, `app/src/graph/CanvasGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src/graph/displayGraph.ts`, `app/src/graph/labelSelection.ts`, `app/src/GraphView.tsx`, `app/src/App.tsx`, `app/src/intro/VaultIntro.tsx`, `core/src/relay.ts`, `core/src/vault.ts`, `core/test/graph.test.ts`, `core/test/daemonViz.test.ts`, `core/test/engine.test.ts` (`core/src/agents.ts` is orphaned dead code — see "Node Kinds" above — and intentionally not listed as a live source here)
