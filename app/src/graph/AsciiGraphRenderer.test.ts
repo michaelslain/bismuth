@@ -289,12 +289,17 @@ const RAMP_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a"];
 // colours are no longer one of a fixed 5-entry ramp (buildColorSlots ranks-and-boosts against the
 // --graph-0..4 tokens, so the actual hex a community lands on is a saturation/lightness-boosted, and
 // possibly hue-rotated, DERIVATIVE of those tokens — see clusterVisual.ts) — so "is this a node run"
-// is a WHITELIST, computed via the real buildColorSlots (not hand-copied, and not a blacklist): a
-// blacklist of the five FIXED roles (self/muted/faint/accent/edge) is wrong in both directions — it
-// accidentally excludes `#3f6bf0`, which is BOTH `--accent`'s fallback AND `--graph-2`'s (a
-// coincidence in COLOR_FALLBACK), hiding a legitimate community-coloured glyph from every assertion
-// built on it; and it admits ANY other stray colour (e.g. a regression that mis-painted an
-// accent/self glyph) as if it were a real community node run. sampleGraph() gives its three
+// is a WHITELIST, computed via the real buildColorSlots (not hand-copied, and not a blacklist).
+//
+// The reason is ADMISSION, not exclusion: a blacklist of the five fixed roles (self/muted/faint/
+// accent/edge) admits ANY other stray colour — e.g. a regression that mis-painted an accent or self
+// glyph — as if it were a real community node run, which is the direction that lets a broken
+// renderer pass. It does NOT also under-admit: an earlier version of this comment claimed the
+// blacklist "accidentally excludes #3f6bf0, which is both --accent's fallback and --graph-2's",
+// hiding legitimate glyphs. That is false, and measuring it is one line: buildColorSlots
+// saturation/lightness-boosts every token before emitting it, so --graph-2's #3f6bf0 comes out as
+// #5078f1, and this fixture's three community colours (#f261a5, #a45cf2, #5078f1) have ZERO overlap
+// with the five fixed UI colours. No glyph was ever being hidden. sampleGraph() gives its three
 // communities (ids 0/1/2) an exact 8-member size TIE, so buildColorSlots ranks them by id ascending
 // — ids 0/1/2 -> ranks 0/1/2, all within the palette's first cycle (3 < 5, no hue rotation yet) — a
 // small, closed, exactly-computable set.
@@ -1436,7 +1441,18 @@ describe("UI data accessors", () => {
     r.destroy();
   });
 
-  it("survives an empty graph — noise field only, no nodes, no clusters", () => {
+  it("survives an empty graph — nothing is painted at all, no nodes, no clusters", () => {
+    // POSITIVE CONTROL first. The assertion below is a "nothing was drawn" one, and those are
+    // exactly the assertions that rot into always-true: this proves the instrument reads non-zero
+    // on a graph that DOES have nodes, in this same harness, immediately before it is used to claim
+    // zero. (It replaces `expect(nodeRuns()).toEqual([])`, which could not fail — nodeRuns() filters
+    // on a whitelist of the SAMPLE graph's community colours, and a graph with no communities paints
+    // nothing that could ever match, so the assertion was true by construction rather than by
+    // behaviour.)
+    const control = mountRenderer("2d");
+    expect(ctx.fills.length).toBeGreaterThan(0);
+    control.r.destroy();
+
     const host = document.createElement("div");
     document.body.appendChild(host);
     const r = new AsciiGraphRenderer();
@@ -1446,10 +1462,14 @@ describe("UI data accessors", () => {
     r.setConfig({ ...CONFIG });
     r.render({ nodes: [], edges: [] });
     ctx.fills.length = 0;
-  ctx.strokes.length = 0;
+    ctx.strokes.length = 0;
     frame();
     expect(painted.at(-1)).toBe(0);
-    expect(nodeRuns()).toEqual([]);
+    // An empty graph paints NOTHING — measured: no glyph runs, no labels, and no noise texture
+    // either (hence the renamed title; the old one said "noise field only", which the paint output
+    // does not bear out). Asserted on the raw fill list so ANY regression that paints anything at
+    // all trips it, whatever colour or glyph it comes out as.
+    expect(ctx.fills).toEqual([]);
     expect(r.getCommunityCentroids().size).toBe(0);
     r.destroy();
   });
