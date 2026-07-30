@@ -36,3 +36,8 @@ relay/shim/zdotdir/.zsh_history
 .slim/worktrees/
 .slim/worktrees.json
 # END oh-my-opencode-slim worktrees
+
+# Ad-hoc CLI installs for offline-integration-testing live verification (codex/cline/gemini, etc.)
+# — heavy (a real npm install with vendored platform binaries), never committed. See
+# docs/contributing/testing.md's offline-testing section for how these get used.
+.offline-cli-tools/

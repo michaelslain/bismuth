@@ -16,6 +16,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@copilotkit/aimock": "^1.37.4",
     "@types/bun": "latest",
     "@types/node": "^25"
   }
