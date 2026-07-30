@@ -58,12 +58,17 @@ function rpc(ws: WebSocket, sessionId?: string) {
 const INK_PROBE = `(() => {
   const cs = [...document.querySelectorAll('canvas')];
   if (!cs.length) return null;
+  // Luminance MUST be alpha-weighted. Reading raw RGB treats a 1%-alpha pixel as fully bright,
+  // which inflates every "canvas alone" figure — worst for the mostly-low-alpha bloom canvas — and
+  // made the composite read LOWER than the graph canvas it contains, which is impossible for a
+  // screen blend. 'ink' likewise means visible coverage, not merely nonzero alpha.
   const stats = (d) => {
     let n = 0, s = 0, lum = 0, lum2 = 0;
     for (let i = 0; i < d.length; i += 4*37) {
       s++;
-      if (d[i+3] !== 0) n++;
-      const L = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+      const a = d[i+3] / 255;
+      if (a > 0.02) n++;
+      const L = (0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]) * a;
       lum += L; lum2 += L*L;
     }
     const mean = lum/s;
