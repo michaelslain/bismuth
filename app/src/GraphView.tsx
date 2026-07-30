@@ -6,6 +6,7 @@ import { AsciiGraphRenderer } from "./graph/AsciiGraphRenderer";
 import { CanvasGraphRenderer } from "./graph/CanvasGraphRenderer";
 import { GraphAtmosphere } from "./graph/GraphAtmosphere";
 import { computeLayout } from "../../core/src/layout";
+import { localLayoutInput } from "./graph/localLayoutInput";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
 import { resolveAppearance } from "./themes";
@@ -143,6 +144,16 @@ export function GraphView(props: {
   // the boot splash gates on the app shell's own first paint (see App.tsx's bootGate wiring),
   // not the graph's, so the graph is free to keep rasterizing after the splash is gone.
   onPaint?: (nodeCount: number) => void;
+  // The full (un-mode-filtered) vault+memory graph, used ONLY as a `community`/`communityPath`
+  // lookup for LOCAL mode's own layout settle (see localLaidOut below) — never rendered. `props.graph`
+  // in local mode is `displayGraph.ts`'s `localSubgraph()` result, which deliberately STRIPS those
+  // fields before the renderer ever sees them (a dozen notes coloured by the whole vault's community
+  // structure "said nothing" — see localSubgraph's doc comment) — but the underlying ids are still
+  // useful to the LAYOUT physics even when there's nothing sensible to draw from them: a neighbour
+  // that shares the focused note's community should settle closer than a bridge into an unrelated
+  // one. Optional so a caller that doesn't have it degrades to the pre-Task-5 community-less local
+  // layout instead of erroring.
+  communitySource?: GraphData;
 }) {
   let host!: HTMLDivElement;
   // The ASCII field draws its labels ON the character grid (they're cells like everything else),
@@ -230,10 +241,19 @@ export function GraphView(props: {
   // uses for a ```graph block: the pure `computeLayout`, no backend round-trip and no cache, because a
   // neighbourhood is small enough to settle in a few ms. 3D first, then 2D seeded from it, exactly as
   // the backend pipeline does, so the 2D/3D morph stays aligned.
+  //
+  // `community`/`communityPath` are looked up from `props.communitySource` (the full, un-stripped
+  // graph — see the prop doc) rather than read off `g.nodes` directly: `g` in local mode is already
+  // `localSubgraph()`'s stripped result, by design (see its comment), so the fields aren't there to
+  // read even though the underlying data exists. This makes `computeLayout`'s community-aware gravity
+  // apply (a neighbour sharing the focused note's community settles closer than a cross-community
+  // bridge) WITHOUT changing what gets rendered: the returned nodes below never carry these fields, so
+  // the renderer stays exactly as flat/uncoloured in local mode as it already was (showLodMasses is
+  // separately gated off `props.mode !== "local"` regardless). See localLayoutInput.ts / its test.
   const localLaidOut = createMemo<GraphData>(() => {
     const g = props.graph;
     if (props.mode !== "local" || g.nodes.length === 0) return g;
-    const input = { nodes: g.nodes.map((n) => ({ id: n.id })), edges: g.edges.map((e) => ({ from: e.from, to: e.to })) };
+    const input = localLayoutInput(g, props.communitySource);
     const pos3 = computeLayout(input, { refineTicks: LOCAL_REFINE_TICKS });
     const pos2 = computeLayout(input, { dimensions: 2, refineTicks: LOCAL_REFINE_TICKS, initialPositions: pos3 });
     return {

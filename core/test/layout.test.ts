@@ -77,9 +77,25 @@ test("softer repulsion shrinks hub-to-leaf edges vs. the pre-fix default (a mega
 
 // --- Task 5: explicit coverage for energyModel:"linlog" / degreeRepulsion:true through the full
 // prepareLayout pipeline. Both are now the DEFAULT (see withDefaults), so every test above already
-// exercises them ambiently — these two assert their SPECIFIC, documented effects directly, rather than
+// exercises them ambiently — these three assert their SPECIFIC, documented effects directly, rather than
 // shipping the flip at zero direct coverage. linlog.test.ts covers the raw force in isolation; these
 // cover it wired into the real sim (charge/collide/community forces all present).
+
+test('withDefaults actually DEFAULTS to energyModel:"linlog" and degreeRepulsion:true (not merely honours them when passed)', () => {
+  // Every other test in this file that omits energyModel/degreeRepulsion is exercising them only
+  // AMBIENTLY — it would keep passing even if withDefaults silently reverted to the pre-Task-5
+  // "spring"/false defaults, as long as the physics stayed internally consistent. This is the one
+  // test that would actually catch that regression: it asserts OMITTING the options produces the
+  // SAME output as passing them explicitly, and a DIFFERENT output than the old defaults. Since
+  // CACHE_VERSION is a hand-maintained literal (layout-cache.ts), a silent revert here would return
+  // every user to the old physics under a v20 cache key — nothing would even re-settle to reveal it.
+  const g = ring(60);
+  const implicit = computeLayout(g, { refineTicks: 60 });
+  const explicitNew = computeLayout(g, { refineTicks: 60, energyModel: "linlog", degreeRepulsion: true });
+  const explicitOld = computeLayout(g, { refineTicks: 60, energyModel: "spring", degreeRepulsion: false });
+  expect(implicit).toEqual(explicitNew);
+  expect(implicit).not.toEqual(explicitOld);
+});
 
 test('energyModel: "linlog" (explicit) settles a ring to different, still-finite geometry than "spring"', () => {
   const g = ring(60);
@@ -345,8 +361,9 @@ test("community-aware forces separate communities far better, without collapsing
     // repulsion default flip itself: LinLog's much weaker long-range attraction plus (degree+1)-scaled
     // repulsion changes the intra/inter force balance independent of whether a separate community-level
     // collide also runs. Still nowhere near the degenerate collapse-to-a-point failure mode this guards
-    // against (both remain well over 100 world units, not ~0), so the floor is lowered to keep testing
-    // "not degenerate" rather than "no compaction at all".
+    // against — measured on.intra/off.intra is 50.5/96.8 world units (3D) and 120.6/310.0 (2D), not ~0
+    // in either dimension — so the floor is lowered to keep testing "not degenerate" rather than "no
+    // compaction at all".
     expect(on.intra).toBeGreaterThan(off.intra * 0.35);
   }
 });
@@ -444,7 +461,10 @@ test("nesting separates the COARSE level too, without undoing the fine level", (
     const nest = computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedNest });
     // The super-clusters (level 0) read as distinct groups only once the coarse forces are on.
     expect(separationAtLevel(g.nodes, nest, 0).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 0).ratio * 0.75);
-    // ...and the finest level is not sacrificed for it (it stays at least as separated as flat).
+    // ...and the finest level is not sacrificed too badly for it. Measured (both community forces,
+    // the shipped default): L1 nest/flat is 0.946 (3D, nest is BETTER than flat) but 1.1297 (2D, nest
+    // is 13% WORSE than flat) — the 1.15 bound tolerates that, but only just (98.2% of its ceiling).
+    // Not "at least as separated as flat" in 2D; genuinely a little less, on this fixture.
     expect(separationAtLevel(g.nodes, nest, 1).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 1).ratio * 1.15);
     // No level collapses: each keeps real spatial extent (the degenerate way to win the ratio).
     for (const level of [0, 1]) {

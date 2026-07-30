@@ -66,7 +66,30 @@ function mixHex(a: number, b: number, t: number): number {
 
 /** Attach deterministic layout coords (position/position2d) computed client-side — an
  *  embedded diagram is small, so the sync settle is instant; determinism means the same
- *  markdown always reproduces the same picture. */
+ *  markdown always reproduces the same picture.
+ *
+ *  KNOWN LIMITATION (Task 5, fix round 2 — left as-is, by design, not an oversight): `input.nodes`
+ *  below carries no `community`/`communityPath` — a hand-authored ` ```graph ` block has no Louvain
+ *  detection run over it, so there's genuinely no community data to attach (unlike GraphView.tsx's
+ *  LOCAL mode, which DOES have it available from the full engine graph and now passes it through —
+ *  see localLayoutInput.ts). The user's call: keep embedded diagrams simple rather than run detection
+ *  inline for what's usually a handful of nodes, where any visual overlap costs little.
+ *
+ *  Concretely, this means the "two densely-linked clusters joined by one bridge visibly separate"
+ *  property the deleted core/test/layout.test.ts assertion used to guard does NOT hold here under the
+ *  shipped LinLog + degreeRepulsion default (measured — same two-6/10/20/40-clique-plus-bridge fixture,
+ *  centroid distance ÷ intra-cluster spread, single 120-tick settle, >1 = clusters read as distinct):
+ *      cluster size     6       10      20      40
+ *      pre-Task-5      2.006   1.742   1.970   2.141   (always > 1: clusters separate)
+ *      shipped         0.813   1.344   0.237   2.388   (0.813 / 0.237 are BELOW 1: clusters visibly
+ *                                                        interpenetrate — the centroids sit closer
+ *                                                        together than the clusters' own radii)
+ *  Not a monotonic regression (40 is fine, 6 and 20 aren't) — it's noise from the combination lacking
+ *  any community signal to lock onto, not a consistent shrink. If this ever becomes a real complaint
+ *  (as opposed to a documented, accepted trade-off), the fix is almost certainly NOT re-tuning physics
+ *  constants here — see COMMUNITY_SEP_MULT's hazard comment in core/src/layout.ts for why that trap is
+ *  easy to fall into — but giving embedded blocks SOME grouping signal to feed `computeLayout`, e.g. an
+ *  author-specified `group:` field per node, synthesized into `community`. */
 function layoutGraphData(spec: GraphBlockSpec) {
   const data = graphBlockToGraphData(spec);
   if (data.nodes.length === 0) return data;

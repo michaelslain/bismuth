@@ -2268,7 +2268,7 @@ export default function App() {
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
       <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() && !switcherOpen() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} />
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} communitySource={graph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} />
         </Suspense>
       </div>
       <Show when={palette() === "command"}>
