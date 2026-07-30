@@ -102,7 +102,7 @@ The synthetic "you" hub that used to represent the user in the graph. **No live 
 
 ### `"agent"` (vestigial)
 
-Used to represent a Claude Code session or subagent running inside one of Bismuth's terminal tabs, created by `buildAgentGraph()` in `core/src/agents.ts` for the now-removed "agents" graph mode. `core/src/agents.ts` still exists on disk but is entirely orphaned — nothing imports it, and its own test file (`core/test/agents.test.ts`) is gone too. `NodeKind` still includes `"agent"`, but nothing in the current app produces one. The id/label/state shape below is preserved here for historical/type reference only:
+Used to represent a Claude Code session or subagent running inside one of Bismuth's terminal tabs, created by `buildAgentGraph()` in `core/src/agents.ts` for the now-removed "agents" graph mode. `buildAgentGraph()` and its test file (`core/test/agents.test.ts`) are both gone. `core/src/agents.ts` itself remains and is **not** orphaned — it now holds only the `ChatAgentSubagent` / `ChatAgentSession` types, which `core/src/chat.ts` imports for visual-chat subagent tracking. `NodeKind` still includes `"agent"`, but nothing in the current app produces one. The id/label/state shape below is preserved here for historical/type reference only:
 
 - **Session nodes** — id: `"agent:sess:<sessionId>"`. Label: `basename(cwd)`, falling back to `terminalId`. No `parent` field.
 - **Subagent nodes** — id: `"agent:sub:<agentId>"`. Label: the `agentType` string (e.g. `"Explore"`, `"Plan"`, `"general-purpose"`). `parent` is the session's node id.
@@ -544,4 +544,4 @@ The relay registry (`core/src/relay.ts`) is still populated the same way (termin
 
 ---
 
-Source: `core/src/graph.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/engine.ts`, `core/src/daemon.ts`, `core/src/daemonViz.ts`, `core/src/daemonGraph.ts`, `app/src/graph/CanvasGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src/graph/displayGraph.ts`, `app/src/graph/labelSelection.ts`, `app/src/GraphView.tsx`, `app/src/App.tsx`, `app/src/intro/VaultIntro.tsx`, `core/src/relay.ts`, `core/src/vault.ts`, `core/test/graph.test.ts`, `core/test/daemonViz.test.ts`, `core/test/engine.test.ts` (`core/src/agents.ts` is orphaned dead code — see "Node Kinds" above — and intentionally not listed as a live source here)
+Source: `core/src/graph.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/engine.ts`, `core/src/daemon.ts`, `core/src/daemonViz.ts`, `core/src/daemonGraph.ts`, `app/src/graph/CanvasGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src/graph/displayGraph.ts`, `app/src/graph/labelSelection.ts`, `app/src/GraphView.tsx`, `app/src/App.tsx`, `app/src/intro/VaultIntro.tsx`, `core/src/relay.ts`, `core/src/vault.ts`, `core/test/graph.test.ts`, `core/test/daemonViz.test.ts`, `core/test/engine.test.ts` (`core/src/agents.ts` no longer contributes to the graph — it now holds only the chat-subagent types; see "Node Kinds" above)

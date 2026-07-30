@@ -289,7 +289,7 @@ expect(buildPtyEnv({ ...ENV_BASE, base: {}, realClaude: "/usr/local/bin/claude" 
 
 The `relay/` workspace is a Claude Code plugin (`--plugin-dir`) loaded **per-session** inside every Bismuth app terminal tab. It has no global install, no daemon, and no slash commands — only four event hooks that POST registration/heartbeat/subagent events to the core server's relay registry.
 
-The relay powers the "agents" graph mode: `you → terminal-tab sessions → subagents`.
+The relay formerly powered the "agents" graph mode (`you → terminal-tab sessions → subagents`), which has been removed. The hooks and the registry still run; nothing currently reads the registry.
 
 ### How the plugin loads
 
@@ -545,7 +545,7 @@ These routes live in the **read table** in `server.ts` (not `mutatingRoutes`) �
 
 All 400 errors from relay endpoints are silently swallowed by the hooks (best-effort).
 
-There is no longer an endpoint that reads the registry — `GET /agent-graph` (and the `buildAgentGraph` pure function it called, `core/src/agents.ts`) was removed along with the "agents" graph mode. `core/src/agents.ts` still exists on disk but is orphaned: nothing imports it. The registry is still written to (by the routes above) and still pruned (by `terminal.ts` on tab close, see `prune` above); it just currently has no reader.
+There is no longer an endpoint that reads the registry — `GET /agent-graph` (and the `buildAgentGraph` pure function it called, in `core/src/agents.ts`) was removed along with the "agents" graph mode. `core/src/agents.ts` itself remains and is **not** orphaned: it now holds only the `ChatAgentSubagent` / `ChatAgentSession` types, imported by `core/src/chat.ts` for visual-chat subagent tracking. The registry is still written to (by the routes above), and is pruned both on tab close (`terminal.ts`, see `prune` above) and eagerly on `stopSubagent`; it just currently has no reader.
 
 ---
 
