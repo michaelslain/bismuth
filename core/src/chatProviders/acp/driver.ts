@@ -133,6 +133,20 @@ const INITIALIZE_PARAMS = {
 
 const ABORT_GRACE_MS = 8000;
 
+/** How long closeChat() waits after a graceful kill() (SIGTERM) before escalating to SIGKILL.
+ *  REQUIRED, not defense-in-depth — confirmed live (offline-testing openclaw task) that a real
+ *  `openclaw acp` process does NOT exit on SIGTERM alone: its own `serveAcpGateway`'s SIGTERM
+ *  handler (`dist/acp-cli-BQ740PFm.js`) gracefully stops its internal Gateway WebSocket connection
+ *  but never calls `process.exit()` itself, relying on the event loop draining naturally — which
+ *  never happens while this process still holds the child's stdin pipe open (the same pipe
+ *  writeToProc() writes JSON-RPC requests to), so the child survives indefinitely, not just briefly,
+ *  after a plain `proc.kill()`. Reproduced directly: `proc.exited` on a real openclaw ACP bridge
+ *  child did not resolve within 120s of a bare SIGTERM. Mirrors the SAME grace-then-SIGKILL shape
+ *  core/test/support/openclawGateway.ts's/mockLlm.ts's own stopProcess already use for their child
+ *  processes — this is that same pattern landing in the one place it was still missing: the
+ *  PRODUCTION close path every real Bismuth chat close goes through, not just a test's teardown. */
+const CLOSE_KILL_GRACE_MS = 3000;
+
 // ── Session state ───────────────────────────────────────────────────────────────────────────────
 
 interface AcpPendingCall {
@@ -361,7 +375,12 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
     s.usedFallbackArgs = true;
     const bin = whichBinary(agent.binary);
     if (!bin) return false;
-    const proc = spawnAcpProcess(bin, agent.fallbackArgs, s.cwd);
+    // Same per-chat argv extension as createSession's primary spawn (s.id is the chat id — see
+    // AcpSession's own `id` field doc comment) — currently dead for every agent that HAS
+    // fallbackArgs (only gemini, which has no sessionKeyArgs), kept consistent in case a future
+    // agent ever needs both.
+    const fallbackSpawnArgs = [...agent.fallbackArgs, ...(agent.sessionKeyArgs?.(s.id) ?? [])];
+    const proc = spawnAcpProcess(bin, fallbackSpawnArgs, s.cwd);
     if (!proc) return false;
     attachProc(s, proc);
     const second = await raceExit(s, call(s, "initialize", INITIALIZE_PARAMS));
@@ -385,7 +404,15 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
       });
       return null;
     }
-    const proc = spawnAcpProcess(bin, agent.args, cwd);
+    // agent.sessionKeyArgs (currently only openclaw): a per-CHAT argv extension, computed from THIS
+    // call's own chatId (already a parameter above — nothing new needed to reach it here). See
+    // agents.ts's openclaw entry for why a per-chat session key is required, not optional: a fixed
+    // constant here was shipped once and reverted after review found it leaks one chat's content
+    // into another's upstream request (the openclaw isolation test in openclawMocked.test.ts proves
+    // this stays closed). Every other agent leaves this undefined and gets byte-identical argv to
+    // before this field existed.
+    const spawnArgs = [...agent.args, ...(agent.sessionKeyArgs?.(chatId) ?? [])];
+    const proc = spawnAcpProcess(bin, spawnArgs, cwd);
     if (!proc) {
       sink({ type: "error", code: "spawn", message: `Failed to start ${agent.label}.` });
       return null;
@@ -525,11 +552,27 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
     s.pendingCalls.clear();
     s.pendingPermissions.clear();
     if (s.proc) {
+      const proc = s.proc;
       try {
-        s.proc.kill();
+        proc.kill();
       } catch {
         /* already exited */
       }
+      // Fire-and-forget escalation — closeChat() itself stays synchronous (its signature/callers are
+      // unchanged) but a process that ignores the graceful signal above still gets force-killed
+      // rather than surviving past this chat indefinitely. See CLOSE_KILL_GRACE_MS's own doc comment
+      // for why this is required for a real agent (openclaw), not speculative hardening.
+      void Promise.race([
+        proc.exited.then(() => false),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(true), CLOSE_KILL_GRACE_MS)),
+      ]).then((timedOut) => {
+        if (!timedOut) return;
+        try {
+          proc.kill(9);
+        } catch {
+          /* already exited between the timeout firing and this call */
+        }
+      });
     }
   }
 

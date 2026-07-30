@@ -32,6 +32,15 @@ export interface AcpAgentSpec {
    * for an agent with this set to false — not a bug, a real protocol constraint on that agent's side.
    */
   supportsSessionMcpServers?: boolean;
+  /**
+   * Extra argv appended AFTER `args`, computed from the chat id — for an agent whose spawn needs a
+   * value only available per-chat (currently only openclaw's `--session`, see its own comment for
+   * why a STATIC session key is unsafe, not just unfair). driver.ts's createSession calls this with
+   * its own `chatId` parameter (already in scope there — see the call site) and spreads the result
+   * onto argv. Omitted for every other agent: they get an isolated `acp:<uuid>` session per chat for
+   * free from the CLI's own default, so no per-chat argv is needed.
+   */
+  sessionKeyArgs?: (chatId: string) => string[];
 }
 
 export const ACP_AGENTS: readonly AcpAgentSpec[] = [
@@ -73,10 +82,10 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
     // acp` "speaks ACP over stdio for IDEs"). Puts OpenClaw on the AGENT side of the connection,
     // backed by whatever Gateway/model the user has it configured with.
     //
-    // `--session agent:main:bismuth` is REQUIRED, not cosmetic — confirmed live (offline-testing
-    // openclaw task) that the plain `openclaw acp` invocation (no --session) is BROKEN for every
-    // fresh turn, independent of mocking: `session/new` succeeds, but the FIRST `session/prompt`
-    // always fails with `ACP_SESSION_INIT_FAILED: ACP metadata is missing for
+    // `sessionKeyArgs` (a per-CHAT `--session`) is REQUIRED, not cosmetic — confirmed live
+    // (offline-testing openclaw task) that the plain `openclaw acp` invocation (no --session) is
+    // BROKEN for every fresh turn, independent of mocking: `session/new` succeeds, but the FIRST
+    // `session/prompt` always fails with `ACP_SESSION_INIT_FAILED: ACP metadata is missing for
     // agent:main:acp:<uuid>...`. Root cause, read directly from the installed package
     // (~/`openclaw`'s `dist/acp-cli-BQ740PFm.js`'s `AcpGatewayAgent.newSession`, and
     // `dist/session-key-DAhnzjyr.js`'s `isAcpSessionKey`): when no `--session`/`_meta.sessionKey` is
@@ -92,17 +101,18 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
     // collision and works normally (confirmed live for both `agent:main:main` — openclaw's own
     // documented example, `docs/cli/acp.md` — and an arbitrary custom label): the embedded agent
     // runtime auto-provisions itself the first time a non-"acp:"-prefixed session name is used.
-    // `agent:main:bismuth` is a fixed, Bismuth-specific label chosen to avoid the collision.
     //
-    // KNOWN LIMITATION (not fixed by this args change, flagged for future work): AcpAgentSpec.args
-    // is static per-backend, not per-chat, so every Bismuth chat/tab against openclaw currently
-    // shares this ONE Gateway session key — unlike cline/gemini/goose, which each get an
-    // isolated-per-chat `acp:<uuid>` session (openclaw's own default, if only it worked). Concurrent
-    // Bismuth chats through openclaw will see each other's turns interleaved on the same transcript.
-    // A real per-chat fix needs driver.ts's spawnAcpProcess to inject a chat-id-derived
-    // `--session agent:main:bismuth-<chatId>` dynamically (or an equivalent `_meta.sessionKey` on
-    // session/new) instead of this static args entry — out of scope for this fix, which prioritizes
-    // "works at all" over "works with full isolation".
+    // MUST BE PER-CHAT, NOT A FIXED CONSTANT — this was shipped as a static `agent:main:bismuth`
+    // once and reverted after review: a fixed session key means every Bismuth chat/tab against
+    // openclaw resolves to the SAME Gateway session, which is not merely "less isolated" but an
+    // active cross-chat content leak — reproduced live (capture-server test, see
+    // openclawMocked.test.ts's isolation test below): chat A's own text arrives INSIDE chat B's
+    // first-ever upstream request the moment B is a brand-new, never-before-seen chat id, and the
+    // merged transcript persists across a Gateway restart because it's the SAME on-disk Gateway
+    // session state a real user's `~/.openclaw` would carry indefinitely. `agent:main:bismuth-
+    // <chatId>` (via `sessionKeyArgs` below) gives each Bismuth chat its OWN Gateway session key,
+    // closing the leak while still avoiding the `acp:` prefix collision above (a chat id never
+    // starts with `acp:` in this codebase).
     //
     // `supportsSessionMcpServers: false` — a SECOND real bug found alongside the session-key one
     // above, confirmed live: on any machine where Bismuth's own MCP tools are installed
@@ -127,7 +137,8 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
     id: "openclaw",
     label: "OpenClaw",
     binary: "openclaw",
-    args: ["acp", "--session", "agent:main:bismuth"],
+    args: ["acp"],
+    sessionKeyArgs: (chatId) => ["--session", `agent:main:bismuth-${chatId}`],
     supportsSessionMcpServers: false,
   },
   {

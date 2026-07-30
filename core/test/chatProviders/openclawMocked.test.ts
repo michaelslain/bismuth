@@ -16,22 +16,38 @@
 // spawns that Gateway; backendEnv.ts's `openclaw` case writes the config both the Gateway and the ACP
 // bridge read (isolated via OPENCLAW_CONFIG_PATH/OPENCLAW_STATE_DIR — never a real `~/.openclaw`).
 //
-// A REAL BUG WAS FOUND AND FIXED to make this test possible at all (see agents.ts's openclaw entry
-// for the full root-cause writeup): Bismuth's OLD default spawn args (`openclaw acp`, no `--session`)
-// reliably failed the FIRST session/prompt on ANY fresh Gateway — a genuine, pre-existing production
-// bug independent of mocking, not a test artifact. Fixed by adding `--session agent:main:bismuth` to
-// agents.ts's openclaw entry (sidesteps a session-key-naming collision with an unrelated OpenClaw
-// feature). KNOWN LIMITATION of that fix, not solved here: this session key is static per-backend
-// (not per-chat), so concurrent Bismuth chats through openclaw currently share one Gateway session —
-// see agents.ts's own comment for the follow-up this would need.
+// THREE REAL BUGS WERE FOUND AND FIXED to make this test possible at all — pre-existing production
+// bugs, not test artifacts, each hit by any real user before this task, not just by this harness:
+//   1. Bismuth's OLD default spawn args (`openclaw acp`, no `--session`) reliably failed the FIRST
+//      session/prompt on ANY fresh Gateway — a session-key-naming collision with an unrelated
+//      OpenClaw feature. Fixed with a PER-CHAT `--session agent:main:bismuth-<chatId>`
+//      (`AcpAgentSpec.sessionKeyArgs` in agents.ts, consumed in driver.ts's createSession). This went
+//      through TWO revisions: a first version used a FIXED constant session key, which review caught
+//      as an active cross-chat content-leak vulnerability (one chat's text arriving inside another,
+//      never-before-seen chat's upstream request) rather than a mere isolation nicety — see the
+//      "session isolation" test below, which reproduces the leak's own precondition and proves the
+//      per-chat fix actually closes it. Full root-cause writeup: agents.ts's openclaw entry.
+//   2. session/new's usual non-empty `mcpServers` array is rejected outright by openclaw's ACP
+//      bridge. Fixed via `AcpAgentSpec.supportsSessionMcpServers: false` (agents.ts) + driver.ts's
+//      createSession consuming it.
+//   3. A real `openclaw acp` process does not exit on SIGTERM alone — its own shutdown handler never
+//      calls `process.exit()`, so `driver.ts`'s old `closeChat()` (a bare `proc.kill()`, never
+//      awaited) left it running indefinitely after a chat closed. Reproduced live: `proc.exited` on a
+//      real openclaw ACP bridge child did not resolve within 120s of a plain SIGTERM. Fixed with a
+//      grace-then-SIGKILL escalation (driver.ts's `CLOSE_KILL_GRACE_MS`) — see this file's own orphan
+//      check in `afterEach` below, which is what surfaces a regression here if this escalation ever
+//      breaks.
 //
 // SABOTAGE NOTES (per this task's brief — every new assertion was broken once, confirmed it failed,
 // then reverted): the fixture-text assertion was flipped to expect literal "hello" (lowercase, the
-// PROMPT text, not the fixture's reply) — failed as expected ("Hello!" !== "hello"). The path-specific
-// /metrics assertion was changed to check a path that never gets hit ("/v1/does-not-exist") — failed
-// as expected (0 !== >0). The `isError` assertion was flipped to `.toBe(true)` — failed as expected
-// (driver reports isError:false for a real successful turn). All three reverted after confirming the
-// failure; see this file's own git history / the task report for the exact diffs sabotaged.
+// PROMPT text, not the fixture's reply) — failed as expected ("Hello!" !== "hello"). The
+// path-specific /metrics assertion was changed to check a path that never gets hit
+// ("/v1/does-not-exist") — failed as expected (0 !== >0). The `isError` assertion was flipped to
+// `.toBe(true)` — failed as expected. The session-isolation test's own leak assertion was sabotaged
+// by reverting agents.ts's openclaw entry to a fixed-constant session key — failed as expected (chat
+// B's request DID contain chat A's marker). The orphan check itself was sabotaged by disabling
+// driver.ts's CLOSE_KILL_GRACE_MS escalation (bug #3 above) — both tests failed as expected, correctly
+// reporting the leaked `openclaw`/`openclaw-acp` pids. All reverted after confirming each failure.
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -40,6 +56,7 @@ import { whichBinary } from "../../src/claudeWhich";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { backendMockEnv } from "../support/backendEnv";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
+import { startCaptureLlmServer, type CaptureLlmHandle } from "../support/captureLlmServer";
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
 import { getFreePort, startOpenclawGateway, type OpenclawGatewayHandle } from "../support/openclawGateway";
 
@@ -69,6 +86,51 @@ function chatCompletionsHitCount(metricsText: string): number {
   return total;
 }
 
+/** True if `pid` still names a live process — an OWNED point check (never a machine-wide `pgrep -f`
+ *  pattern match, which could hit an unrelated `openclaw gateway run` a developer started themselves
+ *  — the product's own normal deployment, it ships a `service` installer). Used below on pids this
+ *  test itself received back from starting a process, after that process's own stop()/exit already
+ *  resolved — so a `true` here means a genuine leak, not a race with an in-flight shutdown. */
+function pidAlive(pid: number): boolean {
+  return Bun.spawnSync(["ps", "-p", String(pid)]).exitCode === 0;
+}
+
+/** All PIDs descending from `rootPid` (children, grandchildren, ...) via `pgrep -P`. Used only for
+ *  the ACP bridge subprocess below, which — unlike the Gateway (openclawGateway.ts's `stop()`) and
+ *  the mock (mockLlm.ts's `stop()`), both of which AWAIT `proc.exited` — this test cannot get a pid
+ *  for directly: `CHAT_BACKENDS.openclaw.closeChat()` calls `proc.kill()` internally
+ *  (chatProviders/acp/driver.ts's closeChat) and returns void, without exposing the killed process
+ *  or awaiting its exit. Scoping the search to `process.pid`'s OWN descendant tree (not a
+ *  machine-wide name pattern) means this can never match an unrelated process a developer started
+ *  outside this test — only something THIS test process itself, directly or indirectly, spawned. */
+function collectDescendantPids(rootPid: number): number[] {
+  const out: number[] = [];
+  const frontier = [rootPid];
+  while (frontier.length) {
+    const pid = frontier.pop()!;
+    const r = Bun.spawnSync(["pgrep", "-P", String(pid)]);
+    const children = r.stdout
+      .toString()
+      .trim()
+      .split("\n")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    for (const c of children) {
+      out.push(c);
+      frontier.push(c);
+    }
+  }
+  return out;
+}
+
+/** `pid, comm` from a live `ps -p` lookup, or a "(already gone)" placeholder for a pid that's since
+ *  exited (a normal outcome mid-poll, not an error — see the bounded poll below). */
+function describePid(pid: number): string {
+  const r = Bun.spawnSync(["ps", "-p", String(pid), "-o", "pid=,comm="]);
+  const out = r.stdout.toString().trim();
+  return out || `${pid} (already gone)`;
+}
+
 describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a real Gateway against a mock LLM (zero account API calls)", () => {
   const ENV_KEYS = ["OPENCLAW_CONFIG_PATH", "OPENCLAW_STATE_DIR"] as const;
   // Snapshotted BEFORE anything that can fail/reject (startMockLlm/getFreePort/startOpenclawGateway)
@@ -80,6 +142,7 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
   const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   let mock: MockLlmHandle | undefined;
+  let capture: CaptureLlmHandle | undefined;
   let gateway: OpenclawGatewayHandle | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
@@ -103,8 +166,25 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     // chatProviders/acp/driver.ts's claudeSpawnEnv(process.env, "chat")) must both read the SAME
     // config — passing process.env here (already carrying the two OPENCLAW_* vars just set above)
     // is what guarantees that; see openclawGateway.ts's own header for why a shared config file,
-    // not a shared port arg, is the actual synchronization mechanism.
-    gateway = await startOpenclawGateway(process.env);
+    // not a shared port arg, is the actual synchronization mechanism. `port` is also passed directly
+    // so startOpenclawGateway can verify its OWN readiness banner reports that same port (see
+    // openclawGateway.ts's LISTEN_BANNER_RE doc comment for why the comparison matters).
+    gateway = await startOpenclawGateway(process.env, port);
+  }
+
+  /** Setup variant for the session-isolation test below: same Gateway isolation, but the LLM
+   *  backend is the request-capturing server (captureLlmServer.ts), not aimock — aimock has no way
+   *  to expose a captured request's full body for inspection, only hit counts (see
+   *  captureLlmServer.ts's own header for why a second, purpose-built server exists for this one
+   *  test rather than reusing `mock`). Assigns to the SAME shared `gateway`/`capture` slots afterEach
+   *  already tears down, so this test gets the same orphan-safety net as the one above. */
+  async function setupCapture(replyText: string): Promise<void> {
+    capture = startCaptureLlmServer(replyText);
+    const workDir = await newTempDir("bismuth-openclaw-iso-workdir-");
+    const port = await getFreePort();
+    const mockEnv = backendMockEnv("openclaw", capture.url, workDir, port);
+    for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v;
+    gateway = await startOpenclawGateway(process.env, port);
   }
 
   afterAll(async () => {
@@ -116,29 +196,55 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
 
   afterEach(async () => {
     for (const id of chatIds.splice(0)) CHAT_BACKENDS.openclaw.closeChat(id);
-    // Stop the Gateway (a real, separately-run process — see this file's header) and the mock BEFORE
-    // removing temp dirs, so neither is left mid-shutdown trying to read a config/log path that no
-    // longer exists.
+    // Stop the Gateway (a real, separately-run process — see this file's header) and the mock/capture
+    // server BEFORE removing temp dirs, so neither is left mid-shutdown trying to read a config/log
+    // path that no longer exists.
     await gateway?.stop();
+    const gatewayPid = gateway?.pid;
     gateway = undefined;
     await mock?.stop();
+    const mockPid = mock?.pid;
     mock = undefined;
+    capture?.stop();
+    capture = undefined;
     for (const dir of tempDirs.splice(0)) {
       await rm(dir, { recursive: true, force: true }).catch(() => {});
     }
     // Per this task's brief: "Kill every process you start... verify with ps that nothing
-    // survives" — belt-and-suspenders beyond openclawGateway.ts's own stop()/mockLlm.ts's own
-    // stop() resolving cleanly. A stray match here means a LEAK, not a false negative — both
-    // stop() calls above already awaited full process exit.
-    const leftover = Bun.spawnSync(["pgrep", "-f", "openclaw-gateway|aimock/dist/cli.js"]);
-    if (leftover.stdout.toString().trim()) {
+    // survives" — OWNED checks only, never a machine-wide `pgrep -f` (see pidAlive's/
+    // collectDescendantPids's own doc comments for why that matters, not just style).
+    //
+    // Gateway + mock: both already resolved via a stop() that AWAITS proc.exited internally
+    // (openclawGateway.ts's stopProcess / mockLlm.ts's stopProcess) — so a direct `ps -p` here is a
+    // simple confirmation, not a race.
+    if (gatewayPid !== undefined && pidAlive(gatewayPid)) {
+      throw new Error(`openclawMocked.test: gateway pid ${gatewayPid} still alive after gateway.stop() resolved — a real leak.`);
+    }
+    if (mockPid !== undefined && pidAlive(mockPid)) {
+      throw new Error(`openclawMocked.test: mock pid ${mockPid} still alive after mock.stop() resolved — a real leak.`);
+    }
+    // ACP bridge: CHAT_BACKENDS.openclaw.closeChat() calls proc.kill() internally
+    // (chatProviders/acp/driver.ts's closeChat) but does NOT await proc.exited — so unlike the two
+    // checks above, an immediate single-shot check here would race the kill signal actually landing.
+    // Bounded poll (5s) of this test PROCESS's own descendant tree, scoped so it can never match an
+    // unrelated developer-started openclaw process (see collectDescendantPids's doc comment).
+    const deadline = Date.now() + 5000;
+    let remaining: number[] = [];
+    while (Date.now() < deadline) {
+      remaining = collectDescendantPids(process.pid).filter((pid) => /openclaw|aimock/i.test(describePid(pid)));
+      if (remaining.length === 0) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (remaining.length > 0) {
       throw new Error(
-        "openclawMocked.test: a process matching openclaw-gateway or aimock's cli.js is STILL RUNNING " +
-          "after this test's own stop() calls resolved — a real orphan, not expected. PIDs:\n" +
-          leftover.stdout.toString(),
+        `openclawMocked.test: ${remaining.length} openclaw/aimock-related descendant process(es) of this test ` +
+          `still running 5s after teardown: ${remaining.map(describePid).join(", ")}`,
       );
     }
-  });
+  }, 15_000); // Bun's default hook timeout (5000ms) is shorter than the bounded poll above can
+  // legitimately take on its own (up to 5s) on top of gateway.stop()'s own up-to-5s grace-then-
+  // SIGKILL window — an explicit, generous timeout here so a slow-but-successful teardown reports as
+  // a pass, not a hook-timeout failure that looks like a hang.
 
   test(
     "a turn sent through CHAT_BACKENDS.openclaw returns the fixture's exact text, then terminates with result + done, proven by a path-specific mock hit",
@@ -180,6 +286,60 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
       // the mock, not merely that the driver reported success.
       const after = chatCompletionsHitCount(await fetch(`${mock!.url}/metrics`).then((r) => r.text()));
       expect(after).toBeGreaterThan(before);
+    },
+    60_000,
+  );
+
+  test(
+    "session isolation: a brand-new second chat's upstream request carries NO content from a completed first chat (closes the cross-chat leak a fixed session key would reopen)",
+    async () => {
+      // Reproduces the exact scenario review caught against a first (reverted) version of this fix,
+      // which used a FIXED constant `--session` value for every chat: chat A completes, then a
+      // BRAND-NEW chat B (different chatId, different cwd, never seen before) sends its first-ever
+      // upstream request — and with a shared session key, that request carried chat A's own text
+      // inside it. This test proves the per-chat `agent:main:bismuth-<chatId>` fix
+      // (agents.ts's `sessionKeyArgs`) keeps that from happening, using distinctive per-chat markers
+      // no real conversation would ever produce, so a match can only mean actual cross-chat bleed —
+      // not a coincidental substring.
+      const MARKER_A = "ZEBRA-ALPHA-marker";
+      const MARKER_B = "QUOKKA-BETA-marker";
+      await setupCapture("Hello!");
+
+      const cwdA = await newTempDir("bismuth-openclaw-iso-cwd-a-");
+      const chatA = "openclaw-iso-a-" + Date.now();
+      chatIds.push(chatA);
+      const collectorA = makeChatFrameCollector(45_000);
+
+      CHAT_BACKENDS.openclaw.sendMessage({ chatId: chatA, cwd: cwdA, sink: collectorA.sink, computerUse: false, text: MARKER_A });
+      await collectorA.waitFor((f) => f.type === "assistant-text");
+      await collectorA.waitFor((f) => f.type === "done");
+      // Chat A is done with its own turn but deliberately left OPEN here (not closeChat'd yet) —
+      // the leak review reproduced is about a SEQUENTIAL new chat while the Gateway's own on-disk
+      // session state persists, not about concurrent access; closing A first would only prove
+      // isolation-after-close, a narrower and less realistic claim than what actually matters (the
+      // normal "open a new chat later" case). afterEach still closes/tears down both regardless.
+
+      expect(capture!.captured.length).toBe(1); // sanity: exactly chat A's own request so far
+      expect(JSON.stringify(capture!.captured[0])).toContain(MARKER_A);
+      expect(JSON.stringify(capture!.captured[0])).not.toContain(MARKER_B);
+
+      const cwdB = await newTempDir("bismuth-openclaw-iso-cwd-b-");
+      const chatB = "openclaw-iso-b-" + Date.now();
+      chatIds.push(chatB);
+      const collectorB = makeChatFrameCollector(45_000);
+
+      CHAT_BACKENDS.openclaw.sendMessage({ chatId: chatB, cwd: cwdB, sink: collectorB.sink, computerUse: false, text: MARKER_B });
+      await collectorB.waitFor((f) => f.type === "assistant-text");
+      await collectorB.waitFor((f) => f.type === "done");
+
+      expect(capture!.captured.length).toBe(2); // sanity: chat B's own request landed too
+      const chatBRequest = JSON.stringify(capture!.captured[1]);
+      // The actual leak assertion: chat B's own marker must be present (it's B's own turn)...
+      expect(chatBRequest).toContain(MARKER_B);
+      // ...and chat A's marker must be ABSENT — this is the one that failed against the fixed
+      // session key this test was written to catch (chat A's text arrived inside chat B's first-ever
+      // request when both resolved to the same Gateway session).
+      expect(chatBRequest).not.toContain(MARKER_A);
     },
     60_000,
   );

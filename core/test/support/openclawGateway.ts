@@ -32,9 +32,11 @@
 // down the grandchild too (the launcher forwards the signal / waits and exits) — verified via `ps`
 // showing zero matching processes within 2s of a plain `proc.kill()`. No process-group tricks needed.
 // stop() still races a grace-period timeout and escalates to SIGKILL as defense-in-depth (the same
-// belt-and-suspenders posture mockLlm.ts's stopProcess takes), and the TEST FILE's own afterAll does
+// belt-and-suspenders posture mockLlm.ts's stopProcess takes), and the TEST FILE's own afterEach does
 // an independent `ps`-based verification per this task's brief ("verify with ps that nothing
-// survives") rather than trusting this module's resolution alone.
+// survives") rather than trusting this module's resolution alone — `pid` below (the direct child's,
+// i.e. the launcher's own pid — the one `ps` showed the grandchild's teardown rides along with) is
+// what that check uses; it is NOT the renamed `openclaw-gateway` grandchild's own pid.
 //
 // CONFIG HYGIENE FINDING (not fully solved here, called out for the caller): a completely bare config
 // makes `openclaw gateway run` perform a real outbound update-check HTTP request on startup
@@ -49,8 +51,14 @@ import { whichBinary } from "../../src/claudeWhich";
 
 /** Observed live: "[gateway] listening on ws://127.0.0.1:<port>, ws://[::1]:<port> (PID <pid>)" — a
  *  plain console log tag, not a documented contract, so this only anchors on the stable "listening on
- *  <url>" fragment, same defensiveness as mockLlm.ts's own LISTEN_BANNER_RE. */
-const LISTEN_BANNER_RE = /\[gateway\][^\n]*listening on\s+(wss?:\/\/\S+)/;
+ *  <url>" fragment, same defensiveness as mockLlm.ts's own LISTEN_BANNER_RE. Captures the FIRST
+ *  URL's port specifically (group 1) — startOpenclawGateway compares it against the port the caller
+ *  actually asked for (the same one written into `gateway.port` in the shared config) and fails loud
+ *  on a mismatch, rather than reporting ready on any "listening on" line regardless of which port.
+ *  Readiness itself is genuinely observed (a real banner from a real process, not a fixed timer), but
+ *  without this comparison a gateway that silently ignored the configured port would still report
+ *  ready here and only surface later as an opaque ACP-connect error with no link back to the cause. */
+const LISTEN_BANNER_RE = /\[gateway\][^\n]*listening on\s+wss?:\/\/[^:\s]+:(\d+)/;
 
 /** Generous relative to opencodeServer.ts's 8s / mockLlm.ts's 15s — the Gateway does more startup
  *  work (heartbeat, health monitor, model-provider registration) than either of those. */
@@ -78,6 +86,12 @@ function killAllLiveProcs(): void {
 process.on("exit", killAllLiveProcs);
 
 export interface OpenclawGatewayHandle {
+  /** The DIRECT child's pid (the short-lived `openclaw` launcher — see this module's header's
+   *  PROCESS TREE note) — NOT the renamed `openclaw-gateway` grandchild's own pid. Exposed so a
+   *  caller can do an OWNED `ps -p <pid>` check after stop() resolves, rather than a machine-wide
+   *  `pgrep -f` that could just as easily match an unrelated `openclaw gateway run` a developer
+   *  started themselves (the product's own normal deployment — it ships a `service` installer). */
+  pid: number;
   /** Kill the Gateway process (and, per this module's header, its grandchild) and resolve once
    *  fully exited. Idempotent-safe to call more than once. */
   stop(): Promise<void>;
@@ -107,15 +121,18 @@ export function getFreePort(): Promise<number> {
 
 /**
  * Spawn `openclaw gateway run` pointed at the given (already-isolated) config/state env, resolving
- * once its readiness banner has been observed on stdout. Rejects (never resolves a broken handle) on
- * a spawn failure, a missing binary, or a startup timeout — same fail-loud contract as
- * mockLlm.ts's startMockLlm.
+ * once its readiness banner has been observed on stdout AND that banner's own port matches
+ * `expectedPort` (see LISTEN_BANNER_RE's doc comment for why the comparison matters, not just the
+ * banner's presence). Rejects (never resolves a broken handle) on a spawn failure, a missing binary,
+ * a startup timeout, or a port mismatch — same fail-loud contract as mockLlm.ts's startMockLlm.
  *
  * `env` must already carry `OPENCLAW_CONFIG_PATH`/`OPENCLAW_STATE_DIR` pointed at throwaway temp
  * dirs (see backendEnv.ts's `openclaw` case) — this function does not choose or validate isolation
- * itself, only spawns/waits/tears down the process.
+ * itself, only spawns/waits/tears down the process. `expectedPort` must be the SAME port already
+ * written into that config's `gateway.port` (see backendMockEnv's `openclaw` case, which is where a
+ * caller gets both from the same `getFreePort()` call).
  */
-export function startOpenclawGateway(env: Record<string, string | undefined>): Promise<OpenclawGatewayHandle> {
+export function startOpenclawGateway(env: Record<string, string | undefined>, expectedPort: number): Promise<OpenclawGatewayHandle> {
   return new Promise((resolve, reject) => {
     const bin = whichBinary("openclaw");
     if (!bin) {
@@ -143,7 +160,7 @@ export function startOpenclawGateway(env: Record<string, string | undefined>): P
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ stop: () => stopProcess(proc) });
+      resolve({ pid: proc.pid, stop: () => stopProcess(proc) });
     };
     const finishFail = (reason: Error) => {
       if (settled) return;
@@ -180,7 +197,18 @@ export function startOpenclawGateway(env: Record<string, string | undefined>): P
         for await (const chunk of proc.stdout as ReadableStream<Uint8Array>) {
           if (settled) return;
           pending += decoder.decode(chunk, { stream: true });
-          if (LISTEN_BANNER_RE.test(pending)) {
+          const m = LISTEN_BANNER_RE.exec(pending);
+          if (m) {
+            const bannerPort = Number(m[1]);
+            if (bannerPort !== expectedPort) {
+              finishFail(
+                new Error(
+                  `openclaw gateway printed its listening banner on port ${bannerPort}, not the requested ${expectedPort} ` +
+                    `(gateway.port in the config it read) — refusing to report ready against the wrong port.`,
+                ),
+              );
+              return;
+            }
             finishOk();
             return;
           }
