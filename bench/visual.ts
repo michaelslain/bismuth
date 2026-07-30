@@ -48,21 +48,43 @@ function rpc(ws: WebSocket, sessionId?: string) {
     });
 }
 
-/** Ink %, mean luminance and its spread — enough to catch "blank", "too dense", "no bloom". */
+/** Per-canvas ink % and luminance, PLUS the composite of all of them.
+ *
+ *  Measuring only `querySelector('canvas')` is a trap: the atmosphere is a SEPARATE canvas
+ *  composited over the graph with `mix-blend-mode: screen`. A probe that reads just the first
+ *  canvas reports byte-identical numbers whether the bloom is off, subtle, or blinding — which is
+ *  exactly what happened the first time this was used. `composite` re-blends every canvas the same
+ *  way the browser does, so it measures what is actually on screen. */
 const INK_PROBE = `(() => {
-  const c = document.querySelector('canvas');
-  if (!c) return null;
-  const d = c.getContext('2d', {willReadFrequently:true}).getImageData(0,0,c.width,c.height).data;
-  let n = 0, s = 0, lum = 0, lum2 = 0;
-  for (let i = 0; i < d.length; i += 4*37) {
-    s++;
-    if (d[i+3] !== 0) n++;
-    const L = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
-    lum += L; lum2 += L*L;
-  }
-  const mean = lum/s;
-  return { inkPct: +(100*n/s).toFixed(3), lumMean: +mean.toFixed(2),
-           lumSd: +Math.sqrt(Math.max(0, lum2/s - mean*mean)).toFixed(2) };
+  const cs = [...document.querySelectorAll('canvas')];
+  if (!cs.length) return null;
+  const stats = (d) => {
+    let n = 0, s = 0, lum = 0, lum2 = 0;
+    for (let i = 0; i < d.length; i += 4*37) {
+      s++;
+      if (d[i+3] !== 0) n++;
+      const L = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+      lum += L; lum2 += L*L;
+    }
+    const mean = lum/s;
+    return { inkPct: +(100*n/s).toFixed(3), lumMean: +mean.toFixed(2),
+             lumSd: +Math.sqrt(Math.max(0, lum2/s - mean*mean)).toFixed(2) };
+  };
+  const per = cs.map((c) => {
+    try {
+      const d = c.getContext('2d', {willReadFrequently:true}).getImageData(0,0,c.width,c.height).data;
+      return { cls: String(c.className) || '(unnamed)', w: c.width, h: c.height, ...stats(d) };
+    } catch (e) { return { cls: String(c.className), err: String(e).slice(0,40) }; }
+  });
+  // Screen-blend every canvas into one buffer at the largest canvas's size.
+  const W = Math.max(...cs.map(c => c.width)), H = Math.max(...cs.map(c => c.height));
+  const off = document.createElement('canvas'); off.width = W; off.height = H;
+  const octx = off.getContext('2d');
+  octx.fillStyle = '#000'; octx.fillRect(0, 0, W, H);
+  octx.globalCompositeOperation = 'screen';
+  for (const c of cs) { try { octx.drawImage(c, 0, 0, W, H); } catch {} }
+  const comp = stats(octx.getImageData(0, 0, W, H).data);
+  return { composite: comp, canvases: per, ...comp };
 })()`;
 
 mkdirSync(OUT, { recursive: true });
