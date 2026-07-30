@@ -29,6 +29,48 @@
 // Tolerant by construction, like every other piece of this harness: a malformed/unrecognized method
 // gets a generic empty result rather than crashing the process — a fake agent that dies mid-test
 // would just look like a flaky test, not a useful failure signal.
+//
+// CLINE AUTH-GATE MODE (added for the "close the cline coverage gap" task — see
+// clineAuthFakeAgent.test.ts): opt-in via FAKE_ACP_AUTH_GATE=cline, decoupled from the model-shape
+// logic above so acpFakeAgent.test.ts's existing three tests (which never set this var) are
+// unaffected byte-for-byte. Reproduces cline 3.0.47's REAL ACP auth surface, read from its own
+// compiled binary (`npm install cline@3.0.47`, `strings`'d the bundled Bun executable at
+// bin/.cline — same technique agents.ts's own header already used for this binary):
+//   - `initialize`'s authMethods, verified verbatim from the minified source's own
+//     `var B=[{id:"cline",name:"Sign in with Cline"},{id:"openai-codex",name:"Sign in with ChatGPT
+//     Subscription"}]` (this array is BOTH the authMethods list AND the only valid `authenticate`
+//     methodId allowlist in the real binary).
+//   - `session/new`'s gate, verified verbatim from: `async newSession(z){if(!this.authResult&&
+//     !process.env.CLINE_API_KEY){if(this.authResult=this.tryRestoreAuth(),!this.authResult)throw
+//     $.authRequired(void 0,"Call authenticate before creating a session")}...}` — an ACP SDK
+//     `RequestError.authRequired(data, detail)` helper that renders as JSON-RPC code -32000, message
+//     `"Authentication required: Call authenticate before creating a session"` (confirmed from the
+//     SDK's own `static authRequired(X,Z){return new D(-32000,\`Authentication required${Z?
+//     `: ${Z}`:""}\`,X)}`).
+//   - The REAL bypass this task discovered and live-verified (a real cline 3.0.47 binary, driven
+//     through Bismuth's own unmodified production driver, completed a full ACP turn against a local
+//     mock LLM this way — see backendEnv.ts's `cline` case + clineMocked.test.ts's new "real E2E"
+//     block): `process.env.CLINE_API_KEY`, read at newSession() time, unconditionally skips the
+//     throw above. Bismuth's driver (chatProviders/acp/driver.ts) never calls the ACP `authenticate`
+//     method at all (grep confirms no `call(s, "authenticate", ...)` anywhere in that file) — so the
+//     only faithful way for THIS fake to model "the gate is satisfied" is the exact same shape the
+//     real binary itself offers: an env var read fresh at THIS process's own spawn time,
+//     FAKE_ACP_CLINE_AUTHED, standing in for CLINE_API_KEY. This is not invented — it mirrors a real,
+//     cited mechanism 1:1, chosen because it is the only bypass that exists at all (see the case
+//     comment above it for the full finding).
+//
+// SCOPE LIMIT of this mode (a code-review finding on this task, recorded explicitly so nobody
+// mistakes this for broader coverage than it is): this mode reproduces cline's AUTH surface only.
+// Once the gate is open, `handleSessionNew` below falls through to the SAME generic
+// old/new-model-shape logic FAKE_ACP_MODEL_SHAPE already drives (this file's own hand-built
+// `{id, name}`-shaped configOptions) — NOT cline's real, quirkier `provider`-then-`model`
+// `configOptions` ordering (see backendEnv.ts's `cline` case, "TWO HONEST LIMITS" #2, for that
+// separate, already-cited bug: a real cline session emits a "provider" selector ahead of the true
+// "model" selector under the same category, which poisons both the `models` ChatFrame and
+// `modelConfigId`). This mode's own gate-OPEN test therefore CANNOT catch that bug — it was found
+// only by driving the REAL binary (clineMocked.test.ts's "real E2E" block), and this
+// always-running, binary-independent fake structurally never will unless a future task teaches it
+// cline's real configOptions shape too.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -63,6 +105,13 @@ function respond(id: number | string, result: unknown): void {
   writeLine({ jsonrpc: "2.0", id, result });
 }
 
+/** A JSON-RPC error response — the shape cline's own ACP SDK helper (`RequestError.authRequired`)
+ *  produces for the auth gate, and the general shape any rejected outbound call takes on the wire
+ *  (see ./protocol.ts's AcpRpcError, which driver.ts constructs from exactly these two fields). */
+function respondError(id: number | string, code: number, message: string): void {
+  writeLine({ jsonrpc: "2.0", id, error: { code, message } });
+}
+
 function notify(method: string, params: unknown): void {
   writeLine({ jsonrpc: "2.0", method, params });
 }
@@ -79,6 +128,24 @@ const modelShape = process.env.FAKE_ACP_MODEL_SHAPE === "old" ? "old" : "new";
  *  it can never be fooled by a stray real mock server accidentally still running. */
 const FAKE_TURN_TEXT = "Hello from the fake ACP agent";
 
+/** See this file's header "CLINE AUTH-GATE MODE" section. Unset (the default, what
+ *  acpFakeAgent.test.ts's three pre-existing tests get) reproduces this fake's ORIGINAL behavior
+ *  byte-for-byte: no gate, empty authMethods. "cline" reproduces cline 3.0.47's real auth surface,
+ *  cited above. */
+const authGate = process.env.FAKE_ACP_AUTH_GATE === "cline" ? "cline" : "none";
+
+/** Mirrors real cline's `process.env.CLINE_API_KEY` bypass — see this file's header. Only consulted
+ *  when authGate is "cline"; irrelevant (and expected unset) otherwise. */
+const clineAuthed = authGate === "cline" && !!process.env.FAKE_ACP_CLINE_AUTHED;
+
+/** Verbatim from cline 3.0.47's own `var B=[...]` — see this file's header citation. Real cline uses
+ *  this SAME array as both `initialize`'s authMethods AND `authenticate`'s methodId allowlist; this
+ *  fake only needs the authMethods half (the driver never calls `authenticate` — see the header). */
+const CLINE_AUTH_METHODS = [
+  { id: "cline", name: "Sign in with Cline" },
+  { id: "openai-codex", name: "Sign in with ChatGPT Subscription" },
+];
+
 let sessionCounter = 0;
 
 function handleInitialize(id: number | string): void {
@@ -86,15 +153,22 @@ function handleInitialize(id: number | string): void {
     protocolVersion: 1,
     agentCapabilities: { loadSession: true, promptCapabilities: { image: false, audio: false, embeddedContext: false } },
     agentInfo: { name: "fake-acp-agent", version: "0.0.1" },
-    // Empty on purpose: this fake's session/new never demands an authenticate() first (unlike real
-    // cline 3.0.47 — see backendEnv.ts's cline finding) — the driver never calls it either way
-    // (core/src/chatProviders/acp/driver.ts has no authenticate() call at all), so an empty array
-    // here is simply honest about what this fake offers, not a workaround for anything.
-    authMethods: [],
+    // Empty by default: this fake's session/new never demands an authenticate() first UNLESS
+    // FAKE_ACP_AUTH_GATE=cline is set (see this file's header) — the driver itself never calls
+    // authenticate() either way (core/src/chatProviders/acp/driver.ts has no authenticate() call at
+    // all), so an empty array here is simply honest about what this fake offers by default, not a
+    // workaround for anything. In "cline" gate mode, this is cline's own real authMethods verbatim.
+    authMethods: authGate === "cline" ? CLINE_AUTH_METHODS : [],
   });
 }
 
 function handleSessionNew(id: number | string): void {
+  if (authGate === "cline" && !clineAuthed) {
+    // Verbatim shape of cline 3.0.47's real refusal — see this file's header citation for both the
+    // triggering source line and the SDK helper that renders it as this exact {code, message}.
+    respondError(id, -32000, "Authentication required: Call authenticate before creating a session");
+    return;
+  }
   sessionCounter += 1;
   const sessionId = `fake-session-${modelShape}-${sessionCounter}`;
   if (modelShape === "old") {
