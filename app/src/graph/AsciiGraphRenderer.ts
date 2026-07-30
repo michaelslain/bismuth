@@ -1637,28 +1637,44 @@ export class AsciiGraphRenderer implements GraphRenderer {
   }
 
   /** Cluster-name pass for ONE hierarchy `level` (0 = coarsest): one label per that level's
-   *  community, ANCHORED ON ITS HUB (pickHubAnchor — clusterVisual.ts) WHEN THE HUB IS ON SCREEN,
-   *  not a member centroid — a vault's communities are hub-and-spoke and sprawling, so a centroid
-   *  routinely lands in empty space (the failure this replaces; see clusterVisual.ts's module doc).
-   *  The hub comes from `clusterHubByLevel`, precomputed ONCE per structural rebuild over the WHOLE
-   *  community (not filtered to what's on screen) — the anchor never jumps as members pan in and out
-   *  of frame WHILE THE HUB ITSELF STAYS VISIBLE.
+   *  community, ANCHORED ON ITS HUB (pickHubAnchor — clusterVisual.ts), never on a member centroid —
+   *  a vault's communities are hub-and-spoke and sprawling, so a centroid routinely lands in empty
+   *  space (the failure this replaces; see clusterVisual.ts's module doc). The hub comes from
+   *  `clusterHubByLevel`, precomputed ONCE per structural rebuild over the WHOLE community (not
+   *  filtered to what's on screen) — so the anchor never jumps as members pan in and out of frame.
+   *  There is exactly ONE anchor rule here, unconditionally: no second, screen-derived anchor to
+   *  switch to, because switching is the thing that cannot be made smooth (see below).
    *
-   *  But the hub can itself pan or orbit OUT of frame while most of the community is still on
-   *  screen — Canvas is immune (it draws at the hub's raw, possibly off-canvas, x/y with no clamp),
-   *  ASCII is not: the col/row placement clamp a few lines down (`col + wCells > m.cols` etc.) exists
-   *  to keep an ON-SCREEN label from running off the grid, but fed an off-screen hub it instead PARKS
-   *  the label at the grid edge — a stationary label the field visibly slides out from under as the
-   *  user keeps panning (see AsciiGraphRenderer.test.ts's pan-stability test, the regression this
-   *  guards). So: anchor on the hub only while `hubOnScreen` (projValid + inViewport); otherwise fall
-   *  back to the plain average screen position of THIS FRAME's visible members — degrading to
-   *  exactly the pre-hub-anchor behaviour instead of freezing or dropping the name outright.
+   *  **The edge clamp is CONDITIONAL — this is the load-bearing subtlety.** The col clamp below
+   *  (`col < 0` / `col + wCells > m.cols`) exists for exactly one job: stop an ON-SCREEN label from
+   *  running off the grid. Applied unconditionally it also does something illegitimate — fed an
+   *  anchor that is itself off the grid, it PARKS the label at the edge column, a stationary name the
+   *  field visibly slides out from under while the user keeps panning, captioning whatever happens to
+   *  drift under it. So the clamp only fires while the ANCHOR's own column is on the grid; past that
+   *  the label is placed at its raw hub column and, once its cells are entirely outside the grid,
+   *  simply isn't drawn. That is what Canvas does (`drawClusterNames` draws at the hub's raw x with
+   *  no clamp, letting the canvas clip), and it matches how `row` is ALREADY handled six lines down —
+   *  an off-grid row `continue`s rather than clamping. Columns now behave the same way rows always
+   *  did.
+   *
+   *  **Accepted cost, stated plainly:** a community whose hub has panned off-frame loses its name
+   *  until the hub comes back, even while its members are still on screen. That is a real regression
+   *  against the pre-hub-anchor centroid behaviour. It is deliberate. The alternative — falling back
+   *  to the visible members' centroid while the hub is away — was measured and is worse: the hub and
+   *  the centroid are BY CONSTRUCTION far apart (that is the entire premise of hub-anchoring, and
+   *  AsciiGraphRenderer.test.ts's hub-anchor test asserts `|label − centroid| > 10` on purpose), so
+   *  the switch between them teleports the label ~99 columns of a 124-column field in one frame; and
+   *  while the hub is away the centroid itself jitters backwards against the pan as members cross the
+   *  viewport pad, which is precisely the per-frame instability hub-anchoring exists to eliminate. A
+   *  quiet, honest omission beats a teleport and beats a frozen label captioning the wrong region.
+   *  (The app's DEFAULT 2D view is unaffected either way — it uses `layoutEntityNames`, the LOD path
+   *  below, not this one. This path is 3D, "local" mode, and community-less graphs.)
    *
    *  Reserved first so file labels — and any OTHER level's names drawn the same frame during a
    *  level-to-level crossfade — never draw over each other. Larger communities (more VISIBLE members
    *  this frame) claim contested cells first — same greedy-by-worth idea as the file-label loop.
    *
-   *  The name lifts above the anchor's cell by `clusterLabelLift(clusterExtent(...))` — a constant
+   *  The name lifts above the hub's cell by `clusterLabelLift(clusterExtent(...))` — a constant
    *  minimum plus the community's own on-screen reach, so a big mass's name clears the whole mass.
    *  `clusterExtent` — UNLIKE the hub — takes only this frame's VIEWPORT-VISIBLE members: it measures
    *  how far the label has to reach across what the user can actually see right now, which is a
@@ -1686,23 +1702,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const items = [...agg.entries()].sort((a, b) => b[1].length - a[1].length || a[0] - b[0]);
     for (const [community, members] of items) {
       const hubId = hubs.get(community);
-      const hubNode = hubId != null ? this.byId.get(hubId) : undefined;
-      const hubOnScreen = !!hubNode && hubNode.projValid && inViewport(hubNode.sx, hubNode.sy, this.W, this.H, VIEWPORT_LABEL_PAD);
-      let anchorSx: number, anchorSy: number;
-      if (hubOnScreen) {
-        anchorSx = hubNode!.sx; anchorSy = hubNode!.sy;
-      } else {
-        // The hub panned/rotated out of frame — fall back to the average screen position of this
-        // frame's VISIBLE members (the pre-hub-anchor behaviour) rather than parking a stale label
-        // at the field edge or dropping the name. `members` is always non-empty here (it's the key
-        // this very entry was aggregated under).
-        let sxSum = 0, sySum = 0;
-        for (const mm of members) { sxSum += mm.sx; sySum += mm.sy; }
-        anchorSx = sxSum / members.length; anchorSy = sySum / members.length;
-      }
-      const col0 = Math.round((anchorSx - m.padX) / m.cellW);
-      const row0 = Math.round((anchorSy - m.padY) / m.cellH);
-      const extent = clusterExtent({ sx: anchorSx, sy: anchorSy }, members);
+      const hub = hubId != null ? this.byId.get(hubId) : undefined;
+      if (!hub || !hub.projValid) continue; // no valid whole-graph anchor this frame
+      const col0 = Math.round((hub.sx - m.padX) / m.cellW);
+      const row0 = Math.round((hub.sy - m.padY) / m.cellH);
+      const extent = clusterExtent({ sx: hub.sx, sy: hub.sy }, members);
       const liftRows = Math.round(clusterLabelLift(extent) / m.cellH);
       const row = row0 - liftRows; // "up" = decreasing row, off the TOP of the hub's cell
       if (row < 0 || row >= m.rows) continue;
@@ -1715,8 +1719,21 @@ export class AsciiGraphRenderer implements GraphRenderer {
       // what makes overlap impossible, not just unlikely.
       const wCells = eyebrowWidthCells(len, CLUSTER_LABEL_TRACKING_EM, this.fontPx, this.cellW);
       let col = col0 - Math.floor(wCells / 2); // centre by DRAWN width, not raw char count
-      if (col < 0) col = 0;
-      if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
+      // Keep an ON-SCREEN name inside the grid — but ONLY while the anchor's own column is on the
+      // grid. `col0` is the test, deliberately, NOT a pixel-space `inViewport(hub.sx, …)`: the clamp
+      // it guards is column-space arithmetic, and gating column-space arithmetic on a pixel-space
+      // predicate leaves a band (a padded viewport is WIDER than the grid) where the guard reads
+      // "on screen" while the clamp is already parking the label — the residual freeze that made the
+      // previous attempt at this fix fail review. One space, one test. Past the edge the label keeps
+      // its raw hub column and clips, exactly like Canvas. See this method's doc for the cost.
+      if (col0 >= 0 && col0 < m.cols) {
+        if (col < 0) col = 0;
+        if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
+      }
+      // Entirely outside the grid — don't draw it at all (and don't run the occupancy loops over a
+      // range with no on-grid cells in it). A partially-overlapping label still draws, clipped, so
+      // the name slides off the edge continuously instead of vanishing the instant it touches it.
+      if (col + wCells <= 0 || col >= m.cols) continue;
       let free = true;
       for (let c = col - 1; c <= col + wCells && free; c++) {
         if (c < 0 || c >= m.cols) continue;
