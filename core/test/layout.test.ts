@@ -331,19 +331,22 @@ test("community-aware forces separate communities far better, without collapsing
     const seedOn = dim === 2 ? computeLayout(g, { refineTicks: 120 }) : undefined;
     const off = separation(g.nodes, computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedOff, communityForces: false }));
     const on = separation(g.nodes, computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedOn }));
-    // Re-measured under the Task 5 default (linlog + degreeRepulsion, community gravity only — the
-    // community-level SEPARATION force is gone): on.ratio/off.ratio is now ~0.42 (3D) / ~0.21 (2D),
-    // i.e. separation quality improved sharply again (was already comfortably under the 0.75 bar
-    // pre-Task-5; still is). The 25% bar below is left as-is.
+    // Re-measured under the Task 5 default (linlog + degreeRepulsion, BOTH community forces — gravity
+    // AND separation, restored in fix round 1): on.ratio/off.ratio is now ~0.35 (3D) / ~0.23 (2D), i.e.
+    // separation quality improved sharply again (was already comfortably under the 0.75 bar pre-Task-5;
+    // still is). The 25% bar below is left as-is.
     expect(on.ratio).toBeLessThan(off.ratio * 0.75);
     // ...and NOT by crushing each community into a point (the degenerate way to win this metric).
-    // Without the separation force's outward push, gravity alone compacts communities more than
-    // before: on.intra/off.intra measures ~0.51 (3D) / ~0.39 (2D) under the new default, against
-    // ~0.76-0.90 pre-Task-5 (spring, both community forces) — a real, expected consequence of shipping
-    // gravity-only (Task 4's ablation: gravity alone retains the separation win almost intact but was
-    // never measured against THIS intra-collapse statistic). Still nowhere near the degenerate
-    // collapse-to-a-point failure mode this guards against (both remain well over 100 world units, not
-    // ~0), so the floor is lowered to keep testing "not degenerate" rather than "no compaction at all".
+    // on.intra/off.intra measures ~0.52 (3D) / ~0.39 (2D) under the new default, against ~0.76-0.90
+    // pre-Task-5 (spring, no degree repulsion, both community forces). NOT attributable to community
+    // separation — isolated (see the Task 5 report): linlog+degreeRepulsion+BOTH forces measures
+    // ~0.389 here (2D), linlog+degreeRepulsion+gravity-ONLY measures ~0.387 — restoring separation
+    // barely moves this statistic on this fixture. The real cause is the energy-model + degree-
+    // repulsion default flip itself: LinLog's much weaker long-range attraction plus (degree+1)-scaled
+    // repulsion changes the intra/inter force balance independent of whether a separate community-level
+    // collide also runs. Still nowhere near the degenerate collapse-to-a-point failure mode this guards
+    // against (both remain well over 100 world units, not ~0), so the floor is lowered to keep testing
+    // "not degenerate" rather than "no compaction at all".
     expect(on.intra).toBeGreaterThan(off.intra * 0.35);
   }
 });
@@ -441,14 +444,8 @@ test("nesting separates the COARSE level too, without undoing the fine level", (
     const nest = computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedNest });
     // The super-clusters (level 0) read as distinct groups only once the coarse forces are on.
     expect(separationAtLevel(g.nodes, nest, 0).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 0).ratio * 0.75);
-    // ...and the finest level is not sacrificed too badly for it. Re-measured under the Task 5 default
-    // (linlog + degreeRepulsion, community gravity only): nest/flat at L1 is now ~1.20 (3D) / ~1.23
-    // (2D), against the pre-Task-5 bound of 1.15 — the coarse level's gravity, no longer counterbalanced
-    // by a separation force at its own level, pulls harder on shared structure and costs the fine level
-    // a bit more of its own separation than before. Bound widened with margin above the measured worst
-    // case; it stays well short of erasing the fine level's separation advantage over `flat` (ratio
-    // 1.0 = no advantage at all).
-    expect(separationAtLevel(g.nodes, nest, 1).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 1).ratio * 1.35);
+    // ...and the finest level is not sacrificed for it (it stays at least as separated as flat).
+    expect(separationAtLevel(g.nodes, nest, 1).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 1).ratio * 1.15);
     // No level collapses: each keeps real spatial extent (the degenerate way to win the ratio).
     for (const level of [0, 1]) {
       expect(separationAtLevel(g.nodes, nest, level).intra)
@@ -555,22 +552,17 @@ test("vault-scale hierarchy with cross-cutting hubs: coarse separation holds at 
     .filter((n): n is { id: string; community: number; communityPath: number[] } => Array.isArray(n.communityPath))
     .map((n) => ({ id: n.id, community: n.communityPath[0] }));
   const sep = separation(l0Nodes, pos2);
-  // KNOWN REGRESSION, shipped anyway — see the Task 5 report. Pre-Task-5 (spring, community gravity +
-  // SEPARATION, 240 ticks) this fixture measured ratio 0.392. Under the Task 5 default (linlog +
-  // degreeRepulsion, community gravity ONLY — the separation force this fixture was specifically built
-  // to guard is now gone) it measures ~0.72, i.e. WORSE than the pre-Task-5 baseline and worse than the
-  // OLD 120-tick-budget regression an adversarial review caught (0.581) — isolated on the old code
-  // (see the Task 5 report): linlog+degreeRepulsion+separation still measures ~0.31 here (better than
-  // spring), so the regression is specifically attributable to removing the separation force, not to
-  // the new energy model or degree repulsion. This directly contradicts the "community-level SEPARATION
-  // contributes only ~1.6%" figure from Task 4's ablation — but that figure is the REAL vault's
-  // NP-degree statistic (gravity-only there: 0.1221 vs 0.1242 full), a different metric on different
-  // (community-tagged, not cross-cutting-hub-planted) data. This fixture exists precisely because
-  // Task 4's own smaller fixtures "could not have caught" a hub-bridging regression (see the comment
-  // above) — it is now doing exactly that job again, on the thing that replaced grid/containment.
-  // Bound widened with margin above the measured 0.72 so the suite is green; this is a known,
-  // documented gap for heavily tag/hub-mediated topologies, not a silently-accepted one.
-  expect(sep.ratio).toBeLessThan(0.85);
+  // Measured at the production budget (240): ratio 0.313, intra 430.4 — under linlog + degreeRepulsion
+  // + BOTH community forces (Task 5, restored in fix round 1: an earlier pass deleted the community
+  // SEPARATION force here on a d3-only reading of Task 4's ablation, and this exact fixture — built
+  // specifically to guard tag-hub-mediated bridging, the same failure mode grid islands used to fix —
+  // caught the mistake: linlog+degreeRepulsion+gravity-ONLY measures ~0.72 here, a ~2x regression, so
+  // separation is genuinely load-bearing on hub-heavy topology even though it's cheap on the reference
+  // vault's own NP-degree statistic). At the OLD 120-tick budget the identical fixture measures ratio
+  // 0.581 (+48%) — this is the exact shape of regression the smaller fixtures above cannot exhibit (see
+  // comment above): a bound recorded here at the shipped budget would have caught reverting
+  // REFINE_TICKS back to 120 (0.581 comfortably fails a 0.45 bound).
+  expect(sep.ratio).toBeLessThan(0.45);
   // ...and not by collapsing communities into points (the degenerate way to win the ratio).
   expect(sep.intra).toBeGreaterThan(50);
 }, 45000); // measured ~19s locally (3D + 2D @ 240 ticks over 2000 nodes / ~19k edges)

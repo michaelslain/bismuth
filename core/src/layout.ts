@@ -6,12 +6,14 @@
 //      local spacing. Starting from PivotMDS means it converges in a fraction of the iterations a
 //      random start needs — that's the whole point, since the force solve is the expensive part.
 //   3. Link attraction is LinLog by default (see LayoutOptions.energyModel / linlog.ts): pull grows
-//      only as ln(1+d) instead of proportionally (a Hooke spring), so cluster separation is a
-//      property of the energy model rather than something a corrective force has to impose on top.
-//      Community-aware gravity (see the COMMUNITY_* block below) still runs alongside it — measured
-//      (Task 4) to remain load-bearing even under LinLog — but the community-level SEPARATION force,
-//      grid-lattice placement, and per-member containment that used to fight the old spring model for
-//      cluster spacing are gone (measured to move nothing once LinLog + degree repulsion are default).
+//      only as ln(1+d) instead of proportionally (a Hooke spring), so a meaningful share of cluster
+//      separation is a property of the energy model rather than something a corrective force has to
+//      impose — but not all of it: the community-aware forces (see the COMMUNITY_* block below,
+//      gravity AND separation) still run alongside it and are both measurably load-bearing even under
+//      LinLog (a d2 NP-degree loss of 7.9% and a ~2x separation regression on tag-hub-heavy topology
+//      were measured from deleting just the separation half — see its own comment for the numbers).
+//      Only the already-inactive grid-lattice placement, per-member containment, and disc-flatten bias
+//      were genuinely dead code and are gone for good.
 //
 // Pure (no DOM, no Bun/fs) so it runs in both Bun (core) and a browser Worker (app).
 import {
@@ -88,18 +90,25 @@ export interface LayoutOptions {
   communityInterDist?: number;
   /** Per-tick pull of each node toward its own community's centroid (0 = off). */
   communityGravity?: number;
-  /** Per-ancestor-level falloff for the NESTED community gravity: an ancestor `a` levels above the
-   *  finest gets `communityGravity · decay^a`. 0 disables the coarse levels entirely (finest-only =
-   *  the pre-hierarchy behaviour). See the COMMUNITY_* block. */
+  /** Strength (0..1, 0 = off) of the community-level collide that pushes whole communities apart
+   *  until their packing radii clear. Same semantics as d3's forceCollide strength. */
+  communitySeparation?: number;
+  /** Per-ancestor-level falloff for the NESTED community forces: an ancestor `a` levels above the
+   *  finest gets `communityGravity · decay^a` and `communitySeparation · decay^a`. 0 disables the
+   *  coarse levels entirely (finest-only = the pre-hierarchy behaviour). See the COMMUNITY_* block. */
   communityLevelDecay?: number;
   /**
    * Which attraction model links use.
    *   - "spring"  — d3 forceLink (Hooke). The pre-2026-07 behaviour.
-   *   - "linlog"  — Noack's LinLog: attraction ~ ln(1+d). Clusters separate because the model
-   *                 separates them, which is what makes the community SEPARATION force unnecessary
-   *                 (community GRAVITY stays on — measured load-bearing even under LinLog, see the
-   *                 COMMUNITY_* block). DEFAULT as of Task 5's measurement (d3 NP-degree separation
-   *                 0.0557→0.1242, d2 0.0398→0.1302 on the reference vault, both better than spring).
+   *   - "linlog"  — Noack's LinLog: attraction ~ ln(1+d), so a lot of cluster separation is a
+   *                 property of the model rather than something a corrective force has to impose —
+   *                 but NOT all of it: the community-level SEPARATION force below is still measurably
+   *                 load-bearing under LinLog (see COMMUNITY_SEP_MULT's comment; a tag-hub-heavy
+   *                 synthetic fixture regresses ~2x without it, and the reference vault's own d2
+   *                 NP-degree loses 7.9% — this was nearly deleted on a d3-only reading of the
+   *                 evidence, see the git history around Task 5, fix round 1). DEFAULT as of Task 5's
+   *                 measurement (d3 NP-degree separation 0.0557→0.1242, d2 0.0398→0.1302 on the
+   *                 reference vault, both better than spring, WITH both community forces active).
    */
   energyModel?: "spring" | "linlog";
   /**
@@ -149,10 +158,10 @@ const DEFAULTS = {
   // --- Community-aware clustering (see the COMMUNITY_* block below) ---
   communityForces: true,
   // Cranked 2026-07-25 (user: tighter clumps, wider lanes, "like the design example"):
-  // gravity .4→.6, inter links .35→.2 @ 1.9→2.6× rest length.
+  // gravity .4→.6, separation .6→.85, inter links .35→.2 @ 1.9→2.6× rest length.
   communityIntraLink: 1.8, communityInterLink: 0.2,
   communityIntraDist: 1.0, communityInterDist: 2.6,
-  communityGravity: 0.6,
+  communityGravity: 0.6, communitySeparation: 0.85,
   // Hierarchical ("clusters in clusters") nesting — see the COMMUNITY_LEVEL_DECAY block below.
   communityLevelDecay: COMMUNITY_LEVEL_DECAY,
 };
@@ -197,12 +206,14 @@ const drawnNodeRadius = (scale: number) => (NODE_SIZE * scale * Math.tan(((NODE_
 // --- Community-aware clustering ------------------------------------------------------------------
 // Zoomed out, a graph whose communities intermingle reads as one undifferentiated blob: the detected
 // communities (community.ts, stamped onto every node by engine.ts BEFORE layout) were used only for
-// COLOR, never for position, so link topology alone had to separate them.
+// COLOR, never for position, so link topology alone had to separate them — and it doesn't, because a
+// handful of inter-community bridges pull clusters into each other while uniform many-body repulsion
+// pushes intra-community members apart just as hard as it pushes whole clusters apart.
 //
-// Two cooperating pieces fix that, both gated on `community` being present on 2+ distinct
+// Three cooperating forces fix that, all gated on `community` being present on 2+ distinct
 // communities — so a community-less caller (embedded graph blocks, the daemon graph, every existing
 // test fixture) gets byte-identical output to before, and `communityForces: false` reproduces the
-// community-unaware layout exactly for A/B measurement:
+// old layout exactly for A/B measurement:
 //   1. Anisotropic links: an intra-community edge gets a stronger spring, an inter-community edge a
 //      weaker + longer one. Turns the modularity structure directly into geometry. Note the intra
 //      REST LENGTH is deliberately left at 1.0× — shortening it to 0.7× measurably improved the
@@ -214,54 +225,125 @@ const drawnNodeRadius = (scale: number) => (NODE_SIZE * scale * Math.tan(((NODE_
 //      already inside its community's jammed-packing radius feels nothing, so gravity gathers a
 //      community's strays without squeezing its core past what forceCollide can resolve. Ungated it
 //      compressed a 650-node community until 2% of ALL the vault's nodes overlapped.
+//      Separation then has to come from communities moving APART (3), not from each one shrinking.
+//   3. Community-level COLLIDE: each community is treated as one soft body of radius packRadius, and
+//      an overlapping pair is pushed apart (mass-weighted, exactly like d3's forceCollide) until
+//      their radii clear with a COMMUNITY_SEP_MULT margin. This is the piece that opens visible lanes.
+//      An inverse-square centroid repulsion was tried first and is strictly worse: a settled layout
+//      is near collide-jammed, so a 1/d² push is immediately balanced by the linear centering spring
+//      (raising it 2×→6× moved the 3D separation ratio by <2%). A bounded overlap-resolving
+//      constraint has no such equilibrium — it dilates the assembly just until the gap exists and
+//      then switches off, so it also can't inflate an already-separated graph. A per-node variant
+//      (evict a node from foreign community discs) was also tried and separated distinctly worse
+//      (vault 3D 41% vs 46% improvement) for no overlap benefit.
 //
-// A third force — a community-level COLLIDE that pushed whole communities apart until their packing
-// radii cleared a margin (COMMUNITY_SEP_MULT) — used to run alongside these two. Task 4's ablation
-// (measured under the LinLog energy model, which is now the default: see LayoutOptions.energyModel)
-// found it contributed only ~1.6% of the combined win (linlog+degreeRepulsion+both community forces:
-// d3 NP-degree 0.1242; gravity alone: 0.1221; separation alone: 0.0429; neither: 0.0156 — separation
-// is NOT what makes LinLog's separation work, gravity is) — so it, its grid-lattice placement pass,
-// and its per-member containment constraint were removed. Gravity (2) alone retains ~98% (3D) / ~92%
-// (2D) of the measured separation improvement and is kept.
+// NEARLY DELETED (Task 5, fix round 1 — kept, and this is why): Task 4's ablation under the LinLog
+// energy model measured (3) as only ~1.6% of the combined win by the d3 (3D) NP-degree statistic
+// alone (linlog+degreeRepulsion+both forces: d3 0.1242; gravity alone: d3 0.1221) and it was deleted
+// on that basis. Two things were missed, both since corrected:
+//   - The SAME ablation's d2 (2D) statistic loses 7.9%, not ~1.6% (0.1302 full → 0.1199 gravity-only)
+//     — the "~1.6%" figure was read off d3 only and never cross-checked against d2.
+//   - A synthetic tag-hub-heavy fixture purpose-built to guard exactly this failure mode
+//     (`plantedHierarchyWithHubs`, core/test/layout.test.ts) regresses from ~0.31 (both forces) to
+//     ~0.72 (gravity-only) on its separation-ratio statistic — roughly 2x worse, not ~1.6%. The
+//     reference vault's own NP-degree ablation did not show this sensitivity, but the user's real
+//     vault has 88 tag nodes and max degree 687 — genuinely hub-heavy — so a single vault's NP-degree
+//     reading is not enough evidence that gravity-only generalizes. See the Task 5 report for the
+//     full isolation (confirmed via the pre-deletion code re-run with the same options, to rule out
+//     the regression being an implementation bug rather than the force itself).
+// Only communities of >= COMMUNITY_MIN_SIZE take part in (3): a real vault has a long tail of
+// singleton/pair communities (isolated notes), and pairing all of them would be O(k²) for no visual
+// gain. Gravity applies to any community with >= 2 members. Cost is O(n + k_big²) per tick with
+// k_big in the low tens even on a big vault (28 qualifying communities out of 196 on the reference
+// 2248-node vault) — measured at +7% (3D) / +6% (2D) on total settle time.
 //
-// Measured on the reference 2248-node/4959-edge vault and a 300-node/6-community synthetic (under the
-// pre-LinLog spring model, both community forces active), as mean-intra-community-spread /
-// mean-nearest-other-community-centroid-distance (lower = clusters read as distinct blobs), 120 refine
-// ticks, `communityForces:false` vs the defaults below:
+// Measured on the reference 2248-node/4959-edge vault and a 300-node/6-community synthetic, as
+// mean-intra-community-spread / mean-nearest-other-community-centroid-distance (lower = clusters
+// read as distinct blobs), 120 refine ticks, `communityForces:false` vs the defaults below:
 //   vault   3D 1.675 → 0.952 (-43%),  2D 2.999 → 1.058 (-65%)
 //   synth   3D 0.522 → 0.326 (-38%),  2D 0.464 → 0.270 (-42%)
 // with intra-community spread retained at 0.76-0.90× (no degenerate collapse into points) and the
 // collide invariant essentially intact (worst pairwise distance / (rᵢ+rⱼ): vault 3D 0.90 → 0.90,
 // 2D 0.88 → 0.77; synthetic unchanged at 0.94).
+const COMMUNITY_MIN_SIZE = 4; // min members for a community to take part in community-level collide
 // Radius a community occupies once its members are jam-packed at their own collide radii:
 //   R = (Σ rᵢ^dim / φ)^(1/dim),  φ = the fraction a random (not crystalline) packing fills.
 // Summing rᵢ^dim rather than using k·r^dim matters: a community's hubs carry a collide radius up to
 // ~6× a leaf's (degreeScale), so a uniform-radius estimate under-reads a hub-heavy community's real
-// footprint. Gravity is switched off inside this radius (its "packing floor" — see communityForce).
+// footprint. Gravity is switched off inside this radius, and it is the "body radius" the
+// community-level collide separates on.
 const COMMUNITY_PACK_FILL_2D = 0.55; // random-loose disc packing
 const COMMUNITY_PACK_FILL_3D = 0.5;  // random-loose sphere packing
+// Target clearance between two communities' packing radii — >1 leaves an actual empty lane.
+// 1.6 → 2.4 (2026-07-27, ASCII redesign: "things more separated and clustered", edges now drawn as
+// real vector lines rather than character-grid glyphs — see AsciiGraphRenderer.ts / docs/design/ascii).
+//
+// CORRECTION (an adversarial review caught this): this was originally swept ONLY on
+// plantedCommunities([80,70,60,40,30,20], cross=0.25) — a FLAT, single-level partition — measuring
+// intra-community nearest-neighbour distance (a) vs. inter-centroid distance (b). On that fixture (a)
+// held flat across the whole sweep and the comment claimed intra-cluster spacing was "untouched by
+// construction". That claim is only true for a single-level partition: the constant enters the
+// separation-force target at EVERY level of a real hierarchy (finest + every ancestor, decayed — see
+// the "Nesting" block below), and a flat fixture has no ancestor level to expose that. Re-swept
+// 1.6/2.0/2.4/2.8 on the REAL reference vault (2121 nodes / 3-level Louvain hierarchy) at the
+// PRODUCTION tick budget (240 — see REFINE_TICKS in layout-cache.ts), measuring mean distance from a
+// member to its OWN level-community centroid (intra) vs. mean distance to the NEAREST OTHER
+// level-community's centroid (inter), per hierarchy level L0 (coarsest) / L1 / L2 (finest):
+//   3D intra        L0      L1      L2     3D inter (nearest centroid)   L0      L1      L2
+//   1.6             53.46   43.91   33.83                                69.34   59.50   40.50
+//   2.0             60.82   48.69   37.22                                84.69   69.26   48.24
+//   2.4             68.84   54.00   41.49                                99.84   80.82   54.42
+//   2.8             76.73   59.69   45.98                               113.03   93.41   61.51
+//   2D intra        L0      L1      L2     2D inter                     L0      L1      L2
+//   1.6            164.36  132.95  101.11                               181.74  126.38   77.89
+//   2.0            181.60  148.40  112.79                               213.77  145.02   88.58
+//   2.4            203.82  166.13  126.84                               246.83  163.36   97.48
+//   2.8            226.79  182.53  139.94                               283.91  179.25  113.52
+// Both columns grow substantially with the multiplier at EVERY level, in both dimensions — intra by
+// +36% to +44% (1.6→2.8), inter by +42% to +63%. So the honest statement is: raising this constant
+// widens spacing everywhere a real hierarchy has more than one level, not just the gaps between
+// clusters — DELETE the old "untouched by construction" claim, it does not hold once communities nest.
+// What still justifies the change: intra grows more slowly than inter at every level/dimension sampled,
+// so the RATIO the tests actually assert on (separation() — lower is clusters reading as distinct
+// blobs) keeps improving rather than standing still. Confirmed through the full production pipeline on
+// this same vault (see REFINE_TICKS's comment in layout-cache.ts for the paired tick-budget measurement
+// this depends on): coarsest-level 2D ratio 0.851 (1.6@120, pre-change) → 0.700 (2.4@240, shipped). 2.4
+// is kept as a comfortable middle value rather than the most extreme sampled: both columns keep scaling
+// smoothly out to 2.8 with no sign of instability, so 2.4 is "a clear, wide-enough step" rather than
+// "the ceiling before something breaks".
+//
+// HAZARD, confirmed twice now (original ASCII-redesign sweep above, then independently by Task 5's
+// near-deletion of the whole force): raising this constant does NOT automatically widen cluster gaps.
+// It sizes a BOUNDED constraint (3) — the force switches off once a pair clears its target — so a
+// wider target needs proportionally more ticks to actually reach before REFINE_TICKS runs out, and
+// short of that it can measure WORSE than not raising it at all. Measured on the reference vault at
+// the coarsest level's 2D separation ratio (lower is better): 1.6 @ 120 ticks = 0.851; 2.4 @ 120
+// ticks = 0.884 — WORSE, because 120 ticks doesn't reach the wider (2.4) target. 2.4 only becomes an
+// improvement (0.700) once REFINE_TICKS is also raised to 240 (see layout-cache.ts). Any future change
+// to this constant — or to COMMUNITY_MAX_STEP, which caps how fast a pair can close on the target —
+// must be re-measured at the ACTUAL shipped tick budget, not assumed to transfer from a smaller one.
+const COMMUNITY_SEP_MULT = 2.4;
 // Per-tick speed limit for everything this force adds, as a multiple of the node's OWN collide
-// radius. Community gravity can be large on the first ticks (alpha=1, communities still deeply
+// radius. Both community terms can be large on the first ticks (alpha=1, communities still deeply
 // interpenetrating), and an uncapped step drags a whole community across the field faster than the
-// collide relaxation can track. Measured (under both community forces, pre-removal of separation) on
-// the reference vault's 2D layout: uncapped, the worst pairwise distance/(rᵢ+rⱼ) is 0.65 and the
-// separation ratio 1.111; at 1.5 they are 0.77 and 1.058 (better on both counts). Clamping harder
-// (0.5) is worse again (ratio 1.381) — the communities no longer reach their targets inside the tick
-// budget. Task 4's gravity-only ablation (see above) re-exercised this same cap under gravity alone.
+// collide relaxation can track. Measured on the reference vault's 2D layout: uncapped, the worst
+// pairwise distance/(rᵢ+rⱼ) is 0.65 and the separation ratio 1.111; at 1.5 they are 0.77 and 1.058
+// (better on both counts). Clamping harder (0.5) is worse again (ratio 1.381) — the communities no
+// longer reach their targets inside the tick budget.
 const COMMUNITY_MAX_STEP = 1.5;
 
 // --- Nesting (hierarchical communities) -----------------------------------------------------------
 // Communities now come as a PATH (coarsest → finest; see community.ts / GraphNode.communityPath),
-// so the gravity force above is applied once per level instead of once, total:
+// so the two shape-setting forces above are applied once per level instead of once, total:
 //   - the FINEST level keeps the constants above verbatim — it is the tuned baseline and a graph
 //     with a 1-level path (or none) produces byte-identical output to before hierarchies existed;
-//   - each ancestor level `a` above it gets the SAME force at COMMUNITY_LEVEL_DECAY^a strength, so a
-//     super-cluster gathers its member clusters, more weakly than its children do among themselves.
+//   - each ancestor level `a` above it gets the SAME two forces at COMMUNITY_LEVEL_DECAY^a strength,
+//     so a super-cluster gathers its member clusters and shoulders other super-clusters aside, more
+//     weakly than its children do among themselves.
 //
-// COMMUNITY_LEVEL_DECAY = 0.4, swept on the reference 2251-node/4979-edge vault (3 levels, 120 refine
-// ticks, under both community forces — pre-removal of separation) as per-level separation ratio
-// (intra spread / nearest-other-centroid; LOWER is better) plus the collide invariant (worst pairwise
-// distance / (rᵢ+rⱼ); the flat baseline is 0.89):
+// COMMUNITY_LEVEL_DECAY = 0.4, swept on the reference 2251-node/4979-edge vault (3 levels, 120
+// refine ticks) as per-level separation ratio (intra spread / nearest-other-centroid; LOWER is
+// better) plus the collide invariant (worst pairwise distance / (rᵢ+rⱼ); the flat baseline is 0.89):
 //     decay   L0 3D   L1 3D   L2 3D    L0 2D   L1 2D   L2 2D    2D collide
 //     0.00    1.985   1.668   1.090    2.421   2.745   1.936    0.89 (0 pairs)   ← finest-level only
 //     0.30    0.996   0.915   0.993    1.358   1.384   1.856    0.83 (2 pairs)
@@ -272,35 +354,53 @@ const COMMUNITY_MAX_STEP = 1.5;
 // (0.82 → 0.71); 0.65 starts pulling the FINEST level back apart (L2 worsens) because the coarse
 // gravity begins to outweigh the level that actually sets local structure. 0.4 is the knee.
 //
-// The invariant from the flat version that still has to be preserved here: ONE speed cap for the
-// WHOLE stack, not one per level. COMMUNITY_MAX_STEP exists because an uncapped community step
-// outruns the collide relaxation; capping each level separately would let L levels contribute up to
-// L× the cap and silently reintroduce the overlap it was added to stop. So every level's gravity is
-// summed into one velocity delta and clamped once.
+// TWO invariants from the flat version have to be preserved deliberately here:
+//
+// 1. ONE speed cap for the WHOLE stack, not one per level. COMMUNITY_MAX_STEP exists because an
+//    uncapped community step outruns the collide relaxation; capping each level separately would let
+//    L levels contribute up to L× the cap and silently reintroduce the overlap it was added to stop.
+//    So every level's gravity + separation is summed into one velocity delta and clamped once.
+// 2. The packing radius has to be computed RECURSIVELY, not from raw node radii. Summing rᵢ^dim over
+//    a 500-node super-community answers "how big if you jam-packed its NODES", but its members are
+//    not jam-packed — they sit in sub-clusters that are themselves held apart by COMMUNITY_SEP_MULT
+//    lanes, so the real footprint is several times bigger. Feed that underestimate to the separation
+//    force and it reads every super-cluster pair as already clear and barely fires. So each level
+//    packs its CHILDREN's radii instead of the raw node radii:
+//        R_a(C) = ( Σ_{child ∈ C} R_{a-1}(child)^dim / fill )^(1/dim)
+//    with the finest level still packing raw node radii exactly as before. Note the children go in
+//    UNPADDED: the pairwise target already multiplies by COMMUNITY_SEP_MULT, so padding them here
+//    too compounds 1.6× per level. Measured with the padding on, the reference vault's coarse
+//    separation over-inflated the whole field — the FINEST level's ratio got 23% (3D) / 50% (2D)
+//    WORSE than finest-only, intra spread nearly doubled (1.83× baseline), and the 2D collide
+//    invariant fell to 0.56. Unpadded, the same run improves every level and holds 0.82.
 // (COMMUNITY_LEVEL_DECAY itself is declared next to DEFAULTS, which needs it at module init.)
 
 
 /** One level of the community hierarchy as the force sees it: a dense per-node community index
- *  (-1 = not in a community at this level) and the gravity strength this level acts at. */
+ *  (-1 = not in a community at this level) and the strength this level acts at. */
 interface CommunityLevel {
   comm: Int32Array;
   numComms: number;
   gravity: number;
+  separation: number;
 }
 
 /** Per-level precomputed geometry (sizes, packing radii, participating communities, scratch). */
 interface LevelState extends CommunityLevel {
   count: Float64Array;
   packRadius: Float64Array;
+  big: number[];
   cx: Float64Array; cy: Float64Array; cz: Float64Array;
+  rx: Float64Array; ry: Float64Array; rz: Float64Array;
 }
 
 /**
  * Per-level member counts + packing radii for a level stack (finest first). The recursive definition
  * (a coarse level packs its CHILDREN's radii, not raw node radii; see the "Nesting" block) is what
- * makes gravity's packing floor realistic at every level of the hierarchy, not just the finest —
- * without it a super-community's floor would be computed as if its members were flatly jam-packed,
- * when they actually sit in sub-clusters with their own room around them.
+ * makes both gravity's packing floor AND separation's pairwise target realistic at every level of the
+ * hierarchy, not just the finest — without it a super-community's radius would be computed as if its
+ * members were flatly jam-packed, when they actually sit in sub-clusters with their own room around
+ * them (and, for separation, held apart by their own COMMUNITY_SEP_MULT lanes on top of that).
  */
 function levelPackRadii(
   levels: CommunityLevel[],
@@ -343,12 +443,14 @@ function levelPackRadii(
 }
 
 /**
- * Per-tick community gravity, applied at every level of the hierarchy. `levels[0]` is the FINEST
- * (its `gravity` is the tuned baseline); later entries are successively coarser ancestors at decayed
- * strength. Pure function of the node array — deterministic, no RNG. `radii` holds each node's own
- * collide radius (the same values the sim's forceCollide uses); they seed the finest level's packing
- * radius, inside which gravity stops pulling (so a community is never squeezed into an overlap).
- * Coarser levels derive theirs from the level below (see the nesting block above).
+ * Per-tick community gravity + community-level collide, applied at every level of the hierarchy.
+ * `levels[0]` is the FINEST (its `gravity`/`separation` are the tuned baseline); later entries are
+ * successively coarser ancestors at decayed strength. Pure function of the node array —
+ * deterministic, no RNG. `radii` holds each node's own collide radius (the same values the sim's
+ * forceCollide uses); they seed the finest level's packing radius, inside which gravity stops
+ * pulling (so a community is never squeezed into an overlap) and which doubles as the
+ * community-level collide's body radius. Coarser levels derive theirs from the level below (see the
+ * nesting block above).
  */
 function communityForce(
   nodes: RN[],
@@ -358,14 +460,21 @@ function communityForce(
 ): (alpha: number) => void {
   const n = nodes.length;
   const { counts, packRadius: packRadii } = levelPackRadii(levels, radii, dim, n);
-  const states: LevelState[] = levels.map((lv, li) => ({
-    ...lv, count: counts[li], packRadius: packRadii[li],
-    cx: new Float64Array(lv.numComms), cy: new Float64Array(lv.numComms), cz: new Float64Array(lv.numComms),
-  }));
+  const states: LevelState[] = levels.map((lv, li) => {
+    const count = counts[li];
+    // Communities big enough to repel each other as coarse bodies (index list, computed once).
+    const big: number[] = [];
+    for (let c = 0; c < lv.numComms; c++) if (count[c] >= COMMUNITY_MIN_SIZE) big.push(c);
+    return {
+      ...lv, count, packRadius: packRadii[li], big,
+      cx: new Float64Array(lv.numComms), cy: new Float64Array(lv.numComms), cz: new Float64Array(lv.numComms),
+      rx: new Float64Array(lv.numComms), ry: new Float64Array(lv.numComms), rz: new Float64Array(lv.numComms),
+    };
+  });
 
   return (alpha: number) => {
     for (const s of states) {
-      const { comm, numComms, cx, cy, cz } = s;
+      const { comm, numComms, count, packRadius, big, cx, cy, cz, rx, ry, rz, separation } = s;
       cx.fill(0); cy.fill(0); cz.fill(0);
       for (let i = 0; i < n; i++) {
         const c = comm[i];
@@ -375,30 +484,64 @@ function communityForce(
         if (dim === 3) cz[c] += nd.z ?? 0;
       }
       for (let c = 0; c < numComms; c++) {
-        const k = s.count[c];
+        const k = count[c];
         if (k > 0) { cx[c] /= k; cy[c] /= k; cz[c] /= k; }
+      }
+
+      // (3) Community-level collide: resolve the overlap of two soft bodies of radius packRadius,
+      // split between them by MASS (the smaller community yields more), exactly like d3's forceCollide.
+      // Bounded by construction — zero force once the pair clears, so it dilates the assembly just
+      // enough to open a lane and never inflates an already-separated graph.
+      rx.fill(0); ry.fill(0); rz.fill(0);
+      if (separation > 0 && big.length > 1) {
+        for (let a = 0; a < big.length; a++) {
+          const ca = big[a];
+          for (let b = a + 1; b < big.length; b++) {
+            const cb = big[b];
+            const target = (packRadius[ca] + packRadius[cb]) * COMMUNITY_SEP_MULT;
+            let dx = cx[ca] - cx[cb], dy = cy[ca] - cy[cb], dz = dim === 3 ? cz[ca] - cz[cb] : 0;
+            let d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d >= target) continue;
+            if (d === 0) {
+              // Exactly coincident centroids: deterministic (no RNG) unit axis so they still separate.
+              dx = 1; dy = ca & 1 ? 1 : -1; dz = dim === 3 ? (cb & 1 ? 1 : -1) : 0;
+              d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            }
+            // Displacement vector that would exactly clear the pair, split by mass share.
+            const push = ((target - d) / d) * separation;
+            const total = count[ca] + count[cb];
+            const wa = count[cb] / total, wb = count[ca] / total;
+            rx[ca] += dx * push * wa; ry[ca] += dy * push * wa; rz[ca] += dz * push * wa;
+            rx[cb] -= dx * push * wb; ry[cb] -= dy * push * wb; rz[cb] -= dz * push * wb;
+          }
+        }
       }
     }
 
-    // Centroid gravity, summed over EVERY level, scaled by alpha like every d3 force. Gravity only
-    // acts on the part of a node's offset that exceeds that level's packing radius, so a cluster's
-    // (or super-cluster's) already-dense core is left alone — no collide fight, no overlaps.
+    // (2) Centroid gravity + the accumulated (3) push, summed over EVERY level, both scaled by alpha
+    // like every d3 force. Gravity only acts on the part of a node's offset that exceeds that level's
+    // packing radius, so a cluster's (or super-cluster's) already-dense core is left alone — no
+    // collide fight, no overlaps.
     for (let i = 0; i < n; i++) {
       const nd = nodes[i];
       let vx = 0, vy = 0, vz = 0;
       for (const s of states) {
         const c = s.comm[i];
-        if (c < 0 || s.count[c] < 2) continue;
-        const ox = s.cx[c] - (nd.x ?? 0), oy = s.cy[c] - (nd.y ?? 0), oz = dim === 3 ? s.cz[c] - (nd.z ?? 0) : 0;
-        const d = Math.sqrt(ox * ox + oy * oy + oz * oz);
-        // Fraction of the offset that lies outside the packing radius (0 inside it → no pull at all).
-        const excess = d > s.packRadius[c] ? (d - s.packRadius[c]) / d : 0;
-        const g = s.gravity * alpha * excess;
-        vx += ox * g; vy += oy * g; vz += oz * g;
+        if (c < 0) continue;
+        if (s.count[c] >= 2) {
+          const ox = s.cx[c] - (nd.x ?? 0), oy = s.cy[c] - (nd.y ?? 0), oz = dim === 3 ? s.cz[c] - (nd.z ?? 0) : 0;
+          const d = Math.sqrt(ox * ox + oy * oy + oz * oz);
+          // Fraction of the offset that lies outside the packing radius (0 inside it → no pull at all).
+          const excess = d > s.packRadius[c] ? (d - s.packRadius[c]) / d : 0;
+          const g = s.gravity * alpha * excess;
+          vx += ox * g; vy += oy * g; vz += oz * g;
+        }
+        // Community-level collide (3) is accumulated per community, so every member gets the same push.
+        vx += s.rx[c] * alpha; vy += s.ry[c] * alpha; if (dim === 3) vz += s.rz[c] * alpha;
       }
       if (vx === 0 && vy === 0 && vz === 0) continue;
-      // ONE speed limit for the whole stack (see COMMUNITY_MAX_STEP above) — keeps the motion
-      // collide-trackable no matter how many levels contributed to it.
+      // ONE speed limit for the whole stack (see COMMUNITY_MAX_STEP + invariant 1 above) — keeps the
+      // motion collide-trackable no matter how many levels contributed to it.
       const step = Math.sqrt(vx * vx + vy * vy + vz * vz);
       const cap = COMMUNITY_MAX_STEP * radii[i];
       if (step > cap) {
@@ -650,6 +793,7 @@ function layoutGeometry(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions):
         comm: levelComm,
         numComms: dense.size,
         gravity: o.communityGravity * decay,
+        separation: o.communitySeparation * decay,
       });
       finerCount = dense.size;
     }
@@ -685,7 +829,7 @@ function layoutGeometry(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions):
 
   // The community force's level stack, finest first (see the "Nesting" block).
   const levels: CommunityLevel[] = useCommunity
-    ? [{ comm, numComms, gravity: o.communityGravity }, ...ancestors]
+    ? [{ comm, numComms, gravity: o.communityGravity, separation: o.communitySeparation }, ...ancestors]
     : [];
 
   return { ids, n, adj, edgePairs, realDeg, linkDist, radii, comm, numComms, useCommunity, levels };
@@ -848,11 +992,11 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   // undo) the velocity contributed by forces that ran earlier in the same tick. Registered after
   // collide, the community pull lands unchecked and only gets corrected a tick late, which on a
   // dense vault leaves permanently overlapping nodes.
-  if (useCommunity && o.communityGravity > 0) {
+  if (useCommunity && (o.communityGravity > 0 || o.communitySeparation > 0)) {
     // The community body radius is derived from the SAME per-node collide radii the sim's own
-    // forceCollide uses, so the community force automatically tracks every spacing/size multiplier.
-    // ONE force for the whole hierarchy (finest first, then ancestors) — see the "Nesting" block: the
-    // per-tick speed cap has to bound the SUM of every level's contribution.
+    // forceCollide uses, so both community forces automatically track every spacing/size multiplier.
+    // ONE force for the whole hierarchy (finest first, then ancestors) — see invariant 1 in the
+    // "Nesting" block: the per-tick speed cap has to bound the SUM of every level's contribution.
     sim.force("community", communityForce(nodes, levels, dim, radii));
   }
   sim
