@@ -33,6 +33,10 @@ export function accumulate(points: BloomPoint[], w: number, h: number): Float32A
 /** Separable box blur, `radius` cells each way. Mass-conserving apart from edge clamping.
  *  `w`/`h` are REQUIRED — a Float32Array's length cannot tell you its grid shape. */
 export function blur(field: Float32Array, w: number, h: number, radius: number): Float32Array {
+  if (field.length !== w * h) {
+    throw new Error(`blur: field.length (${field.length}) does not match w*h (${w * h})`);
+  }
+  radius = Math.round(radius);
   const n = field.length;
   const width = w, height = h;
   if (radius <= 0) return Float32Array.from(field);
