@@ -23,6 +23,15 @@ export interface AcpAgentSpec {
   /** True for a protocol ADAPTER (an separately-published package that bridges some other CLI onto
    *  ACP) rather than the agent's own native `--acp`/`acp` mode — see per-entry comments. */
   adapter?: boolean;
+  /**
+   * False for an agent whose ACP session/new REJECTS a non-empty `mcpServers` array outright rather
+   * than silently ignoring or merging it — driver.ts's createSession must send `[]` instead of its
+   * usual buildMcpServers(cwd, memoryDir) result for such an agent. Omitted (undefined) means
+   * "supported", matching every entry below except openclaw (see its own comment for the citation).
+   * A per-session Bismuth MCP server (the "Surface 5" comment atop driver.ts) is simply unavailable
+   * for an agent with this set to false — not a bug, a real protocol constraint on that agent's side.
+   */
+  supportsSessionMcpServers?: boolean;
 }
 
 export const ACP_AGENTS: readonly AcpAgentSpec[] = [
@@ -63,10 +72,63 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
     // is "Agent Control Protocol" but the wire format is identical Zed ACP (its own docs say `openclaw
     // acp` "speaks ACP over stdio for IDEs"). Puts OpenClaw on the AGENT side of the connection,
     // backed by whatever Gateway/model the user has it configured with.
+    //
+    // `--session agent:main:bismuth` is REQUIRED, not cosmetic — confirmed live (offline-testing
+    // openclaw task) that the plain `openclaw acp` invocation (no --session) is BROKEN for every
+    // fresh turn, independent of mocking: `session/new` succeeds, but the FIRST `session/prompt`
+    // always fails with `ACP_SESSION_INIT_FAILED: ACP metadata is missing for
+    // agent:main:acp:<uuid>...`. Root cause, read directly from the installed package
+    // (~/`openclaw`'s `dist/acp-cli-BQ740PFm.js`'s `AcpGatewayAgent.newSession`, and
+    // `dist/session-key-DAhnzjyr.js`'s `isAcpSessionKey`): when no `--session`/`_meta.sessionKey` is
+    // given, the ACP bridge's OWN default session-key naming is `acp:<uuid>` — which collides with a
+    // COMPLETELY UNRELATED OpenClaw feature that also uses the literal `acp:` session-name prefix as
+    // a reserved marker (its own outbound multi-agent "spawn an external ACP-speaking sub-agent"
+    // mechanism, `docs/tools/acp-agents.md`, driven by the `/acp spawn` slash command — nothing to do
+    // with Bismuth or with `openclaw acp` the bridge command). `dist/manager-Bw8JrihM.js`'s
+    // `AcpSessionManager.resolveSession` treats ANY session key whose name matches `isAcpSessionKey`
+    // (starts with `acp:`) as "must already be spawn-bound", and the bridge's own default session
+    // never goes through that spawn step — so a plain `openclaw acp` can never complete a single
+    // turn on a fresh Gateway, for any user, mock or real. Any OTHER session name sidesteps the
+    // collision and works normally (confirmed live for both `agent:main:main` — openclaw's own
+    // documented example, `docs/cli/acp.md` — and an arbitrary custom label): the embedded agent
+    // runtime auto-provisions itself the first time a non-"acp:"-prefixed session name is used.
+    // `agent:main:bismuth` is a fixed, Bismuth-specific label chosen to avoid the collision.
+    //
+    // KNOWN LIMITATION (not fixed by this args change, flagged for future work): AcpAgentSpec.args
+    // is static per-backend, not per-chat, so every Bismuth chat/tab against openclaw currently
+    // shares this ONE Gateway session key — unlike cline/gemini/goose, which each get an
+    // isolated-per-chat `acp:<uuid>` session (openclaw's own default, if only it worked). Concurrent
+    // Bismuth chats through openclaw will see each other's turns interleaved on the same transcript.
+    // A real per-chat fix needs driver.ts's spawnAcpProcess to inject a chat-id-derived
+    // `--session agent:main:bismuth-<chatId>` dynamically (or an equivalent `_meta.sessionKey` on
+    // session/new) instead of this static args entry — out of scope for this fix, which prioritizes
+    // "works at all" over "works with full isolation".
+    //
+    // `supportsSessionMcpServers: false` — a SECOND real bug found alongside the session-key one
+    // above, confirmed live: on any machine where Bismuth's own MCP tools are installed
+    // (`~/.bismuth/bin/bismuth-mcp` exists — true for every user of the bundled app, per
+    // bismuthInstall.ts), driver.ts's createSession ordinarily sends a non-empty `mcpServers` array
+    // on `session/new` (buildMcpServers above). OpenClaw's ACP bridge explicitly REJECTS this:
+    // `dist/acp-cli-BQ740PFm.js`'s `AcpGatewayAgent.assertSupportedSessionSetup` throws "ACP bridge
+    // mode does not support per-session MCP servers. Configure MCP on the OpenClaw gateway or agent
+    // instead." the moment `mcpServers.length > 0` — confirmed live via a raw JSON-RPC session/new
+    // carrying one mcpServers entry, which came back `{code:-32603,message:"Internal error",
+    // data:{details:"ACP bridge mode does not support per-session MCP servers..."}}` (the outer
+    // "Internal error" is openclaw's own JSON-RPC transport flattening ANY thrown error to -32603;
+    // the real reason only survives in `error.data.details`, which driver.ts's AcpRpcError does not
+    // currently surface — see driver.ts's handleInbound). Without this flag, EVERY Bismuth chat
+    // against openclaw on a machine with the MCP tools installed would fail its first turn exactly
+    // like the session-key bug did. The real, load-bearing fix is in driver.ts's createSession
+    // (checks this flag and sends `[]` for openclaw); this flag is the per-agent declaration driving
+    // it. Consequence, stated plainly rather than hidden: openclaw chats get NO Bismuth MCP access
+    // (no bismuth_cli/docs/memory tools) — openclaw's own docs point at a DIFFERENT mechanism for
+    // this ("Configure MCP on the OpenClaw gateway or agent instead", the user's own openclaw
+    // config), which Bismuth cannot drive per-session and does not attempt to.
     id: "openclaw",
     label: "OpenClaw",
     binary: "openclaw",
-    args: ["acp"],
+    args: ["acp", "--session", "agent:main:bismuth"],
+    supportsSessionMcpServers: false,
   },
   {
     // ADAPTER, not a native agent: this package bridges Claude Code (via Anthropic's own Claude

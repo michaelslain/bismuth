@@ -390,7 +390,11 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
       sink({ type: "error", code: "spawn", message: `Failed to start ${agent.label}.` });
       return null;
     }
-    const mcpServers = buildMcpServers(cwd, memoryDir);
+    // agent.supportsSessionMcpServers === false (currently only openclaw — see its own agents.ts
+    // comment for the live-confirmed citation): that agent's session/new REJECTS a non-empty
+    // mcpServers array outright rather than ignoring/merging it, so sending [] here is required for
+    // EVERY turn to succeed at all, not an optional degrade.
+    const mcpServers = agent.supportsSessionMcpServers === false ? [] : buildMcpServers(cwd, memoryDir);
     const s: AcpSession = {
       id: chatId,
       cwd,

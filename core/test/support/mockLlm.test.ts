@@ -152,8 +152,7 @@ describe("backendMockEnv", () => {
         // File-based mappings (see backendEnv.ts's own case comments): require a workDir (throw
         // without one), and the mock URL lands in a FILE this call writes into that dir — never in
         // the returned env object's own values (those are just paths/keys).
-        case "codex":
-        case "openclaw": {
+        case "codex": {
           expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
           const dir = mkdtempSync(join(tmpdir(), `backendenv-driftguard-${id}-`));
           const env = backendMockEnv(id, MOCK_URL, dir);
@@ -162,6 +161,20 @@ describe("backendMockEnv", () => {
             .map((f) => readFileSync(join(dir, f), "utf8"))
             .join("\n");
           expect(written).toContain(MOCK_URL);
+          break;
+        }
+        // File-based AND a required 4th `openclawGatewayPort` argument (its Gateway process and the
+        // ACP bridge must agree on a port via the SAME written config — see backendEnv.ts's own
+        // case comment and openclawGateway.ts). Reads the one config file directly rather than
+        // globbing the workDir (which also now contains `state`/`workspace` SUBDIRECTORIES this
+        // call mkdirSync's — readdirSync+readFileSync over those would throw EISDIR).
+        case "openclaw": {
+          expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
+          const dir = mkdtempSync(join(tmpdir(), `backendenv-driftguard-${id}-`));
+          expect(() => backendMockEnv(id, MOCK_URL, dir)).toThrow(/openclawGatewayPort/);
+          const env = backendMockEnv(id, MOCK_URL, dir, 47600);
+          expect(Object.keys(env).length).toBeGreaterThan(0);
+          expect(readFileSync(join(dir, "openclaw.json5"), "utf8")).toContain(MOCK_URL);
           break;
         }
         // No env-var mapping is possible at all (see backendEnv.ts's own case comment for why) —
@@ -229,14 +242,27 @@ describe("backendMockEnv", () => {
     expect(env.GOOSE_PROVIDER).toBe("anthropic");
   });
 
-  test("openclaw requires a workDir (a config.json5 file, not a bare env var); config-path redirection verified live, full turn routing was not (see the case comment)", () => {
+  test("openclaw requires a workDir + a gateway port (a config.json5 file, not a bare env var); config redirection AND full-turn model routing both verified live (see the case comment)", () => {
     expect(() => backendMockEnv("openclaw", MOCK_URL)).toThrow(/workDir/);
 
     const dir = mkdtempSync(join(tmpdir(), "backendenv-openclaw-test-"));
-    const env = backendMockEnv("openclaw", MOCK_URL, dir);
+    expect(() => backendMockEnv("openclaw", MOCK_URL, dir)).toThrow(/openclawGatewayPort/);
+
+    const env = backendMockEnv("openclaw", MOCK_URL, dir, 47601);
     expect(env.OPENCLAW_CONFIG_PATH).toBe(join(dir, "openclaw.json5"));
+    expect(env.OPENCLAW_STATE_DIR).toBe(join(dir, "state"));
     const config = JSON.parse(readFileSync(env.OPENCLAW_CONFIG_PATH, "utf8"));
     expect(config.models.providers.mock.baseUrl).toBe(`${MOCK_URL}/v1`);
+    expect(config.gateway.port).toBe(47601);
+    expect(config.gateway.mode).toBe("local");
+    // The other required-but-non-obvious config this file's case comment documents as load-bearing
+    // (not cosmetic) — see backendEnv.ts's openclaw case for why each of these is needed for a turn
+    // to complete at all, not just test hygiene.
+    expect(config.agents.defaults.workspace).toBe(join(dir, "workspace"));
+    expect(config.agents.defaults.skipBootstrap).toBe(true);
+    expect(config.canvasHost.enabled).toBe(false);
+    expect(config.browser.enabled).toBe(false);
+    expect(config.update.checkOnStart).toBe(false);
   });
 
   test("an unrecognized backend id throws rather than silently returning an empty (no-op) mapping", () => {
