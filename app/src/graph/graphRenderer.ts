@@ -11,6 +11,7 @@
 // import — erased at compile time, so nothing here pulls graphCanvas.css into the bundle.
 import type { GraphData } from "../../../core/src/graph";
 import type { CanvasGraphRenderer, GraphConfig, HoverNode } from "./CanvasGraphRenderer";
+import type { DensityField } from "./densityField";
 
 export type { GraphConfig, HoverNode };
 
@@ -53,9 +54,9 @@ export interface GraphRenderer {
   onHighlightCleared?: () => void;
   /** ASCII renderer only: the 0–100 resolution readout ("zoom is resolution"). */
   setZoomCallback?(cb: (pct: number) => void): void;
-  /** STANDARD (Canvas) renderer only: per-frame screen positions of the three biggest clusters, which
-   *  the <GraphAtmosphere> glow lobes ride. The ASCII field draws a flat ground and omits it. */
-  setGlowCallback?(cb: (g: { lobes: { x: number; y: number }[] }) => void): void;
+  /** Per-frame node-density field for the phosphor bloom (see densityField.ts). Optional: a
+   *  renderer that omits it simply gets no bloom. Values are 0..1 over a FIELD_W×FIELD_H grid. */
+  setBloomCallback?(cb: (field: DensityField) => void): void;
 }
 
 // Compile-time proof the legacy renderer still satisfies the seam. It is unused by GraphView but

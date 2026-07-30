@@ -1,32 +1,57 @@
 // app/src/graph/GraphAtmosphere.tsx
-// Shared graph "atmosphere": the iridescent cluster-glow + depth vignette layered over a
-// WebGL graph canvas. Extracted so GraphView and the first-run intro graph share ONE source
-// instead of duplicating the divs + glow-callback wiring. Render it as a sibling AFTER the
-// renderer's canvas inside a positioned container; it fills that container (inset 0).
-import { onMount, type JSX } from "solid-js";
+// The graph's atmosphere: a phosphor bloom emitted by the node field, plus the depth vignette.
+// Mounted as a sibling AFTER the renderer's canvas inside a positioned container; fills it (inset 0).
+//
+// The bloom is drawn at FIELD_W×FIELD_H and scaled up by the browser's own smoothing, which is
+// both cheap and exactly the soft falloff we want. Colour comes from --bloom-hue (theme token), so
+// nothing here hardcodes a palette.
+import { onCleanup, onMount, type JSX } from "solid-js";
+import { FIELD_W, FIELD_H, type DensityField } from "./densityField";
 import "./graphAtmosphere.css";
 
-// Structural type: any renderer (WebGL or CSS-3D) that can push glow-lobe screen positions.
-// Optional method: the ASCII renderer draws a flat ground and pushes no lobes, so it still satisfies
-// this and the atmosphere simply holds its CSS default lobe positions.
-type GlowRenderer = { setGlowCallback?(cb: (g: { lobes: { x: number; y: number }[] }) => void): void };
+type BloomRenderer = { setBloomCallback?(cb: (field: DensityField) => void): void };
 
-export function GraphAtmosphere(props: { renderer: GlowRenderer; mode?: string }): JSX.Element {
-  let glowEl: HTMLDivElement | undefined;
+export function GraphAtmosphere(props: { renderer: BloomRenderer; mode?: string }): JSX.Element {
+  let canvas: HTMLCanvasElement | undefined;
+  let raf = 0;
+  let pending: DensityField | null = null;
+
   onMount(() => {
-    // The renderer pushes the 3 biggest clusters' projected screen positions each frame; ride
-    // the glow lobes on them so the atmosphere follows the nodes.
-    props.renderer.setGlowCallback?.((g) => {
-      if (!glowEl) return;
-      g.lobes.forEach((p, i) => {
-        glowEl!.style.setProperty(`--glow-x${i + 1}`, `${p.x}%`);
-        glowEl!.style.setProperty(`--glow-y${i + 1}`, `${p.y}%`);
-      });
+    const ctx = canvas?.getContext("2d") ?? null;
+    if (!canvas || !ctx) return;
+    canvas.width = FIELD_W;
+    canvas.height = FIELD_H;
+
+    const hue = getComputedStyle(canvas).getPropertyValue("--bloom-rgb").trim() || "150, 230, 216";
+    const img = ctx.createImageData(FIELD_W, FIELD_H);
+    const [r, g, b] = hue.split(",").map((n) => Number(n.trim()));
+
+    const paint = () => {
+      raf = 0;
+      const field = pending;
+      if (!field) return;
+      for (let i = 0; i < FIELD_W * FIELD_H; i++) {
+        const v = field[i];
+        img.data[i * 4] = r;
+        img.data[i * 4 + 1] = g;
+        img.data[i * 4 + 2] = b;
+        // Gamma-ish curve: keeps the faint tail faint so only genuinely dense regions glow.
+        img.data[i * 4 + 3] = Math.round(255 * Math.min(1, v * v));
+      }
+      ctx.putImageData(img, 0, 0);
+    };
+
+    props.renderer.setBloomCallback?.((field) => {
+      pending = field;
+      if (!raf) raf = requestAnimationFrame(paint);
     });
   });
+
+  onCleanup(() => { if (raf) cancelAnimationFrame(raf); });
+
   return (
     <>
-      <div class="graph-glow" data-mode={props.mode} ref={(el) => (glowEl = el)} />
+      <canvas class="graph-bloom" data-mode={props.mode} ref={(el) => (canvas = el)} />
       <div class="graph-vignette" />
     </>
   );
