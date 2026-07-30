@@ -18,6 +18,7 @@ import {
 } from "./AsciiGraphRenderer";
 import { CELL_W, LAYER_EDGE } from "./asciiGrid";
 import { CLUSTER_LABEL_MAX_CHARS } from "./labelSelection";
+import { buildColorSlots } from "./clusterVisual";
 import { THEMES } from "../../../core/src/theme/tokens";
 
 const DOM_GLOBALS = [
@@ -280,14 +281,17 @@ const allText = () => ctx.fills.map((f) => f.text).join("");
 /** Every line segment the vector-edge pass (strokeEdges()) actually stroked this paint, flattened
  *  across all batched `stroke()` calls. */
 const strokeSegs = () => ctx.strokes.flatMap((s) => s.segs);
-// happy-dom resolves no CSS vars, so the renderer falls back to its literal token table — which
-// makes the fill colour a reliable way to tell a NODE run (the --graph-0..4 ramp) apart from the
-// noise texture and the edges, whose glyph vocabularies overlap ("." "o" "@" are noise chars too).
-// Cluster-name LABELS are drawn in this same ramp (by design — "the cluster's ramp color"), so the
-// glyph-only regex below is what actually separates a node run from a cluster-name fill sharing
-// its color.
-const RAMP_COLORS = new Set(["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a"]);
-const nodeRuns = () => ctx.fills.filter((f) => RAMP_COLORS.has(f.color) && /^[.o@ ]+$/.test(f.text));
+// happy-dom resolves no CSS vars, so the renderer falls back to its literal token table. Community
+// colours are no longer one of a fixed 5-entry ramp (buildColorSlots ranks-and-boosts against the
+// --graph-0..4 tokens, so the actual hex a community lands on is a saturation/lightness-boosted, and
+// possibly hue-rotated, DERIVATIVE of those tokens — see clusterVisual.ts) — so "is this a node run"
+// is now: NOT one of the fixed non-community roles (self/muted/faint/accent/edge — the only fills
+// still drawn at the LITERAL fallback hex), AND matching the glyph-only vocabulary. That excludes the
+// self-hub glyph, dimmed daemon glyphs, and the noise texture, while still counting any
+// community-derived colour (nodes AND entity masses share one colour per community by design — see
+// colorLevelsFor's doc — so this can't tell the two apart, but no test here needs to).
+const FIXED_UI_COLORS = new Set(["#e8e8ee", "#9aa0b4", "#6b7086", "#3f6bf0", "#3C4048"]); // C_FG, C_MUTED, C_FAINT, C_ACCENT, C_EDGE
+const nodeRuns = () => ctx.fills.filter((f) => !FIXED_UI_COLORS.has(f.color) && /^[.o@ ]+$/.test(f.text));
 // A real wheel event always carries the cursor position — default to the field's centre (2D zoom
 // is cursor-ANCHORED now). happy-dom's WheelEvent constructor DROPS MouseEvent init fields
 // (clientX comes out undefined), so the coordinates are pinned on afterwards.
@@ -592,6 +596,125 @@ describe("N-level semantic labels — the zoom ladder walks communityPath, coars
     wheelIn(viewport, 30);
     settle(200);
     expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
+    r.destroy();
+  });
+});
+
+// The fallback --graph-0..4 tokens (COLOR_FALLBACK's first 5 entries in AsciiGraphRenderer.ts) —
+// happy-dom resolves no CSS vars, so this is the exact palette rebuildCommunityColors() passes to
+// buildColorSlots() in every test in this file.
+const RAMP_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a"];
+
+describe("Task 9 — clusterVisual wiring: community colours are RANK-based, cluster names are HUB-anchored", () => {
+  /** `sizeById[c]` notes tagged `community: c` (finest-level only, no hierarchy) — no edges needed,
+   *  getCommunityCentroids() only reads community membership + colour. */
+  function communitySizeGraph(sizeById: number[]) {
+    const nodes: unknown[] = [];
+    let i = 0;
+    for (let c = 0; c < sizeById.length; c++) {
+      for (let k = 0; k < sizeById[c]; k++) {
+        nodes.push({
+          id: `n${i}`, label: `note ${i}`, kind: "note" as const,
+          position: [i * 5, 0, 0] as [number, number, number], position2d: [i * 5, 0] as [number, number],
+          community: c, communityLabel: `Cluster ${c}`,
+        });
+        i++;
+      }
+    }
+    return { nodes: nodes as never, edges: [] };
+  }
+
+  it("the LARGEST community always resolves to the same colour, regardless of which id happens to be biggest (rank, not hash)", () => {
+    // id 2 is the biggest (10 members) here...
+    const a = mountRenderer("3d", communitySizeGraph([2, 3, 10]));
+    const colorABiggest = a.r.getCommunityCentroids().get(2)!.color;
+    a.r.destroy();
+
+    // ...id 0 is the biggest (10 members) here — same size DISTRIBUTION, different id<->size mapping.
+    const b = mountRenderer("3d", communitySizeGraph([10, 3, 2]));
+    const colorBBiggest = b.r.getCommunityCentroids().get(0)!.color;
+    b.r.destroy();
+
+    // A hash of the community id would almost certainly give these two a DIFFERENT colour (id 2 vs
+    // id 0 hash differently); rank-by-size gives the biggest community the same palette slot no
+    // matter which id it happens to carry.
+    expect(colorABiggest).toBe(colorBBiggest);
+
+    // ...and the three communities within ONE graph are still visually distinct from each other —
+    // ranking isn't collapsing everything onto one colour either.
+    const c = mountRenderer("3d", communitySizeGraph([2, 3, 10]));
+    const colors = new Set([...c.r.getCommunityCentroids().values()].map((cl) => cl.color));
+    expect(colors.size).toBe(3);
+    c.r.destroy();
+  });
+
+  it("a node with only a finest-level community (no communityPath) still counts toward a DEEPER level's community tally — the pathOf level clamp", () => {
+    // Two-level hierarchy: top is uniformly 0, sub varies 0/1/2. Sub sizes 2/4/3 — sub 0 is the
+    // STRICT smallest among the three deep-only sizes. One extra SHALLOW node (community: 0, no
+    // communityPath at all) should count toward sub 0's tally too (clamped to its own deepest known
+    // community), tying it with sub 2 at 3 — and buildColorSlots' tie-break (lowest id) then ranks
+    // sub 0 ABOVE sub 2. Drop the clamp and sub 0 stays strictly smaller than sub 2, changing its rank
+    // (and therefore its colour) entirely.
+    const nodes: unknown[] = [];
+    let i = 0;
+    const subSizes = [2, 4, 3];
+    for (let sub = 0; sub < subSizes.length; sub++) {
+      for (let k = 0; k < subSizes[sub]; k++) {
+        nodes.push({
+          id: `d${sub}_${k}`, label: `deep ${sub} ${k}`, kind: "note" as const,
+          position: [i * 5, sub * 50, 0] as [number, number, number], position2d: [i * 5, sub * 50] as [number, number],
+          community: sub, communityLabel: `Sub ${sub}`,
+          communityPath: [0, sub], communityPathLabels: ["Top 0", `Sub ${sub}`],
+        });
+        i++;
+      }
+    }
+    nodes.push({
+      id: "shallow", label: "shallow", kind: "note" as const,
+      position: [i * 5, -50, 0] as [number, number, number], position2d: [i * 5, -50] as [number, number],
+      community: 0, communityLabel: "Sub 0",
+    });
+    const { r } = mountRenderer("3d", { nodes: nodes as never, edges: [] });
+
+    // Independently reconstruct what the CORRECTLY-clamped per-level tally should be (sub 0 = 2 deep
+    // + 1 clamped shallow = 3) and feed it through the real buildColorSlots — the same palette the
+    // renderer falls back to under happy-dom (no CSS vars resolved).
+    const expected = buildColorSlots(new Map([[0, 3], [1, 4], [2, 3]]), RAMP_FALLBACK);
+    expect(r.getCommunityCentroids().get(0)!.color).toBe(expected.get(0));
+    r.destroy();
+  });
+
+  it("anchors a cluster name on the community's HUB (highest-degree member), not the member centroid", () => {
+    // One high-degree hub far to the right; four low-degree leaves clustered far to the left. The
+    // OLD centroid-of-all-members anchor lands far to the LEFT (dragged there by the 4-vs-1 leaf
+    // majority); the hub anchor must land at the hub's own (far-RIGHT) position instead.
+    const nodes = [
+      {
+        id: "hub", label: "Hub", kind: "note" as const,
+        position: [300, 0, 0] as [number, number, number], position2d: [300, 0] as [number, number],
+        community: 0, communityLabel: "Group",
+      },
+      ...[0, 1, 2, 3].map((k) => ({
+        id: `leaf${k}`, label: `leaf${k}`, kind: "note" as const,
+        position: [-300 - k, k % 2 === 0 ? -10 : 10, 0] as [number, number, number],
+        position2d: [-300 - k, k % 2 === 0 ? -10 : 10] as [number, number],
+        community: 0, communityLabel: "Group",
+      })),
+    ];
+    const edges = [0, 1, 2, 3].map((k) => ({ from: "hub", to: `leaf${k}`, kind: "link" as const }));
+    const { r } = mountRenderer("2d", { nodes, edges });
+    const priv = r as unknown as {
+      nodes: { node: { id: string }; col: number; row: number }[];
+      labels: { text: string; col: number; row: number; eyebrow?: boolean }[];
+    };
+    const hub = priv.nodes.find((n) => n.node.id === "hub")!;
+    // The OLD formula: the plain average grid column over EVERY on-grid member of the community
+    // (hub included) — what layoutClusterNames used to anchor on.
+    const oldCentroidCol = priv.nodes.reduce((s, n) => s + n.col, 0) / priv.nodes.length;
+    const label = priv.labels.find((l) => l.eyebrow);
+    expect(label).toBeDefined();
+    expect(Math.abs(label!.col - hub.col)).toBeLessThanOrEqual(4);
+    expect(Math.abs(label!.col - oldCentroidCol)).toBeGreaterThan(10);
     r.destroy();
   });
 });

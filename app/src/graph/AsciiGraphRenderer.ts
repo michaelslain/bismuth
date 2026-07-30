@@ -39,6 +39,9 @@ import {
   clusterLabelAlpha, clusterLabelText, clusterLevelAlphas, computeAlwaysOnSet, eyebrowWidthCells,
   FILE_LABEL_FADE_SPAN, fileLabelAlpha, fileLabelBudget, FILE_LABEL_REVEAL_T, levelBoundaries,
 } from "./labelSelection";
+import {
+  buildColorSlots, clusterExtent, clusterLabelLift, inViewport, pathOf, pickHubAnchor, trimDanglingWord,
+} from "./clusterVisual";
 import { hashKey } from "../themeColors";
 import { isUsableBox, finiteVec3, boundingRadius, boundingHalfExtents, fitScaleForBox } from "./graphFit";
 import { structuralGraphSig, shouldResetView } from "./graphStability";
@@ -132,13 +135,30 @@ const C_FG = 5, C_MUTED = 6, C_FAINT = 7, C_ACCENT = 8, C_EDGE = 9;
 const COLOR_VARS = ["--graph-0", "--graph-1", "--graph-2", "--graph-3", "--graph-4", "--fg", "--text-muted", "--faint", "--accent", "--graph-edge"];
 const COLOR_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a", "#e8e8ee", "#9aa0b4", "#6b7086", "#3f6bf0", "#3C4048"];
 const RAMP = [C_G0, C_G1, C_G2, C_G3, C_G4];
-// LEVEL-DRIVEN NODE COLOR (see colorLevelsFor/restyle + rasterize's colour block): during a
-// crossfade between two adjacent hierarchy levels, `colorBuf` needs a blended RGB that plain/faint
-// slots (0..8, resolved through `this.colors`) can't express. `BLEND_BASE + a*RAMP.length + b`
-// (a/b are RAMP slots 0..4) indexes a small per-frame palette built fresh only WHILE actually
-// crossfading (rasterize() skips it entirely at a settled zoom stop — see the `colorW1` gate) —
-// at most RAMP.length² = 25 entries, well inside the Uint8Array `colorBuf` already uses for slots.
+// COMMUNITY COLOUR SLOTS (see rebuildCommunityColors()/colorLevelsFor/restyle + rasterize's colour
+// block, and clusterVisual.ts's buildColorSlots): every (hierarchy level, community) pair gets its
+// OWN resolved colour — ranked by member count, not hashed — via buildColorSlots against ASCII's
+// `--graph-0..4` tokens as the palette. That is a MUCH bigger space than the old 5-slot RAMP (a real
+// vault's finer levels can carry dozens of communities), so colours live in a flat per-build array
+// (`this.commColors`) instead of the fixed `this.colors` table, addressed on `colorBuf` starting at
+// `BLEND_BASE`. `COMM_BLEND_BASE` (below) starts a SEPARATE, per-frame-memoized range for the
+// LEVEL-DRIVEN COLOR crossfade — blending two community colours together while the camera walks
+// between adjacent hierarchy levels — built lazily (only the (a,b) pairs a frame actually asks for,
+// not the full cross product) because the community space is no longer small enough to precompute in
+// full up front. `colorBuf` is a Uint16Array (not Uint8) precisely to give this range room.
 const BLEND_BASE = 16;
+// Lazily-memoized LEVEL-DRIVEN COLOR blend slots — see blendColorSlot()/resolveFillColor(). Set well
+// above any realistic `commColors` span (BLEND_BASE.. ) so the two ranges never collide; MAX_BLEND_SLOTS
+// keeps the memo inside Uint16Array's ceiling regardless of how many distinct (a,b) pairs a frame asks
+// for (a pathological graph degrades to a hard colour cut instead of an out-of-range write — see
+// blendColorSlot()).
+const COMM_BLEND_BASE = 50000;
+const MAX_BLEND_SLOTS = 15000;
+const BLEND_KEY_MUL = 65536; // exceeds any possible colorBuf slot value — safe as a plain JS Map key, never written to a buffer
+// Padding (px) added to the actual canvas box before a screen point counts as "in the viewport" for
+// label-candidate purposes — ported from CanvasGraphRenderer.ts's inViewport call sites (40px) via
+// clusterVisual.ts's inViewport(). See layoutLabels()/layoutClusterNames().
+const VIEWPORT_LABEL_PAD = 40;
 
 /** Parse a CSS colour STRING (the tokens table only ever holds `#rgb`/`#rrggbb` hex — see
  *  theme/tokens.ts — or, defensively, `rgb()`/`rgba()`) into 0..255 channels for the LEVEL-DRIVEN
@@ -285,7 +305,11 @@ interface EntityView {
   drawnRowR: number; drawnColR: number; // grid-capped radii for this frame
 }
 interface LabelDraw {
-  text: string; col: number; row: number; color: number; accent: boolean;
+  // A resolved CSS colour string, not a colorBuf slot — labels never blend (only alpha crossfades),
+  // and a cluster name's colour comes straight out of `buildColorSlots` (an already-final hex, no
+  // slot indirection needed), so callers resolve once at label-creation time via resolveFillColor()
+  // (fixed slots) or the raw buildColorSlots hex (community names) rather than at paint time.
+  text: string; col: number; row: number; color: string; accent: boolean;
   alpha: number;      // crossfade multiplier — forced file labels and cluster names ignore this differently (see paint())
   eyebrow?: boolean;  // cluster name: uppercase + tracked, drawn at full brightness × alpha
   // Real drawn width in cells (eyebrowWidthCells for a tracked cluster name, plain text.length for a
@@ -294,16 +318,12 @@ interface LabelDraw {
   widthCells: number;
 }
 
-/** A node's hierarchy path, coarsest → finest — `communityPath` when the backend sent one, else the
- *  single-element fallback `[community]` so a node/graph with no hierarchy data (legacy, or simply
- *  never rebuilt against the new detector) reads as exactly a 1-level graph, unchanged from before
- *  communityPath existed. `undefined` when the node carries no community at all. */
-function nodePath(n: GraphNode): number[] | undefined {
-  if (n.communityPath && n.communityPath.length) return n.communityPath;
-  return n.community != null ? [n.community] : undefined;
-}
+// A node's hierarchy path, coarsest → finest, is `pathOf` (clusterVisual.ts) — imported rather than
+// re-derived (see that function's docblock for the two edges it handles: `community: 0` is not
+// absent, and a per-level lookup must clamp `path[Math.min(L, path.length - 1)]`, never index past a
+// shallower node's own path).
 
-/** The exemplar name per level, mirroring `nodePath`'s fallback. */
+/** The exemplar name per level, mirroring `pathOf`'s fallback. */
 function nodePathLabels(n: GraphNode): string[] | undefined {
   if (n.communityPathLabels && n.communityPathLabels.length) return n.communityPathLabels;
   return n.community != null ? [n.communityLabel ?? `cluster ${n.community}`] : undefined;
@@ -346,18 +366,42 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private W = 1; private H = 1;
   private charBuf = new Uint16Array(1);
   private layerBuf = new Uint8Array(1);
-  private colorBuf = new Uint8Array(1);
+  // Uint16, not Uint8: colorBuf slots now range over the per-build community-colour space
+  // (BLEND_BASE..) and the per-frame blend memo (COMM_BLEND_BASE..) — see the COMMUNITY COLOUR
+  // SLOTS comment above RAMP/BLEND_BASE.
+  private colorBuf = new Uint16Array(1);
   private alphaBuf = new Uint8Array(1);
   private cellNode = new Int32Array(1);
   private noiseBuf = new Uint16Array(1);
   private labelOccupied = new Uint8Array(1);
   private labels: LabelDraw[] = [];
   private labelScratch: NodeView[] = [];
-  private clusterAgg = new Map<number, { colSum: number; rowSum: number; n: number }>();
+  // layoutClusterNames()'s per-frame candidate scratch: community → its VIEWPORT-VISIBLE members
+  // this frame (see clusterExtent()'s call-site contract — deliberately NOT the whole-graph
+  // membership `clusterHubByLevel` below uses).
+  private clusterAgg = new Map<number, NodeView[]>();
   // Per-level community → its display name, resolved once per build() (communityPathLabels is
   // static graph data, not a per-frame thing) so layoutClusterNames() never has to search for a
   // representative member. Index = hierarchy level (0 = coarsest); length = levelCount.
   private communityNamesByLevel: Map<number, string>[] = [];
+  // Per-level community → its resolved display COLOUR (buildColorSlots' hex output — see
+  // rebuildCommunityColors()), and → its colorBuf SLOT (BLEND_BASE + a flat index into
+  // `commColors`/`commColorsRGB`). Rebuilt every restyle() (not just build()) because the palette —
+  // unlike community structure — changes on a theme switch.
+  private communityColorsByLevel: Map<number, string>[] = [];
+  private communitySlotByLevel: Map<number, number>[] = [];
+  private commColors: string[] = [];
+  private commColorsRGB: [number, number, number][] = [];
+  // Lazily-memoized LEVEL-DRIVEN COLOR blend results this frame (see blendColorSlot()) — cleared
+  // whenever a crossfade starts being rebuilt (rasterize()'s `colorW1` gate), not every frame.
+  private blendColors: string[] = [];
+  private blendIndex = new Map<number, number>();
+  // Whole-graph, PRECOMPUTED per-level community → hub member id (pickHubAnchor) — built once per
+  // structural rebuild (build()), never per frame and never filtered to what's on screen. See
+  // clusterVisual.ts pickHubAnchor's call-site contract: this is what layoutClusterNames() anchors
+  // cluster names to, so a name and the mass it labels never disagree about where "the cluster" is,
+  // and the anchor doesn't jump as members pan in and out of frame.
+  private clusterHubByLevel: Map<number, string>[] = [];
   // Deepest hierarchy depth any node carries (1..4 typically; see core/src/graph.ts communityPath).
   // 0 means no node carries a community at all (no cluster names to draw).
   private levelCount = 0;
@@ -428,14 +472,6 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   // theme tokens
   private colors: string[] = [...COLOR_FALLBACK];
-  // RAMP slots (0..4) parsed to 0..255 RGB channels — the LEVEL-DRIVEN COLOR blend's lerp inputs
-  // (see rasterize()/buildBlendPalette). Re-derived from `this.colors` in readTokens(), so a theme
-  // switch keeps the blend consistent with everything else the tokens drive.
-  private rampRGB: [number, number, number][] = RAMP.map((_, i) => parseColorToRGB(COLOR_FALLBACK[i]) ?? [255, 255, 255]);
-  // Per-frame blend palette (RAMP.length² entries, `BLEND_BASE`-offset — see colorBuf's sentinel
-  // scheme), rebuilt only while a level crossfade is actually in progress (rasterize()'s `colorW1`
-  // gate) — most frames never touch this.
-  private blendColors: string[] = [];
   private groundColor = "#0b0c11";
   // Per-theme edge-stroke alpha (see deriveEdgeBaseAlpha()) — recomputed in readTokens() whenever the
   // theme's colour tokens are (re-)read, from THIS renderer's own resolved --text-muted/--graph-bg/
@@ -573,17 +609,17 @@ export class AsciiGraphRenderer implements GraphRenderer {
     });
     this.byId = new Map(this.nodes.map((nv) => [nv.node.id, nv]));
 
-    // Hierarchy depth + per-level exemplar names, resolved once here (not per-frame): `nodePath`
+    // Hierarchy depth + per-level exemplar names, resolved once here (not per-frame): `pathOf`
     // falls back to the single-element `[community]` for pre-hierarchy/legacy nodes, so a graph with
     // no communityPath at all still gets exactly the original one-tier cluster-name behaviour.
     this.levelCount = 0;
     for (const nv of this.nodes) {
-      const path = nodePath(nv.node);
+      const path = pathOf(nv.node);
       if (path && path.length > this.levelCount) this.levelCount = path.length;
     }
     this.communityNamesByLevel = Array.from({ length: this.levelCount }, () => new Map<number, string>());
     for (const nv of this.nodes) {
-      const path = nodePath(nv.node);
+      const path = pathOf(nv.node);
       if (!path) continue;
       const labels = nodePathLabels(nv.node);
       for (let L = 0; L < path.length; L++) {
@@ -591,6 +627,44 @@ export class AsciiGraphRenderer implements GraphRenderer {
         const map = this.communityNamesByLevel[L];
         if (id == null || !map || map.has(id)) continue;
         map.set(id, labels?.[L] ?? `cluster ${id}`);
+      }
+    }
+
+    // Whole-graph, PRECOMPUTED per-level community → hub member id (pickHubAnchor — see the
+    // `clusterHubByLevel` field doc). Structural: depends only on communityPath + whole-graph degree,
+    // neither of which a theme switch touches, so this lives in build(), not restyle(). The clamp
+    // (`path[Math.min(L, path.length - 1)]`) is the same one buildColorSlots' community-size tally
+    // uses below (rebuildCommunityColors) — a node whose own path is shallower than L still counts
+    // toward L's hub race, under its own deepest known community.
+    //
+    // pickHubAnchor's `id` is a bare `number` (its cited source, CanvasGraphRenderer.ts:865-874,
+    // actually compares the STRING `nv.node.id` — GraphNode ids are strings here too), so members are
+    // keyed by their INDEX into `this.nodes` rather than their real id, and the winning index is
+    // mapped back to the real string id afterward. This does not weaken the "never flickers frame to
+    // frame" guarantee the tie-break exists for — `this.nodes`' order is fixed for the lifetime of one
+    // build() — it only means a rare exact-degree tie may not byte-for-byte match whatever tie-break
+    // the backend's OWN exemplar-picking used.
+    this.clusterHubByLevel = Array.from({ length: this.levelCount }, () => new Map<number, string>());
+    if (this.levelCount > 0) {
+      const membersByLevel: Map<number, { id: number; degree: number }[]>[] =
+        Array.from({ length: this.levelCount }, () => new Map());
+      for (let i = 0; i < this.nodes.length; i++) {
+        const nv = this.nodes[i];
+        const path = pathOf(nv.node);
+        if (!path) continue;
+        for (let L = 0; L < this.levelCount; L++) {
+          const c = path[Math.min(L, path.length - 1)];
+          const map = membersByLevel[L];
+          let arr = map.get(c);
+          if (!arr) { arr = []; map.set(c, arr); }
+          arr.push({ id: i, degree: nv.deg });
+        }
+      }
+      for (let L = 0; L < this.levelCount; L++) {
+        for (const [c, members] of membersByLevel[L]) {
+          const hubIdx = pickHubAnchor(members);
+          if (hubIdx != null) this.clusterHubByLevel[L].set(c, this.nodes[hubIdx].node.id);
+        }
       }
     }
 
@@ -624,18 +698,17 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // never per frame. Cluster world centroids use the same centred/flipped p2 space the projector
     // consumes, so per-frame entity projection is the same two multiplies a node costs.
     this.lodLevels = buildLodIndex(
-      this.nodes.map((nv) => ({ id: nv.node.id, path: nodePath(nv.node), x: nv.p2[0], y: nv.p2[1] })),
+      this.nodes.map((nv) => ({ id: nv.node.id, path: pathOf(nv.node) ?? undefined, x: nv.p2[0], y: nv.p2[1] })),
       g.edges.map((e) => ({ from: e.from, to: e.to })),
     );
     this.entityFlat = [];
     this.entityLevels = this.lodLevels.map((lv, L) => lv.clusters.map((c) => {
-      const isFinest = L === this.lodLevels.length - 1;
-      const key = isFinest ? "community:" + c.community : `community:L${L}:${c.community}`;
       const { rowR, colR } = massRadii(c.count, this.cellW, this.cellH);
       const ev: EntityView = {
         flat: this.entityFlat.length, level: L, community: c.community, count: c.count,
         wx: c.wx, wy: c.wy,
-        color: RAMP[hashKey(key) % RAMP.length],
+        color: C_FAINT, // placeholder — restyle() (called at the end of build()) assigns the real
+                         // per-level community colour via rebuildEntityColors() before any paint runs
         name: this.communityNamesByLevel[L]?.get(c.community) ?? `cluster ${c.community}`,
         rowR, colR, memberIds: c.memberIds,
         sx: 0, sy: 0, col: -1, row: -1, onGrid: false, drawnRowR: rowR, drawnColR: colR,
@@ -699,10 +772,6 @@ export class AsciiGraphRenderer implements GraphRenderer {
       return v || fallback;
     };
     this.colors = COLOR_VARS.map((v, i) => read(v, COLOR_FALLBACK[i]));
-    // RAMP is C_G0..C_G4 (indices 0..4 of `this.colors`, coincidentally identical to the RAMP array's
-    // own values) — re-parse whenever the tokens are (re-)read so a theme switch keeps the LEVEL-
-    // DRIVEN COLOR blend (rasterize()/buildBlendPalette) in sync with the rest of the field.
-    this.rampRGB = RAMP.map((slot) => parseColorToRGB(this.colors[slot]) ?? [255, 255, 255]);
     // The label's cleared ground. --graph-bg may still be a gradient on a non-ASCII theme, and a
     // gradient string is not a valid fillStyle — fall back to the flat page background there.
     const gb = read("--graph-bg", "");
@@ -749,22 +818,90 @@ export class AsciiGraphRenderer implements GraphRenderer {
   }
 
   private restyle() {
+    // Community colours first (rank-based, not hashed — buildColorSlots) — colorLevelsFor's
+    // community branch below reads `communitySlotByLevel`, so it must exist before that loop runs.
+    this.rebuildCommunityColors();
     for (const nv of this.nodes) {
       const levels = this.colorLevelsFor(nv.node);
       nv.colorByLevel = levels;
       nv.color = levels[levels.length - 1]; // finest/fixed slot — unchanged meaning for existing consumers
       nv.dim = this.isDimmed(nv.node);
     }
+    // LOD entity masses share the SAME per-level community colour a node would show at that level
+    // (see colorLevelsFor's doc) — recomputed here too since the palette (not just structure) may
+    // have changed.
+    this.rebuildEntityColors();
     this.dirty = true;
   }
 
-  /** Level-by-level RAMP colour for one node — hashed ONCE here (build()/restyle(), never per
-   *  frame; see rasterize()'s LEVEL-DRIVEN COLOR block for the per-frame lookup+lerp that consumes
-   *  it). `levels[L]` is the ramp slot (0..4, same numbering `this.colors` uses for C_G0..C_G4) the
-   *  node would show if hierarchy level `L` (coarsest → finest) were the ACTIVE one. Keys mirror the
-   *  ones `entityLevels`/`layoutClusterNames` hash for the SAME level+community, so a node's colour,
-   *  the mass that would summarize it (LOD masses, opt-in), and the cluster-name label naming it all
-   *  agree — "the cluster's ramp colour" is one hash, not three.
+  /**
+   * Rank every hierarchy level's communities by member count (buildColorSlots — clusterVisual.ts)
+   * against ASCII's own `--graph-0..4` CSS tokens as the palette, replacing the old
+   * `RAMP[hashKey(key) % 5]` scheme: hashing collided constantly once a real vault's coarsest level
+   * carried more than 5 substantial groups (see clusterVisual.ts's module doc for the measured
+   * failure). Flattens the per-level `Map<community, hex>` buildColorSlots returns into ONE dense
+   * array (`commColors`/`commColorsRGB`), addressed on `colorBuf` starting at `BLEND_BASE` — a
+   * community's SLOT (not just its colour) is what `colorByLevel`/`EntityView.color` store, since
+   * those still have to travel through the grid's per-cell integer buffers.
+   *
+   * Community SIZES are tallied with the same level clamp `pathOf`'s docblock requires
+   * (`path[Math.min(L, path.length - 1)]`, never a bare `path[L]`) — otherwise a node whose own
+   * hierarchy is shallower than level L silently drops out of L's tally instead of counting toward
+   * its own deepest known community.
+   *
+   * Runs every restyle() (build() AND setConfig()), not just build(): community STRUCTURE only
+   * changes on a rebuild, but the PALETTE (and therefore buildColorSlots' actual hex output) changes
+   * on every theme switch too.
+   */
+  private rebuildCommunityColors() {
+    const palette = [this.colors[C_G0], this.colors[C_G1], this.colors[C_G2], this.colors[C_G3], this.colors[C_G4]];
+    const sizesByLevel: Map<number, number>[] = Array.from({ length: this.levelCount }, () => new Map());
+    for (const nv of this.nodes) {
+      const path = pathOf(nv.node);
+      if (!path) continue;
+      for (let L = 0; L < this.levelCount; L++) {
+        const c = path[Math.min(L, path.length - 1)];
+        const sizes = sizesByLevel[L];
+        sizes.set(c, (sizes.get(c) ?? 0) + 1);
+      }
+    }
+    this.commColors = [];
+    this.commColorsRGB = [];
+    this.communityColorsByLevel = [];
+    this.communitySlotByLevel = [];
+    for (let L = 0; L < this.levelCount; L++) {
+      const hexByCommunity = buildColorSlots(sizesByLevel[L], palette);
+      this.communityColorsByLevel[L] = hexByCommunity;
+      const slotByCommunity = new Map<number, number>();
+      for (const [community, hex] of hexByCommunity) {
+        slotByCommunity.set(community, BLEND_BASE + this.commColors.length);
+        this.commColors.push(hex);
+        this.commColorsRGB.push(parseColorToRGB(hex) ?? [255, 255, 255]);
+      }
+      this.communitySlotByLevel[L] = slotByCommunity;
+    }
+    // The blend memo indexes INTO commColors by slot — any stale (a,b) pair from before this rebuild
+    // is meaningless once the slot space has been rebuilt from scratch.
+    this.blendColors.length = 0;
+    this.blendIndex.clear();
+  }
+
+  /** LOD entity masses' colours, kept in sync with `communitySlotByLevel` — see restyle()'s doc. */
+  private rebuildEntityColors() {
+    for (let L = 0; L < this.entityLevels.length; L++) {
+      const slotMap = this.communitySlotByLevel[L];
+      for (const ev of this.entityLevels[L]) ev.color = slotMap?.get(ev.community) ?? C_FAINT;
+    }
+  }
+
+  /** Level-by-level colour for one node — resolved ONCE here (build()/restyle(), never per frame;
+   *  see rasterize()'s LEVEL-DRIVEN COLOR block for the per-frame lookup+blend that consumes it).
+   *  `levels[L]` is the colorBuf SLOT the node would show if hierarchy level `L` (coarsest → finest)
+   *  were the ACTIVE one — a fixed RAMP int (0..4) for the non-community fallback cases below, or a
+   *  `communitySlotByLevel[L]` entry (rank-based, via buildColorSlots) for an actual community. Each
+   *  level's map is already level-scoped by construction (see rebuildCommunityColors — one `Map` per
+   *  level), so — unlike the old hash scheme — no separate "is this the node's own finest level" key
+   *  variant is needed to keep two different levels' same-numbered communities from colliding.
    *
    *  A node with no community at all (self/daemon/cron/process, or community-less legacy data) gets
    *  a length-1 `levels` array: every consumer treats that as "fixed colour, never blended" —
@@ -779,13 +916,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
         return [vs.fill === "palette" || vs.border === "palette" ? RAMP[hashKey(n.id) % RAMP.length] : C_FAINT];
       }
       default: {
-        const path = nodePath(n);
+        const path = pathOf(n);
         if (path && path.length) {
-          return path.map((c, L) => {
-            const isFinest = L === path.length - 1;
-            const key = isFinest ? "community:" + c : `community:L${L}:${c}`;
-            return RAMP[hashKey(key) % RAMP.length];
-          });
+          return path.map((c, L) => this.communitySlotByLevel[L]?.get(c) ?? C_FAINT);
         }
         // No community at all (a community-less fixture, or a graph mode that never stamps one) —
         // the pre-hierarchy fixed colour: tags by their own label (so the same tag always reads the
@@ -827,7 +960,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (m.cols !== this.m.cols || m.rows !== this.m.rows || this.charBuf.length !== cells) {
       this.charBuf = new Uint16Array(cells);
       this.layerBuf = new Uint8Array(cells);
-      this.colorBuf = new Uint8Array(cells);
+      this.colorBuf = new Uint16Array(cells);
       this.alphaBuf = new Uint8Array(cells);
       this.cellNode = new Int32Array(cells);
       this.cellEntity = new Int32Array(cells);
@@ -1114,10 +1247,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (clusterColorsOn && this.levelCount > 1) {
       const picked = this.activeColorLevels(clusterLevelAlphas(t, this.levelCount));
       colorL0 = picked.L0; colorL1 = picked.L1; colorW1 = picked.w1;
-      // Only build the (RAMP.length² entry) blend palette while an actual crossfade is in progress —
-      // most frames sit settled at one level (w1 ≈ 0) and skip this entirely; nodeColorSlotForFrame
-      // falls back to the plain per-level slot (an exact `this.colors` hex, not an rgb() string) then.
-      if (colorW1 > LOD_ALPHA_EPS) this.buildBlendPalette(colorW1);
+      // Reset the lazy blend memo only while an actual crossfade is in progress — most frames sit
+      // settled at one level (w1 ≈ 0) and skip this entirely; nodeColorSlotForFrame falls back to the
+      // plain per-level slot (an exact community hex, not a blended rgb() string) then. See
+      // blendColorSlot() — entries are computed on demand per (a,b) pair actually requested this
+      // frame, not a full precomputed cross product (the community space is too big for that now).
+      if (colorW1 > LOD_ALPHA_EPS) { this.blendColors.length = 0; this.blendIndex.clear(); }
     }
 
     // ---- LEAF passes (real notes + real edges) — DEFAULT: always on (see showLodMasses above); ---
@@ -1219,36 +1354,45 @@ export class AsciiGraphRenderer implements GraphRenderer {
     return { L0, L1, w1: total > 1e-6 ? a1 / total : 0 };
   }
 
-  /** Rebuild the `BLEND_BASE`-offset per-frame palette: every (L0 slot, L1 slot) pair's RGB, lerped
-   *  by `w1` — RAMP.length² = 25 entries, cheap to redo in full every time it's called (only while a
-   *  crossfade is actually in progress; see the `colorW1` gate in rasterize()). */
-  private buildBlendPalette(w1: number) {
-    const n = RAMP.length;
-    if (this.blendColors.length !== n * n) this.blendColors = new Array(n * n).fill("");
-    for (let a = 0; a < n; a++) {
-      const ca = this.rampRGB[a] ?? [255, 255, 255];
-      for (let b = 0; b < n; b++) {
-        const cb = this.rampRGB[b] ?? [255, 255, 255];
-        const r = Math.round(ca[0] + (cb[0] - ca[0]) * w1);
-        const g = Math.round(ca[1] + (cb[1] - ca[1]) * w1);
-        const bl = Math.round(ca[2] + (cb[2] - ca[2]) * w1);
-        this.blendColors[a * n + b] = `rgb(${r},${g},${bl})`;
-      }
-    }
-  }
-
   /** The colorBuf value for one on-grid node this frame: a node with no hierarchy
    *  (`colorByLevel.length <= 1`) keeps its one fixed slot; settled (non-crossfading, `w1 ≈ 0`)
-   *  frames resolve the plain L0 slot too (an exact `this.colors` hex — see BLEND_BASE's comment
-   *  for why that matters); only an in-progress crossfade actually indexes into the blend palette. */
+   *  frames resolve the plain L0 slot too (an exact community hex — see BLEND_BASE's comment for why
+   *  that matters); only an in-progress crossfade actually asks blendColorSlot() for a blend. `a`/`b`
+   *  here are always `commColors`-range slots (`>= BLEND_BASE`) — `colorByLevel.length > 1` only
+   *  ever comes from the community branch of colorLevelsFor(). */
   private nodeColorSlotForFrame(nv: NodeView, clusterColorsOn: boolean, L0: number, L1: number, w1: number): number {
     const cbl = nv.colorByLevel;
     if (!clusterColorsOn || cbl.length <= 1) return nv.color;
     const a = cbl[Math.min(L0, cbl.length - 1)];
     if (w1 <= LOD_ALPHA_EPS) return a;
     const b = cbl[Math.min(L1, cbl.length - 1)];
-    if (a === b) return a; // same community both sides (or a hash collision) — nothing to blend
-    return BLEND_BASE + a * RAMP.length + b;
+    if (a === b) return a; // same community both sides — nothing to blend
+    return this.blendColorSlot(a, b, w1);
+  }
+
+  /** Lazily-memoized LEVEL-DRIVEN COLOR blend: the RGB lerp between two community colours (`a`, `b`
+   *  — both `commColors`-range colorBuf slots) at crossfade weight `w1`, cached per (a,b) pair for
+   *  the remainder of THIS crossfade (rasterize()'s `colorW1` gate clears the cache the moment a new
+   *  crossfade starts). Replaces the old RAMP.length²=25-entry full precompute: the community
+   *  colour space is no longer a small fixed 5, so this only ever materializes the (a,b) pairs a
+   *  frame actually asks for — bounded by distinct on-grid community transitions, not the full cross
+   *  product. `MAX_BLEND_SLOTS` is a hard ceiling so a pathological community count can't overrun
+   *  `colorBuf`'s Uint16 range; past it, callers get a hard cut (`a`, no blend) instead of an
+   *  out-of-range slot. */
+  private blendColorSlot(a: number, b: number, w1: number): number {
+    const key = a * BLEND_KEY_MUL + b;
+    const cached = this.blendIndex.get(key);
+    if (cached !== undefined) return COMM_BLEND_BASE + cached;
+    if (this.blendColors.length >= MAX_BLEND_SLOTS) return a;
+    const ca = this.commColorsRGB[a - BLEND_BASE] ?? [255, 255, 255];
+    const cb = this.commColorsRGB[b - BLEND_BASE] ?? [255, 255, 255];
+    const r = Math.round(ca[0] + (cb[0] - ca[0]) * w1);
+    const g = Math.round(ca[1] + (cb[1] - ca[1]) * w1);
+    const bl = Math.round(ca[2] + (cb[2] - ca[2]) * w1);
+    const idx = this.blendColors.length;
+    this.blendColors.push(`rgb(${r},${g},${bl})`);
+    this.blendIndex.set(key, idx);
+    return COMM_BLEND_BASE + idx;
   }
 
   /** Project one level's entities (2D only — the flat pipeline with rx = ry = 0, i.e. two
@@ -1433,9 +1577,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (this.lodOn && this.leafAlpha <= LOD_ALPHA_EPS) return;
 
     // Reused scratch array — layoutLabels runs every frame, so it must not allocate one per frame.
+    // Candidate gate is `inViewport` (the actual box + 40px), not merely `onGrid`'s exact cell
+    // bounds — the label budget must be spent on what the user can actually see this frame, not
+    // ranked by a global (possibly off-frame) criterion first (see clusterVisual.ts inViewport's
+    // doc: "otherwise ... zooming in used to surface no new names"). `projValid` is ASCII's
+    // equivalent of the source's own on-screen/depth-cull flag, ANDed in per that function's contract.
     const ordered = this.labelScratch;
     ordered.length = 0;
-    for (const nv of this.nodes) if (nv.onGrid) ordered.push(nv);
+    for (const nv of this.nodes) {
+      if (nv.projValid && inViewport(nv.sx, nv.sy, this.W, this.H, VIEWPORT_LABEL_PAD)) ordered.push(nv);
+    }
     const budget = fileLabelBudget(t, ordered.length);
 
     const forced = (nv: NodeView) => {
@@ -1468,8 +1619,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
         if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
       }
       const accent = nv.node.id === this.activeFile || nv.node.id === this.hoveredId || this.searchMatches.has(nv.node.id);
+      const colorSlot = accent ? C_ACCENT : is2d ? C_MUTED : nv.dr > 0.55 ? C_MUTED : C_FAINT;
       this.labels.push({
-        text, col, row, color: accent ? C_ACCENT : is2d ? C_MUTED : nv.dr > 0.55 ? C_MUTED : C_FAINT,
+        text, col, row, color: this.resolveFillColor(colorSlot),
         accent, alpha: force ? 1 : fAlpha, widthCells: len,
       });
       drawn++;
@@ -1477,37 +1629,52 @@ export class AsciiGraphRenderer implements GraphRenderer {
   }
 
   /** Cluster-name pass for ONE hierarchy `level` (0 = coarsest): one label per that level's
-   *  community, centred on the average grid cell of its currently-on-grid members (so it works in
-   *  2D and follows the 3D orbit alike), reserved first so file labels — and any OTHER level's
-   *  names drawn the same frame during a level-to-level crossfade — never draw over each other.
-   *  Larger communities (more on-grid members) claim contested cells first — same greedy-by-worth
-   *  idea as the file-label loop, just ranked by member count instead of renderedPx. Colour is the
-   *  level's own community ramp colour: at the FINEST level this is deliberately the exact same key
-   *  `colorSlot()` uses for the nodes themselves (so a cluster name matches the colour of the nodes
-   *  it names); coarser levels get a level-scoped key so a super-cluster's name doesn't just
-   *  coincidentally borrow one of its children's colours. */
+   *  community, ANCHORED ON ITS HUB (pickHubAnchor — clusterVisual.ts), not a member centroid — a
+   *  vault's communities are hub-and-spoke and sprawling, so a centroid routinely lands in empty
+   *  space (the failure this replaces; see clusterVisual.ts's module doc). The hub comes from
+   *  `clusterHubByLevel`, precomputed ONCE per structural rebuild over the WHOLE community (not
+   *  filtered to what's on screen) — the anchor never jumps as members pan in and out of frame.
+   *  Reserved first so file labels — and any OTHER level's names drawn the same frame during a
+   *  level-to-level crossfade — never draw over each other. Larger communities (more VISIBLE members
+   *  this frame) claim contested cells first — same greedy-by-worth idea as the file-label loop.
+   *
+   *  The name lifts above the hub's cell by `clusterLabelLift(clusterExtent(...))` — a constant
+   *  minimum plus the community's own on-screen reach, so a big mass's name clears the whole mass.
+   *  `clusterExtent` — UNLIKE the hub — takes only this frame's VIEWPORT-VISIBLE members: it measures
+   *  how far the label has to reach across what the user can actually see right now, which is a
+   *  different member set from the whole-graph one the hub uses on purpose (see clusterHubByLevel's
+   *  field doc and clusterVisual.ts pickHubAnchor's call-site contract — the two must NOT share one
+   *  materialized member array, or the anchor starts recomputing per frame and visibly drifts). */
   private layoutClusterNames(level: number, alpha: number) {
     const m = this.m;
     const names = this.communityNamesByLevel[level];
-    if (!names) return;
+    const hubs = this.clusterHubByLevel[level];
+    if (!names || !hubs) return;
     const agg = this.clusterAgg;
     agg.clear();
     for (const nv of this.nodes) {
-      if (!nv.onGrid) continue;
-      const c = nodePath(nv.node)?.[level];
-      if (c == null) continue;
-      let g = agg.get(c);
-      if (!g) { g = { colSum: 0, rowSum: 0, n: 0 }; agg.set(c, g); }
-      g.colSum += nv.col; g.rowSum += nv.row; g.n++;
+      if (!nv.projValid || !inViewport(nv.sx, nv.sy, this.W, this.H, VIEWPORT_LABEL_PAD)) continue;
+      const path = pathOf(nv.node);
+      if (!path) continue;
+      const c = path[Math.min(level, path.length - 1)];
+      let arr = agg.get(c);
+      if (!arr) { arr = []; agg.set(c, arr); }
+      arr.push(nv);
     }
     if (agg.size === 0) return;
 
-    const isFinest = level === this.levelCount - 1;
-    const items = [...agg.entries()].sort((a, b) => b[1].n - a[1].n || a[0] - b[0]);
-    for (const [community, g] of items) {
-      const row = Math.round(g.rowSum / g.n);
+    const items = [...agg.entries()].sort((a, b) => b[1].length - a[1].length || a[0] - b[0]);
+    for (const [community, members] of items) {
+      const hubId = hubs.get(community);
+      const hub = hubId != null ? this.byId.get(hubId) : undefined;
+      if (!hub || !hub.projValid) continue; // no valid whole-graph anchor on screen this frame
+      const col0 = Math.round((hub.sx - m.padX) / m.cellW);
+      const row0 = Math.round((hub.sy - m.padY) / m.cellH);
+      const extent = clusterExtent({ sx: hub.sx, sy: hub.sy }, members);
+      const liftRows = Math.round(clusterLabelLift(extent) / m.cellH);
+      const row = row0 - liftRows; // "up" = decreasing row, off the TOP of the hub's cell
       if (row < 0 || row >= m.rows) continue;
-      const text = clusterLabelText(names.get(community) ?? `cluster ${community}`);
+      const text = trimDanglingWord(clusterLabelText(names.get(community) ?? `cluster ${community}`));
       const len = text.length;
       // The tracked (ctx.letterSpacing) draw is wider on screen than `len` cells — reserve the REAL
       // drawn width (eyebrowWidthCells), not `len`, so a neighbouring label can never be painted
@@ -1515,7 +1682,6 @@ export class AsciiGraphRenderer implements GraphRenderer {
       // free-space check below share the exact same [col-1, col+wCells] bounds — that identity is
       // what makes overlap impossible, not just unlikely.
       const wCells = eyebrowWidthCells(len, CLUSTER_LABEL_TRACKING_EM, this.fontPx, this.cellW);
-      const col0 = Math.round(g.colSum / g.n);
       let col = col0 - Math.floor(wCells / 2); // centre by DRAWN width, not raw char count
       if (col < 0) col = 0;
       if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
@@ -1528,8 +1694,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       for (let c = col - 1; c <= col + wCells; c++) {
         if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
       }
-      const key = isFinest ? "community:" + community : `community:L${level}:${community}`;
-      const color = RAMP[hashKey(key) % RAMP.length];
+      const color = this.communityColorsByLevel[level]?.get(community) ?? "#888";
       this.labels.push({ text, col, row, color, accent: false, alpha, eyebrow: true, widthCells: wCells });
     }
   }
@@ -1564,17 +1729,21 @@ export class AsciiGraphRenderer implements GraphRenderer {
       for (let c = col - 1; c <= col + wCells; c++) {
         if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
       }
-      this.labels.push({ text, col, row, color: ev.color, accent: false, alpha, eyebrow: true, widthCells: wCells });
+      this.labels.push({
+        text, col, row, color: this.resolveFillColor(ev.color), accent: false, alpha, eyebrow: true, widthCells: wCells,
+      });
     }
   }
 
   // ---- painting ------------------------------------------------------------
 
-  /** `colorBuf`'s sentinel scheme: a plain slot (0..8) resolves through `this.colors`/
-   *  COLOR_FALLBACK as always; `BLEND_BASE` and above indexes the per-frame LEVEL-DRIVEN COLOR
-   *  blend palette (buildBlendPalette) instead. */
+  /** `colorBuf`'s sentinel scheme: a plain slot (0..9) resolves through `this.colors`/
+   *  COLOR_FALLBACK as always; `BLEND_BASE..<COMM_BLEND_BASE` indexes a resolved per-(level,
+   *  community) colour (`commColors`, buildColorSlots); `COMM_BLEND_BASE` and above indexes the
+   *  per-frame, lazily-memoized LEVEL-DRIVEN COLOR blend cache (blendColorSlot) instead. */
   private resolveFillColor(slot: number): string {
-    if (slot >= BLEND_BASE) return this.blendColors[slot - BLEND_BASE] ?? "#888";
+    if (slot >= COMM_BLEND_BASE) return this.blendColors[slot - COMM_BLEND_BASE] ?? "#888";
+    if (slot >= BLEND_BASE) return this.commColors[slot - BLEND_BASE] ?? "#888";
     return this.colors[slot] ?? COLOR_FALLBACK[slot] ?? "#888";
   }
 
@@ -1723,7 +1892,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const y = m.padY + l.row * m.cellH;
       ctx.fillStyle = this.groundColor;
       ctx.fillRect(x - m.cellW * 0.5, y, (l.text.length + 1) * m.cellW, m.cellH);
-      ctx.fillStyle = this.colors[l.color] ?? "#888";
+      ctx.fillStyle = l.color; // already a resolved CSS colour string — see LabelDraw's doc
       ctx.globalAlpha = (l.eyebrow ? 1 : l.accent ? 1 : 0.9) * l.alpha;
       if (this.letterSpacingSupported) ctxLS.letterSpacing = l.eyebrow ? eyebrowLS : this.pinnedLetterSpacing;
       ctx.fillText(l.text, x, y + m.cellH / 2);
@@ -2001,7 +2170,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       out.set(c, {
         label: members[0].node.communityLabel ?? `Cluster ${c}`,
         ids: members.map((mm) => mm.node.id),
-        color: this.colors[members[0].color] ?? COLOR_FALLBACK[members[0].color] ?? "#888",
+        color: this.resolveFillColor(members[0].color),
         centroid: centroid3(members.map((mm) => mm.p3)),
         count: members.length,
       });
