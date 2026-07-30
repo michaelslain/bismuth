@@ -88,6 +88,12 @@ export interface LevelPair {
  * Static: hubs are highest-degree members and communities don't move, so this is build-time work,
  * not per-frame. Cost is O(levelCount × edges).
  *
+ * Returns `truncated[L]`: the number of pairs DROPPED at level L by the `maxPairs` cap. Silent
+ * truncation is ambiguous with "exactly `maxPairs` pairs exist" — on the reference vault's level 4
+ * (1221 pairs against the shipped 700 cap) more than half the connected pairs vanish on every
+ * build with no signal anywhere. Callers that care about density loss (a stats/QA hook, say) can
+ * surface this; callers that don't can ignore it.
+ *
  * Ported from `CanvasGraphRenderer.ts`'s `buildLevelEdges` (lines 859-924).
  */
 export function buildLevelEdges(
@@ -95,7 +101,7 @@ export function buildLevelEdges(
   edges: PathEdge[],
   levelCount: number,
   maxPairs: number = MAX_LEVEL_PAIRS,
-): { levelHubs: Map<number, LevelHub>[]; levelPairs: LevelPair[][] } {
+): { levelHubs: Map<number, LevelHub>[]; levelPairs: LevelPair[][]; truncated: number[] } {
   const byId = new Map<string, PathNode>();
   for (const n of nodes) byId.set(n.id, n);
 
@@ -108,6 +114,7 @@ export function buildLevelEdges(
 
   const levelHubs: Map<number, LevelHub>[] = [];
   const levelPairs: LevelPair[][] = [];
+  const truncated: number[] = [];
 
   for (let L = 0; L < levelCount; L++) {
     // Hubs first — the anchors both the lines and (elsewhere) the cluster names use.
@@ -141,10 +148,11 @@ export function buildLevelEdges(
     // thousands of pairs, which would put the hairball straight back. The heaviest pairs are the
     // real structure; a 1-edge link between two 5-node groups is noise at that zoom.
     const list = [...pairs.values()].sort((x, y) => y.count - x.count);
+    truncated.push(Math.max(0, list.length - maxPairs));
     levelPairs.push(list.slice(0, maxPairs));
   }
 
-  return { levelHubs, levelPairs };
+  return { levelHubs, levelPairs, truncated };
 }
 
 /** Ported from `CanvasGraphRenderer.ts`'s `CANVAS_REVEAL_T` — the boundary its (pre-merge)
@@ -163,6 +171,20 @@ export const DEFAULT_LEVEL_REVEAL_T = 0.62;
  * visible exactly when level L is the grouping being shown, crossfading into level L+1's. The
  * real node-to-node edges ride `fileLabelAlpha` — they arrive with the file names, when
  * individual notes are what is on screen.
+ *
+ * THAT "SAME FRAME" CLAIM ONLY HOLDS IF THE CALLER PASSES THE SAME `revealT` EVERYWHERE. It was
+ * automatically true in Canvas, because node colour, cluster names AND group edges all read the
+ * one instance constant `CANVAS_REVEAL_T`. It is NOT automatically true here: this function's own
+ * default, `DEFAULT_LEVEL_REVEAL_T` (0.62), is that same Canvas constant, ported verbatim for
+ * fidelity to the source being ported — but ASCII's node colour and cluster names key off
+ * `labelSelection.ts`'s `FILE_LABEL_REVEAL_T` (0.75), not this one. Left at its default, a 4-level
+ * graph's group edges rewire from their coarsest to their next-finer grouping at t≈0.465, while
+ * node colour and cluster names don't do the same handover until t≈0.5625 — about one wheel notch
+ * apart, contradicting the very comment above. Task 12 MUST call this with `revealT:
+ * FILE_LABEL_REVEAL_T` when wiring into ASCII (see the "three-band handover" wiring recipe below)
+ * for the "same frame" claim to actually hold; the ported default is kept only because a faithful
+ * port should default to its source's own value, not because it's the right value to ship with.
+ * Both the default and `FILE_LABEL_REVEAL_T` are exercised in `backbone.test.ts`.
  *
  * Ported from `CanvasGraphRenderer.ts`'s `computeEdgeLevelWeights` (lines 898-925).
  */
@@ -218,11 +240,40 @@ export function edgeWeightBucketRange(
 //   mid  (t mid)  — individual glyphs, hub-to-hub backbone (this file's buildLevelEdges owns this)
 //   near (t high) — individual glyphs, real member edges (the plain edge list owns this)
 //
-// `bandsForT` is the OUTER gate deciding how much of the field each band gets at a given `t` — it
+// `bandsForT` is the OUTER gate deciding how much of the field each band gets at a given `t`. It
 // says nothing about which hierarchy LEVEL within the mass or backbone band is active; that is
-// still `clusterLevelAlphas`'s job (lod.ts's `lodMix`, and `computeEdgeLevelWeights` above),
-// unchanged. A caller wiring this in multiplies: e.g. a level's backbone lines draw at
-// `computeEdgeLevelWeights(...)[L] × bandsForT(t, levelCount).backboneAlpha`.
+// still `clusterLevelAlphas`'s job (lod.ts's `lodMix`, and `computeEdgeLevelWeights` above).
+//
+// WIRING RECIPE FOR TASK 12 — this file only supplies the pure numbers; NONE of the below is
+// wired into `lod.ts`/`AsciiGraphRenderer.ts` yet, and that wiring is not optional polish:
+//
+// MARKS column (masses vs individual glyphs — this is the part a recipe naming only the edges
+// would silently miss):
+//   `lod.ts`'s `lodMix()` currently computes its mass weight (`cA`) as `1 - fileLabelAlpha(t)`,
+//   and `AsciiGraphRenderer.ts:1433` hard-gates the ENTIRE leaf/glyph raster pass on that SAME
+//   `fileLabelAlpha(t)` value (stored as `leafAlpha`): `if (this.lodOn && this.leafAlpha <=
+//   LOD_ALPHA_EPS) return;`. That gate knows only "masses" vs "leaves (glyphs + real edges,
+//   bundled)" — it has no concept of a mid band. Concretely, at t=0.6 (inside the mid band:
+//   `bandsForT(0.6, N)` ≈ `{massAlpha:0, backboneAlpha:1, memberAlpha:0}` for any reasonable N),
+//   `fileLabelAlpha(0.6)` is STILL 0 (`FILE_LABEL_REVEAL_T` is 0.75), so the leaf pass stays
+//   skipped and NO glyphs rasterize — the mid band would show backbone lines drawn over
+//   full-strength territory masses, which is neither of the two pictures the band is meant to
+//   show. Task 12 MUST re-key BOTH of these to `massAlpha`, not merely multiply the edge draws:
+//     - `lodMix`'s `cA` (mass weight, and the multiplier on its per-level `clusterLevelAlphas`
+//       split) → `bandsForT(t, levelCount).massAlpha`, replacing `1 - fileLabelAlpha(t)`.
+//     - the leaf-pass gate's `leafAlpha` → `1 - bandsForT(t, levelCount).massAlpha` (equivalently
+//       `backboneAlpha + memberAlpha`) — glyphs rasterize whenever the field is NOT purely in the
+//       mass band, i.e. across BOTH the mid and near bands, not only the near one.
+//   `lodMix`'s per-level `clusterLevelAlphas` split (WHICH level's masses/names show while masses
+//   own the field) needs no change — only the overall on/off weight it's multiplied by does.
+//
+// EDGES column (which edges draw, once glyphs are rasterizing — mid vs near):
+//   a level L's backbone line draws at `computeEdgeLevelWeights(t, levelCount, revealT)[L] ×
+//   bandsForT(t, levelCount).backboneAlpha`; real member edges draw at
+//   `bandsForT(t, levelCount).memberAlpha`. `computeEdgeLevelWeights`'s OWN internal real-edge
+//   weight (its `[levelCount]` entry) is superseded by `memberAlpha` here, and its `revealT` must
+//   be passed explicitly as `FILE_LABEL_REVEAL_T` — see that function's doc comment for why its
+//   ported default cannot be trusted unchanged.
 // ---------------------------------------------------------------------------------------------
 
 export interface Bands {
@@ -244,13 +295,46 @@ export const BACKBONE_START_T = 0.32;
  *  plateau afterward where the mid band owns the field outright (see `MEMBER_START_T`), rather
  *  than the mid band being nothing but two crossfades back to back. */
 export const BACKBONE_FADE_SPAN = 0.14;
-/** `t` at which the backbone→member handover centres. Symmetric placement to `BACKBONE_START_T`
- *  around the ladder's midpoint (0.32 and 0.68 sit equally far from 0.5) so the mid band's plateau
- *  (`[0.46, 0.68)`) is centred in the ladder's own middle third, not lopsided toward one side. */
+/** `t` at which the backbone→member handover centres. The LOAD-BEARING property (not merely
+ *  aesthetic): `bandsForT(FILE_LABEL_REVEAL_T, …).memberAlpha === 0.5` EXACTLY —
+ *  `fileLabelAlpha(0.75, 0.68, 0.14)`'s smoothstep input `u = (0.75-0.68)/0.14 = 0.5`, and
+ *  `smoothstep(0.5) = 0.5`. Real member edges therefore cross half-strength at PRECISELY
+ *  `FILE_LABEL_REVEAL_T` (0.75, `labelSelection.ts`) — the same t where `fileLabelAlpha`/
+ *  `clusterLabelAlpha` themselves cross the file-name/cluster-name midpoint. That match is what
+ *  makes `computeEdgeLevelWeights`'s "same frame" claim true in practice once Task 12 passes it
+ *  `FILE_LABEL_REVEAL_T` (see that function's doc comment). It ALSO happens to sit symmetrically
+ *  opposite `BACKBONE_START_T` around the ladder's midpoint (0.32 and 0.68 both 0.18 from 0.5) —
+ *  that symmetry is a property of these particular numbers, not the reason 0.68 was chosen; the
+ *  half-strength alignment above is. Nothing in code enforces this alignment with
+ *  `FILE_LABEL_REVEAL_T` — it has already moved once (0.6 → 0.75, see that constant's own history
+ *  in `labelSelection.ts`), and a future move will silently break it here unless
+ *  `backbone.test.ts`'s regression test for this exact identity is updated alongside it. */
 export const MEMBER_START_T = 0.68;
 /** Width of the backbone→member crossfade. Same width as `BACKBONE_FADE_SPAN` for a symmetric
  *  ladder — no principled reason for the two crossfades to differ in speed. */
 export const MEMBER_FADE_SPAN = 0.14;
+
+/** Absolute floor on the mid band's plateau width — `MEMBER_START_T - (BACKBONE_START_T +
+ *  BACKBONE_FADE_SPAN)`, the stretch of t where `backboneAlpha` is genuinely ≈1, not merely
+ *  touching 1 at one instant between two crossfades. Every relative assertion in
+ *  `backbone.test.ts` (e.g. "peaks in its own third") is expressed AGAINST whatever these four
+ *  constants happen to be, so a plausible future retune — "let masses last longer, bring real
+ *  edges in sooner" — could shrink this gap to ~0 and leave every one of those assertions green:
+ *  the backbone would become two back-to-back crossfade shoulders with no genuine plateau, i.e.
+ *  no mid band at all in practice, and nothing relative would notice. This is the one ABSOLUTE
+ *  check, enforced at IMPORT TIME (not only in a test) so a hand-edit of the four constants above
+ *  fails immediately and loudly instead of silently shipping a knife-edge backbone. 0.15 is itself
+ *  a judgement call, not a measurement — comfortably bigger than the 0.14 crossfade spans on
+ *  either side of it, so the plateau reads as its own thing rather than a rounding artifact of the
+ *  two fades meeting in the middle. */
+export const MIN_BACKBONE_PLATEAU_T = 0.15;
+if (MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN) <= MIN_BACKBONE_PLATEAU_T) {
+  throw new Error(
+    "backbone.ts: the mid band's plateau (MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN) = " +
+    `${(MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN)).toFixed(3)}) must exceed ` +
+    `MIN_BACKBONE_PLATEAU_T (${MIN_BACKBONE_PLATEAU_T}) — see MERGE-NOTES.md §5.4 and this constant's doc comment.`,
+  );
+}
 
 /**
  * The three-band alpha mix at zoom progress `t` (0 = fit, 1 = deepest — the same progress

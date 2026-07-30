@@ -8,9 +8,11 @@ import { describe, expect, it } from "bun:test";
 import {
   BACKBONE_FADE_SPAN,
   BACKBONE_START_T,
+  DEFAULT_LEVEL_REVEAL_T,
   MAX_LEVEL_PAIRS,
   MEMBER_FADE_SPAN,
   MEMBER_START_T,
+  MIN_BACKBONE_PLATEAU_T,
   bandsForT,
   buildLevelEdges,
   computeEdgeLevelWeights,
@@ -19,6 +21,7 @@ import {
   type PathEdge,
   type PathNode,
 } from "./backbone";
+import { FILE_LABEL_REVEAL_T, clusterLevelAlphas } from "./labelSelection";
 
 // ---------------------------------------------------------------------------------------------
 // crossLevelOf
@@ -137,9 +140,33 @@ describe("buildLevelEdges", () => {
   });
 
   it("returns empty structures for levelCount 0", () => {
-    const { levelHubs, levelPairs } = buildLevelEdges(fixtureNodes(), fixtureEdges, 0);
+    const { levelHubs, levelPairs, truncated } = buildLevelEdges(fixtureNodes(), fixtureEdges, 0);
     expect(levelHubs).toEqual([]);
     expect(levelPairs).toEqual([]);
+    expect(truncated).toEqual([]);
+  });
+
+  it("reports how many pairs were dropped by the cap at each level", () => {
+    const { truncated } = buildLevelEdges(fixtureNodes(), fixtureEdges, 2, /* maxPairs */ 2);
+    // Level 0 has 1 pair total (no truncation); level 1 has 3 pairs against a cap of 2 -> 1 dropped.
+    expect(truncated).toEqual([0, 1]);
+  });
+
+  it("clamps to a node's LAST path entry when a level goes deeper than its own path — matches crossLevelOf's own clamp, and is exercised here rather than left as a same-length-fixture no-op", () => {
+    const nodes: PathNode[] = [
+      { id: "short", path: [7], deg: 1 },  // only defines level 0; level 1 must clamp back to it
+      { id: "deepA", path: [7, 2], deg: 5 },
+      { id: "deepB", path: [7, 3], deg: 5 },
+    ];
+    const edges: PathEdge[] = [{ a: "short", b: "deepA" }]; // crossLevel 1 (agree at 0, "short" has nothing deeper)
+    const { levelHubs, levelPairs } = buildLevelEdges(nodes, edges, 2);
+    // Level 1: "short" is clamped to its only path entry (community 7), not read as `undefined` —
+    // it becomes its own singleton community's hub at level 1, same as at level 0.
+    expect(levelHubs[1].get(7)).toEqual({ id: "short", deg: 1 });
+    // ...and the short<->deepA edge (crossLevel 1, so it qualifies at L=1) pairs community 2
+    // (deepA's) with community 7 (short's, via the clamp) — not some clamp-free garbage key. `lo`
+    // is 2 (deepA's community), so its hub (deepA) sorts into slot `a`.
+    expect(levelPairs[1]).toEqual([{ a: { id: "deepA", deg: 5 }, b: { id: "short", deg: 1 }, count: 1 }]);
   });
 });
 
@@ -173,6 +200,47 @@ describe("computeEdgeLevelWeights", () => {
     const w = computeEdgeLevelWeights(revealT + 0.2, 3, revealT); // well past FILE_LABEL_FADE_SPAN (0.15)
     expect(w[2]).toBeCloseTo(0, 10); // handed off, NOT left at 1 alongside real edges
     expect(w[3]).toBeCloseTo(1, 10);
+  });
+
+  // The ported default (DEFAULT_LEVEL_REVEAL_T, Canvas's own CANVAS_REVEAL_T) is NOT what ASCII's
+  // node colour and cluster names key off (FILE_LABEL_REVEAL_T, labelSelection.ts) — Task 12 must
+  // override it. Both values need real coverage, not just the ported default, or the 0.75
+  // parameterisation Task 12 actually needs would ship untested.
+  it("behaves the same shape at FILE_LABEL_REVEAL_T (0.75) as it does at the ported Canvas default (0.62)", () => {
+    expect(DEFAULT_LEVEL_REVEAL_T).not.toBe(FILE_LABEL_REVEAL_T); // the two values genuinely differ
+    const w = computeEdgeLevelWeights(FILE_LABEL_REVEAL_T, 3, FILE_LABEL_REVEAL_T);
+    expect(w[0]).toBeCloseTo(0, 10);
+    expect(w[1]).toBeCloseTo(0, 10);
+    expect(w[2]).toBeCloseTo(1, 10);
+    expect(w[3]).toBeCloseTo(0, 10);
+    const wPast = computeEdgeLevelWeights(FILE_LABEL_REVEAL_T + 0.2, 3, FILE_LABEL_REVEAL_T);
+    expect(wPast[2]).toBeCloseTo(0, 10);
+    expect(wPast[3]).toBeCloseTo(1, 10);
+  });
+
+  it("crosses level boundaries on the SAME FRAME as clusterLevelAlphas only because the same revealT is passed to both — the comment's claim is conditional, not automatic", () => {
+    const levelCount = 4;
+    for (const t of [0.1, 0.3, 0.5]) {
+      const w = computeEdgeLevelWeights(t, levelCount, FILE_LABEL_REVEAL_T);
+      const levelAlphas = clusterLevelAlphas(t, levelCount, FILE_LABEL_REVEAL_T);
+      // Level (levelCount-1) is excluded: computeEdgeLevelWeights discounts it by (1 - memberWeight)
+      // to avoid double-drawing against the real edges, so it legitimately diverges from the raw
+      // clusterLevelAlphas value near the reveal point — that discount is the "no double-draw" test
+      // above, not a same-frame violation.
+      for (let L = 0; L < levelCount - 1; L++) expect(w[L]).toBeCloseTo(levelAlphas[L], 10);
+    }
+    // At the PORTED DEFAULT (mismatched with FILE_LABEL_REVEAL_T), the same comparison genuinely
+    // fails mid-ladder — demonstrating the "same frame" claim is conditional on revealT alignment,
+    // not a property of the function alone. At t=0.5 with 4 levels, DEFAULT_LEVEL_REVEAL_T (0.62)
+    // has already collapsed level 2's weight to 0 (t is past that level's own boundary), while
+    // FILE_LABEL_REVEAL_T (0.75) — what node colour/cluster names actually read — still has level 2
+    // near full strength: node colour would show one grouping while group edges show another.
+    const t = 0.5;
+    const wDefault = computeEdgeLevelWeights(t, 4); // DEFAULT_LEVEL_REVEAL_T
+    const levelAlphasAtFileReveal = clusterLevelAlphas(t, 4, FILE_LABEL_REVEAL_T);
+    expect(wDefault[2]).toBeCloseTo(0, 10);
+    expect(levelAlphasAtFileReveal[2]).toBeGreaterThan(0.5);
+    expect(Math.abs(wDefault[2] - levelAlphasAtFileReveal[2])).toBeGreaterThan(0.01);
   });
 });
 
@@ -292,5 +360,27 @@ describe("bandsForT", () => {
   it("is independent of levelCount's exact value once it is >= 1 (only the levelCount<=0 case is special)", () => {
     // The band boundaries are t-only; levelCount just gates the degenerate "no hierarchy" case.
     expect(bandsForT(0.5, 1)).toEqual(bandsForT(0.5, 5));
+  });
+
+  // Every OTHER assertion above is relative to BACKBONE_START_T/BACKBONE_FADE_SPAN/MEMBER_START_T/
+  // MEMBER_FADE_SPAN, so a retune that shrinks the mid band's plateau to ~0 (masses lasting longer,
+  // real edges arriving sooner is a plausible-sounding tweak) would leave all of them green — the
+  // backbone would become two back-to-back crossfade shoulders with no genuine plateau, i.e. no mid
+  // band in practice. This is the one ABSOLUTE check. The module also enforces this at IMPORT TIME
+  // (see MIN_BACKBONE_PLATEAU_T's doc comment in backbone.ts) — this test additionally documents the
+  // intent and would already have failed to even import if the shipped constants violated it.
+  it("the mid band's plateau clears the absolute floor — a knife-edge backbone with no plateau must be impossible to ship silently", () => {
+    const plateau = MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN);
+    expect(plateau).toBeGreaterThan(MIN_BACKBONE_PLATEAU_T);
+  });
+
+  // MEMBER_START_T's doc comment records the REAL reason it's 0.68, not the "symmetric around the
+  // midpoint" framing alone: memberAlpha crosses exactly half strength at FILE_LABEL_REVEAL_T, the
+  // same t where fileLabelAlpha/clusterLabelAlpha themselves cross their own midpoint. Nothing in
+  // code enforces this — it's a numeric coincidence of the current constants — so this test is the
+  // thing that would actually notice if a future retune (of either FILE_LABEL_REVEAL_T or
+  // MEMBER_START_T/MEMBER_FADE_SPAN) broke the alignment.
+  it("memberAlpha crosses exactly half strength at FILE_LABEL_REVEAL_T — the real reason MEMBER_START_T is 0.68", () => {
+    expect(bandsForT(FILE_LABEL_REVEAL_T, 4).memberAlpha).toBeCloseTo(0.5, 10);
   });
 });
