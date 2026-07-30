@@ -19,18 +19,23 @@
 .source { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* textarea + line-number gutter, sharing the same mono metrics so rows line up. */
 .sourceEditor { flex: 1; min-height: 0; display: flex; overflow: hidden; background: var(--bg); }
+/* SIZE RULE for query/base views: BODY text tracks the NOTE prose size (--editor-font-size), because a
+   ```query block is rendered inside a note and has to read as part of it — a fixed literal here meant a
+   query's rows sat at a different size from the prose above them the moment the note size changed.
+   Titles derive from the same var with a small step up. META text (authors, group headers, counts) stays
+   on the --fs-micro/--fs-ui chrome tokens: it is scanned, not read. */
 .sourceGutter {
   flex: none; overflow: hidden; box-sizing: border-box;
   padding: 12px 8px 12px 12px; text-align: right; user-select: none;
   color: color-mix(in srgb, var(--fg) 35%, transparent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5;
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--editor-font-size, 13.5px); line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
 .sourceArea {
   flex: 1; min-height: 0; width: 100%; box-sizing: border-box; resize: none;
   padding: 12px 16px 12px 6px; border: none; outline: none;
   background: var(--bg); color: var(--fg);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5;
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--editor-font-size, 13.5px); line-height: 1.5;
 }
 .sourceBar { display: flex; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--border); }
 
@@ -224,11 +229,11 @@
   background: repeating-linear-gradient(90deg, transparent 0 6px, color-mix(in srgb, var(--fg) 2%, transparent) 6px 7px);
   pointer-events: none;
 }
-.coverTitle { position: relative; z-index: 1; font-family: var(--editor-font); font-size: 14px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.coverTitle { position: relative; z-index: 1; font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 0.5px); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .coverAuthor { position: relative; z-index: 1; font-size: 11px; color: var(--text-muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .cardBodyInner { padding: 13px 14px; display: flex; flex-direction: column; gap: 6px; }
-.cardTitle { font-family: var(--editor-font); font-size: 15px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow-wrap: anywhere; }
+.cardTitle { font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 1.5px); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow-wrap: anywhere; }
 /* Faint serif-adjacent author line under the title (Kanban; Cards shows it on the cover). */
 .cardAuthor { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The single meta row: status word on the left, stars / page count on the right. */
@@ -267,7 +272,7 @@
 /* The note body rendered as real markdown (renderNoteBody). Task lists are tightened
    into a label-free Keep-style checklist; the checkbox stays inline so a task's text
    (with its links and trailing signifiers) wraps naturally instead of column-splitting. */
-.cardMd { font-family: var(--editor-font); font-size: 14px; line-height: 1.55; color: var(--fg); margin-top: 6px; overflow-wrap: anywhere; }
+.cardMd { font-family: var(--editor-font); font-size: var(--editor-font-size, 13.5px); line-height: 1.55; color: var(--fg); margin-top: 6px; overflow-wrap: anywhere; }
 /* Lists: plain bullet/ordered lists get markers + a hanging indent like a note; GFM task
    lists (ul.contains-task-list) stay flush + label-free (the checkbox is the marker). */
 .cardMd :global(ul), .cardMd :global(ol) { margin: 4px 0; padding-left: 1.5em; }
@@ -412,7 +417,7 @@
 /* ---------- bullets view (plain markdown-style list, no table chrome) ---------- */
 /* Reads like the note's own `- item` prose: group key as a small serif heading, then a
    real <ul> of clickable links. No column header, no row borders, no per-row icons. */
-.bullets { padding: 6px 6px 14px; font-family: var(--editor-font); font-size: 15px; color: var(--fg); }
+.bullets { padding: 6px 6px 14px; font-family: var(--editor-font); font-size: var(--editor-font-size, 13.5px); color: var(--fg); }
 .bulletGroupHead { font-weight: 600; font-size: 1.05em; color: var(--fg); letter-spacing: -0.01em; margin: 14px 0 5px; }
 .bulletGroup:first-child .bulletGroupHead { margin-top: 2px; }
 .bulletList { margin: 0; padding-left: 1.5em; list-style: disc; }

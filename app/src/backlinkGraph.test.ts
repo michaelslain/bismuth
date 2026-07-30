@@ -45,7 +45,7 @@ describe("deriveBacklinks", () => {
     expect(deriveBacklinks(g, "b")).toEqual([]);
   });
 
-  it("ignores non-link/tag edge kinds (e.g. about/message/open)", () => {
+  it("ignores non-link edge kinds (e.g. tag/about/message/open)", () => {
     const g: GraphData = {
       nodes: [note("a"), note("b")],
       edges: [{ from: "a", to: "b", kind: "about" }],

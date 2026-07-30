@@ -65,13 +65,13 @@ export const SETTINGS_SCHEMA: Schema = {
       default: "Monaspace Xenon",
       doc: "UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus.",
     },
-    editorFontSize: { type: "number", default: 11.5, min: 11, max: 28, doc: "Editor font size (px). Unified with the sidebar tree's --fs-ui workhorse size (11.5px) — notes, tabs, and tree share one rhythm." },
+    editorFontSize: { type: "number", default: 13.5, min: 11, max: 28, doc: "Note prose font size (px). 13.5 is the design system's own prose size (--fs-body-lg, ui.css) — prose is the one thing that is NOT at the 11.5px --fs-ui chrome size, because chrome is scanned and prose is read. The 18px row unit (--row-h) is unchanged, so a line of prose still lands on the same grid as a tree row or a tab." },
     sidebarWidth: { type: "number", default: 266, min: 200, max: 600, doc: "Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css)." },
     sidebarGraphHeight: { type: "number", default: 305, min: 200, max: 500, doc: "Height of the mini graph panel in the sidebar (px)." },
     uiFontSize: { type: "number", default: 11.5, min: 11, max: 16, doc: "Base UI font size — sidebar, tabs, menus (px) (the ASCII design's --fs-ui workhorse size)." },
     monoScale: { type: "number", default: 1, min: 0.6, max: 1, doc: "Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; 1 = no correction." },
     tabFontSize: { type: "number", default: 11.5, min: 11, max: 14, doc: "Editor tab label font size (px)." },
-    sidebarIconFontSize: { type: "number", default: 11.5, min: 11, max: 20, doc: "Sidebar header icon button size (px). Unified with the sidebar tree's --fs-ui workhorse size (11.5px)." },
+    sidebarIconFontSize: { type: "number", default: 12, min: 11, max: 20, doc: "Sidebar header icon button size (px). 12, not the 11.5px --fs-ui text size: the pixel icons are drawn on a 24x24 grid (app/src/icons/pixelPaths.ts), so 12 is an exact half-scale and every stem lands on whole device pixels — 11.5 samples unevenly and thickens some strokes. Matches the tab toolbars, which use the same 12px default (ICON_PX)." },
     paletteInputFontSize: { type: "number", default: 15, min: 13, max: 18, doc: "Command palette search-input font size (px)." },
   }),
   graph: object({
@@ -94,6 +94,11 @@ export const SETTINGS_SCHEMA: Schema = {
     mapDefaultZoom: { type: "number", default: 2, min: 1, max: 18, doc: "Default zoom for the Bases map view when it can't fit markers." },
     refreshDebounceMs: { type: "number", default: 300, min: 100, max: 1000, doc: "Delay before rebuilding the graph after an edit burst (ms)." },
     backgroundNoise: { type: "boolean", default: false, doc: "The faint ASCII noise texture under the graph field. Off by default." },
+    renderer: {
+      type: enumType(["ascii", "standard"]),
+      default: "ascii",
+      doc: "Which look draws the knowledge graph. 'ascii' is the character field: clusters render as aggregate ASCII masses joined by summarized links, zoom is resolution rather than scale, and the hierarchy reads through zoom-driven colour and a cluster-name ladder. 'standard' is the conventional graph: filled dots sized by degree, vector edges, orbitable 3D and the atmosphere glow. Both draw the same backend layout.",
+    },
   }),
   editor: object({
     defaultMode: {
@@ -179,7 +184,6 @@ export const SETTINGS_SCHEMA: Schema = {
     // Vertical tab rail: hide the horizontal top strip and show the open tabs as a narrow
     // icon rail on the RIGHT edge of the app, which expands to reveal full names on hover.
     // Off = the classic horizontal tab bar. Toggled via the `.has-rail` layout class in App.tsx.
-    verticalTabs: { type: "boolean", default: false, doc: "Show tabs as a vertical rail on the right edge of the app instead of the classic horizontal strip. Collapsed the rail shows just each tab's icon; hovering it expands to reveal the full tab names." },
     paletteTopOffset: { type: "string", default: "12vh", doc: "How far down the screen the command palette appears (CSS length, e.g. 12vh)." },
     paneDividerWidth: { type: "number", default: 5, min: 3, max: 12, doc: "Thickness of the draggable divider between split panes (px)." },
     cardGridMinWidth: { type: "number", default: 220, min: 150, max: 360, doc: "Minimum card width in the Bases cards view (px)." },

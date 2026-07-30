@@ -11,7 +11,11 @@ function withTheme(theme: string) {
 describe("settingsToCssVars", () => {
   it("maps non-color appearance settings to CSS custom properties with units", () => {
     const vars = settingsToCssVars(DEFAULTS);
-    expect(vars["--editor-font-size"]).toBe("11.5px");
+    // Derived from DEFAULTS, not a literal: what this asserts is that the mapping appends the UNIT.
+    // Pinning "11.5px" made a legitimate change to the default prose size (11.5 -> 13.5, the design's
+    // own --fs-body-lg) look like a regression here.
+    expect(vars["--editor-font-size"]).toBe(`${DEFAULTS.appearance.editorFontSize}px`);
+    expect(vars["--editor-font-size"]).toMatch(/^\d+(\.\d+)?px$/);
     expect(vars["--editor-font"]).toBe("'Monaspace Xenon', ui-monospace, monospace"); // resolved through FONT_STACKS
     expect(vars["--ui-font-stack"]).toBe("'Monaspace Xenon', ui-monospace, monospace"); // resolved through FONT_STACKS
   });

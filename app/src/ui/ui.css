@@ -118,8 +118,12 @@
 /* unselected — toggle member, off: structure-dim, no outline emphasis */
 .btn--text.btn--unselected { color: var(--faint); }
 .btn--text.btn--unselected:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
-/* selected — toggle member, on: accent text on an accent-soft fill */
-.btn--text.btn--selected { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+/* selected — toggle member, on: accent text + accent OUTLINE, and NO fill. The fill used to be
+   --accent-soft, which reads as a lighter patch sitting on whatever is behind the toggle (most
+   visibly in the sidebar, where the graph's mode/2D-3D toggles sit straight on the panel) — the
+   selected segment looked like a different surface rather than the same surface, selected. The
+   accent border + accent ink already carry "on" unambiguously. */
+.btn--text.btn--selected { color: var(--accent); background: transparent; border-color: var(--accent); }
 /* primary — selected + a glow rim. Max one per view. */
 .btn--text.btn--primary { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); box-shadow: var(--glow-accent); }
 /* danger tone — destructive actions */
@@ -142,7 +146,9 @@
 .btn--icon.btn--unselected { opacity: 0.5; }
 .btn--icon.btn--unselected:hover:not(:disabled) { opacity: 1; background: var(--hover-bg); }
 /* selected — toggle member, on: accent icon on an accent-soft fill */
-.btn--icon.btn--selected { opacity: 1; background: var(--accent-soft); color: var(--accent); }
+/* Icon toggles get the same treatment — no fill, so a selected icon button doesn't read as a
+   lighter tile against its container. */
+.btn--icon.btn--selected { opacity: 1; background: transparent; color: var(--accent); }
 /* danger tone */
 .btn--icon.btn--danger { color: var(--danger); }
 

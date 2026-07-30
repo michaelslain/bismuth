@@ -1277,7 +1277,7 @@ export const livePreview = [
     // inside the block there are no margins, so the container stays one continuous piece.
     ".cm-block-top": {
       "font-family": MONO_FONT,
-      "font-size": "var(--fs-ui)",
+      "font-size": "var(--editor-font-size)",
       background: "var(--surface-1)",
       padding: "0.15em 0.5em",
       margin: "2px 0 0",
@@ -1288,7 +1288,7 @@ export const livePreview = [
     // adjacent-block separation.
     ".cm-block-bottom": {
       "font-family": MONO_FONT,
-      "font-size": "var(--fs-ui)",
+      "font-size": "var(--editor-font-size)",
       background: "var(--surface-1)",
       padding: "0.15em 0.5em",
       margin: "0 0 2px",
@@ -1328,13 +1328,16 @@ export const livePreview = [
       transition: "color 120ms, opacity 120ms",
     },
     ".cm-code-copy:hover": { color: "var(--accent)", opacity: "1" },
-    // Frontmatter: monospace property rows at the chrome size (--fs-ui, the "workhorse" register
-    // per the type scale); the container chrome (flat surface + accent left edge) comes from
-    // `.cm-block-mid` (always co-applied), matching the fenced code blocks above so the whole
-    // panel reads as one homogeneous .asc-frontmatter card.
+    // Frontmatter: monospace property rows at the NOTE PROSE size (--editor-font-size), not the
+    // --fs-ui chrome size it used to sit at. The type scale's argument for the chrome size was that
+    // frontmatter is metadata rather than prose — true in the abstract, and wrong in practice: plenty of
+    // notes are mostly frontmatter (a book note is a dozen property rows and one query), so "metadata"
+    // was in fact most of the document, and it read a size smaller than the query results under it. One
+    // note, one text size. The container chrome (flat surface + accent left edge) still comes from
+    // `.cm-block-mid` (always co-applied).
     ".cm-frontmatter": {
       "font-family": MONO_FONT,
-      "font-size": "var(--fs-ui)",
+      "font-size": "var(--editor-font-size)",
     },
     // Property KEYS (date / tags / icon …): --text-muted, NOT a theme-accent color, so the
     // frontmatter panel stays theme-agnostic. The `> span` is load-bearing (mirrors

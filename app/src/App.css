@@ -240,13 +240,19 @@ body { background: var(--bg); color: var(--fg); }
 /* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
    resting color rising to --fg on hover — not full-strength white at rest. Shared by
    the sidebar toolbar, the tab-strip actions, and the empty-pane new-terminal icon. */
-.sidebar-icons .btn--icon, .tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty .btn--icon { width: 28px; height: 28px; padding: 0; border-radius: 7px; color: var(--text-muted); opacity: 1; }
+/* Box sized FOR the 12px glyph (IconButton's ICON_PX), not left at the 28px it was when the art was
+   16px. A 12px icon in a 28px box left 8px of dead space on every side and a 3px gap between boxes, so
+   the icons read as sparse and unevenly spaced — the glyphs were 12px apart visually but 31px apart on
+   centres. 20px box + 3px gap puts ~11px of air between glyphs, roughly one glyph width, which is what
+   makes a row of icons read as a group. Radius drops 7 -> --r-control (3px): 7px on a 20px box is nearly
+   a pill, and nothing in this design system is pill-round (ui.css :root). */
+.sidebar-icons .btn--icon, .tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty .btn--icon, .graph-mode-icons .btn--icon { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
 /* The sidebar toolbar's icon buttons read the settings-driven size (appearance.sidebarIconFontSize,
    unified with the sidebar tree's --fs-ui rhythm) instead of the generic .btn--icon 14px literal
    (ui.css) — the icon glyph itself already scales via IconButton's iconSize prop (App.tsx); this
    also brings the BUTTON element's own font-size in line so nothing inside it silently reverts. */
 .sidebar-icons .btn--icon { font-size: var(--sidebar-icon-font-size); }
-.sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .empty .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+.sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .empty .btn--icon:hover:not(:disabled), .graph-mode-icons .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 .sidebar-logo { width: 18px; height: 18px; flex-shrink: 0; margin-right: 4px; display: block; }
 .sidebar canvas { display: block; }
 /* File-tree row icons (typed glyphs, icons/Icon.tsx). Inherit currentColor; never shrink in
@@ -861,7 +867,13 @@ html.view-dragging .graph-floater { pointer-events: none; }
 /* .graph-glow + .graph-vignette live in graph/graphAtmosphere.css — used only by the first-run
    Vault Intro (app/src/intro/VaultIntro.tsx); the shipped ASCII graph draws a FLAT --graph-bg field
    with no glow or vignette. */
-.graph-viewbar { gap: 8px; padding: 0 12px; background: var(--pop-bg); backdrop-filter: blur(8px); }
+/* The graph toolbar is a PLAIN .viewbar — same height, gap, padding and hairline as the base rule, so
+   it reads as the same control strip as every other view's (notes, bases, calendar, chat). It used to
+   override all four (gap 8, padding 0 12px, a translucent --pop-bg fill and an 8px backdrop blur),
+   which made it the one toolbar in the app that looked like a floating panel. The fill was pointless
+   anyway: .graph-root lays the bar out ABOVE .graph-area in flow rather than over the canvas, so there
+   was never anything behind it to blur. The class is kept only as the hook for the narrow-container
+   rules below. */
 .graph-vb-right { display: inline-flex; align-items: center; gap: 8px; }
 .graph-area { container-type: inline-size; position: relative; width: 100%; }
 /* The WebGL canvas host fills the graph area; the renderer mounts its <canvas> here. */
@@ -907,14 +919,36 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .graph-bottom-narrow { display: flex; gap: 2px; align-items: stretch; background: var(--pop-bg); border-radius: 4px; padding: 1px; pointer-events: auto; flex-shrink: 0; }
 /* Bottom-bar fps readout (paired with .graph-hud-pill; dynamic traffic-light color stays inline). */
 .graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: 10.5px; padding: 2px 7px; }
-/* Narrow (sidebar mini-graph): the mode switcher stays TEXT — 2ND/3RD/BOTH/AGENTS/DAEMON, no
-   glyph prefix, ever — just free to wrap onto a second row when five segments don't fit one
-   line at --fs-micro (the .btn--text default size). Everything that needs real width (the
-   "Knowledge Graph" crumb, the 2D/3D toggle, the legend/stats cards) hides; the mini-graph is
-   too small for them. */
+/* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field. `margin-left: auto`
+   pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D pair; pointer-events are
+   re-enabled because the bar itself is click-through. */
+
+/* EMBEDDED ```query blocks (editor/queryBlock.ts sets .bismuth-query-block) render a base view INSIDE
+   a note, so their text follows the NOTE prose size — everything in a note is one size. Scoped to this
+   wrapper: a FULL-PANE base is a standalone data grid and keeps the --fs-ui chrome size. Element
+   selectors (not the CSS-module class) so this stays one rule and outranks .table/.dateCell. */
+.bismuth-query-block table,
+.bismuth-query-block td,
+.bismuth-query-block th { font-size: var(--editor-font-size, 13.5px); }
+
+/* Mini-graph mode switcher: the sidebar toolbar's own row, so the two read as one family. Sizing,
+   radius and hover come from the shared .btn--icon rules above (this selector is listed there) — only
+   the row layout lives here. */
+.graph-mode-icons { display: flex; align-items: center; gap: 3px; }
+.graph-bottom-local { margin-left: auto; pointer-events: auto; background: var(--pop-bg); border-radius: 4px; padding: 1px; flex-shrink: 0; }
+/* Narrow (sidebar mini-graph): the mode switcher becomes ICONS (GraphView's MODE_ICON, chosen on
+   props.mini) — a reversal of the earlier text-only rule, which still governs the FULL-PANE graph.
+   Five text segments wrapped onto two rows here and ate the little field's height, which is exactly
+   what icons fix; words stay the rule wherever they fit. Everything needing real width (the
+   "Knowledge Graph" crumb, the legend/stats cards) hides; the mini-graph is too small for them. */
 @container (max-width: 520px) {
   .graph-vb-wide, .graph-legend-card, .graph-stats { display: none; }
-  .graph-viewbar { height: auto; min-height: 41px; padding: 5px 10px; justify-content: center; border-bottom: none; }
+  /* Keeps the base .viewbar height (36px = 2x --row-h) and its hairline: in the sidebar this bar sits
+     directly under .sidebar-icons, which has the same 2-row band and the same bottom border, so dropping
+     either made the graph the one section in the sidebar with no divider and an off-grid 41px height.
+     The old height:auto/min-height:41px existed to let five TEXT segments wrap onto a second row — the
+     mini switcher is icons now (see MODE_ICON), so one row always fits. Padding matches .sidebar-icons. */
+  .graph-viewbar { padding: 0 10px; justify-content: center; }
   .graph-viewbar .segmented { flex-wrap: wrap; justify-content: center; gap: 3px; row-gap: 3px; }
   .graph-bottom-narrow .segmented { gap: 3px; }
 }

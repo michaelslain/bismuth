@@ -113,6 +113,44 @@ export function subgraphByKinds(g: GraphData, kinds: Set<NodeKind>): GraphData {
   return { nodes, edges: g.edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
 }
 
+/**
+ * The LOCAL neighbourhood of one node: `centerId` plus every node within `depth` hops of it, in
+ * either direction, and every edge among that set. Direction-agnostic on purpose — "what is this note
+ * connected to" means both the notes it links out to AND the notes that link back (its backlinks), and
+ * a local view that showed only one of those would be lying by omission.
+ *
+ * Returns an EMPTY graph when `centerId` isn't in `g` (no node, nothing local to show) rather than
+ * falling back to the whole graph, which would silently turn a local view into a global one.
+ *
+ * Hierarchy fields (`community`, `communityPath`, `communityPathLabels`) are STRIPPED from the result.
+ * They describe a node's place in the whole vault's community structure, which is meaningless inside a
+ * one-note neighbourhood — and every consumer treats their absence as "one flat level" (see
+ * CanvasGraphRenderer's colorLevelsFor / AsciiGraphRenderer's colorLevelsFor), so dropping them is how
+ * a local view says "no clustering here" without needing a flag threaded through the renderers.
+ *
+ * Positions are left untouched but are NOT meaningful for a local view — they came from a layout of
+ * the whole vault, so a caller rendering this should re-run the layout over the subgraph.
+ */
+export function localSubgraph(g: GraphData, centerId: string, depth = 1): GraphData {
+  if (!centerId || !g.nodes.some((n) => n.id === centerId)) return { nodes: [], edges: [] };
+  const keep = new Set<string>([centerId]);
+  let frontier = new Set<string>([centerId]);
+  for (let hop = 0; hop < Math.max(1, depth); hop++) {
+    const next = new Set<string>();
+    for (const e of g.edges) {
+      if (frontier.has(e.from) && !keep.has(e.to)) next.add(e.to);
+      if (frontier.has(e.to) && !keep.has(e.from)) next.add(e.from);
+    }
+    if (next.size === 0) break;
+    for (const id of next) keep.add(id);
+    frontier = next;
+  }
+  const nodes = g.nodes
+    .filter((n) => keep.has(n.id))
+    .map(({ community, communityPath, communityPathLabels, ...rest }) => rest);
+  return { nodes, edges: g.edges.filter((e) => keep.has(e.from) && keep.has(e.to)) };
+}
+
 /** A vault entry surfaced by /tree: a markdown file (with optional `icon` frontmatter) or a directory. */
 export interface TreeEntry {
   path: string;
