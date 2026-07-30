@@ -4,7 +4,7 @@ import type { GraphData } from "../../core/src/graph";
 import type { GraphConfig, GraphRenderer, HoverNode } from "./graph/graphRenderer";
 import { AsciiGraphRenderer } from "./graph/AsciiGraphRenderer";
 import { CanvasGraphRenderer } from "./graph/CanvasGraphRenderer";
-import { GraphAtmosphere } from "./graph/GraphAtmosphere";
+import { GraphAtmosphere, type BloomSink } from "./graph/GraphAtmosphere";
 import { computeLayout } from "../../core/src/layout";
 import { localLayoutInput } from "./graph/localLayoutInput";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
@@ -165,6 +165,13 @@ export function GraphView(props: {
     settings.graph.renderer === "standard" ? "standard" : "ascii";
   let renderer: GraphRenderer = makeRenderer(graphRenderKind());
   let mountedKind: GraphRenderKind = graphRenderKind();
+  // The bloom's paint target, decoupled from `renderer`'s identity entirely — see
+  // GraphAtmosphere.tsx's file-level comment for why a `renderer` prop on <GraphAtmosphere> is a
+  // bug magnet (a stale capture across the ASCII<->STANDARD swap effect, not fixable with a keyed
+  // remount). This object's identity never changes; mountRenderer() below wires every renderer
+  // instance's setBloomCallback to forward through it, and <GraphAtmosphere> registers into it
+  // once, on its own mount, independent of how many times `renderer` gets swapped.
+  const bloomSink: BloomSink = {};
   let mounted = false;
   let lastGraph: GraphData | null = null;
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);
@@ -363,6 +370,11 @@ export function GraphView(props: {
     renderer.mount(host, openNode, (node) => setHovered(node));
     renderer.setFpsCallback(setFps);
     renderer.setZoomCallback?.(setZoomPct);
+    // Forward through the stable sink, not straight to a signal/effect — see bloomSink's own
+    // comment. This closure captures THIS renderer instance, but every renderer ever mounted here
+    // forwards into the same `bloomSink`, so <GraphAtmosphere> (mounted once, independent of this
+    // function) always sees whichever one is current without needing to know a swap happened.
+    renderer.setBloomCallback?.((field) => bloomSink.current?.(field));
     if (props.onPaint) renderer.setPaintCallback(props.onPaint);
     renderer.setConfig(buildConfig());
     if (lastGraph) renderGraphNow(rendererGraph());
@@ -510,24 +522,22 @@ export function GraphView(props: {
       >
         <div class="graph-canvas-host" ref={host} />
         {/* Atmosphere (phosphor bloom emitted by the node field + depth vignette) — both renderers
-            now push a per-frame density field (setBloomCallback), so this mounts for both kinds.
-            The old rule ("the ASCII field's ground is deliberately flat, no glow or vignette") is
-            deliberately reversed here: the redesign's phosphor bloom IS the atmosphere for the
-            unified renderer, and Part 2b merges STANDARD/ASCII into one renderer anyway, at which
-            point the distinction this used to gate on disappears entirely.
-            KEYED on graphRenderKind(), not a plain mount: `renderer` above is a reassigned `let`
-            (the swap effect does `renderer = makeRenderer(kind)` on every renderer-kind change —
-            see that effect's comment), not a signal, so a plain `<GraphAtmosphere renderer={renderer}>`
-            would capture the instance live at JSX-eval time and go stale the moment the app boots
-            with the default kind and then swaps once settings load (which is the common case: the
-            client always boots on the "ascii" default before the fetched settings can override it).
-            `keyed` forces GraphAtmosphere to unmount + remount — re-running its onMount, which is
-            the only place it wires setBloomCallback — every time the kind changes, so it always
-            re-reads the freshly swapped-in `renderer`. No DOM label overlay in either renderer: both
-            draw their own labels on their own canvas. */}
-        <Show when={graphRenderKind()} keyed>
-          <GraphAtmosphere renderer={renderer} mode={props.mode} />
-        </Show>
+            now push a per-frame density field, so this mounts unconditionally, ONCE, for the
+            component's whole lifetime, and does NOT key/remount on graphRenderKind(). The old rule
+            ("the ASCII field's ground is deliberately flat, no glow or vignette") is deliberately
+            reversed here: the redesign's phosphor bloom IS the atmosphere for the unified renderer,
+            and Part 2b merges STANDARD/ASCII into one renderer anyway, at which point the
+            distinction this used to gate on disappears entirely.
+            No `renderer` prop, on purpose — see GraphAtmosphere.tsx's file-level comment and
+            bloomSink above. A keyed remount was tried first and does NOT work: Solid's `Show`
+            re-evaluates children in the pure/Updates phase, strictly before the swap effect
+            (Effects phase) reassigns `renderer`, so even a fresh mount recaptures the
+            about-to-be-destroyed instance — reproducible, not a one-off race. Routing through the
+            stable `bloomSink` object sidesteps the whole prop-capture/effect-ordering question:
+            GraphAtmosphere registers into it once here and never needs to react to a swap at all.
+            No DOM label overlay in either renderer: both draw their own labels on their own
+            canvas. */}
+        <GraphAtmosphere sink={bloomSink} mode={props.mode} />
         {/* No floating cluster-legend card any more — cluster names are drawn IN the field itself
             (zoomed-out labels; see AsciiGraphRenderer's layoutClusterNames), crossfading to file
             names as the camera zooms in. ClusterLegend.tsx stays in-tree, just unused here. */}

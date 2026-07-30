@@ -55,8 +55,10 @@ export interface GraphRenderer {
   /** ASCII renderer only: the 0–100 resolution readout ("zoom is resolution"). */
   setZoomCallback?(cb: (pct: number) => void): void;
   /** Per-frame node-density field for the phosphor bloom (see densityField.ts). Optional: a
-   *  renderer that omits it simply gets no bloom. Values are 0..1 over a FIELD_W×FIELD_H grid. */
-  setBloomCallback?(cb: (field: DensityField) => void): void;
+   *  renderer that omits it simply gets no bloom. Values are 0..1 over a FIELD_W×FIELD_H grid.
+   *  Pass `undefined` to detach — `destroy()` on both renderers does this itself, so a torn-down
+   *  instance never holds a callback into a consumer that may no longer exist. */
+  setBloomCallback?(cb: ((field: DensityField) => void) | undefined): void;
 }
 
 // Compile-time proof the legacy renderer still satisfies the seam. It is unused by GraphView but

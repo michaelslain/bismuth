@@ -354,6 +354,17 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
     r.destroy();
   });
 
+  it("detaches its bloom callback on destroy — a torn-down renderer must not hold a stale sink", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = new AsciiGraphRenderer();
+    r.mount(host, () => {});
+    r.setBloomCallback(() => {});
+    expect((r as unknown as { onBloom?: unknown }).onBloom).toBeDefined();
+    r.destroy();
+    expect((r as unknown as { onBloom?: unknown }).onBloom).toBeUndefined();
+  });
+
   it("rasterizes the flat layout in 2D too", () => {
     const { r } = mountRenderer("2d");
     expect(allText().length).toBeGreaterThan(0);

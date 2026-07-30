@@ -510,10 +510,11 @@ export class CanvasGraphRenderer {
     window.removeEventListener("keydown", this.onKeyDown);
     this.host?.replaceChildren();
     this.nodes = []; this.edges = []; this.byId.clear();
+    this.onBloom = undefined; // detach — a torn-down renderer must not hold a stale bloom sink
   }
 
   setFpsCallback(cb: (fps: number) => void) { this.onFps = cb; }
-  setBloomCallback(cb: (field: DensityField) => void) { this.onBloom = cb; }
+  setBloomCallback(cb: ((field: DensityField) => void) | undefined) { this.onBloom = cb; }
   setPaintCallback(cb: (nodeCount: number) => void) { this.onPaint = cb; }
   setVisible(visible: boolean) { this.visible = visible; if (visible) { this.dirty = true; this.start(); } else this.stop(); }
   /** Zoom the resting fit out by this factor (>1 = smaller graph). Used by the intro graph. */
