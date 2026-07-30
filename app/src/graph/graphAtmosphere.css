@@ -10,7 +10,7 @@
   position: absolute; inset: 0; width: 100%; height: 100%;
   pointer-events: none; z-index: 1;
   mix-blend-mode: screen;
-  opacity: 0.85;
+  opacity: 0.45;
   /* Scaled up from FIELD_W×FIELD_H — the browser's smoothing IS the falloff. */
   image-rendering: auto;
   /* Deliberately NOT set here: GraphAtmosphere.tsx resolves the colour itself (explicit
