@@ -1,12 +1,16 @@
-// LinLog attraction (Noack): the pull between linked nodes grows with ln(1 + d) rather than with d.
+// LinLog-mode attraction (ForceAtlas2's ln(1+d) approximation, Jacomy et al. — not strict Noack
+// LinLog, which is fully distance-independent): the pull between linked nodes grows with ln(1 + d)
+// rather than with d.
 //
 // WHY THIS AND NOT forceLink: d3's link force is a Hooke spring — attraction proportional to
 // (d - restLength). Proportional attraction is what collapses communities into a hairball, because
-// the further apart two clusters drift the harder they are yanked back together. LinLog's
-// near-distance-independent pull lets dense regions stay dense while sparse regions spread, so
-// cluster separation is a PROPERTY OF THE MODEL rather than something a corrective force imposes.
+// the further apart two clusters drift the harder they are yanked back together. LinLog's pull
+// grows only logarithmically with distance, letting dense regions stay dense while sparse regions
+// spread, so cluster separation is a PROPERTY OF THE MODEL rather than something a corrective force
+// imposes.
 //
-// The `1 +` guards d → 0 (ln(1) = 0, no force, no NaN when two nodes coincide).
+// The `1 +` keeps attraction positive below d=1 (ln(d) alone goes negative and would repel for
+// d < 1); the actual d → 0 / NaN guard is the `if (d === 0) continue` below.
 
 interface LinLogNode { index: number; x?: number; y?: number; z?: number; vx?: number; vy?: number; vz?: number }
 
