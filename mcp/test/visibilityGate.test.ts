@@ -2,7 +2,7 @@ import { test, expect, describe } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decideCliGate, gateCliArgs, isContentScanningCommand, mcpChannel } from "../src/visibilityGate";
+import { commandTier, decideCliGate, gateCliArgs, mcpChannel } from "../src/visibilityGate";
 
 // The hole this gate closes, restated so a future reader knows what not to "simplify" away:
 // `bismuth read Private/secret.md` returns a hidden note verbatim. Claude sessions were protected by
@@ -48,21 +48,41 @@ describe("decideCliGate", () => {
   test("allows an unrelated visible file while something else is restricted", () => {
     expect(decideCliGate(["read", "open.md"], RESTRICTED).allowed).toBe(true);
   });
-  test("refuses content-scanning commands wholesale when ANYTHING is restricted", () => {
-    // A per-path check cannot catch these: they surface a hidden file's matching LINES without ever
-    // naming it. Same reason Claude disables Grep/Glob outright.
-    for (const cmd of ["search", "replace", "api", "export", "grep"]) {
+  test("refuses content-surfacing commands wholesale when ANYTHING is restricted", () => {
+    // These return a hidden file's matching LINES without ever naming it, so no path check can catch
+    // them. Same reason Claude disables Grep/Glob outright.
+    for (const cmd of ["search", "replace", "api", "export"]) {
       const d = decideCliGate([cmd, "THE-SECRET"], RESTRICTED);
       expect(d.allowed).toBe(false);
       expect(d.reason).toContain(cmd);
     }
   });
+  test("refuses `checkpoint diff` — a git diff is the plaintext of every changed hidden note", () => {
+    // The denylist this gate started with MISSED this one, and the daemon's PATH shim exists partly
+    // to make `checkpoint` reachable. Found by red-teaming, not by writing more denylist entries.
+    expect(decideCliGate(["checkpoint", "diff"], RESTRICTED).allowed).toBe(false);
+  });
+  test("refuses the other content-bearing commands the denylist missed", () => {
+    for (const cmd of ["rows", "card", "task", "calendar", "graph", "tree", "page", "daily", "note", "base", "row"]) {
+      expect(decideCliGate([cmd, "x"], RESTRICTED).allowed).toBe(false);
+    }
+  });
+  test("an UNKNOWN command refuses — a future CLI command must not fail open", () => {
+    // The whole point of inverting the denylist: this build cannot know what the CLI grows next.
+    expect(decideCliGate(["some-new-command", "x"], RESTRICTED).allowed).toBe(false);
+    expect(commandTier(["some-new-command"])).toBe("refuse-when-restricted");
+  });
+  test("machine/app plumbing stays usable in a restricted vault", () => {
+    // A restricted vault must not brick the agent's ability to drive the app or report status.
+    for (const cmd of ["backends", "app", "daemon", "install", "settings"]) {
+      expect(decideCliGate([cmd, "status"], RESTRICTED).allowed).toBe(true);
+    }
+    expect(decideCliGate(["--help"], RESTRICTED).allowed).toBe(true);
+    expect(decideCliGate([], RESTRICTED).allowed).toBe(true);
+  });
   test("allows those same commands when nothing is restricted", () => {
     expect(decideCliGate(["search", "anything"], []).allowed).toBe(true);
-  });
-  test("does not refuse a command that merely CONTAINS a scanning command's name", () => {
-    expect(isContentScanningCommand(["researcher"])).toBe(false);
-    expect(isContentScanningCommand(["tree"])).toBe(false);
+    expect(decideCliGate(["checkpoint", "diff"], []).allowed).toBe(true);
   });
 });
 

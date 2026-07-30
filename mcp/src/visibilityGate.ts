@@ -37,20 +37,53 @@ export function mcpChannel(env: Record<string, string | undefined> = process.env
 }
 
 /**
- * CLI commands that can surface a restricted file's CONTENT without ever naming its path, so no
- * argv check can catch them. Refused outright whenever the vault restricts anything at all.
+ * Command classification, as an ALLOWLIST with a refuse-by-default tail.
  *
- * `search`/`replace` scan file bodies; `api` is an arbitrary HTTP passthrough to the core server
- * (`bismuth api GET /file?path=…` reads any note, and the path hides inside a query string);
- * `export` can render a whole tree. Matched on the FIRST argv token, and for two-word commands on
- * the first two, mirroring the CLI's own longest-match dispatch.
+ * This started as a denylist of "content-scanning commands" and that was the wrong shape. A
+ * red-team pass found the misses immediately: `rows`, `card all|due|note`, `task list`,
+ * `calendar`, `graph`, `tree`, and most sharply **`checkpoint diff`** — a git diff, i.e. the full
+ * plaintext of every changed hidden note, on a command the daemon's PATH shim exists to make
+ * reachable. A denylist is only ever as good as the author's imagination, and it silently fails
+ * open for every command added to the CLI afterwards.
+ *
+ * So: three tiers, and anything unclassified REFUSES.
  */
-const CONTENT_SCANNING_COMMANDS = new Set(["search", "replace", "api", "export", "grep"]);
 
-/** Pure: is this argv a content-scanning command? */
-export function isContentScanningCommand(args: string[]): boolean {
+/** Tier A — cannot surface vault note content at all, so allowed even in a restricted vault.
+ *  Machine/app/daemon plumbing and settings writes. Keep this list boring and short: every
+ *  addition is a promise that the command can never echo a note's body. */
+const ALWAYS_SAFE_COMMANDS = new Set([
+  "backends", "install", "uninstall", "app", "daemon", "agent-graph",
+  "folder-icon", "folder-visibility", "settings", "backup", "serve",
+]);
+
+/** Tier B — takes an explicit path, and returns only that path's content. Allowed subject to the
+ *  argv path check below, which is what makes them safe. */
+const PATH_SCOPED_COMMANDS = new Set([
+  "read", "write", "move", "delete", "restore", "mkdir", "prop", "render",
+]);
+
+/**
+ * Tier C is everything else, INCLUDING commands this build has never heard of — refused whenever
+ * the vault restricts anything. That covers the verified leaks (`checkpoint diff`, `search`,
+ * `api`, `export`, `rows`, `card`, `task`, `calendar`, `graph`, `tree`, `page`, `daily`) and, more
+ * importantly, whatever the CLI grows next.
+ *
+ * `note` is deliberately here rather than in Tier B even though it takes a path: `note new x.md
+ * --template Secret` pulls a TEMPLATE's body into the new note, and the template is named by name,
+ * not by path, so the argv check cannot see it. An agent that needs to create a file can `write`.
+ */
+export type CommandTier = "always-safe" | "path-scoped" | "refuse-when-restricted";
+
+/** Pure: which tier this argv falls into. Reads only the first token, mirroring the CLI's own
+ *  longest-match dispatch closely enough — every two-word command shares its group's first word. */
+export function commandTier(args: string[]): CommandTier {
   const first = (args[0] ?? "").toLowerCase();
-  return CONTENT_SCANNING_COMMANDS.has(first);
+  // No command at all (or a bare flag) is help output — harmless.
+  if (!first || first.startsWith("-")) return "always-safe";
+  if (ALWAYS_SAFE_COMMANDS.has(first)) return "always-safe";
+  if (PATH_SCOPED_COMMANDS.has(first)) return "path-scoped";
+  return "refuse-when-restricted";
 }
 
 export interface GateDecision {
@@ -74,13 +107,15 @@ export function decideCliGate(
 ): GateDecision {
   if (restricted.length === 0) return { allowed: true };
 
-  if (isContentScanningCommand(args)) {
+  const tier = commandTier(args);
+  if (tier === "always-safe") return { allowed: true };
+  if (tier === "refuse-when-restricted") {
     return {
       allowed: false,
       reason:
         `Refused: \`bismuth ${args[0]}\` can return the contents of notes this vault marks off-limits ` +
         `to AI sessions, and it cannot be filtered per-file. ${restricted.length} note(s) are restricted. ` +
-        `Ask the user to unhide them, or use a command that names a specific visible file.`,
+        `Ask the user to unhide them, or read a specific visible file by path.`,
     };
   }
 
