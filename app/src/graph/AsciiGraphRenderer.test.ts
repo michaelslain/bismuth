@@ -653,6 +653,80 @@ describe("Task 9 — clusterVisual wiring: community colours are RANK-based, clu
     c.r.destroy();
   });
 
+  // --- the `pathOf` level clamp, `path[Math.min(L, path.length - 1)]` -------------------------
+  // Three independent per-level tables apply it (exemplar NAMES, the COLOUR tally, and the HUB
+  // race) and all three must agree, or a shallow node belongs to different communities depending on
+  // which table you ask. There is one test per table below; the names one is further down. Round 1
+  // of this task deleted the colour one, and deleting either production clamp then passed the whole
+  // suite — coverage a fix round dropped on the way past.
+
+  it("a node with only a finest-level community (no communityPath) still counts toward a DEEPER level's COLOUR tally — the pathOf level clamp", () => {
+    // Two-level hierarchy: top is uniformly 0, sub varies 0/1/2. Sub sizes 2/4/3 — sub 0 is the
+    // STRICT smallest among the three deep-only sizes. One extra SHALLOW node (community: 0, no
+    // communityPath at all) should count toward sub 0's tally too (clamped to its own deepest known
+    // community), tying it with sub 2 at 3 — and buildColorSlots' tie-break (lowest id) then ranks
+    // sub 0 ABOVE sub 2. Drop the clamp and sub 0 stays strictly smallest, changing its rank (and
+    // therefore its colour) entirely.
+    const nodes: unknown[] = [];
+    let i = 0;
+    const subSizes = [2, 4, 3];
+    for (let sub = 0; sub < subSizes.length; sub++) {
+      for (let k = 0; k < subSizes[sub]; k++) {
+        nodes.push({
+          id: `d${sub}_${k}`, label: `deep ${sub} ${k}`, kind: "note" as const,
+          position: [i * 5, sub * 50, 0] as [number, number, number], position2d: [i * 5, sub * 50] as [number, number],
+          community: sub, communityLabel: `Sub ${sub}`,
+          communityPath: [0, sub], communityPathLabels: ["Top 0", `Sub ${sub}`],
+        });
+        i++;
+      }
+    }
+    nodes.push({
+      id: "shallow", label: "shallow", kind: "note" as const,
+      position: [i * 5, -50, 0] as [number, number, number], position2d: [i * 5, -50] as [number, number],
+      community: 0, communityLabel: "Sub 0",
+    });
+    const { r } = mountRenderer("3d", { nodes: nodes as never, edges: [] });
+
+    // Independently reconstruct what the CORRECTLY-clamped per-level tally should be (sub 0 = 2 deep
+    // + 1 clamped shallow = 3) and feed it through the real buildColorSlots — the same palette the
+    // renderer falls back to under happy-dom (no CSS vars resolved).
+    const expected = buildColorSlots(new Map([[0, 3], [1, 4], [2, 3]]), RAMP_FALLBACK);
+    expect(r.getCommunityCentroids().get(0)!.color).toBe(expected.get(0));
+    r.destroy();
+  });
+
+  it("...and toward that deeper level's HUB race too — the same clamp, in clusterHubByLevel", () => {
+    // The colour test above cannot see this one: the tally and the hub race clamp INDEPENDENTLY, so
+    // deleting the clamp here leaves every colour correct while the name silently anchors on the
+    // wrong node. Fixture: deep community 5 has two degree-1 members; a SHALLOW node ("big",
+    // community 5, no communityPath) has degree 3. Clamped, "big" joins community 5 at level 1 and
+    // wins the hub race outright on degree. Unclamped, its `path[1]` is undefined, it falls out of
+    // level 1 entirely, and the hub becomes "d5a" (degree tie, lowest id).
+    const mk = (id: string, x: number, path?: number[]) => ({
+      id, label: id, kind: "note" as const,
+      position: [x, 0, 0] as [number, number, number], position2d: [x, 0] as [number, number],
+      community: path ? path[1] : 5, communityLabel: path ? `C${path[1]}` : "C5",
+      ...(path ? { communityPath: path, communityPathLabels: ["Top", `C${path[1]}`] } : {}),
+    });
+    const nodes = [
+      mk("d5a", 0, [0, 5]), mk("d5b", 20, [0, 5]),
+      mk("f0", 40, [0, 6]), mk("f1", 60, [0, 6]), mk("f2", 80, [0, 6]),
+      mk("big", 100), // shallow: community 5, NO communityPath
+    ];
+    const edges = [
+      { from: "d5a", to: "d5b", kind: "link" as const },       // d5a, d5b -> degree 1 each
+      { from: "big", to: "f0", kind: "link" as const },
+      { from: "big", to: "f1", kind: "link" as const },
+      { from: "big", to: "f2", kind: "link" as const },        // big -> degree 3
+    ];
+    const { r } = mountRenderer("3d", { nodes: nodes as never, edges });
+    const priv = r as unknown as { clusterHubByLevel: Map<number, string>[]; levelCount: number };
+    expect(priv.levelCount).toBe(2); // sanity: there IS a deeper level than "big"'s own path
+    expect(priv.clusterHubByLevel[1]?.get(5)).toBe("big");
+    r.destroy();
+  });
+
   /** Shared by the two hub-anchor tests below: one high-degree hub far to the RIGHT, four
    *  low-degree leaves spread across the LEFT half, all in one community. The OLD centroid-of-all-
    *  members anchor lands far to the LEFT (dragged there by the 4-vs-1 leaf majority); the hub
