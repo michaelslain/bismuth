@@ -333,20 +333,36 @@ const OPENCODE: BackendDescriptor = {
     agentsGraph: "none",
     subagents: false,
     daemon: false,
-    // chat: "wrapper-macos" — chatProviders/opencode.ts wraps each RESTRICTED vault's per-turn
-    // `opencode run` subprocess in a Seatbelt profile (agentBackends/sandboxWrapper.ts). Verified
-    // live against a real turn (opencode/deepseek-v4-flash-free, $0 cost): both the structured read
-    // tool AND a Bash `cat` fallback were denied in the same turn — see opencode.ts's top-of-file
-    // note for the exact probe. The suffix is load-bearing: on non-macOS, or when `sandbox-exec` is
-    // missing, this resolves to a runtime refusal (checkSandboxWrapperAvailability), never a silent
-    // unwrapped spawn.
+    // chat: "none" — DOWNGRADED from "wrapper-macos" (task-3 of the visibility-hardening plan,
+    // 2026-07-30 acceptance run, docs/vault/visibility-acceptance.md's third dated section). The
+    // mechanism (agentBackends/sandboxWrapper.ts's Seatbelt profile around a restricted vault's
+    // per-turn `opencode run` subprocess) is real and, as far as it was exercised, held: a live turn
+    // against the SHIPPED driver (getOrCreateSession/runTurnLegacy/runTurn, opencode/
+    // deepseek-v4-flash-free, $0 cost) saw the structured read tool AND well over a dozen distinct
+    // Bash-level bypass attempts (cat, stat, chflags, a nested sandbox-exec, python3 open()/raw
+    // ctypes open(2), osascript file-read, Spotlight mdfind/mdls, the bismuth CLI subprocess,
+    // launchctl job submission, nohup/at) ALL denied, zero leaks of either marker string. What did
+    // NOT happen is the acceptance run the catalog's own honesty rule requires: the model never
+    // concluded that turn (still running, still trying new bypasses, minutes in) and the two FOLLOW-UP
+    // turns this run was supposed to measure separately (a dedicated `cat` turn; a grep-for-the-
+    // sentinel-without-naming-the-path turn — the exact case flagged as unmeasured by an earlier
+    // design-time spike) never got dispatched to the model at all: they sat queued behind the still-
+    // active first turn (dispatchTurn's per-session turnActive gate — see opencode.ts) until the
+    // process was killed to stop the run. Per the catalog's own rule ("a value here is a claim...
+    // requires a recorded live acceptance run" — an incomplete probe is not evidence of enforcement),
+    // two of three probes could not be completed, so this cannot honestly stand at "wrapper-macos"
+    // regardless of how clean the parts that DID run looked. Separately, worth flagging for whoever
+    // next attempts this: one bypass attempt (`launchctl submit` to spawn `cat` as a launchd job,
+    // which would run OUTSIDE the wrapped process's tree and therefore outside the Seatbelt profile
+    // entirely) failed only on argument syntax, not because anything blocked it — a real, not yet
+    // exercised, escape shape distinct from the three probes this task measured.
     // daemon: "none" — a restricted vault can NEVER select opencode as the daemon backend today.
     // Not because opencode can't self-sandbox (it can't, see selfSandboxes below) but because the
     // wrapper's own precondition P3 (agentBackends/sandboxWrapper.ts) requires a dedicated
     // per-session-or-per-turn process for ONE vault — opencode's daemon integration doesn't exist
     // in this codebase at all yet (sendMessage in daemon/src/daemon/session.ts only dispatches
     // "claude"/"codex"), so there is nothing to verify a gate against.
-    visibilityGate: { chat: "wrapper-macos", daemon: "none" },
+    visibilityGate: { chat: "none", daemon: "none" },
     // Confirmed false: opencode applies no OS sandbox of its own (nothing in its CLI wraps itself
     // in Seatbelt/Landlock/etc — this is exactly what makes it wrappable).
     selfSandboxes: false,
