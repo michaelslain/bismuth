@@ -52,6 +52,9 @@ import {
 } from "./lod";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
 import { buildBloom, type DensityField } from "./densityField";
+import {
+  scaleToSpacing, createSpacingCache, cloneVec3Array, type SpacingCache, type Vec3 as RespaceVec3,
+} from "./respace";
 
 /** Numeric per-frame snapshot for QA (`window.__asciiGraphStats`, DEV builds only) — lets the
  *  redesign's fit/LOD/label criteria be asserted against directly instead of eyeballed off a
@@ -88,6 +91,16 @@ const DRAG_THRESHOLD = 5;        // px before a press becomes an orbit/pan rathe
 // is ~1.5x (asciiGrid.ts DEEPEST_WORLD_PER_CELL's deeper absolute floor widened the ladder's range),
 // the same per-frame catch-up snapped to each stop in only a few frames, reading as a jump cut.
 const GLIDE_TAU_MS = 110;
+// The node-count-independent resting spacing respace.ts's `scaleToSpacing` rescales every build's
+// positions onto (see build()). MUST be 14.0 — that's not a natural-looking grid unit, it's the exact
+// calibration input `asciiGrid.ts`'s DEEPEST_WORLD_PER_CELL comment records ("the vault's own local
+// spacing ... has a median nearest-neighbour distance of 14.0 world units"). DEEPEST_WORLD_PER_CELL
+// derives the deep-zoom ladder's fixed absolute floor FROM that 14.0 figure, which used to be true only
+// for the one vault it was measured on — any OTHER vault's own median spacing silently mis-scaled the
+// ladder. Rescaling every graph's resting spacing to this same 14.0 makes the ladder correct for any
+// vault, not just the reference one. If this ever changes, MIN_ZOOM_SPAN and the RING_SCALE test
+// constant in AsciiGraphRenderer.test.ts must move with it (asciiGrid.ts:293 says so explicitly).
+const RESPACE_TARGET_SPACING = 14.0;
 const FALLBACK_MAX_RES = 16;     // pre-fit() bootstrap value for `maxRes` (real one is graph/box-derived — see fit())
 const WHEEL_NOTCH_PX = 120;      // one physical mouse-wheel click (the Windows WHEEL_DELTA convention most
                                   // browsers report a notch as); each notch moves ZOOM_STEP_PCT, trackpad
@@ -354,6 +367,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private edges: EdgeView[] = [];
   private adjacency = new Map<string, Set<string>>();
   private sig = "";
+  // Per-structural-signature memo for scaleToSpacing (respace.ts) — a re-visited graph shape (a mode
+  // toggle back to one already settled this session) is a Map lookup, not an O(n²) remeasure. Separate
+  // caches per dimension: 2D (`position2d`) and 3D (`position`) are independent point clouds with their
+  // own median nearest-neighbour distance, so their rescale factors legitimately differ. `clone` is
+  // `cloneVec3Array`, never identity — see respace.ts's own header for why an identity clone on a
+  // reference type would silently reinstate the exact position-corruption hazard this cache exists to
+  // prevent (the 2D<->3D morph lerps p2/p3 in place every frame).
+  private p3SpacingCache: SpacingCache<RespaceVec3[]> = createSpacingCache(cloneVec3Array);
+  private p2SpacingCache: SpacingCache<RespaceVec3[]> = createSpacingCache(cloneVec3Array);
   private radius3 = 1; private radius2 = 1;
   // 2D-only bounding-BOX half-extents (see graphFit.ts boundingHalfExtents/fitScaleForBox) — the
   // fit-to-100% law for a rectangular field fills each AXIS to FIT_FILL_FRACTION independently,
@@ -590,21 +612,40 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.link(e.from, e.to); this.link(e.to, e.from);
     }
 
-    // Centre on the CONTENT centroid excluding the injected "you" hub (which sits at the origin and
-    // would bias it) — same reasoning as CanvasGraphRenderer.build().
-    const c3 = centroid3(g.nodes.filter((n) => n.kind !== "self").map((n) => finiteVec3(n.position)));
-    const c2 = centroid3(g.nodes.filter((n) => n.kind !== "self").map((n) => {
-      const v = finiteVec3(n.position2d); return [v[0], v[1], 0] as Vec3;
-    }));
+    // Node-count-independent resting spacing (respace.ts `scaleToSpacing`, replaces the old client
+    // force-settle Canvas used to run on every mode switch). scaleToSpacing centers the cloud on its
+    // OWN centroid as part of the same rescale, so this REPLACES the old separate "centre on the
+    // content centroid" step above rather than stacking with it — running both would double-apply the
+    // translation (harmless numerically once the cloud is already centered, but two transforms doing
+    // one job is one too many to reason about, and the second would silently mask a bug in the first).
+    // No "self" filter: the old centroid excluded the injected "you" hub so it wouldn't bias the mean,
+    // but that hub no longer exists (a6687c0 removed its only injector — see MERGE-NOTES.md §2.4), and
+    // respace.ts is deliberately kind-agnostic (it never sees `node.kind` at all — see its header).
+    // Raw (unflipped, uncentered) positions, index-aligned with g.nodes/this.nodes so the respaced
+    // arrays below can be indexed straight back onto each node with no id bookkeeping.
+    const raw3: RespaceVec3[] = [];
+    const raw2: RespaceVec3[] = [];
+    for (const node of g.nodes) {
+      const p = finiteVec3(node.position);
+      raw3.push(p);
+      raw2.push(finiteVec3(node.position2d, [p[0], p[1], 0]));
+    }
+    // Memoized per structural signature (`this.sig`, set by render() just before calling build()) —
+    // O(n²) measure runs at most once per distinct graph shape, not once per mode toggle.
+    const spaced3 = this.p3SpacingCache.getOrCompute(this.sig, () => scaleToSpacing(raw3, RESPACE_TARGET_SPACING));
+    const spaced2 = this.p2SpacingCache.getOrCompute(this.sig, () => scaleToSpacing(raw2, RESPACE_TARGET_SPACING));
 
     this.hoveredId = null; this.highlightSet = null;
-    this.nodes = g.nodes.map((node) => {
-      const p = finiteVec3(node.position);
-      const p2 = finiteVec3(node.position2d, [p[0], p[1], 0]);
+    this.nodes = g.nodes.map((node, i) => {
+      const p3 = spaced3[i], p2 = spaced2[i];
       return {
         node,
-        p3: [p[0] - c3[0], -(p[1] - c3[1]), p[2] - c3[2]] as Vec3,
-        p2: [p2[0] - c2[0], -(p2[1] - c2[1]), 0] as Vec3,
+        // Y negated for both — the backend layout is Y-down, this renderer's world/screen space is
+        // Y-up. Negation commutes with respace's centre-then-scale (both act per-axis with the same
+        // scalar for +y and -y), so it doesn't matter that it now runs AFTER the rescale rather than
+        // folded into the same expression the old centroid subtraction used.
+        p3: [p3[0], -p3[1], p3[2]] as Vec3,
+        p2: [p2[0], -p2[1], 0] as Vec3,
         deg: deg.get(node.id) ?? 0,
         color: C_FG, colorByLevel: [C_FG], dim: false,
         sx: 0, sy: 0, depth: 0, dr: 1, col: -1, row: -1, onGrid: false, projValid: false,

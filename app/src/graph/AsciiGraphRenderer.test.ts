@@ -1251,6 +1251,139 @@ describe("THE LAW — zoom is resolution, never scale", () => {
   });
 });
 
+describe("respace wiring (Task 10) — node-count-independent resting spacing on the deep-zoom ladder", () => {
+  /** Independent (re-implemented, NOT imported from respace.ts) median nearest-neighbour distance
+   *  over raw 3-tuples — mirrors respace.test.ts's own `measuredSpacing()`, so a bug shared between
+   *  the implementation and a test that imported the same helper can't hide from both. */
+  function measuredSpacing3(points: readonly [number, number, number][]): number {
+    const nn = points.map((p, i) => {
+      let best = Infinity;
+      points.forEach((q, j) => {
+        if (j === i) return;
+        const d = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+        if (d < best) best = d;
+      });
+      return best;
+    });
+    const s = [...nn].sort((a, b) => a - b);
+    const mid = s.length >> 1;
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  }
+
+  /** Deterministic jittered square lattice (locally uniform density; the jitter breaks the exact
+   *  distance ties a bare lattice would have, so a nearest-neighbour swap can't hide behind a tie)
+   *  scaled by `unit`. Two calls whose `unit`s differ by a factor model two vaults whose BACKEND
+   *  absolute coordinate scale differs by that same factor — exactly what respace.ts's targetSpacing
+   *  exists to normalise away (see respace.ts's own header: "regardless of node count or which layout
+   *  algorithm produced the input"). */
+  function jitterGrid(size: number, unit: number): ReturnType<typeof sampleGraph> {
+    const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
+    const edges: ReturnType<typeof sampleGraph>["edges"] = [];
+    const half = (size - 1) / 2;
+    const pseudo = (a: number, b: number) => {
+      const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        const jx = (pseudo(col, row) - 0.5) * 0.3 * unit;
+        const jy = (pseudo(row, col + 1000) - 0.5) * 0.3 * unit;
+        const x = (col - half) * unit + jx;
+        const y = (row - half) * unit + jy;
+        nodes.push({
+          id: `g${row}_${col}`, label: `note ${row} ${col}`, kind: "note" as const,
+          position: [x, y, 0] as [number, number, number],
+          position2d: [x, y] as [number, number],
+          community: 0, communityLabel: "grid",
+        });
+        if (col > 0) edges.push({ from: `g${row}_${col - 1}`, to: `g${row}_${col}`, kind: "link" as const });
+        if (row > 0) edges.push({ from: `g${row - 1}_${col}`, to: `g${row}_${col}`, kind: "link" as const });
+      }
+    }
+    return { nodes, edges };
+  }
+
+  /** Median nearest-neighbour separation IN GRID CELLS among the currently on-grid nodes (private
+   *  per-frame state — see lodPriv()). "cells" is (col,row) distance, the literal grid coordinate
+   *  every glyph/label/hit-test in this renderer already keys off. */
+  function medianOnGridCellSpacing(p: LodPriv): { count: number; median: number } {
+    const onGrid = p.nodes.filter((nv) => nv.onGrid);
+    const nn = onGrid.map((a, i) => {
+      let best = Infinity;
+      onGrid.forEach((b, j) => { if (i === j) return; const d = Math.hypot(a.col - b.col, a.row - b.row); if (d < best) best = d; });
+      return best;
+    });
+    const s = [...nn].sort((x, y) => x - y);
+    const mid = s.length >> 1;
+    return { count: onGrid.length, median: s.length ? (s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2) : NaN };
+  }
+
+  it("rescales the resting spacing to the 14.0-world-unit calibration target, regardless of the backend's raw density", () => {
+    // Pins the ABSOLUTE calibration value, not just "consistent across fixtures" — a wrong constant
+    // (e.g. targetSpacing 1 instead of 14) would still make two differently-scaled fixtures agree WITH
+    // EACH OTHER (any uniform target cancels a uniform input scale identically — see respace.ts's own
+    // header), so a test that only compares two fixtures to each other can't catch a wrong absolute
+    // number. This measures the OUTPUT's own median nearest-neighbour distance directly against the
+    // literal 14.0 the brief requires (asciiGrid.ts DEEPEST_WORLD_PER_CELL's calibration input),
+    // independent of anything imported from respace.ts or AsciiGraphRenderer.ts.
+    const graph = jitterGrid(12, 37); // an arbitrary raw scale far from 14 — a no-op wiring bug shows up loudly
+    const { r } = mountRenderer("3d", graph); // p3 (3D) has no SECOND recentring pass, unlike p2 (2D) — cleanest signal
+    const priv = r as unknown as { nodes: { p3: [number, number, number] }[] };
+    const spacing = measuredSpacing3(priv.nodes.map((nv) => nv.p3));
+    expect(spacing).toBeCloseTo(14, 0);
+    r.destroy();
+  });
+
+  it("two fixtures whose RAW backend density differs ~10x land on the SAME median neighbour cell-separation at the deepest (0%) zoom stop", () => {
+    // The task's actual acceptance gate (task-10-brief.md): NOT a screenshot. ASCII's fit divides by
+    // the cloud's own extents, so it exactly cancels a uniform scale — a fit-zoom (100%) screenshot is
+    // byte-identical whether this task is wired or not. What differs, and what this measures, is the
+    // DEEP-ZOOM ladder, anchored to the fixed absolute DEEPEST_WORLD_PER_CELL constant.
+    const SIZE = 45;
+    const dense = jitterGrid(SIZE, 1.4);
+    const sparse = jitterGrid(SIZE, 14); // exactly 10x the dense fixture's raw lattice spacing
+    expect(14 / 1.4).toBeCloseTo(10, 6); // sanity: the fixtures really are ~10x apart before any rescale
+
+    const { r: rDense, viewport: vDense } = mountRenderer("2d", dense);
+    const { r: rSparse, viewport: vSparse } = mountRenderer("2d", sparse);
+    wheelIn(vDense, 20); settle(400);   // saturate at the 0% (deepest) floor
+    wheelIn(vSparse, 20); settle(400);
+
+    const camDense = rDense as unknown as { zoomPct: number };
+    const camSparse = rSparse as unknown as { zoomPct: number };
+    expect(camDense.zoomPct).toBe(0);   // sanity: both actually reached the deepest stop
+    expect(camSparse.zoomPct).toBe(0);
+
+    const spacingDense = medianOnGridCellSpacing(lodPriv(rDense));
+    const spacingSparse = medianOnGridCellSpacing(lodPriv(rSparse));
+    expect(spacingDense.count).toBeGreaterThan(2);   // enough on-grid neighbours for a real median
+    expect(spacingSparse.count).toBeGreaterThan(2);
+
+    expect(spacingSparse.median).toBeCloseTo(spacingDense.median, 6);
+
+    rDense.destroy(); rSparse.destroy();
+  });
+
+  it("wires the per-signature spacing cache with a real clone, not identity — a later hit is unaffected by mutating an earlier return", () => {
+    // The specific footgun respace.ts's own docs call out by name: passing an identity clone for a
+    // reference type (Vec3[]) silently reinstates the exact position-corruption hazard the cache
+    // exists to prevent (the 2D<->3D morph a future task wires would lerp p2/p3 in place every frame).
+    // This exercises the ACTUAL cache instance AsciiGraphRenderer constructs (not a fresh
+    // createSpacingCache() call of the test's own), so a wiring bug — e.g.
+    // createSpacingCache((v) => v) instead of createSpacingCache(cloneVec3Array) — fails HERE.
+    const { r } = mountRenderer("3d", sampleGraph());
+    const priv = r as unknown as {
+      p3SpacingCache: { getOrCompute(sig: string, compute: () => [number, number, number][]): [number, number, number][] };
+    };
+    const sig = "respace-wiring-probe";
+    const first = priv.p3SpacingCache.getOrCompute(sig, () => [[1, 2, 3]]);
+    first[0][0] = -9999; // mutate the CALLER's own copy, as a future per-frame morph would
+    const second = priv.p3SpacingCache.getOrCompute(sig, () => { throw new Error("must be a cache hit"); });
+    expect(second).toEqual([[1, 2, 3]]); // untouched by the mutation above
+    r.destroy();
+  });
+});
+
 describe("LEVEL OF DETAIL (opt-in, GraphConfig.showLodMasses) — coarse stops rasterize aggregate entities, deep stops the real graph", () => {
   it("renders every individual node as a glyph even at fit — LOD masses are OFF by default", () => {
     const { r } = mountRenderer("2d", lodGraph());
