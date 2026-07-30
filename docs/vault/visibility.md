@@ -237,14 +237,34 @@ between a Bash call and a hidden note. And the router chokepoint (`resolveVisibi
 sandbox mechanism at all, by refusing it outright before a session ever opens.
 
 **The hole this measurement found and closed**: `chat.ts` and `daemon/session.ts` both passed
-`sandbox: { enabled: true, failIfUnavailable: false, … }`. Per the SDK's own documented semantics
-(`@anthropic-ai/claude-agent-sdk`'s bundled type declarations): with `failIfUnavailable: false`
-(its default), a sandbox that cannot start at all (missing OS dependencies, an unsupported
-platform) makes the CLI show a warning and **run the session anyway, fully unsandboxed** — for its
-entire lifetime, not just one command. In that state, `managedSettings.permissions.deny` is *all*
-that's left, and — as measured above — that layer does nothing to a raw Bash `cat`/`bismuth read`/
-`python3 -c`. `BISMUTH_AGENT_CHANNEL` still covers the `bismuth`-subprocess case, but a plain `cat`
-would go completely unguarded.
+`sandbox: { enabled: true, failIfUnavailable: false, … }`. The SDK's own bundled type declarations
+(`@anthropic-ai/claude-agent-sdk`'s `sdk.d.ts`, checked directly in both the 0.3.186 core resolves
+and the 0.2.141 daemon resolves) actually contain **two different `sandbox.failIfUnavailable`
+fields on two unrelated types, with contradicting doc comments about the default**:
+
+- `Options.sandbox: SandboxSettings` — the type that governs `query({ prompt, options })`, i.e. the
+  ACTUAL call chat.ts's `spawnChatQuery` and session.ts's `sendMessage` make — says: *"When
+  `enabled: true` is passed via this option, `failIfUnavailable` defaults to `true` — if sandbox
+  dependencies are missing … or the platform is unsupported, `query()` will emit an error result and
+  exit rather than silently running commands unsandboxed. Set `failIfUnavailable: false` to allow
+  graceful degradation."*
+- `Settings.sandbox` — an unrelated, on-disk `settings.json`/managed-settings schema type, never
+  touched by either call site — says: *"Exit with an error at startup if sandbox.enabled is true but
+  the sandbox cannot start … When false (default), a warning is shown and commands run unsandboxed."*
+
+These disagree with each other on which way is the default. The type that actually governs this
+code path is `Options.sandbox`, whose documented default is **fail-closed (`true`)** — meaning the
+pre-fix code's explicit `failIfUnavailable: false` was not merely accepting a permissive default, it
+was **actively overriding a documented-safe one**. Practically, this contradiction is moot for
+correctness either way: both call sites always pass an explicit boolean and never rely on either
+type's default, so which "default" is right never mattered for what actually ran — only for how
+severe a fixed `false` reads. Under either type's semantics, a sandbox that cannot start at all
+(missing OS dependencies, an unsupported platform) with `failIfUnavailable: false` in force makes
+the CLI show a warning and **run the session anyway, fully unsandboxed** — for its entire lifetime,
+not just one command. In that state, `managedSettings.permissions.deny` is *all* that's left, and —
+as measured above — that layer does nothing to a raw Bash `cat`/`bismuth read`/`python3 -c`.
+`BISMUTH_AGENT_CHANNEL` still covers the `bismuth`-subprocess case, but a plain `cat` would go
+completely unguarded.
 
 **The fix** (`core/src/visibility.ts` + `daemon/src/lib/visibility.ts`'s ported twin,
 `sandboxFailIfUnavailable(denyEntries)`): `failIfUnavailable` is now `denyEntries.length > 0`
@@ -262,9 +282,10 @@ no non-Darwin machine available in this pass) — genuinely attempted (env-var p
 the harness in an outer Seatbelt jail, which produced a *different*, per-command failure — exit 71,
 `sandbox_apply: Operation not permitted` — not the session-wide graceful-degrade `failIfUnavailable`
 governs). So the corrected `failIfUnavailable: true` behavior (the session refusing to open at all)
-rests on the SDK's own documented semantics plus the code-level fact that `managedSettings` cannot
-cover Bash, not on a reproduced live leak-then-fixed round trip. That distinction is recorded here
-rather than glossed over, per this page's own standard.
+rests on `Options.sandbox`'s documented semantics (the type this code actually calls — see above)
+plus the code-level fact that `managedSettings` cannot cover Bash, not on a reproduced live
+leak-then-fixed round trip. That distinction is recorded here rather than glossed over, per this
+page's own standard.
 
 **A residual gap found by this same measurement, NOT fixed here**: `dangerouslyDisableSandbox` is a
 documented, model-controlled Bash-tool parameter, honored whenever `sandbox.allowUnsandboxedCommands`

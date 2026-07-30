@@ -162,12 +162,23 @@ it is present and working here, and there is no non-Darwin machine in this pass.
 would require removing/hiding a system binary or running on an unsupported platform — both out of
 bounds for this task.
 
-So Step 3's decision (below) rests on: (a) the SDK's own bundled type-declaration doc string,
-quoted verbatim — *"Exit with an error at startup if sandbox.enabled is true but the sandbox cannot
-start (missing dependencies or unsupported platform). When false (default), a warning is shown and
-commands run unsandboxed."* — a primary source, not a guess; and (b) the code-level, verified fact
-that `managedSettings.permissions.deny` is scoped to the Read/Edit/Grep/Glob tool calling
-convention and never touches Bash's argv (confirmed by the Step 1 measurement: the OS sandbox, not
+So Step 3's decision (below) rests on: (a) the SDK's own bundled type declarations, read directly
+in `sdk.d.ts` for both versions this monorepo resolves (0.3.186 for core, 0.2.141 for daemon) —
+which turn out to contain TWO different, contradicting doc strings for `failIfUnavailable`, on two
+different types. `Options.sandbox: SandboxSettings` — the type that actually governs
+`query({ prompt, options })`, i.e. what `chat.ts`/`session.ts` call — says *"When `enabled: true` is
+passed via this option, `failIfUnavailable` defaults to `true` … Set `failIfUnavailable: false` to
+allow graceful degradation."* `Settings.sandbox` — an unrelated, on-disk `settings.json`/managed-
+settings schema type that neither call site touches — says *"Exit with an error at startup if
+sandbox.enabled is true but the sandbox cannot start … When false (default), a warning is shown and
+commands run unsandboxed."* The governing type's documented default is fail-CLOSED, not fail-open —
+which makes the pre-fix `failIfUnavailable: false` a worse choice than first written up here: it was
+overriding a documented-safe default, not merely accepting a permissive one. (Practically, this
+contradiction is moot for correctness: both call sites always pass an explicit boolean and never
+relied on either default — see `docs/vault/visibility.md`'s "Sandbox availability" section for the
+full correction and citation.) And (b) the code-level, verified fact that
+`managedSettings.permissions.deny` is scoped to the Read/Edit/Grep/Glob tool calling convention and
+never touches Bash's argv (confirmed by the Step 1 measurement: the OS sandbox, not
 `managedSettings`, is what produced the `EPERM`). Together these establish that a session running
 with the sandbox off entirely would leave a raw Bash `cat`/`bismuth read`/`python3 -c` completely
 unguarded. This is marked explicitly as resting on documented semantics + code inspection, not a
