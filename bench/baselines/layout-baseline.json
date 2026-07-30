@@ -3,14 +3,17 @@
   "opts": {},
   "vault": {
     "dir": "/Users/michaelslain/Documents/dev/bismuth-graph-vault",
-    "nodes": 2262,
     "edges": 5077,
-    "communities": 357
+    "edgesRaw": 5078,
+    "selfLoops": 1,
+    "nodes": 2262,
+    "communities": 357,
+    "fingerprint": "5558f545e13b163b"
   },
   "timing": {
-    "layout3dMs": 12296,
-    "layout2dMs": 7988,
-    "totalMs": 20284
+    "layout3dMs": 12040,
+    "layout2dMs": 7449,
+    "totalMs": 19489
   },
   "paths": {
     "separation": {
@@ -23,6 +26,7 @@
     },
     "exactPairLimit": 20000000
   },
+  "nanFields": [],
   "d3": {
     "neighbourhoodPreservationDegree": 0.05568757085436961,
     "neighbourhoodPreservationK10": 0.12779632627366344,
