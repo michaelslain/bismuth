@@ -88,11 +88,16 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
   const chatIds: string[] = [];
 
   beforeEach(() => {
-    stubDir = makeStubBinDir();
+    // Snapshot env BEFORE anything that can throw (makeStubBinDir: mkdtempSync/writeFileSync/
+    // chmodSync) — a final-review finding, the same env-save-ordering class of bug fixed elsewhere
+    // on this branch: on a first-beforeEach throw here, `savedPath` would stay `undefined`, and
+    // afterEach's restore (`if (savedPath === undefined) delete process.env.PATH`) would then strip
+    // PATH from the shared `bun test` process for every LATER test that spawns a subprocess.
     savedPath = process.env.PATH;
     savedShape = process.env.FAKE_ACP_MODEL_SHAPE;
     savedEchoFile = process.env.FAKE_ACP_ECHO_FILE;
     echoDir = undefined;
+    stubDir = makeStubBinDir();
     // Prepended, not appended: must win over any real `cline` this machine happens to have
     // installed elsewhere on PATH (this task installed one temporarily under .offline-cli-tools/ —
     // see the task report).

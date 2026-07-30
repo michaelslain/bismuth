@@ -90,7 +90,15 @@ function generateContentHitCount(metricsText: string): number {
 }
 
 describeOrSkip("the real gemini CLI, driven through the ACP driver, against a mock LLM — handshake + zero account API calls (see header: full-turn completion is NOT asserted)", () => {
-  const ENV_KEYS = ["GOOGLE_GEMINI_BASE_URL", "GEMINI_API_KEY", "GEMINI_CLI_TRUST_WORKSPACE", "HOME"] as const;
+  const ENV_KEYS = [
+    "GOOGLE_GEMINI_BASE_URL",
+    "GEMINI_API_KEY",
+    "GEMINI_CLI_TRUST_WORKSPACE",
+    "HOME",
+    "GOOGLE_API_KEY",
+    "GOOGLE_GENAI_USE_VERTEXAI",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+  ] as const;
   // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — populating this after an
   // await that can throw leaves it empty, and the restore loop below then unconditionally `delete`s
   // every ENV_KEY from the shared `bun test` process, including a developer's real $HOME.
@@ -108,6 +116,14 @@ describeOrSkip("the real gemini CLI, driven through the ACP driver, against a mo
 
   async function setup(): Promise<void> {
     mock = await startMockLlm(undefined, ["--metrics"]);
+    // Belt-only (final-review minor, matching codex's/cline's own defensive clears): the pinned
+    // $HOME + seeded selectedType below should dominate regardless, but a real Vertex/service-account
+    // escape hatch ambient in a developer's shell is exactly the class of risk closed for claude
+    // (CLAUDE_CODE_USE_BEDROCK/VERTEX) — clear the Google-side equivalents too rather than assume
+    // they can't matter.
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.GOOGLE_GENAI_USE_VERTEXAI;
+    delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
     const mockEnv = backendMockEnv("gemini", mock.url);
     for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v;
     // Headless CLIs refuse to run in an "untrusted" directory by default (a real, separate gemini-cli

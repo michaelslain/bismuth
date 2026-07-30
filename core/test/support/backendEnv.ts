@@ -3,15 +3,34 @@
 // (core/test/support/mockLlm.ts) instead of a real provider API — the other half of the
 // zero-real-API-calls test harness Tasks 3/4 build integration tests on top of.
 //
-// HONESTY, per the task brief: every row below is labeled VERIFIED or GUESSED, and a VERIFIED label
-// means this was actually run — a real installed binary, driven either directly (a raw shell
-// invocation) or through Bismuth's own production driver (`core/src/chatProviders/**`), against a
-// real `startMockLlm()` (or, where the backend's mechanism is file-based, a hand-written config
-// pointed at one) — with the mock's own request log/metrics inspected to confirm the hit landed on
-// the mock and NOT a real provider host. GUESSED means: researched against that CLI's own
-// documentation/source, but never run live. Two miscitations were already caught in this repo's
-// recent work (see catalog.ts's history) — presenting an unverified mapping as fact is the exact
-// failure mode that produces a THIRD, so this file is disciplined about which is which.
+// HONESTY, per the task brief: every row below is labeled with exactly what was actually
+// established for it, using this vocabulary (final-review finding: an earlier version of this
+// comment claimed the vocabulary was "VERIFIED or GUESSED" — no row below has said GUESSED since
+// Task 4; every row that started as a guess was either upgraded to one of the labels below with a
+// real live run, or explicitly left as-is with the word "guess" used only to describe that PAST
+// state, never a current one):
+//   - VERIFIED: actually run — a real installed binary, driven either directly (a raw shell
+//     invocation) or through Bismuth's own production driver (`core/src/chatProviders/**`), against
+//     a real `startMockLlm()` (or, where the backend's mechanism is file-based, a hand-written
+//     config pointed at one) — with the mock's own request log/metrics inspected to confirm the hit
+//     landed on the mock and NOT a real provider host, end to end, turn completing.
+//   - FIXED: a row that was previously wrong (verified live to fail — see the codex/cline case
+//     comments for what "wrong" meant concretely in each) and has since been corrected and then
+//     VERIFIED by the definition above.
+//   - PARTIALLY VERIFIED: some of the row's mapping was confirmed live, but not the full "a turn
+//     completes end to end" bar above — and this label covers two DELIBERATELY DIFFERENT states,
+//     never conflated: gemini means "driver-verified" (the real production driver, real handshake,
+//     real zero-real-network-access confirmation — everything EXCEPT a completed turn, which this
+//     task could not get gemini-cli to do against the mock; see that case's own comment for why).
+//     openclaw means "config mechanism only" (only the two env vars that redirect its config/state
+//     location were confirmed live; the actual model-ROUTING mechanism through its Gateway
+//     architecture was never executed at all — a materially weaker claim than gemini's).
+//   - Throws: no env-var (or file-based) mapping exists that actually works for how Bismuth spawns
+//     that backend — see cline's case comment for the one row this applies to, and why.
+// Two miscitations were already caught in this repo's recent work (see catalog.ts's history) —
+// presenting an unverified mapping as fact is the exact failure mode that produces a THIRD, so this
+// file is disciplined about which label is which and updates this file's OWN vocabulary comment
+// whenever a row's label changes, rather than letting the two drift apart.
 //
 // A backend not in the switch throws rather than silently returning `{}` — a caller asking this
 // module to mock a backend it doesn't know about is a bug in the CALLER (a typo'd backend id, or
@@ -23,7 +42,7 @@
 // with a message explaining exactly why and what (if anything) DOES work — never a row that "looks"
 // complete but silently falls through to a real API the moment someone trusts it.
 //
-// `workDir`: three backends' REAL working mechanism is a FILE Bismuth's driver reads at spawn time
+// `workDir`: two backends' REAL working mechanism is a FILE Bismuth's driver reads at spawn time
 // (Codex's `$CODEX_HOME/config.toml`, OpenClaw's `$OPENCLAW_CONFIG_PATH`), not a value any env var
 // carries directly — this file writes that config INTO `workDir` (a caller-owned temp directory,
 // never touched by any other test) and returns only the env vars that point at it. Every other
@@ -154,9 +173,10 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
       };
 
     // --------------------------------------------------------------------------------------
-    // PARTIALLY VERIFIED live (Task 4) — upgraded from a pure guess, but NOT fully to "verified
-    // end-to-end" the way claude/opencode/codex/goose are, and this row says exactly where the
-    // line falls:
+    // PARTIALLY VERIFIED live (Task 4) — the "driver-verified, turn not confirmed" sense of that
+    // label (see this file's header vocabulary section) — upgraded from a pure guess, but NOT fully
+    // to "verified end-to-end" the way claude/opencode/codex/goose are, and this row says exactly
+    // where the line falls:
     //   - CONFIRMED, live, through BOTH a raw ACP JSON-RPC handshake AND Bismuth's own
     //     CHAT_BACKENDS.gemini.sendMessage (chatProviders/acp/driver.ts, unmodified): this mapping
     //     correctly redirects a real `gemini` 0.53.0's outbound calls to the mock — zero real
@@ -284,7 +304,10 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
 
     // --------------------------------------------------------------------------------------
     // ADDED this task (brief finding #2 — openclaw previously had NO row at all, despite being a
-    // live, non-hidden backend in core/src/agentBackends/catalog.ts). PARTIALLY VERIFIED, and this
+    // live, non-hidden backend in core/src/agentBackends/catalog.ts). PARTIALLY VERIFIED, and
+    // specifically the "config mechanism only" sense of that label (see this file's header
+    // vocabulary section — a materially WEAKER claim than gemini's "driver-verified" sense just
+    // above: openclaw's model-ROUTING was never executed at all, only its config redirection). This
     // row is explicit about the boundary rather than overclaiming:
     //   - CONFIRMED live: `OPENCLAW_CONFIG_PATH` and `OPENCLAW_STATE_DIR` are real env vars that
     //     redirect openclaw's config file location and local state directory respectively (`openclaw

@@ -12,7 +12,7 @@ Bismuth uses **Bun's built-in test runner** (`bun:test`) for all tests — both 
 import { test, expect, describe, it, beforeEach, afterEach } from "bun:test";
 ```
 
-The full suite (~930 tests across the `core/` and `app/` workspaces) runs in roughly 10 seconds on a modern laptop.
+The full suite (~2026 tests across the `core/` and `app/` workspaces) runs in roughly 80-90 seconds on a modern laptop with every mocked-CLI binary installed and reachable. (This is an ~8x increase from an earlier ~930-tests/~10s figure this file used to quote — mostly the offline-testing branch's own mocked agent-CLI integration tests below, several of which spawn a REAL CLI subprocess and wait for a real turn to complete rather than exercising pure in-process logic, which costs real wall-clock seconds per test even though it costs zero API calls/dollars. A machine missing some of those CLI binaries runs fewer tests, faster, via the missing-binary skip described below.)
 
 ---
 
@@ -123,13 +123,24 @@ applies to two distinct kinds of test that could otherwise spend real money or c
    `BISMUTH_LIVE_TESTS=1` environment variable (see `core/test/liveGate.ts`) and skip by default —
    running them costs real money/quota, so they must never run in CI or a default `bun test`.
 2. **Mocked agent-CLI integration tests** (`core/test/chatProviders/*Mocked.test.ts`,
-   `core/test/chatProviders/acpFakeAgent.test.ts`) drive a REAL agent CLI binary (`claude`,
-   `opencode`, `codex`, `goose`, `gemini`, `cline`) through Bismuth's OWN production chat driver, but
-   point it at a **local mock LLM server** instead of the real provider API — these run by default
-   in `bun test core` (no opt-in needed) precisely because they spend nothing. They skip when the
-   relevant CLI **binary** isn't installed (a portability/CI concern), never when an **account**
-   isn't logged in — a missing-binary skip and a missing-account skip must never be conflated (see
-   each test file's own header for why).
+   `core/test/chatProviders/acpFakeAgent.test.ts`) run by default in `bun test core` (no opt-in
+   needed) precisely because they spend nothing, and skip when the relevant CLI **binary** isn't
+   installed (a portability/CI concern), never when an **account** isn't logged in — a
+   missing-binary skip and a missing-account skip must never be conflated (see each test file's own
+   header for why). They are NOT all the same shape, and the difference matters (corrected here
+   after an earlier version of this paragraph overstated it for two of the six files):
+   - `claudeMocked`/`opencodeMocked`/`codexMocked`/`gooseMocked`/`geminiMocked.test.ts` drive a REAL
+     agent CLI binary (`claude`/`opencode`/`codex`/`goose`/`gemini`) through Bismuth's OWN
+     production chat driver, pointed at a **local mock LLM server** instead of the real provider API
+     — see the verification table below for exactly how far each one is confirmed (full turn E2E vs.
+     handshake-only).
+   - `clineMocked.test.ts` drives the REAL `cline` binary too, but starts **no mock at all** — cline's
+     ACP mode has no mockable path (see the table), so this test instead proves that failure mode is
+     SAFE: an isolated, never-authenticated `CLINE_DIR` produces a clean error, never a hang or a
+     silent real-account fallback.
+   - `acpFakeAgent.test.ts` drives a **fake ACP agent** (`core/test/support/fakeAcpAgent.ts`, a
+     hand-rolled stub speaking the wire protocol), not a real CLI at all — see "The fake ACP agent"
+     below for why a fake is the only way to cover the version-skew branch it exists for.
 
 ### The mock LLM server
 
@@ -159,7 +170,7 @@ per-case comments are the source of truth, and are updated every time a row is a
 | `claude` | **Verified**, full turn E2E | `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_API_KEY` |
 | `opencode` | **Verified**, full turn E2E | Needs an explicit `setModel("mock/mock")` after session-open (a real driver quirk — server mode doesn't consult the config's default model on a session's first turn) and a small mock `--latency` (a zero-latency reply can race past opencode's own event-stream subscription) |
 | `goose` | **Verified**, full turn E2E | `ANTHROPIC_HOST`/`GOOSE_PROVIDER=anthropic`, driven via `goose acp` |
-| `codex` | **Verified**, full turn E2E | Needs a `$CODEX_HOME/config.toml` (a custom `model_providers.*` block, `wire_api = "responses"`) — plain `OPENAI_BASE_URL` does **not** work for this codex version, confirmed live (see `backendEnv.ts`) |
+| `codex` | **Verified**, full turn E2E | Needs a `$CODEX_HOME/config.toml` (a custom `model_providers.*` block, `wire_api = "responses"`) — plain `OPENAI_BASE_URL` does **not** work for this codex version, confirmed live (see `backendEnv.ts`). Known cosmetic quirk: codex logs a benign "Model metadata not found" item for any model under a non-built-in provider, which the driver's own translator (correctly, per its own contract) surfaces as `result.isError === true` even though the assistant's text arrives correctly — `codexMocked.test.ts` asserts on the text, not on `isError`, and documents this inline |
 | `gemini` | **Partially verified** | Handshake + old-shape model list + zero real network access confirmed live; a full turn's assistant text could not be made to arrive against the generic mock fixture within a reasonable time (see `geminiMocked.test.ts`'s header for the investigation) |
 | `cline` | **Not mockable for the mode Bismuth ships** | ACP mode (`cline --acp`) gates `session/new` behind a real OAuth `authenticate` call with no mockable path; `clineMocked.test.ts` instead verifies this fails SAFELY (a clean error, never a hang or a silent real-account fallback) against an isolated `CLINE_DIR` |
 | `openclaw` | **Config-mechanism only** | `OPENCLAW_CONFIG_PATH`/`OPENCLAW_STATE_DIR` genuinely redirect its config/state (confirmed live); routing an actual turn through its Gateway-backed ACP bridge was not exercised |

@@ -43,12 +43,24 @@
 // fail loud immediately, not silently let a caller's CLI fall through to a real API — the same
 // property the task brief calls out for a misconfigured ANTHROPIC_BASE_URL.
 //
-// ORPHAN SAFETY NET: mirrors opencodeServer.ts's own `process.on("exit", shutdownAll)` — every
-// spawned child is tracked in a module-level `liveProcs` Set (registered once, not per call, so a
-// suite starting many servers doesn't accumulate `process` listeners) and killed on this host
-// process's own exit, so a test that throws before reaching stop() (a genuine crash, not just a
-// failed assertion) can't leave an orphaned `node .../aimock/dist/cli.js` holding its port forever
-// — reproduced live: without this, exactly that happened.
+// ORPHAN SAFETY NET — SCOPE CORRECTION (final-review finding): mirrors opencodeServer.ts's own
+// `process.on("exit", shutdownAll)` — every spawned child is tracked in a module-level `liveProcs`
+// Set (registered once, not per call, so a suite starting many servers doesn't accumulate `process`
+// listeners) and killed on this host process's own exit. An EARLIER version of this comment claimed
+// this catches "a test that throws before reaching stop()" without qualification — that is ONLY
+// true for a plain `bun run`/standalone host process. Reproduced live (a bare `process.on("exit")`
+// that writes a file: fires reliably under `bun run`, NEVER fires under `bun test`) and independently
+// documented the same finding in core/test/chatProviders/opencodeMocked.test.ts's own header (search
+// "DEMONSTRABLY NEVER FIRES") — cross-referenced here so the two files stop contradicting each
+// other. Concretely: under `bun test`, this module's OWN consumer, this handler is NOT what keeps a
+// crashing test from orphaning a mock server — every caller in this codebase (claudeMocked.test.ts
+// et al.) instead relies on its own `afterAll(() => mock?.stop())`, which Bun DOES still run after a
+// test throws (afterAll hooks run regardless of a preceding test's pass/fail/throw — only a genuine
+// process-level crash or SIGKILL skips them). This handler is real, working, defense-in-depth for
+// the plain `bun run`/standalone-script case (see mockLlm.test.ts's own crash-simulation test, which
+// deliberately drives a SEPARATE `bun run` child specifically because that property can't be proven
+// from inside a `bun test` process) — it is not, and was never verified to be, a safety net for a
+// crash inside `bun test` itself.
 import { join, dirname } from "node:path";
 import { readFileSync } from "node:fs";
 
@@ -127,9 +139,29 @@ function resolveLlmockBin(): string {
  * full account. A small `--latency` value gives the subscription time to attach first. Every OTHER
  * caller (claudeMocked.test.ts, mockLlm.test.ts) omits this and is completely unaffected — an empty
  * default changes nothing about the exact spawn argv they already depend on.
+ *
+ * DENYLISTED (final-review minor): `--record`/`--provider-*` turn `llmock` from a mock into a
+ * REAL-PROVIDER PROXY (see `docs/contributing/testing.md`'s "Recording a new fixture" section) —
+ * exactly the one thing this whole harness exists to prevent a test from doing by accident. Any
+ * `extraArgs` entry matching either is rejected synchronously (before any spawn attempt) rather than
+ * silently starting a mock that isn't one; a future test file that needs to record a NEW fixture
+ * must do so as the deliberate, manual, real-account act the docs describe, never as a value handed
+ * to this function.
  */
+const DENYLISTED_ARG_RE = /^--record$|^--provider-/;
+
 export function startMockLlm(fixtureDir: string = DEFAULT_FIXTURE_DIR, extraArgs: readonly string[] = []): Promise<MockLlmHandle> {
   return new Promise((resolve, reject) => {
+    const denylisted = extraArgs.find((a) => DENYLISTED_ARG_RE.test(a));
+    if (denylisted) {
+      reject(
+        new Error(
+          `startMockLlm: extraArgs contains "${denylisted}", which turns llmock into a REAL-PROVIDER PROXY — never something a test's extraArgs may pass. ` +
+            'Recording a new fixture is a deliberate, manual, real-account act (see docs/contributing/testing.md\'s "Recording a new fixture" section), not something this function does.',
+        ),
+      );
+      return;
+    }
     let proc: ReturnType<typeof Bun.spawn>;
     try {
       const bin = resolveLlmockBin();

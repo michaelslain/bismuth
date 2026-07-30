@@ -66,6 +66,24 @@ function opencodeServePids(): string[] {
   }
 }
 
+/** True iff `pid`'s PARENT is THIS process (`process.pid`) — a final-review minor: the shared
+ *  server's argv match (`OPENCODE_SERVE_PATTERN`) alone isn't enough to say "safe to SIGTERM",
+ *  because a user's OWN running Bismuth app could independently start an `opencode serve` with the
+ *  exact same argv (opencodeServer.ts's spawn args are fixed, not test-specific) while this test
+ *  happens to be running. A server this test itself caused to exist is always a DIRECT child of
+ *  this `bun test` process (chatProviders/opencode.ts's `ensureOpencodeServer` calls `Bun.spawn`
+ *  synchronously within it, no double-fork) — the app's own instance never is. Best effort: any
+ *  `ps` hiccup yields false (never kill on an inconclusive check). */
+function isChildOfThisProcess(pid: string): boolean {
+  try {
+    const r = Bun.spawnSync(["ps", "-o", "ppid=", "-p", pid]);
+    if (r.exitCode !== 0) return false;
+    return r.stdout.toString().trim() === String(process.pid);
+  } catch {
+    return false;
+  }
+}
+
 describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts, against a mock LLM (zero account API calls)", () => {
   const ENV_KEYS = ["OPENCODE_CONFIG_CONTENT", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"] as const;
   // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — a code-review finding on this
@@ -143,6 +161,11 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
     await mock?.stop();
     for (const pid of opencodeServePids()) {
       if (pidsBefore.has(pid)) continue; // pre-existing — not this test's to kill
+      // Final-review minor: argv-matching alone could SIGTERM the user's OWN running Bismuth app if
+      // its opencode server happened to start during this test's window — require the PID to
+      // actually be a child of THIS process before killing it (see isChildOfThisProcess's doc
+      // comment).
+      if (!isChildOfThisProcess(pid)) continue;
       try {
         process.kill(Number(pid), "SIGTERM");
       } catch {

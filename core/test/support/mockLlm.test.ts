@@ -3,7 +3,7 @@
 // harness itself doesn't spawn claude/codex/opencode/etc; core/test/support/backendEnv.ts's per-CLI
 // mapping is exercised as a pure function here, not by actually running a CLI).
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -59,6 +59,17 @@ describe("startMockLlm", () => {
   // prints its URL, then throws — simulating exactly the crash-before-stop() scenario — and this
   // test asserts the mock's port is unreachable once that child has actually exited, proving
   // mockLlm.ts's own `process.on("exit", …)` safety net fired inside the child.
+  //
+  // SCOPE (final-review finding, do not over-read this test): the child above is a plain
+  // `bun run script.ts`, NOT a `bun test` process — this test certifies the safety net for that
+  // ONE context (a standalone script/host), which is a REAL and useful property but is NOT the
+  // context every *Mocked.test.ts file in this suite actually runs in. Under `bun test` itself,
+  // `process.on("exit", …)` handlers were separately confirmed to never fire at all (see
+  // mockLlm.ts's own header, and core/test/chatProviders/opencodeMocked.test.ts's) — teardown there
+  // relies entirely on each test file's own `afterAll(() => mock?.stop())`, not on this mechanism.
+  // Do not read a green run of this test as "the suite is protected against a crashing test file
+  // leaking a mock server" — it isn't, by this mechanism; `afterAll` is what does that job in
+  // `bun test`.
   test(
     "an abnormal exit (crash before stop()) does not orphan the mock server — process.on('exit') safety net",
     async () => {
@@ -118,18 +129,60 @@ describe("startMockLlm", () => {
 describe("backendMockEnv", () => {
   const MOCK_URL = "http://127.0.0.1:54321";
 
-  test("every backend id core/src/agentBackends/catalog.ts knows about either maps to real env vars or is explicitly unmapped", () => {
-    // Not every BACKEND_IDS entry is expected to be covered (the ACP-adapter entries bridge a
-    // CLI that already has its own native row — see catalog.ts's `hidden` doc comment). codex/
-    // openclaw need a `workDir` third argument (a file-based mechanism — see backendEnv.ts's case
-    // comments) so they're exercised separately below; cline is DELIBERATELY excluded from this
-    // loop — Task 4 found its only real mechanism can't reach the ACP mode Bismuth drives, so it
-    // throws instead of mapping (see its own dedicated test below).
-    for (const id of ["claude", "opencode", "gemini", "goose"] as const) {
-      expect(BACKEND_IDS as readonly string[]).toContain(id);
-      const env = backendMockEnv(id, MOCK_URL);
-      expect(Object.keys(env).length).toBeGreaterThan(0);
-      expect(Object.values(env).some((v) => v.includes(MOCK_URL))).toBe(true);
+  test("EVERY backend id core/src/agentBackends/catalog.ts knows about is covered by backendMockEnv, as a real mapping or an explicit throw — a true drift guard", () => {
+    // FINAL-REVIEW FINDING (Important #3): the previous version of this test was titled as a
+    // universally-quantified drift guard ("every backend id...") but its BODY iterated a hardcoded
+    // 4-entry array — adding a 10th id to BACKEND_IDS (9 entries today) could never fail it. Fixed
+    // by iterating BACKEND_IDS itself; the `default` arm below is the actual guard — it throws with
+    // an explanatory message for any id this switch doesn't yet know how to check, so a newly-added
+    // backend fails LOUD here until a real case is added for it, rather than silently passing by
+    // never being iterated at all.
+    for (const id of BACKEND_IDS) {
+      switch (id) {
+        // Plain env-var mappings — no workDir, mockUrl appears directly in a returned env VALUE.
+        case "claude":
+        case "opencode":
+        case "gemini":
+        case "goose": {
+          const env = backendMockEnv(id, MOCK_URL);
+          expect(Object.keys(env).length).toBeGreaterThan(0);
+          expect(Object.values(env).some((v) => v.includes(MOCK_URL))).toBe(true);
+          break;
+        }
+        // File-based mappings (see backendEnv.ts's own case comments): require a workDir (throw
+        // without one), and the mock URL lands in a FILE this call writes into that dir — never in
+        // the returned env object's own values (those are just paths/keys).
+        case "codex":
+        case "openclaw": {
+          expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
+          const dir = mkdtempSync(join(tmpdir(), `backendenv-driftguard-${id}-`));
+          const env = backendMockEnv(id, MOCK_URL, dir);
+          expect(Object.keys(env).length).toBeGreaterThan(0);
+          const written = readdirSync(dir)
+            .map((f) => readFileSync(join(dir, f), "utf8"))
+            .join("\n");
+          expect(written).toContain(MOCK_URL);
+          break;
+        }
+        // No env-var mapping is possible at all (see backendEnv.ts's own case comment for why) —
+        // must throw, never silently return an empty/unusable mapping a caller could trust.
+        case "cline":
+          expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/authenticate|OAuth/);
+          break;
+        // Hidden ACP-ADAPTER entries (catalog.ts's `hidden` doc comment): each bridges a CLI that
+        // already has its own native row above (claude, codex) — deliberately never given a
+        // SEPARATE row of their own, so this function throws (an unknown id in the switch) rather
+        // than silently returning {}.
+        case "claude-code-acp":
+        case "codex-acp":
+          expect(() => backendMockEnv(id, MOCK_URL)).toThrow();
+          break;
+        default:
+          // A NEW id landed in BACKEND_IDS that this switch has no case for — this is the guard
+          // actually firing. Add a case above (and a real row or an explicit throw in
+          // backendEnv.ts) rather than widening this default to swallow it.
+          throw new Error(`mockLlm.test.ts's drift guard has no case for backend id "${id}" — add one above (and a matching row/throw in backendEnv.ts) before this can pass.`);
+      }
     }
   });
 
