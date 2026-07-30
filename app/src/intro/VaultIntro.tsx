@@ -27,7 +27,7 @@ import { IconButton } from "../ui/IconButton";
 import { Chip } from "../ui/Chip";
 import { Icon } from "../icons/Icon";
 import { CanvasGraphRenderer } from "../graph/CanvasGraphRenderer";
-import { GraphAtmosphere } from "../graph/GraphAtmosphere";
+import { GraphAtmosphere, type BloomSink } from "../graph/GraphAtmosphere";
 import { paletteToInts, hexToInt } from "../themeColors";
 import type { GraphData } from "../../../core/src/graph";
 import { THEME_NAMES, THEMES, THEME_LABELS, DEFAULT_THEME, resolveAppearance, type ThemeName } from "../themes";
@@ -184,9 +184,17 @@ function applyGraphConfig(renderer: CanvasGraphRenderer, name: ThemeName) {
 function IntroGraph(props: { graph: GraphData; pose: "full" | "condensed"; active: boolean; theme: ThemeName; offsetY?: number; fitMargin?: number }) {
   let host!: HTMLDivElement;
   const renderer = new CanvasGraphRenderer();
+  // This renderer instance never gets swapped (unlike GraphView.tsx's ASCII<->STANDARD toggle) —
+  // one IntroGraph always drives one CanvasGraphRenderer for its whole life — so wiring it straight
+  // to a sink here has none of the staleness risk a `renderer` prop has on GraphAtmosphere. Still
+  // going through the same BloomSink shape as GraphView.tsx rather than a one-off, so there is
+  // exactly one way <GraphAtmosphere> is ever fed a field. See GraphAtmosphere.tsx's file-level
+  // comment for why it takes a sink instead of the renderer itself.
+  const bloomSink: BloomSink = {};
   let mounted = false;
   onMount(() => {
     renderer.mount(host, () => {});
+    renderer.setBloomCallback?.((field) => bloomSink.current?.(field));
     renderer.render(props.graph);
     mounted = true;
     applyGraphConfig(renderer, props.theme);
@@ -202,7 +210,7 @@ function IntroGraph(props: { graph: GraphData; pose: "full" | "condensed"; activ
   return (
     <div class="vi-graph3d" data-pose={props.pose} classList={{ active: props.active }}>
       <div class="vi-graph3d-canvas" ref={host} />
-      <GraphAtmosphere renderer={renderer} />
+      <GraphAtmosphere sink={bloomSink} />
     </div>
   );
 }

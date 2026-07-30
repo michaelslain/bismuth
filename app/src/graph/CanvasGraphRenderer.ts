@@ -12,6 +12,7 @@
 
 import "./graphCanvas.css";
 import type { GraphData, GraphNode, NodeKind } from "../../../core/src/graph";
+import { buildBloom, type DensityField } from "./densityField";
 
 /** Live graph settings pushed by GraphView (mirrors settings.graph + appearance tokens). */
 export interface GraphConfig {
@@ -409,7 +410,6 @@ export class CanvasGraphRenderer {
   private radius3 = 1; private radius2 = 1; // layout extent per view
   private scale3 = 1; private scale2 = 1;   // world-units -> px fit per view
   private fitPx = 1;                          // on-screen fit radius (px); node size derives from DENSITY, not layout scale
-  private glowCentroids: Vec3[] = [];        // cached top-3 community centroids (glow lobes)
   private minZ = 0; private maxZ = 1;        // last frame's projected depth range
 
   // viewport geometry
@@ -448,7 +448,7 @@ export class CanvasGraphRenderer {
   private onNodeClick: (id: string) => void = () => {};
   private onHover: (n: HoverNode | null) => void = () => {};
   private onFps?: (fps: number) => void;
-  private onGlow?: (g: { lobes: { x: number; y: number }[] }) => void;
+  private onBloom?: (field: DensityField) => void;
   /** Fired when an empty-space click clears a persistent highlight — lets the view (e.g. the
    *  cluster legend's selected row) drop its own selection state in sync. */
   onHighlightCleared?: () => void;
@@ -510,10 +510,11 @@ export class CanvasGraphRenderer {
     window.removeEventListener("keydown", this.onKeyDown);
     this.host?.replaceChildren();
     this.nodes = []; this.edges = []; this.byId.clear();
+    this.onBloom = undefined; // detach — a torn-down renderer must not hold a stale bloom sink
   }
 
   setFpsCallback(cb: (fps: number) => void) { this.onFps = cb; }
-  setGlowCallback(cb: (g: { lobes: { x: number; y: number }[] }) => void) { this.onGlow = cb; }
+  setBloomCallback(cb: ((field: DensityField) => void) | undefined) { this.onBloom = cb; }
   setPaintCallback(cb: (nodeCount: number) => void) { this.onPaint = cb; }
   setVisible(visible: boolean) { this.visible = visible; if (visible) { this.dirty = true; this.start(); } else this.stop(); }
   /** Zoom the resting fit out by this factor (>1 = smaller graph). Used by the intro graph. */
@@ -616,7 +617,6 @@ export class CanvasGraphRenderer {
     this.radius3 = boundingRadius(this.nodes.map((nv) => nv.p3));
     this.radius2 = boundingRadius(this.nodes.map((nv) => nv.p2));
 
-    this.glowCentroids = [...this.getCommunityCentroids().values()].sort((a, b) => b.count - a.count).slice(0, 3).map((c) => c.centroid);
     this.restyle();
     this.fit(resetCamera);
     this.dirty = true;
@@ -991,24 +991,12 @@ export class CanvasGraphRenderer {
 
   // ---- projection ----------------------------------------------------------
 
-  private project(p: Vec3): { x: number; y: number; z: number; s: number } {
-    const s = this.worldScale;
-    const x = (p[0] - this.target[0]) * s, y = (p[1] - this.target[1]) * s, z = (p[2] - this.target[2]) * s;
-    const cy = Math.cos(this.ry), sy = Math.sin(this.ry);
-    const x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
-    const cx = Math.cos(this.rx), sx = Math.sin(this.rx);
-    const y2 = y * cx - z1 * sx, z2 = y * sx + z1 * cx;
-    const zc = z2 + this.zoom;
-    const persp = this.P / Math.max(1, this.P - zc);
-    return { x: x1 * persp, y: y2 * persp, z: zc, s: persp };
-  }
-
-  /** Compute screen pos + depth for every node (no DOM writes). Inlines project() plus the old
-   *  coordFor() morph-lerp (now folded in here, since this was its only caller) with the
-   *  per-frame-constant trig/target/origin values hoisted out of the loop, and no per-node result
-   *  object allocated. Arithmetic, operand order, and branch structure are identical to
-   *  project()/the old coordFor() — just evaluated inline. project() itself is kept intact above
-   *  (still used by emitGlow). */
+  /** Compute screen pos + depth for every node (no DOM writes). Inlines the camera projection
+   *  (world -> orbit rotation -> perspective divide) plus the old coordFor() morph-lerp (now
+   *  folded in here, since this was its only caller) with the per-frame-constant trig/target/
+   *  origin values hoisted out of the loop, and no per-node result object allocated. This is the
+   *  single projection pass for the frame — emitBloom() reads the sx/sy/pscale it writes rather
+   *  than re-projecting. */
   private projectPositions() {
     const s = this.worldScale;
     const tx = this.target[0], ty = this.target[1], tz = this.target[2];
@@ -1200,7 +1188,7 @@ export class CanvasGraphRenderer {
     if (this.dirty) {
       this.projectPositions();
       this.drawCanvas(true, is2d);
-      this.emitGlow();
+      this.emitBloom();
       this.dirty = false;
     }
 
@@ -1669,14 +1657,22 @@ export class CanvasGraphRenderer {
     return false;
   }
 
-  private emitGlow() {
-    if (!this.onGlow) return;
-    const lobes = this.glowCentroids.map((c) => {
-      const pr = this.project(c);
-      return { x: ((this.cx + this.panX + pr.x) / this.W) * 100, y: ((this.cy + this.panY + this.viewOffsetY * this.H + pr.y) / this.H) * 100 };
-    });
-    while (lobes.length < 3) lobes.push({ x: 50, y: 50 });
-    this.onGlow({ lobes });
+  /** Emit the per-frame node-density field for the phosphor bloom (densityField.ts). Reuses the
+   *  screen positions projectPositions() already computed this frame (nv.sx/nv.sy — the same
+   *  (cx+panX+x)/(cy+panY+viewOffsetY*H+y) space the old glow lobes read off `project()`, just as
+   *  0..1 fractions instead of CSS percent) rather than re-projecting: there is only ever one
+   *  projection pass per frame. */
+  private emitBloom() {
+    if (!this.onBloom) return;
+    const pts: { x: number; y: number; weight: number }[] = [];
+    for (const nv of this.nodes) {
+      if (!nv.onScreen) continue;
+      const x = nv.sx / this.W, y = nv.sy / this.H;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      // Weight by projected scale so near/large nodes contribute more light than far/small ones.
+      pts.push({ x, y, weight: Math.max(0.2, nv.pscale) });
+    }
+    this.onBloom(buildBloom(pts));
   }
 
   // ---- interaction ---------------------------------------------------------

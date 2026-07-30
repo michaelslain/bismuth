@@ -48,6 +48,7 @@ import {
   massCellCode, massRadii, type LodLevel,
 } from "./lod";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
+import { buildBloom, type DensityField } from "./densityField";
 
 /** Numeric per-frame snapshot for QA (`window.__asciiGraphStats`, DEV builds only) — lets the
  *  redesign's fit/LOD/label criteria be asserted against directly instead of eyeballed off a
@@ -454,6 +455,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private onFps?: (fps: number) => void;
   private onPaint?: (nodeCount: number) => void;
   private onZoom?: (pct: number) => void;
+  private onBloom?: (field: DensityField) => void;
   onHighlightCleared?: () => void;
 
   // loop
@@ -517,11 +519,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
     this.host?.replaceChildren();
     this.nodes = []; this.edges = []; this.byId.clear();
+    this.onBloom = undefined; // detach — a torn-down renderer must not hold a stale bloom sink
   }
 
   setFpsCallback(cb: (fps: number) => void) { this.onFps = cb; }
   setPaintCallback(cb: (nodeCount: number) => void) { this.onPaint = cb; }
   setZoomCallback(cb: (pct: number) => void) { this.onZoom = cb; }
+  setBloomCallback(cb: ((field: DensityField) => void) | undefined) { this.onBloom = cb; }
   setVisible(visible: boolean) { this.visible = visible; if (visible) { this.dirty = true; this.start(); } else this.stop(); }
 
   // ---- data ----------------------------------------------------------------
@@ -945,6 +949,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.rasterize(is2d);
       this.paint();
       this.emitZoom();
+      this.emitBloom();
       this.dirty = false;
     }
     this.raf = requestAnimationFrame(this.tick);
@@ -953,6 +958,26 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private emitZoom() {
     const pct = resolutionPercent(this.res, this.maxRes);
     if (pct !== this.lastZoomPct) { this.lastZoomPct = pct; this.onZoom?.(pct); }
+  }
+
+  /** Emit the per-frame node-density field for the phosphor bloom (densityField.ts). This field
+   *  had no atmosphere at all before — the flat --graph-bg ground drew alone. Reads the screen
+   *  positions projectNodes() already wrote this frame (nv.sx/nv.sy) rather than re-projecting —
+   *  there is only ever one projection pass per frame — and drops any node that isn't in front of
+   *  the camera (nv.projValid, the same test drawn nodes/edges gate on; buildBloom itself drops
+   *  anything that lands outside the 0..1 field once converted to a screen fraction). */
+  private emitBloom() {
+    if (!this.onBloom) return;
+    const pts: { x: number; y: number; weight: number }[] = [];
+    for (const nv of this.nodes) {
+      if (!nv.projValid) continue;
+      const x = nv.sx / this.W, y = nv.sy / this.H;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      // Weight by depth so near nodes contribute more light than far ones — the same depthAlpha
+      // curve nodes themselves already fade by, rather than inventing a second one.
+      pts.push({ x, y, weight: depthAlpha(nv.dr) });
+    }
+    this.onBloom(buildBloom(pts));
   }
 
   // ---- cursor-anchored zoom (2D) -------------------------------------------
