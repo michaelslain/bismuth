@@ -31,7 +31,7 @@ export const CODEX_HOOK_SCRIPT_NAME = "bismuth-relay-hook.ts";
 const CODEX_DIR_NAME = ".codex";
 const HOOKS_FILE_NAME = "hooks.json";
 
-const HOOKS_JSON_DESCRIPTION = "Bismuth relay lifecycle hooks — reports this Codex session to the in-app agents graph.";
+const HOOKS_JSON_DESCRIPTION = "Bismuth relay lifecycle hooks — reports this Codex session to Bismuth's relay registry.";
 
 /**
  * The reporting script's full source, written verbatim to `<vault>/.codex/bismuth-relay-hook.ts`.

@@ -19,7 +19,7 @@ cd app && bun run dev                             # Tauri app + backend on :4321
 - **core**: Backend server that manages vaults, builds knowledge graphs, and integrates with the per-vault daemon's memory
 - **cli**: Command-line interface for managing vaults (`bismuth` binary)
 - **app**: Tauri + Solid + TypeScript application with CodeMirror editor and 3D/2D graph visualizations. Runs on desktop AND iPad/iOS — mobile swaps the HTTP backend for an in-process one (see Mobile / iPad below)
-- **relay**: A tiny Claude Code plugin (hooks only) reporting each terminal-tab session + subagents to core's in-process registry (the "agents" graph), and injecting the vault's memory when the daemon is enabled (see Relay + Daemon Integration)
+- **relay**: A tiny Claude Code plugin (hooks only) reporting each terminal-tab session + subagents to core's in-process relay registry (`core/src/relay.ts`), and injecting the vault's memory when the daemon is enabled (see Relay + Daemon Integration)
 - **mcp**: A stdio MCP server (`docs/` reference + `bismuth` CLI, token-frugal; plus `remember`/`recall`/`forget` when the daemon is enabled) — per-tab in dev, machine-wide from the bundled app (see MCP Integration)
 - **memory**: `@bismuth/memory` — the pure 3rd-brain memory graph (note CRUD + frontmatter + backlinks, keyword search, query DSL). Shared by the daemon, relay hooks, and MCP tools; every entry point takes an explicit dir (`BISMUTH_MEMORY_DIR`)
 - **daemon**: `@bismuth/daemon` — per-vault runtime; ONE machine process multiplexes every enabled vault's brain (memory + crons + processes + a conversation session); bundled binary run by launchd/systemd (see Daemon Integration)
@@ -69,10 +69,10 @@ Default ports `:4321`/`:1420` serve one instance. For more, override: `PORT=4322
 - `server.ts` — HTTP server (Bun.serve): caching, file watching, SSE broadcast, three WS upgrades (`/terminal` PTY, `/chat` visual Claude chat, `/ui` per-window app-control). Three route tables: **GET reads**, **POST mutations** (`mutatingHandler` → invalidate + SSE), **read-table POST/PUT** (no invalidate: `/rows`, `/search`, `PUT /file`, `/relay/*`, `/ui/*`, daemon writes). Also drives `/gcal/*` + a 60s auto-sync ticker; writes a run-registry record on boot. **Full reference: `docs/api/http-reference.md`.**
 - `sse.ts` — SSE registry (`formatEvent`, `createSseRegistry`): pushes `{version, paths, dirty:{graph,tree}}` on file changes — consumers use the `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — graph composition: merges vault + memory + self node, creates "about" edges (memory→vault). `vault.ts` — builds vault graph from markdown (two-pass: note nodes, then wikilink/tag/frontmatter edges)
-- `graph.ts` — Graph types. Node kinds: note/memory/agent/tag/self (the "you" hub, injected frontend-side via `app/src/graph/agentLayout.ts` — agents mode only; no self node in 2nd/3rd/both/daemon) + daemon/cron/process. Edge kinds: link, message, about, tag, open, supervises
+- `graph.ts` — Graph types. Node kinds: note/memory/agent/tag/self (the "you" hub; previously injected frontend-side for the now-removed agents graph mode — no mode injects a self node any more) + daemon/cron/process. Edge kinds: link, message, about, tag, open, supervises
 - `layout.ts` — pure layout (pivot-MDS + force sim) → 2D + 3D `Positions`. `layout-cache.ts` — `attachLayout()` writes precomputed `position2d`/`position3d` onto nodes; frontend morphs between them (no client force sim)
 - `files.ts` — file I/O + path-traversal rejection. `frontmatter.ts` — YAML parse (tolerates malformed). `wikilinks.ts`/`tags.ts` — extract `[[WikiLink]]` / `#tag`. `memory.ts` — memory graph (`mem:` namespace)
-- `agents.ts`/`relay.ts` — "agents" graph (you → terminal-tab sessions → subagents) over the in-process relay registry (populated by relay hooks via `POST /relay/*`, pruned against the live pty set)
+- `agents.ts` — the `ChatAgentSession`/`ChatAgentSubagent` types shared with `chat.ts`'s per-chat subagent tracking. `relay.ts` — in-process registry of terminal-tab Claude Code sessions + their subagents, populated by the relay plugin's hooks (`POST /relay/*`); pruned against the live pty set when a terminal tab closes (`terminal.ts`'s `killSession`)
 - `uiControl.ts` — registry of OPEN app WINDOWS + request/reply command channel (`/ui` WS): powers the `app` CLI + MCP app control. `runRegistry.ts` — `~/.bismuth/run/<vault>.json` so out-of-app callers discover which port serves which vault
 - `daemon.ts`/`daemonGraph.ts`/`daemonViz.ts` — daemon shared-state reader (never throws) + "daemon" graph builder (hub → cron/process, `supervises` edges) + pure `nodeVisualState()` (enabled/running → visual tokens). See Daemon Integration
 - `backup.ts` — git snapshot of vault. `tasks.ts`/`tasks-query.ts` — Tasks extraction + query DSL (Obsidian-compatible). `dates.ts` — date math (tasks/SRS/calendar). `calendar.ts` — headless calendar-file logic (behind the `bismuth calendar` CLI). `basesData.ts` — vault feed for Bases
@@ -102,7 +102,7 @@ Default ports `:4321`/`:1420` serve one instance. For more, override: `PORT=4322
 - `settingsCssVars.ts` — projects appearance/ui/calendar/terminal settings + the resolved theme tokens into `:root` CSS custom properties (colors, `--graph-0..4`, `--danger/--success/--warning`, `--shadow-*`); stylesheets reference via `var(--name, fallback)`. Color tokens come from `core/src/theme/tokens.ts` (the single source of truth, re-exported by `app/src/themes.ts`).
 
 **Graph rendering**:
-- `graph/CanvasGraphRenderer.ts` — Canvas-2D renderer (NOT WebGL) for 2D + 3D: 3D camera math + hit-test/hover/drag-orbit/pan/zoom/labels in one pass per frame; only rescales the backend's precomputed layouts. `graph/AgentsGraph.tsx` — cards + org-picker overlay for "agents" mode
+- `graph/CanvasGraphRenderer.ts` — Canvas-2D renderer (NOT WebGL) for 2D + 3D: 3D camera math + hit-test/hover/drag-orbit/pan/zoom/labels in one pass per frame; only rescales the backend's precomputed layouts.
 - `graph/labelSelection.ts` — pure `computeAlwaysOnSet` (top-N nodes by undirected edge count), unit-tested. `graph/collide.ts` — per-node collision-radius helpers.
 
 **Styling**: `App.css` = global styles + CSS vars for theme/accent/fonts; component styles colocated with components. The color system is centralized in **`core/src/theme/tokens.ts`** (12 themes, semantic + shadow tokens, category swatches — in `core` so gcal/drawing/export/schema can import it; `app/src/themes.ts` re-exports it). Ref: `docs/settings/themes.md`.
@@ -183,7 +183,7 @@ Purposes are in **Architecture** above; this is the layout.
 ```
 core/src/
   server.ts sse.ts                    # HTTP + SSE + WS, mutating-route abstraction
-  engine.ts vault.ts memory.ts agents.ts relay.ts uiControl.ts runRegistry.ts graphBuilder.ts   # graph composition + builders (relay = agent-graph registry; uiControl = app-control window channel; runRegistry = port discovery)
+  engine.ts vault.ts memory.ts agents.ts relay.ts uiControl.ts runRegistry.ts graphBuilder.ts   # graph composition + builders (relay = terminal-tab session/subagent registry; uiControl = app-control window channel; runRegistry = port discovery)
   daemon.ts daemonGraph.ts daemonViz.ts daemonState.ts   # daemon: state reader + daemon-mode graph + node-visual encoder + shared file-read helpers
   drawing/   # .draw vector docs (model/geometry/smooth/render2d/paper/theme/export — pure, headless)
   graph.ts layout.ts layout-cache.ts community.ts          # types, layout, community detection
@@ -206,7 +206,7 @@ app/src/
   ChatView.tsx ChatComposer.tsx chat*.ts   # visual Claude chat (NOT in blocks/): ChatView + ChatComposer + ~13 pure unit-tested modules (chatContext/chatEditorContext, chatHistory, chatModelResolution, chatEffort, chatPermissionMode, chatSlashCommands, chatQueueRestore, chatSessionStore, chatTitles, chatOrigin = daemon-vs-user icon, chatColors, chatComposerKeys)
   mobile/   # iPad/iOS boot: bootMobile.ts (swaps FileAccess+Transport before App import), inProcessTransport.ts (dispatch→Response, optimistic read-compare-write), tauriFileAccess.ts (tauri-plugin-fs IO) — see Mobile / iPad
   FileTree.tsx fileTreeOps.ts ContextMenu.tsx nativeMenu.ts FolderPrompt.tsx EmptyPane.tsx
-  GraphView.tsx GraphSearch.tsx ClusterLegend.tsx graph/   # graph shell + Canvas2D CanvasGraphRenderer, AgentsGraph overlay, GraphAtmosphere, agentLayout (agents-only self node), agentGraphSig, collide, labelSelection
+  GraphView.tsx GraphSearch.tsx ClusterLegend.tsx graph/   # graph shell + Canvas2D CanvasGraphRenderer, GraphAtmosphere, collide, labelSelection
   FileView.tsx NoteTitle.tsx Flashcards.tsx Terminal.tsx SheetView.tsx sheet/ ExportView.tsx export/
   intro/ ai/   # intro/ = first-run Vault Intro takeover (VaultIntro + marks; theme picker + power-ups; see Desktop app & core sidecar); ai/ = local offline "Detect AI text" (aiDetect.ts, transformers.js, no network)
   bases/ calendar/ palette/ drawing/   # feature view-sets (bases/: + CardEditor inline-editable cards, CardEditModal, reconcileRows, changeRelevance; kanban card image-drop: cardImageDrop/kanbanImageDrop → embed dropped images in a card's markdown description, #67)
@@ -260,7 +260,6 @@ Memory notes live in a separate dir; the memory graph is built separately with n
 
 ### Graph Modes
 - **"2nd" brain**: self + vault notes + tags (excludes memory). **"3rd" brain**: self + memory. **"both"**: full brain + cross-edges.
-- **"agents"**: live tree of Claude Code work in THIS app's terminal tabs — you → each terminal-tab session → its subagents (depth 1). Built from `/agent-graph` (`agents.ts` over the relay registry, filtered to open tabs); frontend polls it (change-signature dedup) only while agents mode is active. See Relay Integration.
 - **"daemon"**: the daemon's supervised work — daemon hub → its crons + processes (`supervises` edges), node fill/border encoding enabled/running state. See Daemon Integration.
 
 **2D/3D toggle**: a **transient localStorage toggle** (not a `.settings` key) — persists across sessions but not user-facing in the settings file. Toggle via the graph toolbar or `GraphView` mode control.
@@ -282,7 +281,7 @@ A stdio [MCP](https://modelcontextprotocol.io) server serving the `docs/` refere
 
 ### Relay Integration (`relay/` workspace + `core/src/relay.ts`)
 
-A small Claude Code plugin (`relay/`) reports each terminal-tab Claude session + its subagents to an **in-process registry** (`core/src/relay.ts`), powering the "agents" graph. Loads per-session inside app terminals (bundled via `BISMUTH_RELAY_BUNDLE`; nothing in `~/.claude`); `terminal.ts` injects `CLAUDE_TERMINAL_ID`/`CLAUDE_RELAY_URL` + a zsh shim so a bare `claude` auto-loads it. Hooks POST `/relay/*` (`SessionStart`/`UserPromptSubmit` register, `SubagentStart`/`SubagentStop` add/finish); `/agent-graph` prunes closed-tab sessions. App-local; registry lives only while core runs.
+A small Claude Code plugin (`relay/`) reports each terminal-tab Claude session + its subagents to an **in-process registry** (`core/src/relay.ts`). Loads per-session inside app terminals (bundled via `BISMUTH_RELAY_BUNDLE`; nothing in `~/.claude`); `terminal.ts` injects `CLAUDE_TERMINAL_ID`/`CLAUDE_RELAY_URL` + a zsh shim so a bare `claude` auto-loads it. Hooks POST `/relay/*` (`SessionStart`/`UserPromptSubmit` register, `SubagentStart`/`SubagentStop` add/finish); closing a terminal tab prunes its session (`terminal.ts`'s `killSession` → `relay.ts`'s `prune`). App-local; registry lives only while core runs.
 
 ### Daemon Integration (`daemon/` workspace + `core/src/daemon.ts` + `daemonGraph.ts`)
 

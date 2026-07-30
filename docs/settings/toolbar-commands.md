@@ -106,7 +106,7 @@ Notes on individual commands:
 
 ### Notable absences / gotchas
 
-- **There is no `graph-daemon` command** in the catalog, even though the renderer has a `"daemon"` graph mode. `setMode`'s type accepts `"2nd" | "3rd" | "both" | "agents" | "daemon"`, but only the first four have catalog commands. Daemon mode is reached via the daemon sidebar/UI, not a toolbar command.
+- **There is no `graph-local` command** in the catalog, even though the renderer has a `"local"` graph mode. `setMode`'s type accepts `"2nd" | "3rd" | "both" | "daemon" | "local"`, but only the first four have catalog commands — `"local"` is a lens toggled from the graph's own UI (the LOCAL button), not a toolbar/palette command like the other graph modes.
 - **Several commands share an icon**: `Download` (`export`, `daemon-setup`, `bismuth-install`), `RefreshCw` (`daemon-update`, `update-app`, `gcal-sync`), and **`new-tab` shares `Plus` with `create-menu`**. That is intentional and allowed — icon uniqueness is not an invariant (only `id` uniqueness is).
 - Icons are **Lucide icon names** by convention (matched against the icon registry on the frontend), but toolbar/daily-note `icon` fields may also be a literal emoji (see "Button fields").
 
@@ -193,7 +193,7 @@ export interface CommandHandlers {
   // when invoked without an event (e.g. from the command palette).
   openCreateMenu: (e?: MouseEvent) => void;
   openGraph: () => void;
-  setMode: (mode: GraphMode) => void;        // GraphMode = "2nd"|"3rd"|"both"|"agents"|"daemon"
+  setMode: (mode: GraphMode) => void;        // GraphMode = "2nd"|"3rd"|"both"|"daemon"|"local"
   openDailyNote: (id: string) => void;
   equalizePanes: () => void;
   toggleSidebar: () => void;

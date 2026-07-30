@@ -16,6 +16,7 @@ import {
   type BackendShimCandidate,
   type ShimSpec,
 } from "../src/terminal";
+import { registerSession, snapshot as relaySnapshot, resetRelay } from "../src/relay";
 
 function tmp() {
   return mkdtempSync(join(tmpdir(), "bismuth-term-"));
@@ -436,6 +437,25 @@ test("resizeSession updates the PTY winsize and propagates to the shell", async 
     expect(Buffer.concat(out).toString()).toMatch(/\b40\s+120\b/);
   } finally {
     killSession(s.id);
+  }
+});
+
+// Regression: GET /agent-graph used to be the only caller of relay.ts's prune(), so closing a
+// terminal tab left its relay-registered session (and its whole subagent subtree) in the
+// registry forever once that route was removed (the agents graph). killSession now calls
+// prune() itself — this is the natural "terminal tab closed" hook relay.ts's own doc comment
+// says doesn't otherwise exist.
+test("killSession prunes the closed tab's session out of the relay registry", () => {
+  resetRelay();
+  const cwd = tmp();
+  const s = createTerminalSession({ cwd, shell: "/bin/sh", cols: 80, rows: 24 });
+  try {
+    registerSession({ sessionId: "sess-leak-test", terminalId: s.id, cwd: "/x" });
+    expect(relaySnapshot().sessions.some((x) => x.sessionId === "sess-leak-test")).toBe(true);
+    killSession(s.id);
+    expect(relaySnapshot().sessions.some((x) => x.sessionId === "sess-leak-test")).toBe(false);
+  } finally {
+    resetRelay();
   }
 });
 

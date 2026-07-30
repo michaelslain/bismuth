@@ -1775,6 +1775,10 @@ async function drain(session: ChatSession): Promise<void> {
         // user's own prompt came from the client). Shared with history replay via translateSdkMessage.
         for (const frame of translateSdkMessage(msg, { live: true })) {
           trackChatSubagent(session, frame); // Task tool_use/result → agents-graph subagent lifecycle
+          // TTL/backstop sweep (same lifetimes as relay's registry — see relay.ts sweepDoneSubagents).
+          // chatAgentSnapshot used to be the only caller of this; nothing polls it any more since the
+          // agents graph was removed, so without this call session.chatSubagents was append-only.
+          sweepDoneChatSubagents(session, Date.now());
           emit(session, frame);
         }
         continue;

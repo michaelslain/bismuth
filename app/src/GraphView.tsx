@@ -413,6 +413,11 @@ export function GraphView(props: {
   onCleanup(() => renderer.destroy());
 
   const setViewMode = (m: "2d" | "3d") => setViewModePersisted(m);
+  // The 3rd-brain/daemon graph modes only exist while the daemon is on (see the effect above that
+  // falls back to "2nd" when it's off), so with it off there is only ONE brain-mode option — "2nd".
+  // A single-option switcher is a permanently-selected, does-nothing control, so it's hidden
+  // entirely rather than rendered disabled (see the outer <Show> around it below).
+  const modeOptions = (): GraphMode[] => (settings.daemon.enabled ? ["2nd", "3rd", "both", "daemon"] : ["2nd"]) as GraphMode[];
   const MODE_LABEL: Record<GraphMode, string> = { "2nd": "2nd brain", "3rd": "3rd brain", both: "both brains", daemon: "daemon", local: "the open note's neighbourhood" };
   const modeLabel = () => MODE_LABEL[props.mode] ?? props.mode;
   const nodeCount = () => props.graph?.nodes?.length ?? 0;
@@ -428,35 +433,40 @@ export function GraphView(props: {
             turn an icon into a chunky bordered tile — the one control in the sidebar that didn't look
             like the sidebar. The full-pane graph keeps the real segmented control, where the labels are
             words and a joined outline is right. */}
-        <Show
-          when={props.mini}
-          fallback={
-            <SegmentedToggle
-              value={props.mode}
-              onChange={props.setMode}
-              size="sm"
-              // "local" is deliberately NOT here — it is not a sibling of the brain views. It is a lens
-              // on whatever note is open, so it gets its own on/off toggle in the mini-graph's bottom bar.
-              options={((settings.daemon.enabled ? ["2nd", "3rd", "both", "daemon"] : ["2nd"]) as GraphMode[]).map((id) => ({
-                id,
-                title: MODE_LABEL[id],
-                label: MODE_SHORT[id],
-              }))}
-            />
-          }
-        >
-          <div class="graph-mode-icons">
-            <For each={(settings.daemon.enabled ? ["2nd", "3rd", "both", "daemon"] : ["2nd"]) as GraphMode[]}>
-              {(id) => (
-                <IconButton
-                  icon={MODE_ICON[id]}
-                  label={MODE_LABEL[id]}
-                  variant={props.mode === id ? "selected" : "unselected"}
-                  onClick={() => props.setMode(id)}
-                />
-              )}
-            </For>
-          </div>
+        {/* Hidden outright (not just disabled) when there's only one brain-mode option to pick
+            from — the daemon-off default — since a permanently-selected single-option control
+            does nothing. See modeOptions() above. */}
+        <Show when={modeOptions().length > 1}>
+          <Show
+            when={props.mini}
+            fallback={
+              <SegmentedToggle
+                value={props.mode}
+                onChange={props.setMode}
+                size="sm"
+                // "local" is deliberately NOT here — it is not a sibling of the brain views. It is a lens
+                // on whatever note is open, so it gets its own on/off toggle in the mini-graph's bottom bar.
+                options={modeOptions().map((id) => ({
+                  id,
+                  title: MODE_LABEL[id],
+                  label: MODE_SHORT[id],
+                }))}
+              />
+            }
+          >
+            <div class="graph-mode-icons">
+              <For each={modeOptions()}>
+                {(id) => (
+                  <IconButton
+                    icon={MODE_ICON[id]}
+                    label={MODE_LABEL[id]}
+                    variant={props.mode === id ? "selected" : "unselected"}
+                    onClick={() => props.setMode(id)}
+                  />
+                )}
+              </For>
+            </div>
+          </Show>
         </Show>
         <ViewBarSpacer />
         <span class="graph-vb-wide graph-vb-right">

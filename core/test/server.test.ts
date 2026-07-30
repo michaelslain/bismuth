@@ -6,6 +6,7 @@ import { createServer } from "../src/server";
 import { writeNote, readNote } from "../src/files";
 import { readSettings } from "../src/settings";
 import { resetUiControl } from "../src/uiControl";
+import { resetRelay, snapshot as relaySnapshot } from "../src/relay";
 import { searchPromptDeps } from "../src/searchPrompt";
 import { makeSampleVault } from "./helpers";
 
@@ -156,6 +157,36 @@ test("relay ingest routes reject missing required fields", async () => {
     expect((await post("/relay/session", { sessionId: "s1" })).status).toBe(400); // no terminalId
     expect((await post("/relay/subagent/start", { agentId: "a1" })).status).toBe(400); // no parentSessionId
   } finally {
+    server.stop(true);
+  }
+});
+
+// The GET /agent-graph route that used to render this end-to-end is gone (the agents graph was
+// removed), but POST /relay/* itself must still survive — the relay plugin's hooks post here from
+// every app terminal tab. This is the only remaining coverage that a well-formed POST actually
+// reaches the registry (registerSession/startSubagent), asserted by reading relay.ts's own
+// snapshot() directly rather than through a graph-shaped response.
+test("POST /relay/session + /relay/subagent/start reach the relay registry", async () => {
+  resetRelay();
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const post = (path: string, body: unknown) =>
+    fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    const sessionRes = await post("/relay/session", { sessionId: "sess-1", terminalId: "tab-1", cwd: "/x/my-proj" });
+    expect(sessionRes.status).toBe(200);
+    const subagentRes = await post("/relay/subagent/start", { parentSessionId: "sess-1", agentId: "ag-1", agentType: "Explore" });
+    expect(subagentRes.status).toBe(200);
+    const snap = relaySnapshot();
+    expect(snap.sessions).toContainEqual(
+      expect.objectContaining({ sessionId: "sess-1", terminalId: "tab-1", cwd: "/x/my-proj" }),
+    );
+    expect(snap.subagents).toContainEqual(
+      expect.objectContaining({ agentId: "ag-1", parentSessionId: "sess-1", agentType: "Explore" }),
+    );
+  } finally {
+    resetRelay();
     server.stop(true);
   }
 });
