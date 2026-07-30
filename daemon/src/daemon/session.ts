@@ -285,11 +285,25 @@ export function buildQueryOptions(
   // whose sandbox couldn't start run anyway with ONLY managedSettings standing guard, which a raw
   // Bash `cat`/`bismuth read`/`python3 -c` walks straight past. A vault that hides nothing must
   // keep running on a machine where the sandbox can't start at all, so this stays conditional.
+  //
+  // `allowUnsandboxedCommands: false` (Task 9) — a live probe found the model calling its OWN Bash
+  // tool with `dangerouslyDisableSandbox: true` to skip the OS sandbox on its own initiative, TWICE,
+  // while asked to read a hidden note. Not an adversarial bypass — the app's own agent behaving
+  // normally. `failIfUnavailable` only gates a sandbox that fails to START; it does nothing about a
+  // sandbox the model itself asks to skip per-call. Per sdk.d.ts's `Settings.sandbox.
+  // allowUnsandboxedCommands` docstring (0.2.141, line 5011 — the only prose in the bundled types
+  // describing this field; `Options.sandbox`'s zod-derived `SandboxSettings` at line 2411 shares the
+  // identical field/shape but carries no doc comment of its own at its declaration site — see
+  // docs/vault/visibility.md for the full citation): "Allow commands to run outside the sandbox via
+  // the dangerouslyDisableSandbox parameter. When false, the dangerouslyDisableSandbox parameter is
+  // completely ignored and all commands must run sandboxed. Default: true." Conditional on the same
+  // guard as everything else here, so an unrestricted vault is unaffected.
   if (denyEntries.length > 0) {
     options.managedSettings = { permissions: { deny: buildManagedSettingsDeny(denyEntries) } }
     options.sandbox = {
       enabled: true,
       failIfUnavailable: sandboxFailIfUnavailable(denyEntries),
+      allowUnsandboxedCommands: false,
       filesystem: { denyRead: sandboxDenyRead(denyEntries, ctx.root) },
     }
     // When ANY file is restricted, hard-disable the bismuth_cli MCP tool (its `file read` can

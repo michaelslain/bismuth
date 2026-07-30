@@ -31,6 +31,7 @@ import {
   extractAskUserQuestions,
   buildAskUserQuestionAnswer,
   ASK_USER_QUESTION_TOOL,
+  buildChatSandboxOption,
   type ChatFrame,
   type ChatSearchDoc,
 } from "../src/chat";
@@ -408,6 +409,25 @@ describe("sandboxFailIfUnavailable (the value spawnChatQuery's sandbox option is
   });
   test("false when nothing is restricted — an unrestricted vault must keep working on a machine where the sandbox can't start at all", () => {
     expect(sandboxFailIfUnavailable([])).toBe(false);
+  });
+});
+
+// Task 9: a live probe of the previous task found the model calling its OWN Bash tool with
+// `dangerouslyDisableSandbox: true` to skip the OS sandbox on its own initiative, TWICE, while
+// being asked to read a hidden note — not an adversarial bypass, just the app's own agent behaving
+// normally. `failIfUnavailable` alone only gates a sandbox that fails to START; it does nothing
+// about a sandbox the model itself asks to skip per-call. `allowUnsandboxedCommands: false` is what
+// makes the SDK ignore that parameter outright (sdk.d.ts's `Settings.sandbox.allowUnsandboxedCommands`
+// docstring — the only prose in the bundled types describing this field; see docs/vault/visibility.md
+// for the full citation). buildChatSandboxOption is extracted from spawnChatQuery so this is a pure
+// check — no live `claude` needed.
+describe("buildChatSandboxOption (the value spawnChatQuery's sandbox option is built from)", () => {
+  test("allowUnsandboxedCommands is false when the vault restricts something", () => {
+    const o = buildChatSandboxOption([{ rel: "secret.md", abs: "/vault/secret.md" }], "/vault");
+    expect(o?.allowUnsandboxedCommands).toBe(false);
+  });
+  test("sandbox is omitted entirely (not merely allowUnsandboxedCommands:false) when nothing is restricted — an unrestricted vault must not risk failing on a machine with no sandbox support", () => {
+    expect(buildChatSandboxOption([], "/vault")).toBeUndefined();
   });
 });
 

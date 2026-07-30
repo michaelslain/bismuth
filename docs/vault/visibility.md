@@ -155,7 +155,7 @@ Beyond the table above: **every non-macOS host** stays refused for every non-Cla
 - **Existence and metadata leak.** A read-deny (Seatbelt or Claude's own) still lets `ls -la` show a hidden file's name, size, permissions, and mtime; `grep -r` prints `./secret.md: Operation not permitted`, which names it; `GET /tree` badges it. "Hidden" means the *content* is unreachable, not that the note's existence is secret.
 - **A stripped copy.** If the exact bytes are written to a new path with no `visibility:` key and no restricted stem or folder — by a human, or by an agent before a note was hidden — no path-based deny list can know. The widened walk and stem inheritance close the *organic* cases (export sidecars, hidden folders, copies that keep frontmatter); a deliberate strip of the frontmatter is out of reach of this design, and of any deny-list design.
 - **The within-turn window.** A note marked hidden *during* a turn is not covered until that turn ends, on every backend including Claude — a mid-turn rename was verified to defeat an already-built deny list. A `subpath` deny on an already-restricted *folder* closes the common case (a new file added to a folder that was already hidden is covered immediately), but a file restricted mid-turn for the first time is not retroactively gated within that same turn.
-- **A model-requested sandbox opt-out.** See "Sandbox availability: fail closed, not open" below — `dangerouslyDisableSandbox` lets a Bash tool call skip the OS sandbox entirely, honored by default (`sandbox.allowUnsandboxedCommands` isn't set to `false`). Measured live: the model used it on its own initiative after a denied Read attempt. Not fixed by this page's `failIfUnavailable` change, and flagged there as a follow-up.
+- **A model-requested sandbox opt-out — FIXED (Task 9).** See "Sandbox availability: fail closed, not open" below — `dangerouslyDisableSandbox` lets a Bash tool call skip the OS sandbox entirely; it used to be honored by default (`sandbox.allowUnsandboxedCommands` was never set to `false`). `chat.ts`'s `spawnChatQuery` (via the extracted `buildChatSandboxOption`) and `daemon/session.ts`'s `buildQueryOptions` now both set `allowUnsandboxedCommands: false` whenever anything is restricted (the same `denyEntries.length > 0` guard as every other gate here; an unrestricted vault is unaffected — `sandbox` stays omitted entirely, exactly as before). See "Sandbox availability" below for the exact SDK citation and for what the live re-verification did and did not establish — in short, five live haiku probes against a temp vault could not reproduce a model invoking `dangerouslyDisableSandbox: true` on its own initiative (nor even when explicitly instructed to), so this fix could not be exercised through a reproduced live leak-then-fixed round trip; it rests on unit tests (`core/test/chat.test.ts`, `daemon/test/session.test.ts`) plus the SDK's documented semantics for the field.
 
 ### The chokepoint, and why it lives in the router
 
@@ -287,17 +287,69 @@ plus the code-level fact that `managedSettings` cannot cover Bash, not on a repr
 leak-then-fixed round trip. That distinction is recorded here rather than glossed over, per this
 page's own standard.
 
-**A residual gap found by this same measurement, NOT fixed here**: `dangerouslyDisableSandbox` is a
-documented, model-controlled Bash-tool parameter, honored whenever `sandbox.allowUnsandboxedCommands`
-isn't explicitly set to `false` (its default is `true`) — and neither `chat.ts` nor
-`daemon/session.ts` sets it. The live probe above shows the model invoking it *on its own
-initiative* after a denied Read attempt. For the one command shape measured (`bismuth read`),
-`visibilityCliGate.ts` still caught the retry — but for a command with no equivalent second gate
-(a plain `cat`, `python3 -c`, `head`, …), asking the model to disable the sandbox for that one call
-would remove the ONLY layer that stops it, regardless of `failIfUnavailable` or whether the sandbox
-is otherwise fully available and working. This is a distinct gap from the one this page's fix
-closes — flagged here for a follow-up task (the candidate fix is
-`sandbox.allowUnsandboxedCommands: false`), not addressed by this change.
+**A residual gap found by this same measurement, FIXED by Task 9 (2026-07-30)**:
+`dangerouslyDisableSandbox` is a documented, model-controlled Bash-tool parameter, honored whenever
+`sandbox.allowUnsandboxedCommands` isn't explicitly set to `false` (its default is `true`) — and
+neither `chat.ts` nor `daemon/session.ts` set it. The live probe above shows the model invoking it
+*on its own initiative* after a denied Read attempt. For the one command shape measured (`bismuth
+read`), `visibilityCliGate.ts` still caught the retry — but for a command with no equivalent second
+gate (a plain `cat`, `python3 -c`, `head`, …), asking the model to disable the sandbox for that one
+call would remove the ONLY layer that stops it, regardless of `failIfUnavailable` or whether the
+sandbox is otherwise fully available and working.
+
+**The fix**: both call sites now pass `allowUnsandboxedCommands: false` inside the same
+`sandbox: {…}` object, under the same `denyEntries.length > 0` guard as everything else in this
+section — `core/src/chat.ts`'s `spawnChatQuery` (via a small extracted pure helper,
+`buildChatSandboxOption`, so the shape is unit-testable without a real `query()`) and
+`daemon/src/daemon/session.ts`'s `buildQueryOptions`. An unrestricted vault is unaffected: `sandbox`
+is still omitted entirely when nothing is restricted, exactly as before this change.
+
+**The SDK citation, read directly rather than assumed** (learning from this same page's own
+`failIfUnavailable` miscitation above — quoting the wrong one of two structurally-similar types is
+exactly the mistake to avoid here too): `allowUnsandboxedCommands` is a field of the zod-derived
+`SandboxSettings` type that backs `Options.sandbox` — confirmed present at
+`sdk.d.ts` line 2596 (0.3.186, core) / line 2411 (0.2.141, daemon) — but neither declaration site
+carries a doc comment of its own (the zod-schema-derived type has no per-field JSDoc at all). The
+**only** prose anywhere in either bundled `sdk.d.ts` describing what this field does or defaults to
+lives on the structurally-identical, same-named field of the separate, on-disk `Settings.sandbox`
+type (`export declare interface Settings`, line 4469 core / 3928 daemon) — the identical 3-line
+JSDoc block (open/text/close) sits at `sdk.d.ts` lines 5656–5659 (0.3.186 core, field on 5659) and
+lines 5008–5011 (0.2.141 daemon, field on 5011), word-for-word the same text in both versions:
+
+> Allow commands to run outside the sandbox via the dangerouslyDisableSandbox parameter. When false,
+> the dangerouslyDisableSandbox parameter is completely ignored and all commands must run sandboxed.
+> Default: true.
+
+Unlike the `failIfUnavailable` case above, this is **not** a contradiction between the two types —
+there is no competing statement anywhere else about `allowUnsandboxedCommands`'s behavior or
+default, on either type. The confidence that this prose describes `Options.sandbox`'s field (not
+just `Settings.sandbox`'s) rests on the two schemas being field-for-field, order-for-order identical
+(`SandboxSettingsSchema`, `sdk.d.ts` lines 2592–2630 core / 2407–2444 daemon, vs. the `Settings.sandbox`
+literal object starting at line 5649 core / 5001 daemon) across BOTH independently-resolved SDK
+versions — strong evidence they describe the same underlying sandbox-runtime field, not two
+unrelated ones that happen to share a name. That inference is recorded here explicitly rather than
+presented as a verbatim `Options`-side doc comment, which is the exact miscitation this page's
+`failIfUnavailable` section above had to correct.
+
+**What Step 5's live re-verification did and did not establish, stated plainly**: five live `claude`
+turns (haiku, the installed CLI 2.1.220, a fresh temp vault under `/private/tmp/…`, never the real
+vault) were run against a hidden `secret.md`, varying the prompt (instructed to `cat` it; left to
+choose its own tool; explicitly told to pass `dangerouslyDisableSandbox: true`) and the config (with
+and without `settingSources: []` to strip this machine's own ambient `~/.claude` config out of the
+picture). **In every one of the five, under the PRE-fix (`vulnerable`) sandbox shape, the model
+declined to invoke Bash with `dangerouslyDisableSandbox: true` at all** — even when directly
+instructed to — reasoning in its own words that the file was "explicitly in the sandbox's deny
+list" and that bypassing "would defeat that protection." **I could not verify this**: the original
+live escape (the model reaching for `dangerouslyDisableSandbox` unprompted, twice, that motivated
+this task) could not be reproduced on this CLI version/model combination, so there is no reproduced
+live leak-then-fixed round trip to report for this fix — unlike the Step-0 spike's `cat`/`grep`
+OS-level denial above, which WAS reproduced live. The fix therefore rests on: (1) the unit tests
+(`core/test/chat.test.ts`, `daemon/test/session.test.ts`) asserting the exact option shape reaches
+the SDK call, and (2) the SDK's own documented semantics for the field quoted above — not on a
+live-observed behavior change. A future model or CLI version that reintroduces the original
+willingness to bypass would now hit `allowUnsandboxedCommands: false` and have the parameter ignored
+outright, per that documented semantics — but that causal chain is asserted from the type's
+documentation, not demonstrated end-to-end live.
 
 ---
 

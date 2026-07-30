@@ -95,6 +95,23 @@ test("buildQueryOptions: sandbox is omitted entirely (not merely failIfUnavailab
   expect(o.managedSettings).toBeUndefined()
 })
 
+// Task 9: a live probe of the previous task found the model calling its OWN Bash tool with
+// `dangerouslyDisableSandbox: true` to skip the OS sandbox on its own initiative, TWICE, while
+// being asked to read a hidden note — not an adversarial bypass, just the app's own agent behaving
+// normally. `failIfUnavailable` alone only gates a sandbox that fails to START; it does nothing
+// about a sandbox the model itself asks to skip per-call. `allowUnsandboxedCommands: false` is what
+// makes the SDK ignore that parameter outright (sdk.d.ts's `Settings.sandbox.allowUnsandboxedCommands`
+// docstring — the only prose in the bundled types describing this field; see docs/vault/visibility.md
+// for the full citation). Conditional on the same `denyEntries.length > 0` guard as every other gate
+// here — the negative case (unrestricted vault → sandbox omitted entirely) is already covered by the
+// test directly above.
+test("buildQueryOptions: sandbox.allowUnsandboxedCommands is false when the vault restricts notes", () => {
+  const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" }, [
+    { rel: "secret.md", abs: "/vault/secret.md" },
+  ])
+  expect((o.sandbox as { allowUnsandboxedCommands?: boolean } | undefined)?.allowUnsandboxedCommands).toBe(false)
+})
+
 test("buildQueryOptions resumes an existing session unless newSession is set", () => {
   expect(buildQueryOptions(ctx, undefined, "sess-1", { systemPrompt: "x" }).resume).toBe("sess-1")
   expect(buildQueryOptions(ctx, { newSession: true }, "sess-1", { systemPrompt: "x" }).resume).toBeUndefined()
