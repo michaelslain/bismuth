@@ -10,14 +10,29 @@
 // nothing outside an app terminal can report in. See relay-merge-spec for the
 // confirmed Claude Code hook payloads this models.
 
-/** A top-level Claude Code session running in one terminal tab. */
+/** A top-level agent-CLI session running in one terminal tab. */
 export interface RelaySession {
-  /** Claude Code session_id (from the SessionStart hook payload). */
+  /** The CLI's own session_id (from its SessionStart-equivalent hook payload). */
   sessionId: string;
   /** CLAUDE_TERMINAL_ID — the pty id of the app terminal tab hosting this session. */
   terminalId: string;
   /** Working directory of the session (used for the node label). */
   cwd: string;
+  /**
+   * Which agent CLI this session is running (a backend id from
+   * agentBackends/catalog.ts — "claude", "codex", …). Defaults to "claude" when a
+   * reporter omits it, so the original Claude-only relay hooks keep working verbatim
+   * and every existing session keeps its current identity.
+   *
+   * Carried so the agents graph can show WHAT is running in a tab, not just that
+   * something is: with several CLIs reporting into one registry, a bare node label of
+   * `basename(cwd)` is ambiguous across backends.
+   *
+   * Optional on the TYPE (a snapshot built by an older reporter genuinely may not carry
+   * one, and every reader defaults it to "claude"), but {@link registerSession} always
+   * populates it, so a session in this registry always has one at runtime.
+   */
+  backend?: string;
   /** ms epoch; set on register and bumped on every heartbeat (UserPromptSubmit). */
   lastSeen: number;
 }
@@ -90,14 +105,22 @@ const subagents = new Map<string, RelaySubagent>();
  *  DIFFERENT session_id reports the same terminalId (the user re-ran `claude`), the
  *  previous session and its subagents are dropped. An empty cwd preserves the existing
  *  one (the heartbeat payload may omit it). */
-export function registerSession(s: { sessionId: string; terminalId: string; cwd: string }, now = Date.now()): void {
+export function registerSession(
+  s: { sessionId: string; terminalId: string; cwd: string; backend?: string },
+  now = Date.now(),
+): void {
   for (const [id, existing] of sessions) {
     if (existing.terminalId === s.terminalId && id !== s.sessionId) {
       removeSessionSubtree(id);
     }
   }
-  const cwd = s.cwd || sessions.get(s.sessionId)?.cwd || "";
-  sessions.set(s.sessionId, { sessionId: s.sessionId, terminalId: s.terminalId, cwd, lastSeen: now });
+  const prev = sessions.get(s.sessionId);
+  const cwd = s.cwd || prev?.cwd || "";
+  // An omitted backend means a pre-existing Claude-only reporter (the relay hooks shipped before
+  // multi-backend), and a heartbeat that omits it must not downgrade a session that already
+  // identified itself — same "empty value preserves the existing one" rule as cwd above.
+  const backend = s.backend || prev?.backend || "claude";
+  sessions.set(s.sessionId, { sessionId: s.sessionId, terminalId: s.terminalId, cwd, backend, lastSeen: now });
 }
 
 /** Drop a session and its subagents (Stop / session end). */

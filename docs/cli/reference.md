@@ -565,8 +565,28 @@ bismuth install --status --pretty
 bismuth install --src /path/to/bismuth-tools
 ```
 
+### `install --mcp <cli>[,<cli>…] | all`
+Registers Bismuth's MCP server with OTHER agent CLIs on demand, so they get the same docs/CLI/memory tools. Ten registrars: `codex, cline, openclaw, gemini, qwen, copilot, amp, droid, crush, goose`. Each prefers its CLI's own `mcp add`/`mcp set` subcommand and falls back to a structure-preserving config merge (never hand-written TOML). Idempotent; refuses to overwrite a `bismuth` entry it didn't write; records what it wrote so `uninstall` reverses only our own edits.
+
+**Only Claude Code auto-registers on boot.** Any other CLI needs either this flag or its id in `mcp.registerWith` in `.settings` — naming it there is the opt-in, and boot acts on it. Bismuth never writes into another CLI's config uninvited. See [agent backends](../chat/backends.md).
+```bash
+bismuth install --mcp codex,gemini
+bismuth install --mcp all
+```
+
 ### `uninstall`
 Removes the machine-wide CLI symlink (if it's ours), the global MCP registration (`claude mcp remove -s user bismuth`), and `~/.bismuth`.
+
+## Backend commands (`commands/backends.ts`)
+
+### `backends [--json] [--installed]`
+Lists every agent backend Bismuth knows: whether its CLI is installed **on this machine**, its version, and which of the six integration surfaces it supports. The catalog declares what a CLI *can* do; this reports what is actually true here — which is the question you want when a chat tab shows a setup screen.
+
+Read-only and cheap by construction: it resolves binaries and reads version strings, never runs an agent turn, authenticates, spends money, starts a daemon, or writes config. Probes are 5s-bounded, run concurrently, and never inherit stdin (a CLI that decided to prompt would otherwise hang). npx-fetched ACP adapters render as `adapter → @scope/package` rather than a version, since the package runner's presence says nothing about whether the bridge will run.
+```bash
+bismuth backends
+bismuth backends --installed --json --pretty
+```
 
 ## Checkpoint commands (`commands/checkpoint.ts`)
 
@@ -725,7 +745,8 @@ bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault
 | `agent-graph` `api` | api.ts | **no** (needs running server) | JSON / text |
 | `app windows/tabs/open/close/focus/run/commands` | app.ts | **no** (needs running app; discovery via `BISMUTH_API`/`CLAUDE_RELAY_URL`/run-registry) | JSON |
 | `page list/create/resolve/mark-failed` | page.ts | **yes** (per-vault `<vault>/.daemon/pages`) | JSON |
-| `install` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + global MCP) | JSON |
+| `install` `install --mcp <cli>` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + per-CLI MCP config) | JSON |
+| `backends` | backends.ts | **no** (probes binaries on PATH; read-only) | table / JSON |
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 
-Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/checkpoint.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/settings.ts`
+Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`

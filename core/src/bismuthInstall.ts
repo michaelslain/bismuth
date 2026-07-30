@@ -31,6 +31,7 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { whichClaude } from "./claudeWhich";
+import { MCP_REGISTRARS, type BismuthMcpSpec } from "./agentBackends/mcpRegistrars";
 
 const HOME = homedir();
 export const BISMUTH_HOME = join(HOME, ".bismuth");
@@ -42,6 +43,14 @@ const MCP_DEST = join(BIN_DIR, "bismuth-mcp");
 // Candidate PATH dirs for the CLI symlink, preferred first (machine-wide before per-user).
 const LINK_DIRS = ["/usr/local/bin", join(HOME, ".local", "bin")];
 
+/** Per-registrar detect/register status for the "other CLIs" surface (core/src/agentBackends/
+ *  mcpRegistrars.ts) — every non-Claude agent CLI Bismuth knows how to register its MCP with. */
+export interface AdditionalMcpStatus {
+  label: string;
+  detected: boolean;
+  registered: boolean;
+}
+
 export interface BismuthStatus {
   /** A version marker exists at ~/.bismuth/.version. */
   installed: boolean;
@@ -51,6 +60,10 @@ export interface BismuthStatus {
   cliPath: string | null;
   cliLinked: boolean;
   mcpRegistered: boolean;
+  /** Detected/registered status for every OTHER agent CLI (opt-in — see `mcp.registerWith` in
+   *  settingsSchema.ts and `bismuth install --mcp`). Undefined only if the injected IO doesn't
+   *  implement `additionalMcpStatus` (older fakes in tests). */
+  additionalMcp?: Record<string, AdditionalMcpStatus>;
 }
 
 export type InstallAction =
@@ -82,6 +95,16 @@ export interface InstallIO {
   linkCli(): { ok: boolean; path: string | null; warning?: string };
   /** Register the MCP in the user's global Claude config (idempotent remove+add). */
   registerMcp(): Promise<{ ok: boolean; warning?: string }>;
+  /**
+   * Register the MCP with every OTHER (non-Claude) agent CLI id the caller opted into — best
+   * effort per id, keyed by registrar id, never throws (see core/src/agentBackends/mcpRegistrars.ts).
+   * `ids` of `["all"]` registers with every detected registrar. Optional so existing InstallIO
+   * fakes (tests) that predate this multi-CLI step keep type-checking unchanged.
+   */
+  registerAdditionalMcp?(ids: string[]): Promise<Record<string, { ok: boolean; warning?: string }>>;
+  /** Detected/registered status for every OTHER agent CLI registrar. Optional for the same reason
+   *  as registerAdditionalMcp. */
+  additionalMcpStatus?(): Promise<Record<string, AdditionalMcpStatus>>;
 }
 
 function sha256File(path: string): Promise<string> {
@@ -217,6 +240,24 @@ export const defaultIO: InstallIO = {
     if (add.code !== 0) return { ok: false, warning: `claude mcp add failed: ${add.stderr.trim() || add.stdout.trim()}` };
     return { ok: true };
   },
+  async registerAdditionalMcp(ids) {
+    const spec: BismuthMcpSpec = { mcpBin: MCP_DEST, docsDir: DOCS_DIR, cliBin: CLI_DEST };
+    const wantAll = ids.includes("all");
+    const out: Record<string, { ok: boolean; warning?: string }> = {};
+    for (const registrar of MCP_REGISTRARS) {
+      if (!wantAll && !ids.includes(registrar.id)) continue;
+      out[registrar.id] = await registrar.register(spec);
+    }
+    return out;
+  },
+  async additionalMcpStatus() {
+    const out: Record<string, AdditionalMcpStatus> = {};
+    for (const registrar of MCP_REGISTRARS) {
+      const detected = registrar.detect() != null;
+      out[registrar.id] = { label: registrar.label, detected, registered: detected ? await registrar.isRegistered() : false };
+    }
+    return out;
+  },
 };
 
 /** Read-only status. Never throws. */
@@ -229,7 +270,33 @@ export async function getBismuthStatus(io: InstallIO = defaultIO): Promise<Bismu
   } catch {
     mcpRegistered = false;
   }
-  return { installed: version != null, version, cliPath: path, cliLinked: linked, mcpRegistered };
+  const additionalMcp = io.additionalMcpStatus ? await io.additionalMcpStatus() : undefined;
+  return { installed: version != null, version, cliPath: path, cliLinked: linked, mcpRegistered, additionalMcp };
+}
+
+/**
+ * Registration of Bismuth's MCP server with OTHER (non-Claude) agent CLIs. Runs only for CLIs the
+ * user named — either on demand (`bismuth install --mcp <cli>`) or, on boot, for whatever is listed
+ * in `mcp.registerWith` (naming a CLI there IS the opt-in). A CLI absent from both is never touched,
+ * which is the whole point: Claude auto-registers because Bismuth is a Claude-first app, but writing
+ * uninvited into someone's Codex or Gemini config is not ours to do.
+ * `ids` of `["all"]` registers with every detected registrar. Best-effort per id; never throws.
+ */
+export async function registerAdditionalMcp(
+  ids: string[],
+  io: InstallIO = defaultIO,
+): Promise<Record<string, { ok: boolean; warning?: string }>> {
+  if (!io.registerAdditionalMcp) return {};
+  return io.registerAdditionalMcp(ids);
+}
+
+/** Detected/registered status for every OTHER agent CLI registrar — the "which CLIs are detected
+ *  and which are registered" listing `bismuth install --status` surfaces. */
+export async function getAdditionalMcpStatus(
+  io: InstallIO = defaultIO,
+): Promise<Record<string, AdditionalMcpStatus>> {
+  if (!io.additionalMcpStatus) return {};
+  return io.additionalMcpStatus();
 }
 
 /**
@@ -240,7 +307,7 @@ export async function getBismuthStatus(io: InstallIO = defaultIO): Promise<Bismu
 export async function ensureBismuthInstalled(
   src: string | undefined,
   io: InstallIO = defaultIO,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; registerWith?: string[] } = {},
 ): Promise<InstallResult> {
   const status0 = await getBismuthStatus(io);
   if (!src) return { action: "skipped-no-src", status: status0, warnings: [] };
@@ -262,6 +329,16 @@ export async function ensureBismuthInstalled(
   if (link.warning) warnings.push(link.warning);
   const mcp = await io.registerMcp();
   if (mcp.warning) warnings.push(mcp.warning);
+  // Other CLIs the user LISTED in `mcp.registerWith`. Naming a CLI there is the explicit opt-in —
+  // the setting would be a footgun otherwise: a user who adds "codex", restarts, and finds nothing
+  // registered has been silently ignored. So consent recorded in settings is acted on here, while a
+  // CLI absent from the list is still never touched. Best-effort + idempotent, like every step above.
+  if (opts.registerWith?.length) {
+    const results = await registerAdditionalMcp(opts.registerWith, io);
+    for (const [id, r] of Object.entries(results)) {
+      if (r.warning) warnings.push(`${id}: ${r.warning}`);
+    }
+  }
   io.writeMarker(hash);
 
   const status = await getBismuthStatus(io);
@@ -282,6 +359,18 @@ export async function uninstallBismuth(): Promise<{ removed: boolean; warnings: 
     if (claude) await runClaude(claude, ["mcp", "remove", "-s", "user", "bismuth"]);
   } catch {
     // best-effort
+  }
+  // Best-effort: reverse any of the opt-in "other CLI" registrations too, so an uninstall doesn't
+  // leave a dangling ~/.codex/~/.cline/~/.openclaw/~/.gemini/~/.qwen/~/.copilot/~/.config/amp/
+  // ~/.factory/~/.config/crush/~/.config/goose entry pointing at a bin dir that's about to be
+  // deleted. Each registrar's own unregister() already no-ops when we never registered it (or
+  // it's a foreign entry), so this is safe to run unconditionally.
+  for (const registrar of MCP_REGISTRARS) {
+    try {
+      await registrar.unregister();
+    } catch {
+      // best-effort
+    }
   }
   try {
     rmSync(BISMUTH_HOME, { recursive: true, force: true });
