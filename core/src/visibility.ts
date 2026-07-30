@@ -389,6 +389,25 @@ export function sandboxDenyRead(entries: DenyEntry[], vaultRoot: string): string
   return [...absDenyPaths(entries), join(vaultRoot, ".git")];
 }
 
+/**
+ * Pure: `sandbox.failIfUnavailable` for a spawn — whether a sandbox that can't start should hard-
+ * fail the session rather than silently degrade to running unsandboxed. Measured (2026-07-30, see
+ * docs/vault/visibility.md + docs/vault/visibility-acceptance.md's second run): both `chat.ts` and
+ * `daemon/session.ts` used to pass a FIXED `false` here, so a session whose OS sandbox couldn't
+ * start ran anyway — leaving only `managedSettings.permissions.deny`, which restricts the Read/
+ * Edit/Grep/Glob tool CALLING CONVENTION and does nothing at all to a raw Bash subprocess
+ * (`bismuth read`, `cat`, `python3 -c`). A live probe confirmed the OS sandbox is what actually
+ * stops those — `managedSettings` never touches Bash's argv.
+ *
+ * Conditional, never a fixed `true`: an UNRESTRICTED vault (nothing in `entries`) must keep
+ * working exactly as today on a machine where the sandbox can't start at all — failing every chat
+ * there would be a regression worse than the leak this closes. A restricted vault, on the other
+ * hand, would rather refuse to open the session than open it silently unprotected.
+ */
+export function sandboxFailIfUnavailable(entries: DenyEntry[]): boolean {
+  return entries.length > 0;
+}
+
 /** Both path forms of every entry, for an O(1) same-process membership check (e.g. a
  *  canUseTool's `toolInput.file_path`, which may itself be relative OR absolute).
  *

@@ -14,6 +14,7 @@ import {
   buildDenyPaths,
   buildManagedSettingsDeny,
   absDenyPaths,
+  sandboxFailIfUnavailable,
   type DenyEntry,
 } from "./visibility.ts"
 
@@ -103,6 +104,20 @@ test("buildManagedSettingsDeny: emits Read/Edit/Grep/Glob rules for BOTH path fo
 
 test("absDenyPaths: pulls just the absolute form", () => {
   expect(absDenyPaths(SAMPLE_ENTRIES)).toEqual(["/vault/secret.md"])
+})
+
+// sandbox.failIfUnavailable (2026-07-30 measurement, docs/vault/visibility.md +
+// visibility-acceptance.md): session.ts used to hardcode `false` here, so a session whose OS
+// sandbox couldn't start ran anyway with only managedSettings standing guard — which does nothing
+// to a raw Bash `cat`/`bismuth read`/`python3 -c`. Now derived from the deny list so a restricted
+// vault fails closed while an unrestricted one keeps working on a machine where the sandbox can't
+// start at all.
+test("sandboxFailIfUnavailable: true when the vault restricts something", () => {
+  expect(sandboxFailIfUnavailable(SAMPLE_ENTRIES)).toBe(true)
+})
+
+test("sandboxFailIfUnavailable: false when nothing is restricted", () => {
+  expect(sandboxFailIfUnavailable([])).toBe(false)
 })
 
 // --- discovery-walk fixes: same bugs, same fixes as core/test/visibility.test.ts (this file is

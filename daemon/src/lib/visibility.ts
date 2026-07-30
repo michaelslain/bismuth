@@ -384,3 +384,18 @@ export function sandboxDenyRead(entries: DenyEntry[], vaultRoot: string): string
   if (entries.length === 0) return []
   return [...absDenyPaths(entries), join(vaultRoot, ".git")]
 }
+
+/**
+ * Pure: `sandbox.failIfUnavailable` for this vault's daemon session. A deliberate literal copy of
+ * core/src/visibility.ts's `sandboxFailIfUnavailable` (see that file's doc comment for the full
+ * measurement this is based on — 2026-07-30, docs/vault/visibility.md + visibility-acceptance.md).
+ *
+ * `session.ts` used to pass a fixed `false` here, so a sandbox that couldn't start let the daemon's
+ * session run anyway with only `managedSettings.permissions.deny` standing guard — which restricts
+ * the Read/Edit/Grep/Glob tool CALLING CONVENTION and does nothing to a raw Bash subprocess
+ * (`bismuth read`, `cat`, `python3 -c`). Conditional on `entries`, never a fixed `true`: a vault
+ * that hides nothing must keep running on a machine where the sandbox can't start at all.
+ */
+export function sandboxFailIfUnavailable(entries: DenyEntry[]): boolean {
+  return entries.length > 0
+}

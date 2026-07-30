@@ -17,7 +17,7 @@ import {
 import { whichClaude } from "./claudeWhich";
 import { loadSessionModel, saveSessionModel } from "./chatModelStore";
 import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
-import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, isDeniedPath, type DenyEntry } from "./visibility";
+import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, sandboxFailIfUnavailable, isDeniedPath, type DenyEntry } from "./visibility";
 import { readDaemonSessionIds } from "./daemon";
 import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
 import { emit, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
@@ -1115,10 +1115,23 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         // survives this session's permission mode (Step-0 spike). `sandbox` additionally blocks a
         // Bash `cat`/`grep` at the OS level (verified on macOS). Omitted entirely when nothing is
         // restricted, so a vault with no visibility settings behaves exactly as before.
+        //
+        // `failIfUnavailable: sandboxFailIfUnavailable(denyEntries)` (never a fixed `false`) — a
+        // 2026-07-30 measurement (docs/vault/visibility.md, visibility-acceptance.md) found that a
+        // fixed `false` let a session whose sandbox couldn't start run anyway with ONLY
+        // managedSettings standing guard, which a raw Bash `cat`/`bismuth read`/`python3 -c` walks
+        // straight past (managedSettings only restricts the Read/Edit/Grep/Glob tool calling
+        // convention). Restricted vault → fail closed; unrestricted vault → unaffected, exactly as
+        // before this fix (sandboxFailIfUnavailable([]) is false, and this whole block is only
+        // included when denyEntries.length > 0 anyway).
         ...(denyEntries.length > 0
           ? {
               managedSettings: { permissions: { deny: buildManagedSettingsDeny(denyEntries) } },
-              sandbox: { enabled: true, failIfUnavailable: false, filesystem: { denyRead: sandboxDenyRead(denyEntries, session.cwd) } },
+              sandbox: {
+                enabled: true,
+                failIfUnavailable: sandboxFailIfUnavailable(denyEntries),
+                filesystem: { denyRead: sandboxDenyRead(denyEntries, session.cwd) },
+              },
             }
           : {}),
         // Memory auto-recall (daemon-gated). The visual chat is an SDK session with NO relay

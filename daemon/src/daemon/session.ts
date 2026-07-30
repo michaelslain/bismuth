@@ -5,7 +5,7 @@ import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"
 import { whichClaude } from "../lib/claudeWhich.ts"
 import { augmentPath } from "../lib/childEnv.ts"
-import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, type DenyEntry } from "../lib/visibility.ts"
+import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, sandboxFailIfUnavailable, type DenyEntry } from "../lib/visibility.ts"
 import { mcpBin, cliBin, docsDir } from "../lib/bismuthPaths.ts"
 import { recordDaemonSessionId } from "./sessionIds.ts"
 import { sendCodexMessage } from "./codexSession.ts"
@@ -279,9 +279,19 @@ export function buildQueryOptions(
   // Read tool doesn't consistently resolve a relative file_path against an absolute-only deny
   // (see buildManagedSettingsDeny). Omitted entirely when nothing is restricted, so an
   // unrestricted vault is unaffected.
+  //
+  // `failIfUnavailable: sandboxFailIfUnavailable(denyEntries)` (never a fixed `false`) — measured
+  // 2026-07-30 (docs/vault/visibility.md, visibility-acceptance.md): a fixed `false` let a session
+  // whose sandbox couldn't start run anyway with ONLY managedSettings standing guard, which a raw
+  // Bash `cat`/`bismuth read`/`python3 -c` walks straight past. A vault that hides nothing must
+  // keep running on a machine where the sandbox can't start at all, so this stays conditional.
   if (denyEntries.length > 0) {
     options.managedSettings = { permissions: { deny: buildManagedSettingsDeny(denyEntries) } }
-    options.sandbox = { enabled: true, failIfUnavailable: false, filesystem: { denyRead: sandboxDenyRead(denyEntries, ctx.root) } }
+    options.sandbox = {
+      enabled: true,
+      failIfUnavailable: sandboxFailIfUnavailable(denyEntries),
+      filesystem: { denyRead: sandboxDenyRead(denyEntries, ctx.root) },
+    }
     // When ANY file is restricted, hard-disable the bismuth_cli MCP tool (its `file read` can
     // target any vault, escaping the managedSettings deny) AND Grep/Glob (an unscoped whole-vault
     // scan returns a hidden file's lines — the daemon has no canUseTool second layer, so an

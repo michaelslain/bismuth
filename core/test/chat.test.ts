@@ -35,6 +35,7 @@ import {
   type ChatSearchDoc,
 } from "../src/chat";
 import { whichClaude } from "../src/claudeWhich";
+import { sandboxFailIfUnavailable } from "../src/visibility";
 
 // extractEditorContextPaths backs captureToMemory's visibility gate (skip capturing a session
 // that touched a chat-only/hidden file) — it parses the SAME preamble format app/src/
@@ -391,6 +392,22 @@ describe("computerUseChange (BUG #87: live --chrome toggle → respawn decision)
   test("undefined request is treated as off (a client that omits the flag never enables it)", () => {
     expect(computerUseChange(true, undefined)).toEqual({ next: false, respawn: true });
     expect(computerUseChange(false, undefined)).toEqual({ next: false, respawn: false });
+  });
+});
+
+// 2026-07-30 measurement (docs/vault/visibility.md, visibility-acceptance.md): spawnChatQuery's
+// `sandbox` option used to hardcode `failIfUnavailable: false`, so a session whose OS sandbox
+// couldn't start ran anyway with only managedSettings standing guard — which restricts the
+// Read/Edit/Grep/Glob tool CALLING CONVENTION and does nothing to a raw Bash `cat`/`bismuth read`/
+// `python3 -c`. It now computes `failIfUnavailable` from the SAME `sandboxFailIfUnavailable`
+// helper session.ts uses, which is exactly what spawnChatQuery's `sandbox` option is built from
+// (see chat.ts's spawnChatQuery). This is a pure check — no live `claude` needed.
+describe("sandboxFailIfUnavailable (the value spawnChatQuery's sandbox option is built from)", () => {
+  test("true when the vault restricts something — a restricted vault must fail closed rather than run unprotected", () => {
+    expect(sandboxFailIfUnavailable([{ rel: "secret.md", abs: "/vault/secret.md" }])).toBe(true);
+  });
+  test("false when nothing is restricted — an unrestricted vault must keep working on a machine where the sandbox can't start at all", () => {
+    expect(sandboxFailIfUnavailable([])).toBe(false);
   });
 });
 
