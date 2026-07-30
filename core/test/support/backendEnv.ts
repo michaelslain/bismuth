@@ -3,26 +3,39 @@
 // (core/test/support/mockLlm.ts) instead of a real provider API — the other half of the
 // zero-real-API-calls test harness Tasks 3/4 build integration tests on top of.
 //
-// HONESTY, per the task brief: only the `claude` row below was verified LIVE, end-to-end, on a
-// real machine (`ANTHROPIC_BASE_URL=... ANTHROPIC_AUTH_TOKEN=mock ANTHROPIC_API_KEY=mock claude -p
-// "hello" --model claude-haiku-4-5` returned the mock fixture's text). Every other row is GUESSED:
-// researched against that CLI's own documentation/source (never this codebase's speculation),
-// but NEVER run against a real installed binary + the mock server, because two miscitations were
-// already caught in this repo's recent work and presenting an unverified mapping as fact is the
-// exact failure mode that produces a THIRD. Each case below says which it is and cites what the
-// guess rests on. Do not upgrade a "guessed" comment to "verified" without actually running that
-// CLI live against startMockLlm() and recording the result, the same way the claude row was
-// earned.
+// HONESTY, per the task brief: every row below is labeled VERIFIED or GUESSED, and a VERIFIED label
+// means this was actually run — a real installed binary, driven either directly (a raw shell
+// invocation) or through Bismuth's own production driver (`core/src/chatProviders/**`), against a
+// real `startMockLlm()` (or, where the backend's mechanism is file-based, a hand-written config
+// pointed at one) — with the mock's own request log/metrics inspected to confirm the hit landed on
+// the mock and NOT a real provider host. GUESSED means: researched against that CLI's own
+// documentation/source, but never run live. Two miscitations were already caught in this repo's
+// recent work (see catalog.ts's history) — presenting an unverified mapping as fact is the exact
+// failure mode that produces a THIRD, so this file is disciplined about which is which.
 //
 // A backend not in the switch throws rather than silently returning `{}` — a caller asking this
 // module to mock a backend it doesn't know about is a bug in the CALLER (a typo'd backend id, or
 // a new backend added to core/src/agentBackends/catalog.ts that this file hasn't caught up to
 // yet), not a "just don't mock anything" situation; the whole point of this harness is that a
-// misconfigured mock must fail loud, never silently fall through to a real API.
-export function backendMockEnv(backendId: string, mockUrl: string): Record<string, string> {
+// misconfigured mock must fail loud, never silently fall through to a real API. Task 4 extends this
+// same discipline one step further: a KNOWN backend whose only "mapping" would be env vars that
+// DON'T ACTUALLY WORK for how Bismuth spawns it (cline's ACP mode, verified this task) throws too,
+// with a message explaining exactly why and what (if anything) DOES work — never a row that "looks"
+// complete but silently falls through to a real API the moment someone trusts it.
+//
+// `workDir`: three backends' REAL working mechanism is a FILE Bismuth's driver reads at spawn time
+// (Codex's `$CODEX_HOME/config.toml`, OpenClaw's `$OPENCLAW_CONFIG_PATH`), not a value any env var
+// carries directly — this file writes that config INTO `workDir` (a caller-owned temp directory,
+// never touched by any other test) and returns only the env vars that point at it. Every other
+// backend ignores this parameter entirely; it defaults to undefined so every pre-Task-4 call site
+// (`backendMockEnv(id, mockUrl)`, no third argument) is completely unaffected.
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+export function backendMockEnv(backendId: string, mockUrl: string, workDir?: string): Record<string, string> {
   switch (backendId) {
     // --------------------------------------------------------------------------------------
-    // VERIFIED live on this machine (see this file's header): env auth takes precedence over
+    // VERIFIED live end-to-end (Task 3, re-confirmed this task): env auth takes precedence over
     // Claude Code's own keychain OAuth login, which is why this works at all despite Claude Code
     // defaulting to OAuth. ANTHROPIC_AUTH_TOKEN is what actually satisfies Claude Code's own
     // auth check; ANTHROPIC_API_KEY is set alongside it because some code paths/SDKs consult
@@ -36,36 +49,93 @@ export function backendMockEnv(backendId: string, mockUrl: string): Record<strin
       };
 
     // --------------------------------------------------------------------------------------
-    // GUESSED. Not run live (codex isn't installed on the machine this was researched on).
-    // Backed by two independent sources, not just one CLI's marketing docs:
-    //   - developers.openai.com/codex's own "Advanced Configuration" page: the SUPPORTED way to
-    //     permanently redirect the built-in `openai` provider is `openai_base_url` in
-    //     ~/.codex/config.toml — a real `[model_providers.<id>]` block can NOT override the
-    //     built-in "openai" provider id (the docs explicitly warn "you can't override built-in
-    //     provider IDs").
-    //   - A Codex maintainer (etraut-openai) on openai/codex#11698 confirmed directly: "you can
-    //     use the OPENAI_BASE_URL environment variable if the URL is the only parameter you want
-    //     to override" — i.e. the env var IS a real, maintainer-confirmed escape hatch, distinct
-    //     from (and simpler than) the config.toml route.
-    // Caveat found in the same docs: an explicit `--profile` or `model_provider` setting in a
-    // config file takes precedence OVER this env var — irrelevant for a fresh/no-config test
-    // environment, but would silently defeat this mapping on a machine with prior codex config.
+    // FIXED this task — the OLD row (`OPENAI_BASE_URL`/`OPENAI_API_KEY`) was GUESSED and is
+    // CONFIRMED WRONG: run live against a real `@openai/codex` 0.146.0 (`codex exec --json
+    // --sandbox workspace-write --cd <dir> --skip-git-repo-check --config approval_policy="never"`
+    // — Bismuth's OWN argv, chatProviders/codex/driver.ts's buildCodexExecArgs, with no --model/
+    // --config override since a fresh session's `s.model`/`s.effort` start unset), it dialed
+    // straight past OPENAI_BASE_URL to the REAL `wss://api.openai.com/v1/responses` (a genuine
+    // network attempt — it only failed with 401 because no real key was set; on a machine WITH a
+    // real key this would have been a real, billed account call). Root cause, confirmed two ways:
+    //   1. codex's built-in "openai" provider id is HARD-REJECTED from override: `-c
+    //      model_providers.openai.base_url=...` errors "Built-in providers cannot be overridden."
+    //      (this codex version enforces the constraint the config.toml docs only warn about).
+    //   2. codex's newer wire transport for the "openai" provider is a WebSocket
+    //      (`wss://.../v1/responses`, falling back to HTTPS) that does not consult
+    //      OPENAI_BASE_URL at all for that provider id — regardless of what an older GitHub
+    //      maintainer comment (cited in the row this replaces) said about an earlier codex era.
+    // The REAL, WORKING, LIVE-VERIFIED mechanism: a custom (non-"openai") `[model_providers.mock]`
+    // block in `$CODEX_HOME/config.toml`, with `wire_api = "responses"` (`"chat"` is REJECTED
+    // outright in this codex version: "no longer supported... set wire_api = \"responses\"") and
+    // `model_provider`/`model` defaults pointing at it — confirmed to need NO `--model`/`--config`
+    // CLI override at all, because Bismuth's own codex driver never passes either on a session's
+    // first turn. `CODEX_HOME` (an env var, confirmed via `-p/--profile`'s own help text
+    // referencing `$CODEX_HOME/<name>.config.toml`) isolates this from the developer's real
+    // `~/.codex` entirely. `env_key` names an arbitrary env var this function also sets — codex
+    // insists on SOME key being present for a configured provider even though the mock never
+    // checks it. Verified live for BOTH a raw `codex exec` invocation AND through
+    // CHAT_BACKENDS.codex.sendMessage (chatProviders/codex/driver.ts, unmodified) — a real
+    // "assistant-text":"Hello!" frame arrived, with the mock's own /metrics showing exactly one
+    // hit on POST /v1/responses.
+    //
+    // KNOWN COSMETIC QUIRK (also live-verified, not a real failure): codex logs a benign
+    // `item.completed` of type "error" reading "Model metadata for `mock` not found. Defaulting to
+    // fallback metadata..." for ANY model under a custom (non-built-in) provider — codex's model
+    // metadata registry is keyed by (provider, model) and has no entry for one it doesn't own.
+    // chatProviders/codex/protocol.ts's translator (correctly, by its own contract) treats any
+    // "error"-typed item as `sawErrorFrame`, so the turn's final `result` frame reports
+    // `isError:true` even though the assistant's actual text came back correctly — codexMocked.test.ts
+    // asserts on the text, not on `result.isError`, and documents this finding inline.
     // --------------------------------------------------------------------------------------
-    case "codex":
-      return {
-        OPENAI_BASE_URL: mockUrl,
-        OPENAI_API_KEY: "mock",
-      };
+    case "codex": {
+      if (!workDir) {
+        throw new Error(
+          'backendMockEnv: "codex" requires a third `workDir` argument — its real mock mechanism is a ' +
+            "$CODEX_HOME/config.toml file, not a bare env var (see this file's `codex` case comment for the " +
+            "full, live-verified finding). Pass a throwaway temp directory this call may write into.",
+        );
+      }
+      const envKey = "MOCK_CODEX_API_KEY";
+      writeFileSync(
+        join(workDir, "config.toml"),
+        [
+          'model_provider = "mock"',
+          'model = "mock"',
+          "",
+          "[model_providers.mock]",
+          'name = "Mock"',
+          `base_url = "${mockUrl}/v1"`,
+          'wire_api = "responses"',
+          `env_key = "${envKey}"`,
+          "",
+        ].join("\n"),
+      );
+      return { CODEX_HOME: workDir, [envKey]: "mock" };
+    }
 
     // --------------------------------------------------------------------------------------
-    // GUESSED. Not run live. opencode.ai's own /docs/config/ page documents OPENCODE_CONFIG_CONTENT
-    // as a real env var carrying an entire INLINE JSON config at the HIGHEST precedence tier
-    // ("Runtime Config" — above the project/global config files, no file needed at all), and
-    // opencode.ai's own /docs/providers/ page documents the custom-provider shape needed to point
-    // an OpenAI-compatible endpoint at a custom baseURL (`@ai-sdk/openai-compatible` +
-    // `options.baseURL`). This mapping composes those two documented, independently-confirmed
-    // mechanisms; the COMPOSITION itself (does opencode's model-selection actually accept
-    // "mock/mock" for a provider registered this way) was never exercised against a real binary.
+    // VERIFIED live end-to-end (Task 4) — this env mapping was already correct (the OLD "GUESSED"
+    // row's composition of two independently-documented opencode.ai mechanisms held up), but a
+    // real DRIVER QUIRK was found and must be called out so a caller doesn't get a false negative:
+    // this config's `model: "mock/mock"` top-level default IS honored by opencode's OWN CLI
+    // (`opencode run "hello"`, no --model flag) but is NOT consulted by Bismuth's SERVER-mode
+    // session (chatProviders/opencodeServer.ts's `opencode serve` + `@opencode-ai/sdk`'s
+    // session.prompt) when a chat's `s.model` is still unset (a session's first turn, before any
+    // setModel call) — that session instead falls back to whatever model this MACHINE's own
+    // opencode last had active (on the research machine: a real Moonshot/Zen provider from prior
+    // real usage — see opencodeMocked.test.ts's header for the live reproduction). The fix a
+    // caller needs, NOT expressed as an env var because it isn't one: call
+    // `CHAT_BACKENDS.opencode.setModel(chatId, "mock/mock")` once the session is open (after the
+    // "models" frame arrives) and BEFORE the first sendMessage — exactly what
+    // opencodeMocked.test.ts does. Confirmed via /metrics: zero hits on the mock until setModel is
+    // called; the very next turn hits it correctly.
+    //
+    // SEPARATE, ALSO LIVE-VERIFIED FINDING: SERVER mode's real-time event subscription can miss an
+    // entire turn's text if the mock replies with zero artificial latency — reproduced directly
+    // (a turn that hit the mock twice per /metrics still produced ZERO assistant-text frames at
+    // latency 0, and a clean single frame at latency 40ms) — see mockLlm.ts's `extraArgs` doc
+    // comment and opencodeMocked.test.ts for the full account and the fix (a small `--latency`
+    // value on the mock server, not a driver change).
     // --------------------------------------------------------------------------------------
     case "opencode":
       return {
@@ -84,25 +154,40 @@ export function backendMockEnv(backendId: string, mockUrl: string): Record<strin
       };
 
     // --------------------------------------------------------------------------------------
-    // GUESSED, but the strongest-confidence guess in this file: read directly out of
-    // google-gemini/gemini-cli's CURRENT source (via `gh api`, not a blog post) rather than
-    // inferred from search results, which turned up several stale/abandoned env var names
-    // (GEMINI_BASEURL, GEMINI_API_BASE_URL) from old PRs that never shipped. The name actually
-    // live in packages/core/src/core/contentGenerator.ts AND documented in
-    // docs/reference/configuration.md is GOOGLE_GEMINI_BASE_URL. Notably it is ALSO read in
-    // packages/cli/src/acp/acpSessionManager.ts — the ACP session path, which is the actual mode
-    // Bismuth drives gemini in (`gemini --experimental-acp`, see agentBackends/catalog.ts's GEMINI
-    // descriptor) — so this isn't just confirmed for the plain-CLI path Bismuth doesn't use.
-    // Still never run live: gemini isn't installed on the research machine.
-    // Documented caveats worth preserving:
-    //   - the URL must be HTTPS unless it targets localhost/127.0.0.1/[::1] (our mock always
-    //     binds 127.0.0.1, so this is satisfied) — a stray non-loopback mock URL would be
-    //     rejected outright rather than silently ignored, which matches this harness's own
-    //     "fail loud, never silently hit a real API" property.
-    //   - a persisted `security.auth.selectedType` in the user's own gemini settings is checked
-    //     BEFORE this env var in acpSessionManager.ts — a machine with a prior real gemini login
-    //     could silently defeat this mapping; out of scope for this task (Task 3/4's problem if
-    //     it bites).
+    // PARTIALLY VERIFIED live (Task 4) — upgraded from a pure guess, but NOT fully to "verified
+    // end-to-end" the way claude/opencode/codex/goose are, and this row says exactly where the
+    // line falls:
+    //   - CONFIRMED, live, through BOTH a raw ACP JSON-RPC handshake AND Bismuth's own
+    //     CHAT_BACKENDS.gemini.sendMessage (chatProviders/acp/driver.ts, unmodified): this mapping
+    //     correctly redirects a real `gemini` 0.53.0's outbound calls to the mock — zero real
+    //     network access. `initialize` -> `session/new` succeeds with NO prior `authenticate` call
+    //     (the API-key env var alone satisfies it; driver.ts never calls `authenticate` at all,
+    //     which matters because this task separately found that cline's ACP mode, below, does
+    //     require it and hangs without real OAuth). `session/new`'s response is genuinely the OLD
+    //     `models.availableModels`/`currentModelId` shape — a real, live confirmation of
+    //     protocol.ts's "old" branch that this task's fake-agent test (acpFakeAgent.test.ts)
+    //     otherwise only proves synthetically.
+    //   - NOT CONFIRMED: a full turn's assistant text arriving. `session/prompt` against this
+    //     mock's single generic fixture reliably reaches 3-5 successful (200, fixture-matched)
+    //     hits on the mock — proving no real API call ever happens — but gemini-cli 0.53.0 never
+    //     emits an `agent_message_chunk`/settles the turn afterward, in EITHER `--acp` mode or
+    //     plain `-p`/headless mode; the same shape was observed both times (silent stall after a
+    //     bounded handful of retries, no stderr, no crash). This was investigated at length (the
+    //     "next speaker check" skip-by-default setting was ruled out by reading gemini-cli's own
+    //     bundle) but not root-caused within this task's budget — most likely gemini-cli issues
+    //     additional, non-user-facing model calls per turn (loop/function-call-shape detection,
+    //     history compression) that expect a response shape this generic single-fixture mock
+    //     doesn't provide, and retries/gives up rather than surfacing an error. See the task
+    //     report for the full account. geminiMocked.test.ts asserts what IS confirmed (handshake,
+    //     old-shape models, zero real network calls) and does not assert full turn completion.
+    //   - Everything below this line is UNCHANGED from the original guess (still never
+    //     independently re-verified beyond what's stated above): GOOGLE_GEMINI_BASE_URL, read
+    //     directly from google-gemini/gemini-cli's source
+    //     (packages/core/src/core/contentGenerator.ts, and packages/cli/src/acp/
+    //     acpSessionManager.ts — the ACP path Bismuth actually drives); must be loopback or HTTPS
+    //     (satisfied, our mock always binds 127.0.0.1); a persisted `security.auth.selectedType`
+    //     in the user's own gemini settings is checked before this env var and could silently
+    //     defeat it on a machine with prior real gemini login.
     // --------------------------------------------------------------------------------------
     case "gemini":
       return {
@@ -111,40 +196,72 @@ export function backendMockEnv(backendId: string, mockUrl: string): Record<strin
       };
 
     // --------------------------------------------------------------------------------------
-    // GUESSED, and the WEAKEST-confidence row here — flagged explicitly rather than dressed up to
-    // look as solid as the others. Cline's own documented mechanism for a custom base URL is the
-    // `cline auth -p <provider> -k <key> -b <baseUrl> -m <model>` CLI SUBCOMMAND, which persists
-    // to a config file under CLINE_DIR — NOT a plain environment variable read per-invocation.
-    // No authoritative source (official docs, or cline/cline's own source — a GitHub code search
-    // for ANTHROPIC_BASE_URL/OPENAI_BASE_URL in that repo came back empty) confirms these two
-    // names are read directly from the environment at all. They are included anyway (mirroring
-    // the "OpenAI Compatible" provider type cline's own GUI names for exactly this use case) so
-    // this function has SOMETHING to return for every backend in core/src/agentBackends/
-    // catalog.ts's BACKEND_IDS, but Task 3/4 should expect this row to need `cline auth -b
-    // <mockUrl>` as setup instead of (or in addition to) these env vars, and should upgrade this
-    // comment with a real finding the moment that's tried live.
+    // FIXED this task, per the brief's finding #1 — the OLD row was already flagged as the
+    // weakest-confidence guess in this file, and Task 4 confirms it was actually WRONG for the
+    // mode Bismuth's own driver spawns, in a way plain env vars cannot fix at all:
+    //
+    //   - cline's PLAIN CLI mode (`cline "<prompt>"`, NOT what Bismuth drives) genuinely CAN be
+    //     pointed at a mock — VERIFIED LIVE: `cline auth -p openai-compatible -k <key> -b <url> -m
+    //     <model>` (the real subcommand the brief names) persists a custom provider, and
+    //     `CLINE_DIR=<isolated dir>` (a real, live-confirmed env var — NOT `CLINE_DATA_DIR`, which
+    //     looks plausible from the binary's own strings table but does nothing; `--data-dir`/
+    //     `CLINE_DIR` are the two that actually redirect cline's persisted state) keeps this
+    //     entirely off the developer's real `~/.cline`. A full turn was confirmed this way:
+    //     `CLINE_DIR=<dir> cline auth ...` then `CLINE_DIR=<dir> cline --provider openai-compatible
+    //     --model mock --json "hello there"` returned the mock's exact fixture text, with the
+    //     mock's own /metrics confirming exactly one hit and zero real network access.
+    //   - Bismuth's ACTUAL cline integration drives a COMPLETELY DIFFERENT mode —
+    //     `cline --acp` (chatProviders/acp/agents.ts's spec) — and THAT mode's `session/new`
+    //     unconditionally refuses with `-32000 "Authentication required: Call authenticate before
+    //     creating a session"` until an `authenticate` call succeeds. `initialize`'s own
+    //     `authMethods` for ACP mode are HARDCODED to `["cline", "openai-codex"]` — "Sign in with
+    //     Cline" / "Sign in with ChatGPT Subscription" — real OAuth flows, NOT the
+    //     "openai-compatible" provider the `auth` subcommand configures; calling `authenticate`
+    //     with either literally hangs waiting for a real interactive sign-in (reproduced live,
+    //     killed after it never returned). There is NO env var, no CLI flag, and no config file
+    //     this task could find that lets cline's ACP session/new skip this OAuth gate — it is a
+    //     genuine architectural wall in cline 3.0.47's ACP mode specifically, independent of the
+    //     provider-auth mechanism the brief pointed at (which fixes the OTHER mode).
+    //
+    // So there is no env-var mapping that would make `CHAT_BACKENDS.cline` (the actual production
+    // driver) hit this mock — returning one anyway would be exactly the "row that will be trusted
+    // and cannot work" failure mode the brief warns against. This throws instead, pointing at what
+    // DOES work (the CLI mode + subcommand) and stating plainly that it doesn't reach the ACP mode
+    // Bismuth ships. clineMocked.test.ts instead asserts the SAFE, real, live behavior:
+    // `CHAT_BACKENDS.cline` against an isolated (guaranteed-unauthenticated) `CLINE_DIR` surfaces a
+    // clean `error` ChatFrame — never a hang, never a silent real-account fallback.
     // --------------------------------------------------------------------------------------
     case "cline":
-      return {
-        OPENAI_BASE_URL: mockUrl,
-        OPENAI_API_KEY: "mock",
-      };
+      throw new Error(
+        'backendMockEnv: "cline" has no working env-var mock mapping for Bismuth\'s actual `cline --acp` ' +
+          "integration (chatProviders/acp/driver.ts). VERIFIED LIVE (Task 4): ACP mode's `session/new` demands " +
+          '`authenticate` with a REAL OAuth method ("cline" or "openai-codex" sign-in) before it will proceed, ' +
+          "and that call hangs waiting for real interactive login — it cannot be satisfied by a mock. Cline's " +
+          "OTHER, non-ACP CLI mode (`cline \"<prompt>\"`) CAN be pointed at a mock, but only via the `cline auth " +
+          "-p openai-compatible -k <key> -b <url> -m <model>` subcommand (scope its state with the CLINE_DIR env " +
+          "var, not this function) run as SETUP before invoking cline — not a value this function can return. " +
+          "See this file's `cline` case comment and the Task 4 report for the full finding.",
+      );
 
     // --------------------------------------------------------------------------------------
-    // GUESSED, but source-verified: read directly from block/goose's (now aaif-goose/goose's)
-    // current Rust source, not inferred.
-    //   - crates/goose/src/config/base.rs: BOTH Config::get_param and Config::get_secret check
-    //     `env::var(key.to_uppercase())` FIRST, before the YAML config file or OS keyring — so
-    //     ANTHROPIC_HOST/ANTHROPIC_API_KEY genuinely are plain per-process env var overrides, not
-    //     merely config-file keys that happen to share a name.
-    //   - crates/goose/src/providers/formats/anthropic.rs: confirms the provider id string goose
-    //     registers this under is literally "anthropic" (ANTHROPIC_PROVIDER_NAME).
-    //   - documentation/docs/guides/config-files.md, goose's own official docs: "GOOSE_PROVIDER
-    //     and GOOSE_MODEL are still supported as environment variables and override the config
-    //     file for that process" — the mechanism that makes goose actually pick the anthropic
-    //     provider above rather than whatever a prior `goose configure` run persisted.
-    // GOOSE_MODEL's value is a placeholder Task 3/4 may want to override — goose doesn't validate
-    // it against a known-model list before use, but was never run live to confirm that.
+    // VERIFIED live end-to-end (Task 4, upgraded from GUESSED) — the original source-reading
+    // (goose's Rust source: env vars checked before the YAML config/OS keyring) held up completely
+    // under a real run. `goose acp`, driven through BOTH a raw ACP JSON-RPC handshake and
+    // Bismuth's own CHAT_BACKENDS.goose.sendMessage (chatProviders/acp/driver.ts, unmodified),
+    // produced a full turn: `session/new` succeeds immediately (one `GET /v1/models` hit on the
+    // mock), `session/prompt` streams a real `agent_message_chunk` with the mock fixture's exact
+    // "Hello!" text (two `POST /v1/messages` hits on the mock, both 200/fixture-matched), and
+    // settles with `stopReason:"end_turn"` — through the driver, this landed as a clean
+    // `assistant-text` frame followed by `result:{isError:false}` then `done`. Zero real network
+    // access, confirmed via the mock's own /metrics (only the two paths above, never a real
+    // anthropic.com hit).
+    //
+    // NOT part of this mapping (a local-STATE-isolation concern, not a MOCK-pointing one, so kept
+    // out of this function's return value): goose persists local config/session state under
+    // `$XDG_CONFIG_HOME`/`$XDG_DATA_HOME`/`$XDG_STATE_HOME` (confirmed live via `goose info`'s own
+    // path listing) — a caller that cares about never touching a developer's real
+    // `~/.config/goose` should set those three, independently of this mapping (gooseMocked.test.ts
+    // does exactly that).
     // --------------------------------------------------------------------------------------
     case "goose":
       return {
@@ -153,6 +270,57 @@ export function backendMockEnv(backendId: string, mockUrl: string): Record<strin
         GOOSE_PROVIDER: "anthropic",
         GOOSE_MODEL: "claude-haiku-4-5",
       };
+
+    // --------------------------------------------------------------------------------------
+    // ADDED this task (brief finding #2 — openclaw previously had NO row at all, despite being a
+    // live, non-hidden backend in core/src/agentBackends/catalog.ts). PARTIALLY VERIFIED, and this
+    // row is explicit about the boundary rather than overclaiming:
+    //   - CONFIRMED live: `OPENCLAW_CONFIG_PATH` and `OPENCLAW_STATE_DIR` are real env vars that
+    //     redirect openclaw's config file location and local state directory respectively (`openclaw
+    //     config file` printed the overridden path back) — so this mapping can genuinely keep
+    //     openclaw off a developer's real `~/.openclaw` config/state.
+    //   - NOT CONFIRMED: that a turn actually routes through the mock. `openclaw acp` ("Run an ACP
+    //     bridge backed by the Gateway", per its own --help) is a THIN BRIDGE to a separately-running
+    //     (or auto-started) Gateway process that owns model routing via its OWN `models.providers.*`
+    //     JSON5 config (documented in openclaw's own docs/gateway/local-models.md) plus an
+    //     `agents.defaults.model.primary` selection — a materially heavier, multi-process
+    //     architecture than any other backend here (cline/gemini/goose are single-process CLIs that
+    //     speak ACP directly). Standing up that Gateway + agent + ACP bridge against this mock was
+    //     not completed within this task's time budget. This function writes the config shape
+    //     openclaw's own docs describe (best-effort, never run end-to-end), so a future task has a
+    //     concrete starting point rather than nothing — but does NOT claim this backend is
+    //     E2E-verified, and no openclawMocked.test.ts was added claiming that.
+    // --------------------------------------------------------------------------------------
+    case "openclaw": {
+      if (!workDir) {
+        throw new Error(
+          'backendMockEnv: "openclaw" requires a third `workDir` argument — it needs a config file, not just env ' +
+            "vars (see this file's `openclaw` case comment). Pass a throwaway temp directory this call may write into.",
+        );
+      }
+      writeFileSync(
+        join(workDir, "openclaw.json5"),
+        JSON.stringify(
+          {
+            agents: { defaults: { model: { primary: "mock/mock" }, models: { "mock/mock": { alias: "Mock" } } } },
+            models: {
+              mode: "merge",
+              providers: {
+                mock: {
+                  baseUrl: `${mockUrl}/v1`,
+                  apiKey: "mock",
+                  api: "openai-completions",
+                  models: [{ id: "mock", name: "Mock", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32768, maxTokens: 4096 }],
+                },
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      return { OPENCLAW_CONFIG_PATH: join(workDir, "openclaw.json5"), OPENCLAW_STATE_DIR: join(workDir, "state") };
+    }
 
     default:
       throw new Error(`backendMockEnv: no mock-env mapping for backend id "${backendId}"`);

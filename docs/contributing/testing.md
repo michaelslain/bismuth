@@ -112,6 +112,84 @@ Every workspace `tsconfig.json` uses `"noEmit": true` — these passes only chec
 
 ---
 
+## Offline agent-CLI integration tests (mock LLM, zero account API calls)
+
+**The rule: `bun test core` never makes a real API call against anyone's account, full stop.** This
+applies to two distinct kinds of test that could otherwise spend real money or consume real quota:
+
+1. **Live model tests** (`core/test/chat.test.ts`'s `describe.skip`-by-default live block, and any
+   test file gated the same way) drive Bismuth's own Claude Code integration against the REAL
+   Anthropic API, using the developer's own logged-in account. These are opt-in via the
+   `BISMUTH_LIVE_TESTS=1` environment variable (see `core/test/liveGate.ts`) and skip by default —
+   running them costs real money/quota, so they must never run in CI or a default `bun test`.
+2. **Mocked agent-CLI integration tests** (`core/test/chatProviders/*Mocked.test.ts`,
+   `core/test/chatProviders/acpFakeAgent.test.ts`) drive a REAL agent CLI binary (`claude`,
+   `opencode`, `codex`, `goose`, `gemini`, `cline`) through Bismuth's OWN production chat driver, but
+   point it at a **local mock LLM server** instead of the real provider API — these run by default
+   in `bun test core` (no opt-in needed) precisely because they spend nothing. They skip when the
+   relevant CLI **binary** isn't installed (a portability/CI concern), never when an **account**
+   isn't logged in — a missing-binary skip and a missing-account skip must never be conflated (see
+   each test file's own header for why).
+
+### The mock LLM server
+
+`core/test/support/mockLlm.ts`'s `startMockLlm()` spawns a real local HTTP server — the `llmock`
+binary from the `@copilotkit/aimock` devDependency — that answers Anthropic-, OpenAI-, and
+Gemini-shaped chat-completion requests from one small JSON fixture
+(`core/test/fixtures/llm/basic-turn.json`): a request whose last user message contains `"hello"`
+gets back the literal text `"Hello!"`. Every mocked test points its CLI's outbound base-URL env
+var(s) at this server (see `core/test/support/backendEnv.ts`'s per-backend mapping) instead of the
+real provider host, then asserts the fixture's exact text arrived — text no real model would ever
+reply with verbatim, which is what proves the mock (not a real API) served the turn.
+
+`startMockLlm()` **always** resolves the exact installed `@copilotkit/aimock` binary via
+`Bun.resolveSync`, anchored at its own module's directory — **never** `bunx llmock` / `npx llmock`.
+An unrelated npm package also happens to be named `llmock`; a bare-name lookup can silently resolve
+to it instead, with a different banner and different behavior and no error at all. If you're adding
+a new mocked test, always go through `startMockLlm()` — never spawn `llmock`/`aimock` yourself.
+
+### Per-backend verification status
+
+Not every backend's mapping in `backendEnv.ts` is verified to the same depth — the file's own
+per-case comments are the source of truth, and are updated every time a row is actually run live
+(never upgraded from a guess to "verified" without doing so). As of this writing:
+
+| Backend | Status | Notes |
+|---|---|---|
+| `claude` | **Verified**, full turn E2E | `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_API_KEY` |
+| `opencode` | **Verified**, full turn E2E | Needs an explicit `setModel("mock/mock")` after session-open (a real driver quirk — server mode doesn't consult the config's default model on a session's first turn) and a small mock `--latency` (a zero-latency reply can race past opencode's own event-stream subscription) |
+| `goose` | **Verified**, full turn E2E | `ANTHROPIC_HOST`/`GOOSE_PROVIDER=anthropic`, driven via `goose acp` |
+| `codex` | **Verified**, full turn E2E | Needs a `$CODEX_HOME/config.toml` (a custom `model_providers.*` block, `wire_api = "responses"`) — plain `OPENAI_BASE_URL` does **not** work for this codex version, confirmed live (see `backendEnv.ts`) |
+| `gemini` | **Partially verified** | Handshake + old-shape model list + zero real network access confirmed live; a full turn's assistant text could not be made to arrive against the generic mock fixture within a reasonable time (see `geminiMocked.test.ts`'s header for the investigation) |
+| `cline` | **Not mockable for the mode Bismuth ships** | ACP mode (`cline --acp`) gates `session/new` behind a real OAuth `authenticate` call with no mockable path; `clineMocked.test.ts` instead verifies this fails SAFELY (a clean error, never a hang or a silent real-account fallback) against an isolated `CLINE_DIR` |
+| `openclaw` | **Config-mechanism only** | `OPENCLAW_CONFIG_PATH`/`OPENCLAW_STATE_DIR` genuinely redirect its config/state (confirmed live); routing an actual turn through its Gateway-backed ACP bridge was not exercised |
+
+The **version-skew branch** in `core/src/chatProviders/acp/protocol.ts`'s `detectModelShape` (an ACP
+agent's `session/new` reporting the OLD `models.availableModels`/`currentModelId` shape vs the NEW
+`configOptions` shape) cannot be covered by any single real CLI — nothing installed anywhere reports
+both. `core/test/support/fakeAcpAgent.ts` is a small, hand-rolled fake ACP agent (JSON-RPC over
+stdio, no network of any kind) used by `core/test/chatProviders/acpFakeAgent.test.ts` to drive both
+branches from one place, following the exact "write + chmod a stub binary, prepend it onto PATH"
+pattern `relay/test/wrap.test.ts` already established for testing a driver against a fake binary.
+
+### Recording a new fixture
+
+`llmock --record` is a **deliberate, manual act that makes REAL API calls** — it proxies unmatched
+requests to a real provider and saves the response as a new fixture. It is never run by `bun test`,
+never wired into CI, and never triggered as a side effect of anything in this repo:
+
+```bash
+# Proxies to the real OpenAI API using your own credentials — costs real money/quota.
+npx -p @copilotkit/aimock llmock --record --provider-openai https://api.openai.com \
+  -f core/test/fixtures/llm/my-new-fixture.json
+# ...then drive the CLI you're recording against this server as usual...
+```
+
+Only run this yourself, with your own account, when you actually need a new fixture — never assume
+a fixture can be regenerated as part of routine testing.
+
+---
+
 ## File layout and colocating tests
 
 Every test file is a `*.test.ts` colocated with (or adjacent to) the module it tests:
@@ -491,4 +569,4 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/agents.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/collide.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/agents.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/collide.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `relay/test/wrap.test.ts`
