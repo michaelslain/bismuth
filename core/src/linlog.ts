@@ -12,13 +12,13 @@
 // The `1 +` keeps attraction positive below d=1 (ln(d) alone goes negative and would repel for
 // d < 1); the actual d → 0 / NaN guard is the `if (d === 0) continue` below.
 //
-// The `attraction` option (Task 4) swaps ONLY that ln(1+d) magnitude function, leaving the rest of
-// this module's structure — symmetric 50/50 correction, raw (not predicted) positions, alpha
-// handling — untouched. That gives a CONTROL arm (`(d) => d`, i.e. a linear/Hooke-shaped magnitude
-// run through THIS module's integration instead of forceLink's) that isolates the force law from
-// the other two things `linLogLinkForce` also changes vs. d3's `forceLink`: no per-node degree
-// division of the correction, and reading raw rather than velocity-predicted positions. See
-// `energyModel: "linear"` in layout.ts.
+// The `attraction` option swaps ONLY that ln(1+d) magnitude function, leaving the rest of this
+// module's structure — symmetric 50/50 correction, raw (not predicted) positions, alpha handling —
+// untouched. Task 4 used it to build a linear/Hooke-shaped CONTROL arm (`(d) => d`) meant to isolate
+// the force law from the other two things `linLogLinkForce` changes vs. d3's `forceLink` (no
+// per-node degree division of the correction, raw rather than velocity-predicted positions) — that
+// arm diverged on the reference vault's hub topology in both variants tried and was not shipped (see
+// layout.ts's git history for Task 4/5). The option itself remains general-purpose.
 
 // `index` is optional and, like the other fields, never read by this module — it's only here so a
 // plain d3 SimNode-shaped type (e.g. layout.ts's `RN`, whose `index` comes from an untyped index

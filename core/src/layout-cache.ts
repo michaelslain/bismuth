@@ -24,6 +24,19 @@ interface Layout { pos3d: Positions; pos2d: Positions }
 const to2d = (p: number[]): [number, number] => [p[0], p[1]];
 
 const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache");
+// v20: LinLog energy model + degree-proportional repulsion now DEFAULT (layout.ts LayoutOptions
+//      energyModel/degreeRepulsion, resolved in withDefaults) — attraction along links is ln(1+d)
+//      instead of a Hooke spring, and many-body repulsion is scaled by (degree+1) per node. Task 4's
+//      measurement on the reference vault (fingerprint 5558f545e13b163b): d3 NP-degree separation
+//      0.0557→0.1242, d2 0.0398→0.1302, both clearly better than the old spring default. The
+//      community-level SEPARATION force, grid-lattice placement, per-member containment, and disc-
+//      flatten bias are all removed (measured to contribute ~1.6% or move nothing once LinLog +
+//      degree repulsion ship — see layout.ts's COMMUNITY_* comment); community GRAVITY stays (measured
+//      load-bearing even under LinLog: removing both community forces was 8x worse than keeping them
+//      and worse than the untouched spring baseline). Every 2D AND 3D coordinate moves for every graph.
+//      MUST bump — same reasoning as v19/v18/.../v12 below: graphSig() and seedPath() are both
+//      versioned, so the first build after the bump is a full cold settle under the new physics and no
+//      node stays pinned at a v19 position.
 // v19: ASCII redesign, part 2 — two changes, shipped together because the first doesn't work without
 //      the second (an adversarial review caught this before it shipped: see both comments below):
 //      (a) COMMUNITY_SEP_MULT (layout.ts) 1.6 → 2.4 ("things more separated and clustered": whole
@@ -109,8 +122,9 @@ const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bism
 // v7: stronger small-graph linkDist boost (400/n, cap 8) — much airier small graphs.
 // v6: small-graph linkDist boost added (sqrt(500/n) factor in layout.ts) changes layout output.
 // v5: collide iterations 3→6 + padding 1.25→1.55 (anti-overlap).
-const CACHE_VERSION = "v19"; // v19: COMMUNITY_SEP_MULT 1.6→2.4 + REFINE_TICKS 120→240 (ASCII redesign,
-                              // wider AND converged cluster gaps — see the comment above)
+const CACHE_VERSION = "v20"; // v20: LinLog energy model + degree-proportional repulsion by default;
+                              // community separation/grid-islands/containment/disc-flatten removed
+                              // (see the comment above)
 // 120 → 240 (2026-07-27, same pass as COMMUNITY_SEP_MULT above): at the raised multiplier, 120 ticks no
 // longer fully settles the wider target before the budget runs out. Measured on the reference vault
 // (2121 nodes / 4560-ish edges, 3-level hierarchy) through this EXACT production pipeline (3D @

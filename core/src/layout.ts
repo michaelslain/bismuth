@@ -3,21 +3,15 @@
 //   1. PivotMDS (Brandes & Pich) — a fast, deterministic GLOBAL placement from graph-theoretic
 //      distances to a handful of pivot nodes. Gets the overall shape right in O(k·(V+E)).
 //   2. A short d3-force-3d REFINEMENT using the same forces/constants as the renderer, to polish
-//      local spacing — this stage also carries a degree-weighted disc-flatten bias in 3D (see
-//      discFlattenForce) so hub-heavy graphs settle into a "planet with rings" shape: heavily-linked
-//      hubs stay roughly spherical while sparse leaves flatten toward the Y=0 plane.
-//      Starting from PivotMDS means it converges in a fraction of the iterations a
+//      local spacing. Starting from PivotMDS means it converges in a fraction of the iterations a
 //      random start needs — that's the whole point, since the force solve is the expensive part.
-//   3. `LayoutOptions.clusterLayout` picks how the TOP-level clusters are arranged. DEFAULT (both
-//      2D and 3D) is `"organic"` — the plain force settle (community gravity + community-level
-//      collide), which is what the ASCII redesign renders: every individual node as a glyph, with
-//      the hierarchy read through zoom-driven color + labels (AsciiGraphRenderer.ts), not a lattice.
-//      `"grid"` is kept as an explicit 2D-only opt-in: a GRID-ISLAND post-pass on the seed translates
-//      every top-level cluster rigidly onto a coarse lattice cell with provable empty lanes between
-//      neighbours, and the refine then settles its members around that fixed anchor. See the
-//      "GRID ISLANDS" block for why the organic settle alone could not separate this vault's clusters
-//      (measured: it IS clusterable — Q = 0.45 — but 75% of its edges run through shared tag hubs) —
-//      the grid mode remains available for callers that want that stronger separation.
+//   3. Link attraction is LinLog by default (see LayoutOptions.energyModel / linlog.ts): pull grows
+//      only as ln(1+d) instead of proportionally (a Hooke spring), so cluster separation is a
+//      property of the energy model rather than something a corrective force has to impose on top.
+//      Community-aware gravity (see the COMMUNITY_* block below) still runs alongside it — measured
+//      (Task 4) to remain load-bearing even under LinLog — but the community-level SEPARATION force,
+//      grid-lattice placement, and per-member containment that used to fight the old spring model for
+//      cluster spacing are gone (measured to move nothing once LinLog + degree repulsion are default).
 //
 // Pure (no DOM, no Bun/fs) so it runs in both Bun (core) and a browser Worker (app).
 import {
@@ -80,15 +74,6 @@ export interface LayoutOptions {
   virtualAnchors?: number;
   virtualDistMult?: number;
   /**
-   * "Planet with rings" 3D shape bias — extra pull toward the Y=0 plane (dim===3 only), weighted by
-   * how peripheral a node is (see discFlattenForce). 0 (the default) = the roughly-spherical
-   * behavior; higher = flatter disc. Shipped OFF: on a real vault the flattening read as a squashed
-   * blob rather than a planet (rings need radial structure, not just flattening) — kept as an
-   * option for the future ring-structure iteration. Purely a function of each node's OWN existing
-   * (real-edge) degree — no extra analysis pass, no change to 2D output or the tick budget.
-   */
-  discBias?: number;
-  /**
    * Community-aware clustering forces (default ON). Requires `community` on the input nodes — with
    * fewer than 2 distinct communities this is a no-op and output is identical either way. Set false
    * to reproduce the community-unaware layout exactly (used by the tuning harness / A-B tests).
@@ -103,51 +88,20 @@ export interface LayoutOptions {
   communityInterDist?: number;
   /** Per-tick pull of each node toward its own community's centroid (0 = off). */
   communityGravity?: number;
-  /** Strength (0..1, 0 = off) of the community-level collide that pushes whole communities apart
-   *  until their packing radii clear. Same semantics as d3's forceCollide strength. */
-  communitySeparation?: number;
-  /** Per-ancestor-level falloff for the NESTED community forces: an ancestor `a` levels above the
-   *  finest gets `communityGravity · decay^a` and `communitySeparation · decay^a`. 0 disables the
-   *  coarse levels entirely (finest-only = the pre-hierarchy behaviour). See the COMMUNITY_* block. */
+  /** Per-ancestor-level falloff for the NESTED community gravity: an ancestor `a` levels above the
+   *  finest gets `communityGravity · decay^a`. 0 disables the coarse levels entirely (finest-only =
+   *  the pre-hierarchy behaviour). See the COMMUNITY_* block. */
   communityLevelDecay?: number;
-  /**
-   * How the TOP-level clusters are arranged (see the GRID_* block below).
-   *   - `"grid"`  — each top-level cluster ("island") is anchored on a coarse GRID cell, biggest
-   *                 islands nearest the centre, with generous empty lanes between neighbours. Its
-   *                 members settle around that fixed anchor; sub-clusters arrange INSIDE the island
-   *                 via the unchanged nested community forces.
-   *   - `"organic"` — the pure force settle (islands find their own places via community gravity +
-   *                 community-level collide). This is the pre-grid behaviour, bit-for-bit.
-   * DEFAULT: `"organic"` in both 2D and 3D (the ASCII redesign's ORGANIC layout — see
-   * design/ascii/redesign — renders every individual node as a glyph, with the hierarchy read
-   * through zoom-driven color + labels rather than a lattice of grid-cell "islands"; see
-   * AsciiGraphRenderer.ts). `"grid"` is kept as an explicit opt-in (only takes effect in 2D — a flat
-   * lattice would squash a 3D cloud — and only when the nodes actually carry communities; it is also
-   * skipped for an incremental (`fixedIds`) rebuild, where pinned nodes must hold the positions the
-   * previous — already gridded — build gave them).
-   */
-  clusterLayout?: "grid" | "organic";
   /**
    * Which attraction model links use.
    *   - "spring"  — d3 forceLink (Hooke). The pre-2026-07 behaviour.
    *   - "linlog"  — Noack's LinLog: attraction ~ ln(1+d). Clusters separate because the model
-   *                 separates them, which is what makes the community forces unnecessary.
-   *   - "linear"  — CONTROL ARM (Task 4 measurement only, not a shipped path). Reuses
-   *                 `linLogLinkForce`'s exact structure/integration (symmetric 50/50 correction,
-   *                 raw positions, same alpha handling) but with attraction ~ (d - linkDist)
-   *                 instead of ~ ln(1+d) — i.e. the same magnitude LAW as "spring" (a Hooke spring
-   *                 with the same base rest length), run through LinLog's integration instead of
-   *                 forceLink's. MEANT to isolate whether a LinLog-vs-spring result is caused by
-   *                 the ln(1+d) force law or by the OTHER two ways `linLogLinkForce` differs from
-   *                 `forceLink` (no per-node degree division of the correction; raw rather than
-   *                 velocity-predicted positions) — but on this vault's hub topology this arm is
-   *                 numerically UNSTABLE in both the rest-length-free and rest-length variants
-   *                 measured (diverges over 240 ticks; see the prepareLayout comment at its link-
-   *                 force registration and the Task 4 report), so that isolation has not yet
-   *                 actually been achieved — see core/src/linlog.ts's header.
-   * Temporary during the energy-model migration; removed once one path ships for good.
+   *                 separates them, which is what makes the community SEPARATION force unnecessary
+   *                 (community GRAVITY stays on — measured load-bearing even under LinLog, see the
+   *                 COMMUNITY_* block). DEFAULT as of Task 5's measurement (d3 NP-degree separation
+   *                 0.0557→0.1242, d2 0.0398→0.1302 on the reference vault, both better than spring).
    */
-  energyModel?: "spring" | "linlog" | "linear";
+  energyModel?: "spring" | "linlog";
   /**
    * Scale many-body repulsion by (degree + 1), per ForceAtlas2. A vault is scale-free; uniform
    * repulsion crushes leaf nodes against their hubs ("forests of leaves").
@@ -191,14 +145,14 @@ export type Positions = Record<string, [number, number, number]>;
 const COMMUNITY_LEVEL_DECAY = 0.4;
 const DEFAULTS = {
   dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -7, linkDistance: 5, centering: 0.13,
-  virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8, discBias: 0,
+  virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8,
   // --- Community-aware clustering (see the COMMUNITY_* block below) ---
   communityForces: true,
   // Cranked 2026-07-25 (user: tighter clumps, wider lanes, "like the design example"):
-  // gravity .4→.6, separation .6→.85, inter links .35→.2 @ 1.9→2.6× rest length.
+  // gravity .4→.6, inter links .35→.2 @ 1.9→2.6× rest length.
   communityIntraLink: 1.8, communityInterLink: 0.2,
   communityIntraDist: 1.0, communityInterDist: 2.6,
-  communityGravity: 0.6, communitySeparation: 0.85,
+  communityGravity: 0.6,
   // Hierarchical ("clusters in clusters") nesting — see the COMMUNITY_LEVEL_DECAY block below.
   communityLevelDecay: COMMUNITY_LEVEL_DECAY,
 };
@@ -208,11 +162,6 @@ const LINK_STRENGTH = 0.18;
 // ×) — 3D keeps the gentler defaults for both.
 const MODE_2D_REPULSION_MULT = 3;
 const MODE_2D_CENTERING_MULT = 0.5;
-// Grid mode retargets the centering spring from the origin to each node's island ANCHOR, which makes
-// it the force that holds the placement rather than a gentle pull to the middle — so it keeps the full
-// `centering` strength instead of the halved 2D value. (The "let communities breathe" reason for
-// halving it is served by the lattice's own lanes in grid mode.)
-const GRID_CENTERING_MULT = 1;
 // 0.65 (was 1.2): that extra padding on TOP of the already-larger 2D collide floor (COLLIDE_RATIO ×
 // MODE_2D_SPACING) is what produced the "condensed honeycomb" look — on the real 2246-node vault it
 // forced ~every leaf node to the exact same collide radius, so nearly all of them settled at a
@@ -245,35 +194,15 @@ const COLLIDE_SIZE_PADDING = 1.55; // gap around big hubs (was 1.25) so they don
 const degreeScale = (deg: number) => Math.min(SIZE_MAX_MULT, SIZE_MIN_MULT + SIZE_DEGREE_GAIN * Math.sqrt(deg));
 const drawnNodeRadius = (scale: number) => (NODE_SIZE * scale * Math.tan(((NODE_FOV_DEG * Math.PI) / 180) / 2)) / 2;
 
-/** Extra per-node pull toward Y=0, weighted by peripherality (1 - hub-ness on the SAME degreeScale
- *  curve used for collide sizing/draw size). Hubs (hubT→1) barely move; leaves (hubT→0) flatten hard.
- *  A pure function of realDeg — reused across full-graph/2nd-brain/3rd-brain/daemon layouts alike. */
-function discFlattenForce(nodes: RN[], realDeg: number[], bias: number): (alpha: number) => void {
-  const hubT = realDeg.map((d) => {
-    const s = degreeScale(d);
-    return (s - SIZE_MIN_MULT) / (SIZE_MAX_MULT - SIZE_MIN_MULT);
-  });
-  return (alpha: number) => {
-    for (let i = 0; i < nodes.length; i++) {
-      const flatten = bias * (1 - hubT[i]);
-      if (flatten <= 0) continue;
-      const nd = nodes[i];
-      nd.vy = (nd.vy ?? 0) - (nd.y ?? 0) * flatten * alpha;
-    }
-  };
-}
-
 // --- Community-aware clustering ------------------------------------------------------------------
 // Zoomed out, a graph whose communities intermingle reads as one undifferentiated blob: the detected
 // communities (community.ts, stamped onto every node by engine.ts BEFORE layout) were used only for
-// COLOR, never for position, so link topology alone had to separate them — and it doesn't, because a
-// handful of inter-community bridges pull clusters into each other while uniform many-body repulsion
-// pushes intra-community members apart just as hard as it pushes whole clusters apart.
+// COLOR, never for position, so link topology alone had to separate them.
 //
-// Three cooperating forces fix that, all gated on `community` being present on 2+ distinct
+// Two cooperating pieces fix that, both gated on `community` being present on 2+ distinct
 // communities — so a community-less caller (embedded graph blocks, the daemon graph, every existing
 // test fixture) gets byte-identical output to before, and `communityForces: false` reproduces the
-// old layout exactly for A/B measurement:
+// community-unaware layout exactly for A/B measurement:
 //   1. Anisotropic links: an intra-community edge gets a stronger spring, an inter-community edge a
 //      weaker + longer one. Turns the modularity structure directly into geometry. Note the intra
 //      REST LENGTH is deliberately left at 1.0× — shortening it to 0.7× measurably improved the
@@ -285,99 +214,54 @@ function discFlattenForce(nodes: RN[], realDeg: number[], bias: number): (alpha:
 //      already inside its community's jammed-packing radius feels nothing, so gravity gathers a
 //      community's strays without squeezing its core past what forceCollide can resolve. Ungated it
 //      compressed a 650-node community until 2% of ALL the vault's nodes overlapped.
-//      Separation then has to come from communities moving APART (3), not from each one shrinking.
-//   3. Community-level COLLIDE: each community is treated as one soft body of radius packRadius, and
-//      an overlapping pair is pushed apart (mass-weighted, exactly like d3's forceCollide) until
-//      their radii clear with a COMMUNITY_SEP_MULT margin. This is the piece that opens visible lanes.
-//      An inverse-square centroid repulsion was tried first and is strictly worse: a settled layout
-//      is near collide-jammed, so a 1/d² push is immediately balanced by the linear centering spring
-//      (raising it 2×→6× moved the 3D separation ratio by <2%). A bounded overlap-resolving
-//      constraint has no such equilibrium — it dilates the assembly just until the gap exists and
-//      then switches off, so it also can't inflate an already-separated graph. A per-node variant
-//      (evict a node from foreign community discs) was also tried and separated distinctly worse
-//      (vault 3D 41% vs 46% improvement) for no overlap benefit.
-// Only communities of >= COMMUNITY_MIN_SIZE take part in (3): a real vault has a long tail of
-// singleton/pair communities (isolated notes), and pairing all of them would be O(k²) for no visual
-// gain. Gravity applies to any community with >= 2 members. Cost is O(n + k_big²) per tick with
-// k_big in the low tens even on a big vault (28 qualifying communities out of 196 on the reference
-// 2248-node vault) — measured at +7% (3D) / +6% (2D) on total settle time.
 //
-// Measured on the reference 2248-node/4959-edge vault and a 300-node/6-community synthetic, as
-// mean-intra-community-spread / mean-nearest-other-community-centroid-distance (lower = clusters
-// read as distinct blobs), 120 refine ticks, `communityForces:false` vs the defaults below:
+// A third force — a community-level COLLIDE that pushed whole communities apart until their packing
+// radii cleared a margin (COMMUNITY_SEP_MULT) — used to run alongside these two. Task 4's ablation
+// (measured under the LinLog energy model, which is now the default: see LayoutOptions.energyModel)
+// found it contributed only ~1.6% of the combined win (linlog+degreeRepulsion+both community forces:
+// d3 NP-degree 0.1242; gravity alone: 0.1221; separation alone: 0.0429; neither: 0.0156 — separation
+// is NOT what makes LinLog's separation work, gravity is) — so it, its grid-lattice placement pass,
+// and its per-member containment constraint were removed. Gravity (2) alone retains ~98% (3D) / ~92%
+// (2D) of the measured separation improvement and is kept.
+//
+// Measured on the reference 2248-node/4959-edge vault and a 300-node/6-community synthetic (under the
+// pre-LinLog spring model, both community forces active), as mean-intra-community-spread /
+// mean-nearest-other-community-centroid-distance (lower = clusters read as distinct blobs), 120 refine
+// ticks, `communityForces:false` vs the defaults below:
 //   vault   3D 1.675 → 0.952 (-43%),  2D 2.999 → 1.058 (-65%)
 //   synth   3D 0.522 → 0.326 (-38%),  2D 0.464 → 0.270 (-42%)
 // with intra-community spread retained at 0.76-0.90× (no degenerate collapse into points) and the
 // collide invariant essentially intact (worst pairwise distance / (rᵢ+rⱼ): vault 3D 0.90 → 0.90,
 // 2D 0.88 → 0.77; synthetic unchanged at 0.94).
-const COMMUNITY_MIN_SIZE = 4; // min members for a community to take part in community-level collide
 // Radius a community occupies once its members are jam-packed at their own collide radii:
 //   R = (Σ rᵢ^dim / φ)^(1/dim),  φ = the fraction a random (not crystalline) packing fills.
 // Summing rᵢ^dim rather than using k·r^dim matters: a community's hubs carry a collide radius up to
 // ~6× a leaf's (degreeScale), so a uniform-radius estimate under-reads a hub-heavy community's real
-// footprint. Gravity is switched off inside this radius, and it is the "body radius" the
-// community-level collide separates on.
+// footprint. Gravity is switched off inside this radius (its "packing floor" — see communityForce).
 const COMMUNITY_PACK_FILL_2D = 0.55; // random-loose disc packing
 const COMMUNITY_PACK_FILL_3D = 0.5;  // random-loose sphere packing
-// Target clearance between two communities' packing radii — >1 leaves an actual empty lane.
-// 1.6 → 2.4 (2026-07-27, ASCII redesign: "things more separated and clustered", edges now drawn as
-// real vector lines rather than character-grid glyphs — see AsciiGraphRenderer.ts / docs/design/ascii).
-//
-// CORRECTION (an adversarial review caught this): this was originally swept ONLY on
-// plantedCommunities([80,70,60,40,30,20], cross=0.25) — a FLAT, single-level partition — measuring
-// intra-community nearest-neighbour distance (a) vs. inter-centroid distance (b). On that fixture (a)
-// held flat across the whole sweep and the comment claimed intra-cluster spacing was "untouched by
-// construction". That claim is only true for a single-level partition: the constant enters the
-// separation-force target at EVERY level of a real hierarchy (finest + every ancestor, decayed — see
-// the "Nesting" block below), and a flat fixture has no ancestor level to expose that. Re-swept
-// 1.6/2.0/2.4/2.8 on the REAL reference vault (2121 nodes / 3-level Louvain hierarchy) at the
-// PRODUCTION tick budget (240 — see REFINE_TICKS in layout-cache.ts), measuring mean distance from a
-// member to its OWN level-community centroid (intra) vs. mean distance to the NEAREST OTHER
-// level-community's centroid (inter), per hierarchy level L0 (coarsest) / L1 / L2 (finest):
-//   3D intra        L0      L1      L2     3D inter (nearest centroid)   L0      L1      L2
-//   1.6             53.46   43.91   33.83                                69.34   59.50   40.50
-//   2.0             60.82   48.69   37.22                                84.69   69.26   48.24
-//   2.4             68.84   54.00   41.49                                99.84   80.82   54.42
-//   2.8             76.73   59.69   45.98                               113.03   93.41   61.51
-//   2D intra        L0      L1      L2     2D inter                     L0      L1      L2
-//   1.6            164.36  132.95  101.11                               181.74  126.38   77.89
-//   2.0            181.60  148.40  112.79                               213.77  145.02   88.58
-//   2.4            203.82  166.13  126.84                               246.83  163.36   97.48
-//   2.8            226.79  182.53  139.94                               283.91  179.25  113.52
-// Both columns grow substantially with the multiplier at EVERY level, in both dimensions — intra by
-// +36% to +44% (1.6→2.8), inter by +42% to +63%. So the honest statement is: raising this constant
-// widens spacing everywhere a real hierarchy has more than one level, not just the gaps between
-// clusters — DELETE the old "untouched by construction" claim, it does not hold once communities nest.
-// What still justifies the change: intra grows more slowly than inter at every level/dimension sampled,
-// so the RATIO the tests actually assert on (separation() — lower is clusters reading as distinct
-// blobs) keeps improving rather than standing still. Confirmed through the full production pipeline on
-// this same vault (see REFINE_TICKS's comment in layout-cache.ts for the paired tick-budget measurement
-// this depends on): coarsest-level 2D ratio 0.851 (1.6@120, pre-change) → 0.700 (2.4@240, shipped). 2.4
-// is kept as a comfortable middle value rather than the most extreme sampled: both columns keep scaling
-// smoothly out to 2.8 with no sign of instability, so 2.4 is "a clear, wide-enough step" rather than
-// "the ceiling before something breaks".
-const COMMUNITY_SEP_MULT = 2.4;
 // Per-tick speed limit for everything this force adds, as a multiple of the node's OWN collide
-// radius. Both community terms can be large on the first ticks (alpha=1, communities still deeply
+// radius. Community gravity can be large on the first ticks (alpha=1, communities still deeply
 // interpenetrating), and an uncapped step drags a whole community across the field faster than the
-// collide relaxation can track. Measured on the reference vault's 2D layout: uncapped, the worst
-// pairwise distance/(rᵢ+rⱼ) is 0.65 and the separation ratio 1.111; at 1.5 they are 0.77 and 1.058
-// (better on both counts). Clamping harder (0.5) is worse again (ratio 1.381) — the communities no
-// longer reach their targets inside the tick budget.
+// collide relaxation can track. Measured (under both community forces, pre-removal of separation) on
+// the reference vault's 2D layout: uncapped, the worst pairwise distance/(rᵢ+rⱼ) is 0.65 and the
+// separation ratio 1.111; at 1.5 they are 0.77 and 1.058 (better on both counts). Clamping harder
+// (0.5) is worse again (ratio 1.381) — the communities no longer reach their targets inside the tick
+// budget. Task 4's gravity-only ablation (see above) re-exercised this same cap under gravity alone.
 const COMMUNITY_MAX_STEP = 1.5;
 
 // --- Nesting (hierarchical communities) -----------------------------------------------------------
 // Communities now come as a PATH (coarsest → finest; see community.ts / GraphNode.communityPath),
-// so the two shape-setting forces above are applied once per level instead of once, total:
+// so the gravity force above is applied once per level instead of once, total:
 //   - the FINEST level keeps the constants above verbatim — it is the tuned baseline and a graph
 //     with a 1-level path (or none) produces byte-identical output to before hierarchies existed;
-//   - each ancestor level `a` above it gets the SAME two forces at COMMUNITY_LEVEL_DECAY^a strength,
-//     so a super-cluster gathers its member clusters and shoulders other super-clusters aside, more
-//     weakly than its children do among themselves.
+//   - each ancestor level `a` above it gets the SAME force at COMMUNITY_LEVEL_DECAY^a strength, so a
+//     super-cluster gathers its member clusters, more weakly than its children do among themselves.
 //
-// COMMUNITY_LEVEL_DECAY = 0.4, swept on the reference 2251-node/4979-edge vault (3 levels, 120
-// refine ticks) as per-level separation ratio (intra spread / nearest-other-centroid; LOWER is
-// better) plus the collide invariant (worst pairwise distance / (rᵢ+rⱼ); the flat baseline is 0.89):
+// COMMUNITY_LEVEL_DECAY = 0.4, swept on the reference 2251-node/4979-edge vault (3 levels, 120 refine
+// ticks, under both community forces — pre-removal of separation) as per-level separation ratio
+// (intra spread / nearest-other-centroid; LOWER is better) plus the collide invariant (worst pairwise
+// distance / (rᵢ+rⱼ); the flat baseline is 0.89):
 //     decay   L0 3D   L1 3D   L2 3D    L0 2D   L1 2D   L2 2D    2D collide
 //     0.00    1.985   1.668   1.090    2.421   2.745   1.936    0.89 (0 pairs)   ← finest-level only
 //     0.30    0.996   0.915   0.993    1.358   1.384   1.856    0.83 (2 pairs)
@@ -388,481 +272,35 @@ const COMMUNITY_MAX_STEP = 1.5;
 // (0.82 → 0.71); 0.65 starts pulling the FINEST level back apart (L2 worsens) because the coarse
 // gravity begins to outweigh the level that actually sets local structure. 0.4 is the knee.
 //
-// TWO invariants from the flat version have to be preserved deliberately here:
-//
-// 1. ONE speed cap for the WHOLE stack, not one per level. COMMUNITY_MAX_STEP exists because an
-//    uncapped community step outruns the collide relaxation; capping each level separately would let
-//    L levels contribute up to L× the cap and silently reintroduce the overlap it was added to stop.
-//    So every level's gravity + separation is summed into one velocity delta and clamped once.
-// 2. The packing radius has to be computed RECURSIVELY, not from raw node radii. Summing rᵢ^dim over
-//    a 500-node super-community answers "how big if you jam-packed its NODES", but its members are
-//    not jam-packed — they sit in sub-clusters that are themselves held apart by COMMUNITY_SEP_MULT
-//    lanes, so the real footprint is several times bigger. Feed that underestimate to the separation
-//    force and it reads every super-cluster pair as already clear and barely fires. So each level
-//    packs its CHILDREN's radii instead of the raw node radii:
-//        R_a(C) = ( Σ_{child ∈ C} R_{a-1}(child)^dim / fill )^(1/dim)
-//    with the finest level still packing raw node radii exactly as before. Note the children go in
-//    UNPADDED: the pairwise target already multiplies by COMMUNITY_SEP_MULT, so padding them here
-//    too compounds 1.6× per level. Measured with the padding on, the reference vault's coarse
-//    separation over-inflated the whole field — the FINEST level's ratio got 23% (3D) / 50% (2D)
-//    WORSE than finest-only, intra spread nearly doubled (1.83× baseline), and the 2D collide
-//    invariant fell to 0.56. Unpadded, the same run improves every level and holds 0.82.
+// The invariant from the flat version that still has to be preserved here: ONE speed cap for the
+// WHOLE stack, not one per level. COMMUNITY_MAX_STEP exists because an uncapped community step
+// outruns the collide relaxation; capping each level separately would let L levels contribute up to
+// L× the cap and silently reintroduce the overlap it was added to stop. So every level's gravity is
+// summed into one velocity delta and clamped once.
 // (COMMUNITY_LEVEL_DECAY itself is declared next to DEFAULTS, which needs it at module init.)
 
-// --- GRID ISLANDS (2D opt-in; LayoutOptions.clusterLayout: "grid") ---------------------------------
-// Measured verdict on the reference vault (2114 nodes / 4535 deduped edges): its Louvain partition
-// has modularity Q = 0.45 at the finest level, 0.57 mid, 0.62 coarsest, against ~0.00 for a random
-// partition of the same group count. The vault is GENUINELY, strongly clusterable — so when the
-// picture still read as "one intermingled blob", the failure was the LAYOUT's, not the data's.
-//
-// Why the organic settle can't win it: the same partition also shows the vault is heavily
-// TAG-MEDIATED hub-and-spoke — 75% of all edges are incident to a tag node, and the top 1% of nodes
-// by degree touch 73% of the edges. Communities therefore share hubs, and a shared hub can only sit
-// in one place: whatever the community forces do, a few very heavy bridges keep dragging clusters
-// back into each other. (For comparison: with tag nodes removed the note-only graph scores Q = 0.86,
-// and the vault's own FOLDER tree scores Q = -0.07 — folders carry no structure at all.)
-//
-// So the top level's positions are IMPOSED rather than negotiated: each top-level cluster (an
-// "island") gets a cell on a coarse square lattice, ordered largest-first from the centre outward,
-// and its members settle around that fixed anchor. Sub-clusters still arrange themselves INSIDE the
-// island through the unchanged nested community forces — the grid replaces exactly one level of
-// negotiation, the one the bridges were winning.
-//
-// LANE GUARANTEE (why the empty space is provable, not hoped for). An island of packing radius R
-// gets a square block of `span = ceil(R / unit)` cells at pitch `P = 2·unit·(1 + GRID_LANE)`, so
-//     R ≤ span·unit = span·P / (2·(1 + GRID_LANE)).
-// Blocks never overlap, so two islands' anchors are ≥ (spanᵢ + spanⱼ)·P/2 apart along some axis, and
-// the gap between their packing DISCS is
-//     gap ≥ (spanᵢ + spanⱼ)·P/2 − Rᵢ − Rⱼ ≥ GRID_LANE · (Rᵢ + Rⱼ).
-// At GRID_LANE = 0.75 that is 1.5× the mean of the two radii of clear space — comfortably the
-// "at least one island-radius" the design asks for, and independent of `unit`, so the cell-count cap
-// below can only ever make the lanes wider.
-const GRID_LANE = 0.75;
-// An island needs this many members to earn its own cell. Smaller top-level groups (on the reference
-// vault: 143 fully-isolated notes, which are singleton communities at every level) have no structure
-// to summarize — they ride along with the island they already settled nearest to.
-const GRID_MIN_ISLAND = COMMUNITY_MIN_SIZE;
-// Fewest islands a level must yield to be worth gridding. The grid takes the COARSEST level that
-// clears this — 2 is the real floor (one island is not an arrangement), and it must stay that low on
-// purpose: raising it lets a coarse level with only 3 super-clusters be REJECTED, at which point the
-// grid drops down to a finer level and the levels above it get discarded — i.e. sub-clusters land on
-// the lattice with no regard for which parent they belong to, which is exactly the nesting the grid is
-// supposed to preserve ("sub-clusters arrange INSIDE their parent's island").
-const GRID_MIN_ISLANDS = 2;
-// The cell size ("unit" island radius) is a low quantile of the island radii rather than the max, so
-// a single huge island doesn't set the pitch for the whole field and strand the small ones in
-// oversized cells — it takes a multi-cell block instead.
-const GRID_UNIT_QUANTILE = 0.25;
-// Cap on the lattice's WIDTH in cells. This is a READABILITY constraint, not a geometric one: at the
-// 100% (fit) stop the whole lattice maps to ~92% of the field, so two adjacent island anchors land
-// ~0.92·cols/width columns apart on screen — and a capped 20-char cluster name is 26 columns wide
-// (app/src/graph/labelSelection.ts `eyebrowWidthCells`, 0.14em tracking at 11.5px on a 6.3px cell).
-// Measured on the reference vault at 1400×900 (219 columns): the mosaic spans 182 columns, so a width
-// of 6 gives ~30 columns per cell step — a name per island with clear space, where 8 gave only ~23 and
-// two adjacent islands would contend. When the packing wants a wider lattice the unit is grown until
-// it fits, which only widens the lanes (see above). A level with more than ~GRID_MAX_SIDE² islands
-// can't be satisfied and degrades to best-effort; the renderer then drops contending names rather than
-// overlapping them, which is also what happens at the FINER aggregate stops (46 and 75 entities on the
-// reference vault) where contention is inherent.
-const GRID_MAX_SIDE = 6;
-const GRID_UNIT_GROWTH = 1.25;
-// Target width:height of the whole mosaic. A graph pane is LANDSCAPE (~1.6:1 on a normal window), and
-// the world→screen projection is isotropic, so a SQUARE mosaic fitted to the pane's height leaves ~40%
-// of the width empty — measured as an ink coverage of 0.53 against 0.85 for an aspect-matched one.
-// Implemented as an anisotropic placement score (x compressed by this factor), so the spiral grows a
-// wide ellipse instead of a circle. Not a hard bound — one enormous island can still make the mosaic
-// taller than this — just the preference the placement order expresses.
-const GRID_ASPECT = 1.6;
-// Spring strength multiplier for a link that CROSSES an island boundary (and for the orphan tethers,
-// which are hash-picked and therefore cross freely). 0 = released entirely.
-// This is the piece without which the whole thing does not work, and it took a measurement to see:
-// with the inter-community multiplier (0.2) still applied across islands, the reference vault's
-// mosaic formed in the right ARRANGEMENT but contracted to ~0.5× its lattice — settled island
-// centroids sat at 0.26-0.68 of their anchor magnitude, and 64 of 105 island pairs still overlapped.
-// The cause is arithmetic, not subtle: 4535 edges, most of them island-crossing and stretched to
-// ~1000 world units against a 29-unit rest length, each contributing ~0.036 of that separation per
-// tick, collectively overwhelm a single 0.13 anchor spring per node. The same applies to the 572
-// orphan tethers (strength 1.2 each, endpoints chosen by hash so they criss-cross the whole mosaic).
-// Releasing them is not a fudge — it is the definition of "imposed rather than negotiated": inter-island
-// edges are still DRAWN, they just no longer vote on where the islands go. Orphans lose nothing by it
-// either: the anchor spring places each one on its host island, which is what the tethers were for.
-const GRID_INTER_ISLAND_LINK = 0;
-
-// --- CONTAINMENT (grid mode) ----------------------------------------------------------------------
-// The grid pass above fixes where an island's CENTROID sits; on its own it does not bound where the
-// island's MEMBERS end up — "the clusters are visual, but once I zoom in the notes are all over the
-// place, even outside where the cluster was". The anchor spring (`centering` = 0.13) is a linear
-// pull, so a member settles wherever it balances the many-body repulsion of ~2000 other nodes, and
-// nothing says where that is. Measured on the reference vault (2114 nodes, 15 islands):
-//   - against the lattice BLOCK alone, 98.7% of nodes were already inside — the blocks are much
-//     larger than most islands need, so that bound was never the binding one;
-//   - against the disc this block defines below (the island's own footprint wherever that is tighter
-//     than its block), 95.7% — and the miss is concentrated exactly where it is most visible: only
-//     50% of the 172 RIDERS (notes whose own top-level group is too small to earn a cell — on this
-//     vault, the fully-isolated ones) were inside the island they were placed on, individual notes
-//     sat up to 73× the radius away, and once riders are counted as part of the island they were
-//     placed on, 42 of the 105 island PAIRS overlapped.
-// So the lanes were not empty, and an island expanded to fill whatever cell it was given: a 15-note
-// island's members spread over a p95 radius of 4827 world units against a footprint of 51 — a haze
-// across the entire mosaic rather than a container, with the aggregate mass drawn at its centroid
-// summarizing notes that were nowhere near it.
-//
-// So membership is CONSTRAINED, not merely encouraged: each node is held inside a disc centred on its
-// island's anchor, of radius
-//     Rc = min( span·unit,  CONTAIN_ISLAND_SLACK · hostedRadius )
-// The two terms do different jobs and both are needed.
-//   - `span·unit` is the block's INSCRIBED radius, and it is what keeps the lanes provably empty:
-//     two blocks of spans sᵢ,sⱼ never overlap, so their anchors are at least
-//     (sᵢ+sⱼ)·P/2 = (sᵢ+sⱼ)·unit·(1+GRID_LANE) apart along some axis, hence the gap between the two
-//     CONTAINMENT discs is
-//         gap ≥ (sᵢ+sⱼ)·unit·(1+GRID_LANE) − sᵢ·unit − sⱼ·unit = GRID_LANE · (Rcᵢ + Rcⱼ),
-//     i.e. the same guarantee the lattice already gave the packing discs, now extended to every
-//     individual member. Capping at this term is what makes "nothing crosses into a lane" provable
-//     rather than measured.
-//   - `CONTAIN_ISLAND_SLACK · hostedRadius` sizes the disc to the island ITSELF (see
-//     PlannedIsland.hostedRadius — its own packing radius plus the riders it hosts), which is what
-//     turns it into a container: a small island contracts to a compact blob with clear space around
-//     it instead of dilating into its cell.
-//
-// Shape of the constraint (per tick, on the projected position `x + vx` — see the ordering note where
-// it is registered):
-//   - inside CONTAIN_FREE_FRAC·Rc: nothing at all. The interior is where the organic settle lives.
-//   - in the band up to Rc: a quadratically-ramped inward spring, so the wall is felt before it is
-//     hit and the rim doesn't read as a hard circular cut.
-//   - past Rc: a PROJECTION back onto the boundary (not a spring): the node's velocity is corrected
-//     by exactly the overshoot. This is deliberately NOT alpha-scaled — alpha is ~0.03 by the end of
-//     the refine, which is exactly when the constraint has to hold.
-// Nested: every level FINER than the gridded one gets the same treatment around its own running
-// centroid at CONTAIN_CHILD_SLACK × its packing radius, so a sub-cluster stays a compact blob inside
-// its parent island instead of smearing across it (the child centroid is a mean of points already
-// confined to the parent disc, so it is inside the parent by construction — the nested discs only
-// have to bound the spread).
-/** Multiple of an island's own footprint (`PlannedIsland.hostedRadius`) it is allowed to occupy, when
- *  that is tighter than its lattice block. > 1 because a settled island is not packed to its
- *  estimate exactly — it has to be able to hold its internal structure without fighting forceCollide.
- *  Swept on the reference vault (2114 nodes / 15 islands, 120 refine ticks; DILATION = per-island p95
- *  member spread / hostedRadius, collide = worst pairwise distance / (rᵢ+rⱼ) over the whole graph):
- *      slack   contained   riders   DILATION p50 / max   collide   overlapping pairs
- *      (none)      0.943    0.477   1.15 / 95.04          0.80      2359
- *      1.00        1.000    0.994   0.90 /  1.00          0.75      2636
- *      1.15        1.000    1.000   1.01 /  1.13          0.78      2521
- *      1.30        1.000    1.000   1.11 /  1.26          0.83      2460   ← shipped
- *      1.50        1.000    1.000   1.12 /  1.42          0.83      2490
- *  1.3 is the knee: containment is already total at 1.0, so the only thing left to buy is room, and
- *  1.3 buys enough of it to come in AHEAD of the unconstrained baseline on the collide invariant
- *  (0.83 vs 0.80) — i.e. islands are contained AND less jammed than before. Past it the constraint
- *  stops binding for most islands (DILATION p50 flat from 1.3 to 1.5) and only the containers get
- *  loose again (max 1.26 → 1.42). Tighter is measurably worse on collide for no containment gain. */
-const CONTAIN_ISLAND_SLACK = 1.3;
-/** Fraction of the containment radius that is completely free of the constraint. */
-const CONTAIN_FREE_FRAC = 0.8;
-/** Strength of the soft inward spring in the [free, Rc] band, as a fraction of the band width per
- *  tick at the rim. Deliberately much weaker than the anchor spring (`centering` = 0.13, which is
- *  already pulling every member in): the soft band exists to take the discontinuity off the wall,
- *  the projection past Rc is what actually contains. */
-const CONTAIN_SPRING = 0.25;
-/** Multiple of a FINER level's packing radius used as its nested containment disc. > 1 because a
- *  settled sub-cluster is not jam-packed: it holds its own children apart with COMMUNITY_SEP_MULT
- *  lanes, so its real footprint is a multiple of the jammed estimate. Sized to catch strays without
- *  compacting the sub-cluster (which is the community GRAVITY's job, gated at 1× the same radius). */
-const CONTAIN_CHILD_SLACK = 2;
-/** Per-tick speed limit for everything this force adds, as a multiple of the node's OWN collide
- *  radius — the same bound and for the same reason as COMMUNITY_MAX_STEP: a node can start hundreds
- *  of units outside its island (the seed is the flattened 3D layout, at a completely different
- *  scale), and an instant projection would drag it across the field faster than the collide
- *  relaxation can track, leaving overlaps behind it. Capped ONCE over all levels' contributions. */
-const CONTAIN_MAX_STEP = 1.5;
-
-/** One island's square block on the lattice. */
-export interface IslandCell { comm: number; col: number; row: number; span: number }
-
-/**
- * Place each island on the coarse lattice and return its ANCHOR in world coordinates (the block's
- * centre, recentred so the whole mosaic straddles the origin). Pure + deterministic: islands are
- * placed largest-radius-first (ties → smaller community id) into the free block whose centre is
- * nearest the origin (ties → smaller row, then column), so the biggest masses end up central and the
- * same island set always produces the same mosaic. See the GRID_* block above for the lane
- * guarantee and the cell-count cap.
- *
- * O(islands · side²) with `side` in the low tens — run once per layout, never per tick.
- */
-export function gridIslandAnchors(
-  islands: { comm: number; radius: number }[],
-  opts: { lane?: number; unitQuantile?: number; maxSide?: number; aspect?: number } = {},
-): { anchors: Map<number, [number, number]>; cells: IslandCell[]; pitch: number; unit: number; side: number } {
-  const lane = opts.lane ?? GRID_LANE;
-  const quantile = opts.unitQuantile ?? GRID_UNIT_QUANTILE;
-  const maxSide = opts.maxSide ?? GRID_MAX_SIDE;
-  const aspect = Math.max(1e-6, opts.aspect ?? GRID_ASPECT);
-  const anchors = new Map<number, [number, number]>();
-  if (islands.length === 0) return { anchors, cells: [], pitch: 0, unit: 0, side: 0 };
-
-  // Cell size: a low quantile of the island radii, grown until the lattice's WIDTH fits `maxSide` (see
-  // the GRID_MAX_SIDE comment — the cap is about label width, so it is the column count that matters,
-  // and growing the unit shrinks every span, which can only widen the lanes).
-  const ascending = islands.map((i) => Math.max(1e-6, i.radius)).sort((a, b) => a - b);
-  let unit = ascending[Math.min(ascending.length - 1, Math.floor(ascending.length * quantile))];
-  const spanFor = (r: number, u: number) => Math.max(1, Math.ceil(r / u - 1e-9));
-  const sideFor = (u: number) => {
-    let area = 0;
-    for (const it of islands) area += spanFor(it.radius, u) ** 2;
-    return Math.ceil(Math.sqrt(area * aspect)); // width of an `aspect`-shaped block of that many cells
-  };
-  // Bounded: each step shrinks every span, and all-spans-1 gives side = ceil(sqrt(k)), the floor.
-  for (let guard = 0; guard < 64 && sideFor(unit) > maxSide && unit < ascending[ascending.length - 1]; guard++) {
-    unit *= GRID_UNIT_GROWTH;
-  }
-  const pitch = 2 * unit * (1 + lane);
-
-  const order = [...islands].sort((a, b) => b.radius - a.radius || a.comm - b.comm);
-  const spans = new Map<number, number>();
-  for (const it of order) spans.set(it.comm, spanFor(it.radius, unit));
-  // Search window: big enough to hold every block even in the degenerate "one long row" case.
-  let maxSpan = 1;
-  for (const s of spans.values()) if (s > maxSpan) maxSpan = s;
-  const W = sideFor(unit) + maxSpan + 1;
-  const stride = 2 * W + 1;
-  const occupied = new Set<number>();
-  const key = (c: number, r: number) => (c + W) * stride + (r + W);
-  const blockFree = (c: number, r: number, s: number) => {
-    for (let dc = 0; dc < s; dc++) for (let dr = 0; dr < s; dr++) if (occupied.has(key(c + dc, r + dr))) return false;
-    return true;
-  };
-  // Candidate top-left positions per span, pre-ordered by |block centre| (then row, then col) so
-  // placement is a single scan to the first free slot instead of a full O(W²) argmin per island.
-  const candCache = new Map<number, { c: number; r: number }[]>();
-  const candidates = (s: number) => {
-    let list = candCache.get(s);
-    if (!list) {
-      list = [];
-      for (let c = -W; c + s <= W; c++) for (let r = -W; r + s <= W; r++) list.push({ c, r });
-      // Anisotropic: x compressed by `aspect`, so equal score is an ellipse and the mosaic grows
-      // wider than tall — matching the landscape pane it will be fitted into.
-      const score = (c: number, r: number) => ((c + s / 2) / aspect) ** 2 + (r + s / 2) ** 2;
-      list.sort((a, b) => score(a.c, a.r) - score(b.c, b.r) || a.r - b.r || a.c - b.c);
-      candCache.set(s, list);
-    }
-    return list;
-  };
-
-  const cells: IslandCell[] = [];
-  for (const it of order) {
-    const s = spans.get(it.comm)!;
-    for (const cand of candidates(s)) {
-      if (!blockFree(cand.c, cand.r, s)) continue;
-      for (let dc = 0; dc < s; dc++) for (let dr = 0; dr < s; dr++) occupied.add(key(cand.c + dc, cand.r + dr));
-      cells.push({ comm: it.comm, col: cand.c, row: cand.r, span: s });
-      break;
-    }
-  }
-  // Recentre on the mosaic's bounding box so the field straddles the origin (the renderer fits a
-  // symmetric box; an off-centre mosaic would waste a margin on one side).
-  let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
-  for (const cl of cells) {
-    if (cl.col < minC) minC = cl.col;
-    if (cl.col + cl.span > maxC) maxC = cl.col + cl.span;
-    if (cl.row < minR) minR = cl.row;
-    if (cl.row + cl.span > maxR) maxR = cl.row + cl.span;
-  }
-  const ox = (minC + maxC) / 2, oy = (minR + maxR) / 2;
-  for (const cl of cells) {
-    anchors.set(cl.comm, [(cl.col + cl.span / 2 - ox) * pitch, (cl.row + cl.span / 2 - oy) * pitch]);
-  }
-  return { anchors, cells, pitch, unit, side: Math.max(maxC - minC, maxR - minR) };
-}
-
-/** One island of the gridded level, as planned onto the lattice. */
-export interface PlannedIsland {
-  /** Its community id AT THE GRIDDED LEVEL (an index into that level's dense community numbering). */
-  comm: number;
-  /** Nodes whose OWN gridded-level community this is. */
-  count: number;
-  /** Everything the island actually holds: `count` + the riders hosted on it (see `hostIsland`). */
-  hosted: number;
-  /** Packing radius of `count` (`levelPackRadii`) — what sized its lattice block. */
-  packRadius: number;
-  /** The island's real footprint: `packRadius` plus the area of the riders hosted on it (riders are
-   *  members of no island, so they are in nobody's `packRadius`). */
-  hostedRadius: number;
-  /** Block side, in lattice cells. */
-  span: number;
-  /** World position of the block's centre — where the island's centroid is pinned. */
-  anchor: [number, number];
-  /** The island's centroid IN THE SEED, which the rigid translation onto `anchor` is measured from. */
-  seedCentroid: [number, number];
-  /** CONTAINMENT radius (see the CONTAINMENT block): the smaller of the block's inscribed radius
-   *  (`span·unit`, which is what keeps the lattice's lanes provably empty) and the island's own
-   *  footprint with slack (`CONTAIN_ISLAND_SLACK · hostedRadius`, which is what makes a small island
-   *  read as a compact container instead of a haze filling an oversized cell). */
-  containRadius: number;
-}
-
-/** The whole grid-island plan for one input: which level was gridded, the lattice it was gridded on,
- *  every island placed on it, which island each NODE belongs to, and the per-level packing radii the
- *  nested containment discs are sized from. */
-export interface IslandPlan {
-  /** Index into the level stack (0 = finest) of the gridded level. */
-  level: number;
-  islands: PlannedIsland[];
-  unit: number;
-  pitch: number;
-  /** Per NODE (input order): the island (a gridded-level community id) it is placed on and contained
-   *  in — its own island, or, for a node whose gridded-level group is too small to earn a cell, the
-   *  island it rides along with. Always a real island. */
-  hostIsland: Int32Array;
-  /** Per level (finest first), per community: member count / packing radius. */
-  counts: Float64Array[];
-  packRadius: Float64Array[];
-}
-
-/**
- * The whole grid placement decision: which level to grid, the lattice, each island's block + anchor,
- * which island every node belongs to, and each island's containment radius. Split out of
- * `prepareLayout` (which now only APPLIES it) so the plan is one thing that can be inspected and
- * measured — `gridIslandPlan` is the exported door onto it.
- *
- * `X` is the SEED (pre-translation): riders are hosted on the island they already settled nearest to,
- * which is the only part of the plan that depends on it. Returns null when no level yields a mosaic
- * worth drawing (see GRID_MIN_ISLANDS).
- */
-function planIslands(
-  levels: CommunityLevel[], radii: Float64Array, dim: 2 | 3, n: number, X: number[][],
-): IslandPlan | null {
-  const { counts, packRadius } = levelPackRadii(levels, radii, dim, n);
-  // Grid the COARSEST level that still yields a mosaic worth drawing (see GRID_MIN_ISLANDS). Levels
-  // COARSER than the gridded one are dropped by the caller: their separation force would shove whole
-  // super-clusters off the absolute anchors the grid just handed out.
-  let gi = -1;
-  for (let l = levels.length - 1; l >= 0; l--) {
-    let islands = 0;
-    for (let c = 0; c < levels[l].numComms; c++) if (counts[l][c] >= GRID_MIN_ISLAND) islands++;
-    if (islands >= GRID_MIN_ISLANDS) { gi = l; break; }
-  }
-  if (gi < 0) return null;
-  const lvl = levels[gi];
-  const list: { comm: number; radius: number }[] = [];
-  for (let c = 0; c < lvl.numComms; c++) if (counts[gi][c] >= GRID_MIN_ISLAND) list.push({ comm: c, radius: packRadius[gi][c] });
-  const { anchors, cells, pitch, unit } = gridIslandAnchors(list);
-  const spanOf = new Map(cells.map((cl) => [cl.comm, cl.span]));
-  // Islands are the placed ones: an unplaceable group (no free block — degenerate, past
-  // GRID_MAX_SIDE²) has no anchor and rides along like any other too-small group.
-  const placed = list.filter((it) => anchors.has(it.comm));
-  if (placed.length === 0) return null;
-  const islandComms = placed.map((it) => it.comm);
-  const isIsland = new Uint8Array(lvl.numComms);
-  for (const c of islandComms) isIsland[c] = 1;
-
-  // Seed centroid per gridded-level community — the rigid translation's origin, and what a rider's
-  // host is chosen by.
-  const scx = new Float64Array(lvl.numComms), scy = new Float64Array(lvl.numComms);
-  for (let i = 0; i < n; i++) {
-    const c = lvl.comm[i];
-    if (c < 0) continue;
-    scx[c] += X[i][0] ?? 0; scy[c] += X[i][1] ?? 0;
-  }
-  for (let c = 0; c < lvl.numComms; c++) if (counts[gi][c] > 0) { scx[c] /= counts[gi][c]; scy[c] /= counts[gi][c]; }
-
-  // Host every node: its own island, else the island whose seed centroid it is nearest to, so it
-  // stays with the neighbourhood it visually belongs to instead of piling up at the origin.
-  //
-  // Hosting is decided per GROUP, not per node: every member of a too-small gridded-level community
-  // rides along with the SAME island. Choosing per node splits such a group across islands, and a
-  // split group's nested containment disc — centred on its own centroid, which then sits in a lane
-  // between the two — pulls its members straight back out of the islands they were placed on. The two
-  // constraints cancel (they are summed before the one speed cap), so the members simply stop moving:
-  // measured on the reference vault, 3 islands were left with a p95 member spread of 1.1k-1.9k world
-  // units (a whole lattice cell) against a containment radius of ~50.
-  const nearestIsland = (x: number, y: number): number => {
-    let host = islandComms[0], best = Infinity;
-    for (const ic of islandComms) {
-      const d = (x - scx[ic]) ** 2 + (y - scy[ic]) ** 2;
-      if (d < best) { best = d; host = ic; }
-    }
-    return host;
-  };
-  const hostOfComm = new Int32Array(lvl.numComms).fill(-1);
-  for (let c = 0; c < lvl.numComms; c++) {
-    if (counts[gi][c] <= 0) continue;
-    hostOfComm[c] = isIsland[c] ? c : nearestIsland(scx[c], scy[c]);
-  }
-  const hostIsland = new Int32Array(n);
-  const hosted = new Float64Array(lvl.numComms);
-  const riderPow = new Float64Array(lvl.numComms);
-  for (let i = 0; i < n; i++) {
-    const c = lvl.comm[i];
-    // A node with no community at all at this level (a partially-stamped graph) has no group to ride
-    // with, so it falls back to its own nearest island.
-    const host = c >= 0 && hostOfComm[c] >= 0 ? hostOfComm[c] : nearestIsland(X[i][0] ?? 0, X[i][1] ?? 0);
-    hostIsland[i] = host;
-    hosted[host]++;
-    if (host !== c) riderPow[host] += Math.pow(radii[i], dim);
-  }
-  const fill = dim === 2 ? COMMUNITY_PACK_FILL_2D : COMMUNITY_PACK_FILL_3D;
-
-  const islands: PlannedIsland[] = placed.map((it) => {
-    const span = spanOf.get(it.comm) ?? 1;
-    // The island's real footprint: its own (recursively-packed — see invariant 2 in the "Nesting"
-    // block, which is why this is bigger than a flat sum over its nodes) packing radius, plus the
-    // area of the riders it hosts. Riders belong to no island, so they are in nobody's packRadius.
-    const hostedRadius = Math.pow(Math.pow(it.radius, dim) + riderPow[it.comm] / fill, 1 / dim);
-    return {
-      comm: it.comm, count: counts[gi][it.comm], hosted: hosted[it.comm],
-      packRadius: it.radius, hostedRadius, span,
-      anchor: anchors.get(it.comm)!, seedCentroid: [scx[it.comm], scy[it.comm]],
-      containRadius: Math.min(span * unit, CONTAIN_ISLAND_SLACK * hostedRadius),
-    };
-  });
-  return { level: gi, islands, unit, pitch, hostIsland, counts, packRadius };
-}
-
-/**
- * The grid-island plan `computeLayout`'s 2D grid mode will use for this input — the lattice, the
- * islands on it, which island each node belongs to, and each island's containment radius. Exported
- * for the layout tests and the tuning harness, which measure whether members actually land inside
- * their island's disc. Returns null when the input isn't gridded at all (3D, `clusterLayout:
- * "organic"`, fewer than 2 communities / islands).
- *
- * Pass the same `initialPositions` the real layout will use (the flattened 3D layout — see
- * layout-cache.ts): the seed decides which island a rider is hosted on, so without it this reports
- * the plan for a COLD (PivotMDS-seeded) build instead, which is a different — if equally valid — one.
- */
-export function gridIslandPlan(input: LayoutInput, options: LayoutOptions = {}): IslandPlan | null {
-  const o = withDefaults({ dimensions: 2, ...options });
-  if (o.clusterLayout !== "grid" || o.dimensions !== 2) return null;
-  const g = layoutGeometry(input, o);
-  if (!g.useCommunity) return null;
-  return planIslands(g.levels, g.radii, o.dimensions, g.n, seedCoords(g, o));
-}
-// -------------------------------------------------------------------------------------------------
 
 /** One level of the community hierarchy as the force sees it: a dense per-node community index
- *  (-1 = not in a community at this level) and the strength this level acts at. `anchorX/anchorY`
- *  (grid mode only, see the GRID_* block) replace the level's running CENTROID with a fixed target
- *  per community — NaN for a community with no anchor, which falls back to the centroid. */
+ *  (-1 = not in a community at this level) and the gravity strength this level acts at. */
 interface CommunityLevel {
   comm: Int32Array;
   numComms: number;
   gravity: number;
-  separation: number;
-  anchorX?: Float64Array;
-  anchorY?: Float64Array;
 }
 
 /** Per-level precomputed geometry (sizes, packing radii, participating communities, scratch). */
 interface LevelState extends CommunityLevel {
   count: Float64Array;
   packRadius: Float64Array;
-  big: number[];
   cx: Float64Array; cy: Float64Array; cz: Float64Array;
-  rx: Float64Array; ry: Float64Array; rz: Float64Array;
 }
 
 /**
- * Per-level member counts + packing radii for a level stack (finest first). Extracted from
- * `communityForce` because grid placement needs the SAME radii the separation force uses — the
- * recursive definition (a coarse level packs its CHILDREN's radii, not raw node radii; see invariant
- * 2 in the "Nesting" block) is exactly what makes a super-cluster's footprint realistic, and sizing
- * grid cells from the flat estimate instead would let islands bleed into their lanes.
+ * Per-level member counts + packing radii for a level stack (finest first). The recursive definition
+ * (a coarse level packs its CHILDREN's radii, not raw node radii; see the "Nesting" block) is what
+ * makes gravity's packing floor realistic at every level of the hierarchy, not just the finest —
+ * without it a super-community's floor would be computed as if its members were flatly jam-packed,
+ * when they actually sit in sub-clusters with their own room around them.
  */
 function levelPackRadii(
   levels: CommunityLevel[],
@@ -905,14 +343,12 @@ function levelPackRadii(
 }
 
 /**
- * Per-tick community gravity + community-level collide, applied at every level of the hierarchy.
- * `levels[0]` is the FINEST (its `gravity`/`separation` are the tuned baseline); later entries are
- * successively coarser ancestors at decayed strength. Pure function of the node array —
- * deterministic, no RNG. `radii` holds each node's own collide radius (the same values the sim's
- * forceCollide uses); they seed the finest level's packing radius, inside which gravity stops
- * pulling (so a community is never squeezed into an overlap) and which doubles as the
- * community-level collide's body radius. Coarser levels derive theirs from the level below (see the
- * nesting block above).
+ * Per-tick community gravity, applied at every level of the hierarchy. `levels[0]` is the FINEST
+ * (its `gravity` is the tuned baseline); later entries are successively coarser ancestors at decayed
+ * strength. Pure function of the node array — deterministic, no RNG. `radii` holds each node's own
+ * collide radius (the same values the sim's forceCollide uses); they seed the finest level's packing
+ * radius, inside which gravity stops pulling (so a community is never squeezed into an overlap).
+ * Coarser levels derive theirs from the level below (see the nesting block above).
  */
 function communityForce(
   nodes: RN[],
@@ -922,21 +358,14 @@ function communityForce(
 ): (alpha: number) => void {
   const n = nodes.length;
   const { counts, packRadius: packRadii } = levelPackRadii(levels, radii, dim, n);
-  const states: LevelState[] = levels.map((lv, li) => {
-    const count = counts[li];
-    // Communities big enough to repel each other as coarse bodies (index list, computed once).
-    const big: number[] = [];
-    for (let c = 0; c < lv.numComms; c++) if (count[c] >= COMMUNITY_MIN_SIZE) big.push(c);
-    return {
-      ...lv, count, packRadius: packRadii[li], big,
-      cx: new Float64Array(lv.numComms), cy: new Float64Array(lv.numComms), cz: new Float64Array(lv.numComms),
-      rx: new Float64Array(lv.numComms), ry: new Float64Array(lv.numComms), rz: new Float64Array(lv.numComms),
-    };
-  });
+  const states: LevelState[] = levels.map((lv, li) => ({
+    ...lv, count: counts[li], packRadius: packRadii[li],
+    cx: new Float64Array(lv.numComms), cy: new Float64Array(lv.numComms), cz: new Float64Array(lv.numComms),
+  }));
 
   return (alpha: number) => {
     for (const s of states) {
-      const { comm, numComms, count, packRadius, big, cx, cy, cz, rx, ry, rz, separation } = s;
+      const { comm, numComms, cx, cy, cz } = s;
       cx.fill(0); cy.fill(0); cz.fill(0);
       for (let i = 0; i < n; i++) {
         const c = comm[i];
@@ -946,70 +375,30 @@ function communityForce(
         if (dim === 3) cz[c] += nd.z ?? 0;
       }
       for (let c = 0; c < numComms; c++) {
-        const k = count[c];
+        const k = s.count[c];
         if (k > 0) { cx[c] /= k; cy[c] /= k; cz[c] /= k; }
-      }
-
-      // (3) Community-level collide: resolve the overlap of two soft bodies of radius packRadius,
-      // split between them by MASS (the smaller community yields more), exactly like d3's forceCollide.
-      // Bounded by construction — zero force once the pair clears, so it dilates the assembly just
-      // enough to open a lane and never inflates an already-separated graph.
-      rx.fill(0); ry.fill(0); rz.fill(0);
-      if (separation > 0 && big.length > 1) {
-        for (let a = 0; a < big.length; a++) {
-          const ca = big[a];
-          for (let b = a + 1; b < big.length; b++) {
-            const cb = big[b];
-            const target = (packRadius[ca] + packRadius[cb]) * COMMUNITY_SEP_MULT;
-            let dx = cx[ca] - cx[cb], dy = cy[ca] - cy[cb], dz = dim === 3 ? cz[ca] - cz[cb] : 0;
-            let d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (d >= target) continue;
-            if (d === 0) {
-              // Exactly coincident centroids: deterministic (no RNG) unit axis so they still separate.
-              dx = 1; dy = ca & 1 ? 1 : -1; dz = dim === 3 ? (cb & 1 ? 1 : -1) : 0;
-              d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            }
-            // Displacement vector that would exactly clear the pair, split by mass share.
-            const push = ((target - d) / d) * separation;
-            const total = count[ca] + count[cb];
-            const wa = count[cb] / total, wb = count[ca] / total;
-            rx[ca] += dx * push * wa; ry[ca] += dy * push * wa; rz[ca] += dz * push * wa;
-            rx[cb] -= dx * push * wb; ry[cb] -= dy * push * wb; rz[cb] -= dz * push * wb;
-          }
-        }
       }
     }
 
-    // (2) Centroid gravity + the accumulated (3) push, summed over EVERY level, both scaled by alpha
-    // like every d3 force. Gravity only acts on the part of a node's offset that exceeds that level's
-    // packing radius, so a cluster's (or super-cluster's) already-dense core is left alone — no
-    // collide fight, no overlaps.
+    // Centroid gravity, summed over EVERY level, scaled by alpha like every d3 force. Gravity only
+    // acts on the part of a node's offset that exceeds that level's packing radius, so a cluster's
+    // (or super-cluster's) already-dense core is left alone — no collide fight, no overlaps.
     for (let i = 0; i < n; i++) {
       const nd = nodes[i];
       let vx = 0, vy = 0, vz = 0;
       for (const s of states) {
         const c = s.comm[i];
-        if (c < 0) continue;
-        // Gravity target: the level's running CENTROID, or — in grid mode, for a community that owns
-        // a lattice cell — that cell's FIXED anchor, so the island gathers itself onto the grid
-        // instead of drifting with its own centre of mass.
-        const anchored = s.anchorX !== undefined && s.anchorY !== undefined && Number.isFinite(s.anchorX[c]);
-        if (s.count[c] >= 2 || anchored) {
-          const tx = anchored ? s.anchorX![c] : s.cx[c];
-          const ty = anchored ? s.anchorY![c] : s.cy[c];
-          const ox = tx - (nd.x ?? 0), oy = ty - (nd.y ?? 0), oz = dim === 3 ? s.cz[c] - (nd.z ?? 0) : 0;
-          const d = Math.sqrt(ox * ox + oy * oy + oz * oz);
-          // Fraction of the offset that lies outside the packing radius (0 inside it → no pull at all).
-          const excess = d > s.packRadius[c] ? (d - s.packRadius[c]) / d : 0;
-          const g = s.gravity * alpha * excess;
-          vx += ox * g; vy += oy * g; vz += oz * g;
-        }
-        // Community-level collide (3) is accumulated per community, so every member gets the same push.
-        vx += s.rx[c] * alpha; vy += s.ry[c] * alpha; if (dim === 3) vz += s.rz[c] * alpha;
+        if (c < 0 || s.count[c] < 2) continue;
+        const ox = s.cx[c] - (nd.x ?? 0), oy = s.cy[c] - (nd.y ?? 0), oz = dim === 3 ? s.cz[c] - (nd.z ?? 0) : 0;
+        const d = Math.sqrt(ox * ox + oy * oy + oz * oz);
+        // Fraction of the offset that lies outside the packing radius (0 inside it → no pull at all).
+        const excess = d > s.packRadius[c] ? (d - s.packRadius[c]) / d : 0;
+        const g = s.gravity * alpha * excess;
+        vx += ox * g; vy += oy * g; vz += oz * g;
       }
       if (vx === 0 && vy === 0 && vz === 0) continue;
-      // ONE speed limit for the whole stack (see COMMUNITY_MAX_STEP + invariant 1 above) — keeps the
-      // motion collide-trackable no matter how many levels contributed to it.
+      // ONE speed limit for the whole stack (see COMMUNITY_MAX_STEP above) — keeps the motion
+      // collide-trackable no matter how many levels contributed to it.
       const step = Math.sqrt(vx * vx + vy * vy + vz * vz);
       const cap = COMMUNITY_MAX_STEP * radii[i];
       if (step > cap) {
@@ -1023,86 +412,6 @@ function communityForce(
   };
 }
 
-/** One containment disc per node: the community it belongs to at that level, that community's
- *  containment radius, and the disc's centre — a FIXED per-community anchor (the gridded island
- *  level) or, when `anchorX`/`anchorY` are absent, the community's own running centroid (the finer,
- *  nested levels). 2D only: grid mode is 2D-only, so there is no z term. */
-interface ContainLevel {
-  comm: Int32Array;
-  numComms: number;
-  radius: Float64Array;
-  anchorX?: Float64Array;
-  anchorY?: Float64Array;
-}
-
-/**
- * Per-tick radial CONTAINMENT (see the CONTAINMENT block above): hold every node inside its
- * community's disc at each level, finest first so the island level (last) wins. Works on the
- * PROJECTED position `x + vx` — the same thing forceCollide reads on the very next force — so an
- * overshoot contributed by the charge/link/community forces in THIS tick is corrected in this tick,
- * not a tick late. Pure + deterministic (no RNG); O(n · levels) per tick.
- */
-function containmentForce(
-  nodes: RN[],
-  levels: ContainLevel[],
-  radii: Float64Array,
-): (alpha: number) => void {
-  const n = nodes.length;
-  // Scratch centroids, one set per centroid-centred level (null for an anchored one).
-  const centroids = levels.map((lv) =>
-    lv.anchorX && lv.anchorY
-      ? null
-      : { cx: new Float64Array(lv.numComms), cy: new Float64Array(lv.numComms), k: new Float64Array(lv.numComms) });
-  return (_alpha: number) => {
-    for (let li = 0; li < levels.length; li++) {
-      const ct = centroids[li];
-      if (!ct) continue;
-      const comm = levels[li].comm;
-      ct.cx.fill(0); ct.cy.fill(0); ct.k.fill(0);
-      for (let i = 0; i < n; i++) {
-        const c = comm[i];
-        if (c < 0) continue;
-        ct.cx[c] += nodes[i].x ?? 0; ct.cy[c] += nodes[i].y ?? 0; ct.k[c]++;
-      }
-      for (let c = 0; c < levels[li].numComms; c++) if (ct.k[c] > 0) { ct.cx[c] /= ct.k[c]; ct.cy[c] /= ct.k[c]; }
-    }
-    for (let i = 0; i < n; i++) {
-      const nd = nodes[i];
-      if (nd.fx != null) continue; // pinned by an incremental rebuild — it never moves
-      let dvx = 0, dvy = 0;
-      for (let li = 0; li < levels.length; li++) {
-        const lv = levels[li];
-        const c = lv.comm[i];
-        if (c < 0) continue;
-        const R = lv.radius[c];
-        if (!(R > 0)) continue;
-        const ct = centroids[li];
-        const tx = ct ? ct.cx[c] : lv.anchorX![c];
-        const ty = ct ? ct.cy[c] : lv.anchorY![c];
-        if (!Number.isFinite(tx) || !Number.isFinite(ty)) continue;
-        const ox = (nd.x ?? 0) + (nd.vx ?? 0) + dvx - tx;
-        const oy = (nd.y ?? 0) + (nd.vy ?? 0) + dvy - ty;
-        const d = Math.sqrt(ox * ox + oy * oy);
-        const free = R * CONTAIN_FREE_FRAC;
-        if (d <= free || d === 0) continue;
-        const band = Math.max(1e-9, R - free);
-        const soft = Math.min(d - free, band);
-        // Quadratic ramp through the band, plus the exact overshoot past the boundary.
-        const step = CONTAIN_SPRING * soft * (soft / band) + Math.max(0, d - R);
-        const k = step / d;
-        dvx -= ox * k; dvy -= oy * k;
-      }
-      if (dvx === 0 && dvy === 0) continue;
-      // ONE speed limit over every level's contribution (see CONTAIN_MAX_STEP).
-      const mag = Math.sqrt(dvx * dvx + dvy * dvy);
-      const cap = CONTAIN_MAX_STEP * radii[i];
-      if (mag > cap) { const k = cap / mag; dvx *= k; dvy *= k; }
-      nd.vx = (nd.vx ?? 0) + dvx;
-      nd.vy = (nd.vy ?? 0) + dvy;
-    }
-  };
-}
-// -------------------------------------------------------------------------------------------------
 
 /** Deterministic LCG so layouts are reproducible (stable disk cache, testable). */
 function lcg(seed: number): () => number {
@@ -1259,7 +568,7 @@ type RL = SimLink<RN>;
 /** A force-link, with an optional flag marking a layout-only "tether" link that reels a disconnected
  *  component into the main mass (stronger + shorter than a real link; see prepareLayout's reel-in),
  *  and (when community forces are active) whether both endpoints sit in the SAME community. */
-type VL = RL & { virtual?: boolean; intra?: boolean; island?: boolean };
+type VL = RL & { virtual?: boolean; intra?: boolean };
 /** Same shape as `VL`, but with `source`/`target` narrowed to plain strings instead of `string |
  *  RN`. `SimLink.source`/`.target` widen to the resolved node once d3's `forceLink` mutates them
  *  in place during its own `initialize()` — `linLogLinkForce` never does that mutation (it looks
@@ -1270,10 +579,9 @@ type VL = RL & { virtual?: boolean; intra?: boolean; island?: boolean };
  *  or duplicating the module. */
 type LLLink = Omit<VL, "source" | "target"> & { source: string; target: string };
 
-/** Everything the grid plan and the forces need that depends ONLY on the input — never on the seed
- *  or the settle: the undirected adjacency, the per-node collide radii, and the community level
- *  stack (finest first). Extracted from `prepareLayout` so `gridIslandPlan` reproduces the exact
- *  plan a real layout will use without paying for a PivotMDS + settle. */
+/** Everything the community force needs that depends ONLY on the input — never on the seed or the
+ *  settle: the undirected adjacency, the per-node collide radii, and the community level stack
+ *  (finest first). Extracted from `prepareLayout` so it's built once and shared cleanly. */
 interface LayoutGeometry {
   ids: string[]; n: number;
   adj: number[][]; edgePairs: { a: number; b: number }[]; realDeg: number[];
@@ -1342,15 +650,11 @@ function layoutGeometry(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions):
         comm: levelComm,
         numComms: dense.size,
         gravity: o.communityGravity * decay,
-        separation: o.communitySeparation * decay,
       });
       finerCount = dense.size;
     }
   }
 
-  // Adjacency first; the force LINKS are materialized further down (after the grid pass), because in
-  // grid mode a link's strength depends on whether it crosses an island boundary — which isn't known
-  // until the islands have been placed.
   const adj: number[][] = Array.from({ length: n }, () => []);
   const edgePairs: { a: number; b: number }[] = [];
   for (const e of input.edges) {
@@ -1374,24 +678,21 @@ function layoutGeometry(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions):
   // Per-node collide radius: leaves keep the uniform spacing floor; hubs get their actual drawn
   // radius (degree-scaled) so big nodes repel as the circles they're drawn as, not as points. `i`
   // indexes `nodes`, the same order as `adj`. Degree uses realDeg (real edges only) so the layout-only
-  // tether links below don't inflate an orphan's drawn-size collision radius. Computed HERE (before
-  // the seed) because the grid pass needs it to size islands.
+  // tether links below don't inflate an orphan's drawn-size collision radius.
   const collideMult = dim === 2 ? MODE_2D_COLLIDE_MULT : 1;
   const radii = Float64Array.from(realDeg, (d) =>
     collideMult * Math.max(collideFloor, drawnNodeRadius(degreeScale(d)) * COLLIDE_SIZE_PADDING));
 
-  // The community force's level stack, finest first (see the "Nesting" block). Built here so the grid
-  // pass can read the top level's membership + packing radii before the sim is constructed.
+  // The community force's level stack, finest first (see the "Nesting" block).
   const levels: CommunityLevel[] = useCommunity
-    ? [{ comm, numComms, gravity: o.communityGravity, separation: o.communitySeparation }, ...ancestors]
+    ? [{ comm, numComms, gravity: o.communityGravity }, ...ancestors]
     : [];
 
   return { ids, n, adj, edgePairs, realDeg, linkDist, radii, comm, numComms, useCommunity, levels };
 }
 
 /** Starting coordinates for the refine: the caller's `initialPositions` (warm start — the 2D layout
- *  is seeded from the flattened 3D one) or a cold PivotMDS. Shared by `prepareLayout` and
- *  `gridIslandPlan`, which has to see the SAME seed to report the same island hosting. */
+ *  is seeded from the flattened 3D one) or a cold PivotMDS. */
 function seedCoords(
   g: Pick<LayoutGeometry, "ids" | "n" | "adj">,
   o: typeof DEFAULTS & LayoutOptions,
@@ -1469,72 +770,6 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
 
   const X = seedCoords({ ids, n, adj }, o);
 
-  // --- Grid islands (2D opt-in — see the GRID_* block) ----------------------------------------------
-  // A POST-PASS ON THE SEED, not a second simulation: the 2D seed is the settled 3D layout flattened,
-  // so every island already carries its organically-settled internal structure. Each island is
-  // translated RIGIDLY onto its lattice cell (structure intact, position imposed), and the settle that
-  // follows then only has to relax the seams — which is why it converges inside the normal tick budget.
-  let anchorX: Float64Array | null = null;
-  let anchorY: Float64Array | null = null;
-  /** Per-node community at the GRIDDED level (null when not in grid mode) — the island boundary the
-   *  link force needs to know about (see GRID_INTER_ISLAND_LINK). */
-  let islandOf: Int32Array | null = null;
-  let forceLevels = levels;
-  /** The containment discs the CONTAINMENT force enforces (null outside grid mode). */
-  let containLevels: ContainLevel[] | null = null;
-  const gridMode = o.clusterLayout === "grid" && dim === 2 && useCommunity
-    && !(o.fixedIds && o.fixedIds.length > 0);
-  const plan = gridMode ? planIslands(levels, radii, dim, n, X) : null;
-  if (plan) {
-    const gi = plan.level;
-    const lvl = levels[gi];
-    const ax = new Float64Array(lvl.numComms).fill(NaN);
-    const ay = new Float64Array(lvl.numComms).fill(NaN);
-    const scx = new Float64Array(lvl.numComms), scy = new Float64Array(lvl.numComms);
-    /** Per-island containment radius (0 = not an island, i.e. no disc of its own). */
-    const cr = new Float64Array(lvl.numComms);
-    for (const isl of plan.islands) {
-      ax[isl.comm] = isl.anchor[0]; ay[isl.comm] = isl.anchor[1];
-      scx[isl.comm] = isl.seedCentroid[0]; scy[isl.comm] = isl.seedCentroid[1];
-      cr[isl.comm] = isl.containRadius;
-    }
-    // Translate every island RIGIDLY from where the seed left it onto its lattice cell. `hostIsland`
-    // carries a node whose own group was too small to earn a cell along with the island it already
-    // settled nearest to, so it stays with the neighbourhood it visually belongs to (see planIslands).
-    const hostIsland = plan.hostIsland;
-    anchorX = new Float64Array(n); anchorY = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      const host = hostIsland[i];
-      X[i][0] = (X[i][0] ?? 0) + (ax[host] - scx[host]);
-      X[i][1] = (X[i][1] ?? 0) + (ay[host] - scy[host]);
-      anchorX[i] = ax[host]; anchorY[i] = ay[host];
-    }
-    // The gridded level: gravity toward the fixed anchor at FULL strength, separation off.
-    //   - Full strength (not the `communityLevelDecay^gi` an ancestor level normally acts at) because
-    //     this level is no longer a weak hint about where a super-cluster would like to be — it IS
-    //     the placement. Measured on the reference vault with the decayed value (0.6·0.4² = 0.096):
-    //     the finer levels' own gravity (0.6) and separation (0.85) simply overrode the anchors and
-    //     the mosaic never formed — settled island centroids showed no lattice at all and 72 of 105
-    //     island pairs still overlapped. At full strength the centroids land on their cells.
-    //   - Separation off because the lattice already guarantees the lanes, and a community-level
-    //     collide on top would push islands straight back off their cells.
-    forceLevels = [...levels.slice(0, gi), {
-      ...lvl, gravity: o.communityGravity, separation: 0, anchorX: ax, anchorY: ay,
-    }];
-    islandOf = lvl.comm;
-    // CONTAINMENT discs, finest first so the island level (applied last) wins: one nested disc per
-    // level BELOW the gridded one, around that community's running centroid at CONTAIN_CHILD_SLACK ×
-    // its packing radius, then the island's own disc around its fixed anchor. See the CONTAINMENT block.
-    containLevels = [
-      ...levels.slice(0, gi).map((lv, li) => ({
-        comm: lv.comm, numComms: lv.numComms,
-        radius: Float64Array.from(plan.packRadius[li], (r) => r * CONTAIN_CHILD_SLACK),
-      })),
-      { comm: hostIsland, numComms: lvl.numComms, radius: cr, anchorX: ax, anchorY: ay },
-    ];
-  }
-  // -------------------------------------------------------------------------------------------------
-
   const nodes: RN[] = ids.map((id, i) => ({
     id,
     x: X[i][0] ?? 0,
@@ -1561,12 +796,9 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   // Community-anisotropic springs (see the COMMUNITY_* block): intra-community edges pull harder over
   // a shorter rest length, inter-community edges are weak + long, so modularity turns into geometry.
   // Tethers are exempt (they exist to reel orphans in, not to express community structure).
-  // `island` is set only in grid mode: false = the edge CROSSES an island boundary (see
-  // GRID_INTER_ISLAND_LINK for why those springs are released).
   const links: VL[] = edgePairs.map(({ a, b }) => {
     const l: VL = { source: ids[a], target: ids[b] };
     if (useCommunity) l.intra = comm[a] >= 0 && comm[a] === comm[b];
-    if (islandOf) l.island = islandOf[a] >= 0 && islandOf[a] === islandOf[b];
     return l;
   });
   for (const { a, b } of tetherPairs) links.push({ source: ids[a], target: ids[b], virtual: true });
@@ -1579,22 +811,18 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   const linkForce = forceLink<RN, VL>(links)
     .id((d: RN) => d.id)
     .distance((l: VL) => (l.virtual ? linkDist * o.virtualDistMult : linkDistFor(l)))
-    .strength((l: VL) => {
-      // Grid mode: the top level's positions are IMPOSED, so nothing may negotiate them. Both the
-      // island-crossing real edges and the orphan tethers are released (see GRID_INTER_ISLAND_LINK).
-      if (islandOf && (l.virtual || l.island === false)) return LINK_STRENGTH * GRID_INTER_ISLAND_LINK;
-      return l.virtual ? o.virtualLinkStrength : linkStrengthFor(l);
-    });
+    .strength((l: VL) => (l.virtual ? o.virtualLinkStrength : linkStrengthFor(l)));
   // Flattening to 2D loses a whole dimension of room, so the same forces that spread nicely in 3D
   // collapse into a dense blob in 2D. Compensate in 2D: stronger many-body repulsion pushes communities
   // apart (so clusters stay distinct, not one hairball) and weaker pull-to-center lets them breathe into
   // an even, honeycomb-spaced spread. 3D keeps the gentler defaults.
   const repulsion = dim === 2 ? o.repulsion * MODE_2D_REPULSION_MULT : o.repulsion;
-  const centering = dim === 2
-    ? o.centering * (anchorX ? GRID_CENTERING_MULT : MODE_2D_CENTERING_MULT)
-    : o.centering;
+  const centering = dim === 2 ? o.centering * MODE_2D_CENTERING_MULT : o.centering;
   // degreeRepulsion (ForceAtlas2-style): scale many-body repulsion by (degree + 1) instead of the
-  // uniform default, so hubs push harder than leaves — see LayoutOptions.degreeRepulsion.
+  // uniform default, so hubs push harder than leaves — see LayoutOptions.degreeRepulsion. This scales
+  // TOTAL system repulsion, not just its distribution across nodes: mean degree is ~4.5 on the
+  // reference vault, so this multiplies AGGREGATE many-body force by roughly (mean degree + 1) ≈ 5.5×
+  // rather than merely redistributing a fixed budget from leaves toward hubs.
   const chargeStrength = o.degreeRepulsion
     ? (_n: RN, i: number) => repulsion * (realDeg[i] + 1)
     : () => repulsion;
@@ -1602,35 +830,15 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
     .alpha(1)
     .force("charge", forceManyBody<RN>().strength(chargeStrength).theta(MANYBODY_THETA));
   // Link force per LayoutOptions.energyModel:
-  //   - "linlog" replaces the spring entirely — no rest length, so linkDistFor is unused here.
-  //   - "linear" is Task 4's CONTROL ARM, meant to isolate the force LAW (attraction ~ d instead of
-  //     ~ ln(1+d)) from the OTHER two ways this integration differs from forceLink: no
-  //     degree-splitting of the correction, and raw vs. velocity-predicted positions. attraction ~
-  //     (d - linkDist) gives it forceLink's own rest-length semantics (repels below linkDist, same
-  //     base `linkDist` the spring arm uses — LayoutOptions.linkDistance, default 5,
-  //     dimension-adjusted the same way, NOT community-intra/inter-adjusted the way linkDistFor is).
-  //     STATUS (round 1 of measurement, both recorded in the Task 4 report): a rest-length-FREE
-  //     version (attraction ~ d, mag = s·attraction(d)/d = s·d/d = s — a constant per-component
-  //     multiplier whose resulting FORCE VECTOR (dx,dy,dz)·mag still has magnitude d·s, i.e.
-  //     genuinely proportional to d as intended) diverges over 240 explicit-Euler ticks on this
-  //     vault's hub topology (measured d3.nnMedian ~1e82, NaN fields) — expected, since nothing
-  //     bounds a hub's summed non-degree-split pull from hundreds of neighbours. Adding the rest
-  //     length above (this version) was tried specifically to fix that — but it ALSO diverges,
-  //     nearly identically (nnMedian ~3e82, same NaN fields): a rest length only shifts the
-  //     single-pair EQUILIBRIUM point, it doesn't bound the force MAGNITUDE as d grows past it, so
-  //     it does nothing for a hub whose many neighbours are simultaneously far from equilibrium.
-  //     Per explicit instruction this was NOT tuned further (a control that needs tuning to survive
-  //     stops being comparable to arms that didn't) — "linear" remains numerically unstable on this
-  //     vault in both variants measured; a diverged run cannot be used to attribute the LinLog win
-  //     to the force law vs. the other two differences. See linlog.ts's header and
-  //     LayoutOptions.energyModel's doc comment.
-  //   - "spring" (default) keeps the original forceLink instance built above.
-  if (o.energyModel === "linlog" || o.energyModel === "linear") {
+  //   - "linlog" (default) replaces the spring entirely — no rest length, so linkDistFor is unused
+  //     here. Attraction ~ ln(1+d) is what makes cluster separation a property of the energy model —
+  //     see linlog.ts and this module's header comment.
+  //   - "spring" keeps the original forceLink instance built above (the pre-2026-07 behaviour).
+  if (o.energyModel === "linlog") {
     sim.force("link", linLogLinkForce<RN, LLLink>(links as LLLink[], {
       id: (d: RN) => d.id,
       strength: (l: LLLink) => (l.virtual ? o.virtualLinkStrength : linkStrengthFor(l)),
       dim,
-      attraction: o.energyModel === "linear" ? (d: number) => d - linkDist : undefined,
     }) as unknown as Parameters<typeof sim.force>[1]);
   } else {
     sim.force("link", linkForce);
@@ -1640,31 +848,18 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   // undo) the velocity contributed by forces that ran earlier in the same tick. Registered after
   // collide, the community pull lands unchecked and only gets corrected a tick late, which on a
   // dense vault leaves permanently overlapping nodes.
-  if (useCommunity && (o.communityGravity > 0 || o.communitySeparation > 0)) {
+  if (useCommunity && o.communityGravity > 0) {
     // The community body radius is derived from the SAME per-node collide radii the sim's own
-    // forceCollide uses, so both community forces automatically track every spacing/size multiplier.
-    // ONE force for the whole hierarchy (finest first, then ancestors) — see invariant 1 in the
-    // "Nesting" block: the per-tick speed cap has to bound the SUM of every level's contribution.
-    sim.force("community", communityForce(nodes, forceLevels, dim, radii));
+    // forceCollide uses, so the community force automatically tracks every spacing/size multiplier.
+    // ONE force for the whole hierarchy (finest first, then ancestors) — see the "Nesting" block: the
+    // per-tick speed cap has to bound the SUM of every level's contribution.
+    sim.force("community", communityForce(nodes, levels, dim, radii));
   }
-  // CONTAINMENT (grid mode only) — registered AFTER the community force and BEFORE "collide", for
-  // both halves of the same ordering rule: it must see the velocity every placement force already
-  // contributed this tick (so an overshoot is corrected in the same tick it was created), and
-  // forceCollide must run after it (so a node pushed onto the island boundary can still be spaced
-  // off its neighbours instead of being left overlapping until the next tick).
-  if (containLevels) sim.force("contain", containmentForce(nodes, containLevels, radii));
-  // Centering: normally a spring to the ORIGIN. In grid mode it becomes a spring to the node's own
-  // island ANCHOR instead — that is what keeps each island bounded on its cell (the packing-gated
-  // anchor gravity above only gathers strays; this linear term is what makes the placement stick, and
-  // it can never squeeze past the collide floor because collide is registered after it).
   sim
     .force("collide", forceCollide<RN>(collideRadiusFor).iterations(COLLIDE_ITERATIONS))
-    .force("x", (anchorX ? forceX<RN>((_nd: RN, i: number) => anchorX![i]) : forceX<RN>(0)).strength(centering))
-    .force("y", (anchorY ? forceY<RN>((_nd: RN, i: number) => anchorY![i]) : forceY<RN>(0)).strength(centering));
-  if (dim === 3) {
-    sim.force("z", forceZ<RN>(0).strength(o.centering));
-    if (o.discBias > 0) sim.force("disc", discFlattenForce(nodes, realDeg, o.discBias));
-  }
+    .force("x", forceX<RN>(0).strength(centering))
+    .force("y", forceY<RN>(0).strength(centering));
+  if (dim === 3) sim.force("z", forceZ<RN>(0).strength(o.centering));
   sim.stop();
   return { sim, nodes, dim, mainIdx };
 }
@@ -1682,15 +877,17 @@ function extractPositions(nodes: RN[], dim: 2 | 3): Positions {
  * in 2D mode). Synchronous: the whole tick loop runs to completion on the calling thread — use
  * `computeLayoutAsync` on the server hot path so a big graph doesn't stall concurrent requests.
  */
-/** DEFAULTS merged with the caller's options, plus the one default that isn't a constant:
- *  `clusterLayout` defaults to `"organic"` in both dimensions (see LayoutOptions) — kept out of
- *  DEFAULTS only so this stays the one place every entry point resolves it through, same as before
- *  the dimension-dependent split existed. */
+/** DEFAULTS merged with the caller's options, plus the two defaults that aren't plain constants:
+ *  `energyModel` defaults to `"linlog"` and `degreeRepulsion` to `true` (Task 5 — measured on the
+ *  reference vault: d3 NP-degree separation 0.0557→0.1242, d2 0.0398→0.1302, both better than the
+ *  "spring" pre-2026-07 default). Kept out of DEFAULTS only so this stays the one place every entry
+ *  point resolves them through. */
 function withDefaults(options: LayoutOptions): typeof DEFAULTS & LayoutOptions {
   const dimensions = options.dimensions ?? DEFAULTS.dimensions;
   return {
     ...DEFAULTS, ...options, dimensions,
-    clusterLayout: options.clusterLayout ?? "organic",
+    energyModel: options.energyModel ?? "linlog",
+    degreeRepulsion: options.degreeRepulsion ?? true,
   };
 }
 
