@@ -186,3 +186,18 @@ export function buildManagedSettingsDeny(entries: DenyEntry[]): string[] {
 export function absDenyPaths(entries: DenyEntry[]): string[] {
   return entries.map((e) => e.abs)
 }
+
+/**
+ * Sandbox deny-read list: every restricted file, PLUS the vault's `.git`. A deliberate literal copy
+ * of core/src/visibility.ts's sandboxDenyRead (this whole module is a ported copy so the daemon
+ * compiles standalone — same arrangement as claudeWhich.ts / bismuthPaths.ts).
+ *
+ * `.git` matters because core/src/backup.ts git-snapshots the vault: a note hidden today was likely
+ * committed in plaintext yesterday, and `git show HEAD:Private/secret.md` reads it back without ever
+ * touching the working-tree path the deny list covers. Verified by red-teaming. We restrict the
+ * AGENT's view rather than rewriting the owner's backups.
+ */
+export function sandboxDenyRead(entries: DenyEntry[], vaultRoot: string): string[] {
+  if (entries.length === 0) return []
+  return [...absDenyPaths(entries), join(vaultRoot, ".git")]
+}

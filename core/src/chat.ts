@@ -17,7 +17,7 @@ import {
 import { whichClaude } from "./claudeWhich";
 import { loadSessionModel, saveSessionModel } from "./chatModelStore";
 import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
-import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet, type DenyEntry } from "./visibility";
+import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, isDeniedPath, type DenyEntry } from "./visibility";
 import { readDaemonSessionIds } from "./daemon";
 import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
 import { emit, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
@@ -367,7 +367,10 @@ interface ChatSession {
   model?: string;
   /** LIVE chat-visibility deny set (both path forms), read by canUseTool at call time so a
    *  mid-session visibility change takes effect without a stale captured copy. Rebuilt on respawn. */
-  deniedPathSet: Set<string>;
+  /** LIVE restricted entries for this session's channel, checked via isDeniedPath (which
+   *  case-folds + matches subpaths). Replaced the exact-match Set, which a differently-cased
+   *  path defeated. */
+  deniedEntries: DenyEntry[];
   /** Enable Claude's --chrome (browser/computer-use) capability. Read from settings at spawn —
    *  respawns preserve the flag via this field (like effort). */
   computerUse?: boolean;
@@ -910,7 +913,7 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
     alwaysAllow: new Set(),
     sessionId: null,
     bin,
-    deniedPathSet: denyPathSet(denyEntries),
+    deniedEntries: denyEntries,
     computerUse,
     apiKeySource: "none",
     turnActive: false,
@@ -954,7 +957,7 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
  */
 function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?: string): boolean {
   // canUseTool fires ONLY for tools not already allowed by the user's settings (pre-allowed tools
-  // run silently — correct Claude Code behavior). It reads session.deniedPathSet LIVE so a respawn
+  // run silently — correct Claude Code behavior). It reads session.deniedEntries LIVE so a respawn
   // that swapped the set takes effect immediately.
   const canUseTool = (
     toolName: string,
@@ -968,7 +971,10 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
     // and absolute forms are in deniedPathSet (the model isn't consistent — see denyPathSet).
     for (const key of ["file_path", "notebook_path", "path"] as const) {
       const p = toolInput[key];
-      if (typeof p === "string" && session.deniedPathSet.has(p)) {
+      // isDeniedPath, NOT deniedPathSet.has(p): the set is an exact byte comparison, and a model's
+      // reported path is not byte-identical to ours. On macOS's case-insensitive filesystem
+      // "Private/SECRET.md" opens the same file as "Private/secret.md" and slipped straight through.
+      if (typeof p === "string" && isDeniedPath(session.deniedEntries, p)) {
         return Promise.resolve({ behavior: "deny", message: "This file is marked hidden from chat (visibility)." });
       }
     }
@@ -1069,7 +1075,7 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         ...(denyEntries.length > 0
           ? {
               managedSettings: { permissions: { deny: buildManagedSettingsDeny(denyEntries) } },
-              sandbox: { enabled: true, failIfUnavailable: false, filesystem: { denyRead: absDenyPaths(denyEntries) } },
+              sandbox: { enabled: true, failIfUnavailable: false, filesystem: { denyRead: sandboxDenyRead(denyEntries, session.cwd) } },
             }
           : {}),
         // Memory auto-recall (daemon-gated). The visual chat is an SDK session with NO relay
@@ -1160,7 +1166,7 @@ async function respawnSession(session: ChatSession): Promise<void> {
   session.visibilityDirty = false;
   session.spawnOptionsDirty = false;
   const denyEntries = await buildDenyPaths(session.cwd, "chat");
-  session.deniedPathSet = denyPathSet(denyEntries);
+  session.deniedEntries = denyEntries;
   // Tear down the old query() (interrupt any in-flight, then close) — NOT closeChat, which would
   // capture-to-memory and drop the session from the registry. NOTE: no await between the close and
   // spawnChatQuery below — session.q must already point at the NEW query when the old drain loop's
@@ -2022,7 +2028,12 @@ function captureToMemory(s: ChatSession): void {
       // denyPathSet carries BOTH the vault-relative form (matches editor-context paths + a
       // relative tool file_path) AND the canonical-absolute form (matches the SDK's own absolute
       // path reporting), so a check against either form is safe.
-      const restricted = denyPathSet(await buildDenyPaths(cwd, "daemon"));
+      const restrictedEntries = await buildDenyPaths(cwd, "daemon");
+      // isDeniedPath rather than an exact-match Set: case-folds and matches subpaths, so a
+      // differently-cased path can't smuggle a restricted file's content into daemon memory.
+      const restricted = { has: (p: string) => isDeniedPath(restrictedEntries, p) };
+      // Both path forms, for the Bash-command substring scan below.
+      const restrictedForms = restrictedEntries.flatMap((e) => [e.rel, e.abs]).filter(Boolean);
       const touchedRestricted = entries.some((e) => {
         // (1) Any daemon-restricted file NAMED in the fixed <editor-context> preamble.
         const text = extractText(e.message);
@@ -2046,7 +2057,8 @@ function captureToMemory(s: ChatSession): void {
           }
           const cmd = input.command; // Bash: best-effort substring match on the restricted paths
           if (typeof cmd === "string") {
-            for (const p of restricted) if (p && cmd.includes(p)) return true;
+            const lower = cmd.toLowerCase();
+            for (const p of restrictedForms) if (lower.includes(p.toLowerCase())) return true;
           }
           return false;
         });

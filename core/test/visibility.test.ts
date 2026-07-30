@@ -12,6 +12,7 @@ import {
   absDenyPaths,
   denyPathSet,
   type DenyEntry,
+  isDeniedPath,
 } from "../src/visibility";
 import { setFolderVisibility, readFolderVisibility } from "../src/settings";
 import { makeVault } from "./helpers";
@@ -250,4 +251,44 @@ test("buildDenyPaths: a memory note under .daemon/memory is gated by its OWN fro
   const denied = (await buildDenyPaths(vault, "daemon")).map((e) => e.rel).sort();
   // Only the note with explicit frontmatter is denied; the cascade is ignored under .daemon/memory.
   expect(denied).toEqual([".daemon/memory/hushed.md"]);
+});
+
+// --- isDeniedPath: the matcher every gate that inspects a MODEL-supplied path must use ----------
+// A raw `denyPathSet(...).has(p)` is an exact byte comparison. Red-teaming the shipped chat.ts check
+// found that a differently-cased path walks straight through it on macOS, where the filesystem is
+// case-insensitive so both spellings open the same file.
+
+const ENTRIES = [{ rel: "Private/secret.md", abs: "/v/Private/secret.md" }];
+
+test("isDeniedPath matches the exact relative and absolute forms", () => {
+  expect(isDeniedPath(ENTRIES, "Private/secret.md")).toBe(true);
+  expect(isDeniedPath(ENTRIES, "/v/Private/secret.md")).toBe(true);
+});
+
+test("isDeniedPath matches a DIFFERENTLY-CASED path — the verified bypass", () => {
+  expect(isDeniedPath(ENTRIES, "private/SECRET.md")).toBe(true);
+  expect(isDeniedPath(ENTRIES, "/V/PRIVATE/Secret.MD")).toBe(true);
+});
+
+test("isDeniedPath tolerates the shapes a model actually emits", () => {
+  expect(isDeniedPath(ENTRIES, "./Private/secret.md")).toBe(true);
+  expect(isDeniedPath(ENTRIES, "Private//secret.md")).toBe(true);
+});
+
+test("isDeniedPath matches a path UNDER a restricted directory entry", () => {
+  const dirs = [{ rel: "Private", abs: "/v/Private" }];
+  expect(isDeniedPath(dirs, "Private/deep/nested.md")).toBe(true);
+  expect(isDeniedPath(dirs, "/v/Private/deep/nested.md")).toBe(true);
+});
+
+test("isDeniedPath does not match an unrelated path, or a mere prefix collision", () => {
+  expect(isDeniedPath(ENTRIES, "Public/secret.md")).toBe(false);
+  expect(isDeniedPath(ENTRIES, "open.md")).toBe(false);
+  // "Private2" must NOT match a "Private" entry — the subpath check needs the separator.
+  expect(isDeniedPath([{ rel: "Private", abs: "/v/Private" }], "Private2/x.md")).toBe(false);
+});
+
+test("isDeniedPath is safe on empty input", () => {
+  expect(isDeniedPath([], "anything.md")).toBe(false);
+  expect(isDeniedPath(ENTRIES, "")).toBe(false);
 });

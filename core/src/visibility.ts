@@ -199,8 +199,32 @@ export function absDenyPaths(entries: DenyEntry[]): string[] {
   return entries.map((e) => e.abs);
 }
 
+/**
+ * The sandbox deny-read list: every restricted file, PLUS the vault's `.git` directory.
+ *
+ * `.git` is load-bearing and easy to miss. `core/src/backup.ts` git-snapshots the vault, so a note
+ * hidden today was very likely committed in plaintext yesterday — and `git show HEAD:Private/secret.md`
+ * or `git log -p` reads it straight back out with no reference to the working-tree path the deny list
+ * covers. Red-teaming confirmed the read succeeds without this, and that adding
+ * `(deny file-read* (subpath "<vault>/.git"))` blocks `git show`/`git log -p` while an ordinary
+ * `cat public.md` keeps working.
+ *
+ * Deliberately NOT solved by rewriting history: the owner's backups are theirs, and scrubbing them
+ * would destroy the very thing they exist for. We restrict the AGENT's view instead.
+ *
+ * Only applied when something is actually restricted, so an unrestricted vault's agent keeps full
+ * git access (the daemon's own crons legitimately run `bismuth checkpoint diff`).
+ */
+export function sandboxDenyRead(entries: DenyEntry[], vaultRoot: string): string[] {
+  if (entries.length === 0) return [];
+  return [...absDenyPaths(entries), join(vaultRoot, ".git")];
+}
+
 /** Both path forms of every entry, for an O(1) same-process membership check (e.g. a
- *  canUseTool's `toolInput.file_path`, which may itself be relative OR absolute). */
+ *  canUseTool's `toolInput.file_path`, which may itself be relative OR absolute).
+ *
+ *  Prefer {@link isDeniedPath} for checking a path a MODEL supplied — a raw `Set.has()` is an exact
+ *  byte comparison, and a tool call's path is not guaranteed to be byte-identical to ours. */
 export function denyPathSet(entries: DenyEntry[]): Set<string> {
   const s = new Set<string>();
   for (const e of entries) {
@@ -208,4 +232,46 @@ export function denyPathSet(entries: DenyEntry[]): Set<string> {
     s.add(e.abs);
   }
   return s;
+}
+
+/**
+ * Normalize a path for comparison: strip a leading `./`, collapse repeated slashes, drop a trailing
+ * slash, and CASE-FOLD.
+ *
+ * Case-folding is the load-bearing part. macOS filesystems are case-insensitive by default, so
+ * `Private/SECRET.md` opens exactly the same file as `Private/secret.md` while comparing unequal as
+ * a string — a deny keyed on an exact match lets the second spelling straight through. Found by
+ * red-teaming the shipped `denyPathSet(...).has(p)` check, not by reading it.
+ *
+ * The cost is a false positive on a genuinely case-sensitive volume holding two notes whose paths
+ * differ only in case, where one is hidden and one is not. That is a vanishingly rare vault against
+ * a leak that is trivial to trigger, so it is the right trade — but it is a trade, so it is written
+ * down here rather than left for someone to rediscover.
+ */
+function normalizeForCompare(p: string): string {
+  return p
+    .replace(/^\.\//, "")
+    .replace(/\/{2,}/g, "/")
+    .replace(/\/$/, "")
+    .toLowerCase();
+}
+
+/**
+ * Is `candidate` (a path as some MODEL reported it — relative or absolute, any case) one of the
+ * restricted entries? Use this for every gate that inspects a tool call's path.
+ *
+ * Also matches a path that lies UNDER a restricted entry, so a directory-shaped deny covers the
+ * files inside it rather than only an exact hit on the directory itself.
+ */
+export function isDeniedPath(entries: DenyEntry[], candidate: string): boolean {
+  const c = normalizeForCompare(candidate);
+  if (!c) return false;
+  for (const e of entries) {
+    for (const form of [e.rel, e.abs]) {
+      const f = normalizeForCompare(form);
+      if (!f) continue;
+      if (c === f || c.startsWith(`${f}/`)) return true;
+    }
+  }
+  return false;
 }

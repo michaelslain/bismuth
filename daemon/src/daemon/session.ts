@@ -5,7 +5,7 @@ import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"
 import { whichClaude } from "../lib/claudeWhich.ts"
 import { augmentPath } from "../lib/childEnv.ts"
-import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, type DenyEntry } from "../lib/visibility.ts"
+import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, type DenyEntry } from "../lib/visibility.ts"
 import { mcpBin, cliBin, docsDir } from "../lib/bismuthPaths.ts"
 import { recordDaemonSessionId } from "./sessionIds.ts"
 import { sendCodexMessage } from "./codexSession.ts"
@@ -246,7 +246,7 @@ export function buildQueryOptions(
   // unrestricted vault is unaffected.
   if (denyEntries.length > 0) {
     options.managedSettings = { permissions: { deny: buildManagedSettingsDeny(denyEntries) } }
-    options.sandbox = { enabled: true, failIfUnavailable: false, filesystem: { denyRead: absDenyPaths(denyEntries) } }
+    options.sandbox = { enabled: true, failIfUnavailable: false, filesystem: { denyRead: sandboxDenyRead(denyEntries, ctx.root) } }
     // When ANY file is restricted, hard-disable the bismuth_cli MCP tool (its `file read` can
     // target any vault, escaping the managedSettings deny) AND Grep/Glob (an unscoped whole-vault
     // scan returns a hidden file's lines — the daemon has no canUseTool second layer, so an
