@@ -223,7 +223,7 @@ describe("backendMockEnv", () => {
     expect(config.provider.mock.options.baseURL).toBe(`${MOCK_URL}/v1`);
   });
 
-  test("gemini maps GOOGLE_GEMINI_BASE_URL/GEMINI_API_KEY — env routing + old-shape handshake verified live; full turn completion not (see the case comment)", () => {
+  test("gemini maps GOOGLE_GEMINI_BASE_URL/GEMINI_API_KEY — env routing, old-shape handshake, AND full turn completion all verified live (see the case comment)", () => {
     expect(backendMockEnv("gemini", MOCK_URL)).toEqual({
       GOOGLE_GEMINI_BASE_URL: MOCK_URL,
       GEMINI_API_KEY: "mock",

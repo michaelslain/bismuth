@@ -1,0 +1,12 @@
+{
+  "fixtures": [
+    {
+      "match": { "systemMessage": "assign a **Complexity Score** from 1 to 100" },
+      "response": { "content": { "complexity_reasoning": "mock fixture: trivial request", "complexity_score": 10 } }
+    },
+    {
+      "match": { "userMessage": "hello" },
+      "response": { "content": "Hello!" }
+    }
+  ]
+}
