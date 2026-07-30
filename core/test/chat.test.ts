@@ -396,13 +396,14 @@ describe("computerUseChange (BUG #87: live --chrome toggle → respawn decision)
 
 // These are real round-trips: they spawn the user's `claude` binary (machine-login auth, no API
 // key) against a TEMP dir — NEVER the vault. Opt-in, not opt-out: `bun test` on a machine with
-// `claude` installed must not spend money. Set BISMUTH_LIVE_TESTS=1 to run these deliberately.
+// `claude` installed must not touch the user's Anthropic account. Set BISMUTH_LIVE_TESTS=1 to run
+// these deliberately.
 const LIVE = process.env.BISMUTH_LIVE_TESTS === "1" && whichClaude() !== null;
 const describeOrSkip = LIVE ? describe : describe.skip;
 
 if (!LIVE) {
   // eslint-disable-next-line no-console
-  console.warn("[chat.test] live Claude tests skipped — set BISMUTH_LIVE_TESTS=1 to run them (spends real API credits).");
+  console.warn("[chat.test] live Claude tests skipped — set BISMUTH_LIVE_TESTS=1 to run them (makes real API calls against your Anthropic account).");
 }
 
 /**
