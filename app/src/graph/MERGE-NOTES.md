@@ -133,14 +133,40 @@ the silent-drop risk.
 | **Size-ranked cluster colours** — `buildColorSlots`: rank communities by member count, assign palette slots by rank, hue-rotate on wrap, `NODE_SAT_BOOST` 1.55 | ✅ | `:761-793` (~33 lines) | Its comment records the measured failure of the hash scheme: *"on the reference vault nearly every big top-level group landed on the same teal, so the field read as one colour and the grouping was invisible."* **Ascii still hashes** (`colorLevelsFor`, `RAMP[hashKey(key) % 5]`). Canvas's approach is strictly better-informed. |
 | **Hub-anchored cluster names** — anchored on the community's highest-degree member (not the centroid), lifted by the group's on-screen extent, size-ramped by share of the **visible** field, `CLUSTER_LABEL_MIN_SHARE`/`MIN_MEMBERS` thresholds, `trimDanglingWord`, `fillTracked` | ✅ | `:307-316, 1566-1648` (~95 lines) | Its comment: a 400-node community's centroid *"routinely lands in empty space — the names then read as free-floating text captioning nothing."* **Ascii's `layoutClusterNames` is centroid-anchored.** Same known-bad approach. |
 | **`inViewport`** — label/cluster candidates restricted to the actual viewport + 40px, not merely "in front of the camera" | ✅ | `:931-935, 1505, 1571` | *"the file-label budget is spent ranking global hubs that are off-frame, which is why zooming in used to surface no new names."* |
-| **`clearAroundSelf`** — screen-space clear zone around the "you" hub, world-scaled radius + per-node drawn radius floor, golden-angle fan for coincident nodes | ✅ agents mode / any self-node graph | `:1034-1071` (~38 lines) | The hub's breathing room. Ascii has nothing. |
-| **Workflow lanes (agents mode)** — `drawWorkflowLanes`: rounded backdrop hull + soft glow underlay + dashed accent line per workflow, `WORKFLOW_LANE_PALETTE` | ✅ agents mode | `:1414-1461` (~48 lines) | **A whole feature.** Ascii has zero support for `edge.workflow`. Easiest thing in the codebase to lose silently. |
+| **`clearAroundSelf`** — screen-space clear zone around the "you" hub | ❌ **DEAD — see §2.4** | `:1034-1071` (~38 lines) | Nothing — unreachable. Delete with Canvas. |
+| **Workflow lanes** — `drawWorkflowLanes` | ❌ **DEAD — see §2.4** | `:1414-1461` (~48 lines) | Nothing — unreachable. Delete with Canvas. |
 | **`scaleToSpacing`** + `p3Cache`/`p2Cache` — re-spread the backend layout to a node-count-independent spacing without a force sim; cached per structural signature | ✅ | `:250-301, 649-686` (~90 lines) | Replaced a ~1.2s client force settle at 2k nodes. Ascii consumes the backend coords raw. Different resting spacing → **different-looking graph**. |
 | `BACK_INTERACT_CUTOFF` 0.18 — back-layer nodes aren't hover/click targets in 3D | ✅ 3D | `:1722` | Clicking "through" the cloud to a node behind it. |
 | Per-mode edge thinning (2D 6000/0.06, 3D 6000/0.45) | ✅ | `:178-179, 1224-1225` | Ascii uses one budget (2600/0.12) — **less than half Canvas's**, so a dense vault draws visibly fewer edges under Ascii. |
 | Depth-sorted node draw order (`drawOrder`, far→near) | ✅ 3D | `:1352-1356` | Occlusion correctness. Ascii's grid gives layer-priority instead. |
 | Label pills (rounded translucent bg box) | ✅ | `:1541-1547` | Ascii clears a ground-coloured cell rect instead. Cosmetic. |
 | `setFitMargin` / `setFrameOffsetY` / `transparent` | intro only (`transparent` is **read by nothing**) | `:521-523, :41` | The intro's framing. |
+
+
+### 2.4 ⚠️ CORRECTION (2026-07-30): the self node is gone, so two §2.3 rows are dead code
+
+§2.3 originally listed `clearAroundSelf` and `drawWorkflowLanes` as reachable. **They are not.**
+Commit `a6687c0` — *"refactor(graph)!: remove the agents graph mode"* — already landed on the branch
+this work descends from. Verified against the current tree:
+
+- `buildAgentGraph` no longer exists; `core/src/agents.ts` exports only `ChatAgentSubagent` and
+  `ChatAgentSession` (the latter for `chat.ts`).
+- `GET /agent-graph` is gone (`terminal.ts:589` says so in a comment).
+- `app/src/graph/{AgentsGraph.tsx,agentLayout.ts,agentOrg.ts,agentGraphSig.ts}` are all deleted.
+- No `"agents"` mode remains in `App.tsx` or `GraphView.tsx`.
+
+`agentLayout.ts` was the **only** injector of the `self` node, and `buildAgentGraph` the only producer
+of `edge.workflow`. So on any graph the app can now build, `clearAroundSelf`'s guard never fires and
+`drawWorkflowLanes` iterates an empty set.
+
+`NodeKind` still lists `"self"` and `GraphNode.workflow` still exists in `core/src/graph.ts` — vestigial
+type surface, out of scope here.
+
+**Consequence for the merge:** neither is ported. Both are deleted with Canvas in Task 14. Task 3's
+`clearAroundSelf` characterization test characterizes dead code and is deleted with it — that is not a
+coverage regression. (Task 3 independently reached the same conclusion for workflow lanes and skipped
+them; its test-file header records the reasoning.)
+
 
 ---
 
