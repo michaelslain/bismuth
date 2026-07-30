@@ -123,27 +123,30 @@ applies to two distinct kinds of test that could otherwise spend real money or c
    `BISMUTH_LIVE_TESTS=1` environment variable (see `core/test/liveGate.ts`) and skip by default —
    running them costs real money/quota, so they must never run in CI or a default `bun test`.
 2. **Mocked agent-CLI integration tests** (`core/test/chatProviders/*Mocked.test.ts`,
-   `core/test/chatProviders/acpFakeAgent.test.ts`) run by default in `bun test core` (no opt-in
-   needed) precisely because they spend nothing, and skip when the relevant CLI **binary** isn't
-   installed (a portability/CI concern), never when an **account** isn't logged in — a
-   missing-binary skip and a missing-account skip must never be conflated (see each test file's own
-   header for why). They are NOT all the same shape, and the difference matters (corrected here after
-   an earlier version of this paragraph overstated it: this item covers SEVEN files total, not six —
-   the six `*Mocked.test.ts` files plus `acpFakeAgent.test.ts` — and the overstatement affected one
-   of the six `*Mocked.test.ts` files (`clineMocked`, which starts no mock) plus `acpFakeAgent.test.ts`
-   itself, the seventh file, which isn't one of the six at all and isn't a real CLI):
-   - `claudeMocked`/`opencodeMocked`/`codexMocked`/`gooseMocked`/`geminiMocked.test.ts` drive a REAL
-     agent CLI binary (`claude`/`opencode`/`codex`/`goose`/`gemini`) through Bismuth's OWN
-     production chat driver, pointed at a **local mock LLM server** instead of the real provider API
-     — see the verification table below for exactly how far each one is confirmed (full turn E2E vs.
-     handshake-only).
-   - `clineMocked.test.ts` drives the REAL `cline` binary too, but starts **no mock at all** — cline's
-     ACP mode has no mockable path (see the table), so this test instead proves that failure mode is
-     SAFE: an isolated, never-authenticated `CLINE_DIR` produces a clean error, never a hang or a
-     silent real-account fallback.
+   `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`)
+   run by default in `bun test core` (no opt-in needed) precisely because they spend nothing, and skip
+   when the relevant CLI **binary** isn't installed (a portability/CI concern), never when an
+   **account** isn't logged in — a missing-binary skip and a missing-account skip must never be
+   conflated (see each test file's own header for why). They are NOT all the same shape, and the
+   difference matters (corrected here after an earlier version of this paragraph overstated it: this
+   item covers EIGHT files total, not seven — the six `*Mocked.test.ts` files plus two fake-agent
+   files, `acpFakeAgent.test.ts` and `clineAuthFakeAgent.test.ts`, neither of which is a real CLI):
+   - `claudeMocked`/`opencodeMocked`/`codexMocked`/`gooseMocked`/`geminiMocked`/`clineMocked.test.ts`
+     drive a REAL agent CLI binary (`claude`/`opencode`/`codex`/`goose`/`gemini`/`cline`) through
+     Bismuth's OWN production chat driver, pointed at a **local mock LLM server** instead of the real
+     provider API — see the verification table below for exactly how far each one is confirmed (full
+     turn E2E vs. handshake-only). `clineMocked.test.ts` is two describe blocks, not one: an original
+     one proving the DEFAULT (no-bypass-configured) path fails safely against an isolated,
+     never-authenticated `CLINE_DIR`, plus a later "real E2E" block proving a full turn completes once
+     a real, source-cited env-var bypass (`CLINE_API_KEY`) is applied — see the table's `cline` row.
    - `acpFakeAgent.test.ts` drives a **fake ACP agent** (`core/test/support/fakeAcpAgent.ts`, a
      hand-rolled stub speaking the wire protocol), not a real CLI at all — see "The fake ACP agent"
      below for why a fake is the only way to cover the version-skew branch it exists for.
+   - `clineAuthFakeAgent.test.ts` drives the SAME fake ACP agent, in a mode that reproduces cline's
+     real ACP auth gate (cited from cline's own compiled source — see `fakeAcpAgent.ts`'s header) —
+     needs no `cline` binary at all, so unlike `clineMocked.test.ts`'s real-E2E block it never skips.
+     Proves Bismuth's driver both surfaces the auth-required refusal cleanly AND completes a full turn
+     once the fake's gate is satisfied — coverage that did not exist anywhere in this repo before.
 
 ### The mock LLM server
 
@@ -175,7 +178,7 @@ per-case comments are the source of truth, and are updated every time a row is a
 | `goose` | **Verified**, full turn E2E | `ANTHROPIC_HOST`/`GOOSE_PROVIDER=anthropic`, driven via `goose acp` |
 | `codex` | **Verified**, full turn E2E | Needs a `$CODEX_HOME/config.toml` (a custom `model_providers.*` block, `wire_api = "responses"`) — plain `OPENAI_BASE_URL` does **not** work for this codex version, confirmed live (see `backendEnv.ts`). Known cosmetic quirk: codex logs a benign "Model metadata not found" item for any model under a non-built-in provider, which the driver's own translator (correctly, per its own contract) surfaces as `result.isError === true` even though the assistant's text arrives correctly — `codexMocked.test.ts` asserts on the text, not on `isError`, and documents this inline |
 | `gemini` | **Partially verified** | Handshake + old-shape model list + zero real network access confirmed live; a full turn's assistant text could not be made to arrive against the generic mock fixture within a reasonable time (see `geminiMocked.test.ts`'s header for the investigation) |
-| `cline` | **Not mockable for the mode Bismuth ships** | ACP mode (`cline --acp`) gates `session/new` behind a real OAuth `authenticate` call with no mockable path; `clineMocked.test.ts` instead verifies this fails SAFELY (a clean error, never a hang or a silent real-account fallback) against an isolated `CLINE_DIR` |
+| `cline` | **Verified, full turn E2E** (via a discovered bypass — corrected from an earlier "not mockable" finding) | ACP mode (`cline --acp`) gates `session/new` behind `-32000 "Authentication required"` UNLESS `process.env.CLINE_API_KEY` is set — a real, unconditional escape hatch found by reading cline 3.0.47's own compiled source (never `authenticate`, never OAuth; see `backendEnv.ts`'s `cline` case for the exact source citation). Combined with `CLINE_PROVIDER=openai-compatible` (a non-OAuth provider id the auth check never validates) and a hand-written `$CLINE_DIR/data/settings/providers.json` pointing its `baseUrl` at the mock, a real cline binary completes a full turn — `clineMocked.test.ts`'s newer "real E2E" block. The ORIGINAL default-path (no bypass configured) safe-failure test is unchanged and still passes: it proves the OTHER, honest fact that with no bypass applied, `session/new` still fails safely. Two honest limits: the real "cline"/"openai-codex" OAuth providers remain genuinely closed (this routes around the gate via a third provider id, not through OAuth), and cline's OWN `configOptions` shape mis-orders a "provider" selector ahead of the true "model" selector under the same category — the driver's `detectModelShape` picks the wrong one, so (a) NO `models` ChatFrame is emitted at all against a real cline session (not merely an empty one — see `backendEnv.ts`'s case comment for exactly why) and (b) `modelConfigId` is poisoned the same way, so a model switch would silently write to cline's provider option instead. Unrelated to the auth gate, not fixed by this task (a follow-up should be written against the precise account in the case comment) |
 | `openclaw` | **Config-mechanism only** | `OPENCLAW_CONFIG_PATH`/`OPENCLAW_STATE_DIR` genuinely redirect its config/state (confirmed live); routing an actual turn through its Gateway-backed ACP bridge was not exercised |
 
 The **version-skew branch** in `core/src/chatProviders/acp/protocol.ts`'s `detectModelShape` (an ACP
@@ -185,6 +188,18 @@ both. `core/test/support/fakeAcpAgent.ts` is a small, hand-rolled fake ACP agent
 stdio, no network of any kind) used by `core/test/chatProviders/acpFakeAgent.test.ts` to drive both
 branches from one place, following the exact "write + chmod a stub binary, prepend it onto PATH"
 pattern `relay/test/wrap.test.ts` already established for testing a driver against a fake binary.
+
+The same fake agent also has a **cline auth-gate mode** (`FAKE_ACP_AUTH_GATE=cline`, opt-in and fully
+decoupled from the model-shape logic above — the three original `acpFakeAgent.test.ts` tests are
+unaffected), reproducing cline's real `initialize`/`session/new` auth surface cited from its own
+source (see `fakeAcpAgent.ts`'s header). `core/test/chatProviders/clineAuthFakeAgent.test.ts` drives
+it two ways: gate closed (no `FAKE_ACP_CLINE_AUTHED`) proves the driver surfaces the real
+`-32000`/"Authentication required" refusal as a clean `error` frame with no stray assistant-text or
+result frame anywhere in the transcript; gate open (`FAKE_ACP_CLINE_AUTHED=1`, mirroring the real
+`CLINE_API_KEY` bypass) proves a full turn completes — assistant-text, then `result.isError===false`,
+then `done`. This needs no `cline` binary at all, so it is the coverage guaranteed to run on every
+machine regardless of what's installed — `clineMocked.test.ts`'s real-E2E block is the (also real,
+also verified) belt-and-suspenders version that only runs where a real `cline` happens to be present.
 
 ### Recording a new fixture
 
@@ -583,4 +598,4 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/agents.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/collide.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `relay/test/wrap.test.ts`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/agents.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/collide.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `relay/test/wrap.test.ts`
