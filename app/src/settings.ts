@@ -59,6 +59,7 @@ export interface Settings {
     mapDefaultZoom: number;       // default zoom for the Bases map view
     refreshDebounceMs: number;    // ms before rebuilding the graph after edits
     backgroundNoise: boolean;     // faint ASCII noise texture under the graph field; off by default
+    renderer: "ascii" | "standard"; // which look draws the graph: the ASCII character field or the standard dots+edges
   };
   editor: {
     defaultMode: "source" | "visual"; // how a note opens: raw markdown editor vs no-code visual editor
@@ -103,7 +104,6 @@ export interface Settings {
     timeZone: string;        // IANA tz for naive events ("" = system)
   };
   ui: {
-    verticalTabs: boolean;     // vertical tab rail on the right edge (icon-only, expands to names on hover)
     paletteTopOffset: string;  // CSS length, e.g. "12vh"
     paneDividerWidth: number;  // px
     cardGridMinWidth: number;     // px

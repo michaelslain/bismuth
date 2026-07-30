@@ -5,7 +5,6 @@ import { Editor } from "./Editor";
 import { BlockEditor } from "./BlockEditor";
 import { BaseView } from "./bases/BaseView";
 import { InboxPageView } from "./InboxPageView";
-import { Backlinks } from "./Backlinks";
 import { Loading } from "./ui/EmptyState";
 import { settings } from "./settings";
 import { isConfigBuffer } from "./editor/settingsBuffer";
@@ -70,11 +69,13 @@ export function FileView(props: {
           <InboxPageView path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
         </Match>
         <Match when={!isBase() && !isDaemonPage()}>
-          {/* Column wrapper: the editor takes the available height (flex:1, min-height:0 so it
-              keeps owning its OWN internal scroll exactly as before), Backlinks sits below it and
-              — being collapsed-empty when there are none (Backlinks.tsx) — costs zero layout on
-              a note nothing links to. */}
-          <div style={{ height: "100%", display: "flex", "flex-direction": "column", "min-height": "0" }}>
+          {/* Column wrapper: the editor takes the full height and owns its own internal scroll.
+              No backlinks surface here any more — neither the below-editor strip nor the corner
+              control. The note's connections are answered by the graph's LOCAL lens (GraphView's
+              MODE_ICON/local mode), which shows inbound AND outbound links rather than a list of
+              inbound ones. Backlinks.tsx / BacklinksPanel are unmounted; backlinkGraph.ts (pure +
+              tested) stays for whatever surfaces them next. */}
+          <div style={{ height: "100%", display: "flex", "flex-direction": "column", "min-height": "0", position: "relative" }}>
             <div style={{ flex: "1 1 auto", "min-height": "0" }}>
               <Show
                 when={visualMode()}
@@ -85,7 +86,6 @@ export function FileView(props: {
                 <BlockEditor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
               </Show>
             </div>
-            <Backlinks path={props.path} onOpen={props.onOpen} />
           </div>
         </Match>
       </Switch>

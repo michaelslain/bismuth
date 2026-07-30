@@ -69,7 +69,7 @@ import {
   serializeTabs, deserializeTabs, resolveFocus, sortPinned, setTabPinned, splitColdLaunch,
   decideOpen,
 } from "./panes";
-import { IconButton } from "./ui/IconButton";
+import { IconButton, ICON_PX } from "./ui/IconButton";
 import { PaneTree } from "./PaneTree";
 import { createViewDrag, type DragDescriptor, type DropTarget, type DropPoint } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
@@ -593,7 +593,11 @@ export default function App() {
   // different construct (the literal root of the session tree), injected separately by
   // GraphView/agentLayout.ts, not by this selection.
   const displayGraph = createMemo<GraphData>(() =>
-    selectDisplayGraph(mode(), { graph: graph(), agents: agents(), daemon: daemon() }),
+    // `activeId` feeds "local" mode only: the focused note's graph id (path minus ".md").
+    selectDisplayGraph(mode(), {
+      graph: graph(), agents: agents(), daemon: daemon(),
+      activeId: focusedContent() ? focusedContent()!.replace(/\.md$/i, "") : null,
+    }),
   );
 
   const noteCandidates = createMemo<NoteCandidate[]>(() =>
@@ -1398,31 +1402,15 @@ export default function App() {
     return r.kind === "leaf" && !isSentinel(r.content) && isMarkdown(r.content) ? r.content : undefined;
   };
 
-  // While dragging a tab, neighbors slide to open a gap at the live drop slot
-  // (Chrome-style). Returns the px shift for the chip at `index`; 0 otherwise.
+  // Which tab is mid-drag — the rail row uses it for its `dragging` class.
+  //
+  // The neighbour-slide helpers that lived here (tabShift / stripDropIndex / dragFromIndex) went with
+  // the horizontal strip: they computed a px offset to slide CHIPS sideways and open a gap at the drop
+  // slot, which only means anything for a left-to-right strip of variable-width chips. The rail's rows
+  // are fixed-height and reorder without that affordance.
   const draggingTabId = (): string | null => {
     const d = drag();
     return d.active && d.descriptor?.kind === "tab" ? d.descriptor.tabId : null;
-  };
-  const stripDropIndex = (): number | null => {
-    const d = drag();
-    return d.active && d.target?.kind === "tabstrip" ? d.target.index : null;
-  };
-  const dragFromIndex = createMemo(() => {
-    const id = draggingTabId();
-    return id ? tabs().findIndex((t) => t.id === id) : -1;
-  });
-  const tabShift = (index: number): number => {
-    const d = drag();
-    const dragId = draggingTabId();
-    const dropI = stripDropIndex();
-    if (!dragId || dropI === null || d.descriptor?.kind !== "tab") return 0;
-    const from = dragFromIndex();
-    if (from === -1 || index === from) return 0;
-    const w = d.descriptor.width;
-    if (from < dropI && index > from && index < dropI) return -w;
-    if (from > dropI && index >= dropI && index < from) return w;
-    return 0;
   };
 
   // Delete: drop any leaf whose content is the deleted path (or a file beneath a deleted
@@ -1978,7 +1966,11 @@ export default function App() {
   function CommandButton(props2: { btn: { command?: string; commands?: string[]; icon: string; tooltip?: string }; iconSize?: number }) {
     const cmd = () => resolveButtonCommands(props2.btn, commands())[0];
     const hidden = () => cmd()?.id === "open-inbox" && !settings.daemon.enabled;
-    const iconSize = () => props2.iconSize ?? 18;
+    // 18 -> ICON_PX (12): the two TAB toolbars (.tabbar-actions, .tab-rail-actions) render
+    // CommandButtons without an explicit size, so this default WAS the tab toolbar's icon size — 18px
+    // next to 11.5px labels and a 12px sidebar, which made it the largest iconography in the app for no
+    // reason. The sidebar bar passes appearance.sidebarIconFontSize and is unaffected either way.
+    const iconSize = () => props2.iconSize ?? ICON_PX;
     return (
       <Show when={!hidden()}>
         <Show
@@ -2001,7 +1993,7 @@ export default function App() {
   }
 
   // Shared tab context menu (right-click) — used by both the horizontal strip and the
-  // vertical right-rail (ui.verticalTabs). Kept as one builder so the two presentations
+  // vertical right-rail. Kept as one builder so the toolbar and the rail
   // never drift.
   function openTabContextMenu(e: MouseEvent, tab: Tab) {
     e.preventDefault();
@@ -2084,7 +2076,7 @@ export default function App() {
         </div>
       </Show>
     </div>
-    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": settings.ui.verticalTabs }}>
+    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": true }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
           <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} iconSize={settings.appearance.sidebarIconFontSize} />}</For>
@@ -2103,91 +2095,10 @@ export default function App() {
         <Show when={switcherOpen()}>
           <SwitcherBar onClose={closeSwitcher} openFile={openFile} onResultsChange={setSwitcherResultPaths} />
         </Show>
-        {/* Horizontal top tab strip — the default. When ui.verticalTabs is ON it's replaced
-            entirely by the right-edge .tab-rail rendered below (outside .editor-pane). */}
-        <Show when={!settings.ui.verticalTabs}>
-        <div class="tabbar" data-tabstrip="true">
-          <Index each={tabs()}>
-            {(t, i) => {
-              const chipColor = createMemo(() => {
-                const tab = t();
-                const leaf = leaves(tab.root).find((l) => l.id === tab.focusId) ?? leaves(tab.root)[0];
-                return leaf ? chatTabColor(leaf.content) : undefined;
-              });
-              const chipStyle = createMemo(() => ({
-                transform: `translateX(${tabShift(i)}px)`,
-              }));
-              return (
-                <>
-                  <Show when={stripDropIndex() === i && !draggingTabId()}>
-                    <div class="tab-caret" />
-                  </Show>
-                  <div
-                    class={`tab${activeTabId() === t().id ? " active" : ""}`}
-                    classList={{ dragging: draggingTabId() === t().id, pinned: !!t().pinned }}
-                    data-tab-chip="true"
-                    // A pinned tab renders compact (icon + pin glyph, no label), so surface its
-                    // name on hover. Skip while renaming (the input carries the name).
-                    title={t().pinned && renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
-                    style={chipStyle()}
-                    onPointerDown={(e) => {
-                      if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
-                      viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id), tabNotePath(t()));
-                    }}
-                    // Middle-click closes any tab, INCLUDING a pinned one (which hides its X) —
-                    // the VSCode/Obsidian escape hatch so a pin doesn't have to be undone first.
-                    onAuxClick={(e) => {
-                      if (e.button !== 1) return;
-                      e.preventDefault();
-                      closeTabById(t().id);
-                    }}
-                    onDblClick={(e) => {
-                      if ((e.target as HTMLElement).closest(".tab-x, .tab-pin")) return;
-                      startRenameTab(t().id);
-                    }}
-                    onContextMenu={(e) => openTabContextMenu(e, t())}
-                  >
-                    <Show when={tabBarIcon(t())}>
-                      {(icon) => <Icon class="tab-icon" value={icon()} size={13} style={chipColor() ? { color: chipColor() } : undefined} />}
-                    </Show>
-                    <Show when={renamingTabId() === t().id} fallback={<Show when={!t().pinned}><span>{tabBarLabel(t())}</span></Show>}>
-                      <input
-                        class="tab-rename"
-                        value={tabBarLabel(t())}
-                        ref={(el) => queueMicrotask(() => { el.focus(); el.select(); })}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => commitRename(t().id, e.currentTarget.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") { e.preventDefault(); commitRename(t().id, e.currentTarget.value); }
-                          else if (e.key === "Escape") { e.preventDefault(); setRenamingTabId(null); }
-                          e.stopPropagation();
-                        }}
-                      />
-                    </Show>
-                    {/* Pinned tabs replace the close X with a pin glyph (click → unpin); the tab
-                        can't be closed by the X, matching Obsidian/VSCode pinned-tab behavior. */}
-                    <Show
-                      when={t().pinned}
-                      fallback={<IconButton class="tab-x" icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t().id, e)} />}
-                    >
-                      <IconButton class="tab-pin" icon="Pin" label="Unpin tab" iconSize={12} onClick={(e) => { e.stopPropagation(); togglePinTab(t().id); }} />
-                    </Show>
-                  </div>
-                </>
-              );
-            }}
-          </Index>
-          <Show when={stripDropIndex() === tabs().length && !draggingTabId()}>
-            <div class="tab-caret" />
-          </Show>
-          <div class="tabbar-actions">
-            {/* Settings-driven like the sidebar bar (tabBar: in .settings) — defaults are the
-                previously-hardcoded new-tab + terminal, plus new-chat. */}
-            <For each={settings.tabBar}>{(btn) => <CommandButton btn={btn} />}</For>
-          </div>
-        </div>
-        </Show>
+        {/* Tabs are the right-edge vertical RAIL only — see the .tab-rail block below. The classic
+            horizontal top strip (and its ui.verticalTabs opt-out) was removed: two full tab
+            presentations meant every tab feature had to be built, styled and drag-tested twice, and
+            the rail is the one that fits the redesign. */}
         <div class="editor-body" ref={editorBodyEl}>
           <Show when={activeTab()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
             {(t) => (
@@ -2291,8 +2202,7 @@ export default function App() {
           </For>
         </div>
       </main>
-      {/* Vertical tab rail (ui.verticalTabs) — a right-edge icon rail that REPLACES the top
-          strip. The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
+      {/* The tab rail — the app's ONLY tab presentation (the horizontal strip is gone). The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
           column; .tab-rail-inner is absolutely anchored to the right edge and widens leftward
           OVER the editor on hover (via CSS :hover / :focus-within), so the editor never
           reflows. Top-to-bottom: the +/terminal/chat action TOOLBAR, then the scrollable
@@ -2303,7 +2213,7 @@ export default function App() {
           full-window search takeover that already hides the file-tree sidebar (`sidebar-hidden`,
           below); the rail used to keep floating over that takeover instead of hiding with it. The
           grid column itself collapses to 0 in lockstep via `.layout.switcher-active` (App.css). */}
-      <Show when={tabRailVisible({ verticalTabs: settings.ui.verticalTabs, switcherOpen: switcherOpen() })}>
+      <Show when={tabRailVisible({ switcherOpen: switcherOpen() })}>
         <div class="tab-rail">
           <div class="tab-rail-inner">
             <div class="tab-rail-actions">

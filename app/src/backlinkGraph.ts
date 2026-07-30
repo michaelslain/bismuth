@@ -21,10 +21,14 @@ export function pathToNoteId(path: string): string {
 }
 
 /**
- * Notes that link to `noteId` — vault edges of kind "link" (or "tag", included for forward
- * compatibility with any future note-to-note tag edge) whose `to` is this note. Self-links are
- * dropped, results are deduped by source id and sorted by label. Only "note" kind sources are
- * openable in the editor, so anything else (e.g. a stray non-note `to` match) is excluded.
+ * Notes that link to `noteId` — vault "link" edges (a `[[wikilink]]`) whose `to` is this note.
+ * Self-links are dropped, results are deduped by source id and sorted by label. Only "note" kind
+ * sources are openable in the editor, so anything else is excluded.
+ *
+ * "tag" edges used to be accepted here too, "for forward compatibility with any future note-to-note
+ * tag edge". They were dead weight: a vault tag edge runs note -> TAG NODE, so its `to` is a tag id
+ * and can never equal a note id, and even if one did the `kind === "note"` source filter below would
+ * drop it. Backlinks are wikilinks — nothing else.
  */
 export function deriveBacklinks(graph: GraphData, noteId: string): BacklinkEntry[] {
   if (!noteId) return [];
@@ -32,7 +36,7 @@ export function deriveBacklinks(graph: GraphData, noteId: string): BacklinkEntry
   const seen = new Map<string, BacklinkEntry>();
   for (const edge of graph.edges) {
     if (edge.to !== noteId) continue;
-    if (edge.kind !== "link" && edge.kind !== "tag") continue;
+    if (edge.kind !== "link") continue;
     if (edge.from === noteId) continue; // no self-backlinks
     if (seen.has(edge.from)) continue;
     const node = nodesById.get(edge.from);

@@ -53,6 +53,9 @@ export interface GraphRenderer {
   onHighlightCleared?: () => void;
   /** ASCII renderer only: the 0–100 resolution readout ("zoom is resolution"). */
   setZoomCallback?(cb: (pct: number) => void): void;
+  /** STANDARD (Canvas) renderer only: per-frame screen positions of the three biggest clusters, which
+   *  the <GraphAtmosphere> glow lobes ride. The ASCII field draws a flat ground and omits it. */
+  setGlowCallback?(cb: (g: { lobes: { x: number; y: number }[] }) => void): void;
 }
 
 // Compile-time proof the legacy renderer still satisfies the seam. It is unused by GraphView but

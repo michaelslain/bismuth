@@ -8,7 +8,7 @@ import type { DailyNoteConfig } from "../../core/src/dailyNote";
 
 /** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network,
  *  daemon=the daemon's cron/process supervision graph */
-export type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon";
+export type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon" | "local";
 
 export interface CommandHandlers {
   openSettings: () => void;

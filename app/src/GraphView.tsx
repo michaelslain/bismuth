@@ -1,10 +1,13 @@
 // app/src/GraphView.tsx
-import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
+import { For, onCleanup, onMount, createEffect, createMemo, createSignal, untrack, Show } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import type { GraphConfig, GraphRenderer, HoverNode } from "./graph/graphRenderer";
+import { AsciiGraphRenderer } from "./graph/AsciiGraphRenderer";
 import { CanvasGraphRenderer } from "./graph/CanvasGraphRenderer";
+import { GraphAtmosphere } from "./graph/GraphAtmosphere";
 import { AgentsGraph } from "./graph/AgentsGraph";
 import { layoutAgentGraph } from "./graph/agentLayout";
+import { computeLayout } from "../../core/src/layout";
 import type { Org } from "./graph/agentOrg";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
@@ -14,6 +17,7 @@ import { DaemonList } from "./DaemonList";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
 import { IconButton } from "./ui/IconButton";
+import { TextButton } from "./ui/TextButton";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { IconTextButton } from "./ui/IconTextButton";
 import type { GraphMode } from "./commands";
@@ -60,11 +64,60 @@ const setViewModePersisted = (m: "2d" | "3d") => {
   writeCache(VIEW_MODE_KEY, m);
 };
 
+/**
+ * WHICH RENDERER draws the graph. Two finished looks, both shipping:
+ *
+ *   "ascii"    — the character-grid field (AsciiGraphRenderer): clusters render as aggregate ASCII
+ *                MASSES sized by member count, joined by summarized inter-cluster links; zoom is
+ *                RESOLUTION rather than scale; the hierarchy reads through zoom-driven colour and a
+ *                cluster-name ladder. The redesign's own look, and the default — the rest of the app
+ *                is mono-only with glyph icons and terminal themes, so a dot-and-line graph would be
+ *                the one surface that doesn't belong.
+ *   "standard" — the Canvas-2D graph (CanvasGraphRenderer): filled dots sized by degree, vector
+ *                edges, perspective dolly zoom, orbitable in 3D, atmosphere glow. The conventional
+ *                knowledge-graph look, for when you want to READ the graph rather than look at it.
+ *
+ * Both satisfy the `GraphRenderer` seam (graph/graphRenderer.ts) and both consume the SAME
+ * backend-precomputed layout, so this is a genuine swap, not two code paths to keep in sync.
+ *
+ * A SETTING (`graph.renderer`), not a toolbar control: it is a durable choice about what the graph IS,
+ * not a per-glance view toggle like 2D/3D. It also is NOT the old R1-R4 harness — that was four
+ * cryptically-named dev arms A/B-ing renderers mid-build, and was deliberately removed.
+ */
+const makeRenderer = (k: GraphRenderKind): GraphRenderer =>
+  k === "standard" ? new CanvasGraphRenderer() : new AsciiGraphRenderer();
+export type GraphRenderKind = "ascii" | "standard";
+
 // Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
 // full-pane graph): text-only, uppercase, no glyph prefix — same string in both so the little
 // and big toolbars read as one control at two sizes (the narrow one just wraps to a second row
 // if all five segments don't fit one line; see the @container rule in App.css).
-const MODE_SHORT: Record<GraphMode, string> = { "2nd": "2ND", "3rd": "3RD", both: "BOTH", agents: "AGENTS", daemon: "DAEMON" };
+/** Refine ticks for the client-side LOCAL layout. A neighbourhood is tens of nodes, not thousands, so
+ *  this settles in a few ms on the main thread — the backend budget (400) exists for 2000+ nodes and
+ *  would be wasted here. */
+const LOCAL_REFINE_TICKS = 120;
+
+const MODE_SHORT: Record<GraphMode, string> = { "2nd": "2ND", "3rd": "3RD", both: "BOTH", agents: "AGENTS", daemon: "DAEMON", local: "LOCAL" };
+/**
+ * The same switcher as ICONS, for the sidebar mini-graph only.
+ *
+ * This REVERSES an earlier decision, deliberately and at the user's request: the mode switcher was
+ * specified as text-only ("2ND/3RD/BOTH/AGENTS/DAEMON, no glyph prefixes, ever" — see the container
+ * query in App.css). That still holds for the FULL-PANE graph, where there is room for words and the
+ * words are unambiguous. In the sidebar the same five text segments wrap onto two rows and eat the
+ * little field's height, which is the problem icons solve. Text stays the rule where it fits.
+ *
+ * Each icon names the mode's SUBJECT rather than an abstract symbol: the vault of notes, the memory
+ * brain, the two combined, the agent sessions, the background worker.
+ */
+const MODE_ICON: Record<GraphMode, string> = {
+  "2nd": "Notebook",   // the vault: markdown notes
+  "3rd": "Brain",      // the daemon's memory graph
+  both: "Combine",     // both brains + their cross-edges
+  agents: "Users",     // you -> terminal sessions -> subagents
+  daemon: "Zap",       // the running supervisor (crons/processes)
+  local: "Share",      // the open note's neighbourhood
+};
 
 export function GraphView(props: {
   graph: GraphData;
@@ -96,12 +149,15 @@ export function GraphView(props: {
   onPaint?: (nodeCount: number) => void;
 }) {
   let host!: HTMLDivElement;
-  // The graph is the ORIGINAL Canvas-2D renderer — its camera, continuous perspective zoom,
-  // orbit/pan and vector edges — with ASCII marks instead of dots and the mono face on labels
-  // (see CanvasGraphRenderer's "ASCII node marks"). It draws its labels on the same canvas, so the
-  // vestigial `labelOverlay` argument on the renderer seam (graphRenderer.ts) goes unpassed.
-  // AsciiGraphRenderer (the character-grid field) stays in the tree, unmounted.
-  const renderer: GraphRenderer = new CanvasGraphRenderer();
+  // The ASCII field draws its labels ON the character grid (they're cells like everything else),
+  // so there is no DOM label overlay — the vestigial `labelOverlay` argument on the renderer seam
+  // (graphRenderer.ts) goes unpassed.
+  // `let`, not `const`: the ASCII/STANDARD toggle swaps the instance in place (see the swap effect
+  // below). Every effect in this component reads `renderer.` at call time, so they follow the swap.
+  const graphRenderKind = (): GraphRenderKind =>
+    settings.graph.renderer === "standard" ? "standard" : "ascii";
+  let renderer: GraphRenderer = makeRenderer(graphRenderKind());
+  let mountedKind: GraphRenderKind = graphRenderKind();
   let mounted = false;
   let lastGraph: GraphData | null = null;
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);
@@ -120,6 +176,23 @@ export function GraphView(props: {
   // button here either.
   const [menuOpen, setMenuOpen] = createSignal(false);
   const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); renderer.clearHighlight(); };
+
+  // LOCAL is a LENS, not a brain view: it shows whatever note is open, so it toggles on and off over
+  // the mode you were already in rather than replacing it in the switcher. `beforeLocal` remembers what
+  // to go back to.
+  let beforeLocal: GraphMode = "2nd";
+  const localOn = () => props.mode === "local";
+  const toggleLocal = () => {
+    if (localOn()) { props.setMode(beforeLocal); return; }
+    beforeLocal = props.mode;
+    props.setMode("local");
+  };
+  // LOCAL only exists in the little graph. If the graph is promoted to a full pane while the lens is
+  // on, drop back — otherwise the full-pane switcher would show no selected segment (its options don't
+  // include "local") and there would be no control anywhere to turn it off.
+  createEffect(() => {
+    if (!props.mini && props.mode === "local") props.setMode(beforeLocal);
+  });
 
   // The 3rd-brain (memory) + daemon graph modes only exist while the daemon is enabled
   // (the per-vault master switch). When it's off, the 3rd brain carries no nodes and the
@@ -160,8 +233,33 @@ export function GraphView(props: {
   // 3D to the force layout (the "molecule"), plus the org's communication channels. The
   // AgentsGraph overlay (cards + org picker) sits on top. Reacts to the org signal.
   const [agentOrg, setAgentOrg] = createSignal<Org>("republic");
+
+  // LOCAL mode lays its own graph out, client-side. The positions on the nodes came from a layout of
+  // the WHOLE vault — at neighbourhood scale they are meaningless (a dozen notes scattered across a
+  // ±2000-unit world), so the subgraph gets its own settle. Same approach EmbeddedGraph.tsx already
+  // uses for a ```graph block: the pure `computeLayout`, no backend round-trip and no cache, because a
+  // neighbourhood is small enough to settle in a few ms. 3D first, then 2D seeded from it, exactly as
+  // the backend pipeline does, so the 2D/3D morph stays aligned.
+  const localLaidOut = createMemo<GraphData>(() => {
+    const g = props.graph;
+    if (props.mode !== "local" || g.nodes.length === 0) return g;
+    const input = { nodes: g.nodes.map((n) => ({ id: n.id })), edges: g.edges.map((e) => ({ from: e.from, to: e.to })) };
+    const pos3 = computeLayout(input, { refineTicks: LOCAL_REFINE_TICKS });
+    const pos2 = computeLayout(input, { dimensions: 2, refineTicks: LOCAL_REFINE_TICKS, initialPositions: pos3 });
+    return {
+      nodes: g.nodes.map((n) => ({
+        ...n,
+        position: pos3[n.id] ?? n.position,
+        position2d: pos2[n.id] ? ([pos2[n.id][0], pos2[n.id][1]] as [number, number]) : n.position2d,
+      })),
+      edges: g.edges,
+    };
+  });
+
   const rendererGraph = (): GraphData =>
-    props.mode === "agents" ? layoutAgentGraph(props.graph, agentOrg()) : props.graph;
+    props.mode === "agents" ? layoutAgentGraph(props.graph, agentOrg())
+      : props.mode === "local" ? localLaidOut()
+      : props.graph;
 
   /** Render `g` on the renderer and refresh the search/legend UI data from its new node set.
    *  Shared by the graph-render effect below and mountRenderer. */
@@ -203,6 +301,23 @@ export function GraphView(props: {
       nodeSizeMaxMult: gs.nodeSizeMaxMult,
       // The faint ASCII noise texture under the field — off by default (settingsSchema.ts).
       backgroundNoise: gs.backgroundNoise,
+      // LEVEL OF DETAIL — the ASCII field's aggregate CLUSTER MASSES (lod.ts). Zoomed out, each
+      // community of the active hierarchy level draws as ONE compact ASCII mass sized by member
+      // count, joined by AGGREGATE edges that each summarize every real link between two
+      // communities' member sets; stepping the zoom ladder in replaces a parent mass with its
+      // children, and only the deepest stops rasterize individual notes and their real edges.
+      //
+      // This was built, unit-tested (lod.ts / lod.test.ts / AsciiGraphRenderer.test.ts's LEVEL OF
+      // DETAIL block) and then left unreachable — GraphView never set the flag, so the shipped field
+      // drew every node at every zoom and the hierarchy read only through colour + labels. That is
+      // the version the user found unreadable; the masses are what made it legible. ASCII only: the
+      // STANDARD renderer accepts the field but has no aggregate-mass path (2D-only there too).
+      // ...but NEVER in "local" mode. A local neighbourhood carries no community hierarchy by design
+      // (localSubgraph strips it), and the LOD path suppresses the individual-note raster at coarse
+      // zoom on the assumption that aggregate MASSES are covering the field. With no communities there
+      // are no masses, so both passes stay off and the field renders completely empty. Local mode wants
+      // the real notes at every zoom, which is exactly the non-LOD path.
+      showLodMasses: graphRenderKind() === "ascii" && props.mode !== "local",
       // On light themes the neutral grey, alpha-blended over the pale canvas, reads as harsh dark
       // lines. Lift the edge color toward the background and drop its opacity so links stay faint.
       edgeColor: ap.isLight
@@ -249,6 +364,26 @@ export function GraphView(props: {
     renderer.setVisible(props.visible !== false && !docHidden());
   };
 
+  // ASCII <-> STANDARD swap. Tears the old renderer down (destroy() removes its own canvas/viewport,
+  // and the host is cleared defensively in case a renderer ever leaves a stray child), then mounts a
+  // fresh one through the SAME mountRenderer path as first load, so the new renderer receives config,
+  // graph, active file, search matches and visibility exactly as it would have on boot.
+  //
+  // Only `graphRenderKind` is tracked: mountRenderer reads a dozen other signals, and tracking those
+  // would re-mount the renderer on every unrelated change (that is what made the old A/B harness
+  // thrash). Hence the untrack around the body.
+  createEffect(() => {
+    const kind = graphRenderKind();
+    untrack(() => {
+      if (!mounted || kind === mountedKind) return;
+      mountedKind = kind;
+      renderer.destroy();
+      if (host) host.replaceChildren();
+      renderer = makeRenderer(kind);
+      mountRenderer();
+    });
+  });
+
   // The one graph instance moves between a full pane and the cramped backdrop/sidebar slot, but it
   // draws on the SAME cell in both (the app's unified --row-h rhythm, asciiGraph.css --cell-h) —
   // there is no denser cell for the mini slot any more. It just fits fewer glyphs; that's expected.
@@ -291,7 +426,7 @@ export function GraphView(props: {
   onCleanup(() => renderer.destroy());
 
   const setViewMode = (m: "2d" | "3d") => setViewModePersisted(m);
-  const MODE_LABEL: Record<GraphMode, string> = { "2nd": "2nd brain", "3rd": "3rd brain", both: "both brains", agents: "agents", daemon: "daemon" };
+  const MODE_LABEL: Record<GraphMode, string> = { "2nd": "2nd brain", "3rd": "3rd brain", both: "both brains", agents: "agents", daemon: "daemon", local: "the open note's neighbourhood" };
   const modeLabel = () => MODE_LABEL[props.mode] ?? props.mode;
   const nodeCount = () => props.graph?.nodes?.length ?? 0;
   const edgeCount = () => props.graph?.edges?.length ?? 0;
@@ -300,16 +435,42 @@ export function GraphView(props: {
     <div class="graph-root" style={{ height: props.fill ? "100%" : undefined }}>
       <ViewBar class="graph-viewbar">
         <span class="graph-vb-wide"><Crumb icon="Share2">Knowledge Graph</Crumb></span>
-        <SegmentedToggle
-          value={props.mode}
-          onChange={props.setMode}
-          size="sm"
-          options={((settings.daemon.enabled ? ["2nd", "3rd", "both", "agents", "daemon"] : ["2nd", "agents"]) as GraphMode[]).map((id) => ({
-            id,
-            title: MODE_LABEL[id],
-            label: MODE_SHORT[id],
-          }))}
-        />
+        {/* The mini-graph switcher is a row of BARE ICON BUTTONS, matching the sidebar's own toolbar
+            (.sidebar-icons) — same 28x28 box, same radius, same hover, no border. It is deliberately
+            NOT a <SegmentedToggle> here: that renders .btn--text segments, which keep their outline and
+            turn an icon into a chunky bordered tile — the one control in the sidebar that didn't look
+            like the sidebar. The full-pane graph keeps the real segmented control, where the labels are
+            words and a joined outline is right. */}
+        <Show
+          when={props.mini}
+          fallback={
+            <SegmentedToggle
+              value={props.mode}
+              onChange={props.setMode}
+              size="sm"
+              // "local" is deliberately NOT here — it is not a sibling of the brain views. It is a lens
+              // on whatever note is open, so it gets its own on/off toggle in the mini-graph's bottom bar.
+              options={((settings.daemon.enabled ? ["2nd", "3rd", "both", "agents", "daemon"] : ["2nd", "agents"]) as GraphMode[]).map((id) => ({
+                id,
+                title: MODE_LABEL[id],
+                label: MODE_SHORT[id],
+              }))}
+            />
+          }
+        >
+          <div class="graph-mode-icons">
+            <For each={(settings.daemon.enabled ? ["2nd", "3rd", "both", "agents", "daemon"] : ["2nd", "agents"]) as GraphMode[]}>
+              {(id) => (
+                <IconButton
+                  icon={MODE_ICON[id]}
+                  label={MODE_LABEL[id]}
+                  variant={props.mode === id ? "selected" : "unselected"}
+                  onClick={() => props.setMode(id)}
+                />
+              )}
+            </For>
+          </div>
+        </Show>
         <ViewBarSpacer />
         <span class="graph-vb-wide graph-vb-right">
           <SegmentedToggle
@@ -331,10 +492,13 @@ export function GraphView(props: {
         style={{ ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}
       >
         <div class="graph-canvas-host" ref={host} />
-        {/* No label overlay and no atmosphere layer: labels are cells on the character grid, and
-            the design's ground is a FLAT --graph-bg field — no glow lobes, no vignette.
-            GraphAtmosphere.tsx stays in the tree, just out of the render path here — it's still
-            used by the first-run Vault Intro. */}
+        {/* Atmosphere (cluster-glow lobes + depth vignette) belongs to the STANDARD look only. The
+            ASCII field's ground is deliberately a FLAT --graph-bg with no glow and no vignette, which
+            is the design's rule for it. No DOM label overlay in either: both renderers draw their own
+            labels on their own canvas. */}
+        <Show when={graphRenderKind() === "standard"}>
+          <GraphAtmosphere renderer={renderer} mode={props.mode} />
+        </Show>
         {/* Agents mode: the character field renders the nodes (2D pyramid / 3D molecule); this
             overlay adds the status card + organization picker on top. */}
         <Show when={props.mode === "agents"}>
@@ -360,8 +524,12 @@ export function GraphView(props: {
         <Show when={props.mode !== "agents"}>
           <div class="graph-stats">
             <span>{nodeCount()} nodes · {edgeCount()} edges · {modeLabel()}</span>
-            {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
-            <span class="graph-zoom-pct">{zoomPct()}%</span>
+            {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. The STANDARD renderer
+                has no resolution ladder (it is a continuous perspective dolly), so it reports no
+                percentage and the readout is hidden rather than left showing a stale one. */}
+            <Show when={graphRenderKind() === "ascii"}>
+              <span class="graph-zoom-pct">{zoomPct()}%</span>
+            </Show>
             <Show when={settings.graph.showFps && fps() !== null}><span style={{ color: fpsColor(fps()!) }}>{fps()} fps</span></Show>
           </div>
         </Show>
@@ -397,6 +565,21 @@ export function GraphView(props: {
               />
             </Show>
           </div>
+          {/* LOCAL — the little graph only, bottom-RIGHT, on/off. Separate from the brain/agents
+              switcher because it is a different kind of choice: those pick WHICH graph, this picks
+              whether to narrow the current one to the open note. */}
+          <Show when={props.mini}>
+            <div class="graph-bottom-local">
+              <TextButton
+                size="sm"
+                variant={localOn() ? "selected" : "unselected"}
+                title={localOn() ? "Showing the open note's neighbourhood — click to show the whole graph" : "Show only the open note and what it connects to"}
+                onClick={toggleLocal}
+              >
+                LOCAL
+              </TextButton>
+            </div>
+          </Show>
           <Show when={hovered()}>
             {(node) => (
               <span class="graph-hud-pill" style={{ "min-width": 0, "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis", color: "var(--fg)", "font-size": "11px", padding: "2px 8px" }}>

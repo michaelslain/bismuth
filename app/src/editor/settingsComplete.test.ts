@@ -259,8 +259,11 @@ describe("settings key + enum completion (schema-driven discovery)", () => {
   });
 
   it("scopes nested keys to the section the cursor is in (ui.*)", () => {
-    const labels = complete("ui:\n  vert", false)?.options.map((o) => o.label) ?? [];
-    expect(labels).toEqual(["verticalTabs"]);
+    // "pane" matches exactly one ui.* key; the point of the test is that completion is scoped to the
+    // section under the cursor, not which key it happens to be. (Was "vert" -> verticalTabs, until the
+    // horizontal-tab-strip removal deleted that setting.)
+    const labels = complete("ui:\n  pane", false)?.options.map((o) => o.label) ?? [];
+    expect(labels).toEqual(["paneDividerWidth"]);
   });
 
   it("offers enum members for an enum-typed value (appearance.theme)", () => {
