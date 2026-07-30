@@ -15,8 +15,10 @@ const mean = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.lengt
 
 /** Below this many candidate pairs, enumerate exactly instead of Monte-Carlo sampling, so gated
  * metrics (`separationRatio`, `edgeCrossingRate`) are deterministic and independent of the
- * `samples` argument at the graph sizes this tool actually runs on. */
-const EXACT_PAIR_LIMIT = 20_000_000;
+ * `samples` argument at the graph sizes this tool actually runs on. Exported so callers (e.g. the
+ * bench harness) can report which path a run took instead of silently trusting the same threshold
+ * duplicated elsewhere. */
+export const EXACT_PAIR_LIMIT = 20_000_000;
 
 /**
  * PRIMARY METRIC. For each node, the fraction of its graph neighbours that appear among its
