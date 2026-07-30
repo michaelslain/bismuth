@@ -72,20 +72,19 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 25 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
 | 26 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
 | 27 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
-| 28 | `graph-agents` | Graph: Agents | `Users` | `() => h.setMode("agents")` |
-| 29 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
-| 30 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
-| 31 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 32 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
-| 33 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
-| 34 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
-| 35 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
-| 36 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
-| 37 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
-| 38 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
-| 39 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
-| 40 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
-| 41 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
+| 28 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
+| 29 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
+| 30 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
+| 31 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
+| 32 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
+| 33 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
+| 34 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
+| 35 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
+| 36 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
+| 37 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
+| 38 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
+| 39 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
+| 40 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
 
 Notes on individual commands:
 
@@ -97,7 +96,7 @@ Notes on individual commands:
 - **`detect-ai`**: estimates how AI-generated the active page reads and toasts the score. It runs a **local, offline** detector — see ["The `detect-ai` command"](#the-detect-ai-command).
 - **`emoji-library`**: opens the emoji grid picker (`h.openEmojiLibrary` → `openGallery({ source: emojiSource })`) and inserts the chosen glyph at the focused editor's caret (`insertIntoFocusedEditor`; toasts "Open a note to insert an emoji" when no note is focused). It is the **always-visible home** for the full library and ships in the **default sidebar toolbar** (beside `create-menu`). This is why the `:emoji` completion popup no longer carries an "Open emoji gallery" row — that buried the library and could outrank a real match like `:rocket` (#67; see `docs/editor/autocomplete.md`).
 - **`edit-dictionary`**: opens the modal to view/remove the user's custom spellcheck dictionary words (`h.openEditDictionary`).
-- **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-agents`): each calls `h.setMode(...)` with the corresponding graph mode string.
+- **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-daemon`): each calls `h.setMode(...)` with the corresponding graph mode string.
 - **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. See Daemon Integration in the project CLAUDE.md.
 - **`bismuth-install`**: opens the panel to install the `bismuth` CLI + MCP machine-wide (`h.openBismuthInstall`).
 - **`update-app`**: manually updates the Bismuth app (same pipeline as the `UpdateBanner` button) for when the banner was dismissed or missed; no-op-with-toast when already up to date / in dev (`h.updateApp`).

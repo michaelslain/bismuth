@@ -48,12 +48,12 @@ export const DEFAULT_BACKEND: BackendId = "claude";
  */
 export type StreamingGranularity = "delta" | "part" | "final";
 
-/** Which mechanism reports a backend's sessions into the "agents" graph (core/src/relay.ts):
+/** Which mechanism reports a backend's sessions into the relay registry (core/src/relay.ts):
  *  - "hooks":   the CLI has a real hook/plugin system, so we get sessions AND subagent depth.
  *  - "wrapper": no hook system — the PTY shim wraps the binary and reports session start/end
  *               itself. Correct session nodes, flat tree (no subagents).
- *  - "none":    not represented in the agents graph. */
-export type AgentsGraphMode = "hooks" | "wrapper" | "none";
+ *  - "none":    not reported to the relay registry at all. */
+export type RelayReportMode = "hooks" | "wrapper" | "none";
 
 /** How Bismuth registers its MCP server with a backend:
  *  - "cli":    the CLI owns its config format and exposes `<bin> mcp add …` — always preferred.
@@ -124,8 +124,8 @@ export interface BackendCapabilities {
   // --- the other surfaces -----------------------------------------------------------------
   /** Has an interactive TUI worth hosting in a terminal tab. */
   terminal: boolean;
-  agentsGraph: AgentsGraphMode;
-  /** Reports subagents, so the agents graph gets depth-1 children. */
+  agentsGraph: RelayReportMode;
+  /** Reports subagents, so the relay registry gets depth-1 children for this backend's sessions. */
   subagents: boolean;
   /** Can run a vault's daemon brain (unattended, resumable, headless). */
   daemon: boolean;

@@ -516,7 +516,6 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` |
 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` |
 | `graph-both` | Graph: Both Brains | `Network` |
-| `graph-agents` | Graph: Agents | `Users` |
 | `equalize-panes` | Equalize panes | `Columns3` |
 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` |
 | `daemon-owner` | Set daemon owner device… | `Server` |

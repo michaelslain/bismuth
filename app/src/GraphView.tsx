@@ -5,10 +5,7 @@ import type { GraphConfig, GraphRenderer, HoverNode } from "./graph/graphRendere
 import { AsciiGraphRenderer } from "./graph/AsciiGraphRenderer";
 import { CanvasGraphRenderer } from "./graph/CanvasGraphRenderer";
 import { GraphAtmosphere } from "./graph/GraphAtmosphere";
-import { AgentsGraph } from "./graph/AgentsGraph";
-import { layoutAgentGraph } from "./graph/agentLayout";
 import { computeLayout } from "../../core/src/layout";
-import type { Org } from "./graph/agentOrg";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
 import { resolveAppearance } from "./themes";
@@ -97,24 +94,23 @@ export type GraphRenderKind = "ascii" | "standard";
  *  would be wasted here. */
 const LOCAL_REFINE_TICKS = 120;
 
-const MODE_SHORT: Record<GraphMode, string> = { "2nd": "2ND", "3rd": "3RD", both: "BOTH", agents: "AGENTS", daemon: "DAEMON", local: "LOCAL" };
+const MODE_SHORT: Record<GraphMode, string> = { "2nd": "2ND", "3rd": "3RD", both: "BOTH", daemon: "DAEMON", local: "LOCAL" };
 /**
  * The same switcher as ICONS, for the sidebar mini-graph only.
  *
  * This REVERSES an earlier decision, deliberately and at the user's request: the mode switcher was
- * specified as text-only ("2ND/3RD/BOTH/AGENTS/DAEMON, no glyph prefixes, ever" — see the container
+ * specified as text-only ("2ND/3RD/BOTH/DAEMON, no glyph prefixes, ever" — see the container
  * query in App.css). That still holds for the FULL-PANE graph, where there is room for words and the
- * words are unambiguous. In the sidebar the same five text segments wrap onto two rows and eat the
+ * words are unambiguous. In the sidebar the same text segments wrap onto two rows and eat the
  * little field's height, which is the problem icons solve. Text stays the rule where it fits.
  *
  * Each icon names the mode's SUBJECT rather than an abstract symbol: the vault of notes, the memory
- * brain, the two combined, the agent sessions, the background worker.
+ * brain, the two combined, the background worker.
  */
 const MODE_ICON: Record<GraphMode, string> = {
   "2nd": "Notebook",   // the vault: markdown notes
   "3rd": "Brain",      // the daemon's memory graph
   both: "Combine",     // both brains + their cross-edges
-  agents: "Users",     // you -> terminal sessions -> subagents
   daemon: "Zap",       // the running supervisor (crons/processes)
   local: "Share",      // the open note's neighbourhood
 };
@@ -212,7 +208,7 @@ export function GraphView(props: {
   };
 
   // Open a node as a tab — shared by canvas clicks and search-result commits. Only vault
-  // notes map to a real file; tags, the "you" hub, agents, and memory nodes (their `mem:`
+  // notes map to a real file; tags, the "you" hub, and memory nodes (their `mem:`
   // ids aren't vault paths) can't be opened, so they just get framed by the caller.
   const openNode = (id: string) => {
     const node = lastGraph?.nodes.find((n) => n.id === id);
@@ -227,12 +223,6 @@ export function GraphView(props: {
     mountRenderer();
     mounted = true;
   });
-
-  // Agents mode renders through the SAME WebGL graph as the knowledge graph, for BOTH 2D
-  // and 3D: layoutAgentGraph gives the nodes a pyramid position2d (used in 2D) and leaves
-  // 3D to the force layout (the "molecule"), plus the org's communication channels. The
-  // AgentsGraph overlay (cards + org picker) sits on top. Reacts to the org signal.
-  const [agentOrg, setAgentOrg] = createSignal<Org>("republic");
 
   // LOCAL mode lays its own graph out, client-side. The positions on the nodes came from a layout of
   // the WHOLE vault — at neighbourhood scale they are meaningless (a dozen notes scattered across a
@@ -257,9 +247,7 @@ export function GraphView(props: {
   });
 
   const rendererGraph = (): GraphData =>
-    props.mode === "agents" ? layoutAgentGraph(props.graph, agentOrg())
-      : props.mode === "local" ? localLaidOut()
-      : props.graph;
+    props.mode === "local" ? localLaidOut() : props.graph;
 
   /** Render `g` on the renderer and refresh the search/legend UI data from its new node set.
    *  Shared by the graph-render effect below and mountRenderer. */
@@ -285,8 +273,7 @@ export function GraphView(props: {
     const ap = resolveAppearance(settings.appearance);
     const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
     const cfg: GraphConfig = {
-      spin: props.mode === "agents" ? false : gs.spin, // agents = a tidy pyramid; no idle storm-spin
-
+      spin: gs.spin,
       spinSpeed: gs.spinSpeed,
       palette: paletteToInts(palette),
       repulsion: gs.repulsion,
@@ -426,7 +413,7 @@ export function GraphView(props: {
   onCleanup(() => renderer.destroy());
 
   const setViewMode = (m: "2d" | "3d") => setViewModePersisted(m);
-  const MODE_LABEL: Record<GraphMode, string> = { "2nd": "2nd brain", "3rd": "3rd brain", both: "both brains", agents: "agents", daemon: "daemon", local: "the open note's neighbourhood" };
+  const MODE_LABEL: Record<GraphMode, string> = { "2nd": "2nd brain", "3rd": "3rd brain", both: "both brains", daemon: "daemon", local: "the open note's neighbourhood" };
   const modeLabel = () => MODE_LABEL[props.mode] ?? props.mode;
   const nodeCount = () => props.graph?.nodes?.length ?? 0;
   const edgeCount = () => props.graph?.edges?.length ?? 0;
@@ -450,7 +437,7 @@ export function GraphView(props: {
               size="sm"
               // "local" is deliberately NOT here — it is not a sibling of the brain views. It is a lens
               // on whatever note is open, so it gets its own on/off toggle in the mini-graph's bottom bar.
-              options={((settings.daemon.enabled ? ["2nd", "3rd", "both", "agents", "daemon"] : ["2nd", "agents"]) as GraphMode[]).map((id) => ({
+              options={((settings.daemon.enabled ? ["2nd", "3rd", "both", "daemon"] : ["2nd"]) as GraphMode[]).map((id) => ({
                 id,
                 title: MODE_LABEL[id],
                 label: MODE_SHORT[id],
@@ -459,7 +446,7 @@ export function GraphView(props: {
           }
         >
           <div class="graph-mode-icons">
-            <For each={(settings.daemon.enabled ? ["2nd", "3rd", "both", "agents", "daemon"] : ["2nd", "agents"]) as GraphMode[]}>
+            <For each={(settings.daemon.enabled ? ["2nd", "3rd", "both", "daemon"] : ["2nd"]) as GraphMode[]}>
               {(id) => (
                 <IconButton
                   icon={MODE_ICON[id]}
@@ -499,11 +486,6 @@ export function GraphView(props: {
         <Show when={graphRenderKind() === "standard"}>
           <GraphAtmosphere renderer={renderer} mode={props.mode} />
         </Show>
-        {/* Agents mode: the character field renders the nodes (2D pyramid / 3D molecule); this
-            overlay adds the status card + organization picker on top. */}
-        <Show when={props.mode === "agents"}>
-          <AgentsGraph agents={props.graph} org={agentOrg()} setOrg={setAgentOrg} />
-        </Show>
         {/* No floating cluster-legend card any more — cluster names are drawn IN the field itself
             (zoomed-out labels; see AsciiGraphRenderer's layoutClusterNames), crossfading to file
             names as the camera zooms in. ClusterLegend.tsx stays in-tree, just unused here. */}
@@ -520,19 +502,17 @@ export function GraphView(props: {
             </div>
           </div>
         </Show>
-        {/* Floating stats footer (non-agents). */}
-        <Show when={props.mode !== "agents"}>
-          <div class="graph-stats">
-            <span>{nodeCount()} nodes · {edgeCount()} edges · {modeLabel()}</span>
-            {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. The STANDARD renderer
-                has no resolution ladder (it is a continuous perspective dolly), so it reports no
-                percentage and the readout is hidden rather than left showing a stale one. */}
-            <Show when={graphRenderKind() === "ascii"}>
-              <span class="graph-zoom-pct">{zoomPct()}%</span>
-            </Show>
-            <Show when={settings.graph.showFps && fps() !== null}><span style={{ color: fpsColor(fps()!) }}>{fps()} fps</span></Show>
-          </div>
-        </Show>
+        {/* Floating stats footer. */}
+        <div class="graph-stats">
+          <span>{nodeCount()} nodes · {edgeCount()} edges · {modeLabel()}</span>
+          {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. The STANDARD renderer
+              has no resolution ladder (it is a continuous perspective dolly), so it reports no
+              percentage and the readout is hidden rather than left showing a stale one. */}
+          <Show when={graphRenderKind() === "ascii"}>
+            <span class="graph-zoom-pct">{zoomPct()}%</span>
+          </Show>
+          <Show when={settings.graph.showFps && fps() !== null}><span style={{ color: fpsColor(fps()!) }}>{fps()} fps</span></Show>
+        </div>
         {/* Find panel: search only. Clusters live in the floating legend card; there's no
             reset-view button here (Escape / toggling Find closes it). */}
         <Show when={props.fill && menuOpen()}>
@@ -565,7 +545,7 @@ export function GraphView(props: {
               />
             </Show>
           </div>
-          {/* LOCAL — the little graph only, bottom-RIGHT, on/off. Separate from the brain/agents
+          {/* LOCAL — the little graph only, bottom-RIGHT, on/off. Separate from the brain-mode
               switcher because it is a different kind of choice: those pick WHICH graph, this picks
               whether to narrow the current one to the open note. */}
           <Show when={props.mini}>

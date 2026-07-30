@@ -1,6 +1,6 @@
 // In-process registry of the Claude Code work happening inside Bismuth's own
 // terminal tabs: top-level sessions and the subagents they spawn. Populated by the
-// relay hooks (POST /relay/*), read by agents.ts to build the "agents" graph.
+// relay hooks (POST /relay/*).
 //
 // This lives in core (not a standalone daemon) on purpose: the ONLY clients are
 // Claude Code sessions launched from app terminal tabs, which exist only while this
@@ -66,10 +66,9 @@ export interface RelaySnapshot {
 }
 
 /** How long a finished subagent stays in the snapshot before being pruned, so brief subagents
- *  are still visible for a beat after they complete. A *beat* — long enough to register at the
- *  2s agent-graph poll, short enough that the view reflects what is actually running. This was
- *  60s, which read as "finished subagents never leave": a whole minute of dead nodes, and with
- *  agents starting continuously the view was mostly corpses. */
+ *  are still visible for a beat after they complete rather than vanishing the instant they're
+ *  done. This was 60s, which read as "finished subagents never leave": a whole minute of dead
+ *  entries, and with subagents starting continuously the registry was mostly corpses. */
 export const DONE_SUBAGENT_TTL_MS = 8_000;
 
 /**
@@ -164,10 +163,10 @@ export function stopSubagent(s: { agentId: string; lastMessage?: string }, now =
 /**
  * Bound the registry: drop sessions whose terminal tab has closed (terminalId no longer
  * live) along with their subagents, drop orphaned subagents whose parent session is gone,
- * and drop finished subagents past their TTL. Called from GET /agent-graph with the live
- * pty set (terminal.listSessionIds()) so the registry tracks only currently-open tabs —
- * without this, closed-tab sessions and never-stopped subagents would leak forever (there
- * is no terminal-close hook; cleanup happens here at read time).
+ * and drop finished subagents past their TTL. Intended to be called with the live pty set
+ * (terminal.listSessionIds()) so the registry tracks only currently-open tabs — without
+ * this, closed-tab sessions and never-stopped subagents would leak forever (there is no
+ * terminal-close hook; cleanup only happens where a caller invokes this explicitly).
  */
 /**
  * Drop subagents that are no longer worth showing. Shared by prune() and snapshot().
