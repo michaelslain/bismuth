@@ -958,6 +958,52 @@ describe("Task 9 — LOD entity masses share the node glyphs' colour (the invari
     expect(topEntity0!.color).not.toBe(topEntity1!.color);
     r.destroy();
   });
+
+  it("...and those slots resolve to the ACTUAL PAINTED colours — asserted on ctx.fills, on the app's default 2D view", () => {
+    // The test above compares two private numeric slot INDICES read out of the same map, so it
+    // proves they agree with each other and nothing about what reaches the canvas: swap the slot ->
+    // colour resolution wholesale and it stays green. This one reads the paint output. It is also
+    // the suite's only paint-COLOUR assertion on the configuration the app actually ships by
+    // default — 2D with LOD masses on, which routes through layoutEntityNames/entity rasterization,
+    // not the layoutClusterNames path every other Task 9 test exercises.
+    const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
+    const priv = r as unknown as {
+      entityFlat: { level: number; community: number; col: number; row: number }[];
+      m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
+    };
+    const m = priv.m;
+    // Glyph runs are painted at (padX + runCol*cellW, padY + row*cellH + cellH/2) — see paint()'s
+    // per-row run flusher — so a cell maps back to the run covering it.
+    const paintedColorAtCell = (col: number, row: number) => {
+      const y = m.padY + row * m.cellH + m.cellH / 2;
+      const hit = ctx.fills.find((f) => {
+        if (Math.abs(f.y - y) > 0.01 || !/^[.o@ ]+$/.test(f.text)) return false;
+        const c0 = Math.round((f.x - m.padX) / m.cellW);
+        return col >= c0 && col < c0 + f.text.length;
+      });
+      return hit?.color;
+    };
+
+    // lodGraph's two TOP communities are a 12-member size TIE (blobs 0+1 and blobs 2+3, 6 notes
+    // each), so buildColorSlots ranks them by id ascending — 0 -> rank 0, 1 -> rank 1, both inside
+    // the palette's first cycle (2 < 5, no hue rotation). Computed through the REAL buildColorSlots
+    // against the same fallback ramp the renderer uses under happy-dom, not hand-copied hexes.
+    const expected = buildColorSlots(new Map([[0, 12], [1, 12]]), RAMP_FALLBACK);
+    expect(expected.get(0)).not.toBe(expected.get(1)); // guard: the check below is vacuous if equal
+
+    // Asserted as a MAPPING (community -> painted hex), not as a set of hexes: the two communities
+    // sit at adjacent slots in `commColors`, so an off-by-one in the slot -> colour lookup SWAPS
+    // them, and a set comparison — or any assertion that sorts — cannot see a swap. Verified: that
+    // exact mutation passes a sorted-set version of this test and fails this one.
+    let checked = 0;
+    for (const ev of priv.entityFlat.filter((e) => e.level === 0)) {
+      const painted = paintedColorAtCell(ev.col, ev.row);
+      expect(painted).toBe(expected.get(ev.community));
+      checked++;
+    }
+    expect(checked).toBe(2); // guard: both TOP masses were actually on the field and inspected
+    r.destroy();
+  });
 });
 
 describe("Task 9 — trimDanglingWord wired into the live cluster-name pass", () => {
@@ -983,6 +1029,23 @@ describe("Task 9 — trimDanglingWord wired into the live cluster-name pass", ()
     expect(label).toBeDefined();
     expect(label!.text).toBe("LUDWIG FEUERBACH");
     expect(label!.text.endsWith("AND")).toBe(false);
+    r.destroy();
+  });
+
+  it("...and on the LOD MASS name pass too — the path the app's default 2D view actually uses", () => {
+    // layoutEntityNames is a SECOND, independent name site (masses, not per-node communities), and
+    // it is the one the default 2D view shows. Canvas applies trimDanglingWord at its single name
+    // site; trimming only ASCII's non-LOD site left mass names keeping their dangling word.
+    const g = lodGraph();
+    for (const n of g.nodes as { communityPathLabels?: string[] }[]) {
+      if (n.communityPathLabels) n.communityPathLabels[0] = "Ludwig Feuerbach and";
+    }
+    const { r } = mountRenderer("2d", g, { showLodMasses: true });
+    const priv = r as unknown as { labels: { text: string; eyebrow?: boolean }[] };
+    const names = priv.labels.filter((l) => l.eyebrow).map((l) => l.text);
+    expect(names.length).toBeGreaterThan(0); // guard: no mass names drawn => nothing was tested
+    expect(names).toContain("LUDWIG FEUERBACH");
+    expect(names.some((t) => t.endsWith("AND"))).toBe(false);
     r.destroy();
   });
 });

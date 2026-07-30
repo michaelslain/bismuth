@@ -1758,7 +1758,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (!evs) return;
     for (const ev of evs) {
       if (!ev.onGrid) continue;
-      const text = clusterLabelText(ev.name);
+      // Same treatment as the non-LOD cluster-name pass above: Canvas applies trimDanglingWord at
+      // its ONE name site, so applying it at only one of ASCII's two left LOD mass names — the ones
+      // the app's DEFAULT 2D view actually shows — keeping a trailing "and"/"of"/"the".
+      const text = trimDanglingWord(clusterLabelText(ev.name));
       const len = text.length;
       let row = ev.row + ev.drawnRowR + 1;
       if (row >= m.rows) row = ev.row - ev.drawnRowR - 1;
