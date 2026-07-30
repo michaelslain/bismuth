@@ -49,14 +49,21 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
   // may be a real machine's real ANTHROPIC_* vars, or undefined) — restored in afterAll so this
   // test can never leave a poisoned env behind for any other test file sharing this process.
   const ENV_KEYS = ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
+  // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — a code-review finding on the
+  // sibling Task 4 test files (fixed there, and here on re-review): populating this AFTER an await
+  // that can throw leaves it empty, and afterAll's restore loop then unconditionally `delete`s
+  // every ENV_KEY from the shared `bun test` process. This file is the one where that would have
+  // mattered most: `claude` is the one backend installed on most machines, so this describe block
+  // does NOT skip — a rejected startMockLlm() here would have wiped a developer's real
+  // ANTHROPIC_API_KEY for the rest of the run, not just failed loudly and left everything alone.
   const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
+  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   let mock: MockLlmHandle | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
 
   async function setup(): Promise<void> {
     mock = await startMockLlm(); // default fixture dir: core/test/fixtures/llm (basic-turn.json)
-    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     // This is the ONE row backendEnv.ts marks VERIFIED live on a real machine (see that file's
     // header): env auth takes precedence over Claude Code's own keychain OAuth login.
     const mockEnv = backendMockEnv("claude", mock.url);

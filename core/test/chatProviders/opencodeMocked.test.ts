@@ -122,6 +122,17 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
     process.env.XDG_DATA_HOME = await newTempDir("bismuth-opencode-xdgdata-");
     process.env.XDG_CACHE_HOME = await newTempDir("bismuth-opencode-xdgcache-");
     process.env.XDG_STATE_HOME = await newTempDir("bismuth-opencode-xdgstate-");
+    // RESIDUAL HAZARD, noted rather than fixed (flagged on re-review, no fix needed today): these
+    // XDG vars only affect a FRESH `opencode serve` spawn. chatProviders/opencodeServer.ts's shared
+    // server is PROCESS-LIFETIME (one `live` singleton reused for the rest of this core process —
+    // see this file's header, finding #2, and opencodeServer.ts's own module doc comment) — if any
+    // OTHER test file in the same `bun test` process ever opens an opencode chat BEFORE this file's
+    // setup() runs, that earlier chat's `ensureOpencodeServer()` call would have already spawned
+    // the shared server with THAT call's env (real XDG dirs, not these), and this test would then
+    // be handed the SAME already-running server instead of a fresh isolated one. No such file
+    // exists in this suite today (this is the only one that drives a real opencode turn), so it's
+    // not live risk right now — but a future opencode test file MUST open its first chat only after
+    // its own XDG redirection is in place, and should not assume it starts the shared server fresh.
   }
 
   afterAll(async () => {

@@ -185,9 +185,20 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
     //     directly from google-gemini/gemini-cli's source
     //     (packages/core/src/core/contentGenerator.ts, and packages/cli/src/acp/
     //     acpSessionManager.ts — the ACP path Bismuth actually drives); must be loopback or HTTPS
-    //     (satisfied, our mock always binds 127.0.0.1); a persisted `security.auth.selectedType`
-    //     in the user's own gemini settings is checked before this env var and could silently
-    //     defeat it on a machine with prior real gemini login.
+    //     (satisfied, our mock always binds 127.0.0.1).
+    //   - THE selectedType HAZARD, AND WHERE ITS FIX ACTUALLY LIVES (code-review finding: this
+    //     comment used to describe the hazard and stop, with the mitigation living somewhere this
+    //     reader could not see): a persisted `security.auth.selectedType` in the user's real
+    //     `~/.gemini/settings.json` is checked BEFORE these env vars (confirmed live: even a
+    //     BLANK `$HOME` fails a different way — gemini-cli's own `validateAuthMethod` reads that
+    //     persisted setting, not the env var, for a non-interactive run) and could silently defeat
+    //     this mapping on a machine with a prior real gemini login. This function does NOT close
+    //     that hole itself — it only returns the two env vars above. The mitigation lives in the
+    //     CALLER: geminiMocked.test.ts's `setup()` redirects `$HOME` to a throwaway temp dir with a
+    //     minimal pre-seeded `.gemini/settings.json` (`{"security":{"auth":{"selectedType":
+    //     "gemini-api-key"}}}`) before ever touching this mapping. Any OTHER caller of
+    //     `backendMockEnv("gemini", ...)` inherits the hole and must do the same — this function's
+    //     return value alone is not safe to trust for gemini on a machine with prior real usage.
     // --------------------------------------------------------------------------------------
     case "gemini":
       return {

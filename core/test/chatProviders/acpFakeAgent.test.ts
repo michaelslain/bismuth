@@ -44,7 +44,11 @@ function makeStubBinDir(): string {
 
 /** One `{method, params}` line per inbound JSON-RPC request the fake agent received, in arrival
  *  order — see fakeAcpAgent.ts's `echo()`. Tolerant of the file not existing yet (an empty array,
- *  not a throw) since a test may poll this before the fake agent has written its first line. */
+ *  not a throw) since a test may poll this before the fake agent has written its first line, AND
+ *  of a torn read (this is polled from inside waitForCondition's `check()` while the fake agent may
+ *  be mid-`appendFileSync` on the last line) — a line that doesn't parse yet is dropped rather than
+ *  thrown, so a read racing a write fails the CURRENT poll (retried 50ms later, once the write has
+ *  landed) instead of failing the whole test on a spurious JSON.parse error. */
 function readEchoLines(path: string): { method: string; params: unknown }[] {
   let text: string;
   try {
@@ -52,11 +56,15 @@ function readEchoLines(path: string): { method: string; params: unknown }[] {
   } catch {
     return [];
   }
-  return text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as { method: string; params: unknown });
+  const out: { method: string; params: unknown }[] = [];
+  for (const l of text.split("\n").map((s) => s.trim()).filter(Boolean)) {
+    try {
+      out.push(JSON.parse(l) as { method: string; params: unknown });
+    } catch {
+      /* a torn/partially-written line — see this function's doc comment */
+    }
+  }
+  return out;
 }
 
 async function waitForCondition(check: () => boolean, timeoutMs: number, description: string): Promise<void> {
@@ -73,6 +81,10 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
   let savedPath: string | undefined;
   let savedShape: string | undefined;
   let savedEchoFile: string | undefined;
+  // Set only by the setModel test (below), which is the one test that needs an echo file — cleaned
+  // up here unconditionally (a code-review finding: it was previously created with mkdtempSync and
+  // never removed, leaving a `bismuth-acp-fake-echo-*` dir in $TMPDIR after every run).
+  let echoDir: string | undefined;
   const chatIds: string[] = [];
 
   beforeEach(() => {
@@ -80,6 +92,7 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
     savedPath = process.env.PATH;
     savedShape = process.env.FAKE_ACP_MODEL_SHAPE;
     savedEchoFile = process.env.FAKE_ACP_ECHO_FILE;
+    echoDir = undefined;
     // Prepended, not appended: must win over any real `cline` this machine happens to have
     // installed elsewhere on PATH (this task installed one temporarily under .offline-cli-tools/ —
     // see the task report).
@@ -95,6 +108,7 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
     if (savedEchoFile === undefined) delete process.env.FAKE_ACP_ECHO_FILE;
     else process.env.FAKE_ACP_ECHO_FILE = savedEchoFile;
     rmSync(stubDir, { recursive: true, force: true });
+    if (echoDir) rmSync(echoDir, { recursive: true, force: true });
   });
 
   afterAll(() => {
@@ -111,7 +125,11 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       process.env.FAKE_ACP_MODEL_SHAPE = "old";
       const chatId = "acp-fake-old-" + Date.now();
       chatIds.push(chatId);
-      const { sink, frames, waitFor } = makeChatFrameCollector(15_000);
+      // Below the test's own 15_000ms Bun timeout (below, third arg to `test(...)`) — a code-review
+      // finding: these matched exactly, so on a hang the collector's own diagnostic rejection
+      // ("timeout waiting for frame; saw: [...]") could never fire before Bun's generic timeout cut
+      // it off first, losing the frame-type trace that's the whole point of that message.
+      const { sink, frames, waitFor } = makeChatFrameCollector(12_000);
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
 
@@ -151,7 +169,7 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       process.env.FAKE_ACP_MODEL_SHAPE = "new";
       const chatId = "acp-fake-new-" + Date.now();
       chatIds.push(chatId);
-      const { sink, waitFor } = makeChatFrameCollector(15_000);
+      const { sink, waitFor } = makeChatFrameCollector(12_000); // below the 15_000ms Bun timeout below — see the OLD-shape test's identical comment
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
 
@@ -193,7 +211,7 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       // every inbound {method, params} to a file this test reads directly (see fakeAcpAgent.ts's
       // `echo()`), and a SECOND real turn is sent and awaited after setModel.
       process.env.FAKE_ACP_MODEL_SHAPE = "new";
-      const echoDir = mkdtempSync(join(tmpdir(), "bismuth-acp-fake-echo-"));
+      echoDir = mkdtempSync(join(tmpdir(), "bismuth-acp-fake-echo-"));
       const echoFile = join(echoDir, "echo.jsonl");
       process.env.FAKE_ACP_ECHO_FILE = echoFile;
 
