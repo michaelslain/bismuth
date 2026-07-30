@@ -509,11 +509,23 @@ export function GraphView(props: {
         style={{ ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}
       >
         <div class="graph-canvas-host" ref={host} />
-        {/* Atmosphere (cluster-glow lobes + depth vignette) belongs to the STANDARD look only. The
-            ASCII field's ground is deliberately a FLAT --graph-bg with no glow and no vignette, which
-            is the design's rule for it. No DOM label overlay in either: both renderers draw their own
-            labels on their own canvas. */}
-        <Show when={graphRenderKind() === "standard"}>
+        {/* Atmosphere (phosphor bloom emitted by the node field + depth vignette) — both renderers
+            now push a per-frame density field (setBloomCallback), so this mounts for both kinds.
+            The old rule ("the ASCII field's ground is deliberately flat, no glow or vignette") is
+            deliberately reversed here: the redesign's phosphor bloom IS the atmosphere for the
+            unified renderer, and Part 2b merges STANDARD/ASCII into one renderer anyway, at which
+            point the distinction this used to gate on disappears entirely.
+            KEYED on graphRenderKind(), not a plain mount: `renderer` above is a reassigned `let`
+            (the swap effect does `renderer = makeRenderer(kind)` on every renderer-kind change —
+            see that effect's comment), not a signal, so a plain `<GraphAtmosphere renderer={renderer}>`
+            would capture the instance live at JSX-eval time and go stale the moment the app boots
+            with the default kind and then swaps once settings load (which is the common case: the
+            client always boots on the "ascii" default before the fetched settings can override it).
+            `keyed` forces GraphAtmosphere to unmount + remount — re-running its onMount, which is
+            the only place it wires setBloomCallback — every time the kind changes, so it always
+            re-reads the freshly swapped-in `renderer`. No DOM label overlay in either renderer: both
+            draw their own labels on their own canvas. */}
+        <Show when={graphRenderKind()} keyed>
           <GraphAtmosphere renderer={renderer} mode={props.mode} />
         </Show>
         {/* No floating cluster-legend card any more — cluster names are drawn IN the field itself

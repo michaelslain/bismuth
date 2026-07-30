@@ -13,7 +13,10 @@
   opacity: 0.85;
   /* Scaled up from FIELD_W×FIELD_H — the browser's smoothing IS the falloff. */
   image-rendering: auto;
-  --bloom-rgb: 150, 230, 216;
+  /* Deliberately NOT set here: GraphAtmosphere.tsx resolves the colour itself (explicit
+     --bloom-rgb override > themed --accent > a literal fallback) and needs to see this property
+     genuinely UNSET to know an override wasn't given — a default here would always "win" and the
+     theme-accent derivation would never run. See resolveBloomRgb() in GraphAtmosphere.tsx. */
 }
 .graph-vignette { position: absolute; inset: 0; pointer-events: none; z-index: 1;
   background: radial-gradient(120% 90% at 50% 30%, transparent 42%, var(--vignette-edge, color-mix(in srgb, var(--bg) 70%, #000)) 100%); }

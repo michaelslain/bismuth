@@ -339,6 +339,21 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
     r.destroy();
   });
 
+  it("emits a per-frame density field for the phosphor bloom (buildBloom always normalises its peak cell to exactly 1)", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = new AsciiGraphRenderer();
+    const fields: Float32Array[] = [];
+    r.mount(host, () => {});
+    r.setBloomCallback((f) => fields.push(f));
+    r.setConfig({ ...CONFIG });
+    r.render(sampleGraph());
+    frame();
+    expect(fields.length).toBeGreaterThan(0);
+    expect(Math.max(...fields.at(-1)!)).toBe(1);
+    r.destroy();
+  });
+
   it("rasterizes the flat layout in 2D too", () => {
     const { r } = mountRenderer("2d");
     expect(allText().length).toBeGreaterThan(0);

@@ -864,9 +864,9 @@ html.view-dragging .graph-floater { pointer-events: none; }
    resize can't flash a scrollbar on the pane-body (which would reflow the box every frame
    and make the resize jitter). */
 .graph-root { container-type: inline-size; overflow: hidden; display: flex; flex-direction: column; width: 100%; height: 100%; }
-/* .graph-glow + .graph-vignette live in graph/graphAtmosphere.css — used only by the first-run
-   Vault Intro (app/src/intro/VaultIntro.tsx); the shipped ASCII graph draws a FLAT --graph-bg field
-   with no glow or vignette. */
+/* .graph-bloom + .graph-vignette live in graph/graphAtmosphere.css — mounted by <GraphAtmosphere>
+   for BOTH the STANDARD and ASCII graph (each renderer pushes its own per-frame node-density field
+   via setBloomCallback; see CanvasGraphRenderer.emitBloom / AsciiGraphRenderer.emitBloom). */
 /* The graph toolbar is a PLAIN .viewbar — same height, gap, padding and hairline as the base rule, so
    it reads as the same control strip as every other view's (notes, bases, calendar, chat). It used to
    override all four (gap 8, padding 0 12px, a translucent --pop-bg fill and an 8px backdrop blur),
