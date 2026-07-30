@@ -76,6 +76,25 @@ test("buildQueryOptions exports BISMUTH_CLI only when the CLI binary is present"
   expect((withoutCli.env as Record<string, string>).BISMUTH_CLI).toBeUndefined()
 })
 
+// 2026-07-30 measurement (docs/vault/visibility.md, visibility-acceptance.md): buildQueryOptions
+// used to hardcode `sandbox.failIfUnavailable: false`, so a session whose OS sandbox couldn't
+// start ran anyway with only managedSettings standing guard — which restricts the Read/Edit/Grep/
+// Glob tool CALLING CONVENTION and does nothing to a raw Bash `cat`/`bismuth read`/`python3 -c`.
+// It's now derived from the deny list: a restricted vault fails closed, an unrestricted one is
+// unaffected (the whole sandbox block stays omitted, same as before this fix).
+test("buildQueryOptions: sandbox.failIfUnavailable is true when the vault restricts notes", () => {
+  const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" }, [
+    { rel: "secret.md", abs: "/vault/secret.md" },
+  ])
+  expect((o.sandbox as { failIfUnavailable?: boolean } | undefined)?.failIfUnavailable).toBe(true)
+})
+
+test("buildQueryOptions: sandbox is omitted entirely (not merely failIfUnavailable:false) when nothing is restricted — an unrestricted vault must not risk failing on a machine with no sandbox support", () => {
+  const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" }, [])
+  expect(o.sandbox).toBeUndefined()
+  expect(o.managedSettings).toBeUndefined()
+})
+
 test("buildQueryOptions resumes an existing session unless newSession is set", () => {
   expect(buildQueryOptions(ctx, undefined, "sess-1", { systemPrompt: "x" }).resume).toBe("sess-1")
   expect(buildQueryOptions(ctx, { newSession: true }, "sess-1", { systemPrompt: "x" }).resume).toBeUndefined()

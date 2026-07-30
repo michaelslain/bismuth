@@ -13,6 +13,7 @@ import {
   denyPathSet,
   type DenyEntry,
   isDeniedPath,
+  sandboxFailIfUnavailable,
 } from "../src/visibility";
 import { setFolderVisibility, readFolderVisibility } from "../src/settings";
 import { makeVault } from "./helpers";
@@ -201,6 +202,21 @@ test("denyPathSet: contains BOTH forms of every entry, for either-shape lookup",
   expect(set.has("/vault/private/b.md")).toBe(true);
   expect(set.has("nope.md")).toBe(false);
   expect(set.size).toBe(4);
+});
+
+// sandbox.failIfUnavailable (2026-07-30 measurement, docs/vault/visibility.md +
+// visibility-acceptance.md): a fixed `false` here let a session whose OS sandbox couldn't start
+// run anyway with only managedSettings standing guard — which does nothing to a raw Bash `cat`/
+// `bismuth read`/`python3 -c`. Both chat.ts and daemon/session.ts now compute this from the deny
+// list instead of hardcoding it, so a restricted vault fails closed while an unrestricted one
+// keeps working on a machine where the sandbox can't start at all.
+test("sandboxFailIfUnavailable: true when the vault restricts something", () => {
+  expect(sandboxFailIfUnavailable(SAMPLE_ENTRIES)).toBe(true);
+  expect(sandboxFailIfUnavailable([SAMPLE_ENTRIES[0]])).toBe(true);
+});
+
+test("sandboxFailIfUnavailable: false when nothing is restricted — an unrestricted vault must not start failing chats just because sandboxing is unavailable on this machine", () => {
+  expect(sandboxFailIfUnavailable([])).toBe(false);
 });
 
 // --- review-fix regressions: non-md files, trailing-slash keys, memory-note cascade ---
