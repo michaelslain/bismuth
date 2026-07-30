@@ -35,6 +35,7 @@ import {
   type ChatSearchDoc,
 } from "../src/chat";
 import { whichClaude } from "../src/claudeWhich";
+import { shouldRunLiveTests } from "./liveGate";
 
 // extractEditorContextPaths backs captureToMemory's visibility gate (skip capturing a session
 // that touched a chat-only/hidden file) — it parses the SAME preamble format app/src/
@@ -397,8 +398,9 @@ describe("computerUseChange (BUG #87: live --chrome toggle → respawn decision)
 // These are real round-trips: they spawn the user's `claude` binary (machine-login auth, no API
 // key) against a TEMP dir — NEVER the vault. Opt-in, not opt-out: `bun test` on a machine with
 // `claude` installed must not touch the user's Anthropic account. Set BISMUTH_LIVE_TESTS=1 to run
-// these deliberately.
-const LIVE = process.env.BISMUTH_LIVE_TESTS === "1" && whichClaude() !== null;
+// these deliberately. Gate logic lives in shouldRunLiveTests (liveGate.ts) so its full truth
+// table is unit-tested independently of this file — see liveGate.test.ts.
+const LIVE = shouldRunLiveTests(process.env, whichClaude() !== null);
 const describeOrSkip = LIVE ? describe : describe.skip;
 
 if (!LIVE) {
