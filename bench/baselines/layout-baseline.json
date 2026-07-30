@@ -1,5 +1,5 @@
 {
-  "label": "pre-linlog",
+  "label": "part1-final",
   "opts": {},
   "vault": {
     "dir": "/Users/michaelslain/Documents/dev/bismuth-graph-vault",
@@ -11,9 +11,9 @@
     "fingerprint": "5558f545e13b163b"
   },
   "timing": {
-    "layout3dMs": 12040,
-    "layout2dMs": 7449,
-    "totalMs": 19489
+    "layout3dMs": 11166,
+    "layout2dMs": 7212,
+    "totalMs": 18378
   },
   "paths": {
     "separation": {
@@ -28,23 +28,23 @@
   },
   "nanFields": [],
   "d3": {
-    "neighbourhoodPreservationDegree": 0.05568757085436961,
-    "neighbourhoodPreservationK10": 0.12779632627366344,
-    "separation": 0.281802500359133,
+    "neighbourhoodPreservationDegree": 0.1241655695765395,
+    "neighbourhoodPreservationK10": 0.2963918491538878,
+    "separation": 0.1827923463715893,
     "crossings": 0,
-    "nnCV": 0.332011326236409,
+    "nnCV": 0.4281161623720532,
     "nnMin": 11.357816691600547,
-    "nnMedian": 12.68857754044952,
-    "stressCorrelation": 0.2469416182676893
+    "nnMedian": 15.033296378372908,
+    "stressCorrelation": 0.30718767171847483
   },
   "d2": {
-    "neighbourhoodPreservationDegree": 0.03982568778608704,
-    "neighbourhoodPreservationK10": 0.08505684458234027,
-    "separation": 0.275527774557436,
-    "crossings": 0.022059492264655107,
-    "nnCV": 0.4792730214996755,
-    "nnMin": 13.45362404707371,
-    "nnMedian": 14.866068747318506,
-    "stressCorrelation": 0.31344969383000326
+    "neighbourhoodPreservationDegree": 0.130228912623103,
+    "neighbourhoodPreservationK10": 0.2718722364614704,
+    "separation": 0.09687118577664669,
+    "crossings": 0.017643587576859535,
+    "nnCV": 0.6293617132192543,
+    "nnMin": 13.601470508735444,
+    "nnMedian": 18.110770276274835,
+    "stressCorrelation": 0.19666077728678746
   }
 }
