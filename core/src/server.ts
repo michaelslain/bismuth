@@ -8,7 +8,6 @@ import { listTree, listTemplates, listMarkdown, readNote, writeNote, moveEntry, 
 import { commitVault, scheduleBackup, snapshotMessage } from "./backup";
 import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey, setFrontmatterViewKey, deleteFrontmatterViewKey } from "./frontmatter";
 import { AppError } from "./error";
-import { buildAgentGraph } from "./agents";
 import { buildVaultRows, patchVaultRows } from "./basesData";
 import { buildTaskRows } from "./bases/tasksData";
 import { parseBaseFile } from "./bases/parse";
@@ -27,7 +26,7 @@ import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./
 import { applyReviewToRow } from "./srs/reviewRow";
 import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
-import { createTerminalSession, killSession, resizeSession, getSession, getSessionByTermId, scheduleSessionKill, cancelSessionKill, listSessionIds, claimPooledSession, attachSink, detachSink, prewarmPool, setPoolMemoryDir } from "./terminal";
+import { createTerminalSession, killSession, resizeSession, getSession, getSessionByTermId, scheduleSessionKill, cancelSessionKill, claimPooledSession, attachSink, detachSink, prewarmPool, setPoolMemoryDir } from "./terminal";
 // Chat verbs route through the PROVIDER router (core/src/chatProviders/) so each chat session can
 // run on Claude Code (chat.ts) or opencode (chatProviders/opencode.ts) — same ChatFrame protocol.
 import {
@@ -53,9 +52,8 @@ import {
   searchChatSessions,
   parseChatScope,
   invalidateChatVisibility,
-  chatAgentSnapshot,
 } from "./chat";
-import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
+import { registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarget, sendCommand, resolveReply, type UiTabsSnapshot } from "./uiControl";
 import { UI_CONTROL_BLOCKLIST } from "./commands";
 import { writeRunRecord } from "./runRegistry";
@@ -795,19 +793,6 @@ export function createServer(cfg: CoreConfig) {
     "GET /schema": async (_, __) => {
       // Property registry (from settings.yaml `properties:`) for note validation + autocomplete.
       return ok(await getVaultSchema(cfg.vault));
-    },
-
-    // The "agents" graph: live Claude Code sessions running in THIS app's terminal
-    // tabs + their subagents. Reads the in-process relay registry (populated by the
-    // relay hooks via POST /relay/*). Prunes the registry against the live pty set
-    // first (closed tabs leave no terminal-close hook, so cleanup happens here), then
-    // builds the graph. The frontend polls this while agents mode is active.
-    "GET /agent-graph": async (_, __) => {
-      const live = new Set(listSessionIds());
-      relayPrune(live);
-      // Merge in the live visual-chat sessions (core/src/chat.ts) as first-class session nodes —
-      // a closed chat is already gone from chat.ts's registry, so no separate prune is needed.
-      return ok(buildAgentGraph(relaySnapshot(), live, Date.now(), chatAgentSnapshot()));
     },
 
     // Relay ingest endpoints — posted to by the relay plugin's hooks (loaded

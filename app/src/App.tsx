@@ -46,7 +46,6 @@ const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.Te
 // hides the chat instead of unmounting it — unmount closes its WS with code 1000, which the
 // backend treats as an intentional tab-close and kills the whole `claude` session.
 const ChatView = lazy(() => import("./ChatView").then((m) => ({ default: m.ChatView })));
-import { agentGraphSig } from "./graph/agentGraphSig";
 import { selectDisplayGraph } from "./graph/displayGraph";
 import type { GraphData } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
@@ -141,7 +140,6 @@ export default function App() {
   const [graph, setGraph] = createSignal<GraphData>(
     readCache<GraphData>(GRAPH_CACHE_KEY) ?? { nodes: [], edges: [] },
   );
-  const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [daemon, setDaemon] = createSignal<GraphData>({ nodes: [], edges: [] });
   // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd".
   const [mode, setMode] = createSignal<GraphMode>(settings.daemon.enabled ? "both" : "2nd");
@@ -568,16 +566,6 @@ export default function App() {
     }
   };
 
-  // A 2s poll that returns the same network is a no-op (see agentGraphSig) — without
-  // this, each poll would hand the renderer a fresh graph and re-settle the force layout.
-  let lastAgentsSig = "";
-  const refreshAgents = async () => {
-    const g = await api.agentGraph();
-    const sig = agentGraphSig(g);
-    if (sig === lastAgentsSig) return;
-    lastAgentsSig = sig;
-    setAgents(g);
-  };
   const refreshDaemon = async () => setDaemon(await api.daemonGraph());
 
   // The graph is a visualization, not the source of truth — it can update a beat
@@ -587,15 +575,13 @@ export default function App() {
   // flicker.
   const scheduleGraphRefresh = debounce(() => { refreshGraph(); }, () => settings.graph.refreshDebounceMs);
 
-  // No "you" hub in any mode except "agents" (see selectDisplayGraph in graph/displayGraph.ts) —
-  // it used to be frontend-injected here for 2nd/3rd/both too, but read as noise floating at the
-  // origin next to real vault/memory structure. The agents-mode hub is unaffected: it's a
-  // different construct (the literal root of the session tree), injected separately by
-  // GraphView/agentLayout.ts, not by this selection.
+  // No "you" hub in any mode (see selectDisplayGraph in graph/displayGraph.ts) — it used to be
+  // frontend-injected here for 2nd/3rd/both too, but read as noise floating at the origin next
+  // to real vault/memory structure.
   const displayGraph = createMemo<GraphData>(() =>
     // `activeId` feeds "local" mode only: the focused note's graph id (path minus ".md").
     selectDisplayGraph(mode(), {
-      graph: graph(), agents: agents(), daemon: daemon(),
+      graph: graph(), daemon: daemon(),
       activeId: focusedContent() ? focusedContent()!.replace(/\.md$/i, "") : null,
     }),
   );
@@ -1507,17 +1493,8 @@ export default function App() {
     }
   });
 
-  // Only poll the agent graph while the user is in agents mode — avoids 2s background
-  // fetches when nobody is looking at the network view.
-  createEffect(() => {
-    if (mode() !== "agents") return;
-    void refreshAgents();
-    const t = setInterval(refreshAgents, 2000);
-    onCleanup(() => clearInterval(t));
-  });
-
-  // Likewise, only poll the daemon graph while in daemon mode (~4s — cron/process state changes
-  // are coarse-grained). Mirrors the agents-mode poll above.
+  // Only poll the daemon graph while in daemon mode (~4s — cron/process state changes are
+  // coarse-grained) — avoids background fetches when nobody is looking at that view.
   createEffect(() => {
     if (mode() !== "daemon" || !settings.daemon.enabled) return;
     void refreshDaemon();
@@ -1525,7 +1502,7 @@ export default function App() {
     onCleanup(() => clearInterval(t));
   });
 
-  // Daemon inbox: unlike the agents/daemon graph-mode polls above, this one isn't gated on
+  // Daemon inbox: unlike the daemon graph-mode poll above, this one isn't gated on
   // which tab is showing — the toolbar inbox badge needs to stay live regardless (plan §3, §6).
   // 30s normally, tightened to ~5s while any page is mid-run so a just-approved action's
   // done/failed status shows up promptly. Reading anyWorking() here (tracked) re-arms the

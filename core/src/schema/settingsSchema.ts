@@ -269,7 +269,7 @@ export const SETTINGS_SCHEMA: Schema = {
     installRelayHooks: {
       type: "boolean",
       default: false,
-      doc: "Let Bismuth write a project-scoped .codex/hooks.json (+ its small reporting script) into this vault so a Codex session run in a Bismuth terminal tab or chat reports its lifecycle into the in-app agents graph — the same role Claude Code's relay plugin plays. Off by default: writing into the vault is opt-in.",
+      doc: "Let Bismuth write a project-scoped .codex/hooks.json (+ its small reporting script) into this vault so a Codex session run in a Bismuth terminal tab or chat reports its lifecycle into Bismuth's in-process relay registry — the same role Claude Code's relay plugin plays. Off by default: writing into the vault is opt-in.",
     },
   }),
   srs: object({
