@@ -277,16 +277,29 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
     //   2. cline's real `session/new` response carries BOTH the old `models.availableModels` shape
     //      AND a `configOptions` array whose FIRST category:"model" entry is a "provider" selector
     //      (options shaped `{value, name}`), not the actual per-model selector (options shaped
-    //      `{id, name}`, further down the array). Bismuth's `detectModelShape` (protocol.ts) takes
-    //      the FIRST category:"model" match and its parser filters on `.id` — so against a real
-    //      cline, the driver's own `models` ChatFrame ends up empty (`o?.id` never matches `{value,
-    //      name}` entries) even though the turn itself completes correctly. A genuine quirk of
-    //      cline's OWN ACP implementation (its "model" config option and its "provider" config
-    //      option share one category, and the SDK-generic client can't tell them apart), confirmed
-    //      live, deliberately NOT fixed by this task (out of scope — this task tests coverage, not
-    //      driver/protocol changes) and NOT asserted on by clineMocked.test.ts's new block either
-    //      way, to avoid the exact "asserts something true only by accident" shape this harness
-    //      warns against.
+    //      `{id, name}`, further down the array). This is WORSE than "the models list comes back
+    //      empty" — a code-review finding on this task expanded it, precisely, into two distinct
+    //      driver-side consequences (both confirmed live, neither fixed here — out of scope for a
+    //      coverage task, not a driver/protocol change):
+    //        a. `detectModelShape` (protocol.ts:214-236) takes the FIRST category:"model" match and
+    //           RETURNS inside that branch — so `r.models.availableModels` (protocol.ts:238, the very
+    //           OLD-shape field cline ALSO sends) is never even reached, let alone consulted. The
+    //           parser then filters cline's mis-picked "provider" option's entries on `.id`
+    //           (`{value, name}` shaped — no `.id` at all), yielding zero models — and
+    //           driver.ts:455 (`if (s.modelShape.models.length) emit(...)`) means NO `models`
+    //           ChatFrame is emitted at all in that case, not an empty one.
+    //        b. `modelConfigId` (protocol.ts:233) is set from that SAME mis-picked "provider"
+    //           selector's own `id` field — poisoned, not just the list. driver.ts:600-602's
+    //           `setModel` dispatches `session/set_config_option` using exactly this id, so a model
+    //           switch against a real cline session would silently write to cline's PROVIDER option
+    //           instead. Latent today only because (a) leaves the model picker nothing to select in
+    //           the first place.
+    //      A genuine quirk of cline's OWN ACP implementation (its "model" config option and its
+    //      "provider" config option share one category, and a shape-generic client can't tell them
+    //      apart) — NOT asserted on by clineMocked.test.ts's new block either way, to avoid the exact
+    //      "asserts something true only by accident" shape this harness warns against. A follow-up
+    //      fix (tightening detectModelShape's `.find` predicate, and falling through to the OLD shape
+    //      when the chosen option yields zero models) should be written against this precise account.
     // --------------------------------------------------------------------------------------
     case "cline": {
       if (!workDir) {

@@ -75,10 +75,24 @@ describe("Bismuth's ACP driver against a fake agent reproducing cline's REAL aut
     stubDir = makeStubBinDir();
     process.env.PATH = `${stubDir}:${savedPath ?? ""}`;
     process.env.FAKE_ACP_AUTH_GATE = "cline";
+    // Hermetic against ambient env (a code-review finding on this task): the gate-CLOSED test's
+    // whole meaning depends on this being unset, but only `savedAuthed` was snapshotted here, never
+    // actively cleared — so a stray FAKE_ACP_CLINE_AUTHED already exported in the shell running `bun
+    // test` (or leaked from a prior test, however unlikely given the restores above) would silently
+    // flip the "closed" test into a second copy of the "open" one. Reproduced live: with this line
+    // absent, `FAKE_ACP_CLINE_AUTHED=1 bun test clineAuthFakeAgent.test.ts` fails the gate-CLOSED
+    // test on a timeout (it fails SAFE, which doubles as independent confirmation the assertion
+    // isn't vacuous — but the test's own hermeticity still needs this fix). The gate-OPEN test below
+    // sets this explicitly itself, so this default only ever matters for the CLOSED test.
+    delete process.env.FAKE_ACP_CLINE_AUTHED;
   });
 
   afterEach(async () => {
-    for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
+    // Env restore FIRST (a code-review finding on this task): a throw from the closeChat loop below
+    // must never skip restoration and leave a LATER test in this file pointed at a stub PATH/gate —
+    // restoring env before anything that can itself throw closes that gap without needing a
+    // try/finally. closeChat doesn't need the stub PATH to already be gone (it only tears down a
+    // process handle recorded earlier), so this reordering changes nothing about what's torn down.
     if (savedPath === undefined) delete process.env.PATH;
     else process.env.PATH = savedPath;
     if (savedAuthGate === undefined) delete process.env.FAKE_ACP_AUTH_GATE;
@@ -87,17 +101,27 @@ describe("Bismuth's ACP driver against a fake agent reproducing cline's REAL aut
     else process.env.FAKE_ACP_CLINE_AUTHED = savedAuthed;
     if (savedModelShape === undefined) delete process.env.FAKE_ACP_MODEL_SHAPE;
     else process.env.FAKE_ACP_MODEL_SHAPE = savedModelShape;
+    for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
     rmSync(stubDir, { recursive: true, force: true });
   });
 
   afterAll(() => {
-    // Belt-and-suspenders, matching acpFakeAgent.test.ts's own afterAll: a thrown assertion mid-test
-    // must never leave a LATER, unrelated test file in this same `bun test` process pointed at a
-    // stub PATH or a stuck FAKE_ACP_* var.
-    if (savedPath !== undefined) process.env.PATH = savedPath;
-    if (savedAuthGate !== undefined) process.env.FAKE_ACP_AUTH_GATE = savedAuthGate;
-    if (savedAuthed !== undefined) process.env.FAKE_ACP_CLINE_AUTHED = savedAuthed;
-    if (savedModelShape !== undefined) process.env.FAKE_ACP_MODEL_SHAPE = savedModelShape;
+    // Belt-and-suspenders: afterEach already restores these, but a thrown assertion mid-test must
+    // never leave a LATER, unrelated test file in this same `bun test` process pointed at a stub
+    // PATH or a stuck FAKE_ACP_* var. A code-review finding on this task: the previous version of
+    // this hook only ever SET a saved value back when it was originally defined — in the (default,
+    // every-clean-environment) case where a var started unset, a mid-test throw here left it stuck
+    // at whatever this file's OWN beforeEach had set, not restored to absent. Reproduced live: with
+    // this bug in place, exporting FAKE_ACP_AUTH_GATE=cline and running acpFakeAgent.test.ts gave 0
+    // pass / 3 fail. Fixed to `delete` (not just leave alone) exactly like afterEach does above.
+    if (savedPath === undefined) delete process.env.PATH;
+    else process.env.PATH = savedPath;
+    if (savedAuthGate === undefined) delete process.env.FAKE_ACP_AUTH_GATE;
+    else process.env.FAKE_ACP_AUTH_GATE = savedAuthGate;
+    if (savedAuthed === undefined) delete process.env.FAKE_ACP_CLINE_AUTHED;
+    else process.env.FAKE_ACP_CLINE_AUTHED = savedAuthed;
+    if (savedModelShape === undefined) delete process.env.FAKE_ACP_MODEL_SHAPE;
+    else process.env.FAKE_ACP_MODEL_SHAPE = savedModelShape;
   });
 
   test(

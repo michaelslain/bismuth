@@ -43,6 +43,23 @@ import { backendMockEnv } from "../support/backendEnv";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
 
+/** Sum of `aimock_requests_total{...}` counter values whose `path` label is aimock's own
+ *  `/v1/chat/completions` route (confirmed from aimock's own `server.js`:
+ *  `const COMPLETIONS_PATH = "/v1/chat/completions"`) — the endpoint an OpenAI-compatible-shaped
+ *  client (cline's "openai-compatible" provider, per backendEnv.ts's `cline` case) actually calls.
+ *  Mirrors geminiMocked.test.ts's `generateContentHitCount` shape exactly, including its own
+ *  finding #1: NOT "does aimock_requests_total appear anywhere" (that family also contains the
+ *  mock's own `GET /metrics` self-hits), but a counter for THIS SPECIFIC PATH strictly increasing. */
+function chatCompletionsHitCount(metricsText: string): number {
+  let total = 0;
+  for (const line of metricsText.split("\n")) {
+    if (!line.startsWith("aimock_requests_total{") || !line.includes("chat/completions")) continue;
+    const m = line.match(/}\s+([0-9.]+)\s*$/);
+    if (m) total += Number(m[1]);
+  }
+  return total;
+}
+
 const HAS_CLINE = whichBinary("cline") !== null;
 const describeOrSkip = HAS_CLINE ? describe : describe.skip;
 
@@ -130,7 +147,18 @@ describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver —
 // pointed only at 127.0.0.1). Skips under the SAME `HAS_CLINE` gate as the block above.
 // --------------------------------------------------------------------------------------------
 describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver, against a local mock LLM — a full turn completes end to end (see this file's header UPDATE note)", () => {
-  const ENV_KEYS = ["CLINE_DIR", "CLINE_PROVIDER", "CLINE_API_KEY", "CLINE_MODEL"] as const;
+  // ENV_KEYS: unlike the SAFE-FAILURE block above (which never lets cline build a model client at
+  // all — session/new fails before that's ever reached), THIS block deliberately opens the gate, and
+  // a real cline session DOES build a provider client and make an outbound HTTP call. Routing is
+  // correct today via CLINE_PROVIDER=openai-compatible + a hand-written providers.json baseUrl on
+  // 127.0.0.1 — but that file is written against cline 3.0.47's OWN schema; a future cline version
+  // that stops reading it falls back to some default provider, and a developer's own ambient
+  // OPENAI_API_KEY/ANTHROPIC_API_KEY sitting in their shell is then the ONLY thing left standing
+  // between "safe" and "a real account call slips through unnoticed" — a code-review finding on this
+  // task, correcting an earlier version of this block that cleared neither (the sibling block above
+  // already established this exact defense at its own ENV_KEYS/lines clearing them; this block must
+  // not be weaker than the one that opens the gate on purpose).
+  const ENV_KEYS = ["CLINE_DIR", "CLINE_PROVIDER", "CLINE_API_KEY", "CLINE_MODEL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const;
   const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   const chatIds: string[] = [];
@@ -177,9 +205,15 @@ describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver, ag
   }
 
   test(
-    "a real cline binary, pointed at a local mock via the CLINE_API_KEY bypass, completes a full turn: the mock fixture's exact text arrives, then result.isError===false",
+    "a real cline binary, pointed at a local mock via the CLINE_API_KEY bypass, completes a full turn: the mock fixture's exact text arrives, its /v1/chat/completions counter increases, then result.isError===false",
     async () => {
-      mock = await startMockLlm();
+      mock = await startMockLlm(undefined, ["--metrics"]);
+      // Defensive (see the ENV_KEYS comment above): must never be ambiently available to the
+      // spawned `cline` process, since a real cline session (unlike the sibling block's) actually
+      // builds a provider client and dials out.
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.ANTHROPIC_API_KEY;
+
       const workDir = await newTempDir("bismuth-cline-real-e2e-");
       const env = backendMockEnv("cline", mock.url, workDir);
       for (const [k, v] of Object.entries(env)) process.env[k] = v;
@@ -189,6 +223,9 @@ describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver, ag
       chatIds.push(chatId);
       const { frames, sink, waitFor } = makeChatFrameCollector(25_000);
 
+      const before = chatCompletionsHitCount(await fetch(`${mock.url}/metrics`).then((r) => r.text()));
+      expect(before).toBe(0); // sanity: nothing hit the model endpoint before this turn
+
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd, sink, computerUse: false, text: "hello" });
 
       // session/new actually succeeded through the auth gate (never called `authenticate`) — the
@@ -197,9 +234,11 @@ describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver, ag
       expect(sessionFrame.type).toBe("session");
 
       // The core proof this task exists to add: the mock fixture's EXACT text (core/test/fixtures/
-      // llm/basic-turn.json's "Hello!") arriving through the driver — text no real model would ever
-      // reply with verbatim (see mockLlm.ts's own header), so this is what proves the turn hit OUR
-      // mock and not any real vendor account.
+      // llm/basic-turn.json's "Hello!") arriving through the driver. A code-review finding on this
+      // task: "Hello!" alone is a real model's plausible (if unlikely) reply to "hello" — unlike the
+      // fake agent's own deliberately distinctive sentinel, so this file additionally asserts the
+      // mock's OWN /v1/chat/completions counter (below), which cannot be satisfied by any host but
+      // this one, as the load-bearing "zero real network access" proof.
       const assistantText = await waitFor((f) => f.type === "assistant-text");
       if (assistantText.type === "assistant-text") expect(assistantText.text).toBe("Hello!");
 
@@ -210,6 +249,13 @@ describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver, ag
       expect(resultIdx).toBeGreaterThanOrEqual(0);
       expect(doneIdx).toBeGreaterThan(resultIdx);
       if (frames[resultIdx].type === "result") expect(frames[resultIdx].isError).toBe(false);
+
+      // The load-bearing zero-real-network-access proof (see the comment above): a real model host
+      // could also have replied "Hello!", but only THIS mock's own counter for its own path can
+      // increase — confirms the outbound HTTP call this cline session made landed here, not on any
+      // real vendor endpoint.
+      const after = chatCompletionsHitCount(await fetch(`${mock.url}/metrics`).then((r) => r.text()));
+      expect(after).toBeGreaterThan(before);
 
       // Never confused with the OTHER block's safe-refusal path.
       expect(frames.some((f) => f.type === "error")).toBe(false);

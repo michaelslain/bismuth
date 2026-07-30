@@ -58,6 +58,19 @@
 //     FAKE_ACP_CLINE_AUTHED, standing in for CLINE_API_KEY. This is not invented — it mirrors a real,
 //     cited mechanism 1:1, chosen because it is the only bypass that exists at all (see the case
 //     comment above it for the full finding).
+//
+// SCOPE LIMIT of this mode (a code-review finding on this task, recorded explicitly so nobody
+// mistakes this for broader coverage than it is): this mode reproduces cline's AUTH surface only.
+// Once the gate is open, `handleSessionNew` below falls through to the SAME generic
+// old/new-model-shape logic FAKE_ACP_MODEL_SHAPE already drives (this file's own hand-built
+// `{id, name}`-shaped configOptions) — NOT cline's real, quirkier `provider`-then-`model`
+// `configOptions` ordering (see backendEnv.ts's `cline` case, "TWO HONEST LIMITS" #2, for that
+// separate, already-cited bug: a real cline session emits a "provider" selector ahead of the true
+// "model" selector under the same category, which poisons both the `models` ChatFrame and
+// `modelConfigId`). This mode's own gate-OPEN test therefore CANNOT catch that bug — it was found
+// only by driving the REAL binary (clineMocked.test.ts's "real E2E" block), and this
+// always-running, binary-independent fake structurally never will unless a future task teaches it
+// cline's real configOptions shape too.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 

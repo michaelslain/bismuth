@@ -154,8 +154,11 @@ describe("backendMockEnv", () => {
         // the returned env object's own values (those are just paths/keys). cline joined this group
         // in a later task (see backendEnv.ts's `cline` case): its providers.json is written one
         // directory DEEPER than codex/openclaw's own config files (`<workDir>/data/settings/
-        // providers.json`, not `<workDir>/*`), so this drift guard walks the tree recursively for it
-        // rather than reusing the flat `readdirSync(dir)` codex/openclaw get away with.
+        // providers.json`, not `<workDir>/*`), so its own case below reads that ONE known path
+        // directly (`join(dir,"data","settings","providers.json")`) rather than reusing the flat
+        // `readdirSync(dir)` codex/openclaw get away with — a hardcoded single-file read, not a
+        // recursive tree walk (corrected here after a code-review finding on an earlier draft of
+        // this comment overstated it).
         case "codex":
         case "openclaw": {
           expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
