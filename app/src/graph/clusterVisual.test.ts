@@ -11,9 +11,32 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildColorSlots, clusterExtent, clusterLabelLift, clusterLabelScale, clusterLabelThreshold,
-  CLUSTER_LABEL_LIFT_PX, CLUSTER_LABEL_MAX_LIFT_PX, CLUSTER_LABEL_MIN_MEMBERS, inViewport, pickHubAnchor,
-  trimDanglingWord,
+  CLUSTER_LABEL_LIFT_PX, CLUSTER_LABEL_MAX_LIFT_PX, CLUSTER_LABEL_MIN_MEMBERS, inViewport, LIGHTNESS_CLAMP,
+  NODE_SAT_BOOST, pathOf, pickHubAnchor, trimDanglingWord,
 } from "./clusterVisual";
+
+/** Independent (not imported) hue extraction for the hue-DISTANCE assertion below — `Set.size`
+ *  distinctness is satisfied by a 1-unit rounding difference, which is not what "hue-rotate on wrap"
+ *  is supposed to buy. Standard RGB->hue formula, hand-verified against known primaries. */
+function hexToHue(hex: string): number {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  if (mx === mn) return 0;
+  const d = mx - mn;
+  let h = 0;
+  if (mx === r) h = ((g - b) / d) % 6;
+  else if (mx === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  h /= 6;
+  return ((h % 1) + 1) % 1;
+}
+/** Circular distance between two [0,1) hues (0 and 1 are the same hue). */
+function hueDist(a: number, b: number): number {
+  const d = Math.abs(a - b) % 1;
+  return Math.min(d, 1 - d);
+}
 
 describe("buildColorSlots — size-ranked, not hash-ranked", () => {
   it("ranks by member count, NOT by community id — ids are a derangement of the size order", () => {
@@ -40,6 +63,24 @@ describe("buildColorSlots — size-ranked, not hash-ranked", () => {
     expect(new Set(values).size).toBe(values.length); // all 5 distinct, no palette-length collision
   });
 
+  it("stays distinct even when communities meaningfully OUTNUMBER the palette (a second wrap)", () => {
+    // 10 communities, strictly decreasing size, over only a 5-entry palette — every community past
+    // rank 4 shares a base palette slot with an earlier one and must be told apart by hue rotation
+    // alone. This is this module's entire reason to exist: with only 5 communities (as in the test
+    // above), distinctness is pigeonhole-guaranteed by the palette length regardless of ranking
+    // logic, so that test alone cannot tell a correct wrap-around from a broken one. A `palette[rank
+    // % palLen]` -> `palette[Math.min(rank, palLen - 1)]` mutation (clamp instead of wrap — a
+    // plausible typo) passes every other test in this file but collapses ranks 5-9 here onto one
+    // identical colour, which is exactly the failure this module's header quotes: "nearly every big
+    // top-level group landed on the same teal, so the field read as one colour."
+    const sizes = new Map(Array.from({ length: 10 }, (_, i) => [i + 1, 100 - i]));
+    const palette = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#ff00ff"];
+    const slots = buildColorSlots(sizes, palette);
+    const values = [...slots.values()];
+    expect(slots.size).toBe(10);
+    expect(new Set(values).size).toBe(10);
+  });
+
   it("breaks size ties by community id ascending — lower id ranks first", () => {
     const sizes = new Map([[9, 10], [4, 10]]); // equal size, different id
     const slots = buildColorSlots(sizes, ["#ff0000", "#00ff00"]);
@@ -56,6 +97,23 @@ describe("buildColorSlots — size-ranked, not hash-ranked", () => {
     const slots = buildColorSlots(sizes, ["#ff0000", "#00ff00"]);
     const rank0 = slots.get(1)!, rank2 = slots.get(3)!, rank4 = slots.get(5)!;
     expect(new Set([rank0, rank2, rank4]).size).toBe(3);
+  });
+
+  it("the wrap's hue rotation is visually SIGNIFICANT, not merely a different string", () => {
+    // `Set.size` distinctness (the test above) is satisfied by a 1/255 rounding difference between
+    // two strings — it does not prove the rotation is big enough to actually read as a different
+    // colour. Mutating `HUE_ROTATE_PER_CYCLE` from 0.5 down to 0.006 leaves every existing test in
+    // this file green (colours are still pairwise distinct, just by ~4/255 on one channel) while
+    // producing two masses that are visually identical reds. Assert a real minimum hue separation
+    // instead: same 10-over-5 fixture, community 1 (rank 0, cycle 0) vs community 6 (rank 5, cycle 1
+    // — same base palette slot, next wrap).
+    const sizes = new Map(Array.from({ length: 10 }, (_, i) => [i + 1, 100 - i]));
+    const palette = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#ff00ff"];
+    const slots = buildColorSlots(sizes, palette);
+    const dist = hueDist(hexToHue(slots.get(1)!), hexToHue(slots.get(6)!));
+    // Correct rotation: (1 * 0.5) / 5 = 0.1 of the hue circle (36°). A near-zero rotation constant
+    // (e.g. 0.006) would produce ~0.0016. 0.05 (18°) sits well clear of both.
+    expect(dist).toBeGreaterThan(0.05);
   });
 
   it("does not lighten on wrap — cycle 1's colour keeps a real hue, not a washed-out near-white", () => {
@@ -78,6 +136,30 @@ describe("buildColorSlots — size-ranked, not hash-ranked", () => {
 
   it("returns an empty map for an empty community-size input", () => {
     expect(buildColorSlots(new Map(), ["#ff0000"]).size).toBe(0);
+  });
+
+  it("boosts saturation and clamps lightness on a PASTEL input — the input class the boost is for", () => {
+    // Every other fixture in this file uses pure #ff0000/#00ff00/#0000ff at saturation 1.0, which
+    // clamps to SAT_CLAMP under any NODE_SAT_BOOST >= 0.85 — the boost's actual magnitude is a no-op
+    // on that input class. The source comment says real theme accents sit "near 35% saturation";
+    // this fixture (#d28c8c, a muted red: hue 0, sat 0.4375, l 0.6863) is in that regime and makes
+    // both NODE_SAT_BOOST and LIGHTNESS_CLAMP observable:
+    //   sat_out = min(SAT_CLAMP, 0.4375 * NODE_SAT_BOOST) = min(0.85, 0.678125) = 0.678125 (unclamped
+    //     — so the *exact* NODE_SAT_BOOST value determines the output, not just whether it clamps)
+    //   l_out   = min(LIGHTNESS_CLAMP, 0.686275 * 1.06)   = min(0.72, 0.727451) = 0.72 (clamped — so
+    //     the *exact* LIGHTNESS_CLAMP value determines the output)
+    // Hand-derived through the ported rgbToHsl -> boost/clamp -> hslToHex pipeline and cross-checked
+    // by running the function (see task-5-report.md).
+    const slots = buildColorSlots(new Map([[1, 10]]), ["#d28c8c"]);
+    expect(slots.get(1)).toBe("#e88787");
+  });
+
+  it("pins the exported tuning constants by literal value", () => {
+    // The tests above import these constants and compare OUTPUT against them, which pins the port's
+    // internal consistency but not the constants' actual values (a `NODE_SAT_BOOST: 1.55 -> 1.9` or
+    // `LIGHTNESS_CLAMP: 0.72 -> 0.9` edit leaves every such test green). Pin the literals directly.
+    expect(NODE_SAT_BOOST).toBe(1.55);
+    expect(LIGHTNESS_CLAMP).toBe(0.72);
   });
 });
 
@@ -196,6 +278,12 @@ describe("clusterLabelThreshold — visible-share naming bar", () => {
   it("is relative to what's VISIBLE, not a fixed constant — grows with the visible total", () => {
     expect(clusterLabelThreshold(20_000)).toBeGreaterThan(clusterLabelThreshold(10_000));
   });
+
+  it("pins CLUSTER_LABEL_MIN_MEMBERS by literal value", () => {
+    // The floor test above compares OUTPUT against the imported constant, which doesn't pin the
+    // constant's own value (a `6 -> 3` edit leaves it green). Pin the literal directly.
+    expect(CLUSTER_LABEL_MIN_MEMBERS).toBe(6);
+  });
 });
 
 describe("clusterLabelScale — sqrt-eased share of the visible field", () => {
@@ -231,6 +319,13 @@ describe("clusterLabelLift", () => {
   it("caps at LIFT_PX + MAX_LIFT_PX for a huge extent", () => {
     expect(clusterLabelLift(10_000)).toBe(CLUSTER_LABEL_LIFT_PX + CLUSTER_LABEL_MAX_LIFT_PX);
   });
+
+  it("pins CLUSTER_LABEL_LIFT_PX and CLUSTER_LABEL_MAX_LIFT_PX by literal value", () => {
+    // Same gap as CLUSTER_LABEL_MIN_MEMBERS above: the tests here compare against the imported
+    // constants, not against fixed numbers (a `10 -> 25` / `46 -> 60` edit leaves them green).
+    expect(CLUSTER_LABEL_LIFT_PX).toBe(10);
+    expect(CLUSTER_LABEL_MAX_LIFT_PX).toBe(46);
+  });
 });
 
 describe("clusterExtent — on-screen radius around the hub anchor", () => {
@@ -255,5 +350,33 @@ describe("clusterExtent — on-screen radius around the hub anchor", () => {
       { sx: 100, sy: 250 },   // dy=150 -> the real max
     ];
     expect(clusterExtent(hub, members)).toBe(150);
+  });
+});
+
+describe("pathOf — the hierarchy path callers fold into communitySizes/members inputs", () => {
+  it("prefers a non-empty communityPath over the flat community field", () => {
+    expect(pathOf({ communityPath: [1, 2, 3], community: 99 })).toEqual([1, 2, 3]);
+  });
+
+  it("falls back to [community] when communityPath is absent", () => {
+    expect(pathOf({ community: 5 })).toEqual([5]);
+  });
+
+  it("treats an EMPTY communityPath array as absent, not as a valid (empty) path", () => {
+    // `communityPath?.length` is falsy for `[]`, so this must fall through to `community` — a naive
+    // `communityPath ?? [community]` port would instead return `[]` here and silently drop the node
+    // from every level's size tally.
+    expect(pathOf({ communityPath: [], community: 7 })).toEqual([7]);
+  });
+
+  it("returns null when the node carries no community at all (self/daemon/cron/process)", () => {
+    expect(pathOf({})).toBeNull();
+    expect(pathOf({ communityPath: null, community: null })).toBeNull();
+  });
+
+  it("distinguishes community 0 from no community — 0 is falsy but a real id", () => {
+    // `community != null` (not `community ? ... : null`) is the load-bearing check here: community
+    // id 0 is a legitimate rank-0 community, not "no community".
+    expect(pathOf({ community: 0 })).toEqual([0]);
   });
 });

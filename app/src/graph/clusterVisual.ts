@@ -21,8 +21,8 @@
 //   a 400-node community routinely lands in empty space — the names then read as free-floating text
 //   captioning nothing."
 //
-// Ported: `buildColorSlots` (:761-793), the hub-anchoring + size-ramp logic from the cluster-name
-// pass (:307-316, 1566-1648), `trimDanglingWord`, and `inViewport` (:931-935). The *algorithm* is
+// Ported: `buildColorSlots` (:762-794), the hub-anchoring + size-ramp logic from the cluster-name
+// pass (:307-316, 1566-1648), `trimDanglingWord`, and `inViewport` (:932-936). The *algorithm* is
 // preserved, not Canvas's renderer-coupled representation: colours are CSS colour strings (a theme's
 // resolved `--graph-0..4` tokens) instead of packed ints, and positions/degrees are plain `{sx,sy}`/
 // `{id,degree}` records instead of live `NodeView`s.
@@ -97,17 +97,37 @@ function hslToHex(h: number, sat: number, l: number): string {
 
 const FALLBACK_HEX = "#888888";
 
+/**
+ * The hierarchy path used for both colour and edge levels, with the pre-hierarchy fallbacks —
+ * ported verbatim from `pathOf` (CanvasGraphRenderer.ts:320-323). Exported because it is the most
+ * error-prone few lines in any caller that builds this module's inputs (`communitySizes` for
+ * `buildColorSlots`, `members` for `pickHubAnchor`/`clusterExtent`): forgetting the `null` case
+ * buckets nodes with no community under a key of `undefined`; forgetting to clamp a level index
+ * against `path.length` (a caller's job — the level clamp is `path[Math.min(L, path.length - 1)]`,
+ * not part of this function) silently drops every node whose path is shallower than the level being
+ * built, shrinking coarse communities. Returns `null` for a node with no community at all (self,
+ * daemon, cron, process, or a graph mode that never stamps one) — callers must skip those, not
+ * bucket them under `null`/`undefined`.
+ */
+export function pathOf(node: { communityPath?: number[] | null; community?: number | null }): number[] | null {
+  if (node.communityPath?.length) return node.communityPath;
+  return node.community != null ? [node.community] : null;
+}
+
 // ---------------------------------------------------------------------------
 // Size-ranked cluster colours — ported from `buildColorSlots` (CanvasGraphRenderer.ts:762-794).
 // ---------------------------------------------------------------------------
 
 /** Node-fill saturation boost (`NODE_SAT_BOOST`, CanvasGraphRenderer.ts:128): thousands of 2-4px
  *  dots need to survive being a speck on screen, so every slot is pushed toward the saturated end of
- *  the theme's own hue rather than left at the ~35% saturation that reads fine as UI chrome. */
-const NODE_SAT_BOOST = 1.55;
+ *  the theme's own hue rather than left at the ~35% saturation that reads fine as UI chrome. Exported
+ *  (along with `LIGHTNESS_CLAMP` below) so tests can pin the literal value directly — a pure-primary
+ *  input (sat already 1.0) clamps under any boost ≥ `SAT_CLAMP`, so the boost's actual magnitude is
+ *  only observable against a muted/pastel input; see clusterVisual.test.ts. */
+export const NODE_SAT_BOOST = 1.55;
 const SAT_CLAMP = 0.85;
 const LIGHTNESS_MULT = 1.06;
-const LIGHTNESS_CLAMP = 0.72;
+export const LIGHTNESS_CLAMP = 0.72;
 /** Each wrap around the palette rotates hue by half a palette step rather than lightening it.
  *  Canvas's comment on why: lightening "is what washed the whole field out to near-white — the
  *  theme's ramp is already pastel, so blending it toward white produced pale smears with no colour
@@ -167,6 +187,27 @@ export function buildColorSlots(
  * Returns only the member id, never a position — MERGE-NOTES §5.3: the grid quantises a hub's CELL,
  * not its exact pixel, so the caller looks the id back up (to get its screen position, then its
  * cell) rather than receiving a pixel from here.
+ *
+ * **Call-site contract — both halves matter, and both are load-bearing, not incidental:**
+ *
+ * 1. `members` must be the community's WHOLE membership (every node in that community, anywhere in
+ *    the graph), not just what's currently on screen. Source (`buildLevelEdges`, :1584-1586, at the
+ *    call site inside `drawClusterNames`): "The hub comes from the PRECOMPUTED per-level table, NOT
+ *    from a running max over the visible members — so a group's name and the group-level lines
+ *    meeting at it share one anchor, and the anchor doesn't jump as members pan in and out of
+ *    frame." Call this once per structural rebuild (statically, like the source does — hubs don't
+ *    move unless communities do) and reuse the same result every frame, the same way `clusterExtent`
+ *    below reuses the SAME hub it returns.
+ * 2. `degree` must be WHOLE-GRAPH undirected degree (`GraphNode.deg` in the source, documented there
+ *    as "undirected degree (drives node size)" — CanvasGraphRenderer.ts:211) — not degree restricted
+ *    to edges within the community, and not degree restricted to the visible field.
+ *
+ * This is the OPPOSITE member-set requirement from `clusterExtent` below, which must be fed only the
+ * viewport-visible members of the SAME community (it measures how far a label has to reach across
+ * what the user can actually see this frame). Building one `visibleMembers` array and passing it to
+ * both is the specific bug this split contract exists to prevent: the anchor would then recompute
+ * every frame from whatever happens to be on screen and visibly jump as the user pans — invisible to
+ * any test in this module, since nothing here owns "the same frame" or "the previous frame".
  */
 export function pickHubAnchor(members: Iterable<{ id: number; degree: number }>): number | undefined {
   let best: { id: number; degree: number } | undefined;
@@ -226,8 +267,13 @@ export function clusterLabelLift(extent: number): number {
  * A community's on-screen extent around its hub anchor: the max, over its members, of
  * `max(|dy|, |dx| * 0.5)` — vertical distance dominates because the name lifts UPWARD off the hub,
  * so width matters half as much as height for how far it has to clear. Ported from
- * `drawClusterNames`'s per-member accumulation (CanvasGraphRenderer.ts:1596-1600). Callers should
- * pass only viewport-visible members (see `inViewport` below), matching the source.
+ * `drawClusterNames`'s per-member accumulation (CanvasGraphRenderer.ts:1596-1600).
+ *
+ * `members` here must be VIEWPORT-VISIBLE members only (filter with `inViewport` below first),
+ * matching the source — this is the extent of what the user can actually see this frame, not the
+ * whole community. `hub`, by contrast, should be the SAME anchor `pickHubAnchor` returned (whole-
+ * graph, precomputed, unaffected by panning) — see the deliberately opposite member-set contract
+ * documented on `pickHubAnchor` above. Do not build one member list and feed it to both.
  */
 export function clusterExtent(
   hub: { sx: number; sy: number },
