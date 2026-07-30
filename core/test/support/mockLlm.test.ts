@@ -151,7 +151,11 @@ describe("backendMockEnv", () => {
         }
         // File-based mappings (see backendEnv.ts's own case comments): require a workDir (throw
         // without one), and the mock URL lands in a FILE this call writes into that dir — never in
-        // the returned env object's own values (those are just paths/keys).
+        // the returned env object's own values (those are just paths/keys). cline joined this group
+        // in a later task (see backendEnv.ts's `cline` case): its providers.json is written one
+        // directory DEEPER than codex/openclaw's own config files (`<workDir>/data/settings/
+        // providers.json`, not `<workDir>/*`), so this drift guard walks the tree recursively for it
+        // rather than reusing the flat `readdirSync(dir)` codex/openclaw get away with.
         case "codex":
         case "openclaw": {
           expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
@@ -164,11 +168,15 @@ describe("backendMockEnv", () => {
           expect(written).toContain(MOCK_URL);
           break;
         }
-        // No env-var mapping is possible at all (see backendEnv.ts's own case comment for why) —
-        // must throw, never silently return an empty/unusable mapping a caller could trust.
-        case "cline":
-          expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/authenticate|OAuth/);
+        case "cline": {
+          expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
+          const dir = mkdtempSync(join(tmpdir(), `backendenv-driftguard-${id}-`));
+          const env = backendMockEnv(id, MOCK_URL, dir);
+          expect(Object.keys(env).length).toBeGreaterThan(0);
+          const written = readFileSync(join(dir, "data", "settings", "providers.json"), "utf8");
+          expect(written).toContain(`${MOCK_URL}/v1`);
           break;
+        }
         // Hidden ACP-ADAPTER entries (catalog.ts's `hidden` doc comment): each bridges a CLI that
         // already has its own native row above (claude, codex) — deliberately never given a
         // SEPARATE row of their own, so this function throws (an unknown id in the switch) rather
@@ -219,8 +227,17 @@ describe("backendMockEnv", () => {
     });
   });
 
-  test('cline throws — its only real mock mechanism (the `auth` subcommand) cannot reach the ACP mode Bismuth actually drives, which demands real OAuth (verified live this task)', () => {
-    expect(() => backendMockEnv("cline", MOCK_URL)).toThrow(/authenticate|OAuth/);
+  test("cline requires a workDir (its real mechanism is a $CLINE_DIR/data/settings/providers.json file — a LATER task found a live-verified CLINE_API_KEY bypass; see backendEnv.ts's case comment for the full, source-cited finding, correcting this row's earlier 'no bypass exists' conclusion)", () => {
+    expect(() => backendMockEnv("cline", MOCK_URL)).toThrow(/workDir/);
+
+    const dir = mkdtempSync(join(tmpdir(), "backendenv-cline-test-"));
+    const env = backendMockEnv("cline", MOCK_URL, dir);
+    expect(env.CLINE_DIR).toBe(dir);
+    expect(env.CLINE_PROVIDER).toBe("openai-compatible");
+    expect(env.CLINE_API_KEY).toBeTruthy();
+    const providers = readFileSync(join(dir, "data", "settings", "providers.json"), "utf8");
+    expect(providers).toContain(`${MOCK_URL}/v1`);
+    expect(providers).toContain('"openai-compatible"');
   });
 
   test("goose maps ANTHROPIC_HOST + GOOSE_PROVIDER=anthropic — verified live end-to-end this task (upgraded from GUESSED)", () => {

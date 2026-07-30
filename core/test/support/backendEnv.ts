@@ -26,7 +26,9 @@
 //     location were confirmed live; the actual model-ROUTING mechanism through its Gateway
 //     architecture was never executed at all — a materially weaker claim than gemini's).
 //   - Throws: no env-var (or file-based) mapping exists that actually works for how Bismuth spawns
-//     that backend — see cline's case comment for the one row this applies to, and why.
+//     that backend. NO row currently uses this label (cline used to be the one exception — see its
+//     case comment for how a LATER task found a real, source-cited bypass and corrected it to
+//     VERIFIED; the label stays documented here in case a future backend genuinely has no path in).
 // Two miscitations were already caught in this repo's recent work (see catalog.ts's history) —
 // presenting an unverified mapping as fact is the exact failure mode that produces a THIRD, so this
 // file is disciplined about which label is which and updates this file's OWN vocabulary comment
@@ -36,19 +38,20 @@
 // module to mock a backend it doesn't know about is a bug in the CALLER (a typo'd backend id, or
 // a new backend added to core/src/agentBackends/catalog.ts that this file hasn't caught up to
 // yet), not a "just don't mock anything" situation; the whole point of this harness is that a
-// misconfigured mock must fail loud, never silently fall through to a real API. Task 4 extends this
-// same discipline one step further: a KNOWN backend whose only "mapping" would be env vars that
-// DON'T ACTUALLY WORK for how Bismuth spawns it (cline's ACP mode, verified this task) throws too,
-// with a message explaining exactly why and what (if anything) DOES work — never a row that "looks"
-// complete but silently falls through to a real API the moment someone trusts it.
+// misconfigured mock must fail loud, never silently fall through to a real API. A KNOWN backend
+// whose only "mapping" would be env vars that DON'T ACTUALLY WORK for how Bismuth spawns it would
+// also throw, with a message explaining exactly why and what (if anything) DOES work — never a row
+// that "looks" complete but silently falls through to a real API the moment someone trusts it. (No
+// row currently needs this — see the "Throws" label above.)
 //
-// `workDir`: two backends' REAL working mechanism is a FILE Bismuth's driver reads at spawn time
-// (Codex's `$CODEX_HOME/config.toml`, OpenClaw's `$OPENCLAW_CONFIG_PATH`), not a value any env var
-// carries directly — this file writes that config INTO `workDir` (a caller-owned temp directory,
-// never touched by any other test) and returns only the env vars that point at it. Every other
-// backend ignores this parameter entirely; it defaults to undefined so every pre-Task-4 call site
-// (`backendMockEnv(id, mockUrl)`, no third argument) is completely unaffected.
-import { writeFileSync } from "node:fs";
+// `workDir`: three backends' REAL working mechanism is a FILE Bismuth's driver reads at spawn time
+// (Codex's `$CODEX_HOME/config.toml`, OpenClaw's `$OPENCLAW_CONFIG_PATH`, cline's
+// `$CLINE_DIR/data/settings/providers.json`), not a value any env var carries directly — this file
+// writes that config INTO `workDir` (a caller-owned temp directory, never touched by any other test)
+// and returns only the env vars that point at it. Every other backend ignores this parameter
+// entirely; it defaults to undefined so every pre-Task-4 call site (`backendMockEnv(id, mockUrl)`,
+// no third argument) is completely unaffected.
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export function backendMockEnv(backendId: string, mockUrl: string, workDir?: string): Record<string, string> {
@@ -227,52 +230,101 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
       };
 
     // --------------------------------------------------------------------------------------
-    // FIXED this task, per the brief's finding #1 — the OLD row was already flagged as the
-    // weakest-confidence guess in this file, and Task 4 confirms it was actually WRONG for the
-    // mode Bismuth's own driver spawns, in a way plain env vars cannot fix at all:
+    // FIXED again, this later task ("close the cline coverage gap" — see REPORT-cline.md), CORRECTING
+    // Task 4's own "no bypass exists" conclusion directly below (kept, struck through by this note
+    // rather than deleted, because it documents what was actually checked and why the earlier
+    // conclusion looked reasonable at the time): Task 4 read cline's ACP surface from the OUTSIDE
+    // (black-box JSON-RPC probing) and correctly found `authenticate` hangs on real OAuth. This task
+    // read the SOURCE — cline 3.0.47's own compiled binary (`npm install cline@3.0.47`, `strings`'d
+    // `bin/.cline`, the same technique agents.ts's header already used) — and found the auth check
+    // ITSELF has an unconditional escape hatch never involving `authenticate` at all:
     //
-    //   - cline's PLAIN CLI mode (`cline "<prompt>"`, NOT what Bismuth drives) genuinely CAN be
-    //     pointed at a mock — VERIFIED LIVE: `cline auth -p openai-compatible -k <key> -b <url> -m
-    //     <model>` (the real subcommand the brief names) persists a custom provider, and
-    //     `CLINE_DIR=<isolated dir>` (a real, live-confirmed env var — NOT `CLINE_DATA_DIR`, which
-    //     looks plausible from the binary's own strings table but does nothing; `--data-dir`/
-    //     `CLINE_DIR` are the two that actually redirect cline's persisted state) keeps this
-    //     entirely off the developer's real `~/.cline`. A full turn was confirmed this way:
-    //     `CLINE_DIR=<dir> cline auth ...` then `CLINE_DIR=<dir> cline --provider openai-compatible
-    //     --model mock --json "hello there"` returned the mock's exact fixture text, with the
-    //     mock's own /metrics confirming exactly one hit and zero real network access.
-    //   - Bismuth's ACTUAL cline integration drives a COMPLETELY DIFFERENT mode —
-    //     `cline --acp` (chatProviders/acp/agents.ts's spec) — and THAT mode's `session/new`
-    //     unconditionally refuses with `-32000 "Authentication required: Call authenticate before
-    //     creating a session"` until an `authenticate` call succeeds. `initialize`'s own
-    //     `authMethods` for ACP mode are HARDCODED to `["cline", "openai-codex"]` — "Sign in with
-    //     Cline" / "Sign in with ChatGPT Subscription" — real OAuth flows, NOT the
-    //     "openai-compatible" provider the `auth` subcommand configures; calling `authenticate`
-    //     with either literally hangs waiting for a real interactive sign-in (reproduced live,
-    //     killed after it never returned). There is NO env var, no CLI flag, and no config file
-    //     this task could find that lets cline's ACP session/new skip this OAuth gate — it is a
-    //     genuine architectural wall in cline 3.0.47's ACP mode specifically, independent of the
-    //     provider-auth mechanism the brief pointed at (which fixes the OTHER mode).
+    //   async newSession(z){if(!this.authResult&&!process.env.CLINE_API_KEY){if(this.authResult=
+    //   this.tryRestoreAuth(),!this.authResult)throw $.authRequired(void 0,"Call authenticate before
+    //   creating a session")}let G=A(),J="act",Q=process.env.CLINE_PROVIDER??
+    //   this.authResult?.providerId??"cline",Y=process.env.CLINE_MODEL??
+    //   "anthropic/claude-sonnet-4.6";...}
     //
-    // So there is no env-var mapping that would make `CHAT_BACKENDS.cline` (the actual production
-    // driver) hit this mock — returning one anyway would be exactly the "row that will be trusted
-    // and cannot work" failure mode the brief warns against. This throws instead, pointing at what
-    // DOES work (the CLI mode + subcommand) and stating plainly that it doesn't reach the ACP mode
-    // Bismuth ships. clineMocked.test.ts instead asserts the SAFE, real, live behavior:
-    // `CHAT_BACKENDS.cline` against an isolated (guaranteed-unauthenticated) `CLINE_DIR` surfaces a
-    // clean `error` ChatFrame — never a hang, never a silent real-account fallback.
+    // `process.env.CLINE_API_KEY` (any non-empty string) unconditionally skips the throw — no
+    // `authenticate` call, no OAuth, no network of any kind. `CLINE_PROVIDER`/`CLINE_MODEL` are read
+    // the SAME way, unchecked against cline's own OAuth-only provider allowlist (`var
+    // B=[{id:"cline",...},{id:"openai-codex",...}]`, used elsewhere to validate `session/set_
+    // config_option`'s `provider` case but NOT consulted here) — so a THIRD, non-OAuth provider id
+    // (`"openai-compatible"`, the same one cline's own `auth` subcommand configures for its OTHER,
+    // non-ACP CLI mode) can be substituted freely. `buildConfig()` (called once a turn actually
+    // starts) reads the literal model-client apiKey the SAME way: `Y=process.env.CLINE_API_KEY??
+    // this.authResult?.apiKey??""` — so the one bypass var does double duty as both the gate key AND
+    // the credential handed to whatever provider client gets built.
+    //
+    // The remaining piece — the "openai-compatible" provider's baseUrl — is NOT itself an env var;
+    // it is read from `$CLINE_DIR/data/settings/providers.json`, the same file cline's own `cline
+    // auth -p openai-compatible -k <key> -b <url> -m <model>` subcommand persists (Task 4 already
+    // found this subcommand VERIFIED LIVE to write to disk with zero network access — this task
+    // reuses that fact but writes the file directly rather than shelling out, mirroring how the
+    // `codex`/`openclaw` cases below already write their own config files straight into `workDir`).
+    // Live-verified END TO END this task: a real cline 3.0.47 binary, driven through
+    // `CHAT_BACKENDS.cline` (chatProviders/acp/driver.ts, completely unmodified) with exactly this
+    // mapping, completed a full ACP turn — `session/new` succeeded with zero prior `authenticate`
+    // call, `session/prompt` returned the mock fixture's exact "Hello!" text (a real model would
+    // never reply with that verbatim), and the turn settled with `result.isError:false`. See
+    // clineMocked.test.ts's "real E2E" block for the assertions.
+    //
+    // TWO HONEST LIMITS, so this row is not overclaimed:
+    //   1. This does NOT make cline's real "cline"/"openai-codex" OAuth-backed providers reachable —
+    //      those still require a genuine interactive sign-in and remain closed, exactly as Task 4
+    //      found. This mapping routes around the gate entirely via a THIRD provider id the gate
+    //      never actually validates — a design gap in cline's OWN auth check, not a way through it.
+    //   2. cline's real `session/new` response carries BOTH the old `models.availableModels` shape
+    //      AND a `configOptions` array whose FIRST category:"model" entry is a "provider" selector
+    //      (options shaped `{value, name}`), not the actual per-model selector (options shaped
+    //      `{id, name}`, further down the array). Bismuth's `detectModelShape` (protocol.ts) takes
+    //      the FIRST category:"model" match and its parser filters on `.id` — so against a real
+    //      cline, the driver's own `models` ChatFrame ends up empty (`o?.id` never matches `{value,
+    //      name}` entries) even though the turn itself completes correctly. A genuine quirk of
+    //      cline's OWN ACP implementation (its "model" config option and its "provider" config
+    //      option share one category, and the SDK-generic client can't tell them apart), confirmed
+    //      live, deliberately NOT fixed by this task (out of scope — this task tests coverage, not
+    //      driver/protocol changes) and NOT asserted on by clineMocked.test.ts's new block either
+    //      way, to avoid the exact "asserts something true only by accident" shape this harness
+    //      warns against.
     // --------------------------------------------------------------------------------------
-    case "cline":
-      throw new Error(
-        'backendMockEnv: "cline" has no working env-var mock mapping for Bismuth\'s actual `cline --acp` ' +
-          "integration (chatProviders/acp/driver.ts). VERIFIED LIVE (Task 4): ACP mode's `session/new` demands " +
-          '`authenticate` with a REAL OAuth method ("cline" or "openai-codex" sign-in) before it will proceed, ' +
-          "and that call hangs waiting for real interactive login — it cannot be satisfied by a mock. Cline's " +
-          "OTHER, non-ACP CLI mode (`cline \"<prompt>\"`) CAN be pointed at a mock, but only via the `cline auth " +
-          "-p openai-compatible -k <key> -b <url> -m <model>` subcommand (scope its state with the CLINE_DIR env " +
-          "var, not this function) run as SETUP before invoking cline — not a value this function can return. " +
-          "See this file's `cline` case comment and the Task 4 report for the full finding.",
+    case "cline": {
+      if (!workDir) {
+        throw new Error(
+          'backendMockEnv: "cline" requires a third `workDir` argument — its real mock mechanism is a ' +
+            "$CLINE_DIR/data/settings/providers.json file, not a bare env var alone (see this file's `cline` " +
+            "case comment for the full, live-verified finding). Pass a throwaway temp directory this call may " +
+            "write into; the caller must also set CLINE_DIR to this same directory (this function does not set " +
+            "process.env itself, matching every other case here).",
+        );
+      }
+      const settingsDir = join(workDir, "data", "settings");
+      mkdirSync(settingsDir, { recursive: true });
+      writeFileSync(
+        join(settingsDir, "providers.json"),
+        JSON.stringify(
+          {
+            version: 1,
+            lastUsedProvider: "openai-compatible",
+            providers: {
+              "openai-compatible": {
+                settings: { provider: "openai-compatible", apiKey: "mock", model: "mock-model", baseUrl: `${mockUrl}/v1` },
+                updatedAt: new Date().toISOString(),
+                tokenSource: "manual",
+              },
+            },
+          },
+          null,
+          2,
+        ),
       );
+      return {
+        CLINE_DIR: workDir,
+        CLINE_PROVIDER: "openai-compatible",
+        CLINE_API_KEY: "mock",
+        CLINE_MODEL: "mock-model",
+      };
+    }
 
     // --------------------------------------------------------------------------------------
     // VERIFIED live end-to-end (Task 4, upgraded from GUESSED) — the original source-reading

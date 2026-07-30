@@ -22,13 +22,26 @@
 // request of any kind. This is exactly the "zero account API calls, even under a real integration
 // test" property the whole task exists to prove, applied to the one backend where the honest answer
 // is "cannot be mocked, and here is the proof it fails SAFELY rather than falling through."
+//
+// UPDATE (a LATER task, "close the cline coverage gap" — see REPORT-cline.md): the paragraph above
+// is Task 4's own black-box finding, kept as written because it documents what was actually checked
+// then. Reading cline 3.0.47's own SOURCE (not just probing its wire behavior) found the "no bypass
+// exists" conclusion was WRONG: `session/new`'s auth check has an unconditional `CLINE_API_KEY` env
+// var escape hatch that skips it WITHOUT ever calling `authenticate` — see backendEnv.ts's `cline`
+// case for the full citation and the live-verified mechanism. This file's ORIGINAL test above is
+// left completely unchanged (it still proves a real, valuable, distinct fact: the DEFAULT,
+// no-bypass-configured behavior fails safely) — the new "real E2E" describe block below, added by
+// that later task, proves the SEPARATE fact that a real cline binary can now be driven to a
+// completed turn against a local mock, through this exact same unmodified driver.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { whichBinary } from "../../src/claudeWhich";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
+import { backendMockEnv } from "../support/backendEnv";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
+import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
 
 const HAS_CLINE = whichBinary("cline") !== null;
 const describeOrSkip = HAS_CLINE ? describe : describe.skip;
@@ -103,5 +116,104 @@ describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver —
       expect(frames.some((f) => f.type === "result")).toBe(false);
     },
     20_000,
+  );
+});
+
+// --------------------------------------------------------------------------------------------
+// REAL E2E, added by the "close the cline coverage gap" task (see this file's header UPDATE note
+// and backendEnv.ts's `cline` case for the full citation). Drives the SAME real `cline` binary
+// through the SAME unmodified `CHAT_BACKENDS.cline` production driver as the block above, but via
+// the `CLINE_API_KEY`-bypass mapping `backendMockEnv("cline", ...)` now returns — a real,
+// live-verified escape hatch found by reading cline 3.0.47's own compiled source, NOT an OAuth
+// flow and NOT a real account credential of any kind (see the case comment for exactly why this is
+// safe: it substitutes a THIRD, non-OAuth provider id the auth check never actually validates,
+// pointed only at 127.0.0.1). Skips under the SAME `HAS_CLINE` gate as the block above.
+// --------------------------------------------------------------------------------------------
+describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver, against a local mock LLM — a full turn completes end to end (see this file's header UPDATE note)", () => {
+  const ENV_KEYS = ["CLINE_DIR", "CLINE_PROVIDER", "CLINE_API_KEY", "CLINE_MODEL"] as const;
+  const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
+  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  const chatIds: string[] = [];
+  const tempDirs: string[] = [];
+  let mock: MockLlmHandle | undefined;
+
+  afterEach(async () => {
+    for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
+    if (mock) {
+      await mock.stop();
+      mock = undefined;
+    }
+    // Orphan-safety net (found live during this task): the real cline binary's `--acp` mode spawns
+    // a DETACHED `--cline-hub-daemon` grandchild on startup that outlives `driver.ts`'s
+    // `proc.kill()` — that call only reaches the immediate `cline --acp` child, and the hub daemon
+    // has already detached from it by the time a slow/timed-out test tears down. Reproduced live:
+    // a deliberately-broken mock (unroutable baseUrl) left exactly this process running after the
+    // test's own 25s timeout killed the parent. `pkill -f <cwd>` targets it precisely — each test
+    // run gets a FRESH mkdtemp'd cwd passed on the hub daemon's own `--cwd` argv, so this can never
+    // match an unrelated process, including a hub daemon from a DIFFERENT concurrent test run.
+    // Best-effort: pkill exits non-zero when nothing matched (the common, healthy case), which must
+    // never fail this hook.
+    for (const dir of tempDirs) {
+      if (!dir.includes("bismuth-cline-real-e2e-cwd-")) continue;
+      try {
+        Bun.spawnSync(["pkill", "-f", dir]);
+      } catch {
+        /* best-effort orphan cleanup only */
+      }
+    }
+    for (const dir of tempDirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  });
+
+  async function newTempDir(prefix: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), prefix));
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  test(
+    "a real cline binary, pointed at a local mock via the CLINE_API_KEY bypass, completes a full turn: the mock fixture's exact text arrives, then result.isError===false",
+    async () => {
+      mock = await startMockLlm();
+      const workDir = await newTempDir("bismuth-cline-real-e2e-");
+      const env = backendMockEnv("cline", mock.url, workDir);
+      for (const [k, v] of Object.entries(env)) process.env[k] = v;
+
+      const cwd = await newTempDir("bismuth-cline-real-e2e-cwd-");
+      const chatId = "cline-real-e2e-" + Date.now();
+      chatIds.push(chatId);
+      const { frames, sink, waitFor } = makeChatFrameCollector(25_000);
+
+      CHAT_BACKENDS.cline.sendMessage({ chatId, cwd, sink, computerUse: false, text: "hello" });
+
+      // session/new actually succeeded through the auth gate (never called `authenticate`) — the
+      // session frame only ever fires after that.
+      const sessionFrame = await waitFor((f) => f.type === "session");
+      expect(sessionFrame.type).toBe("session");
+
+      // The core proof this task exists to add: the mock fixture's EXACT text (core/test/fixtures/
+      // llm/basic-turn.json's "Hello!") arriving through the driver — text no real model would ever
+      // reply with verbatim (see mockLlm.ts's own header), so this is what proves the turn hit OUR
+      // mock and not any real vendor account.
+      const assistantText = await waitFor((f) => f.type === "assistant-text");
+      if (assistantText.type === "assistant-text") expect(assistantText.text).toBe("Hello!");
+
+      const done = await waitFor((f) => f.type === "done");
+      expect(done.type).toBe("done");
+      const resultIdx = frames.findIndex((f) => f.type === "result");
+      const doneIdx = frames.findIndex((f) => f.type === "done");
+      expect(resultIdx).toBeGreaterThanOrEqual(0);
+      expect(doneIdx).toBeGreaterThan(resultIdx);
+      if (frames[resultIdx].type === "result") expect(frames[resultIdx].isError).toBe(false);
+
+      // Never confused with the OTHER block's safe-refusal path.
+      expect(frames.some((f) => f.type === "error")).toBe(false);
+    },
+    25_000,
   );
 });
