@@ -2,19 +2,32 @@
 //
 // Pins the camera-dolly derivation from MERGE-NOTES.md §6: `dollyForT` must be the exact algebraic
 // inverse of Canvas's original `zoomT()`, monotonic, zero at the resting overview, and never reach
-// the perspective plane. The round-trip test is the whole correctness claim for the derivation (see
-// cameraModel.ts's module comment) — its tolerance is exercised here, not just asserted.
+// the perspective plane — at ANY perspective distance a real host box can produce, not just an
+// "ordinary" one (see cameraModel.ts's module comment for why that distinction matters). The
+// round-trip test is the whole correctness claim for the derivation — its tolerance is exercised
+// here, not just asserted.
 import { describe, expect, it } from "bun:test";
 import { dollyForT, MAX_MAGNIFICATION, MAX_ZOOM_FRAC, zoomT } from "./cameraModel";
 
-// Representative perspective distances (`P = (H/2) / tan(FOV/2)`, FOV 60°) for viewport heights from
-// ~140px to ~2770px — comfortably inside the "any real viewport" domain the module comment's
-// derivation depends on (P ≫ 1 / (1 - MAX_ZOOM_FRAC) ≈ 16.667; see the "round trip" describe below
-// for what happens once P drops near that threshold).
-const PERSPECTIVES = [120, 300, 650, 1200, 2400];
+// Perspective distances (`P = (H/2) / tan(FOV/2)`, FOV 60°) spanning ordinary viewport heights
+// (~280px to ~5540px) down to the genuinely degenerate cases this renderer's own code admits: 15.59
+// is ASCII's grid floor (`rows = max(1, floor((h - 2*PAD_Y) / cellH))`) for ANY host box under 56px
+// tall — a pane dragged to a sliver, or a collapsed split, both ordinary UI states — and 8.66 is the
+// same floor under a `--cell-h: 10px` CSS override; `graphFit.ts`'s `MIN_USABLE_BOX_PX = 4` admits
+// boxes smaller still (1.5 stands in for that). There is no separate "too small" code path in
+// dollyForT/zoomT — whatever P a real host box produces is handed to them unmodified — so the
+// properties below hold across this whole range, not just at a comfortable viewport scale.
+const PERSPECTIVES = [1.5, 8.66, 15.59, 120, 300, 650, 1200, 2400, 3741];
+
+// The subset of PERSPECTIVES clear of the MAX_ZOOM_FRAC floor (P > 1/(1-MAX_ZOOM_FRAC) ≈ 16.667),
+// where maxZsFor's per-P magnification simplifies to exactly the asymptotic MAX_MAGNIFICATION — i.e.
+// where dollyForT(1,P) === MAX_ZOOM_FRAC*P and the t=0.5 magnification === √MAX_MAGNIFICATION hold as
+// exact shortcuts rather than merely "the correct, P-scaled value" (which the round-trip test below
+// already covers at every P in PERSPECTIVES, floor included).
+const ORDINARY_PERSPECTIVES = [120, 300, 650, 1200, 2400, 3741];
 
 describe("dollyForT — the derived camera dolly", () => {
-  it("is strictly monotonic on [0,1]", () => {
+  it("is strictly monotonic on [0,1], at every perspective distance including the degenerate ones", () => {
     for (const P of PERSPECTIVES) {
       let prev = -Infinity;
       for (let i = 0; i <= 200; i++) {
@@ -29,8 +42,10 @@ describe("dollyForT — the derived camera dolly", () => {
     for (const P of PERSPECTIVES) expect(dollyForT(0, P)).toBe(0);
   });
 
-  it("dollyForT(1, P) reaches exactly Canvas's old wheel-clamp stop, MAX_ZOOM_FRAC * P", () => {
-    for (const P of PERSPECTIVES) expect(dollyForT(1, P)).toBeCloseTo(MAX_ZOOM_FRAC * P, 9);
+  it("at ordinary viewport scale, dollyForT(1, P) reaches exactly Canvas's old wheel-clamp stop, MAX_ZOOM_FRAC * P", () => {
+    // Clear of maxZsFor's floor (see ORDINARY_PERSPECTIVES) this is not just close — the chain
+    // P * (1 - 1/maxZsFor(P)) collapses to exactly MAX_ZOOM_FRAC * P, bit-for-bit, at every P tested.
+    for (const P of ORDINARY_PERSPECTIVES) expect(dollyForT(1, P)).toBe(MAX_ZOOM_FRAC * P);
   });
 
   it("never reaches the perspective plane P for any t in [0,1] — no divide-by-zero, no inversion", () => {
@@ -41,10 +56,23 @@ describe("dollyForT — the derived camera dolly", () => {
     }
   });
 
-  it("clamps out-of-range t to [0,1], mirroring resolutionT's own clamp", () => {
+  it("clamps out-of-range t to [0,1], mirroring resolutionT's own clamp — bit-identical, not just close", () => {
     for (const P of PERSPECTIVES) {
       expect(dollyForT(-1, P)).toBe(dollyForT(0, P));
-      expect(dollyForT(2, P)).toBeCloseTo(dollyForT(1, P), 9);
+      expect(dollyForT(2, P)).toBe(dollyForT(1, P));
+    }
+  });
+
+  it("pins the mapping's LOG shape independently of the round trip: at t=0.5 the magnification is exactly √MAX_MAGNIFICATION", () => {
+    // A correlated-but-WRONG pair — e.g. dollyForT'(t) = dollyForT(√t) paired with zoomT'(z) =
+    // zoomT(z)² — round-trips perfectly (zoomT'(dollyForT'(t)) = zoomT(dollyForT(√t))² = (√t)² = t)
+    // while relocating every LOD/label/colour boundary the log character exists to space evenly. The
+    // round-trip test alone cannot catch that kind of bug, because it only checks that going in and
+    // back out returns you to where you started — not where the midpoint actually landed. This does.
+    for (const P of ORDINARY_PERSPECTIVES) {
+      const dolly = dollyForT(0.5, P);
+      const magnification = P / (P - dolly);
+      expect(magnification).toBeCloseTo(Math.sqrt(MAX_MAGNIFICATION), 10);
     }
   });
 });
@@ -72,14 +100,17 @@ describe("zoomT — Canvas's dolly-to-progress mapping, ported and parameterized
 });
 
 describe("round trip — the whole correctness claim (zoomT(dollyForT(t, P), P) ≈ t)", () => {
-  it("round-trips within 1e-9 across the full [0,1] range, for any realistic perspective", () => {
-    // Tolerance is NOT tuned to make this pass — dollyForT was derived as the closed-form algebraic
-    // inverse of zoomT (see cameraModel.ts's module comment), so in the domain where that derivation
-    // holds (P > 1 / (1 - MAX_ZOOM_FRAC) ≈ 16.667, true of any real viewport) the two are exact
-    // inverses and the only residual is float64 rounding in Math.log/Math.pow — measured at ~1e-15
-    // across this same sweep. 1e-9 leaves nine orders of magnitude of headroom over that measured
-    // error, so this stays a meaningful regression check (it fails hard if the derivation is ever
-    // broken by an edit) without being fragile to engine-level float differences.
+  it("round-trips within 1e-9 across the full [0,1] range, at every perspective distance — no domain restriction", () => {
+    // Tolerance is NOT tuned to make this pass — dollyForT and zoomT share ONE formula for the
+    // wheel-stop magnification (maxZsFor), so they are exact algebraic inverses of each other at
+    // every perspective, not just at a comfortable viewport scale (see cameraModel.ts's module
+    // comment for the history: an earlier version hardcoded that magnification's large-P asymptote
+    // instead of computing it per-P, which broke exactly at the small-P end of this same
+    // PERSPECTIVES array — see the "deliberately wrong dolly" test below for the measured size of
+    // that break). The only residual here is float64 rounding in Math.log/Math.pow — measured at
+    // ~8e-16 across this whole sweep. 1e-9 leaves six orders of magnitude of headroom over that
+    // measured error, so this stays a meaningful regression check without being fragile to
+    // engine-level float differences.
     for (const P of PERSPECTIVES) {
       for (let i = 0; i <= 200; i++) {
         const t = i / 200;
@@ -88,15 +119,20 @@ describe("round trip — the whole correctness claim (zoomT(dollyForT(t, P), P) 
     }
   });
 
-  it("degrades below the documented precondition (P near 1/(1-MAX_ZOOM_FRAC)) — proof the tolerance is load-bearing, not decorative", () => {
-    // At P = 10 (well under the ~16.667 threshold), the guard inside zoomT's own zs/maxZs floor
-    // distorts the ratio at mid-range t, not just at the t=1 boundary — the round trip genuinely
-    // breaks (measured error ~0.18 at t=0.5), rather than merely losing precision. This pins that the
-    // 1e-9 tolerance above is doing real work (it would catch this), not a threshold nobody could
-    // ever miss.
-    const P = 10;
-    const t = 0.5;
-    expect(Math.abs(zoomT(dollyForT(t, P), P) - t)).toBeGreaterThan(0.1);
+  it("a deliberately wrong dolly — the hardcoded-constant formula this file used to use — fails the round-trip gate at a degenerate perspective", () => {
+    // Proof the 1e-9 tolerance above is load-bearing, not decorative: it must be ABLE to fail. This
+    // reconstructs the earlier (wrong) implementation locally — plugging the ASYMPTOTIC
+    // MAX_MAGNIFICATION straight into the dolly formula instead of the per-P maxZsFor — rather than
+    // asserting the CURRENT (correct) dollyForT fails at a degenerate P, which would be pinning the
+    // bug in place instead of the fix (see cameraModel.ts's module comment for why that constant is
+    // now merely a documentation value, not something either exported function computes with).
+    const wrongDollyForT = (t: number, perspective: number) => perspective * (1 - Math.pow(MAX_MAGNIFICATION, -t));
+    const P = 10, t = 0.5;
+    expect(Math.abs(zoomT(wrongDollyForT(t, P), P) - t)).toBeGreaterThan(0.1); // measured ~0.111
+    // Sanity: the wrong formula agrees with the correct one at ordinary viewport scale (that's WHY
+    // the bug shipped unnoticed) — this isn't testing dollyForT, just confirming the comparandum
+    // above is a faithful reconstruction of "worked in the common case, broke at the small-P edge".
+    expect(zoomT(wrongDollyForT(0.5, 300), 300)).toBeCloseTo(0.5, 9);
   });
 });
 
