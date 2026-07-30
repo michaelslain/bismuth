@@ -11,7 +11,7 @@ test("loadSettings returns defaults for null / malformed / non-object input", ()
 test("loadSettings returns a fresh clone, not the DEFAULTS reference", () => {
   const a = loadSettings(null);
   a.appearance.editorFontSize = 99;
-  expect(DEFAULTS.appearance.editorFontSize).toBe(11.5);
+  expect(DEFAULTS.appearance.editorFontSize).toBe(13.5);
 });
 
 test("loadSettings overlays stored values and keeps defaults for missing keys", () => {
@@ -20,7 +20,7 @@ test("loadSettings overlays stored values and keeps defaults for missing keys", 
   expect(s.appearance.theme).toBe("rose-gold");                // taken from storage
   expect(s.appearance.editorFont).toBe("Monaspace Xenon");      // default kept
   expect(s.graph.spin).toBe(false);                            // taken from storage
-  expect(s.appearance.editorFontSize).toBe(11.5);              // default kept
+  expect(s.appearance.editorFontSize).toBe(13.5);              // default kept
 });
 
 test("loadSettings ignores wrong-typed and unknown keys", () => {
@@ -29,7 +29,7 @@ test("loadSettings ignores wrong-typed and unknown keys", () => {
     editor: { autoSaveDelay: 1500 },
   });
   const s = loadSettings(raw) as any;
-  expect(s.appearance.editorFontSize).toBe(11.5); // wrong type rejected → default
+  expect(s.appearance.editorFontSize).toBe(13.5); // wrong type rejected → default
   expect(s.appearance.bogus).toBeUndefined();   // unknown key dropped
   expect(s.editor.autoSaveDelay).toBe(1500);    // valid override applied
 });
