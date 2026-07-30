@@ -65,23 +65,27 @@ import "./Editor.css";
 // Prose font/size and selection tint come from CSS variables (set by App.tsx from
 // the Appearance settings), so they update live without rebuilding the editor.
 const editorTheme = EditorView.theme({
-  // Prose reads as serif Lora near --fg with a soft tone (design: color-mix(hi 86%, lo)),
-  // centered in a 760px reading column to match the redesigned editor column.
-  "&": { backgroundColor: "transparent", color: "color-mix(in srgb, var(--fg) 88%, var(--text-muted))", height: "100%" },
+  // Prose reads in the mono prose font near --fg with a soft tone (design: color-mix(hi 86%, lo)),
+  // centered in the redesign's 620px prose column. The editor's own ground is --editor (a
+  // dedicated paper tone, distinct from the app's --bg chrome), not a transparent pass-through.
+  "&": { backgroundColor: "var(--editor)", color: "color-mix(in srgb, var(--fg) 88%, var(--text-muted))", height: "100%" },
   // Center the gutter + content TOGETHER (justify-content on the flex scroller) rather
   // than centering .cm-content alone — otherwise the line-number gutter stays pinned to
   // the far left while the text floats to the middle, leaving a huge empty indent.
   // `overflowAnchor: none` stops the browser's scroll-anchoring from bumping scrollTop when
   // live-preview widgets above the viewport change height (reveal/fold) — that drift is what
   // could nudge a restored position toward the bottom on a tab return; our scroll-restore owns it.
-  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "var(--prose-line-height, 1.65)", overflow: "auto", overflowAnchor: "none", justifyContent: "center", padding: "0 40px" },
+  // Line-height is a multiple of the app's row unit (--row-h, ui.css :root), NOT of the
+  // font size — editor.lineHeight (--prose-line-height) defaults to 1, so prose lines land
+  // exactly on --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
+  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "calc(var(--row-h, 18px) * var(--prose-line-height, 1))", overflow: "auto", overflowAnchor: "none", justifyContent: "center", padding: "0 40px" },
   // The horizontal reading-column inset lives on the SCROLLER (padding), NOT on
   // .cm-content. If it were content padding, CodeMirror's drawSelection would paint
   // multi-line selection across that padding too — a "phantom indent" left of the
   // text. Keeping .cm-content flush to the text column means the selection box IS the
   // text column. (Don't set position:relative here — it corrupts CM's selection-rect
   // geometry.) Code line numbers hang at -2.7em into the scroller padding.
-  ".cm-content": { caretColor: "var(--fg)", padding: "8px 0 80px", maxWidth: "680px", width: "100%", boxSizing: "border-box" },
+  ".cm-content": { caretColor: "var(--fg)", padding: "8px 0 80px", maxWidth: "620px", width: "100%", boxSizing: "border-box" },
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--fg)",
     borderLeftWidth: "2px",
@@ -1261,7 +1265,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // Snapshot restore, re-asserted. The `scrollTo` config above already placed the view at the
     // saved position during its first measure; re-dispatch the SAME position-anchored effect across
     // the next several frames so a LATER async reflow can't drift it. The note-title block widget
-    // grows once the Lora serif finishes loading (its ResizeObserver fires well after the initial
+    // grows once the Monaspace prose font finishes loading (its ResizeObserver fires well after the initial
     // measure), and live-preview / Harper decorations re-measure too — each re-dispatch re-scrolls
     // to the exact document position. rAF (not requestMeasure) so re-dispatch is legal. Skipped
     // when a heading anchor claimed the scroll.

@@ -90,10 +90,12 @@ A persistent personal-assistant daemon for this Bismuth vault…
 - The **frontmatter `name:`** drives the sidebar folder label, the daemon-graph hub label, and the bot's self-identity (`daemonIdentityName(vault)` in `core/src/daemon.ts`; the daemon-side registry → `ctx.name`). It defaults to `"daemon"` when the file is absent or has no name.
 - The **body** is the daemon's system prompt, read **fresh per session** and appended to Claude Code's prompt as `You are <name>.\n\n<body>` (`daemon/src/daemon/session.ts` `buildSystemPrompt` + `DEFAULT_DAEMON_IDENTITY`). Editing the body in the Bismuth editor takes effect on the next cron/message.
 
-`identity.md` and the default crons are seeded **non-clobbering** by `reconcileSeeds(ctx)` (`daemon/src/daemon/seeds.ts`) — the daemon's analog of core's `reconcileSettings`. It runs every time a vault's brain comes online and writes only what is **missing**, so a new seedable added in a later version lands in already-set-up vaults on the next boot while user edits and deliberate `enabled: false` are preserved. The shipped defaults (`daemon/src/daemon/defaultCrons.ts`, embedded string constants so they survive `bun build --compile`):
+`identity.md` and the default crons are seeded by `reconcileSeeds(ctx)` (`daemon/src/daemon/seeds.ts`) — the daemon's analog of core's `reconcileSettings`. It runs every time a vault's brain comes online: missing seeds are written, and the two default crons are additionally **version-upgraded** in place when the on-disk file still matches a known PRIOR stock version (never when it's been customized) — see [crons-and-processes.md](crons-and-processes.md#seeding-daemonseedsts--reconcileseedsctx). A new seedable added in a later version lands in already-set-up vaults on the next boot; user edits and deliberate `enabled: false` are always preserved. The shipped defaults (`daemon/src/daemon/defaultCrons.ts`, embedded string constants so they survive `bun build --compile`):
 
 - **`dream`** — hourly (`0 * * * *`) consolidation of this vault's memory graph into an atomic, densely-linked zettelkasten.
 - **`vault-review`** — every 4 hours (`0 */4 * * *`); reviews the vault to keep a living model of the user in memory.
+
+Both ship `incremental: true`: before firing, the daemon diffs a git checkpoint ref (`refs/bismuth/cron-<name>`) against the cron's repo and **skips the session entirely** when nothing relevant changed since the last successful run, instead of re-reading an unchanged vault/memory graph every tick. See [crons-and-processes.md](crons-and-processes.md#incremental-crons) for the full mechanism.
 
 ---
 

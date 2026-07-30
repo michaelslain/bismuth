@@ -24,6 +24,74 @@ interface Layout { pos3d: Positions; pos2d: Positions }
 const to2d = (p: number[]): [number, number] => [p[0], p[1]];
 
 const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache");
+// v19: ASCII redesign, part 2 — two changes, shipped together because the first doesn't work without
+//      the second (an adversarial review caught this before it shipped: see both comments below):
+//      (a) COMMUNITY_SEP_MULT (layout.ts) 1.6 → 2.4 ("things more separated and clustered": whole
+//          communities push much further apart — see layout.ts's comment for the sweep, re-measured on
+//          the real reference vault after the original single-level synthetic fixture's "intra spacing
+//          untouched by construction" claim turned out to be an artifact of testing a flat partition —
+//          on a real multi-level hierarchy intra spacing grows too, just more slowly than the
+//          inter-community gap);
+//      (b) REFINE_TICKS (this file) 120 → 240: at the wider (a) target, 120 ticks no longer converges
+//          — measured on the reference vault (2121 nodes, 3-level hierarchy) through the exact
+//          production pipeline (3D @ refineTicks, 2D seeded from it @ refineTicks), the coarsest-level
+//          2D separation ratio (lower = better; same statistic as layout.test.ts's separation()) went
+//          0.851 (1.6@120, pre-change) → 0.884 (2.4@120, WORSE — the regression an adversarial review
+//          caught) → 0.700 (2.4@240, clearly better than the pre-change baseline). (a) alone, at the
+//          old tick budget, was a net regression; shipping them together is what actually helps — see
+//          REFINE_TICKS's own comment below for the full table.
+//      Both change 3D AND 2D output for every graph whose nodes carry a `community` (every vault graph
+//      — engine.ts stamps it), same scope as v13/v15.
+//      MUST bump — same reasoning as v18/v17/.../v12 below: graphSig() and seedPath() are both
+//      versioned, so the first build after the bump is a full cold settle at the new clearance/budget
+//      and no node stays pinned at a v18 (tighter-lane, 120-tick) position.
+// v18: ASCII redesign — LayoutOptions.clusterLayout's DEFAULT flips from "grid" (2D only) to
+//      "organic" (both dimensions): every top-level cluster now finds its own place via the existing
+//      community gravity + community-level collide forces instead of being anchored onto a lattice
+//      cell. "grid" is unchanged and stays available as an explicit opt-in. Every 2D coordinate moves
+//      (3D was already organic by default, so 3D output is untouched) — the hierarchy now reads
+//      through the ASCII renderer's zoom-driven node color + labels instead of grid-cell islands (see
+//      AsciiGraphRenderer.ts). MUST bump — same reasoning as v17/v16/v15/v13/v12 below: graphSig()
+//      and seedPath() are both versioned, so the first build after the bump is a full cold settle
+//      under the new default and no node stays pinned at a v17 (gridded) position.
+// v17: GRID-ISLAND CONTAINMENT (layout.ts "CONTAINMENT" block) — a per-tick radial constraint now
+//      holds every 2D node inside its island's disc, and island hosting for a too-small top-level
+//      group is decided per GROUP instead of per node. Measured on the reference vault: nodes inside
+//      their island 0.957 → 1.000 (riders 0.500 → 1.000), island pairs overlapping on their settled
+//      p95 radii 42/105 → 0/105. Every 2D coordinate moves (3D is untouched, but the 2D layout is
+//      seeded from it, so the entry is keyed as a whole).
+//      MUST bump — same reasoning as v16/v15/v13/v12 below: graphSig() and seedPath() are both
+//      versioned, so the first build after the bump is a full cold settle under the constraint and no
+//      node stays pinned at a v16 position.
+// v16: GRID ISLANDS (layout.ts "GRID ISLANDS" block) — the 2D layout now anchors every top-level
+//      cluster onto a coarse lattice cell with provable empty lanes, instead of letting the community
+//      forces negotiate cluster positions. Every 2D coordinate moves (3D is untouched, but the 2D
+//      layout is seeded from it, so the entry is keyed as a whole). Also v16: the cluster EXEMPLAR
+//      rule changed (community.ts pickExemplar — tag-preferred, shortest-name), which changes
+//      `communityLabel`/`communityPathLabels`; those are not layout coordinates, but they are baked
+//      into the same graph payload, so a bump keeps the two consistent.
+//      MUST bump — same reasoning as v15/v13/v12 below: graphSig() and seedPath() are both versioned,
+//      so the first build after the bump is a full cold settle under the new placement and no node
+//      stays pinned at a v15 position.
+// v15: HIERARCHICAL communities. Two changes, both of which move every node:
+//      (a) the detector is now Louvain (community.ts), not label propagation, so the `community`
+//          ids the finest-level forces key off are different values AND a different partition;
+//      (b) a vault big enough for 2+ levels (>= ~360 nodes) gets extra gravity + separation forces
+//          per ancestor level (layout.ts "Nesting"), so super-clusters clump and spread too.
+//      MUST bump — same reasoning as v13/v12 below: graphSig() and seedPath() are both versioned,
+//      so the first build after the bump is a full cold PivotMDS settle under the new forces and no
+//      node stays pinned at a v14 position.
+// v13: community-aware clustering forces (layout.ts COMMUNITY_* — anisotropic intra/inter-community
+//      links, packing-floored centroid gravity, community-level collide) so communities read as
+//      distinct blobs when zoomed out instead of one intermingled field. Changes 3D AND 2D output for
+//      every graph whose nodes carry a `community` (i.e. every vault graph — engine.ts stamps it).
+//      MUST bump, and the bump alone is sufficient to self-heal: BOTH keys that could otherwise pin
+//      the old physics forever are versioned — graphSig() (the per-graph layout entry) and
+//      seedPath() (the per-vault warm-start seed the incremental path pins nodes AT). A v12 seed is
+//      therefore never read again, so no node is pinned at a v12 position; the first build after the
+//      bump is a full cold PivotMDS settle under the new forces, and every later warm/incremental
+//      rebuild seeds from THAT. (The in-memory lastFullLayout/lastSecondLayout/lastThirdLayout maps
+//      only ever hold layouts produced in the current process, so they carry no stale physics.)
 // v12: repulsion -10→-7 and MODE_2D_COLLIDE_MULT 1.2→0.65 (layout.ts) — shorter 3D edges and a
 //      less uniform 2D packing. MUST bump: graphSig() keys the cache on CACHE_VERSION alone, so
 //      without it every existing user keeps their v11 layout and sees no change whatsoever —
@@ -41,8 +109,26 @@ const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bism
 // v7: stronger small-graph linkDist boost (400/n, cap 8) — much airier small graphs.
 // v6: small-graph linkDist boost added (sqrt(500/n) factor in layout.ts) changes layout output.
 // v5: collide iterations 3→6 + padding 1.25→1.55 (anti-overlap).
-const CACHE_VERSION = "v12";
-const REFINE_TICKS = 120; // PivotMDS-seeded, so this polishes well without a full ~300-tick settle
+const CACHE_VERSION = "v19"; // v19: COMMUNITY_SEP_MULT 1.6→2.4 + REFINE_TICKS 120→240 (ASCII redesign,
+                              // wider AND converged cluster gaps — see the comment above)
+// 120 → 240 (2026-07-27, same pass as COMMUNITY_SEP_MULT above): at the raised multiplier, 120 ticks no
+// longer fully settles the wider target before the budget runs out. Measured on the reference vault
+// (2121 nodes / 4560-ish edges, 3-level hierarchy) through this EXACT production pipeline (3D @
+// refineTicks, then 2D seeded from that 3D @ refineTicks — see layoutFor below), coarsest-level (L0) 2D
+// separation ratio (lower = better, same statistic as layout.test.ts's separation()):
+//   mult \ ticks    120     240
+//   1.6             0.851   0.763
+//   2.4             0.884   0.700
+// 2.4@120 (0.884) is WORSE than the pre-change 1.6@120 baseline (0.851) — the sim simply hasn't reached
+// the wider target inside the old budget (this is the regression an adversarial review caught before
+// it shipped). 2.4@240 (0.700) is clearly the best of the four: an 18% improvement over the 1.6@120
+// baseline, and better than just giving the OLD multiplier the same extra ticks (1.6@240 = 0.763) — so
+// the win is the multiplier PLUS the budget, not the budget alone. Cost: ~2x a cold layout (~10.2s →
+// ~20s for 2121 nodes, both dimensions combined) — paid once per structural graph change and cached to
+// disk (see CACHE_DIR above); REFINE_TICKS_INCREMENTAL (the pinned add-only path, below) is untouched.
+export const REFINE_TICKS = 240; // exported so tests can assert AT the production budget by
+                                  // construction (see core/test/layout.test.ts) instead of a literal
+                                  // that can silently drift out of sync with what actually ships.
 // Incremental (pinned add-only) rebuild: only the new nodes move, so far fewer ticks converge (the
 // early-exit in computeLayoutAsync usually stops sooner). Cap the number of added nodes that take this
 // path — a large batch import is better re-optimized globally by a full cold-quality warm rebuild.

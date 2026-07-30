@@ -264,7 +264,7 @@ The header strip shows a gradient progress bar and a HARD/GOOD/EASY tally (one b
 
 ## Card Rendering
 
-Both the front and back of a card render their content as markdown (Lora serif font; inline `code` in monospace). The rendering is done by `renderMarkdown()` from `./markdown`.
+Both the front and back of a card render their content as markdown (Monaspace prose font; inline `code` in monospace). The rendering is done by `renderMarkdown()` from `./markdown`.
 
 ### Flip Animation
 

@@ -1,5 +1,8 @@
 import { test, expect } from "bun:test";
-import { computeLayout, computeLayoutAsync, pivotMDS, type Positions } from "../src/layout";
+import { computeLayout, computeLayoutAsync, gridIslandAnchors, gridIslandPlan, pivotMDS, type Positions } from "../src/layout";
+// The production tick budget, imported (not a literal) so a test that means "the shipped budget" can
+// never silently pass at a value production doesn't actually use (see REFINE_TICKS's comment there).
+import { REFINE_TICKS } from "../src/layout-cache";
 
 function ring(n: number) {
   return {
@@ -236,6 +239,520 @@ test("components above the size gate are left untouched (genuine islands aren't 
   const withOrphan = { nodes: [...nodes, { id: "lonely" }], edges };
   expect(computeLayout(withOrphan, { dimensions: 3, refineTicks: 100 }))
     .not.toEqual(computeLayout(withOrphan, { dimensions: 3, refineTicks: 100, virtualAnchors: 0 }));
+});
+
+// --- Community-aware clustering (layout.ts COMMUNITY_*) --------------------------------------------
+// The complaint: zoomed out, a real vault's communities intermingled into one blob. The forces are
+// measured with the same statistic used to tune them — mean intra-community spread divided by mean
+// nearest-other-community-centroid distance, weighted by community size. LOWER = clusters read as
+// distinct blobs. On the reference 2248-node vault this goes 1.675 → 0.952 in 3D and 2.999 → 1.058
+// in 2D; the fixture below reproduces the same shape (heterogeneous hub-and-leaf communities, sparse
+// cross-links) small enough to stay a fast test.
+
+/** `sizes.length` planted communities of hub-and-leaf notes, plus ~`cross` cross-community links
+ *  per node. Deterministic (fixed LCG) so the assertions below are stable. */
+function plantedCommunities(sizes: number[], cross: number) {
+  const nodes: { id: string; community: number }[] = [];
+  const edges: { from: string; to: string }[] = [];
+  let s = 12345 >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  sizes.forEach((size, c) => {
+    for (let i = 0; i < size; i++) nodes.push({ id: `c${c}n${i}`, community: c });
+  });
+  sizes.forEach((size, c) => {
+    const hubs = Math.max(2, Math.round(size / 25));
+    for (let h = 1; h < hubs; h++) edges.push({ from: `c${c}n0`, to: `c${c}n${h}` });
+    for (let i = hubs; i < size; i++) {
+      edges.push({ from: `c${c}n${i}`, to: `c${c}n${Math.floor(rnd() * hubs)}` });
+      if (rnd() < 0.45) {
+        const j = hubs + Math.floor(rnd() * (size - hubs));
+        if (j !== i) edges.push({ from: `c${c}n${i}`, to: `c${c}n${j}` });
+      }
+    }
+  });
+  sizes.forEach((size, c) => {
+    for (let i = 0; i < size; i++) {
+      if (rnd() >= cross) continue;
+      let other = Math.floor(rnd() * (sizes.length - 1));
+      if (other >= c) other++;
+      edges.push({ from: `c${c}n${i}`, to: `c${other}n${Math.floor(rnd() * sizes[other])}` });
+    }
+  });
+  return { nodes, edges };
+}
+
+/** Size-weighted (mean intra-community spread) / (mean nearest-other-community-centroid distance),
+ *  plus the raw intra spread so a test can also assert the clusters did not collapse to points. */
+function separation(nodes: { id: string; community: number }[], pos: Positions) {
+  const byComm = new Map<number, string[]>();
+  for (const n of nodes) byComm.set(n.community, [...(byComm.get(n.community) ?? []), n.id]);
+  const cents = [...byComm.entries()]
+    .filter(([, ids]) => ids.length >= 3)
+    .map(([c, ids]) => {
+      const sum = ids.reduce((a, id) => [a[0] + pos[id][0], a[1] + pos[id][1], a[2] + pos[id][2]], [0, 0, 0]);
+      return { c, ids, centroid: sum.map((v) => v / ids.length) as [number, number, number] };
+    });
+  let wIntra = 0, wNear = 0, w = 0;
+  for (const a of cents) {
+    const intra = a.ids.reduce((s, id) => s + dist(pos[id], a.centroid), 0) / a.ids.length;
+    const near = Math.min(...cents.filter((b) => b.c !== a.c).map((b) => dist(a.centroid, b.centroid)));
+    if (!Number.isFinite(near)) continue;
+    wIntra += intra * a.ids.length;
+    wNear += near * a.ids.length;
+    w += a.ids.length;
+  }
+  return { ratio: wIntra / wNear, intra: wIntra / w };
+}
+
+test("community-aware forces separate communities far better, without collapsing them", () => {
+  const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
+  for (const dim of [3, 2] as const) {
+    const seedOff = dim === 2 ? computeLayout(g, { refineTicks: 120, communityForces: false }) : undefined;
+    const seedOn = dim === 2 ? computeLayout(g, { refineTicks: 120 }) : undefined;
+    const off = separation(g.nodes, computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedOff, communityForces: false }));
+    const on = separation(g.nodes, computeLayout(g, { dimensions: dim, refineTicks: 120, initialPositions: seedOn }));
+    // Measured ~0.33 vs 0.52 (3D) and ~0.27 vs 0.46 (2D) at COMMUNITY_SEP_MULT 1.6; re-measured at the
+    // current 2.4 (2026-07-27, "more separated and clustered") as ~0.17 vs 0.52 (3D) and ~0.14 vs 0.46
+    // (2D) — off is unchanged (it doesn't use the constant) and on nearly halved again, so the 25% bar
+    // below is left as-is: it was never close to binding and still isn't.
+    expect(on.ratio).toBeLessThan(off.ratio * 0.75);
+    // ...and NOT by crushing each community into a point (the degenerate way to win this metric).
+    expect(on.intra).toBeGreaterThan(off.intra * 0.5);
+  }
+});
+
+test("community forces keep the layout overlap-free (they must not fight forceCollide)", () => {
+  // Regression for the ordering bug: registered AFTER "collide", the community pull lands unchecked
+  // (forceCollide resolves against x+vx and only sees forces that ran before it) and the settle ends
+  // with permanently overlapping nodes. Asserted in 2D, where the collide budget is tightest.
+  const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
+  const n = g.nodes.length;
+  const pos3 = computeLayout(g, { refineTicks: 120 });
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3 });
+  const ids = g.nodes.map((x) => x.id);
+  let minPair = Infinity;
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) minPair = Math.min(minPair, dist(pos[ids[i]], pos[ids[j]]));
+  expect(minPair).toBeGreaterThan(collideFloorFor(n, 2) * 0.9);
+});
+
+test("a graph with no community ids is laid out exactly as before (opt-in by data)", () => {
+  // Embedded graph blocks, the daemon graph and every pre-existing caller pass nodes without
+  // `community` — those must be bit-identical to the community-unaware layout.
+  const g = ring(60);
+  expect(computeLayout(g, { refineTicks: 60 })).toEqual(computeLayout(g, { refineTicks: 60, communityForces: false }));
+  // Same when every node shares ONE community: there is nothing to separate, so nothing changes.
+  const one = { nodes: g.nodes.map((n) => ({ ...n, community: 0 })), edges: g.edges };
+  expect(computeLayout(one, { refineTicks: 60 })).toEqual(computeLayout(g, { refineTicks: 60, communityForces: false }));
+});
+
+test("community-aware layout is deterministic across runs", () => {
+  const g = plantedCommunities([30, 25, 20], 0.25);
+  const a = computeLayout(g, { refineTicks: 80 });
+  expect(a).toEqual(computeLayout(g, { refineTicks: 80 }));
+  expect(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }))
+    .toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }));
+});
+
+// --- Hierarchical (nested) communities -------------------------------------------------------------
+// `communityPath` (coarsest → finest) adds one gravity + separation pair per ancestor level at
+// COMMUNITY_LEVEL_DECAY^a strength, so super-clusters clump and spread the way clusters do. Measured
+// on the reference 2251-node vault (3 levels, 120 ticks) as per-level separation ratio, nested vs
+// finest-level-only: L0 1.985 → 0.926, L1 1.668 → 0.869, L2 1.090 → 0.926 (3D).
+
+/** `supers.length` super-clusters, each holding several sub-clusters: dense inside a sub-cluster,
+ *  moderate between sub-clusters of the same super, sparse across supers. Emits a 2-level
+ *  `communityPath` matching the planted structure, so the test measures the LAYOUT not the detector. */
+function plantedHierarchy(supers: number[][], cross = 0.02) {
+  const nodes: { id: string; community: number; communityPath: number[] }[] = [];
+  const edges: { from: string; to: string }[] = [];
+  let s = 24680 >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const key = (S: number, c: number, i: number) => `s${S}c${c}n${i}`;
+  let sub = 0;
+  const subOf: number[][] = supers.map((subs) => subs.map(() => sub++));
+  supers.forEach((subs, S) => subs.forEach((size, c) => {
+    for (let i = 0; i < size; i++) nodes.push({ id: key(S, c, i), community: subOf[S][c], communityPath: [S, subOf[S][c]] });
+  }));
+  supers.forEach((subs, S) => subs.forEach((size, c) => {
+    const hubs = Math.max(2, Math.round(size / 25));
+    for (let h = 1; h < hubs; h++) edges.push({ from: key(S, c, 0), to: key(S, c, h) });
+    for (let i = hubs; i < size; i++) {
+      edges.push({ from: key(S, c, i), to: key(S, c, Math.floor(rnd() * hubs)) });
+      if (rnd() < 0.45) {
+        const j = hubs + Math.floor(rnd() * (size - hubs));
+        if (j !== i) edges.push({ from: key(S, c, i), to: key(S, c, j) });
+      }
+    }
+    for (let i = 0; i < size; i++) {
+      if (subs.length > 1 && rnd() < 0.2) {
+        let o = Math.floor(rnd() * (subs.length - 1)); if (o >= c) o++;
+        edges.push({ from: key(S, c, i), to: key(S, o, Math.floor(rnd() * subs[o])) });
+      }
+      if (rnd() < cross) {
+        let oS = Math.floor(rnd() * (supers.length - 1)); if (oS >= S) oS++;
+        const oc = Math.floor(rnd() * supers[oS].length);
+        edges.push({ from: key(S, c, i), to: key(oS, oc, Math.floor(rnd() * supers[oS][oc])) });
+      }
+    }
+  }));
+  return { nodes, edges };
+}
+
+/** `separation`, but grouping by a given level of `communityPath` instead of the flat `community`. */
+function separationAtLevel(nodes: { id: string; communityPath: number[] }[], pos: Positions, level: number) {
+  return separation(nodes.map((n) => ({ id: n.id, community: n.communityPath[level] })), pos);
+}
+
+const HIER = [[70, 55, 45], [65, 50, 40], [60, 50, 45]];
+
+// NOTE these two tests pin `clusterLayout: "organic"` in 2D. They are an A/B of the NESTED COMMUNITY
+// FORCES, which is orthogonal to where the grid post-pass decides to put a top-level island — and grid
+// mode (the 2D default) would otherwise dominate both arms of the comparison and measure nothing about
+// the forces. Grid placement has its own tests further down.
+
+test("nesting separates the COARSE level too, without undoing the fine level", () => {
+  const g = plantedHierarchy(HIER);
+  for (const dim of [3, 2] as const) {
+    const organic = { clusterLayout: "organic" as const };
+    const seedFlat = dim === 2 ? computeLayout(g, { ...organic, refineTicks: 120, communityLevelDecay: 0 }) : undefined;
+    const seedNest = dim === 2 ? computeLayout(g, { ...organic, refineTicks: 120 }) : undefined;
+    const flat = computeLayout(g, { ...organic, dimensions: dim, refineTicks: 120, initialPositions: seedFlat, communityLevelDecay: 0 });
+    const nest = computeLayout(g, { ...organic, dimensions: dim, refineTicks: 120, initialPositions: seedNest });
+    // The super-clusters (level 0) read as distinct groups only once the coarse forces are on.
+    // Re-measured after COMMUNITY_SEP_MULT 1.6 -> 2.4 (2026-07-27): L0 nest/flat is 0.352/0.672 (3D,
+    // bound 0.504) and 0.261/0.501 (2D, bound 0.376); L1 nest/flat is 0.170/0.172 (3D, bound 0.197)
+    // and 0.140/0.161 (2D, bound 0.186) — both bounds below hold with the same comfortable margin as
+    // before (the constant only touches the COARSEST level's inter-community collide target here; L1
+    // separation is barely moved, as expected).
+    expect(separationAtLevel(g.nodes, nest, 0).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 0).ratio * 0.75);
+    // ...and the finest level is not sacrificed for it (it stays at least as separated as flat).
+    expect(separationAtLevel(g.nodes, nest, 1).ratio).toBeLessThan(separationAtLevel(g.nodes, flat, 1).ratio * 1.15);
+    // No level collapses: each keeps real spatial extent (the degenerate way to win the ratio).
+    for (const level of [0, 1]) {
+      expect(separationAtLevel(g.nodes, nest, level).intra)
+        .toBeGreaterThan(separationAtLevel(g.nodes, flat, level).intra * 0.15);
+    }
+  }
+}, 30000); // four full 120-tick settles over a ~480-node fixture
+
+test("coarse levels sit at a LARGER spatial scale than fine ones", () => {
+  // The point of a hierarchy: a super-cluster is a bigger thing than a cluster. If the two levels
+  // settled at the same spread they would be the same picture drawn twice.
+  const g = plantedHierarchy(HIER);
+  const pos = computeLayout(g, { refineTicks: 120 });
+  const coarse = separationAtLevel(g.nodes, pos, 0);
+  const fine = separationAtLevel(g.nodes, pos, 1);
+  expect(coarse.intra).toBeGreaterThan(fine.intra * 1.3);
+});
+
+test("a 1-level communityPath is byte-identical to no path at all", () => {
+  // The finest level is the tuned baseline; hierarchies must be pure opt-in BY DATA. A single-level
+  // path (small vault) and a communityLevelDecay of 0 both have to reproduce it exactly.
+  const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
+  const flat = computeLayout(g, { refineTicks: 80 });
+  const oneLevel = { nodes: g.nodes.map((n) => ({ ...n, communityPath: [n.community] })), edges: g.edges };
+  expect(computeLayout(oneLevel, { refineTicks: 80 })).toEqual(flat);
+  const withPath = { nodes: g.nodes.map((n) => ({ ...n, communityPath: [n.community % 2, n.community] })), edges: g.edges };
+  expect(computeLayout(withPath, { refineTicks: 80, communityLevelDecay: 0 })).toEqual(flat);
+});
+
+test("an ancestor level that is a copy of its child is skipped, not applied twice", () => {
+  // Strict nesting means an equal group COUNT implies an identical partition. Re-applying it would
+  // silently scale the finest level's tuned constants up, changing the layout for no reason.
+  const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
+  const flat = computeLayout(g, { refineTicks: 80 });
+  const dup = { nodes: g.nodes.map((n) => ({ ...n, communityPath: [n.community, n.community] })), edges: g.edges };
+  expect(computeLayout(dup, { refineTicks: 80 })).toEqual(flat);
+});
+
+test("nested community forces keep the layout overlap-free (one speed cap for the whole stack)", () => {
+  // Regression for the per-level speed cap: capping each level separately lets L levels contribute
+  // up to L x COMMUNITY_MAX_STEP, outrunning the collide relaxation. Asserted in 2D (tightest budget).
+  const g = plantedHierarchy(HIER);
+  const pos3 = computeLayout(g, { refineTicks: 120 });
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3 });
+  const ids = g.nodes.map((x) => x.id);
+  let minPair = Infinity;
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) minPair = Math.min(minPair, dist(pos[ids[i]], pos[ids[j]]));
+  expect(minPair).toBeGreaterThan(collideFloorFor(ids.length, 2) * 0.9);
+});
+
+test("nested layout is deterministic across runs", () => {
+  const g = plantedHierarchy([[30, 25], [28, 22], [26, 20]]);
+  const a = computeLayout(g, { refineTicks: 80 });
+  expect(a).toEqual(computeLayout(g, { refineTicks: 80 }));
+  expect(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }))
+    .toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: a }));
+});
+
+// --- Vault-scale convergence regression (the fixture every test above is too small to need) --------
+// Every separation test above uses a fixture small/well-separated enough to fully converge inside the
+// tick budget regardless of COMMUNITY_SEP_MULT — measured directly: plantedCommunities([80,70,60,40,
+// 30,20], 0.25) moves its L0 ratio by <1% between 120 and 600 ticks. None of them could have caught the
+// real regression an adversarial review found (COMMUNITY_SEP_MULT 1.6→2.4 made the DEFAULT 2D view
+// WORSE at the then-120-tick budget, because the wider target no longer converged in time — see
+// REFINE_TICKS's comment in layout-cache.ts). The missing ingredient is the real vault's TAG-MEDIATED
+// hub-and-spoke structure (see the "GRID ISLANDS" comment below: 75% of edges touch a tag, top 1% of
+// nodes by degree touch 73% of edges) — a few very-high-degree nodes bridging many communities resist
+// the separation forces far more stubbornly than same-community hub links do, and take many more ticks
+// to lose that fight. `plantedHierarchy` alone (even scaled to ~2000 nodes — measured) doesn't reproduce
+// this: its hubs are per-community, not cross-cutting, so it fully converges by 120 ticks regardless.
+
+/** `plantedHierarchy`, plus `globalHubs` extra nodes each linked to a random `hubDegFrac` fraction of
+ *  every other node — emulating a vault's tag nodes, which bridge many communities at once instead of
+ *  sitting inside one. Hub nodes carry no `community`/`communityPath` (opt out of gravity/collide
+ *  entirely, like a real tag might), so every link touching one is scored INTER-community by construction
+ *  (see `l.intra` in `layoutGeometry`) — a real bridging edge, not a fabricated same-community one. */
+function plantedHierarchyWithHubs(supers: number[][], globalHubs: number, hubDegFrac: number, cross = 0.02) {
+  const g = plantedHierarchy(supers, cross);
+  const nodes: { id: string; community?: number; communityPath?: number[] }[] = [...g.nodes];
+  const edges = [...g.edges];
+  let s = 13579 >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const allIds = g.nodes.map((n) => n.id);
+  const deg = Math.round(allIds.length * hubDegFrac);
+  for (let h = 0; h < globalHubs; h++) {
+    const hubId = `hub${h}`;
+    nodes.push({ id: hubId });
+    for (let k = 0; k < deg; k++) edges.push({ from: hubId, to: allIds[Math.floor(rnd() * allIds.length)] });
+  }
+  return { nodes, edges };
+}
+
+// 12 super-clusters x 3 sub-clusters x 55 notes = 1980, plus 20 tag-like hubs each touching 40% of
+// every node = ~2000 nodes / ~19,100 edges — vault scale (the reference vault: 2121 nodes / ~4560
+// edges; this fixture trades fewer, denser bridging edges for a bigger, more resistant hub effect at a
+// similar node count, which is what actually reproduces the convergence gap — see the comment above).
+const VAULT_SCALE_HIER = Array.from({ length: 12 }, () => Array.from({ length: 3 }, () => 55));
+
+test("vault-scale hierarchy with cross-cutting hubs: coarse separation holds at the PRODUCTION tick budget", () => {
+  const g = plantedHierarchyWithHubs(VAULT_SCALE_HIER, 20, 0.4);
+  const pos3 = computeLayout(g, { refineTicks: REFINE_TICKS });
+  const pos2 = computeLayout(g, { dimensions: 2, refineTicks: REFINE_TICKS, initialPositions: pos3 });
+  const l0Nodes = g.nodes
+    .filter((n): n is { id: string; community: number; communityPath: number[] } => Array.isArray(n.communityPath))
+    .map((n) => ({ id: n.id, community: n.communityPath[0] }));
+  const sep = separation(l0Nodes, pos2);
+  // Measured at the production budget (240): ratio 0.392, intra 149.4. At the OLD 120-tick budget the
+  // IDENTICAL fixture measures ratio 0.581 (+48%) — this is the exact shape of regression the smaller
+  // fixtures above cannot exhibit (see comment above): a bound recorded here at the shipped budget would
+  // have caught reverting REFINE_TICKS back to 120 (0.581 comfortably fails a 0.45 bound).
+  expect(sep.ratio).toBeLessThan(0.45);
+  // ...and not by collapsing communities into points (the degenerate way to win the ratio).
+  expect(sep.intra).toBeGreaterThan(50);
+}, 45000); // measured ~19s locally (3D + 2D @ 240 ticks over 2000 nodes / ~19k edges)
+
+// --- Grid islands (layout.ts GRID_*) ---------------------------------------------------------------
+// The 2D default: every top-level cluster is anchored on a coarse lattice cell with provable empty
+// lanes, biggest islands central. Measured on the reference 2114-node vault (which HAS strong cluster
+// structure — modularity Q = 0.45 finest / 0.62 coarsest — but 75% of whose edges run through shared
+// tag hubs, which is why the organic settle could not separate it): settled island centroids land on
+// their anchors, worst gap/(Rᵢ+Rⱼ) between islands is 1.47 and 0 of 105 island pairs overlap, against
+// -0.89 and 64/105 without the two forces the grid needs (full-strength anchor gravity + released
+// island-crossing links).
+
+test("gridIslandAnchors: blocks never overlap and every pair clears the lane guarantee", () => {
+  // gap ≥ GRID_LANE·(Rᵢ+Rⱼ) is a consequence of block non-overlap plus span = ceil(R/unit); this pins
+  // the whole derivation (see the GRID ISLANDS block) on a wide spread of island sizes.
+  const islands = [400, 380, 210, 190, 150, 120, 90, 80, 50, 30, 20, 12, 8, 5, 4]
+    .map((size, i) => ({ comm: i, radius: 10 * Math.sqrt(size) }));
+  const { anchors, cells, pitch } = gridIslandAnchors(islands);
+  expect(anchors.size).toBe(islands.length);
+  expect(pitch).toBeGreaterThan(0);
+
+  // No two blocks share a cell.
+  const taken = new Set<string>();
+  for (const c of cells) {
+    for (let dc = 0; dc < c.span; dc++) for (let dr = 0; dr < c.span; dr++) {
+      const k = `${c.col + dc},${c.row + dr}`;
+      expect(taken.has(k)).toBe(false);
+      taken.add(k);
+    }
+  }
+  // Every island fits inside its own block, and every PAIR clears ≥ 0.75·(Rᵢ+Rⱼ) of empty lane.
+  const rOf = new Map(islands.map((i) => [i.comm, i.radius]));
+  for (let a = 0; a < cells.length; a++) {
+    const ra = rOf.get(cells[a].comm)!;
+    expect(ra).toBeLessThanOrEqual((cells[a].span * pitch) / (2 * 1.75) + 1e-6);
+    for (let b = a + 1; b < cells.length; b++) {
+      const pa = anchors.get(cells[a].comm)!, pb = anchors.get(cells[b].comm)!;
+      const gap = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) - ra - rOf.get(cells[b].comm)!;
+      expect(gap).toBeGreaterThan(0.75 * (ra + rOf.get(cells[b].comm)!) - 1e-6);
+    }
+  }
+});
+
+test("gridIslandAnchors puts the BIGGEST islands nearest the centre, in a landscape mosaic", () => {
+  const islands = [500, 400, 300, 40, 30, 20, 10, 8, 6, 5].map((size, i) => ({ comm: i, radius: 10 * Math.sqrt(size) }));
+  const { anchors } = gridIslandAnchors(islands);
+  const d = (c: number) => Math.hypot(...anchors.get(c)!);
+  // The three big ones are all closer to the origin than the smallest.
+  for (const big of [0, 1, 2]) expect(d(big)).toBeLessThan(d(9));
+  // ...and the mosaic is wider than it is tall (GRID_ASPECT), matching a landscape pane.
+  const xs = [...anchors.values()].map((a) => Math.abs(a[0]));
+  const ys = [...anchors.values()].map((a) => Math.abs(a[1]));
+  expect(Math.max(...xs)).toBeGreaterThan(Math.max(...ys));
+});
+
+test("gridIslandAnchors is deterministic and order-independent", () => {
+  const islands = [200, 120, 90, 60, 40, 20].map((size, i) => ({ comm: i, radius: 10 * Math.sqrt(size) }));
+  const a = gridIslandAnchors(islands);
+  const b = gridIslandAnchors([...islands].reverse());
+  expect([...a.anchors.entries()].sort()).toEqual([...b.anchors.entries()].sort());
+  expect(gridIslandAnchors([])).toEqual({ anchors: new Map(), cells: [], pitch: 0, unit: 0, side: 0 });
+});
+
+test("grid mode (opt-in): top-level clusters settle ON their lattice, far apart", () => {
+  // A 2-level hierarchy, laid out exactly as the backend does it (3D settle → 2D seeded from it).
+  // clusterLayout defaults to "organic" in both dimensions (the ASCII redesign) — grid is an
+  // explicit opt-in here, compared against the (now default) organic settle on the same seed.
+  const g = plantedHierarchy(HIER);
+  const pos3 = computeLayout(g, { refineTicks: 120 });
+  const grid = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3, clusterLayout: "grid" });
+  const organic = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3, clusterLayout: "organic" });
+
+  /** Per top-level cluster: centroid + the radius containing 95% of its members. */
+  const islands = (pos: Positions) => {
+    const by = new Map<number, string[]>();
+    for (const nd of g.nodes) by.set(nd.communityPath[0], [...(by.get(nd.communityPath[0]) ?? []), nd.id]);
+    return [...by.values()].map((ids) => {
+      const c = ids.reduce((a, id) => [a[0] + pos[id][0], a[1] + pos[id][1]], [0, 0]).map((v) => v / ids.length) as [number, number];
+      const ds = ids.map((id) => Math.hypot(pos[id][0] - c[0], pos[id][1] - c[1])).sort((x, y) => x - y);
+      return { c, r: ds[Math.floor(ds.length * 0.95)] };
+    });
+  };
+  /** Worst gap between two islands' 95% discs, normalized by their radii (>0 = a real empty lane). */
+  const worstLane = (pos: Positions) => {
+    const isl = islands(pos);
+    let worst = Infinity;
+    for (let a = 0; a < isl.length; a++) for (let b = a + 1; b < isl.length; b++) {
+      const gap = Math.hypot(isl[a].c[0] - isl[b].c[0], isl[a].c[1] - isl[b].c[1]) - isl[a].r - isl[b].r;
+      worst = Math.min(worst, gap / (isl[a].r + isl[b].r));
+    }
+    return worst;
+  };
+  // Grid mode opens a genuine lane between EVERY pair of top-level clusters...
+  expect(worstLane(grid)).toBeGreaterThan(0.4);
+  // ...and a much wider one than the organic settle manages on the same graph.
+  expect(worstLane(grid)).toBeGreaterThan(worstLane(organic) + 0.3);
+  // Islands sit at lattice-like spacing: the closest pair of centroids is far apart relative to the
+  // island radii (the organic settle lets neighbours touch).
+  const isl = islands(grid);
+  expect(Math.min(...isl.map((i) => i.r))).toBeGreaterThan(0); // no island collapsed to a point
+});
+
+test("grid mode keeps the layout overlap-free (the anchor spring must not beat collide)", () => {
+  const g = plantedHierarchy(HIER);
+  const pos3 = computeLayout(g, { refineTicks: 120 });
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: 120, initialPositions: pos3, clusterLayout: "grid" });
+  const ids = g.nodes.map((x) => x.id);
+  let minPair = Infinity;
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) minPair = Math.min(minPair, dist(pos[ids[i]], pos[ids[j]]));
+  expect(minPair).toBeGreaterThan(collideFloorFor(ids.length, 2) * 0.9);
+});
+
+/** The planted hierarchy plus the two kinds of group that earn NO lattice cell and therefore have to
+ *  ride along with an island (`GRID_MIN_ISLAND` = 4): fully-isolated singletons — 143 of them on the
+ *  reference vault — and a small linked pair. Both are what sprawled worst before containment. */
+function hierarchyWithRiders() {
+  const g = plantedHierarchy(HIER);
+  const nodes: { id: string; community: number; communityPath: number[] }[] = [...g.nodes];
+  const edges = [...g.edges];
+  let top = Math.max(...g.nodes.map((nd) => nd.communityPath[0])) + 1;
+  let comm = Math.max(...g.nodes.map((nd) => nd.community)) + 1;
+  for (let k = 0; k < 8; k++) nodes.push({ id: `stray${k}`, community: comm++, communityPath: [top++, comm - 1] });
+  for (let k = 0; k < 3; k++) {
+    const c = comm++, t = top++;
+    nodes.push({ id: `pair${k}a`, community: c, communityPath: [t, c] });
+    nodes.push({ id: `pair${k}b`, community: c, communityPath: [t, c] });
+    edges.push({ from: `pair${k}a`, to: `pair${k}b` });
+  }
+  return { nodes, edges };
+}
+
+test("grid mode CONTAINS every member inside its island's disc, riders included", () => {
+  const g = hierarchyWithRiders();
+  const pos3 = computeLayout(g, { refineTicks: 120 });
+  // 2D ticks 120 -> REFINE_TICKS (production budget, now 240): after COMMUNITY_SEP_MULT 1.6 -> 2.4
+  // (2026-07-27) the 3D seed's communities start farther apart, so the containment projection has
+  // farther to pull riders in from and 120 ticks no longer fully converges (measured: inside 0.907,
+  // worst 1.09 at 120 vs. inside 1.00, worst 0.93 at 240 — see the throwaway sweep behind the
+  // COMMUNITY_SEP_MULT comment in layout.ts). Production's own tick budget was ALSO raised to 240 for
+  // exactly this reason (see REFINE_TICKS's comment in layout-cache.ts) — this asserts AT that budget
+  // by construction (imported, not a literal), so it can never again pass at a number production
+  // doesn't actually ship.
+  const pos = computeLayout(g, { dimensions: 2, refineTicks: REFINE_TICKS, initialPositions: pos3, clusterLayout: "grid" });
+  // The plan must be the one the settle enforced, so it gets the SAME seed (riders are hosted on the
+  // island they seeded nearest to — see gridIslandPlan).
+  const plan = gridIslandPlan(g, { initialPositions: pos3, clusterLayout: "grid" })!;
+  expect(plan).not.toBeNull();
+  expect(plan.islands.length).toBe(HIER.length); // one island per planted super-cluster
+  const islandOf = new Map(plan.islands.map((i) => [i.comm, i]));
+
+  // Every containment disc fits inside its own lattice block, which is what carries the lane
+  // guarantee over from the packing discs to the individual members (see the CONTAINMENT block).
+  for (const isl of plan.islands) expect(isl.containRadius).toBeLessThanOrEqual(isl.span * plan.unit + 1e-9);
+  for (let a = 0; a < plan.islands.length; a++) for (let b = a + 1; b < plan.islands.length; b++) {
+    const A = plan.islands[a], B = plan.islands[b];
+    const gap = Math.hypot(A.anchor[0] - B.anchor[0], A.anchor[1] - B.anchor[1]) - A.containRadius - B.containRadius;
+    expect(gap).toBeGreaterThan(0.75 * (A.containRadius + B.containRadius) - 1e-6);
+  }
+
+  // ...and the settle actually respects them. A hair of tolerance because forceCollide and the anchor
+  // springs both run AFTER the constraint in a tick, so the last word on a rim node is theirs.
+  let worst = 0, inside = 0;
+  g.nodes.forEach((nd, i) => {
+    const isl = islandOf.get(plan.hostIsland[i])!;
+    const r = Math.hypot(pos[nd.id][0] - isl.anchor[0], pos[nd.id][1] - isl.anchor[1]) / isl.containRadius;
+    if (r <= 1) inside++;
+    worst = Math.max(worst, r);
+  });
+  expect(inside / g.nodes.length).toBeGreaterThan(0.97);
+  expect(worst).toBeLessThan(1.05);
+
+  // Hosting is decided per GROUP: a rider group is never split across islands (a split group's
+  // nested containment disc lands in a lane and cancels the island's, stranding its members).
+  for (let k = 0; k < 3; k++) {
+    const [a, b] = [`pair${k}a`, `pair${k}b`].map((id) => plan.hostIsland[g.nodes.findIndex((nd) => nd.id === id)]);
+    expect(a).toBe(b);
+  }
+}, 30000);
+
+test("gridIslandPlan is null exactly where grid mode is", () => {
+  const g = plantedHierarchy([[40, 30], [35, 28], [32, 25]]);
+  expect(gridIslandPlan(g, { dimensions: 3, clusterLayout: "grid" })).toBeNull();
+  expect(gridIslandPlan(g, { clusterLayout: "organic" })).toBeNull();
+  expect(gridIslandPlan(g)).toBeNull(); // clusterLayout defaults to "organic" now — grid is opt-in
+  expect(gridIslandPlan(ring(80), { clusterLayout: "grid" })).toBeNull(); // no communities
+  expect(gridIslandPlan(g, { clusterLayout: "grid" })!.islands.length).toBe(3);
+});
+
+test("grid mode is deterministic across runs", () => {
+  const g = plantedHierarchy([[40, 30], [35, 28], [32, 25], [30, 22]]);
+  const seed = computeLayout(g, { refineTicks: 80 });
+  const a = computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: seed, clusterLayout: "grid" });
+  expect(a).toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: seed, clusterLayout: "grid" }));
+});
+
+test("grid mode is 2D-only, opt-outable, and never fires without communities or on a pinned rebuild", () => {
+  const g = plantedHierarchy([[40, 30], [35, 28], [32, 25]]);
+  const seed = computeLayout(g, { refineTicks: 60 });
+  // 3D defaults to organic, so passing it explicitly changes nothing...
+  expect(computeLayout(g, { dimensions: 3, refineTicks: 60 }))
+    .toEqual(computeLayout(g, { dimensions: 3, refineTicks: 60, clusterLayout: "organic" }));
+  // ...and asking for "grid" in 3D is a no-op (a flat lattice would squash the cloud).
+  expect(computeLayout(g, { dimensions: 3, refineTicks: 60, clusterLayout: "grid" }))
+    .toEqual(computeLayout(g, { dimensions: 3, refineTicks: 60 }));
+  // clusterLayout now defaults to "organic" in BOTH dimensions (the ASCII redesign) — asking for
+  // "grid" explicitly in 2D is a no-op on a community-less graph (opt-in BY DATA, like every
+  // community force), same as it always was.
+  const plain = ring(80);
+  expect(computeLayout(plain, { dimensions: 2, refineTicks: 60, clusterLayout: "grid" }))
+    .toEqual(computeLayout(plain, { dimensions: 2, refineTicks: 60, clusterLayout: "organic" }));
+  // An incremental (pinned) rebuild must not re-grid: pinned nodes hold the previous build's positions.
+  const fixed = g.nodes.slice(0, 100).map((nd) => nd.id);
+  const inc = computeLayout(g, { dimensions: 2, refineTicks: 40, initialPositions: seed, fixedIds: fixed, clusterLayout: "grid" });
+  for (const id of fixed) expect([inc[id][0], inc[id][1]]).toEqual([Math.round(seed[id][0]), Math.round(seed[id][1])]);
 });
 
 test("pivotMDS is deterministic", () => {

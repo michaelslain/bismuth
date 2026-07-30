@@ -7,14 +7,16 @@ import { onMount, type JSX } from "solid-js";
 import "./graphAtmosphere.css";
 
 // Structural type: any renderer (WebGL or CSS-3D) that can push glow-lobe screen positions.
-type GlowRenderer = { setGlowCallback(cb: (g: { lobes: { x: number; y: number }[] }) => void): void };
+// Optional method: the ASCII renderer draws a flat ground and pushes no lobes, so it still satisfies
+// this and the atmosphere simply holds its CSS default lobe positions.
+type GlowRenderer = { setGlowCallback?(cb: (g: { lobes: { x: number; y: number }[] }) => void): void };
 
 export function GraphAtmosphere(props: { renderer: GlowRenderer; mode?: string }): JSX.Element {
   let glowEl: HTMLDivElement | undefined;
   onMount(() => {
     // The renderer pushes the 3 biggest clusters' projected screen positions each frame; ride
     // the glow lobes on them so the atmosphere follows the nodes.
-    props.renderer.setGlowCallback((g) => {
+    props.renderer.setGlowCallback?.((g) => {
       if (!glowEl) return;
       g.lobes.forEach((p, i) => {
         glowEl!.style.setProperty(`--glow-x${i + 1}`, `${p.x}%`);

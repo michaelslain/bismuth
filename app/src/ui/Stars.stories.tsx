@@ -1,5 +1,6 @@
-// Visual spec for <Stars> — a five-star rating: filled `--gold` up to `value`, faint
-// outline for the remainder. Canonical across Bases (table/cards/list/kanban).
+// Visual spec for <Stars> — a five-star rating, typed as a run of `*` glyphs:
+// filled `--gold` up to `value`, `--faint` for the remainder. Canonical across
+// Bases (table/cards/list/kanban).
 //
 // Props: value (rounded + clamped), max? (default 5), size? (default 13).
 import type { Meta, StoryObj } from "storybook-solidjs-vite";

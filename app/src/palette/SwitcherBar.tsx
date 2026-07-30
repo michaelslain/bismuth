@@ -22,6 +22,7 @@
 import { createSignal, createMemo, createEffect, For, Show, onMount, onCleanup } from "solid-js";
 import { Icon } from "../icons/Icon";
 import { SearchBar } from "../ui/SearchBar";
+import { Kbd } from "../ui/ascii/Kbd";
 import { createMenuNav } from "../ui/popover/createMenuNav";
 import { createPointerGuard, resetActiveOnChange, scrollSelectedIntoView } from "./paletteNav";
 import { Highlight } from "./PaletteModal";
@@ -224,7 +225,9 @@ export function SwitcherBar(props: Props) {
         onInput={onQueryInput}
         onKeyDown={onKeyDown}
       >
-        <kbd class="switcher-esc">esc</kbd>
+        {/* A real binding (Escape closes the switcher — see nav.onEscape above), not a
+            fabricated hint. */}
+        <span class="switcher-esc"><Kbd combo="Escape" /></span>
       </SearchBar>
       <div class="switcher-list" ref={listRef}>
         <Show when={aiPhase() === "idle"}>
@@ -290,7 +293,7 @@ export function SwitcherBar(props: Props) {
         </Show>
         <Show when={aiPhase() === "loading"}>
           <div class="search-state">
-            <span class="search-spinner search-spinner-lg" />
+            <span class="search-spinner search-spinner-lg asc-caret">_</span>
             <div class="search-state-title">Searching your vault with Bismuth AI…</div>
             <div class="search-state-hint">Reading your notes to find what answers your question</div>
           </div>

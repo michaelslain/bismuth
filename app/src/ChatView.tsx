@@ -9,8 +9,8 @@
 // Code features light up with ZERO code changes here — nothing is hardcoded.
 //
 // Prose (both the user's messages AND the assistant's replies) renders through renderNoteBody,
-// the SAME markdown pipeline notes use, so a chat reads exactly like the editor (Lora, math,
-// code, wikilinks, tags). There is NO API fallback by design — if `claude` isn't installed the
+// the SAME markdown pipeline notes use, so a chat reads exactly like the editor (mono prose,
+// math, code, wikilinks, tags). There is NO API fallback by design — if `claude` isn't installed the
 // backend emits {error, code:"no-claude"} and we show a setup state.
 import { createSignal, onMount, onCleanup, For, Show, createEffect, createMemo } from "solid-js";
 import { createStore, produce } from "solid-js/store";
@@ -2088,9 +2088,7 @@ export function ChatView(props: {
             <div class="chat-msg assistant">
               <div class="chat-turn-label"><Icon value="MessageSquare" size={11} /> {persona()}</div>
               <div class="chat-thinking-dots">
-                <span class="chat-dot" />
-                <span class="chat-dot" />
-                <span class="chat-dot" />
+                working<span class="asc-caret">_</span>
               </div>
             </div>
           </Show>
@@ -2500,7 +2498,7 @@ export function ChatView(props: {
               when={p.part.pending}
               fallback={<Icon value={p.part.isError ? "X" : "Check"} size={13} class={p.part.isError ? "chat-tool-x" : "chat-tool-check"} />}
             >
-              <span class="chat-tool-spinner" />
+              <span class="asc-caret">_</span>
             </Show>
           </span>
           <Icon value={open() ? "ChevronDown" : "ChevronRight"} size={13} class="chat-tool-caret" />

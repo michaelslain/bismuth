@@ -8,6 +8,8 @@
 //       "selected"   a member that is currently ON (accent-highlighted)
 //     For icon buttons, "normal" looks like "unselected" but at full opacity.
 // `danger` is an orthogonal tone (destructive actions) layered on any state.
+// `primary` is a second orthogonal tone: selected + a glow rim — the view's one
+// emphasized action (max one per view; text buttons only).
 export type ButtonKind = "text" | "icon";
 export type ButtonState = "normal" | "selected" | "unselected";
 export type ButtonSize = "sm" | "md" | "lg";
@@ -22,6 +24,9 @@ export function buttonClass(opts: {
   state?: ButtonState;
   size?: ButtonSize;
   danger?: boolean;
+  /** Selected + a glow rim (--glow-accent) — the view's one emphasized action.
+   *  Orthogonal to `state`/`danger`, same as those. At most one per view. */
+  primary?: boolean;
   class?: string;
 }): string {
   return joinClasses(
@@ -30,6 +35,7 @@ export function buttonClass(opts: {
     `btn--${opts.state ?? "normal"}`,
     opts.size && opts.size !== "md" ? `btn--${opts.size}` : "",
     opts.danger ? "btn--danger" : "",
+    opts.primary ? "btn--primary" : "",
     opts.class,
   );
 }

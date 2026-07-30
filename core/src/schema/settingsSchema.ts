@@ -17,8 +17,9 @@ import { BACKEND_IDS, BACKEND_LIST, DEFAULT_BACKEND } from "../agentBackends/cat
 // only bounds the settings UI to backends that HAVE a daemon implementation at all.
 const DAEMON_BACKEND_IDS = BACKEND_LIST.filter((b) => b.capabilities.daemon).map((b) => b.id);
 
-// Kept in lockstep with app/src/settings.ts EDITOR_FONTS.
-const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
+// Kept in lockstep with app/src/settings.ts FONT_STACKS. One family does the whole
+// interface: all five Monaspace variants, no serif/system-ui.
+const EDITOR_FONTS = ["Monaspace Xenon", "Monaspace Neon", "Monaspace Argon", "Monaspace Krypton", "Monaspace Radon"];
 // The theme enum is sourced directly from the color source of truth
 // (core/src/theme/tokens.ts) — no hand-maintained copy to drift from THEMES.
 const THEME_NAMES = [...THEME_NAME_TUPLE];
@@ -57,11 +58,12 @@ export const SETTINGS_SCHEMA: Schema = {
     // Bismuth color theme — selects EVERY color in the app + graph (background,
     // surfaces, border, text, muted, accent, and the graph node palette). The theme
     // is the single source of color; app/src/themes.ts holds the token values that
-    // settingsCssVars.ts projects to CSS vars. The app is dark-only.
+    // settingsCssVars.ts projects to CSS vars. Ink and cathode are dark; paper and
+    // riso are light.
     theme: {
       type: enumType(THEME_NAMES),
-      default: "oxide-duotone",
-      doc: "Bismuth color theme: oxide-duotone (default) · gunmetal-teal · rose-gold · indigo-oxide · forest-oxide · full-sheen.",
+      default: "ink",
+      doc: "Bismuth color theme: ink (default) · paper · cathode · riso.",
     },
     // Per-vault app logo mark (favicon + sidebar logo). One of the 14 Bismuth marks.
     icon: {
@@ -69,14 +71,23 @@ export const SETTINGS_SCHEMA: Schema = {
       default: "hopper-crystal",
       doc: "App logo mark: hopper-crystal · node-b · square-funnel · nested-diamonds · pinwheel · node-crystal · lattice · diamond-bloom · node-diamond · octagon-bloom · spin-cross · tri-bloom · radial-graph · node-rings.",
     },
-    editorFont: { type: enumType(EDITOR_FONTS), default: "Lora", doc: "Editor font family." },
-    editorFontSize: { type: "number", default: 16, min: 11, max: 28, doc: "Editor font size (px)." },
-    sidebarWidth: { type: "number", default: 280, min: 200, max: 600, doc: "Left sidebar width (px)." },
+    editorFont: {
+      type: enumType(EDITOR_FONTS),
+      default: "Monaspace Xenon",
+      doc: "Editor prose font — a Monaspace variant; the whole app is one monospace grid.",
+    },
+    uiFont: {
+      type: enumType(EDITOR_FONTS),
+      default: "Monaspace Xenon",
+      doc: "UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus.",
+    },
+    editorFontSize: { type: "number", default: 13.5, min: 11, max: 28, doc: "Note prose font size (px). 13.5 is the design system's own prose size (--fs-body-lg, ui.css) — prose is the one thing that is NOT at the 11.5px --fs-ui chrome size, because chrome is scanned and prose is read. The 18px row unit (--row-h) is unchanged, so a line of prose still lands on the same grid as a tree row or a tab." },
+    sidebarWidth: { type: "number", default: 266, min: 200, max: 600, doc: "Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css)." },
     sidebarGraphHeight: { type: "number", default: 305, min: 200, max: 500, doc: "Height of the mini graph panel in the sidebar (px)." },
-    uiFontSize: { type: "number", default: 13, min: 11, max: 16, doc: "Base UI font size — sidebar, tabs, menus (px)." },
-    monoScale: { type: "number", default: 0.85, min: 0.6, max: 1, doc: "Optical-size factor for Monaspace (the mono UI/code font). Monaspace renders visually larger than the serif body at the same px; this shrinks all mono text — UI chrome and code blocks — so it optically matches. 1 = no correction." },
-    tabFontSize: { type: "number", default: 12, min: 11, max: 14, doc: "Editor tab label font size (px)." },
-    sidebarIconFontSize: { type: "number", default: 15, min: 12, max: 20, doc: "Sidebar header icon button size (px)." },
+    uiFontSize: { type: "number", default: 11.5, min: 11, max: 16, doc: "Base UI font size — sidebar, tabs, menus (px) (the ASCII design's --fs-ui workhorse size)." },
+    monoScale: { type: "number", default: 1, min: 0.6, max: 1, doc: "Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; 1 = no correction." },
+    tabFontSize: { type: "number", default: 11.5, min: 11, max: 14, doc: "Editor tab label font size (px)." },
+    sidebarIconFontSize: { type: "number", default: 12, min: 11, max: 20, doc: "Sidebar header icon button size (px). 12, not the 11.5px --fs-ui text size: the pixel icons are drawn on a 24x24 grid (app/src/icons/pixelPaths.ts), so 12 is an exact half-scale and every stem lands on whole device pixels — 11.5 samples unevenly and thickens some strokes. Matches the tab toolbars, which use the same 12px default (ICON_PX)." },
     paletteInputFontSize: { type: "number", default: 15, min: 13, max: 18, doc: "Command palette search-input font size (px)." },
   }),
   graph: object({
@@ -98,6 +109,12 @@ export const SETTINGS_SCHEMA: Schema = {
     nodeSizeMaxMult: { type: "number", default: 6, min: 2, max: 12, doc: "Ceiling on node size (biggest hub vs a leaf)." },
     mapDefaultZoom: { type: "number", default: 2, min: 1, max: 18, doc: "Default zoom for the Bases map view when it can't fit markers." },
     refreshDebounceMs: { type: "number", default: 300, min: 100, max: 1000, doc: "Delay before rebuilding the graph after an edit burst (ms)." },
+    backgroundNoise: { type: "boolean", default: false, doc: "The faint ASCII noise texture under the graph field. Off by default." },
+    renderer: {
+      type: enumType(["ascii", "standard"]),
+      default: "ascii",
+      doc: "Which look draws the knowledge graph. 'ascii' is the character field: clusters render as aggregate ASCII masses joined by summarized links, zoom is resolution rather than scale, and the hierarchy reads through zoom-driven colour and a cluster-name ladder. 'standard' is the conventional graph: filled dots sized by degree, vector edges, orbitable 3D and the atmosphere glow. Both draw the same backend layout.",
+    },
   }),
   editor: object({
     defaultMode: {
@@ -111,7 +128,7 @@ export const SETTINGS_SCHEMA: Schema = {
     spellcheck: { type: "boolean", default: true, doc: "Spell check the note body (Harper)." },
     grammarCheck: { type: "boolean", default: false, doc: "Grammar + style check the note body (Harper). Independent of spellcheck; off by default." },
     autoSaveDelay: { type: "number", default: 800, min: 200, max: 3000, doc: "Milliseconds of idle before saving." },
-    lineHeight: { type: "number", default: 1.65, min: 1.3, max: 2, doc: "Editor prose line height (multiplier)." },
+    lineHeight: { type: "number", default: 1, min: 0.8, max: 1.8, doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — ui.css :root), NOT of the font size. Default 1 -> exactly 18px, the same row cadence as the sidebar tree, tabs, and graph rows." },
     mathMacros: {
       type: "string",
       default: "",
@@ -183,7 +200,6 @@ export const SETTINGS_SCHEMA: Schema = {
     // Vertical tab rail: hide the horizontal top strip and show the open tabs as a narrow
     // icon rail on the RIGHT edge of the app, which expands to reveal full names on hover.
     // Off = the classic horizontal tab bar. Toggled via the `.has-rail` layout class in App.tsx.
-    verticalTabs: { type: "boolean", default: false, doc: "Show tabs as a vertical rail on the right edge of the app instead of the classic horizontal strip. Collapsed the rail shows just each tab's icon; hovering it expands to reveal the full tab names." },
     paletteTopOffset: { type: "string", default: "12vh", doc: "How far down the screen the command palette appears (CSS length, e.g. 12vh)." },
     paneDividerWidth: { type: "number", default: 5, min: 3, max: 12, doc: "Thickness of the draggable divider between split panes (px)." },
     cardGridMinWidth: { type: "number", default: 220, min: 150, max: 360, doc: "Minimum card width in the Bases cards view (px)." },

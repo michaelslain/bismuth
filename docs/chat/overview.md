@@ -273,7 +273,7 @@ The composer accepts dropped or pasted images, sent alongside (or instead of) te
 
 ## Rendering
 
-Both the user's messages and the assistant's replies render through `renderNoteBody` (`app/src/bases/markdown` — the same markdown pipeline notes use), so a chat reads exactly like the editor (Lora, math, code, wikilinks, tags):
+Both the user's messages and the assistant's replies render through `renderNoteBody` (`app/src/bases/markdown` — the same markdown pipeline notes use), so a chat reads exactly like the editor (Monaspace, math, code, wikilinks, tags):
 
 ```tsx
 <div class="chat-bubble user" innerHTML={renderNoteBody((item as UserItem).text)} />

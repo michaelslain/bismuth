@@ -1,17 +1,25 @@
 import { buildVaultGraph, resolveLinkTarget } from "./vault";
 import { buildMemoryGraph } from "./memory";
 import { mergeGraphs, type GraphData, type GraphEdge } from "./graph";
-import { detectCommunities } from "./community";
+import { detectCommunityHierarchy } from "./community";
 
 /**
- * Stamp `community` / `communityLabel` onto each node from the structural edge set. Uses only edges
- * whose endpoints are both present (the same set used for layout/degree). Mutates and returns `g`.
+ * Stamp `community` / `communityLabel` / `communityPath` / `communityPathLabels` onto each node from
+ * the structural edge set. Uses only edges whose endpoints are both present (the same set used for
+ * layout/degree). Mutates and returns `g`.
+ *
+ * The hierarchy's depth is a function of the graph's node count (community.ts
+ * `communityLevelsFor`), so a small vault gets one flat level exactly as before and a big one gets
+ * clusters nested up to 4 deep. `community`/`communityLabel` are always the FINEST level, so every
+ * existing consumer is unaffected by the extra levels.
  */
 function stampCommunities(g: GraphData): GraphData {
   const present = new Set(g.nodes.map((n) => n.id));
   const structural = g.edges.filter((e) => present.has(e.from) && present.has(e.to));
-  const assignments = detectCommunities(
-    g.nodes.map((n) => ({ id: n.id, label: n.label })),
+  const assignments = detectCommunityHierarchy(
+    // `kind` feeds the exemplar picker's tag preference (community.ts pickExemplar): a cluster whose
+    // top-degree members include a tag is named "#school", not by a note's whole title.
+    g.nodes.map((n) => ({ id: n.id, label: n.label, kind: n.kind })),
     structural.map((e) => ({ from: e.from, to: e.to })),
   );
   for (const n of g.nodes) {
@@ -19,6 +27,8 @@ function stampCommunities(g: GraphData): GraphData {
     if (a) {
       n.community = a.community;
       n.communityLabel = a.label;
+      n.communityPath = a.path;
+      n.communityPathLabels = a.labels;
     }
   }
   return g;

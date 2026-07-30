@@ -1,0 +1,27 @@
+<!-- @dsCard group="Components" viewport="700x290" subtitle="Field · TextInput · Select · SearchBar · MarkdownField" name="Forms" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>body{margin:0;font-family:var(--ui-font-stack);font-variant-ligatures:none;background:var(--bg);color:var(--fg);font-size:var(--fs-ui)}
+.wrap{padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.lbl{font-size:10.5px;color:var(--faint)}</style></head>
+<body class="ink"><div class="wrap">
+  <div style="display:grid;gap:11px">
+    <label class="ui-field"><span>vault path</span>
+      <input class="ui-input" value="~/vault" readonly>
+      <span style="color:var(--faint);font-size:10.5px">318 files indexed</span></label>
+    <label class="ui-field"><span>focused</span>
+      <input class="ui-input" value="2029-09-15 journal" readonly style="border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)"></label>
+    <label class="ui-field"><span>theme</span>
+      <button class="ui-input ui-select-trigger"><span>ink</span><span class="ui-select-caret">v</span></button></label>
+    <div class="search-bar"><span class="search-bar-lead">&gt;</span>
+      <input class="search-bar-input" placeholder="ask about this vault">
+      <span class="asc-kbd-hint"><span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">↵</span></span><span class="asc-kbd-desc">send</span></span></div>
+  </div>
+  <div>
+    <div class="asc-frontmatter">
+      <div>---</div><div>icon:    (*)</div><div>created: 2029-09-15T07:12</div>
+      <div>tags:    [attention, walking]</div><div>brain:   2</div><div>---</div>
+    </div>
+    <div class="asc-prose" style="margin-top:12px;font-size:13px">I walked the long way home and let the day unspool behind me. The graph remembers what I don't — <span class="asc-tag">#walking</span> keeps returning to <span class="asc-wikilink">[[attention as a resource]]</span>.</div>
+  </div>
+</div></body></html>

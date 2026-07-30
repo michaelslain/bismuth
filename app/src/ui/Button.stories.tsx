@@ -5,6 +5,7 @@
 //   • state — "normal" (standalone) | "unselected" (toggle member, off) | "selected" (toggle member, on)
 //   • size  — "sm" | "md" | "lg"  (text buttons; md is the default, adds no class)
 //   • danger — orthogonal destructive tone, layerable on any state
+//   • primary — orthogonal: selected + a glow rim, the view's one emphasized action
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
 import type { JSX } from "solid-js";
 import { Button } from "./Button";
@@ -20,6 +21,7 @@ const meta = {
     state: { control: "inline-radio", options: ["normal", "selected", "unselected"] },
     size: { control: "inline-radio", options: ["sm", "md", "lg"] },
     danger: { control: "boolean" },
+    primary: { control: "boolean" },
     disabled: { control: "boolean" },
     children: { control: "text" },
   },
@@ -28,6 +30,7 @@ const meta = {
     state: "normal",
     size: "md",
     danger: false,
+    primary: false,
     disabled: false,
     children: "Button",
   },
@@ -64,6 +67,16 @@ export const TextSizes: Story = {
       <Button kind="text" size="sm">Small</Button>
       <Button kind="text" size="md">Medium</Button>
       <Button kind="text" size="lg">Large</Button>
+    </Row>
+  ),
+};
+
+/** Primary — selected + a glow rim, the view's one emphasized action. Max one per view. */
+export const TextPrimary: Story = {
+  render: () => (
+    <Row label="text · primary">
+      <Button kind="text" state="unselected">Cancel</Button>
+      <Button kind="text" primary>Save</Button>
     </Row>
   ),
 };
@@ -111,6 +124,9 @@ export const AllVariants: Story = {
         <Button kind="text" danger>Danger</Button>
         <Button kind="text" danger disabled>Danger disabled</Button>
         <Button kind="text" disabled>Disabled</Button>
+      </Row>
+      <Row label="text · primary">
+        <Button kind="text" primary>Primary</Button>
       </Row>
       <Row label="icon · normal / unselected / selected / danger">
         <Button kind="icon" state="normal"><Icon value="Star" size={16} /></Button>

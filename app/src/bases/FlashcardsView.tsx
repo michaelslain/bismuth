@@ -7,6 +7,7 @@ import { Icon } from "../icons/Icon";
 import { EmptyState } from "../ui/EmptyState";
 import { Modal } from "../ui/Modal";
 import { TextInput } from "../ui/TextInput";
+import { AsciiMeter } from "../ui/ascii/AsciiMeter";
 import { renderMarkdown } from "./markdown";
 import { EditCardsModal } from "./EditCardsModal";
 import type { BaseConfig, Row } from "../../../core/src/bases/types";
@@ -43,7 +44,7 @@ const GRADE_KEYS: { response: "hard" | "good" | "easy"; key: string; cls: string
  * Flashcards view over a base's rows. Cards are table rows (front/back/due/ease/interval).
  * Reviewing flips to the back (front kept as a small italic caption) and writes fixed-SM-2
  * scheduling back to the row. Cram mode reviews ALL cards ignoring due dates and never changes
- * scheduling. Faces render markdown (Lora serif; `code` monospace).
+ * scheduling. Faces render markdown (mono prose font; `code` monospace).
  *
  * Layout follows the "claude-design" handoff: a header strip with a gradient progress bar +
  * GOOD/HARD session tally and deck controls (edit cards, cram), then a centered stage holding
@@ -331,7 +332,7 @@ export function FlashcardsView(props: {
             <Show when={cram()}> · cram</Show>
           </div>
           <div class="fcbar">
-            <i style={{ width: `${progressPct()}%` }} />
+            <AsciiMeter value={progressPct() / 100} width={30} />
           </div>
           <div class="tally">
             <span class="a">HARD <b>{hardCount()}</b></span>
@@ -431,7 +432,9 @@ export function FlashcardsView(props: {
                       <div class="flip-face flip-front">
                         <Show when={props.basePath}>{cardActions()}</Show>
                         <div class="card-md" innerHTML={promptHtml(current()!)} />
-                        <div class="fliphint"><span class="key">Space</span> to reveal answer</div>
+                        <div class="fliphint">
+                          <span class="asc-kbd"><span class="asc-key">SPACE</span></span> to reveal answer
+                        </div>
                       </div>
                       <div class="flip-face flip-back">
                         <Show when={props.basePath}>{cardActions()}</Show>
@@ -450,8 +453,8 @@ export function FlashcardsView(props: {
                 <For each={GRADE_KEYS}>
                   {(g) => (
                     <button class={`grade ${g.cls}`} onClick={() => grade(g.response)}>
-                      <span class="g-key">{g.key}</span>
                       <span class="g-name">{g.response}</span>
+                      <span class="asc-kbd"><span class="asc-key">{g.key}</span></span>
                     </button>
                   )}
                 </For>

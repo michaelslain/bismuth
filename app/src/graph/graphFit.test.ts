@@ -6,6 +6,9 @@ import {
   finiteVec3,
   boundingRadius,
   fitScale,
+  boundingHalfExtents,
+  fitScaleForBox,
+  FIT_FILL_FRACTION,
 } from "./graphFit";
 
 describe("isUsableBox", () => {
@@ -102,5 +105,60 @@ describe("fitScale", () => {
     expect(fitScale(Infinity, 100)).toBe(1 / 100);
     expect(Number.isFinite(fitScale(300, -5))).toBe(true);
     expect(fitScale(300, -5)).toBe(300); // negative radius -> floored to 1
+  });
+});
+
+describe("boundingHalfExtents", () => {
+  it("returns max |x| and max |y| independently over the cloud", () => {
+    const r = boundingHalfExtents([[3, 1], [1, 9], [-8, 2]]);
+    expect(r.hx).toBeCloseTo(8, 6);
+    expect(r.hy).toBeCloseTo(9, 6);
+  });
+
+  it("floors an empty / origin-only cloud so the fit scale can't divide by zero", () => {
+    expect(boundingHalfExtents([])).toEqual({ hx: 1, hy: 1 });
+    expect(boundingHalfExtents([[0, 0]])).toEqual({ hx: 1, hy: 1 });
+    expect(boundingHalfExtents([[0.1, 0.2]])).toEqual({ hx: 1, hy: 1 }); // sub-floor extent -> floor
+  });
+
+  it("honors a custom floor", () => {
+    expect(boundingHalfExtents([[0, 0]], 5)).toEqual({ hx: 5, hy: 5 });
+  });
+
+  it("ignores non-finite coordinates instead of propagating NaN", () => {
+    const r = boundingHalfExtents([[NaN, Infinity], [4, 6]]);
+    expect(r.hx).toBeCloseTo(4, 6);
+    expect(r.hy).toBeCloseTo(6, 6);
+    expect(Number.isFinite(boundingHalfExtents([[Infinity, -Infinity]]).hx)).toBe(true);
+  });
+});
+
+describe("fitScaleForBox", () => {
+  it("fills the BINDING axis to exactly `fill` fraction of the box", () => {
+    // box 1000x500, extents hx=hy=100 -> x ratio (1000*.92/2)/100=4.6, y ratio (500*.92/2)/100=2.3
+    // the y axis is the binding one (smaller ratio wins).
+    const s = fitScaleForBox(1000, 500, 100, 100);
+    expect(s).toBeCloseTo(2.3, 6);
+    expect((s * 100 * 2) / 500).toBeCloseTo(FIT_FILL_FRACTION, 6);
+  });
+
+  it("picks the smaller of the two axis ratios (never overflows the box)", () => {
+    const wide = fitScaleForBox(800, 800, 200, 50);
+    const tall = fitScaleForBox(800, 800, 50, 200);
+    expect(wide).toBeCloseTo(tall, 6); // symmetric box, extents swapped -> same binding scale
+    expect(wide).toBeCloseTo(1.84, 6);
+  });
+
+  it("returns 1 for degenerate (all-zero) inputs", () => {
+    expect(fitScaleForBox(0, 0, 0, 0)).toBe(1);
+  });
+
+  it("is always finite and positive for extreme/non-finite inputs", () => {
+    expect(Number.isFinite(fitScaleForBox(NaN, NaN, NaN, NaN))).toBe(true);
+    expect(fitScaleForBox(NaN, NaN, NaN, NaN)).toBeGreaterThan(0);
+    expect(Number.isFinite(fitScaleForBox(1e9, 1e-9, 1e-9, 1e9))).toBe(true);
+    expect(fitScaleForBox(1e9, 1e-9, 1e-9, 1e9)).toBeGreaterThan(0);
+    expect(Number.isFinite(fitScaleForBox(-100, 500, 100, 100))).toBe(true);
+    expect(fitScaleForBox(-100, 500, 100, 100)).toBe(1); // negative box -> negative ratio -> fallback
   });
 });

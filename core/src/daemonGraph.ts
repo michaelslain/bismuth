@@ -36,7 +36,7 @@ export interface DaemonCron {
   /** Vault-relative path/glob this cron watches, or null (schedule-triggered / absent). */
   watch: string | null;
   enabled: boolean;
-  lastFired: { timestamp: string; result: string } | null;
+  lastFired: { timestamp: string; result: string; detail?: string } | null;
   running: boolean;
   startedAt: string | null;
 }
@@ -89,6 +89,9 @@ export function daemonSnapshot(home: string = daemonMachineDir(), name: string =
           ? {
               timestamp: typeof (lf as any).timestamp === "string" ? (lf as any).timestamp : "",
               result: typeof (lf as any).result === "string" ? (lf as any).result : "unknown",
+              // Present only for a "skipped" incremental-cron run (see daemon/src/daemon/cron.ts) —
+              // the human-readable reason, e.g. "skipped: no changes since <ISO>".
+              ...(typeof (lf as any).detail === "string" ? { detail: (lf as any).detail } : {}),
             }
           : null;
       const startedAt =
@@ -152,7 +155,10 @@ export function buildDaemonGraph(snap: DaemonSnapshot): GraphData {
       daemon: {
         enabled: c.enabled,
         running: c.running,
-        lastResult: c.lastFired?.result ?? null,
+        // A "skipped" incremental run carries its reason in `detail` (e.g. "skipped: no changes
+        // since 2026-07-20T10:00:00Z") — surface that verbatim as lastResult so it's visible in
+        // `bismuth daemon graph` / the sidebar instead of the bare enum value.
+        lastResult: (c.lastFired?.result === "skipped" && c.lastFired.detail) || c.lastFired?.result || null,
         lastFiredMs: toMs(c.lastFired?.timestamp),
         schedule: c.schedule || undefined,
         on: c.on,

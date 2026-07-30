@@ -1,13 +1,23 @@
-/* app/src/ExportView.css */
+/* app/src/ExportView.css
+   PURE retheme onto the ASCII register — same fields/order/controls as before, only the
+   paint changes. See design/ascii-extended/PORTING.md §3 + view-export.card.html.
+   `.paper` was renamed to `.exp-paper` here (and in ExportView.tsx): `paper` is now a
+   THEME-SCOPE class name (ink/paper/cathode/riso), and reusing it as a local class would
+   silently re-scope this whole preview subtree to the light Paper theme — see README's
+   "Two collisions". */
 .exp {
+  /* The preview WRAPPER's fill while the iframe is loading/empty — light stays print-paper
+     cream (never a UI theme color), dark tracks the app's OWN active scope (--bg), fixed
+     reactively from ExportView.tsx's theme() signal via an inline custom-property override
+     on .exp-paper (see THEME_SWATCH.dark's identical fix, §3c2). */
   --paper-bg: #f7f6f2;
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: 1fr 360px; /* PORTING §3a: keep — the card's narrower demo column is only its own viewport */
   height: 100%;
   min-height: 0;
 }
 
-/* ---- Left: light "paper" preview --------------------------------------- */
+/* ---- Left: paper preview ------------------------------------------------ */
 .exppreview {
   padding: 34px;
   overflow: auto;
@@ -15,22 +25,25 @@
   align-items: flex-start;
   justify-content: center;
 }
-.paper {
+.exp-paper {
   width: 520px;
   max-width: 100%;
   background: var(--paper-bg);
-  color: #1c1a16;
-  border-radius: 4px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  color: var(--fg);
+  border: var(--rule-soft);
+  box-shadow: var(--shadow-menu);
   overflow: hidden;
 }
 /* Visual base views (calendar grid, kanban board) are landscape — give them room so
    the preview matches the wider page the export actually renders to. */
-.paper.paper-wide {
+.exp-paper.paper-wide {
   width: min(960px, 100%);
 }
 
-/* The rendered note lives in an isolated iframe; keep it on the cream paper. */
+/* The rendered note lives in an isolated iframe carrying its OWN inline copy of the
+   chosen export theme's tokens (export/htmlTemplate.ts) — self-contained, so it reads
+   correctly whether opened inside Bismuth or as a standalone file. This wrapper only
+   shows through as the loading/empty-state fill. */
 .export-frame {
   display: block;
   width: 100%;
@@ -45,30 +58,30 @@
 }
 .export-empty {
   font-family: var(--editor-font);
-  color: #8a8578;
+  color: var(--faint);
   text-align: center;
   padding: 48px 52px;
-  font-size: 13.5px;
+  font-size: var(--fs-ui);
   line-height: 1.7;
 }
 
 /* ---- Right: options panel on the rail ---------------------------------- */
 .exppanel {
-  border-left: 1px solid var(--border-soft);
+  border-left: var(--rule-soft);
   background: var(--rail);
-  padding: 22px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   overflow: auto;
 }
 .exp-title {
-  font-family: var(--editor-font);
-  font-size: 19px;
+  font-family: var(--ui-font-stack);
+  font-size: 14px;
   color: var(--fg);
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
 }
 .exp-title svg {
   color: var(--accent);
@@ -77,52 +90,52 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .flab {
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
   color: var(--faint);
   text-transform: uppercase;
 }
 
 .fopts {
   display: flex;
-  gap: 7px;
+  gap: 5px;
   flex-wrap: wrap;
 }
 
 /* A small heads-up under a field's chip row (e.g. "N pages -> N files" for a page-broken
    PNG export) — quieter than .flab, not a label. */
 .exp-hint {
-  font-size: 11.5px;
+  font-size: 10.5px;
   color: var(--faint);
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 /* ---- Input/output path fields ----------------------------------------- */
 .path-row {
   display: flex;
-  gap: 7px;
-  align-items: center;
+  gap: 5px;
+  align-items: stretch;
 }
 .path-input {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-micro);
 }
 
-/* Native date picker, styled to sit with the path inputs on the dark rail. */
+/* Native date picker, styled to sit with the path inputs on the rail. */
 .exp-date {
   flex: 1 1 auto;
   min-width: 0;
-  font-family: var(--editor-font);
-  font-size: 12.5px;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
   color: var(--fg);
-  background: var(--input-bg, var(--bg-elevated, #1b1c22));
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
+  background: var(--panel);
+  border: var(--rule);
+  border-radius: var(--r-control);
+  padding: 4px 7px;
 }
 .exp-date::-webkit-calendar-picker-indicator {
   filter: invert(0.7);
@@ -130,9 +143,8 @@
 }
 
 .theme-swatch {
-  width: 11px;
-  height: 11px;
-  border-radius: 3px;
+  width: 10px;
+  height: 10px;
   display: inline-block;
   border: 1px solid var(--border);
   flex: 0 0 auto;
@@ -140,6 +152,7 @@
 
 .exp-spacer {
   flex: 1;
+  min-height: 6px;
 }
 
 /* ---- Footer: export button uses the shared IconTextButton primitive ---- */

@@ -30,7 +30,7 @@
 .calendar-app textarea { font-family: var(--font-interface); }
 
 /* The modal panels are portaled to <body>, outside `.calendar-app`, so they don't
-   inherit the app font/size and would fall back to the UA serif at the 16px body
+   inherit the app font/size and would fall back to the UA default at the 16px body
    size. Pin the mono UI font + the app's 13px control scale on the whole panel
    (headers, labels, inputs, buttons) so it matches the rest of the chrome. */
 .event-modal,
@@ -54,7 +54,7 @@
 /* ---- Toolbar (bismuth .viewbar shell) ------------------------------------ */
 /* The toolbar reuses the global .viewbar / .vbtn / .vseg / .crumb primitives.
    These local rules add the calendar-specific bits: prev/next chevron icon
-   buttons, the serif month title, and the accent-filled Event CTA. */
+   buttons, the prose-font month title, and the accent-filled Event CTA. */
 .cal-viewbar { gap: 8px; }
 .cal-nav { display: inline-flex; gap: 2px; }
 
@@ -68,7 +68,7 @@
 .cal-viewbar .cal-cta { color: var(--fg); background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
 .cal-viewbar .cal-cta:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--fg); }
 
-.event-chip { display: flex; flex-direction: column; gap: 0; padding: 2px 7px; border-radius: 5px; font-size: 10.5px; color: var(--text-on-accent); cursor: pointer; overflow: hidden; margin-bottom: 2px; font-family: var(--font-text); white-space: nowrap; text-overflow: ellipsis; }
+.event-chip { display: flex; flex-direction: column; gap: 0; padding: 2px 7px; border-radius: var(--r-chip, 2px); font-size: 10.5px; color: var(--text-on-accent); cursor: pointer; overflow: hidden; margin-bottom: 2px; font-family: var(--font-text); white-space: nowrap; text-overflow: ellipsis; }
 .event-chip:hover { filter: brightness(1.1); }
 /* ---- Event pill palette (bismuth .ev.{teal,blue,violet,green,gold,rose}) -----
    Each event's category maps to one of these swatch classes (see EventChip);
@@ -83,7 +83,7 @@
 .ev.ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
 .ev.ghost .event-chip-time { color: var(--faint); }
 .event-chip-time { font-size: 0.95em; opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; font-family: var(--font-interface); }
-.event-chip-title { font-family: var(--editor-font, 'Lora', serif); font-weight: 700; font-size: 1.08em; white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
+.event-chip-title { font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace); font-weight: 700; font-size: 1.08em; white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
 .event-chip-meta { display: flex; align-items: center; gap: 3px; overflow: hidden; flex-shrink: 1; min-height: 0; }
 .event-chip-location { opacity: 0.8; overflow: hidden; white-space: normal; word-break: break-word; }
 .event-chip-link { flex-shrink: 0; }
@@ -120,7 +120,7 @@
 .time-grid-time-rows { display: flex; position: relative; min-height: 1200px; padding-bottom: 48px; }
 .time-gutter-col { width: var(--time-gutter-width, 54px); flex-shrink: 0; border-right: 1px solid var(--border-soft); }
 .time-gutter-hour-block { display: flex; flex-direction: column; height: calc(1200px / 24); }
-.time-gutter-hour { flex: 1; font-size: 10px; color: var(--faint); padding: 2px 8px 0 0; text-align: right; box-sizing: border-box; }
+.time-gutter-hour { flex: 1; font-size: 10.5px; color: var(--faint); padding: 2px 8px 0 0; text-align: right; box-sizing: border-box; }
 .time-gutter-half { flex: 1; box-sizing: border-box; }
 .time-grid-day-col { flex: 1; position: relative; border-left: 1px solid var(--border-soft); height: 1200px; user-select: none; }
 .time-grid-day-col.today { background: color-mix(in srgb, var(--accent) 5%, transparent); }
@@ -132,7 +132,7 @@
 .time-grid-half-cell { flex: 1; box-sizing: border-box; cursor: pointer; }
 .time-grid-hour-cell:hover, .time-grid-half-cell:hover { background: var(--hover-bg); }
 .time-grid-event { position: absolute; left: 3px; right: 3px; overflow: hidden; z-index: 1; cursor: grab; }
-.time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: 7px; padding: 4px 9px; font-size: 10.5px; }
+.time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: var(--r-chip, 2px); padding: 4px 9px; font-size: 10.5px; }
 .time-grid-event .event-chip-meta { flex-shrink: 0; }
 /* Tighter line spacing in the grid so a 1h block fits time + a 2-line title in its
    vertical space (instead of clipping). */
@@ -151,8 +151,11 @@
 .event-chip-title *, .event-chip-location * { color: inherit; }
 /* Calendar event-create drag preview. NOT `.drag-ghost` — that class belongs to the
    global pane drag-and-drop ghost (App.css, position:fixed) and would override this. */
-.cal-drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: 7px; padding: 6px 9px; font-size: 11px; color: var(--text-on-accent); font-weight: 500; pointer-events: none; }
-.event-modal { background: var(--background-primary); border-radius: 8px; padding: 20px; min-width: 340px; max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow-y: auto; }
+.cal-drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: var(--r-chip, 2px); padding: 6px 9px; font-size: 11px; color: var(--text-on-accent); font-weight: 500; pointer-events: none; }
+/* Chrome (background/border/radius/shadow) now comes from the shared `.asc-modal` class every
+   <Modal> panel carries (ui/Modal.tsx) — this legacy rule only supplies layout/sizing so it
+   doesn't fight `.asc-modal` for the background/radius/shadow. */
+.event-modal { min-width: 340px; max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow-y: auto; }
 /* ============================================================
    Recurrence dialog — redesign on the shared `.evm-modal` chrome
    (header/body/footer + tokens defined in the New Event modal block below).
@@ -174,7 +177,7 @@
 .evm-modal .rec-opt:active { transform: translateY(1px); }
 .evm-modal .rec-opt-ic { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--accent); background: var(--accent-soft); }
 .evm-modal .rec-opt-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.evm-modal .rec-opt-lab { font-family: var(--serif); font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; color: var(--hi); }
+.evm-modal .rec-opt-lab { font-family: var(--evm-font); font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; color: var(--hi); }
 .evm-modal .rec-opt-sub { font-family: var(--mono); font-size: 10.5px; letter-spacing: .02em; color: var(--faint); }
 .evm-modal .rec-opt-chev { flex: 0 0 auto; color: var(--faint); display: inline-flex; transition: transform .14s, color .14s; }
 .evm-modal .rec-opt:hover .rec-opt-chev { color: var(--accent); transform: translateX(2px); }
@@ -198,27 +201,25 @@
 .evm-modal .cat-group { background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; overflow: visible; }
 .evm-modal .cat-row { display: flex; align-items: center; gap: 12px; padding: 10px 13px; }
 .evm-modal .cat-row + .cat-row { border-top: 1px solid var(--border2); }
-.evm-modal .cat-name { flex: 1; font-family: var(--serif); font-size: 15.5px; font-weight: 600; color: var(--hi); letter-spacing: -.01em; cursor: default; }
+.evm-modal .cat-name { flex: 1; font-family: var(--evm-font); font-size: 15.5px; font-weight: 600; color: var(--hi); letter-spacing: -.01em; cursor: default; }
 .evm-modal .cat-del { width: 24px; height: 24px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 6px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
 .evm-modal .cat-del:hover { color: var(--rose); background: color-mix(in srgb, var(--rose) 15%, transparent); }
 /* inline rename: sits exactly where the name was (negative margins cancel the
    padding so the text doesn't jump), with a subtle tint + thin inset accent ring. */
-.evm-modal .cat-nameedit { flex: 1; min-width: 0; font-family: var(--serif); font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; color: var(--hi); background: color-mix(in srgb, var(--accent) 9%, transparent); border: none; border-radius: 6px; padding: 3px 7px; margin: -3px -7px; outline: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.evm-modal .cat-nameedit { flex: 1; min-width: 0; font-family: var(--evm-font); font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; color: var(--hi); background: color-mix(in srgb, var(--accent) 9%, transparent); border: none; border-radius: 6px; padding: 3px 7px; margin: -3px -7px; outline: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 
 /* color chip + palette popover */
 .evm-modal .cat-chipwrap { position: relative; flex: 0 0 auto; display: inline-flex; }
-.evm-modal .cat-chip { width: 20px; height: 20px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .16); padding: 0; cursor: pointer; box-shadow: 0 1px 2px rgba(0, 0, 0, .35); transition: filter .12s; }
+.evm-modal .cat-chip { width: 20px; height: 20px; border-radius: var(--r-control, 3px); border: var(--rule-soft, 1px solid var(--border-soft)); padding: 0; cursor: pointer; transition: filter .12s; }
 .evm-modal .cat-chip:hover { filter: brightness(1.1); }
 .evm-modal .cat-chip.open { box-shadow: 0 0 0 2px var(--surface2), 0 0 0 3.5px var(--accent); }
-.evm-modal .cat-pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 18px 44px rgba(0, 0, 0, .55); padding: 8px; }
+/* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
+.evm-modal .cat-pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-panel, 5px); box-shadow: var(--shadow-popup); padding: 8px; }
 .evm-modal .cat-pop.up { top: auto; bottom: calc(100% + 7px); }
 .evm-modal .cat-sws { display: flex; gap: 6px; align-items: center; }
-.evm-modal .cat-sw { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; position: relative; border-radius: 6px; transition: transform .12s; }
+.evm-modal .cat-sw { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; position: relative; border-radius: var(--r-control, 3px); transition: transform .12s; }
 .evm-modal .cat-sw:hover { transform: translateY(-1px); }
 .evm-modal .cat-sw.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px currentColor; }
-/* custom "any colour" well — native picker fills it invisibly */
-.evm-modal .cat-sw.custom { overflow: hidden; background-image: conic-gradient(from 0deg, #f43f5e, #f59e0b, #facc15, #4ade80, #22d3ee, #3b82f6, #a855f7, #f43f5e); }
-.evm-modal .cat-sw.custom input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: none; padding: 0; cursor: pointer; }
 
 /* new category — distinct dashed card */
 .evm-modal .cat-add { margin-top: 18px; border: 1px dashed var(--border); border-radius: 12px; padding: 13px 13px 14px; background: color-mix(in srgb, var(--surface2) 40%, transparent); display: flex; flex-direction: column; gap: 11px; }
@@ -234,15 +235,15 @@
 .evm-modal.calendar-settings .evm-head { align-items: center; }
 .evm-modal.calendar-settings .evm-mark { height: 24px; }
 
-.evm-modal .set-sect { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 9px; margin: 2px 0; }
+.evm-modal .set-sect { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 9px; margin: 2px 0; }
 .evm-modal .set-sect::after { content: ''; flex: 1; height: 1px; background: var(--border2); }
 .evm-modal .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 18px; }
 .evm-modal .set-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .evm-modal .set-field.span { grid-column: 1 / -1; }
 .evm-modal .set-lab { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--hi); }
 .evm-modal .set-lab svg { color: var(--accent); flex: 0 0 auto; }
-.evm-modal .set-lab .req { margin-left: auto; font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 2px 6px; }
-.evm-modal .set-lab .opt { margin-left: auto; font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 6px; }
+.evm-modal .set-lab .req { margin-left: auto; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 2px 6px; }
+.evm-modal .set-lab .opt { margin-left: auto; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 6px; }
 
 .evm-modal .set-hint { font-size: 10.5px; color: var(--faint); line-height: 1.5; }
 
@@ -282,7 +283,7 @@
 .evm-modal .propset-row.open .propset-chev { transform: rotate(90deg); }
 .evm-modal .propset-name-txt { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; color: var(--hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .evm-modal .propset-name-txt.empty { color: var(--faint); font-style: italic; }
-.evm-modal .propset-kind { flex: 0 0 auto; font-family: var(--mono); font-size: 10px; letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 7px; }
+.evm-modal .propset-kind { flex: 0 0 auto; font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 7px; }
 .evm-modal .propset-eye { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
 .evm-modal .propset-eye:hover { color: var(--hi); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .evm-modal .propset-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -316,7 +317,7 @@
    New Event modal — redesign (see ~/Downloads/claude-design).
    `.event-modal` IS the card (the <Modal> portals it inside `.ui-overlay`,
    which supplies the centered scrim). Design tokens (--surface2, --hi,
-   --serif…) are aliased here onto the app's real CSS vars so the design
+   --evm-font…) are aliased here onto the app's real CSS vars so the design
    CSS ports almost verbatim and re-themes automatically (incl. light mode).
    ============================================================ */
 .evm-modal {
@@ -325,7 +326,7 @@
   --surface2: var(--surface-2);
   --border2: var(--border-soft);
   --hi: var(--fg);
-  --serif: var(--editor-font, 'Lora', Georgia, serif);
+  --evm-font: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
   --mono: "Monaspace Xenon", ui-monospace, monospace;
   --azure: var(--blue);
   --orchid: var(--accent-purple, var(--violet));
@@ -336,15 +337,13 @@
   max-height: calc(100vh - 48px);
   font-family: var(--mono);
   font-size: 13px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  /* This card carries both `.event-modal` and `.evm-modal`. The legacy
-     `.event-modal` rule sets padding:20px; the redesigned chrome supplies its own
-     padding per section (head/body/foot), so zero it here to avoid double padding. */
+  /* Chrome (background/border/radius/shadow) is `.asc-modal`'s job (ui/Modal.tsx) — this
+     card also always carries that class, so this rule only supplies sizing/layout. It used
+     to re-declare an opaque `background: var(--surface)` here, which — same specificity,
+     later in the cascade than `.asc-modal` — silently defeated `.asc-modal`'s translucent
+     `--pop-bg-strong` + blur(6px) chrome (blurring behind an opaque fill is invisible). */
   padding: 0;
   overflow: hidden;
-  box-shadow: var(--shadow-modal, 0 40px 110px rgba(0, 0, 0, .6)), 0 8px 24px rgba(0, 0, 0, .4);
   display: flex;
   flex-direction: column;
 }
@@ -353,10 +352,10 @@
 .evm-modal .evm-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 20px 10px; }
 .evm-modal .evm-mark { width: 24px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
 .evm-modal .evm-htext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.evm-modal .evm-title { font-family: var(--serif); font-weight: 600; font-size: 19px; letter-spacing: -.01em; color: var(--hi); line-height: 1.1; }
+.evm-modal .evm-title { font-family: var(--evm-font); font-weight: 600; font-size: 19px; letter-spacing: -.01em; color: var(--hi); line-height: 1.1; }
 .evm-modal .evm-sub { font-size: 11px; color: var(--faint); letter-spacing: .02em; }
 .evm-modal .evm-x { margin-left: auto; width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 7px; color: var(--lo); cursor: pointer; appearance: none; background: none; border: none; padding: 0; font: inherit; }
-.evm-modal .evm-x:hover { background: rgba(255, 255, 255, .06); color: var(--hi); }
+.evm-modal .evm-x:hover { background: var(--hover-bg); color: var(--hi); }
 
 /* body (scrolls when tall) — flex:1 1 auto lets it shrink below its content height
    inside the column-flex `.evm-modal` (which caps at max-height: calc(100vh - 48px)),
@@ -368,9 +367,9 @@
    scrolling. `.set-cols` opts back into its own capped internal scroll below. */
 .evm-modal .evm-body > * { flex-shrink: 0; }
 
-/* big serif title input */
+/* big prose-font title input */
 .evm-modal .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
-.evm-modal .evm-titlein { width: 100%; border: none; outline: none; background: none; font-family: var(--serif); font-size: 23px; font-weight: 600; letter-spacing: -.015em; color: var(--hi); padding: 2px 0 9px; border-bottom: 1px solid var(--border2); transition: border-color .15s; }
+.evm-modal .evm-titlein { width: 100%; border: none; outline: none; background: none; font-family: var(--evm-font); font-size: 23px; font-weight: 600; letter-spacing: -.015em; color: var(--hi); padding: 2px 0 9px; border-bottom: 1px solid var(--border2); transition: border-color .15s; }
 .evm-modal .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; font-family: var(--mono); }
 .evm-modal .evm-titlein:focus { border-bottom-color: var(--accent); }
 
@@ -390,7 +389,7 @@
 .evm-modal .evm-in input, .evm-modal .evm-in textarea { flex: 1; min-width: 0; border: none; outline: none; background: none; font-family: var(--mono); font-size: 13.5px; color: var(--hi); }
 .evm-modal .evm-in textarea { resize: none; line-height: 1.6; min-height: 48px; }
 .evm-modal .evm-in input::placeholder, .evm-modal .evm-in textarea::placeholder { color: var(--faint); }
-.evm-modal .evm-in.serif input, .evm-modal .evm-in.serif textarea { font-family: var(--serif); font-size: 15px; }
+.evm-modal .evm-in.serif input, .evm-modal .evm-in.serif textarea { font-family: var(--evm-font); font-size: 15px; }
 .evm-modal .evm-in.serif textarea { line-height: 1.55; }
 .evm-modal .evm-in.serif input::placeholder, .evm-modal .evm-in.serif textarea::placeholder { font-style: italic; }
 
@@ -406,7 +405,9 @@
 .evm-modal .evm-allday { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 4px; font-size: 12.5px; color: var(--hi); cursor: pointer; white-space: nowrap; }
 .evm-modal .evm-toggle { width: 36px; height: 20px; border-radius: 11px; position: relative; flex: 0 0 auto; background: var(--surface2); border: 1px solid var(--border); transition: background .18s, border-color .18s; }
 .evm-modal .evm-toggle.on { background: var(--accent); border-color: transparent; }
-.evm-modal .evm-toggle i { position: absolute; top: 1.5px; left: 1.5px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .18s; }
+/* Thumb: --fg (not a literal white) — contrasts against both --surface2 (off) and
+   --accent (on) on every theme, light or dark. */
+.evm-modal .evm-toggle i { position: absolute; top: 1.5px; left: 1.5px; width: 15px; height: 15px; border-radius: 50%; background: var(--fg); transition: left .18s; }
 .evm-modal .evm-toggle.on i { left: 18px; }
 
 /* time sub-row */

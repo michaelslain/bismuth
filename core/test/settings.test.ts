@@ -88,7 +88,7 @@ test("initializeSettings writes a clean (comment-free) defaults file when missin
   expect(res!.raw).not.toMatch(/^\s*#/m);
   // The materialized defaults parse back to the DEFAULTS object shape.
   const parsed = parseYaml(res!.raw) as Record<string, any>;
-  expect(parsed.appearance.theme).toBe("oxide-duotone");
+  expect(parsed.appearance.theme).toBe("ink");
   expect(parsed.graph.nodeSize).toBe(6);
   expect(parsed.calendar.defaultView).toBe("week");
 });
@@ -194,7 +194,7 @@ import { serializeSettingsForFrontend, SETTINGS_FILE } from "../src/settings";
 test("serializeSettingsForFrontend returns defaults when no file exists", async () => {
   const vault = await emptyVault();
   const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).theme).toBe("oxide-duotone");
+  expect((data.appearance as any).theme).toBe("ink");
   expect((data.graph as any).nodeSize).toBe(6);
 });
 
@@ -203,11 +203,11 @@ test("serializeSettingsForFrontend overlays valid keys, ignoring wrong types", a
   await writeNote(
     vault,
     ".settings",
-    "appearance:\n  editorFont: Georgia\n  editorFontSize: big\ngraph:\n  nodeSize: 9\n",
+    "appearance:\n  editorFont: Monaspace Radon\n  editorFontSize: big\ngraph:\n  nodeSize: 9\n",
   );
   const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).editorFont).toBe("Georgia");   // valid string, applied
-  expect((data.appearance as any).editorFontSize).toBe(16);      // "big" is wrong type → default
+  expect((data.appearance as any).editorFont).toBe("Monaspace Radon");   // valid string, applied
+  expect((data.appearance as any).editorFontSize).toBe(13.5);      // "big" is wrong type → default
   expect((data.graph as any).nodeSize).toBe(9);                  // valid number, applied
 });
 
@@ -220,8 +220,8 @@ test("serializeSettingsForFrontend clamps out-of-range numbers and invalid enums
     "appearance:\n  editorFontSize: 999\n  theme: not-a-real-theme\n",
   );
   const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).editorFontSize).toBe(16);       // above max → default
-  expect((data.appearance as any).theme).toBe("oxide-duotone");   // invalid enum → default
+  expect((data.appearance as any).editorFontSize).toBe(13.5);       // above max → default
+  expect((data.appearance as any).theme).toBe("ink");   // invalid enum → default
 });
 
 test("serializeSettingsForFrontend accepts a well-formed list leaf, rejects a malformed one", async () => {
@@ -256,17 +256,17 @@ import { readFileSync } from "node:fs";
 
 test("reconcile fills a missing top-level section with its defaults", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  editorFont: Georgia\n");
+  await writeNote(vault, ".settings", "appearance:\n  editorFont: Monaspace Radon\n");
   await reconcileSettings(vault);
   const { data } = (await readSettings(vault))!;
-  expect((data.appearance as any).editorFont).toBe("Georgia"); // user value kept
-  expect((data.appearance as any).theme).toBe("oxide-duotone"); // missing default added
+  expect((data.appearance as any).editorFont).toBe("Monaspace Radon"); // user value kept
+  expect((data.appearance as any).theme).toBe("ink"); // missing default added
   expect((data.graph as any).spin).toBe(true);                 // missing section added
 });
 
 test("reconcile preserves unknown keys", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  theme: oxide-duotone\n  myCustomKey: 42\n");
+  await writeNote(vault, ".settings", "appearance:\n  theme: ink\n  myCustomKey: 42\n");
   await reconcileSettings(vault);
   const { data } = (await readSettings(vault))!;
   expect((data.appearance as any).myCustomKey).toBe(42);
@@ -274,7 +274,7 @@ test("reconcile preserves unknown keys", async () => {
 
 test("reconcile preserves comments", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, ".settings", "# my notes\nappearance:\n  theme: oxide-duotone # inline\n");
+  await writeNote(vault, ".settings", "# my notes\nappearance:\n  theme: ink # inline\n");
   await reconcileSettings(vault);
   const raw = readFileSync(join(vault, ".settings"), "utf8");
   expect(raw).toContain("# my notes");
@@ -298,11 +298,126 @@ test("reconcile leaves a corrupt file untouched", async () => {
   expect(readFileSync(join(vault, ".settings"), "utf8")).toBe(before);
 });
 
+import { DEFAULTS } from "../src/schema/settingsSchema";
+const DEFAULT_APPEARANCE = DEFAULTS.appearance as Record<string, unknown>;
+const DEFAULT_EDITOR = DEFAULTS.editor as Record<string, unknown>;
+
+test("reconcile migrates a legacy-theme .settings file exactly once, resetting the type scale", async () => {
+  const vault = await emptyVault();
+  await writeNote(
+    vault,
+    ".settings",
+    [
+      "# my notes",
+      "appearance:",
+      "  theme: oxide-duotone # inline",
+      "  editorFont: Lora",
+      "  editorFontSize: 16",
+      "  uiFontSize: 14",
+      "  tabFontSize: 12",
+      "  sidebarIconFontSize: 18",
+      "  paletteInputFontSize: 17",
+      "  monoScale: 0.85",
+      "  sidebarWidth: 280",
+      "  myCustomKey: 42",
+      "editor:",
+      "  lineHeight: 1.65",
+      "",
+    ].join("\n"),
+  );
+  await reconcileSettings(vault);
+  const raw1 = readFileSync(join(vault, ".settings"), "utf8");
+  const { data } = (await readSettings(vault))!;
+  const appearance = data.appearance as any;
+  expect(appearance.theme).toBe("ink"); // dark legacy name (no "-light" suffix)
+  expect(appearance.editorFont).toBe("Monaspace Xenon");
+  expect(appearance.editorFontSize).toBe(DEFAULT_APPEARANCE.editorFontSize);
+  expect(appearance.uiFontSize).toBe(DEFAULT_APPEARANCE.uiFontSize);
+  expect(appearance.tabFontSize).toBe(DEFAULT_APPEARANCE.tabFontSize);
+  expect(appearance.sidebarIconFontSize).toBe(DEFAULT_APPEARANCE.sidebarIconFontSize);
+  expect(appearance.paletteInputFontSize).toBe(DEFAULT_APPEARANCE.paletteInputFontSize);
+  expect(appearance.monoScale).toBe(DEFAULT_APPEARANCE.monoScale);
+  expect(appearance.sidebarWidth).toBe(DEFAULT_APPEARANCE.sidebarWidth);
+  expect((data.editor as any).lineHeight).toBe(DEFAULT_EDITOR.lineHeight);
+  // Untouched: comments + unknown keys survive the rewrite.
+  expect(appearance.myCustomKey).toBe(42);
+  expect(raw1).toContain("# my notes");
+  expect(raw1).toContain("# inline");
+
+  // Fires exactly once: a second reconcile is a no-op write (theme/editorFont are
+  // now current-era values, so the trigger can never match this file again).
+  await reconcileSettings(vault);
+  const raw2 = readFileSync(join(vault, ".settings"), "utf8");
+  expect(raw2).toBe(raw1);
+});
+
+test("reconcile maps a '-light' legacy theme to 'paper'", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, ".settings", "appearance:\n  theme: rose-gold-light\n");
+  await reconcileSettings(vault);
+  const { data } = (await readSettings(vault))!;
+  expect((data.appearance as any).theme).toBe("paper");
+});
+
+test("reconcile migrates on a legacy editorFont alone, even with an already-valid theme", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, ".settings", "appearance:\n  theme: cathode\n  editorFont: Georgia\n  editorFontSize: 20\n");
+  await reconcileSettings(vault);
+  const { data } = (await readSettings(vault))!;
+  const appearance = data.appearance as any;
+  expect(appearance.theme).toBe("cathode"); // already valid — left alone
+  expect(appearance.editorFont).toBe("Monaspace Xenon");
+  expect(appearance.editorFontSize).toBe(DEFAULT_APPEARANCE.editorFontSize); // still reset
+});
+
+test("reconcile leaves a new-scheme .settings file untouched", async () => {
+  const vault = await emptyVault();
+  await reconcileSettings(vault); // absent -> writes a full, current-era defaults file
+  const before = readFileSync(join(vault, ".settings"), "utf8");
+  const { data: before1 } = (await readSettings(vault))!;
+  expect((before1.appearance as any).theme).toBe("ink");
+  expect((before1.appearance as any).editorFont).toBe("Monaspace Xenon");
+
+  await reconcileSettings(vault); // already fully current-era → no legacy trigger, no missing keys
+  const after = readFileSync(join(vault, ".settings"), "utf8");
+  expect(after).toBe(before); // byte-identical
+});
+
+test("reconcile leaves customized NEW-era appearance values untouched", async () => {
+  const vault = await emptyVault();
+  await writeNote(
+    vault,
+    ".settings",
+    [
+      "appearance:",
+      "  theme: paper",
+      "  editorFont: Monaspace Neon",
+      "  editorFontSize: 20",
+      "  uiFontSize: 13",
+      "  sidebarWidth: 400",
+      "  monoScale: 0.7",
+      "editor:",
+      "  lineHeight: 1.4",
+      "",
+    ].join("\n"),
+  );
+  await reconcileSettings(vault);
+  const { data } = (await readSettings(vault))!;
+  const appearance = data.appearance as any;
+  expect(appearance.theme).toBe("paper");
+  expect(appearance.editorFont).toBe("Monaspace Neon");
+  expect(appearance.editorFontSize).toBe(20);
+  expect(appearance.uiFontSize).toBe(13);
+  expect(appearance.sidebarWidth).toBe(400);
+  expect(appearance.monoScale).toBe(0.7);
+  expect((data.editor as any).lineHeight).toBe(1.4);
+});
+
 import { setSettingInFile } from "../src/settings";
 
 test("setSettingInFile updates a nested key, preserving siblings/comments/unknowns", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, ".settings", "# hdr\nappearance:\n  theme: oxide-duotone\n  myCustom: 1\ngraph:\n  spin: true\n");
+  await writeNote(vault, ".settings", "# hdr\nappearance:\n  theme: ink\n  myCustom: 1\ngraph:\n  spin: true\n");
   await setSettingInFile(vault, ["appearance", "theme"], "light");
   const raw = readFileSync(join(vault, ".settings"), "utf8");
   const { data } = (await readSettings(vault))!;
@@ -317,15 +432,15 @@ test("setSettingInFile creates the file (via reconcile) when absent, then sets t
   await setSettingInFile(vault, ["graph", "nodeSize"], 12);
   const { data } = (await readSettings(vault))!;
   expect((data.graph as any).nodeSize).toBe(12);
-  expect((data.appearance as any).theme).toBe("oxide-duotone"); // reconcile seeded the rest
+  expect((data.appearance as any).theme).toBe("ink"); // reconcile seeded the rest
 });
 
 test("setSettingInFile ignores an empty path", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  theme: oxide-duotone\n");
+  await writeNote(vault, ".settings", "appearance:\n  theme: ink\n");
   await setSettingInFile(vault, [], "x");
   const { data } = (await readSettings(vault))!;
-  expect((data.appearance as any).theme).toBe("oxide-duotone");
+  expect((data.appearance as any).theme).toBe("ink");
 });
 
 test("setSettingInFile leaves a corrupt file's bytes unchanged", async () => {
@@ -352,7 +467,7 @@ test("loadAppConfig returns file values merged over defaults, typed", async () =
   const cfg = await loadAppConfig(vault);
   expect((cfg.graph as any).repulsion).toBe(-22);    // from file
   expect((cfg.graph as any).linkDistance).toBe(5);   // schema default
-  expect((cfg.appearance as any).theme).toBe("oxide-duotone"); // schema default
+  expect((cfg.appearance as any).theme).toBe("ink"); // schema default
 });
 
 // --- toolbar serialization ---
@@ -507,12 +622,12 @@ describe("concurrent setSettingInFile", () => {
   it("serializes concurrent requests so none clobber each other", async () => {
     const vault = await emptyVault();
     // Set up initial settings with multiple keys
-    await writeNote(vault, ".settings", "appearance:\n  theme: oxide-duotone\n  editorFont: Lora\ngraph:\n  nodeSize: 5\n");
+    await writeNote(vault, ".settings", "appearance:\n  theme: ink\n  editorFont: Monaspace Radon\ngraph:\n  nodeSize: 5\n");
 
     // Fire 3 concurrent requests that each modify a different key
     const results = await Promise.all([
-      setSettingInFile(vault, ["appearance", "theme"], "indigo-oxide"),
-      setSettingInFile(vault, ["appearance", "editorFont"], "Georgia"),
+      setSettingInFile(vault, ["appearance", "theme"], "cathode"),
+      setSettingInFile(vault, ["appearance", "editorFont"], "Monaspace Neon"),
       setSettingInFile(vault, ["graph", "nodeSize"], 10),
     ]);
 
@@ -521,8 +636,8 @@ describe("concurrent setSettingInFile", () => {
 
     // Verify all three changes were persisted (none clobbered)
     const { data } = (await readSettings(vault))!;
-    expect((data.appearance as any).theme).toBe("indigo-oxide");
-    expect((data.appearance as any).editorFont).toBe("Georgia");
+    expect((data.appearance as any).theme).toBe("cathode");
+    expect((data.appearance as any).editorFont).toBe("Monaspace Neon");
     expect((data.graph as any).nodeSize).toBe(10);
   });
 
@@ -530,7 +645,7 @@ describe("concurrent setSettingInFile", () => {
     const vault = await emptyVault();
     const comment = "# important settings\n";
     const custom = "myCustomKey: 42\n";
-    await writeNote(vault, ".settings", `${comment}appearance:\n  theme: oxide-duotone\n${custom}graph:\n  spin: true\n`);
+    await writeNote(vault, ".settings", `${comment}appearance:\n  theme: ink\n${custom}graph:\n  spin: true\n`);
 
     // Fire multiple concurrent mutations
     await Promise.all([

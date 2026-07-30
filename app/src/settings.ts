@@ -16,7 +16,7 @@ import { readCache, writeCache } from "./viewCache";
 import { diffLeaves } from "./settingsDiff";
 import { SETTINGS_FILE } from "./tabIds";
 import { DEFAULTS, type AppSettings as SpineSettings } from "../../core/src/schema/settingsSchema";
-import { SHEEN } from "./themes";
+import { THEMES, DEFAULT_THEME } from "./themes";
 
 // The structural shape the frontend store consumes. Mirrors the spine's
 // SETTINGS_SCHEMA leaf-by-leaf (the spine's derived AppSettings is loosely typed
@@ -31,6 +31,7 @@ export interface Settings {
     theme: string;
     icon: string; // app logo mark name (app/scripts/logoMarks.ts MARK_NAMES)
     editorFont: string;  // key into FONT_STACKS
+    uiFont: string;      // key into FONT_STACKS — UI chrome (rail, tabs, tables, buttons, menus)
     editorFontSize: number; // px
     sidebarWidth: number;        // px
     sidebarGraphHeight: number;  // px
@@ -57,6 +58,8 @@ export interface Settings {
     nodeSizeMaxMult: number;      // ceiling on node size multiplier
     mapDefaultZoom: number;       // default zoom for the Bases map view
     refreshDebounceMs: number;    // ms before rebuilding the graph after edits
+    backgroundNoise: boolean;     // faint ASCII noise texture under the graph field; off by default
+    renderer: "ascii" | "standard"; // which look draws the graph: the ASCII character field or the standard dots+edges
   };
   editor: {
     defaultMode: "source" | "visual"; // how a note opens: raw markdown editor vs no-code visual editor
@@ -67,7 +70,7 @@ export interface Settings {
     grammarCheck: boolean; // grammar + style check the note body (Harper); off by default
 
     autoSaveDelay: number; // ms of idle before save
-    lineHeight: number;    // editor prose line height (multiplier)
+    lineHeight: number;    // editor prose line height, as a multiplier of --row-h (18px), not the font size
     mathMacros: string;    // LaTeX \newcommand preamble applied to all math (Obsidian preamble.sty parity)
     wrapSelection: boolean;       // type a wrap char around a selection to surround it
     wrapSelectionChars: string[]; // which chars wrap the selection when typed
@@ -101,7 +104,6 @@ export interface Settings {
     timeZone: string;        // IANA tz for naive events ("" = system)
   };
   ui: {
-    verticalTabs: boolean;     // vertical tab rail on the right edge (icon-only, expands to names on hover)
     paletteTopOffset: string;  // CSS length, e.g. "12vh"
     paneDividerWidth: number;  // px
     cardGridMinWidth: number;     // px
@@ -208,19 +210,21 @@ export { SETTINGS_DEFAULTS as DEFAULTS };
 const _DEFAULTS: Settings = SETTINGS_DEFAULTS;
 void (DEFAULTS satisfies SpineSettings);
 
-// Editor font choices → full CSS font stacks. Lora + Monaspace ship via @fontsource.
+// Editor/UI font choices → full CSS font stacks. One family does the whole interface:
+// all five Monaspace variants ship via @fontsource; no serif, no system-ui.
 export const FONT_STACKS: Record<string, string> = {
-  Lora: "'Lora', serif",
   "Monaspace Xenon": "'Monaspace Xenon', ui-monospace, monospace",
-  Georgia: "Georgia, 'Times New Roman', serif",
-  "system-ui": "system-ui, -apple-system, sans-serif",
+  "Monaspace Neon": "'Monaspace Neon', ui-monospace, monospace",
+  "Monaspace Argon": "'Monaspace Argon', ui-monospace, monospace",
+  "Monaspace Krypton": "'Monaspace Krypton', ui-monospace, monospace",
+  "Monaspace Radon": "'Monaspace Radon', ui-monospace, monospace",
 };
 
 // The fallback accent palette. Categories (graph nodes/clusters/tags, drawing ink
 // swatches, terminal ANSI) normally derive from the selected theme's accentPalette
 // (resolveTheme in themes.ts); this is only used when that ramp is absent/empty.
-// Single-sourced from themes.ts's SHEEN so the values can't drift.
-export const DEFAULT_ACCENT_PALETTE = SHEEN;
+// Single-sourced from themes.ts's default theme so the values can't drift.
+export const DEFAULT_ACCENT_PALETTE = THEMES[DEFAULT_THEME].accentPalette;
 
 /**
  * Merge an already-parsed object over DEFAULTS using a per-key `typeof`-checked

@@ -1,0 +1,53 @@
+<!-- @dsCard group="Overlays" viewport="700x330" subtitle="Shared overlay shell — confirm and form panels" name="Modal" -->
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { height: 100%; }
+  body { margin:0; font-family: var(--ui-font-stack); font-variant-ligatures: none;
+         background: var(--bg); color: var(--fg); font-size: var(--fs-ui); }
+  .stage { position: relative; height: 100%; background: var(--editor); overflow: hidden; }
+  .scrim { position:absolute; inset:0; background: var(--overlay-bg); backdrop-filter: blur(1px);
+           display:flex; align-items:center; justify-content:center; }
+  .lbl { font-size:10.5px; color:var(--faint); letter-spacing:.14em; }
+  pre { margin:0; white-space:pre; }
+  /* under-layer so the scrim reads as an overlay, not a panel */
+  .under { padding:12px 16px; color:var(--faint); font-size:10.5px; line-height:1.8; }
+</style></head><body class="ink"><div class="stage">
+  <div class="under">
+    <div>|-- ▸ journal/</div><div>|   |-- ✎ 2029-09-15</div><div>|   `-- ✎ 2029-09-12</div>
+    <div>`-- ▸ inbox/          (3)</div>
+  </div>
+  <div class="scrim">
+    <div style="display:flex;gap:16px;align-items:flex-start">
+
+      <div class="asc-modal" style="width:300px">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)">
+          <span class="asc-eyebrow">DELETE NOTE</span><div style="flex:1"></div>
+          <button class="btn btn--icon btn--normal">x</button></div>
+        <div style="padding:12px;color:var(--text-muted);line-height:1.7">
+          Moves <span style="color:var(--fg)">2029-09-15 journal</span> to the trash.
+          Undo from the file tree with <span class="asc-kbd"><span class="asc-key">⌘</span><span class="asc-key">Z</span></span>.</div>
+        <div style="display:flex;gap:6px;justify-content:flex-end;padding:10px 12px;border-top:1px solid var(--border)">
+          <button class="btn btn--text btn--unselected">[&nbsp;cancel&nbsp;]</button>
+          <button class="btn btn--text btn--danger">[&nbsp;delete&nbsp;]</button></div>
+      </div>
+
+      <div class="asc-modal" style="width:300px">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)">
+          <span class="asc-eyebrow">NEW BASE</span><div style="flex:1"></div>
+          <button class="btn btn--icon btn--normal">x</button></div>
+        <div style="padding:12px;display:grid;gap:9px">
+          <label class="ui-field"><span>name</span><input class="ui-input" value="reading" readonly></label>
+          <label class="ui-field"><span>view</span>
+            <button class="ui-input ui-select-trigger"><span>table</span><span class="ui-select-caret">v</span></button></label>
+          <label class="ui-field"><span>source</span><input class="ui-input" value="notes" readonly></label>
+        </div>
+        <div style="display:flex;gap:6px;justify-content:flex-end;padding:10px 12px;border-top:1px solid var(--border)">
+          <button class="btn btn--text btn--unselected">[&nbsp;cancel&nbsp;]</button>
+          <button class="btn btn--text btn--primary">[&nbsp;create&nbsp;]</button></div>
+      </div>
+
+    </div>
+  </div>
+</div></body></html>

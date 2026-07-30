@@ -69,14 +69,24 @@ export function FileView(props: {
           <InboxPageView path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
         </Match>
         <Match when={!isBase() && !isDaemonPage()}>
-          <Show
-            when={visualMode()}
-            fallback={
-              <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
-            }
-          >
-            <BlockEditor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
-          </Show>
+          {/* Column wrapper: the editor takes the full height and owns its own internal scroll.
+              No backlinks surface here any more — neither the below-editor strip nor the corner
+              control. The note's connections are answered by the graph's LOCAL lens (GraphView's
+              MODE_ICON/local mode), which shows inbound AND outbound links rather than a list of
+              inbound ones. Backlinks.tsx / BacklinksPanel are unmounted; backlinkGraph.ts (pure +
+              tested) stays for whatever surfaces them next. */}
+          <div style={{ height: "100%", display: "flex", "flex-direction": "column", "min-height": "0", position: "relative" }}>
+            <div style={{ flex: "1 1 auto", "min-height": "0" }}>
+              <Show
+                when={visualMode()}
+                fallback={
+                  <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
+                }
+              >
+                <BlockEditor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
+              </Show>
+            </div>
+          </div>
         </Match>
       </Switch>
     </Show>

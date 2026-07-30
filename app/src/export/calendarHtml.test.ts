@@ -103,16 +103,16 @@ describe("calendarHtml — output shape", () => {
   });
 
   test("resolves a category NAME to its frontmatter color", () => {
-    // category "Work" -> color token "blue" -> concrete hex #5C7BEE (no var()/color-mix).
+    // category "Work" -> color token "blue" -> concrete hex #8296C6 (no var()/color-mix).
     const rows = [row({ title: "Standup", date: "2026-06-16", category: "Work" })];
     const { body } = calendarHtml(cfg, vr(rows), opts({ calStart: "2026-06-15" }), DARK, [{ name: "Work", color: "blue" }]);
-    expect(body).toContain("#5C7BEE");
+    expect(body).toContain("#8296C6");
   });
 
   test("an unmapped category falls back to the accent (never a raw category name as a color)", () => {
     const rows = [row({ title: "Misc", date: "2026-06-16", category: "Nonexistent" })];
     const { body } = calendarHtml(cfg, vr(rows), opts({ calStart: "2026-06-15" }), DARK, []);
     expect(body).not.toContain("Nonexistent;");   // the name is never emitted as a CSS color
-    expect(body).toContain("#3F6BF0");             // accent fallback
+    expect(body).toContain("#93BDB0");             // accent fallback (ink theme's accent)
   });
 });

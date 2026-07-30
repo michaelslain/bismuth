@@ -8,26 +8,33 @@
  *   4. command/file palette — shares font/selected/shadow tokens (its own modal chrome)
  * Change a token here and every surface changes together. Colors reuse theme vars. */
 :root {
-  --popover-radius: 8px;
+  /* The ASCII register (ui/ui.css .asc-popover/.asc-menurow) — panel radius 5, flat rows,
+     --fs-ui type, accent-on-accent-soft selection, --shadow-popup, a hairline border. */
+  --popover-radius: var(--r-panel);
   --popover-pad: 4px;
-  --popover-row-pad-y: 5px;
+  /* Row height is now the app's row unit (--row-h, ui.css :root) via an explicit height
+     on .bismuth-popover-row below, not vertical padding — pad-y stays 0 so context menu,
+     autocomplete, and the chat history list all snap to the same 18px cadence as the
+     sidebar tree. Kept as a token (rather than inlining 0) so a caller can still widen a
+     specific list without touching the shared row rule. */
+  --popover-row-pad-y: 0px;
   --popover-row-pad-x: 8px;
-  --popover-row-radius: 4px;
+  --popover-row-radius: 0;
   --popover-row-gap: 8px;
-  --popover-font-size: 13px;
+  --popover-font-size: var(--fs-ui);
   --popover-min-width: 170px;
-  --popover-selected-bg: color-mix(in srgb, var(--accent) 25%, transparent);
+  --popover-selected-bg: var(--accent-soft);
   --popover-detail-opacity: 0.5;
   /* UI-chrome font + one shadow for every popover surface. Centralised here so the
      context menu, autocomplete, and palette can never drift on either. */
-  --popover-font: "Monaspace Xenon", ui-monospace, monospace;
-  --popover-shadow: var(--shadow-menu);
+  --popover-font: var(--ui-font-stack);
+  --popover-shadow: var(--shadow-popup);
 }
 
 /* chrome */
 .bismuth-popover {
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: var(--rule);
   border-radius: var(--popover-radius);
   padding: var(--popover-pad);
   min-width: var(--popover-min-width);
@@ -43,13 +50,15 @@
   display: flex;
   align-items: center;
   gap: var(--popover-row-gap);
+  height: var(--row-h, 18px);
   padding: var(--popover-row-pad-y) var(--popover-row-pad-x);
   border-radius: var(--popover-row-radius);
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
 }
-.bismuth-popover-row--selected { background: var(--popover-selected-bg); }
+/* accent-on-accent-soft — the same selection treatment as .asc-menurow. */
+.bismuth-popover-row--selected { background: var(--popover-selected-bg); color: var(--accent); }
 .bismuth-popover-row--danger { color: var(--danger); }
 .bismuth-popover-row--disabled { opacity: 0.55; cursor: default; }
 
@@ -58,6 +67,9 @@
 .bismuth-popover-icon { opacity: 0.85; }
 .bismuth-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
 .bismuth-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: 12px; }
+/* Right-aligned Kbd caps (a real keybinding — see PopoverRow.shortcut) — layout only, the
+   Kbd primitive supplies the cap look. */
+.bismuth-popover-shortcut { margin-left: auto; flex-shrink: 0; padding-left: 12px; display: inline-flex; align-items: center; }
 /* Right-side chevron on a row that opens a nested submenu (label flex pushes it right). */
 .bismuth-popover-chev { display: inline-flex; flex-shrink: 0; opacity: 0.5; margin-left: 4px; }
 

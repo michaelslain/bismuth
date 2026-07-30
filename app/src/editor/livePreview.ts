@@ -1038,15 +1038,16 @@ const calloutDomHandlers = EditorView.domEventHandlers({
 // shared palette (callout.ts) so it matches the export + in-app rendered surfaces.
 const calloutThemeSpec: Record<string, Record<string, string>> = {
   ".cm-callout-wrap": { display: "block", margin: "0.3em 0" },
+  // The .asc-callout register (design/ascii patterns.css): flat --surface-1, a 2px accent LEFT
+  // EDGE (--accent-edge), 4px radius — no full border, no darker fill.
   ".cm-callout-wrap .callout": {
     margin: "0.4em 0",
-    border: "1px solid color-mix(in srgb, var(--fg) 16%, transparent)",
-    "border-left-width": "4px",
-    "border-radius": "6px",
-    background: "color-mix(in srgb, var(--fg) 4%, transparent)",
+    "border-left": "2px solid var(--accent)",
+    "border-radius": "4px",
+    background: "var(--surface-1)",
     padding: "0.5em 0.8em",
   },
-  ".cm-callout-wrap .callout-title": { display: "flex", "align-items": "center", gap: "0.45em", "font-weight": "600" },
+  ".cm-callout-wrap .callout-title": { display: "flex", "align-items": "center", gap: "0.45em", "font-weight": "600", "font-size": "var(--fs-ui)", "text-transform": "uppercase", "letter-spacing": "var(--ls-label)" },
   ".cm-callout-wrap .callout-icon": { display: "inline-flex", flex: "0 0 auto" },
   ".cm-callout-wrap .callout-icon svg": { width: "1.1em", height: "1.1em" },
   ".cm-callout-wrap .callout-content": { "margin-top": "0.4em" },
@@ -1178,21 +1179,23 @@ export const livePreview = [
     ".cm-strong": { "font-weight": "bold" },
     ".cm-em": { "font-style": "italic" },
     ".cm-strike": { "text-decoration": "line-through", opacity: "0.7" },
-    // Monaspace renders visually larger than Lora at the same px; the --mono-scale
-    // factor (settings: appearance.monoScale, default 0.85) makes mono code optically
-    // match the surrounding serif body. This is an OPTICAL correction for mono-next-to-
-    // serif, so it lives only where mono sits inside prose (code regions here + the
-    // flashcard .card-md code in App.css) — NOT on the all-mono UI chrome, which has no
-    // serif to match. Keep all mono regions (inline code, blocks, frontmatter, tables) on it.
+    // Legacy optical correction from the serif-prose era: the --mono-scale factor
+    // (settings: appearance.monoScale, default 1 — no-op now that prose is Monaspace
+    // too) let mono code optically match a serif body. It lives only where mono sits
+    // inside prose (code regions here + the flashcard .card-md code in App.css) —
+    // NOT on the all-mono UI chrome. Keep all mono regions (inline code, blocks,
+    // frontmatter, tables) on it in case a future theme reintroduces the mismatch.
     // Inline code + the same inline-code marks rendered inside a table cell (inlineMarkdown.ts
     // emits a native <code>): byte-identical styling, so they share one rule.
-    ".cm-inline-code, .cm-table-rendered code": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", background: "rgba(140,140,140,0.18)", padding: "0 3px", "border-radius": "3px" },
+    // Inline code + code blocks read the user's chosen UI font (var(--ui-font-stack), not the
+    // fixed Xenon-only MONO_FONT) on --surface-2, per the ASCII redesign's flat register.
+    ".cm-inline-code, .cm-table-rendered code": { "font-family": "var(--ui-font-stack)", "font-size": "calc(1em * var(--mono-scale, 0.85))", background: "var(--surface-2)", padding: "0 3px", "border-radius": "3px" },
     // Links + wikilinks: accent with a SOFT underline (a faint accent rule that
     // sits below the text) rather than a hard text-decoration line.
     ".cm-link": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
     ".cm-wikilink": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
-    // Body #hashtags read teal (design §1: prose tags use --teal).
-    ".cm-tag": { color: "var(--teal)", "font-family": MONO_FONT },
+    // Body #hashtags read gold (ASCII redesign: prose tags use --gold, not --teal).
+    ".cm-tag": { color: "var(--gold)", "font-family": MONO_FONT },
     // `??slug` memory refs read VIOLET: they are links (they navigate, so they keep .cm-wikilink's
     // pointer + soft underline) but they point at the THIRD brain, not a vault note — blue stays
     // "vault link", teal stays "tag". Declared after .cm-wikilink so the hue override wins on
@@ -1208,14 +1211,15 @@ export const livePreview = [
     // which would otherwise override the color/font with its own token color.
     ".cm-heading-mark, .cm-heading-mark > span": { "font-family": MONO_FONT, color: "var(--fg)", "font-weight": "500" },
     ".cm-syntax-mark, .cm-syntax-mark > span": { "font-family": MONO_FONT, color: "var(--fg)" },
-    // Serif headings (design: title 600 with tight tracking; h2 ≈ 20px/1.5em serif).
-    ".cm-h1": { "font-size": "1.94em", "font-weight": "600", "line-height": "1.1", "letter-spacing": "-0.015em" },
-    ".cm-h2": { "font-size": "1.5em", "font-weight": "600", "line-height": "1.25", "letter-spacing": "-0.01em" },
-    ".cm-h3": { "font-size": "1.3em", "font-weight": "600" },
-    ".cm-h4": { "font-size": "1.15em", "font-weight": "600" },
-    ".cm-h5": { "font-size": "1.05em", "font-weight": "600" },
-    ".cm-h6": { "font-size": "1em", "font-weight": "600", opacity: "0.85" },
-    ".cm-quote": { "border-left": "3px solid #555", "padding-left": "8px", opacity: "0.85" },
+    // Headings sit off the fixed type scale (ASCII redesign), not em-multipliers off the
+    // note title's serif-era size — a modest ramp, weight 500/600, no tracking below h1.
+    ".cm-h1": { "font-size": "var(--fs-title)", "font-weight": "var(--fw-bold)", "line-height": "var(--lh-tight)", "letter-spacing": "var(--ls-display)" },
+    ".cm-h2": { "font-size": "var(--fs-lead)", "font-weight": "var(--fw-bold)", "line-height": "var(--lh-tight)" },
+    ".cm-h3": { "font-size": "var(--fs-body-lg)", "font-weight": "var(--fw-bold)" },
+    ".cm-h4": { "font-size": "var(--fs-body)", "font-weight": "var(--fw-medium)" },
+    ".cm-h5": { "font-size": "var(--fs-ui)", "font-weight": "var(--fw-medium)" },
+    ".cm-h6": { "font-size": "var(--fs-micro)", "font-weight": "var(--fw-medium)", opacity: "0.85", "text-transform": "uppercase", "letter-spacing": "var(--ls-label)" },
+    ".cm-quote": { "border-left": "2px solid var(--border)", "padding-left": "8px", opacity: "0.85" },
     // Rendered horizontal rule (a `---` / `***` "em-dash" break): off the cursor line the dashes
     // are hidden, so draw a centered rule via a pseudo-element. It must be ALWAYS clearly visible on
     // EVERY theme — the earlier fixed `rgba(128,128,128,·)` mid-grey WAS the "dashes still not always
@@ -1248,66 +1252,55 @@ export const livePreview = [
       "padding-right": "0.62em",
       color: "color-mix(in srgb, var(--fg) 70%, transparent)",
     },
-    // Code blocks: monospace text; the container chrome (uniform tint + accent left line) comes
+    // Code blocks: monospace text; the container chrome (flat surface + accent left edge) comes
     // from `.cm-block-mid` (always co-applied — see the `blockTopRule` comment near the top of the
     // file), not from this rule.
-    ".cm-codeblock": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5" },
+    ".cm-codeblock": { "font-family": "var(--ui-font-stack)", "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5" },
     // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
     // (codeLineNumbers.ts), shared with the ```query source view. Positioned relative to the
     // line's own padding box (`left: -2.7em`), so the `.cm-block-mid` padding below doesn't shift
     // it — padding is inside the box it's measured from.
     //
-    // The homogeneous container BODY shared by every non-fence line of a frontmatter panel /
-    // fenced code block (bug #10, 5th round — see the `blockTopRule` comment near the top of the
-    // file for the full design): a uniform subtle tint + the continuous left vertical line in the
-    // theme ACCENT (the reference screenshot's blue — theme-aware since it IS `var(--accent)`).
-    // Horizontal padding gives the text breathing room off the line; pure padding, so it doesn't
-    // affect the reading column's outer alignment.
+    // ASCII redesign register (design/ascii .asc-frontmatter / .asc-callout): a flat --surface-1
+    // block with a 2px accent LEFT EDGE (--accent-edge), no rounding, no darker "fence band" —
+    // every non-fence line of a frontmatter panel / fenced code block (shared chrome, see the
+    // `blockTopRule` comment near the top of the file) gets this uniform treatment.
     ".cm-block-mid": {
-      background: "color-mix(in srgb, var(--fg) 5%, transparent)",
+      background: "var(--surface-1)",
       padding: "0 0.5em",
-      "box-shadow": "inset 3px 0 0 var(--accent)",
+      "box-shadow": "inset 2px 0 0 var(--accent)",
     },
-    // A block's TOP fence row (frontmatter opening `---`, code opening ```): the round-5 delta —
-    // a DARKER grey band across the container width (visibly distinct from the body tint), with
-    // the left line's segment shifted to grey. Same `inset 3px 0 0` geometry as `.cm-block-mid`,
-    // only the color differs, so the line reads seamless (no gap/step) as it crosses the band.
-    // Top corners rounded — the container's roof. Greys are `color-mix` off `var(--fg)` so the
-    // band reads correctly on light AND dark themes. The tiny top margin separates this block
-    // from ANY content above it (esp. an adjacent block's closing fence — two touching blocks
-    // stay visibly distinct); inside the block there are no margins, so the container stays one
-    // continuous piece.
+    // The `---` / opening-``` fence row: same flat surface + accent edge as the body, just its
+    // own row — no rounding, no distinct band color, so the whole block reads as one continuous
+    // flat card (killing the old rounded-corner "darker band" treatment). The tiny top margin
+    // separates this block from ANY content above it (e.g. an adjacent block's closing fence);
+    // inside the block there are no margins, so the container stays one continuous piece.
     ".cm-block-top": {
       "font-family": MONO_FONT,
-      "font-size": "calc(1em * var(--mono-scale, 0.85))",
-      background: "color-mix(in srgb, var(--fg) 12%, transparent)",
+      "font-size": "var(--editor-font-size)",
+      background: "var(--surface-1)",
       padding: "0.15em 0.5em",
       margin: "2px 0 0",
-      "border-top-left-radius": "8px",
-      "border-top-right-radius": "8px",
-      "box-shadow": "inset 3px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)",
+      "box-shadow": "inset 2px 0 0 var(--accent)",
     },
     // A block's BOTTOM fence row (frontmatter closing `---`, code closing ```): mirror of
-    // `.cm-block-top` — darker grey band, grey left-line segment, bottom corners rounded (the
-    // container's floor), bottom margin for adjacent-block separation.
+    // `.cm-block-top` — same flat surface + accent edge, no rounding, bottom margin for
+    // adjacent-block separation.
     ".cm-block-bottom": {
       "font-family": MONO_FONT,
-      "font-size": "calc(1em * var(--mono-scale, 0.85))",
-      background: "color-mix(in srgb, var(--fg) 12%, transparent)",
+      "font-size": "var(--editor-font-size)",
+      background: "var(--surface-1)",
       padding: "0.15em 0.5em",
       margin: "0 0 2px",
-      "border-bottom-left-radius": "8px",
-      "border-bottom-right-radius": "8px",
-      "box-shadow": "inset 3px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)",
+      "box-shadow": "inset 2px 0 0 var(--accent)",
     },
     // The always-visible fence text inside the band (frontmatter `---`, code closing ```): very
-    // dim — clearly quieter than the block's content, matching the reference's faint dashes —
-    // but never hidden (a hidden line collapses and erases the container's rounded corners). The
-    // `> span` override is load-bearing (mirrors `.cm-fm-key`): CodeMirror nests syntax-highlighter
-    // token spans inside the mark, and their own token color would win without it.
+    // dim — clearly quieter than the block's content — but never hidden (a hidden line collapses
+    // the row). The `> span` override is load-bearing (mirrors `.cm-fm-key`): CodeMirror nests
+    // syntax-highlighter token spans inside the mark, and their own token color would win without it.
     ".cm-fence-syntax, .cm-fence-syntax > span": { color: "color-mix(in srgb, var(--fg) 30%, transparent)" },
-    // The header widget rides the opening fence's grey band — it inherits that row's
-    // `.cm-block-top` padding, so the lang label/copy button sit inset from the left line like the
+    // The header widget rides the opening fence's row — it inherits that row's
+    // `.cm-block-top` padding, so the lang label/copy button sit inset from the left edge like the
     // raw ``` text would, with no styling of its own needed here.
     ".cm-code-headerwrap": { display: "block", width: "100%" },
     ".cm-code-header": {
@@ -1318,7 +1311,7 @@ export const livePreview = [
       "font-size": "0.78em",
     },
     ".cm-code-lang": {
-      "font-family": MONO_FONT,
+      "font-family": "var(--ui-font-stack)",
       color: "color-mix(in srgb, var(--fg) 42%, transparent)",
       "letter-spacing": "0.04em",
     },
@@ -1335,26 +1328,26 @@ export const livePreview = [
       transition: "color 120ms, opacity 120ms",
     },
     ".cm-code-copy:hover": { color: "var(--accent)", opacity: "1" },
-    // Frontmatter: monospace property rows; the container chrome (uniform tint + accent left
-    // line) comes from `.cm-block-mid` (always co-applied), matching the fenced code blocks above
-    // so the whole panel reads as one homogeneous "properties" card whose `---` rows alone are the
-    // darker grey bands (bug #10, 5th round). A translucent `.cm-block-mid` background does sit
-    // above CodeMirror's selection-background layer, but at 5% `--fg` the selection stays fully
-    // visible through it — a deliberate, barely-there trade-off for the card look.
+    // Frontmatter: monospace property rows at the NOTE PROSE size (--editor-font-size), not the
+    // --fs-ui chrome size it used to sit at. The type scale's argument for the chrome size was that
+    // frontmatter is metadata rather than prose — true in the abstract, and wrong in practice: plenty of
+    // notes are mostly frontmatter (a book note is a dozen property rows and one query), so "metadata"
+    // was in fact most of the document, and it read a size smaller than the query results under it. One
+    // note, one text size. The container chrome (flat surface + accent left edge) still comes from
+    // `.cm-block-mid` (always co-applied).
     ".cm-frontmatter": {
       "font-family": MONO_FONT,
-      "font-size": "calc(1em * var(--mono-scale, 0.85))",
+      "font-size": "var(--editor-font-size)",
     },
-    // Property KEYS (date / tags / icon …): a dimmed neutral grey, NOT a theme-accent color, so the
-    // frontmatter panel stays theme-agnostic dark grey (was `var(--accent)` — the re-flagged bug).
-    // Theme-aware (dims --fg toward the background) so it reads grey on both light + dark themes.
-    // The `> span` is load-bearing (mirrors `.cm-syntax-mark`/`.cm-heading-mark` above): CodeMirror
-    // nests the YAML syntax-highlighter token INSIDE this mark —
-    // `<span class="cm-fm-key"><span class="ͼ…">key</span></span>` — and that inner token is
-    // `t.propertyName → var(--accent)` (codeHighlight.ts). Coloring only `.cm-fm-key` leaves the
-    // inner accent token to win, so the key STILL renders accent; this is exactly why the earlier
-    // "change the key to grey" fix showed no visible effect. Overriding the child span forces grey through.
-    ".cm-fm-key, .cm-fm-key > span": { color: "color-mix(in srgb, var(--fg) 55%, transparent)" },
+    // Property KEYS (date / tags / icon …): --text-muted, NOT a theme-accent color, so the
+    // frontmatter panel stays theme-agnostic. The `> span` is load-bearing (mirrors
+    // `.cm-syntax-mark`/`.cm-heading-mark` above): CodeMirror nests the YAML syntax-highlighter
+    // token INSIDE this mark — `<span class="cm-fm-key"><span class="ͼ…">key</span></span>` —
+    // and that inner token is `t.propertyName → var(--accent)` (codeHighlight.ts). Coloring only
+    // `.cm-fm-key` leaves the inner accent token to win, so the key STILL renders accent; this is
+    // exactly why coloring only the outer mark shows no visible effect. Overriding the child span
+    // forces the muted tone through.
+    ".cm-fm-key, .cm-fm-key > span": { color: "var(--text-muted)" },
     // Raw (active) table source — monospace pipes for structural / power edits (#25). The
     // serializer column-pads every row to align the pipes in a monospace column view, but the
     // editor runs with line-wrapping (`white-space: pre-wrap`), so a table wider than the pane
@@ -1424,8 +1417,8 @@ export const livePreview = [
     ".cm-table-wrap:hover .cm-table-edge": { opacity: "1" },
     ".cm-table-edge:hover": { background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--accent)" },
     // Add-column: full-height bar hugging the right border. Add-row: full-width bar under it.
-    ".cm-table-add-col": { top: "0", bottom: "0", right: "-0.95em", width: "0.8em", "border-radius": "0 5px 5px 0" },
-    ".cm-table-add-row": { left: "0", right: "0", bottom: "-0.95em", height: "0.8em", "border-radius": "0 0 5px 5px" },
+    ".cm-table-add-col": { top: "0", bottom: "0", right: "-0.95em", width: "0.8em", "border-radius": "0 var(--r-panel) var(--r-panel) 0" },
+    ".cm-table-add-row": { left: "0", right: "0", bottom: "-0.95em", height: "0.8em", "border-radius": "0 0 var(--r-panel) var(--r-panel)" },
     // Drag-to-resize: an absolutely-positioned overlay of wide hit strips centered on each
     // COLUMN border (column WIDTH only — row height is auto, #52). Each strip contains a visible
     // 3px grip line so users can discover and grab it; the grip brightens on hover and stays solid
@@ -1475,7 +1468,7 @@ export const livePreview = [
       color: "color-mix(in srgb, var(--fg) 55%, transparent)",
       background: "color-mix(in srgb, var(--fg) 6%, transparent)",
       border: "1px solid color-mix(in srgb, var(--fg) 12%, transparent)",
-      "border-radius": "5px", "font-family": MONO_FONT, "font-size": "0.9em", "line-height": "1",
+      "border-radius": "var(--r-control)", "font-family": "var(--ui-font-stack)", "font-size": "0.9em", "line-height": "1",
       transition: "background 120ms, color 120ms",
     },
     ".cm-table-tool:hover": { background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--accent)" },
@@ -1536,7 +1529,7 @@ export const livePreview = [
       transition: "background 160ms ease, border-color 160ms ease",
     },
     ".cm-task-checkbox:hover": { "border-color": "color-mix(in srgb, var(--accent) 70%, transparent)" },
-    ".cm-task-checkbox[data-status='done']": { background: "var(--accent)", "border-color": "var(--accent)", color: "#fff" },
+    ".cm-task-checkbox[data-status='done']": { background: "var(--accent)", "border-color": "var(--accent)", color: "var(--on-accent)" },
     ".cm-task-checkbox[data-status='doing']": { "border-color": "var(--accent-purple)" },
     ".cm-task-checkbox[data-status='cancelled']": { "border-color": "color-mix(in srgb, var(--fg) 28%, transparent)", opacity: "0.65" },
     // Glyph layers all overlap and self-center (flex over inset:0); the theme fades

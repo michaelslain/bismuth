@@ -1,14 +1,10 @@
 // app/src/tabRailVisibility.ts
-// Pure visibility predicate for the vertical tab rail (`ui.verticalTabs`, App.tsx's `.tab-rail`).
+// Pure visibility predicate for the tab rail (App.tsx's `.tab-rail`) — the app's only tab
+// presentation since the horizontal strip and its `ui.verticalTabs` opt-out were removed.
 //
-// BUG #40: the Cmd+O quick switcher (`switcherOpen()` in App.tsx) is a full-window search takeover —
-// a graph backdrop + big top search bar that already hides the LEFT file-tree sidebar via the
-// `.layout.sidebar-hidden` class (`!sidebarVisible() || switcherOpen()`). The right-edge vertical tab
-// rail never followed that same condition: it was shown purely on `settings.ui.verticalTabs`, so with
-// vertical tabs enabled, opening the switcher left the tab rail floating on top of the takeover while
-// the file tree correctly disappeared — the asymmetry the user reported. `tabRailVisible` is the one
-// place both App.tsx's `<Show>` (which mount/unmounts the rail) and its CSS column-collapse
-// (`.switcher-active`, App.css) key off, so they can never drift out of sync again.
-export function tabRailVisible(opts: { verticalTabs: boolean; switcherOpen: boolean }): boolean {
-  return opts.verticalTabs && !opts.switcherOpen;
+// BUG #40: the Cmd+O quick switcher is a full-window search TAKEOVER. It already hides the file-tree
+// sidebar (`sidebar-hidden`), but the rail used to keep floating over the takeover instead of hiding
+// with it. The grid column collapses to 0 in lockstep via `.layout.switcher-active` (App.css).
+export function tabRailVisible(opts: { switcherOpen: boolean }): boolean {
+  return !opts.switcherOpen;
 }

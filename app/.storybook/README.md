@@ -27,8 +27,9 @@ bun run build-storybook  # static build → app/storybook-static/
 The primitives are ~entirely CSS-custom-property driven. Getting them to render like the
 real app takes **three layers**, all wired in `preview.ts` + `preview-head.html`:
 
-1. **Fonts** — import the same `@fontsource` faces the app entry loads (Lora + Monaspace
-   Xenon). Without them buttons/chips/select triggers fall back to browser serif/mono.
+1. **Fonts** — import the same `@fontsource` faces the app entry loads (all five Monaspace
+   variants — Xenon/Neon/Argon/Krypton/Radon). Without them buttons/chips/select triggers
+   fall back to browser mono.
 
 2. **Stylesheets** — import, in this order:
    - `../src/App.css` — global `:root` first-paint CSS-var *fallbacks*, the semantic tokens

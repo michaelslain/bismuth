@@ -19,18 +19,23 @@
 .source { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* textarea + line-number gutter, sharing the same mono metrics so rows line up. */
 .sourceEditor { flex: 1; min-height: 0; display: flex; overflow: hidden; background: var(--bg); }
+/* SIZE RULE for query/base views: BODY text tracks the NOTE prose size (--editor-font-size), because a
+   ```query block is rendered inside a note and has to read as part of it — a fixed literal here meant a
+   query's rows sat at a different size from the prose above them the moment the note size changed.
+   Titles derive from the same var with a small step up. META text (authors, group headers, counts) stays
+   on the --fs-micro/--fs-ui chrome tokens: it is scanned, not read. */
 .sourceGutter {
   flex: none; overflow: hidden; box-sizing: border-box;
   padding: 12px 8px 12px 12px; text-align: right; user-select: none;
   color: color-mix(in srgb, var(--fg) 35%, transparent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5;
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--editor-font-size, 13.5px); line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
 .sourceArea {
   flex: 1; min-height: 0; width: 100%; box-sizing: border-box; resize: none;
   padding: 12px 16px 12px 6px; border: none; outline: none;
   background: var(--bg); color: var(--fg);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5;
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--editor-font-size, 13.5px); line-height: 1.5;
 }
 .sourceBar { display: flex; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--border); }
 
@@ -57,7 +62,8 @@
 .tabs { display: flex; gap: 4px; }
 
 /* ---------- table view ---------- */
-.table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+/* --fs-ui cells, per bases-table.card.html; hairline row/header rules. */
+.table { border-collapse: collapse; width: 100%; font-size: var(--fs-ui, 11.5px); }
 .table th {
   position: sticky;
   top: 0;
@@ -67,35 +73,44 @@
   font-weight: 500;
   color: var(--text-muted);
   padding: 9px 14px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--rule);
   white-space: nowrap;
-  /* Column headers are chrome (like the view tabs / query label), so they read in the
-     mono UI font, not the prose serif (--editor-font) the table body inherits. */
+  /* Column headers are chrome (like the view tabs / query label): an uppercase,
+     widely-tracked eyebrow at --fs-micro, not the body's --fs-ui prose. */
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.03em;
+  font-size: var(--fs-micro, 10.5px);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-eyebrow, 0.14em);
   vertical-align: bottom;
 }
 .table td {
   padding: 8px 14px;
-  border-bottom: 1px solid var(--border-soft, var(--border));
+  border-bottom: var(--rule-soft, 1px solid var(--border-soft));
   color: var(--fg);
   white-space: nowrap;
   vertical-align: middle;
 }
-.table tbody tr:hover td { background: color-mix(in srgb, var(--fg) 2%, transparent); }
+.table tbody tr:hover td { background: var(--hover-bg); }
 .thDrag { cursor: grab; user-select: none; position: relative; }
 .thDrag:active { cursor: grabbing; }
 .thOver { box-shadow: inset 2px 0 0 0 var(--accent); }
 .thLabel { display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; vertical-align: bottom; }
 
-/* First-column "title" cell: accent book icon + medium-weight label (renderValue
-   marks the cell with .cellTitle when it's the title/file.name column). */
+/* First-column "title" cell: a typed accent title glyph (renderValue.renderTitle) +
+   medium-weight label — no SVG icon. */
 .cellTitle { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
-.cellTitle :global(svg) { color: var(--accent); flex: 0 0 auto; }
+.titleGlyph { color: var(--accent); flex: 0 0 auto; font-family: "Monaspace Xenon", ui-monospace, monospace; }
 /* Muted value cells (author / dates / counts). */
 .cellMuted { color: var(--text-muted); }
 .cellNum { font-variant-numeric: tabular-nums; }
+/* Dates render mono at the chrome type size (not the inherited prose size). */
+.dateCell { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--fs-ui, 11.5px); }
+/* Typed boolean glyph: "x" for true, blank for false — no SVG check. */
+.boolCell { font-family: "Monaspace Xenon", ui-monospace, monospace; color: var(--fg); }
+/* Empty-value dash: faint, everywhere a cell/property has no value (renderValue,
+   renderTags, KanbanCard's multiselect display). Global because the em-dash span is
+   emitted with a bare class name (not a CSS-module reference) across those call sites. */
+:global(.bismuth-empty) { color: var(--faint); }
 /* Plain mono #tag list in teal — no chips. */
 .tagRow { display: inline-flex; gap: 10px; flex-wrap: wrap; color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
 /* Colored-dot status text (no pill). */
@@ -135,7 +150,7 @@
 .thResizable:hover .thResize::after { background: color-mix(in srgb, var(--fg) 30%, transparent); }
 .thResize:hover::after, .thAtEdge .thResize::after { background: var(--accent); }
 .table td { overflow: hidden; text-overflow: ellipsis; }
-.groupRow td { font-family: "Monaspace Xenon", ui-monospace, monospace; font-weight: 500; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--text-muted); font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; }
+.groupRow td { font-family: "Monaspace Xenon", ui-monospace, monospace; font-weight: 500; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--text-muted); font-size: var(--fs-micro, 10.5px); letter-spacing: var(--ls-eyebrow, 0.14em); text-transform: uppercase; }
 .summary { font-weight: 500; color: var(--text-muted); border-top: 2px solid var(--border); }
 
 /* ---------- cards view ---------- */
@@ -149,15 +164,17 @@
 .cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr)); gap: 14px; align-items: start; }
 .card {
   background: var(--surface-1, var(--panel));
-  border: 1px solid var(--border-soft, var(--border));
-  border-radius: 11px;
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-card, 4px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-/* Cards open their note on click — show it's interactive. */
-.cardGrid > .card { cursor: pointer; transition: transform 0.08s ease, box-shadow 0.08s ease, border-color 0.08s ease; }
-.cardGrid > .card:hover { transform: translateY(-2px); border-color: var(--border, var(--border-soft)); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22); }
+/* Cards open their note on click — show it's interactive. Flat + hairline: no in-flow
+   elevation shadow (the ASCII system's floating-only shadow rule); hover reads as an
+   accent border + the shared hover-bg wash instead of a lift. */
+.cardGrid > .card { cursor: pointer; transition: background 0.08s ease, border-color 0.08s ease; }
+.cardGrid > .card:hover { border-color: var(--accent); background: var(--hover-bg); }
 /* Image cover: a clean framed image (no gradient/spine/texture), ratio set inline. */
 .cardCoverImg {
   width: 100%;
@@ -212,11 +229,11 @@
   background: repeating-linear-gradient(90deg, transparent 0 6px, color-mix(in srgb, var(--fg) 2%, transparent) 6px 7px);
   pointer-events: none;
 }
-.coverTitle { position: relative; z-index: 1; font-family: var(--editor-font); font-size: 14px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.coverTitle { position: relative; z-index: 1; font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 0.5px); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .coverAuthor { position: relative; z-index: 1; font-size: 11px; color: var(--text-muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .cardBodyInner { padding: 13px 14px; display: flex; flex-direction: column; gap: 6px; }
-.cardTitle { font-family: var(--editor-font); font-size: 15px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow-wrap: anywhere; }
+.cardTitle { font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 1.5px); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow-wrap: anywhere; }
 /* Faint serif-adjacent author line under the title (Kanban; Cards shows it on the cover). */
 .cardAuthor { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The single meta row: status word on the left, stars / page count on the right. */
@@ -230,8 +247,8 @@
 .bodyCard {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border-soft, var(--border));
-  border-radius: 11px;
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-card, 4px);
   padding: 13px 14px;
   background: var(--surface-1, var(--panel));
 }
@@ -255,7 +272,7 @@
 /* The note body rendered as real markdown (renderNoteBody). Task lists are tightened
    into a label-free Keep-style checklist; the checkbox stays inline so a task's text
    (with its links and trailing signifiers) wraps naturally instead of column-splitting. */
-.cardMd { font-family: var(--editor-font); font-size: 14px; line-height: 1.55; color: var(--fg); margin-top: 6px; overflow-wrap: anywhere; }
+.cardMd { font-family: var(--editor-font); font-size: var(--editor-font-size, 13.5px); line-height: 1.55; color: var(--fg); margin-top: 6px; overflow-wrap: anywhere; }
 /* Lists: plain bullet/ordered lists get markers + a hanging indent like a note; GFM task
    lists (ul.contains-task-list) stay flush + label-free (the checkbox is the marker). */
 .cardMd :global(ul), .cardMd :global(ol) { margin: 4px 0; padding-left: 1.5em; }
@@ -289,13 +306,23 @@
   transition: background-color 160ms ease, border-color 160ms ease;
 }
 .cardMd :global(.bismuth-task-box:hover) { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
-/* Done [x]: accent fill + white check. */
+/* Done [x]: accent fill + a CSS-drawn check (no SVG asset, so it can read `currentColor` —
+   an embedded data-URI can't reference a CSS var, and --on-accent is themed per-accent). */
 .cardMd :global(.bismuth-task-box[data-status="x"]),
 .cardMd :global(.bismuth-task-box[data-status="X"]) {
   background-color: var(--accent);
   border-color: var(--accent);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: center; background-size: 0.78em;
+  color: var(--on-accent);
+}
+.cardMd :global(.bismuth-task-box[data-status="x"])::after,
+.cardMd :global(.bismuth-task-box[data-status="X"])::after {
+  content: "";
+  position: absolute;
+  left: 21%; top: 44%;
+  width: 0.56em; height: 0.3em;
+  border-left: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transform: translateY(-60%) rotate(-45deg);
 }
 /* In progress [/]: accent-bordered box with a diagonal half-fill. */
 .cardMd :global(.bismuth-task-box[data-status="/"]) { border-color: var(--accent); }
@@ -324,9 +351,9 @@
   background: color-mix(in srgb, var(--fg) 11%, transparent);
   padding: 0 3px; border-radius: 3px;
 }
-.cardMd :global(pre) { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; padding: 6px 8px; border-radius: 6px; background: var(--surface-2, var(--bg)); font-size: 12px; font-family: "Monaspace Xenon", ui-monospace, monospace; }
-.cardMd :global(blockquote) { border-left: 3px solid #555; padding-left: 8px; margin: 4px 0; opacity: 0.85; }
-.cardMd :global(hr) { border: none; border-top: 2px solid rgba(140,140,140,0.45); margin: 10px 0; }
+.cardMd :global(pre) { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; padding: 6px 8px; border-radius: var(--r-control, 3px); background: var(--surface-2, var(--bg)); font-size: 12px; font-family: "Monaspace Xenon", ui-monospace, monospace; }
+.cardMd :global(blockquote) { border-left: 2px solid var(--border); padding-left: 8px; margin: 4px 0; color: var(--text-muted); }
+.cardMd :global(hr) { border: none; border-top: var(--rule-soft, 1px solid var(--border-soft)); margin: 10px 0; }
 /* Headings mirror the editor's graduated scale (`.cm-h1`..`.cm-h6`). */
 .cardMd :global(h1), .cardMd :global(h2), .cardMd :global(h3),
 .cardMd :global(h4), .cardMd :global(h5), .cardMd :global(h6) {
@@ -339,7 +366,7 @@
 .cardMd :global(h5) { font-size: 1.05em; }
 .cardMd :global(h6) { font-size: 1em; opacity: 0.85; }
 .cardMd :global(h1:first-child), .cardMd :global(h2:first-child), .cardMd :global(h3:first-child) { margin-top: 0; }
-.cardMd :global(img) { max-width: 100%; border-radius: 6px; }
+.cardMd :global(img) { max-width: 100%; border-radius: var(--r-control, 3px); }
 
 /* Completed tasks live behind this expander at the bottom of the card. */
 .doneToggle {
@@ -376,8 +403,8 @@
   color: var(--fg);
   cursor: pointer;
 }
-.lrow:hover { background: color-mix(in srgb, var(--fg) 2%, transparent); }
-.lrow :global(svg) { color: var(--accent); flex: 0 0 auto; }
+.lrow:hover { background: var(--hover-bg); }
+.ltextGlyph { color: var(--accent); flex: 0 0 auto; font-family: "Monaspace Xenon", ui-monospace, monospace; }
 .ltext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Faint author suffix after a list row's title. */
 .lrowAuthor { color: var(--faint); }
@@ -390,7 +417,7 @@
 /* ---------- bullets view (plain markdown-style list, no table chrome) ---------- */
 /* Reads like the note's own `- item` prose: group key as a small serif heading, then a
    real <ul> of clickable links. No column header, no row borders, no per-row icons. */
-.bullets { padding: 6px 6px 14px; font-family: var(--editor-font); font-size: 15px; color: var(--fg); }
+.bullets { padding: 6px 6px 14px; font-family: var(--editor-font); font-size: var(--editor-font-size, 13.5px); color: var(--fg); }
 .bulletGroupHead { font-weight: 600; font-size: 1.05em; color: var(--fg); letter-spacing: -0.01em; margin: 14px 0 5px; }
 .bulletGroup:first-child .bulletGroupHead { margin-top: 2px; }
 .bulletList { margin: 0; padding-left: 1.5em; list-style: disc; }
@@ -442,7 +469,7 @@
   transition: background 160ms ease, border-color 160ms ease;
 }
 .taskCheck:hover { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
-.taskCheck[data-status='done'] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.taskCheck[data-status='done'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .taskCheck[data-status='doing'] { border-color: var(--accent-purple); }
 .taskCheck[data-status='cancelled'] { border-color: color-mix(in srgb, var(--fg) 28%, transparent); opacity: 0.65; }
 .ckGlyph {
@@ -455,7 +482,7 @@
   transition: opacity 150ms ease;
   pointer-events: none;
 }
-.ckGlyph :global(svg) { color: #fff; flex: 0 0 auto; }
+.ckGlyph :global(svg) { color: var(--on-accent); flex: 0 0 auto; }
 .taskCheck[data-status='done'] .ckCheck { opacity: 1; }
 .taskCheck[data-status='doing'] .ckSlash { opacity: 1; }
 .taskCheck[data-status='cancelled'] .ckDash { opacity: 1; }
@@ -477,8 +504,8 @@
   overflow: hidden;
   cursor: grab;
   background: var(--bismuth-surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: var(--rule);
+  border-radius: var(--r-card, 4px);
   user-select: none;
 }
 /* Offline vector basemap: an SVG drawn in screen space, panned/zoomed by JS. */
@@ -502,7 +529,9 @@
   inset: 0;
   pointer-events: none;
 }
-/* Teardrop pin + label chip, anchored by its tip at (left, top). */
+/* Accent glyph marker + label chip, anchored by the glyph's baseline at (left, top) —
+   "a map has to map" (kept as the offline SVG mercator), but the pin itself is now a
+   typed "@" glyph per bases-map.card.html, not a drawn teardrop shape. */
 .mapPin {
   position: absolute;
   transform: translate(-50%, -100%);
@@ -516,28 +545,28 @@
 .mapPin:hover { transform: translate(-50%, -100%) scale(1.08); }
 .mapPinChip {
   max-width: 180px;
-  margin-bottom: 5px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border-soft);
+  margin-bottom: 2px;
+  padding: 2px 7px;
+  border-radius: var(--r-control, 3px);
+  border: var(--rule-soft, 1px solid var(--border-soft));
   background: var(--pop-bg);
   color: var(--fg);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 10.5px;
+  font-size: var(--fs-micro, 10.5px);
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  /* Floating over the map surface — the shared floating-chrome shadow token. */
+  box-shadow: var(--shadow-popup);
 }
-.mapPinTeardrop {
-  width: 13px;
-  height: 13px;
-  border-radius: 50% 50% 50% 0;
-  transform: rotate(45deg);
-  background: var(--accent);
-  border: 1.5px solid var(--on-accent);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+.mapPinGlyph {
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 15px;
+  line-height: 1;
+  font-weight: var(--fw-bold, 600);
+  color: var(--accent);
+  text-shadow: var(--glow-accent);
 }
 /* Floating controls, top-right. */
 .mapControls {
@@ -552,13 +581,14 @@
 .mapZoomStack {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: 9px;
+  border: var(--rule);
+  border-radius: var(--r-panel, 5px);
   overflow: hidden;
   background: var(--pop-bg);
   backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-popup);
 }
-.mapZoomStack .mapCtrlBtn:first-child { border-bottom: 1px solid var(--border-soft); }
+.mapZoomStack .mapCtrlBtn:first-child { border-bottom: var(--rule-soft, 1px solid var(--border-soft)); }
 .mapCtrlBtn {
   display: flex;
   align-items: center;
@@ -569,15 +599,18 @@
   border: none;
   background: transparent;
   color: var(--fg);
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 13px;
   cursor: pointer;
   transition: background 120ms ease;
 }
 .mapCtrlBtn:hover { background: var(--hover-bg); }
 .mapCtrlSolo {
-  border: 1px solid var(--border);
-  border-radius: 9px;
+  border: var(--rule);
+  border-radius: var(--r-panel, 5px);
   background: var(--pop-bg);
   backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-popup);
 }
 /* Scale bar, bottom-left above the badge. */
 .mapScale {
@@ -597,7 +630,7 @@
 }
 .mapScaleLabel {
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 1;
   color: var(--text-muted);
 }
@@ -620,8 +653,8 @@
   gap: 5px;
   height: 18px;
   padding: 0 7px;
-  border-radius: 5px;
-  border: 1px solid var(--border-soft);
+  border-radius: var(--r-chip, 2px);
+  border: var(--rule-soft, 1px solid var(--border-soft));
   background: var(--surface-2);
   color: var(--green);
 }
@@ -636,7 +669,7 @@
   pointer-events: none;
   font-size: 13px;
 }
-.mapEmpty code { background: var(--bismuth-surface-2); padding: 1px 4px; border-radius: 4px; }
+.mapEmpty code { background: var(--bismuth-surface-2); padding: 1px 4px; border-radius: var(--r-chip, 2px); }
 
 /* ---- Kanban ---- */
 /* Trello-style board: fills its container's height exactly (flex:1/min-height:0 inside
@@ -669,8 +702,8 @@
   flex: 1;
   padding: 0;
   background: color-mix(in srgb, var(--bg) 60%, var(--panel));
-  border: 1px solid var(--border-soft, var(--border));
-  border-radius: 11px;
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-card, 4px);
   overflow: hidden;
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
@@ -682,7 +715,7 @@
 .kanbanColHeader {
   display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 11.5px; color: var(--fg);
   padding: 11px 13px;
-  border-radius: 10px 10px 0 0;
+  border-radius: var(--r-card, 4px) var(--r-card, 4px) 0 0;
   background: color-mix(in srgb, var(--kb-col-color, transparent) 9%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--kb-col-color, var(--border-soft)) 35%, transparent);
   cursor: grab;
@@ -724,14 +757,16 @@
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
-  border-radius: 9px;
-  border: 1px solid var(--border-soft, var(--border));
+  border-radius: var(--r-card, 4px);
+  border: var(--rule-soft, 1px solid var(--border-soft));
   background: var(--surface-1, var(--panel));
-  transition: transform 130ms ease, background 130ms ease, border-color 130ms ease, box-shadow 130ms ease, opacity 130ms ease;
+  transition: background 130ms ease, border-color 130ms ease, opacity 130ms ease;
   will-change: transform;
 }
 .kanbanCards .card .cardBodyInner { padding: 11px 12px; gap: 8px; }
-.kanbanCards .card:hover { background: var(--surface-2); transform: translateY(-1px); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28); }
+/* Flat + hairline: drag/hover states read as an accent border + the hover-bg wash,
+   never an elevation shadow (the ASCII system's "no in-flow shadows" rule). */
+.kanbanCards .card:hover { background: var(--hover-bg); border-color: var(--accent); }
 .kanbanCards .card:active { cursor: grabbing; }
 
 /* Image-drop target: an OS image file dragged over this card. A solid accent ring + soft accent
@@ -739,7 +774,7 @@
 .kanbanCards .card.kbCardDropTarget {
   border-color: var(--accent);
   background: var(--bismuth-accent-soft);
-  box-shadow: 0 0 0 2px var(--bismuth-accent-border) inset, 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 2px var(--bismuth-accent-border) inset;
 }
 
 /* Drop placeholder — collapsed by default, expands to the DRAGGED card's height (via --kb-drag-h)
@@ -752,7 +787,7 @@
   opacity: 0;
   margin-bottom: -9px;
   border: 1px dashed transparent;
-  border-radius: 10px;
+  border-radius: var(--r-card, 4px);
   background: transparent;
   pointer-events: none;
   transition: height 170ms cubic-bezier(0.2, 0, 0, 1), opacity 170ms ease, margin-bottom 170ms ease;
@@ -778,7 +813,7 @@
   align-self: stretch;
   flex: 0 0 5px;
   min-height: 80px;
-  border-radius: 4px;
+  border-radius: var(--r-card, 4px);
   background: var(--bismuth-accent-border);
   box-shadow: 0 0 0 3px var(--bismuth-accent-soft);
   pointer-events: none;
@@ -799,7 +834,7 @@
 .kbTitleInput, .kbComposer { cursor: text; user-select: text; -webkit-user-select: text; }
 .kbTitleInput {
   width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
-  background: var(--surface-2, var(--panel)); border-radius: 6px; padding: 3px 5px; margin: -4px -6px;
+  background: var(--surface-2, var(--panel)); border-radius: var(--r-control, 3px); padding: 3px 5px; margin: -4px -6px;
   font-family: var(--editor-font); font-size: 14px; font-weight: 600; color: var(--fg); outline: none;
 }
 
@@ -816,7 +851,7 @@
   font-size: 12px; color: var(--text-muted); line-height: 1.35; overflow-wrap: anywhere;
 }
 .kbMetaLabel {
-  flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.05em;
+  flex: 0 0 auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em;
   text-transform: uppercase; color: var(--faint); line-height: 1.2;
 }
 .kbMeta .tagRow { font-size: 11.5px; gap: 8px; }
@@ -884,13 +919,13 @@
 .kbAddBtn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; margin-top: 2px; padding: 0;
-  border: none; background: none; border-radius: 7px; color: var(--text-muted);
+  border: none; background: none; border-radius: var(--r-control, 3px); color: var(--text-muted);
   cursor: pointer; transition: background 120ms ease, color 120ms ease;
 }
 .kbAddBtn:hover { background: var(--surface-2); color: var(--fg); }
 .kbComposer {
   width: 100%; box-sizing: border-box; margin-top: 2px; padding: 9px 11px;
-  border: 1px solid var(--bismuth-accent-border); border-radius: 9px;
+  border: 1px solid var(--bismuth-accent-border); border-radius: var(--r-card, 4px);
   background: var(--surface-1, var(--panel)); color: var(--fg);
   font-family: var(--editor-font); font-size: 13px; line-height: 1.35; resize: none; outline: none;
 }
@@ -900,13 +935,14 @@
 .kbColorPop {
   position: absolute; z-index: 41; top: 40px; left: 12px;
   display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 9px;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 9px;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.34); width: max-content; max-width: 214px;
+  background: var(--panel); border: var(--rule); border-radius: var(--r-panel, 5px);
+  /* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
+  box-shadow: var(--shadow-popup); width: max-content; max-width: 214px;
 }
-.kbSwatch { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border-soft, var(--border)); cursor: pointer; padding: 0; }
+.kbSwatch { width: 20px; height: 20px; border-radius: 50%; border: var(--rule-soft, 1px solid var(--border-soft)); cursor: pointer; padding: 0; }
 .kbSwatch:hover { transform: scale(1.12); }
 .kbSwatchAuto {
-  height: 20px; padding: 0 9px; border-radius: 10px; border: 1px solid var(--border-soft, var(--border));
+  height: 20px; padding: 0 9px; border-radius: var(--r-control, 3px); border: var(--rule-soft, 1px solid var(--border-soft));
   background: var(--surface-2, var(--panel)); color: var(--text-muted); font-size: 11px; cursor: pointer;
 }
 .kbSwatchAuto:hover { color: var(--fg); }

@@ -18,7 +18,7 @@ import { settingsToCssVars, setCssVars } from "./settingsCssVars";
 import { resolveAppearance } from "./themes";
 import { matchesKeybinding } from "./keybindings";
 import { initZoom, zoomIn, zoomOut, zoomReset } from "./zoom";
-import { lastChange } from "./serverVersion";
+import { lastChange, currentConnectionState } from "./serverVersion";
 import { debounce } from "./debounce";
 import { ToastHost, pushToast, dismissToast, updateToast } from "./Toast";
 import { applyUpdateAndRelaunch } from "./updateCheck";
@@ -69,7 +69,7 @@ import {
   serializeTabs, deserializeTabs, resolveFocus, sortPinned, setTabPinned, splitColdLaunch,
   decideOpen,
 } from "./panes";
-import { IconButton } from "./ui/IconButton";
+import { IconButton, ICON_PX } from "./ui/IconButton";
 import { PaneTree } from "./PaneTree";
 import { createViewDrag, type DragDescriptor, type DropTarget, type DropPoint } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
@@ -95,20 +95,40 @@ const THEME_VARS_KEY = "bismuth-theme-vars-v1";
 // looked oversized as a ghost; cap it to a tab-like chip.
 const GHOST_MAX_W = 200;
 
+// Top strip / platform titlebar (design/ascii/README.md "Screens -> App shell"). macOS gets a
+// transparent Overlay titlebar (native traffic lights float over the strip, see lib.rs
+// build_main_window) — no typed window controls there. Windows/Linux run fully undecorated
+// (decorations(false)) and get typed `[-] [+] [x]` controls wired to the Tauri window API. A
+// static check (not a signal): the platform never changes mid-session.
+const IS_MAC_PLATFORM =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
+
+async function winMinimize(): Promise<void> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().minimize();
+}
+async function winToggleMaximize(): Promise<void> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().toggleMaximize();
+}
+async function winClose(): Promise<void> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().close();
+}
+
 export default function App() {
-  // Boot splash gate (see bootGate.ts): the graph is a single always-mounted instance (home tab
-  // OR the sidebar mini-graph — see the graph-floater below), so `graphMounts` is always true
-  // here. Dismissal waits for BOTH the initial data fetch (below) AND a graph frame painted AFTER
-  // that data arrived (GraphView's onPaint prop, correlated against dataReady inside bootGate —
-  // an empty pre-data paint does not satisfy it) — never stranding thanks to the `hidden` bypass
-  // (wired below), the bounded paintWaitExpired fallback (also below), plus index.html's own 12s
-  // safety timeout, which calls the same idempotent __bismuthBootReady however this gate resolves.
-  // Timer id for the bounded paint-wait fallback; armed by the graph's first paint (see onPaint
-  // on the graph-floater below), 0 = not yet armed.
-  let paintFallback = 0;
-  // Timer id proving the graph has stayed drawn (not just drawn once) — see onPaint below.
-  let paintStable = 0;
-  const STABLE_MS = 180;
+  // Boot splash gate (see bootGate.ts): gates on the APP SHELL's first painted frame (tree/tabs,
+  // drawn from local/cached state), not the knowledge graph's — a 2000+-node vault's /graph fetch
+  // + layout can take seconds, and there's no reason to keep the whole UI dimmed behind the splash
+  // for that long once the shell around it is already fully drawn. The graph (in the graph-floater
+  // below) keeps rasterizing in the background after the splash lifts.
+  //
+  // bootGate's API is unchanged; only the MEANING fed into it changes: `dataReady` is set
+  // unconditionally right away (no longer waits on the network fetch — see onMount below) and
+  // `graphPainted` is repurposed to mean "the shell has painted", set from a post-mount
+  // double-rAF rather than GraphView's onPaint. `hidden` still bypasses the paint wait for a
+  // backgrounded launch, and a hard 1500ms `timedOut` backstops the rAF path (also below) —
+  // never stranding, same as before, plus index.html's own 12s safety timeout regardless.
   const bootGate = createBootGate({
     graphMounts: true,
     onDismiss: () =>
@@ -128,6 +148,20 @@ export default function App() {
   // Per-file frontmatter icon (vault path -> Lucide name), sourced from the file tree so a
   // note's tab shows the same icon as its file-tree row. Refreshed alongside the graph.
   const [fileIcons, setFileIcons] = createSignal<Map<string, string>>(new Map());
+
+  // Vault name for the status bar's field-log line (design/ascii/README.md "App shell").
+  // Fetched once from the existing GET /config (already used by the settings page to show how
+  // core was launched) — pure presentation of an existing backend signal, no new server state.
+  const [vaultName, setVaultName] = createSignal<string>("");
+  onMount(() => {
+    fetch(`${apiBase()}/config`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg: { vault?: string } | null) => {
+        const v = cfg?.vault;
+        if (typeof v === "string") setVaultName(v.split("/").filter(Boolean).pop() ?? v);
+      })
+      .catch(() => {}); // best-effort — the status bar just shows a blank vault name on failure
+  });
 
   // Chat tab labels: the session's conversation title once one exists (chatTitles, published by
   // ChatView from the backend's `title` frames), else the daemon's identity name when it's
@@ -559,7 +593,11 @@ export default function App() {
   // different construct (the literal root of the session tree), injected separately by
   // GraphView/agentLayout.ts, not by this selection.
   const displayGraph = createMemo<GraphData>(() =>
-    selectDisplayGraph(mode(), { graph: graph(), agents: agents(), daemon: daemon() }),
+    // `activeId` feeds "local" mode only: the focused note's graph id (path minus ".md").
+    selectDisplayGraph(mode(), {
+      graph: graph(), agents: agents(), daemon: daemon(),
+      activeId: focusedContent() ? focusedContent()!.replace(/\.md$/i, "") : null,
+    }),
   );
 
   const noteCandidates = createMemo<NoteCandidate[]>(() =>
@@ -1364,31 +1402,15 @@ export default function App() {
     return r.kind === "leaf" && !isSentinel(r.content) && isMarkdown(r.content) ? r.content : undefined;
   };
 
-  // While dragging a tab, neighbors slide to open a gap at the live drop slot
-  // (Chrome-style). Returns the px shift for the chip at `index`; 0 otherwise.
+  // Which tab is mid-drag — the rail row uses it for its `dragging` class.
+  //
+  // The neighbour-slide helpers that lived here (tabShift / stripDropIndex / dragFromIndex) went with
+  // the horizontal strip: they computed a px offset to slide CHIPS sideways and open a gap at the drop
+  // slot, which only means anything for a left-to-right strip of variable-width chips. The rail's rows
+  // are fixed-height and reorder without that affordance.
   const draggingTabId = (): string | null => {
     const d = drag();
     return d.active && d.descriptor?.kind === "tab" ? d.descriptor.tabId : null;
-  };
-  const stripDropIndex = (): number | null => {
-    const d = drag();
-    return d.active && d.target?.kind === "tabstrip" ? d.target.index : null;
-  };
-  const dragFromIndex = createMemo(() => {
-    const id = draggingTabId();
-    return id ? tabs().findIndex((t) => t.id === id) : -1;
-  });
-  const tabShift = (index: number): number => {
-    const d = drag();
-    const dragId = draggingTabId();
-    const dropI = stripDropIndex();
-    if (!dragId || dropI === null || d.descriptor?.kind !== "tab") return 0;
-    const from = dragFromIndex();
-    if (from === -1 || index === from) return 0;
-    const w = d.descriptor.width;
-    if (from < dropI && index > from && index < dropI) return -w;
-    if (from > dropI && index >= dropI && index < from) return w;
-    return 0;
   };
 
   // Delete: drop any leaf whose content is the deleted path (or a file beneath a deleted
@@ -1420,23 +1442,33 @@ export default function App() {
 
 
   onMount(() => {
-    // Dismiss the boot splash (index.html) once the initial graph+tree fetch settles AND the
-    // graph has actually painted a frame AFTER that (bootGate.setGraphPainted, fired by
-    // GraphView's onPaint below; bootGate itself discards any paint that arrived before
-    // dataReady) — not merely once the data resolved, so the UI is revealed only when there's
-    // really something drawn behind it, with the loaded data. allSettled (never rejects) plus
-    // the paintWaitExpired fallback below plus the splash's own 12s safety timeout mean a
-    // slow/backend-down fetch, or a post-data paint that never arrives (e.g. a vault with
-    // nothing new to draw), can't strand the overlay.
-    Promise.allSettled([refreshGraph(), refreshFileIcons()]).then(() => {
-      requestAnimationFrame(() => bootGate.setDataReady(true));
+    // Dismiss the boot splash (index.html) on the app SHELL's own first painted frame — not the
+    // graph's, and not gated on the /graph+/tree fetch below. `dataReady` no longer means "the
+    // fetch settled"; it's set true right away so bootGate's real (and only) wait is for
+    // `graphPainted`, here repurposed as "the shell painted".
+    bootGate.setDataReady(true);
+    // Double rAF: the callback given to the FIRST call runs just before the browser's next paint;
+    // nesting a second rAF inside it means THAT callback only runs once that paint has actually
+    // landed — the standard "wait for a real frame" idiom. By then the tree/tabs (rendered from
+    // local/cached state, no network wait) are genuinely on screen.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => bootGate.setGraphPainted(true));
     });
-    // A backgrounded launch (window not visible) pauses the graph's render loop, so a first paint
-    // may never come — but nothing is visible to strand either, so let data-ready alone dismiss.
+    // A backgrounded launch may never get a rAF callback at all — nothing is visible to strand,
+    // so let data-ready (already true) alone dismiss instead of waiting on the hard timeout below.
     const onVisibilityChange = () => bootGate.setHidden(document.visibilityState === "hidden");
     onVisibilityChange();
     document.addEventListener("visibilitychange", onVisibilityChange);
     onCleanup(() => document.removeEventListener("visibilitychange", onVisibilityChange));
+    // Hard backstop: bootGate's `timedOut` overrides every other signal, so a stalled rAF (or any
+    // other gap) never keeps the splash up past 1.5s — the graph keeps rasterizing regardless of
+    // whether it's done by the time the splash lifts.
+    const hardTimeout = window.setTimeout(() => bootGate.setTimedOut(true), 1500);
+    onCleanup(() => window.clearTimeout(hardTimeout));
+
+    // The initial graph+tree fetch itself — unrelated to the splash now, just kicked off here as
+    // before. allSettled (never rejects) so a slow/backend-down fetch doesn't throw on boot.
+    void Promise.allSettled([refreshGraph(), refreshFileIcons()]);
     // Cold-launch check (plan §3): catch any daemon-inbox page that became due while the app
     // was closed. onOpenInbox lets the newly-due toast's "Review" action jump straight to ::inbox.
     void refreshDaemonPages(openInbox);
@@ -1931,20 +1963,25 @@ export default function App() {
    *  runs the FIRST resolvable one, disabled when none resolve (see resolveButtonCommands).
    *  The inbox button is special-cased as a DAEMON surface: hidden entirely while the daemon
    *  is off, and it carries the live due-count badge the palette command can't. */
-  function CommandButton(props2: { btn: { command?: string; commands?: string[]; icon: string; tooltip?: string } }) {
+  function CommandButton(props2: { btn: { command?: string; commands?: string[]; icon: string; tooltip?: string }; iconSize?: number }) {
     const cmd = () => resolveButtonCommands(props2.btn, commands())[0];
     const hidden = () => cmd()?.id === "open-inbox" && !settings.daemon.enabled;
+    // 18 -> ICON_PX (12): the two TAB toolbars (.tabbar-actions, .tab-rail-actions) render
+    // CommandButtons without an explicit size, so this default WAS the tab toolbar's icon size — 18px
+    // next to 11.5px labels and a 12px sidebar, which made it the largest iconography in the app for no
+    // reason. The sidebar bar passes appearance.sidebarIconFontSize and is unaffected either way.
+    const iconSize = () => props2.iconSize ?? ICON_PX;
     return (
       <Show when={!hidden()}>
         <Show
           when={cmd()}
           fallback={
-            <IconButton icon={props2.btn.icon || "CircleHelp"} iconSize={18} disabled label={`Unknown command: ${props2.btn.command}`} />
+            <IconButton icon={props2.btn.icon || "CircleHelp"} iconSize={iconSize()} disabled label={`Unknown command: ${props2.btn.command}`} />
           }
         >
           {(c) => (
             <span class="toolbar-btn-wrap">
-              <IconButton icon={props2.btn.icon} iconSize={18} label={props2.btn.tooltip ?? c().label} onClick={(e) => c().action(e)} />
+              <IconButton icon={props2.btn.icon} iconSize={iconSize()} label={props2.btn.tooltip ?? c().label} onClick={(e) => c().action(e)} />
               <Show when={c().id === "open-inbox" && dueCount() > 0}>
                 <span class="toolbar-badge">{dueCount()}</span>
               </Show>
@@ -1956,7 +1993,7 @@ export default function App() {
   }
 
   // Shared tab context menu (right-click) — used by both the horizontal strip and the
-  // vertical right-rail (ui.verticalTabs). Kept as one builder so the two presentations
+  // vertical right-rail. Kept as one builder so the toolbar and the rail
   // never drift.
   function openTabContextMenu(e: MouseEvent, tab: Tab) {
     e.preventDefault();
@@ -1997,14 +2034,59 @@ export default function App() {
     openContextMenu(e.clientX, e.clientY, items, setEditorMenu);
   }
 
+  // Status bar field-log line (design/ascii/README.md "App shell") — pure presentation of
+  // existing signals, no new state: the focused pane's content id (real path, or a friendly
+  // label for a sentinel/terminal via the same contentLabel used by the tab bar).
+  const statusPath = createMemo<string>(() => {
+    const c = focusedContent();
+    if (!c) return "no file";
+    return isSentinel(c) ? contentLabel(c, terminalContentIndex().get(c)) : c;
+  });
+
   return (
-    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": settings.ui.verticalTabs }}>
+    <div class="app-shell">
+    {/* Top strip (design/ascii/README.md "App shell", §1): the wordmark + platform titlebar.
+        macOS runs a transparent Overlay titlebar (native traffic lights float over the strip,
+        left padding reserves room for them) with no typed controls; Windows/Linux run fully
+        undecorated with typed `[-] [+] [x]` controls; the browser/dev build gets neither.
+        `data-tauri-drag-region="deep"` (not a bare/"true" value): Tauri's injected drag script
+        only treats a bare attribute as "this exact element", checked via `el === composedPath[0]`
+        — since the wordmark span and the flex:1 `.top-strip-spacer` (the strip's largest visual
+        area) are child elements that receive the actual click target, a bare attribute here left
+        almost the entire strip undraggable. "deep" lets any non-interactive descendant trigger the
+        drag; the `.win-btn` window-control buttons stay excluded automatically (Tauri's script
+        never treats a clickable tag like <button> as a drag target unless IT carries the
+        attribute itself), so no pointer-events juggling is needed. Also requires
+        `core:window:allow-start-dragging` in capabilities/default.json (silently no-ops without
+        it). Double-click-to-maximize on macOS is Tauri's own built-in behavior for any drag
+        region (fires `internal_toggle_maximize`, already covered by `core:window:default`) — do
+        NOT add a manual dblclick handler here, it would race the native one. */}
+    <div
+      class="top-strip"
+      classList={{ "top-strip--mac": isTauri() && IS_MAC_PLATFORM }}
+      data-tauri-drag-region={isTauri() ? "deep" : undefined}
+    >
+      <span class="asc-wordmark">bismuth</span>
+      <div class="top-strip-spacer" />
+      <Show when={isTauri() && !IS_MAC_PLATFORM}>
+        <div class="win-controls">
+          <button type="button" class="win-btn" title="Minimize" onClick={() => void winMinimize()}>[-]</button>
+          <button type="button" class="win-btn" title="Maximize" onClick={() => void winToggleMaximize()}>[+]</button>
+          <button type="button" class="win-btn win-btn--close" title="Close" onClick={() => void winClose()}>[x]</button>
+        </div>
+      </Show>
+    </div>
+    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": true }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
-          <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} />}</For>
+          <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} iconSize={settings.appearance.sidebarIconFontSize} />}</For>
         </div>
+        <div class="sidebar-eyebrow-row"><span class="asc-eyebrow">VAULT</span></div>
         <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} startItemDrag={startItemDrag} dropHighlight={sidebarDropHighlight} /></div>
-        <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }} ref={sidebarSlot} />
+        <div class="sidebar-graph-section" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }}>
+          <div class="sidebar-eyebrow-row"><span class="asc-eyebrow">GRAPH</span></div>
+          <div class="sidebar-graph" ref={sidebarSlot} />
+        </div>
       </aside>
       <main class="editor-pane">
         <UpdateBanner />
@@ -2013,91 +2095,10 @@ export default function App() {
         <Show when={switcherOpen()}>
           <SwitcherBar onClose={closeSwitcher} openFile={openFile} onResultsChange={setSwitcherResultPaths} />
         </Show>
-        {/* Horizontal top tab strip — the default. When ui.verticalTabs is ON it's replaced
-            entirely by the right-edge .tab-rail rendered below (outside .editor-pane). */}
-        <Show when={!settings.ui.verticalTabs}>
-        <div class="tabbar" data-tabstrip="true">
-          <Index each={tabs()}>
-            {(t, i) => {
-              const chipColor = createMemo(() => {
-                const tab = t();
-                const leaf = leaves(tab.root).find((l) => l.id === tab.focusId) ?? leaves(tab.root)[0];
-                return leaf ? chatTabColor(leaf.content) : undefined;
-              });
-              const chipStyle = createMemo(() => ({
-                transform: `translateX(${tabShift(i)}px)`,
-              }));
-              return (
-                <>
-                  <Show when={stripDropIndex() === i && !draggingTabId()}>
-                    <div class="tab-caret" />
-                  </Show>
-                  <div
-                    class={`tab${activeTabId() === t().id ? " active" : ""}`}
-                    classList={{ dragging: draggingTabId() === t().id, pinned: !!t().pinned }}
-                    data-tab-chip="true"
-                    // A pinned tab renders compact (icon + pin glyph, no label), so surface its
-                    // name on hover. Skip while renaming (the input carries the name).
-                    title={t().pinned && renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
-                    style={chipStyle()}
-                    onPointerDown={(e) => {
-                      if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
-                      viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id), tabNotePath(t()));
-                    }}
-                    // Middle-click closes any tab, INCLUDING a pinned one (which hides its X) —
-                    // the VSCode/Obsidian escape hatch so a pin doesn't have to be undone first.
-                    onAuxClick={(e) => {
-                      if (e.button !== 1) return;
-                      e.preventDefault();
-                      closeTabById(t().id);
-                    }}
-                    onDblClick={(e) => {
-                      if ((e.target as HTMLElement).closest(".tab-x, .tab-pin")) return;
-                      startRenameTab(t().id);
-                    }}
-                    onContextMenu={(e) => openTabContextMenu(e, t())}
-                  >
-                    <Show when={tabBarIcon(t())}>
-                      {(icon) => <Icon value={icon()} size={13} style={chipColor() ? { color: chipColor() } : undefined} />}
-                    </Show>
-                    <Show when={renamingTabId() === t().id} fallback={<Show when={!t().pinned}><span>{tabBarLabel(t())}</span></Show>}>
-                      <input
-                        class="tab-rename"
-                        value={tabBarLabel(t())}
-                        ref={(el) => queueMicrotask(() => { el.focus(); el.select(); })}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => commitRename(t().id, e.currentTarget.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") { e.preventDefault(); commitRename(t().id, e.currentTarget.value); }
-                          else if (e.key === "Escape") { e.preventDefault(); setRenamingTabId(null); }
-                          e.stopPropagation();
-                        }}
-                      />
-                    </Show>
-                    {/* Pinned tabs replace the close X with a pin glyph (click → unpin); the tab
-                        can't be closed by the X, matching Obsidian/VSCode pinned-tab behavior. */}
-                    <Show
-                      when={t().pinned}
-                      fallback={<IconButton class="tab-x" icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t().id, e)} />}
-                    >
-                      <IconButton class="tab-pin" icon="Pin" label="Unpin tab" iconSize={12} onClick={(e) => { e.stopPropagation(); togglePinTab(t().id); }} />
-                    </Show>
-                  </div>
-                </>
-              );
-            }}
-          </Index>
-          <Show when={stripDropIndex() === tabs().length && !draggingTabId()}>
-            <div class="tab-caret" />
-          </Show>
-          <div class="tabbar-actions">
-            {/* Settings-driven like the sidebar bar (tabBar: in .settings) — defaults are the
-                previously-hardcoded new-tab + terminal, plus new-chat. */}
-            <For each={settings.tabBar}>{(btn) => <CommandButton btn={btn} />}</For>
-          </div>
-        </div>
-        </Show>
+        {/* Tabs are the right-edge vertical RAIL only — see the .tab-rail block below. The classic
+            horizontal top strip (and its ui.verticalTabs opt-out) was removed: two full tab
+            presentations meant every tab feature had to be built, styled and drag-tested twice, and
+            the rail is the one that fits the redesign. */}
         <div class="editor-body" ref={editorBodyEl}>
           <Show when={activeTab()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
             {(t) => (
@@ -2201,8 +2202,7 @@ export default function App() {
           </For>
         </div>
       </main>
-      {/* Vertical tab rail (ui.verticalTabs) — a right-edge icon rail that REPLACES the top
-          strip. The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
+      {/* The tab rail — the app's ONLY tab presentation (the horizontal strip is gone). The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
           column; .tab-rail-inner is absolutely anchored to the right edge and widens leftward
           OVER the editor on hover (via CSS :hover / :focus-within), so the editor never
           reflows. Top-to-bottom: the +/terminal/chat action TOOLBAR, then the scrollable
@@ -2213,7 +2213,7 @@ export default function App() {
           full-window search takeover that already hides the file-tree sidebar (`sidebar-hidden`,
           below); the rail used to keep floating over that takeover instead of hiding with it. The
           grid column itself collapses to 0 in lockstep via `.layout.switcher-active` (App.css). */}
-      <Show when={tabRailVisible({ verticalTabs: settings.ui.verticalTabs, switcherOpen: switcherOpen() })}>
+      <Show when={tabRailVisible({ switcherOpen: switcherOpen() })}>
         <div class="tab-rail">
           <div class="tab-rail-inner">
             <div class="tab-rail-actions">
@@ -2291,41 +2291,7 @@ export default function App() {
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
       <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() && !switcherOpen() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} onPaint={(nodeCount) => {
-            // No-op for the rest of the session once dismissed — this fires every frame, and
-            // there's nothing left to gate after boot.
-            if (bootGate.dismissed) return;
-            // The FIRST paint proves the renderer is alive (its lazy chunk loaded, its host box
-            // measured) — only now is "a paint should arrive shortly" a safe assumption, so this
-            // is where the bounded fallback starts. Starting it when the DATA landed instead was
-            // measured to misfire on a cold boot: data was ready at ~1.7s while the GraphView
-            // chunk was still loading, so the 1.5s timer expired and dropped the splash at 3.2s
-            // over an area whose canvas did not exist until 3.9s — the exact gap being fixed.
-            if (paintFallback === 0) {
-              paintFallback = window.setTimeout(() => bootGate.setPaintWaitExpired(true), 1500);
-            }
-            // Only a frame that actually DREW NODES counts as "the graph is on screen" — the
-            // renderer paints blank frames throughout boot (host box measured, data not in yet,
-            // and again for a moment after each resize clears the canvas). Accepting those is
-            // what let the splash drop over an empty graph area, which is the user-visible bug:
-            // "even after it's gone the graph is empty for a bit before it populates itself."
-            // A genuinely empty vault never sends nodeCount > 0, and is covered by the bounded
-            // paintWaitExpired fallback armed just above.
-            // ...and it has to STAY drawn. The graph host box settles in steps during boot
-            // (measured: 1000x773 -> 969x814 -> 952x814), and every resize clears the canvas and
-            // leaves it blank until the next frame. Dismissing on the first good frame therefore
-            // still uncovered an empty graph, just later. So a good frame ARMS a short timer and
-            // any blank frame DISARMS it: the splash lifts only once the graph has been
-            // continuously on screen for STABLE_MS, which is exactly the user's criterion.
-            if (nodeCount > 0) {
-              if (paintStable === 0) {
-                paintStable = window.setTimeout(() => bootGate.setGraphPainted(true), STABLE_MS);
-              }
-            } else if (paintStable !== 0) {
-              clearTimeout(paintStable);
-              paintStable = 0;
-            }
-          }} />
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} />
         </Suspense>
       </div>
       <Show when={palette() === "command"}>
@@ -2387,6 +2353,25 @@ export default function App() {
       </Show>
       <ToastHost />
       <GalleryHost />
+    </div>
+    {/* Status bar (design/ascii/README.md "App shell", §2): a field-log line, pure
+        presentation of existing signals — vault name, the focused pane's content, connection
+        health (serverVersion's ConnectionState), and right-aligned mode indicators, closed by
+        a blinking `_` caret. No new state. */}
+    <div class="status-bar">
+      <span class="status-vault">{vaultName() || "vault"}</span>
+      <span class="status-sep">//</span>
+      <span class="status-path">{statusPath()}</span>
+      <Show when={currentConnectionState() !== "connected"}>
+        <span class="status-conn">connection lost — polling</span>
+      </Show>
+      <div class="status-spacer" />
+      <span class="status-mode">{mode()}</span>
+      <span class="status-daemon">
+        daemon: {settings.daemon.enabled ? (anyWorking() ? "working" : "idle") : "off"}
+      </span>
+      <span class="asc-caret">_</span>
+    </div>
     </div>
   );
 }

@@ -15,7 +15,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync, renameSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { pidAlive } from "./daemonState";
-import { isTempPath } from "./pathUtils";
+import { isTempPath } from "./tempPath";
 
 /** One running-core record: which port serves which vault (+ pid, for future liveness checks).
  *  `token` (added for the owner-token gate — see ownerToken.ts) is this boot's random secret; a

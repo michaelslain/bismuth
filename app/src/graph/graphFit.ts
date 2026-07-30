@@ -1,8 +1,15 @@
 // app/src/graph/graphFit.ts
 //
 // Pure guards for the graph's fit math. The renderer scales the backend layout to the host box
-// (worldScale = fitPx / boundingRadius) every time the box or the node set changes. Two transient
-// states used to make the spacing "go weird until it settles" (card #97):
+// every time the box or the node set changes. THE FIT LAW (2D): 100% zoom fills each axis of the
+// field to `FIT_FILL_FRACTION` of the graph's own bounding-BOX half-extents (`boundingHalfExtents`
+// + `fitScaleForBox`) — not a single circumscribing radius. A radius over-reads a rectangular node
+// cloud by up to sqrt(2) (the diagonal vs. the box), and considering only the shorter screen axis
+// (the old `fitPxPerWorld` fraction-of-min(cols*cellW, rows*cellH) law) wastes the rest of a
+// non-square field — together those two effects left the cloud occupying only ~35-40% of the
+// canvas at "100%". 3D keeps the original radius-based `fitPxPerWorld` fit: an orbiting camera has
+// no fixed "box" to fill, only a distance to keep in frame. Two transient states used to make the
+// spacing "go weird until it settles" (card #97):
 //
 //   1. A DEGENERATE HOST BOX. The knowledge graph is a single floating element that App re-places
 //      across slots (initial mount, tab<->graph, Cmd+O switcher expand, sidebar toggle) and re-sizes
@@ -78,5 +85,50 @@ export function fitScale(fitPx: number, radius: number): number {
   const f = finiteOr(fitPx, 1);
   const r = Math.max(1, finiteOr(radius, 1));
   const s = f / r;
+  return Number.isFinite(s) && s > 0 ? s : 1;
+}
+
+/** Max |x| and max |y| over a point cloud, each floored at `floor` (same non-finite-scrubbing
+ *  discipline as `boundingRadius` — a NaN/Infinity coordinate is ignored, never propagated into the
+ *  result). Unlike `boundingRadius`'s circumscribing radius (the largest hypot), this is the
+ *  axis-aligned HALF-EXTENT of the cloud's bounding BOX — the tighter, two-axis bound a rectangular
+ *  grid actually wants to fill (see the module header's fit law). */
+export function boundingHalfExtents(
+  points: Iterable<readonly number[]>,
+  floor = 1,
+): { hx: number; hy: number } {
+  let hx = floor, hy = floor;
+  for (const p of points) {
+    const x = Math.abs(finiteOr(p[0]));
+    const y = Math.abs(finiteOr(p[1]));
+    if (x > hx) hx = x;
+    if (y > hy) hy = y;
+  }
+  return { hx, hy };
+}
+
+/** The fraction of each screen axis the graph's bounding box fills at 100% (fit) zoom — see
+ *  `fitScaleForBox`. Deliberately short of 1: a small margin keeps rim nodes/labels off the very
+ *  edge of the field. */
+export const FIT_FILL_FRACTION = 0.92;
+
+/** World-units -> screen-px fit scale for a RECTANGULAR field, derived from the cloud's own
+ *  bounding-box half-extents (`hx`/`hy`, see `boundingHalfExtents`) rather than a single
+ *  circumscribing radius: each screen axis is scaled independently against its own half of the box
+ *  (`boxW/2`, `boxH/2`) at `fill` occupancy, and the SMALLER of the two resulting ratios wins so
+ *  neither axis overflows — the binding axis lands at exactly `fill`, the other at less than or
+ *  equal to it. Guaranteed finite and > 0: degenerate inputs (a zero/negative/non-finite box,
+ *  extent, or fill) fall back to 1, the same guard discipline as `fitScale`. */
+export function fitScaleForBox(
+  boxW: number, boxH: number, hx: number, hy: number, fill: number = FIT_FILL_FRACTION,
+): number {
+  const w = finiteOr(boxW, 1);
+  const h = finiteOr(boxH, 1);
+  const ex = Math.max(1e-6, finiteOr(hx, 1));
+  const ey = Math.max(1e-6, finiteOr(hy, 1));
+  const f = Number.isFinite(fill) && fill > 0 ? fill : 1;
+  const sx = (w * f) / 2 / ex;
+  const sy = (h * f) / 2 / ey;
+  const s = Math.min(sx, sy);
   return Number.isFinite(s) && s > 0 ? s : 1;
 }

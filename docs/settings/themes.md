@@ -2,232 +2,166 @@
 
 This document covers every named Bismuth theme, how the `appearance` settings section maps to CSS custom properties on `:root`, the graph accent palette, and the editor font choices. The theme system is the **single source of color** for the entire app: selecting a theme recolors the canvas, surfaces, border, text, accent, graph nodes, terminal, and category swatches from one place, with no per-color overrides. The **single source of truth** is `core/src/theme/tokens.ts` (token definitions). It lives in `core` — not `app` — because the dependency runs app → core: core consumers (gcal event-color mapping, drawing paper/ink, the settings-schema theme enum) must be able to `import` the tokens, and core cannot import app. `app/src/themes.ts` is a **thin, byte-identical re-export** of that module so the frontend keeps its `"./themes"` import path. `app/src/settingsCssVars.ts` still does the CSS projection.
 
+The four themes are the **ASCII redesign's** four scopes (`design/ascii/design-system/tokens/colors.css`): `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), `riso` (cream + indigo, light).
+
 ---
 
 ## Theme Names
 
-The setting is `appearance.theme` in `.settings` (the vault's hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:17`). The schema enum lists 12 names; the first is the default.
+The setting is `appearance.theme` in `.settings` (the vault's hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:17`). The schema enum lists 4 names; the first is the default.
 
 ```yaml
 appearance:
-  theme: oxide-duotone   # default
+  theme: ink   # default
 ```
 
-### Dark Themes
+| Setting value | Display name | Light/Dark |
+|---|---|---|
+| `ink` | Ink *(default)* | Dark — "Riso, but dark": warm paper ink on charcoal |
+| `paper` | Paper | Light — the light counterpart to Ink, same inks |
+| `cathode` | Cathode | Dark — hot phosphor terminal, high-contrast, glows |
+| `riso` | Riso | Light — cream paper + indigo ink, print-flat, no glow |
 
-| Setting value | Display name |
-|---|---|
-| `oxide-duotone` | Oxide Duotone *(default)* |
-| `gunmetal-teal` | Gunmetal Teal |
-| `rose-gold` | Rose Gold |
-| `indigo-oxide` | Indigo Oxide |
-| `forest-oxide` | Forest Oxide |
-| `full-sheen` | Full Sheen |
+The `THEME_NAMES` array in `core/src/theme/tokens.ts` is the ordered authoritative list; the first entry (`ink`) is both the schema default and the `DEFAULT_THEME` constant used by `resolveTheme()` when an unknown name is provided. The display names above are the authoritative `THEME_LABELS` map in the same file (no decorative separators). (`app/src/themes.ts` re-exports `THEME_NAMES`, `THEME_LABELS`, and `DEFAULT_THEME`, so the frontend's `"./themes"` import path is unchanged.)
 
-### Light Themes
-
-| Setting value | Display name |
-|---|---|
-| `oxide-duotone-light` | Oxide Duotone Light |
-| `gunmetal-teal-light` | Gunmetal Teal Light |
-| `rose-gold-light` | Rose Gold Light |
-| `indigo-oxide-light` | Indigo Oxide Light |
-| `forest-oxide-light` | Forest Oxide Light |
-| `full-sheen-light` | Full Sheen Light |
-
-The `THEME_NAMES` array in `core/src/theme/tokens.ts` is the ordered authoritative list; the first entry (`oxide-duotone`) is both the schema default and the `DEFAULT_THEME` constant used by `resolveTheme()` when an unknown name is provided. The display names above are the authoritative `THEME_LABELS` map in the same file (no decorative separators). (`app/src/themes.ts` re-exports `THEME_NAMES`, `THEME_LABELS`, and `DEFAULT_THEME`, so the frontend's `"./themes"` import path is unchanged.)
+**Legacy names**: `.settings` files saved under the pre-redesign 12-theme system (e.g. `oxide-duotone`, `indigo-oxide`) are unknown names to `resolveTheme()` and silently fall back to `ink` — no migration or error, just the same "unknown name → default" behavior that has always backed `resolveTheme()`.
 
 ---
 
 ## ColorTokens Interface
 
-Every theme resolves to a `ColorTokens` object. These are the raw hex values that feed into CSS var derivation:
+Every theme resolves to a `ColorTokens` object. The base palette (first 8 fields) is required; everything after it is an **optional explicit override** — each documents the CSS var it feeds, and `settingsCssVars` prefers the explicit value when a theme sets it, falling back to its original color-mix derivation otherwise. All four ASCII themes set every optional field explicitly.
 
 ```ts
 interface ColorTokens {
-  background: string;      // canvas / --bg
-  foreground: string;      // text / --fg
-  neutral: string;         // muted text + graph edges / --text-muted
-  accent: string;          // --accent
-  border: string;          // --border
-  surface: string;         // --surface-1 / --panel
-  surface2: string;        // --surface-2
-  accentPalette: string[]; // graph node ramp (5–6 entries)
-  isLight?: boolean;       // true for all *-light themes; drives light/dark branching
-  categoryGreen?: string;  // --green (optional override; defaults to palette[1])
-  categoryGold?: string;   // --gold (optional override; defaults to palette[4] ?? palette[3])
-  categoryRose?: string;   // --rose (optional override; defaults to palette[3])
+  background: string;   // canvas / --bg
+  foreground: string;   // text / --fg
+  neutral: string;      // muted text + graph edges / --text-muted
+  accent: string;       // --accent
+  border: string;       // --border
+  surface: string;      // --surface-1 / --panel
+  surface2: string;     // --surface-2
+  accentPalette: string[]; // graph node ramp (5 entries: rose, violet, blue, teal, green)
+  isLight?: boolean;     // true for paper + riso; drives light/dark branching
+
+  // Structural surfaces
+  rail?: string; editor?: string; surface3?: string; borderSoft?: string; faint?: string;
+  hoverBg?: string; popBg?: string; popBgStrong?: string; scrimBg?: string; overlayBg?: string;
+  labelHalo?: string; graphBg?: string; graphEdge?: string; nodeCold?: string; nodeSelf?: string;
+  vignetteEdge?: string; termBg?: string; termFg?: string;
+  glowAccent?: string; glowText?: string;   // bloom is a THEME decision — only cathode glows
+  accentSoft?: string; onAccent?: string;
+
+  // Category hues (Bases statuses, calendar categories, map pins, chart series) — CATEGORICAL,
+  // distinct from the semantic danger/success/warning below.
+  categoryTeal?: string; categoryBlue?: string; categoryViolet?: string;
+  categoryGreen?: string; categoryGold?: string; categoryRose?: string;
+
+  // Semantic status overrides — each ASCII theme sets these explicitly.
+  danger?: string; success?: string; warning?: string;
 }
 ```
 
-The `isLight` flag is only present (and `true`) on light themes. Its absence is treated as `false`. It drives several structural surfaces that branch differently between dark and light (rail, pop-bg, scrim, label-halo, editor surface, graph background gradient).
+`--accent-purple` is **not** its own `ColorTokens` field: it equals `accentPalette[1]` in every scope, so the existing `palette[1]` derivation in `settingsCssVars` covers it without a dedicated token.
+
+The `isLight` flag is only present (and `true`) on `paper` and `riso`. Its absence is treated as `false`. It drives several structural surfaces that branch differently between dark and light whenever a theme doesn't set the explicit field (rail, pop-bg, scrim, label-halo, editor surface, graph background).
 
 ---
 
 ## Per-Theme Color Values
 
-### oxide-duotone (dark, default)
+Values are transcribed verbatim from `design/ascii/design-system/tokens/colors.css` (`:root`/`.ink`, `.paper`, `.cathode`, `.riso`).
+
+### ink (dark, default)
 
 ```
-background:    #0D0E16
-foreground:    #E7E8F2
-neutral:       #888EA8
-accent:        #5E8DE6
-border:        #2A2E45
-surface:       #161827
-surface2:      #1E2133
-accentPalette: ["#22C6D6", "#3F9BE6", "#5C7BEE", "#8B6CF0", "#B16AD6"]
+background:    #15161A        accent:        #93BDB0
+foreground:    #E8E3D6        border:        #3A3E4A
+neutral:       #9C998E        surface:       #20222A
+surface2:      #272A33        accentPalette: ["#C98CA8","#A190C4","#8296C6","#83B4AE","#A3BE8C"]
+rail:          #101116        editor:        #191A1F
+surface3:      #31353F        borderSoft:    #282B34
+faint:         #6A675E        hoverBg:       rgba(232,227,214,.05)
+popBg:         rgba(25,26,31,.88)      popBgStrong: rgba(25,26,31,.94)
+scrimBg:       rgba(10,11,14,.6)      overlayBg:   rgba(10,11,14,.6)
+labelHalo:     #15161A        graphBg:       #121317
+graphEdge:     #3C4048        nodeCold:      #4A4E58
+nodeSelf:      #E8E3D6        vignetteEdge:  #0D0E11
+termBg:        #101116        termFg:        #C9C4B6
+glowAccent:    0 0 0 1px rgba(147,189,176,.14)   glowText: none
+accentSoft:    rgba(147,189,176,.12)    onAccent: #15161A
+categoryTeal/Blue/Violet/Green/Gold/Rose: #83B4AE #8296C6 #A190C4 #A3BE8C #CBB27E #C98CA8
+danger:        #C87F72        success:       #A3BE8C        warning: #CBB27E
 ```
 
-### gunmetal-teal (dark)
+### paper (light)
 
 ```
-background:    #0E1014
-foreground:    #E6E9EF
-neutral:       #878F9E
-accent:        #27C2D1
-border:        #2A303C
-surface:       #161922
-surface2:      #1E2330
-accentPalette: ["#2FD4BE", "#27C2D1", "#39A8E6", "#5C8DEF", "#6FE0A0"]
-```
-
-### rose-gold (dark)
-
-```
-background:    #15110F
-foreground:    #F1EAE5
-neutral:       #A99A8F
-accent:        #E1748F
-border:        #382E29
-surface:       #201917
-surface2:      #2A221E
-accentPalette: ["#F2C24A", "#F0A055", "#EC7E6A", "#E1748F", "#E06AB0"]
-```
-
-### indigo-oxide (dark)
-
-```
-background:    #0C0E1A
-foreground:    #E7E9F6
-neutral:       #868DAE
-accent:        #5C6CF2
-border:        #262B47
-surface:       #151829
-surface2:      #1D2138
-accentPalette: ["#6FA0FF", "#5C6CF2", "#7B5CF0", "#9B5CE8", "#56AEEA"]
-```
-
-### forest-oxide (dark)
-
-```
-background:    #0D120F
-foreground:    #E6EDE7
-neutral:       #8B9A8E
-accent:        #3FB87C
-border:        #2B362D
-surface:       #161E18
-surface2:      #1F2921
-accentPalette: ["#43C586", "#2FB89A", "#7FD68A", "#9CC24F", "#C9A23E"]
-```
-
-### full-sheen (dark)
-
-```
-background:    #0E0F12
-foreground:    #EBEDF0
-neutral:       #878D97
-accent:        #27C2D1
-border:        #262931
-surface:       #16181D
-surface2:      #1E2128
-accentPalette: ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"]
-```
-
-Note: `full-sheen` uses the six-entry `SHEEN` palette — the only theme with 6 graph colors instead of 5.
-
-### oxide-duotone-light
-
-```
-background:    #F1EFF7
-foreground:    #322D49
-neutral:       #7A7393
-accent:        #7A86DE    (palette index 2, not a saturated guess)
-border:        #DCD7EB
-surface:       #FFFFFF
-surface2:      #EEEBF7
-accentPalette: ["#3FB6C4", "#6FA6E6", "#7A86DE", "#A98FE0", "#C08FD8"]
+background:    #E9E6E0        accent:        #4E7F73
+foreground:    #2E2C29        border:        #C4BEB3
+neutral:       #6E6A63        surface:       #EFEDE8
+surface2:      #E1DDD5        accentPalette: ["#A85C7A","#7A6AA0","#5A6E9E","#4E8079","#6E8A55"]
 isLight:       true
+rail:          #E3E0D9        editor:        #F2F0EB
+surface3:      #D3CEC5        borderSoft:    #D8D3C9
+faint:         #9A958C        hoverBg:       rgba(46,44,41,.05)
+popBg:         rgba(242,240,235,.9)   popBgStrong: rgba(242,240,235,.96)
+scrimBg:       rgba(90,86,78,.3)      overlayBg:   rgba(90,86,78,.3)
+labelHalo:     #F2F0EB        graphBg:       #E1DDD5
+graphEdge:     #C9C3B7        nodeCold:      #B6B0A4
+nodeSelf:      #2E2C29        vignetteEdge:  #D8D3C9
+termBg:        #2E2C29        termFg:        #E9E6E0
+glowAccent:    0 0 0 1px rgba(78,127,115,.16)    glowText: none
+accentSoft:    rgba(78,127,115,.12)     onAccent: #F2F0EB
+categoryTeal/Blue/Violet/Green/Gold/Rose: #4E8079 #5A6E9E #7A6AA0 #5E7F4B #A8863F #A85C7A
+danger:        #A8503F        success:       #5E7F4B        warning: #B54708
 ```
 
-### gunmetal-teal-light
+### cathode (dark)
 
 ```
-background:    #EEF4F4
-foreground:    #1B2A2C
-neutral:       #6E8385
-accent:        #1FA6B4
-border:        #D4E2E2
-surface:       #FFFFFF
-surface2:      #E6EFEF
-accentPalette: ["#3FB8A8", "#2FA9B6", "#5AA6DE", "#7C9CE6", "#6CC79A"]
+background:    #05070A        accent:        #35F0E0
+foreground:    #DDF3EA        border:        #1B3A38
+neutral:       #6FA69A        surface:       #0C1116
+surface2:      #121A20        accentPalette: ["#FF5AA8","#A96BFF","#5A82F5","#35E8E0","#5CFA8A"]
+rail:          #020304        editor:        #070A0E
+surface3:      #18242B        borderSoft:    #112524
+faint:         #3F5F58        hoverBg:       rgba(53,240,224,.07)
+popBg:         rgba(7,10,14,.82)      popBgStrong: rgba(7,10,14,.9)
+scrimBg:       rgba(0,0,0,.66)        overlayBg:   rgba(0,0,0,.66)
+labelHalo:     #05070A        graphBg:       #04070A
+graphEdge:     #1B3A38        nodeCold:      #24504B
+nodeSelf:      #DDF3EA        vignetteEdge:  #020405
+termBg:        #020304        termFg:        #9FE6D8
+glowAccent:    0 0 12px rgba(53,240,224,.35)     glowText: 0 0 8px rgba(53,240,224,.28)
+accentSoft:    rgba(53,240,224,.12)     onAccent: #05070A
+categoryTeal/Blue/Violet/Green/Gold/Rose: #35E8E0 #5A82F5 #A96BFF #5CFA8A #FFC23D #FF4FA3
+danger:        #FF6B5A        success:       #5CFA8A        warning: #FFC23D
+```
+
+Cathode is the **one theme with bloom** — `glowAccent`/`glowText` carry real glow shadows; every other theme sets `glowText: none` and a flat 1px accent rim (or `none`) for `glowAccent`.
+
+### riso (light)
+
+```
+background:    #EAE4D4        accent:        #2E36A8
+foreground:    #22285E        border:        #B9AE92
+neutral:       #5E628C        surface:       #E3DCC8
+surface2:      #DBD3BC        accentPalette: ["#C0387A","#6B4FA8","#2E36A8","#2F7F86","#5E8A3C"]
 isLight:       true
-```
-
-### rose-gold-light
-
-```
-background:    #FAF1EE
-foreground:    #3A2A28
-neutral:       #9A8780
-accent:        #D06A86
-border:        #ECDDD7
-surface:       #FFFFFF
-surface2:      #F4E9E4
-accentPalette: ["#E0B65A", "#E0A06A", "#DE8A78", "#D27E92", "#CE82B0"]
-isLight:       true
-```
-
-### indigo-oxide-light
-
-```
-background:    #EEEFF9
-foreground:    #272B45
-neutral:       #767C9C
-accent:        #5360E0
-border:        #DADCEF
-surface:       #FFFFFF
-surface2:      #E7E9F6
-accentPalette: ["#6F9AEC", "#6470E2", "#8270E0", "#9A72DC", "#62A8E2"]
-isLight:       true
-```
-
-### forest-oxide-light
-
-```
-background:    #EDF4EF
-foreground:    #213027
-neutral:       #74897C
-accent:        #2FA86C
-border:        #D6E4DA
-surface:       #FFFFFF
-surface2:      #E5EFE8
-accentPalette: ["#4FB585", "#3FAE96", "#84C28E", "#9AB45E", "#C0A055"]
-isLight:       true
-```
-
-### full-sheen-light
-
-```
-background:    #F2F1F4
-foreground:    #25272D
-neutral:       #6F757F
-accent:        #1FA6B4
-border:        #DEDCE4
-surface:       #FFFFFF
-surface2:      #EAE9EE
-accentPalette: ["#E863A0", "#9A6CE0", "#5A82E8", "#3FB8C4", "#5AC79A", "#E0BC55"]
-isLight:       true
+rail:          #E1DACA        editor:        #F1ECDF
+surface3:      #CFC5AA        borderSoft:    #CFC6AE
+faint:         #948F86        hoverBg:       rgba(34,40,94,.06)
+popBg:         rgba(241,236,223,.92)  popBgStrong: rgba(241,236,223,.97)
+scrimBg:       rgba(60,58,74,.28)     overlayBg:   rgba(60,58,74,.28)
+labelHalo:     #F1ECDF        graphBg:       #DBD3BC
+graphEdge:     #BCB39A        nodeCold:      #AFA68E
+nodeSelf:      #22285E        vignetteEdge:  #CFC6AE
+termBg:        #22285E        termFg:        #EAE4D4
+glowAccent:    0 0 0 1px rgba(46,54,168,.18)     glowText: none
+accentSoft:    rgba(46,54,168,.12)      onAccent: #F1ECDF
+categoryTeal/Blue/Violet/Green/Gold/Rose: #2F7F86 #2E36A8 #6B4FA8 #5E8A3C #C08A2E #C0387A
+danger:        #B03A2E        success:       #4F7A34        warning: #A86A18
 ```
 
 ---
@@ -238,89 +172,68 @@ isLight:       true
 
 ### Color Variables (from theme tokens)
 
-These are all set directly or derived from the selected theme's `ColorTokens`:
+Each of these prefers the theme's explicit `ColorTokens` field (all four ASCII themes set one) and falls back to a color-mix derivation only for a theme that omits it:
 
-| CSS var | Source | Description |
+| CSS var | Explicit field | Fallback derivation |
 |---|---|---|
-| `--bg` | `background` | Canvas background |
-| `--fg` | `foreground` | Primary text color |
-| `--accent` | `accent` | Primary accent color (buttons, links, selected states) |
-| `--border` | `border` | Default border color |
-| `--border-soft` | `color-mix(fg 10%, transparent)` | Hairline / softer border |
-| `--text-muted` | `neutral` | Muted / secondary text, graph edges |
-| `--faint` | `color-mix(fg 42%, transparent)` | Tertiary / disabled text |
-| `--panel` | `surface` | Panel background (same as `--surface-1`) |
-| `--surface-1` | `surface` | First surface level |
-| `--surface-2` | `surface2` | Second surface level |
-| `--surface-3` | `color-mix(fg 14%, transparent)` | Third surface level (not in theme; derived) |
-| `--hover-bg` | `color-mix(fg 8%, transparent)` | Row/item hover tint |
-| `--rail` | dark: `color-mix(bg 88%, black)`; light: `color-mix(bg 70%, border)` | Sidebar + topbar rail |
-| `--editor` | dark: `background`; light: `color-mix(surface 64%, bg)` | Editor/main pane background |
-| `--pop-bg` | dark: `color-mix(bg 82%, transparent)`; light: `color-mix(surface 84%, transparent)` | Popover / floating card surface |
-| `--pop-bg-strong` | dark: `color-mix(bg 88%, transparent)`; light: `color-mix(surface 90%, transparent)` | Stronger popover surface |
-| `--scrim-bg` | dark: `color-mix(fg 62%, transparent)`; light: `color-mix(neutral 32%, transparent)` | Modal overlay scrim |
-| `--label-halo` | dark: `#05060a`; light: `color-mix(#fff 90%, transparent)` | Graph hub-label halo |
-| `--graph-bg` | radial gradient (see below) | Graph canvas radial backdrop |
-| `--vignette-edge` | dark: `color-mix(bg 70%, black)`; light: `color-mix(bg 50%, border)` | Depth vignette edge color |
-| `--graph-edge` | `color-mix(fg 18%, transparent)` | Graph edge (link) color |
-| `--node-cold` | `color-mix(fg 24%, bg)` | Uncolored/cold graph node fill |
-| `--node-self` | `foreground` | "You" self-node color |
-| `--accent-soft` | `color-mix(accent 14%, transparent)` | Accent tint background (selected tab/row) |
-| `--on-accent` | dark: `#08101F`; light: `#fff` | Text on solid accent fill |
-
-#### Graph Background Gradient
-
-The `--graph-bg` var is a radial gradient:
-
-- **Dark**: `radial-gradient(120% 90% at 50% 30%, {bg} 0%, color-mix(bg 60%, black) 72%)`
-- **Light**: `radial-gradient(120% 90% at 50% 30%, color-mix(#fff 60%, bg) 0%, color-mix(bg 50%, border) 72%)`
-
-This stops the agents graph mode from going half-black on light themes.
+| `--bg` / `--fg` / `--accent` / `--border` / `--text-muted` / `--panel` / `--surface-1` / `--surface-2` | `background`/`foreground`/`accent`/`border`/`neutral`/`surface`/`surface`/`surface2` | (required — no fallback) |
+| `--border-soft` | `borderSoft` | `color-mix(fg 10%, transparent)` |
+| `--faint` | `faint` | `color-mix(fg 42%, transparent)` |
+| `--hover-bg` | `hoverBg` | `color-mix(fg 8%, transparent)` |
+| `--surface-3` | `surface3` | `color-mix(fg 14%, transparent)` |
+| `--rail` | `rail` | dark: `color-mix(bg 88%, black)`; light: `color-mix(bg 70%, border)` |
+| `--editor` | `editor` | dark: `background`; light: `color-mix(surface 64%, bg)` |
+| `--pop-bg` | `popBg` | dark: `color-mix(bg 82%, transparent)`; light: `color-mix(surface 84%, transparent)` |
+| `--pop-bg-strong` | `popBgStrong` | dark: `color-mix(bg 88%, transparent)`; light: `color-mix(surface 90%, transparent)` |
+| `--scrim-bg` | `scrimBg` | dark: `color-mix(fg 62%, transparent)`; light: `color-mix(neutral 32%, transparent)` |
+| `--overlay-bg` | `overlayBg` | same fallback expression as `--scrim-bg` |
+| `--label-halo` | `labelHalo` | dark: `#05060a`; light: `color-mix(#fff 90%, transparent)` |
+| `--graph-bg` | `graphBg` (a **flat color**, not a gradient) | dark/light radial-gradient (legacy derivation) |
+| `--vignette-edge` | `vignetteEdge` | dark: `color-mix(bg 70%, black)`; light: `color-mix(bg 50%, border)` |
+| `--graph-edge` | `graphEdge` | `color-mix(fg 18%, transparent)` |
+| `--node-cold` | `nodeCold` | `color-mix(fg 24%, bg)` |
+| `--node-self` | `nodeSelf` | `foreground` |
+| `--accent-soft` | `accentSoft` | `color-mix(accent 14%, transparent)` |
+| `--on-accent` | `onAccent` | dark: `#08101F`; light: `#fff` |
+| `--glow-accent` | `glowAccent` | `"none"` |
+| `--glow-text` | `glowText` | `"none"` |
 
 ### Terminal Variables (fixed palette, not theme-tinted)
 
-The terminal deliberately stays dark in both light and dark modes:
-
-| CSS var | Dark value | Light value |
+| CSS var | Explicit field | Fallback |
 |---|---|---|
-| `--term-bg` | `#08090E` | `#2B2740` |
-| `--term-fg` | `#C7CCE0` | `#E3DEF2` |
+| `--term-bg` | `termBg` | dark: `#08090E`; light: `#2B2740` |
+| `--term-fg` | `termFg` | dark: `#C7CCE0`; light: `#E3DEF2` |
 
 ### Graph Ramp Variables
 
-`settingsCssVars` exposes exactly `--graph-0` through `--graph-4` (5 slots). Each slot maps positionally to `accentPalette[i]`; a missing index falls back to the theme's **accent** (`palette[i] ?? a.accent`), not to the last valid entry. Because only `--graph-0..4` exist, `full-sheen`'s six-entry palette has its 6th hue unexposed as a `--graph` var (the renderer still reads the full array directly):
+`settingsToCssVars` exposes exactly `--graph-0` through `--graph-4` (5 slots), positional to `accentPalette[i]`; a missing index falls back to the theme's **accent** (`palette[i] ?? a.accent`).
 
 | CSS var | Source |
 |---|---|
-| `--graph-0` | `palette[0]` or `accent` |
-| `--graph-1` | `palette[1]` or `accent` |
-| `--graph-2` | `palette[2]` or `accent` |
-| `--graph-3` | `palette[3]` or `accent` |
-| `--graph-4` | `palette[4]` or `accent` |
+| `--graph-0` … `--graph-4` | `palette[0..4]` or `accent` |
 
 ### Chrome Accent Variables
 
-Three named accents are extracted from palette ramp positions and used for chrome highlights and the iridescent gradient:
-
-| CSS var | Source | Description |
+| CSS var | Explicit field | Fallback source |
 |---|---|---|
-| `--teal` | `palette[0]` or `accent` | Chrome teal accent |
-| `--blue` | `palette[2]` or `palette[1]` or `accent` | Chrome blue accent |
-| `--violet` | `palette[3]` or `palette[2]` or `accent` | Chrome violet accent |
-| `--grad` | `linear-gradient(120deg, teal, blue, violet)` | Iridescent gradient |
-| `--accent-purple` | `palette[1]` or `palette[0]` or `accent` | Editor syntax + task accents (purple from graph ramp) |
+| `--teal` | `categoryTeal` | `palette[0]` or `accent` |
+| `--blue` | `categoryBlue` | `palette[2]` or `palette[1]` or `accent` |
+| `--violet` | `categoryViolet` | `palette[3]` or `palette[2]` or `accent` |
+| `--grad` | — | `linear-gradient(120deg, graph-0, graph-1, graph-2, graph-3, graph-4, gold)` — six stops, matching every scope's `--grad` in `colors.css` |
+| `--accent-purple` | — | `palette[1]` or `palette[0]` or `accent` (editor syntax + task accents) |
 
 ### Category Color Variables
 
-Used for Bases status badges, calendar event categories, map pins, and chart series. These re-tint automatically when the theme changes (stored category tokens that match one of these values get the new theme's hue; custom hex colours stay fixed):
+Used for Bases status badges, calendar event categories, map pins, and chart series. Re-tint automatically when the theme changes (stored category tokens that match one of these values get the new theme's hue; custom hex colours stay fixed):
 
-| CSS var | Default source | Override field |
+| CSS var | Explicit field | Fallback source |
 |---|---|---|
-| `--green` | `palette[1]` or `accent` | `categoryGreen` in `ColorTokens` |
-| `--gold` | `palette[4]` or `palette[3]` or `accent` | `categoryGold` in `ColorTokens` |
-| `--rose` | `palette[3]` or `accent` | `categoryRose` in `ColorTokens` |
+| `--green` | `categoryGreen` | `palette[1]` or `accent` |
+| `--gold` | `categoryGold` | `palette[4]` or `palette[3]` or `accent` |
+| `--rose` | `categoryRose` | `palette[3]` or `accent` |
 
-No stock theme sets `categoryGreen`/`categoryGold`/`categoryRose`; they all derive from the palette ramp.
+All four ASCII themes pin every category field explicitly.
 
 ### Map Variables
 
@@ -337,15 +250,13 @@ Bases offline map surfaces:
 
 ## Semantic Status Tokens
 
-Beyond the palette, `core/src/theme/tokens.ts` defines a **semantic status trio** — `danger` / `success` / `warning` — invariant across a theme's hue but tuned **separately per light vs dark** for accessibility. `settingsCssVars` selects the set via `semanticTokens(tokens)` and projects it as `--danger` / `--success` / `--warning`, so components read `var(--danger)` instead of hardcoding reds and greens.
+Beyond the palette, `core/src/theme/tokens.ts` defines a **semantic status trio** — `danger` / `success` / `warning` — invariant across a theme's hue but tuned **separately per light vs dark** for accessibility. `semanticTokens(tokens)` prefers a theme's own explicit `danger`/`success`/`warning` fields (all four ASCII themes set these) and otherwise falls back to `SEMANTIC_LIGHT`/`SEMANTIC_DARK`. `settingsCssVars` projects the result as `--danger` / `--success` / `--warning`, so components read `var(--danger)` instead of hardcoding reds and greens.
 
-The dark values match the historical `App.css` `:root` literals (danger/success; `warning` is new); the light values are chosen to stay accessible on a near-white ground (the dark-tuned olive success and red were illegible there).
-
-| Token | CSS var | Dark (`SEMANTIC_DARK`) | Light (`SEMANTIC_LIGHT`) |
+| Token | CSS var | Dark fallback (`SEMANTIC_DARK`, = ink) | Light fallback (`SEMANTIC_LIGHT`, = paper) |
 |---|---|---|---|
-| `danger` | `--danger` | `#e5534b` | `#d92d20` |
-| `success` | `--success` | `#98c379` | `#067647` |
-| `warning` | `--warning` | `#e0a53f` | `#b54708` |
+| `danger` | `--danger` | `#C87F72` | `#A8503F` |
+| `success` | `--success` | `#A3BE8C` | `#5E7F4B` |
+| `warning` | `--warning` | `#CBB27E` | `#B54708` |
 
 These are **semantic**, distinct from the categorical `--green`/`--rose` swatches above — so destructive/success affordances are never re-tinted by a theme's category hues.
 
@@ -353,36 +264,36 @@ These are **semantic**, distinct from the categorical `--green`/`--rose` swatche
 
 ## Elevation Shadows
 
-`tokens.ts` also owns the elevation shadow set — `menu` / `popup` / `card` / `modal` — selected by `shadowTokens(tokens)` and projected as `--shadow-menu` / `--shadow-popup` / `--shadow-card` / `--shadow-modal`. The dark values are byte-identical to the historical `App.css` `:root` literals; the light values are lighter and smaller-blur, so light themes don't wear the dark themes' heavy near-black drop shadows.
+`tokens.ts` also owns the elevation shadow set — `menu` / `popup` / `card` / `modal` — selected by `shadowTokens(tokens)` and projected as `--shadow-menu` / `--shadow-popup` / `--shadow-card` / `--shadow-modal`. The dark values come from the ASCII redesign's `design/ascii/design-system/tokens/effects.css`; the light values are lighter and smaller-blur, so light themes don't wear the dark themes' heavy near-black drop shadows.
 
 | CSS var | Dark (`SHADOW_DARK`) | Light (`SHADOW_LIGHT`) |
 |---|---|---|
-| `--shadow-menu` | `0 4px 16px rgba(0, 0, 0, 0.3)` | `0 4px 12px rgba(16, 24, 40, 0.10)` |
-| `--shadow-popup` | `0 8px 24px rgba(0, 0, 0, 0.25)` | `0 8px 20px rgba(16, 24, 40, 0.12)` |
-| `--shadow-card` | `0 16px 44px rgba(0, 0, 0, 0.45)` | `0 12px 32px rgba(16, 24, 40, 0.12)` |
-| `--shadow-modal` | `0 40px 110px rgba(0, 0, 0, 0.6)` | `0 24px 64px rgba(16, 24, 40, 0.14)` |
+| `--shadow-menu` | `0 4px 16px rgba(0,0,0,.3)` | `0 4px 12px rgba(16, 24, 40, 0.10)` |
+| `--shadow-popup` | `0 8px 24px rgba(0,0,0,.4)` | `0 8px 20px rgba(16, 24, 40, 0.12)` |
+| `--shadow-card` | `0 1px 0 rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35)` | `0 12px 32px rgba(16, 24, 40, 0.12)` |
+| `--shadow-modal` | `0 24px 70px rgba(0,0,0,.5)` | `0 24px 64px rgba(16, 24, 40, 0.14)` |
 
 ---
 
 ## Category Swatches & Accent Ramp (centralization)
 
-`tokens.ts` fixes the six named category hues in one place — `CATEGORY_SWATCHES` — so every consumer sources the same values:
+`tokens.ts` fixes the six named category hues in one place — `CATEGORY_SWATCHES` — so every consumer sources the same values (the `ink` scope's hues):
 
 | Token | Hex |
 |---|---|
-| `teal` | `#22C6D6` |
-| `blue` | `#5C7BEE` |
-| `violet` | `#8B6CF0` |
-| `green` | `#43D49A` |
-| `gold` | `#F2C53D` |
-| `rose` | `#F0509B` |
+| `teal` | `#83B4AE` |
+| `blue` | `#8296C6` |
+| `violet` | `#A190C4` |
+| `green` | `#A3BE8C` |
+| `gold` | `#CBB27E` |
+| `rose` | `#C98CA8` |
 
 `ACCENT_RAMP` is those six hexes in canonical order (teal → blue → violet → green → gold → rose). `THEME_ACCENTS` is the per-theme `--accent` hex, derived from `THEMES` (`Object.fromEntries(THEME_NAMES.map(n => [n, THEMES[n].accent]))`) so it can **never drift** from the theme definitions.
 
 This is the **one ramp** that used to be hand-copied — and had drifted — into four places; all now source from `tokens.ts`:
 
-- **Drawing toolbar** (`core/src/drawing/theme.ts`): `themeColors()` reads `THEMES[…]` / `DEFAULT_THEME` for a drawing's paper + default ink (dark → `oxide-duotone`, light → `oxide-duotone-light`).
-- **Export theme** (`app/src/export/exportTheme.ts`): `DEFAULT_TOKENS` spreads `CATEGORY_SWATCHES` for the headless-fallback teal→rose ramp (`accent` stays the App.css default `#3F6BF0`).
+- **Drawing toolbar** (`core/src/drawing/theme.ts`): `themeColors()` reads `THEMES[…]` / `DEFAULT_THEME` for a drawing's paper + default ink (dark → `ink`, light → `paper`).
+- **Export theme** (`app/src/export/exportTheme.ts`): `DEFAULT_TOKENS` spreads `CATEGORY_SWATCHES` for the headless-fallback teal→rose ramp (`accent` stays the App.css default `#93BDB0`, the ink accent).
 - **gcal color map** (`core/src/gcal/colors.ts`): resolves category tokens via `CATEGORY_SWATCHES` and the `accent` token via `THEME_ACCENTS` before snapping to the nearest Google event color.
 - **App.css `:root` fallbacks**: the first-paint literal values mirror these swatches (documented in `tokens.ts`).
 
@@ -396,14 +307,15 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 
 | Setting | CSS var | Default |
 |---|---|---|
-| `appearance.editorFont` | `--editor-font` | `'Lora', serif` |
-| `appearance.editorFontSize` | `--editor-font-size` | `16px` |
-| `appearance.sidebarWidth` | `--sidebar-width` | `280px` |
+| `appearance.editorFont` | `--editor-font` | `'Monaspace Xenon', ui-monospace, monospace` |
+| `appearance.uiFont` | `--ui-font-stack` | `'Monaspace Xenon', ui-monospace, monospace` |
+| `appearance.editorFontSize` | `--editor-font-size` | `11.5px` |
+| `appearance.sidebarWidth` | `--sidebar-width` | `266px` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
-| `appearance.uiFontSize` | `--ui-font-size` | `13px` |
-| `appearance.monoScale` | `--mono-scale` | `0.85` |
-| `appearance.tabFontSize` | `--tab-font-size` | `12px` |
-| `appearance.sidebarIconFontSize` | `--sidebar-icon-font-size` | `15px` |
+| `appearance.uiFontSize` | `--ui-font-size` | `11.5px` |
+| `appearance.monoScale` | `--mono-scale` | `1` |
+| `appearance.tabFontSize` | `--tab-font-size` | `11.5px` |
+| `appearance.sidebarIconFontSize` | `--sidebar-icon-font-size` | `11.5px` |
 | `appearance.paletteInputFontSize` | `--palette-input-font-size` | `15px` |
 
 ### From `ui.*`
@@ -421,7 +333,11 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 
 | Setting | CSS var | Default |
 |---|---|---|
-| `editor.lineHeight` | `--prose-line-height` | `1.65` |
+| `editor.lineHeight` | `--prose-line-height` | `1` |
+
+`--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `ui.css`
+`:root` — not itself settings-driven), consumed as `calc(var(--row-h) * var(--prose-line-height))`
+in both editors (Editor.tsx / BlockEditor.css). Default `1` → 18px exactly.
 
 ### From `calendar.*`
 
@@ -440,18 +356,21 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 
 ---
 
-## Editor Fonts (EDITOR_FONTS / FONT_STACKS)
+## Editor & UI Fonts (EDITOR_FONTS / FONT_STACKS)
 
-The `appearance.editorFont` setting accepts one of four values. The setting name maps to a full CSS font stack via `FONT_STACKS` in `app/src/settings.ts`:
+Serif is gone — the ASCII redesign is **one monospace family for the whole interface**. `appearance.editorFont` (prose) and `appearance.uiFont` (rail/tabs/tables/buttons/menus) each independently pick one of the five Monaspace variants; both default to `Monaspace Xenon`. The setting name maps to a full CSS font stack via `FONT_STACKS` in `app/src/settings.ts`:
 
 | Setting value | CSS font stack | Notes |
 |---|---|---|
-| `Lora` *(default)* | `'Lora', serif` | Variable serif from `@fontsource/lora`; shipped with Bismuth |
-| `Monaspace Xenon` | `'Monaspace Xenon', ui-monospace, monospace` | Monospaced from `@fontsource/monaspace-xenon`; shipped with Bismuth; use `monoScale` to correct optical size |
-| `Georgia` | `Georgia, 'Times New Roman', serif` | System serif; no download |
-| `system-ui` | `system-ui, -apple-system, sans-serif` | System sans; no download |
+| `Monaspace Xenon` *(default)* | `'Monaspace Xenon', ui-monospace, monospace` | From `@fontsource/monaspace-xenon`; shipped with Bismuth |
+| `Monaspace Neon` | `'Monaspace Neon', ui-monospace, monospace` | From `@fontsource/monaspace-neon`; shipped with Bismuth |
+| `Monaspace Argon` | `'Monaspace Argon', ui-monospace, monospace` | From `@fontsource/monaspace-argon`; shipped with Bismuth |
+| `Monaspace Krypton` | `'Monaspace Krypton', ui-monospace, monospace` | From `@fontsource/monaspace-krypton`; shipped with Bismuth |
+| `Monaspace Radon` | `'Monaspace Radon', ui-monospace, monospace` | From `@fontsource/monaspace-radon`; shipped with Bismuth |
 
-The `--editor-font` CSS var receives the full stack, not just the name. The `--mono-scale` var (default `0.85`) globally shrinks all Monaspace text — both editor body and code blocks — to correct its visual size relative to the body serif. When `editorFont` is not Monaspace, `monoScale` still applies to inline `<code>` and code blocks that render in Monaspace.
+`app/src/index.tsx` imports the 400/500/700 weights of all five variants at boot, so any variant is available instantly regardless of which one is selected. `--editor-font` receives `editorFont`'s stack, `--ui-font-stack` receives `uiFont`'s stack (with a static literal fallback in `app/src/ui/ui.css :root` for first paint, before settings load). `font-variant-ligatures: none` is set app-wide (`App.css`, html/body) — Monaspace's coding ligatures (`->`, `!=`) would otherwise break the character grid the design leans on.
+
+The `--mono-scale` var (default `1`) is a legacy optical-size correction from the serif-prose era (it shrank mono text to match a serif body); the all-mono UI needs no correction, but the setting and its consumers (inline `<code>`, code blocks) still exist for anyone who wants to tune it.
 
 **Adding a new font**: add it to `EDITOR_FONTS` in `settingsSchema.ts` AND to `FONT_STACKS` in `settings.ts`. The schema enum, autocomplete, and lint all pick it up automatically.
 
@@ -471,8 +390,9 @@ Switching `appearance.theme` reruns `settingsToCssVars` → `applyCssVars`, whic
 - Category swatches for Bases statuses, calendar events, map pins, chart series (`--green`, `--gold`, `--rose`)
 - Bases map surface colors
 - The terminal background/foreground (two fixed values, one for dark/one for light)
-- Modal scrim, popovers, and label halos
-- The graph canvas backdrop gradient (`--graph-bg`)
+- Modal scrim, overlay, popovers, and label halos
+- The graph canvas backdrop (`--graph-bg`, a flat color per theme)
+- Bloom (`--glow-accent`/`--glow-text`) — only `cathode` turns it on
 - `color-scheme` on `<html>` (native scrollbar/form-control appearance)
 
 The 2D/3D graph dimension and graph simulation settings are **not** affected by theme changes.
@@ -483,15 +403,16 @@ The 2D/3D graph dimension and graph simulation settings are **not** affected by 
 
 ```ts
 // Resolve a theme name string to its ColorTokens.
-// Unknown names silently fall back to DEFAULT_THEME ("oxide-duotone").
+// Unknown names (including every pre-redesign 12-theme name) silently fall back to
+// DEFAULT_THEME ("ink").
 resolveTheme(name: string): ColorTokens
 
 // Resolve from the appearance sub-object in settings.
 // Currently identical to resolveTheme(a.theme); no per-color overrides exist yet.
 resolveAppearance(a: { theme: string }): ColorTokens
 
-// The semantic status trio (danger/success/warning) for a resolved theme —
-// SEMANTIC_LIGHT when t.isLight, else SEMANTIC_DARK.
+// The semantic status trio (danger/success/warning) for a resolved theme — prefers
+// the theme's own explicit fields, else SEMANTIC_LIGHT/SEMANTIC_DARK by t.isLight.
 semanticTokens(t: ColorTokens): SemanticTokens
 
 // The elevation shadow set (menu/popup/card/modal) for a resolved theme —
@@ -505,14 +426,14 @@ All four live in `core/src/theme/tokens.ts` and are **DOM-free + dependency-free
 
 ## Default Accent Palette Fallback
 
-`app/src/settings.ts` exports `DEFAULT_ACCENT_PALETTE` as a six-color fallback used by `settingsToCssVars` when `a.accentPalette` is empty:
+`app/src/settings.ts` exports `DEFAULT_ACCENT_PALETTE` as a fallback used by `settingsToCssVars` when `a.accentPalette` is empty:
 
 ```ts
-// Single-sourced from SHEEN so the values can't drift.
-export const DEFAULT_ACCENT_PALETTE = SHEEN;
+// Single-sourced from themes.ts's default theme so the values can't drift.
+export const DEFAULT_ACCENT_PALETTE = THEMES[DEFAULT_THEME].accentPalette;
 ```
 
-`SHEEN` is defined in `core/src/theme/tokens.ts` (re-exported through `app/src/themes.ts`) and holds `["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"]` — the `full-sheen` theme's graph ramp. In practice every theme provides its own palette, so this fallback is defensive only.
+In practice every theme provides its own palette, so this fallback is defensive only.
 
 ---
 
@@ -532,9 +453,9 @@ octagon-bloom · spin-cross · tri-bloom · radial-graph · node-rings
 
 1. Add the theme name to `THEME_NAMES` in `core/src/theme/tokens.ts`. There is **no copy to keep in sync**: `settingsSchema.ts` imports the tuple (`import { THEME_NAMES as THEME_NAME_TUPLE } from "../theme/tokens"; const THEME_NAMES = [...THEME_NAME_TUPLE];`), so the schema enum updates automatically.
 2. Add a `THEME_LABELS` entry for the display name in `tokens.ts`.
-3. Add the `ColorTokens` object to `THEMES` in `tokens.ts`.
+3. Add the `ColorTokens` object to `THEMES` in `tokens.ts` — set every optional field explicitly (the ASCII themes all do; a theme that omits one gets `settingsCssVars`'s legacy color-mix derivation instead).
 4. Set `isLight: true` if it is a light theme.
-5. Light themes can optionally provide `categoryGreen`/`categoryGold`/`categoryRose` to pin specific category hues that suit the palette; otherwise the defaults from the ramp apply.
+5. `categoryTeal`/`categoryBlue`/`categoryViolet`/`categoryGreen`/`categoryGold`/`categoryRose` can pin specific category hues that suit the palette; otherwise the defaults from the ramp apply.
 6. No changes to `settingsCssVars.ts` are needed: all derivations are generic over the tokens.
 
 ---
@@ -545,4 +466,4 @@ Per the architecture: one schema entry in `settingsSchema.ts` + one line in `set
 
 ---
 
-Source: `core/src/theme/tokens.ts`, `app/src/themes.ts` (re-export), `app/src/settingsCssVars.ts`, `core/src/schema/settingsSchema.ts`, `app/src/settings.ts`, `core/src/gcal/colors.ts`, `core/src/drawing/theme.ts`, `app/src/export/exportTheme.ts`
+Source: `core/src/theme/tokens.ts`, `app/src/themes.ts` (re-export), `app/src/settingsCssVars.ts`, `core/src/schema/settingsSchema.ts`, `app/src/settings.ts`, `core/src/gcal/colors.ts`, `core/src/drawing/theme.ts`, `app/src/export/exportTheme.ts`, `design/ascii/design-system/tokens/colors.css`, `design/ascii/design-system/tokens/effects.css`, `design/ascii/README.md`

@@ -16,6 +16,13 @@ describe("buttonClass", () => {
   it("renders an icon button's normal state", () => {
     expect(buttonClass({ kind: "icon" })).toBe("btn btn--icon btn--normal");
   });
+  it("emits btn--primary when primary is set", () => {
+    expect(buttonClass({ primary: true })).toBe("btn btn--text btn--normal btn--primary");
+  });
+  it("composes primary alongside kind, state, size, danger, and extra class", () => {
+    expect(buttonClass({ kind: "text", state: "selected", size: "lg", danger: true, primary: true, class: "x" }))
+      .toBe("btn btn--text btn--selected btn--lg btn--danger btn--primary x");
+  });
 });
 
 describe("searchBarClass", () => {

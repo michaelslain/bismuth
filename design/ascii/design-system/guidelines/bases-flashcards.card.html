@@ -1,0 +1,165 @@
+<!-- @dsCard group="Bases" viewport="700x470" subtitle="SM-2 review — space reveals, 1/2/3 grade; cram never writes scheduling" name="Flashcards" -->
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { height: 100%; }
+  body { margin:0; font-family: var(--ui-font-stack); font-variant-ligatures: none;
+         background: var(--bg); color: var(--fg); font-size: var(--fs-ui);
+         display:flex; flex-direction:column; }
+  .revhead { flex:none; display:flex; align-items:flex-start; justify-content:space-between;
+             gap:18px; padding:10px 16px 8px; }
+  .count { font-size:10.5px; letter-spacing:.14em; color:var(--text-muted); white-space:nowrap; }
+  .count b { color:var(--fg); font-weight:600; }
+  .count .dir { letter-spacing:.02em; color:var(--faint); }
+  .fcbar { width:300px; max-width:40vw; height:3px; margin-top:7px; background:var(--border-soft); overflow:hidden; }
+  .fcbar i { display:block; height:100%; width:0; background:var(--accent); transition:width .3s; }
+  .tally { display:flex; gap:14px; font-size:10.5px; letter-spacing:.06em; color:var(--faint); white-space:nowrap; padding-top:1px; }
+  .tally b { font-weight:600; }
+  .tally .h b { color:var(--violet); } .tally .g b { color:var(--blue); } .tally .e b { color:var(--green); }
+  .stage { flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+           gap:12px; padding:6px 24px 14px; overflow:hidden; }
+  .fcard { width:min(560px,100%); border:1px solid var(--border); background:var(--panel);
+           padding:22px 26px 30px; position:relative; text-align:center; cursor:pointer; }
+  .fcard .actions { position:absolute; top:6px; right:8px; display:flex; gap:2px; opacity:.45; }
+  .fcard:hover .actions { opacity:1; }
+  .prose { font-family:'Lora', Georgia, serif; font-size:17px; line-height:1.55; color:var(--fg); }
+  .prose code { font-family:var(--ui-font-stack); font-size:.85em; color:var(--accent); }
+  .qcap { font-family:'Lora', Georgia, serif; font-style:italic; font-size:13px; line-height:1.45;
+          color:var(--text-muted); text-align:left; }
+  .fcdiv { height:1px; background:var(--border-soft); margin:12px 0; }
+  .abody { font-family:'Lora', Georgia, serif; font-size:15px; line-height:1.6; text-align:left;
+           color:var(--text-muted); }
+  .abody code { font-family:var(--ui-font-stack); font-size:.85em; color:var(--accent); }
+  .hint { display:flex; align-items:center; gap:7px; justify-content:center; margin-top:16px;
+          font-size:10.5px; letter-spacing:.14em; color:var(--faint); }
+  .grades { display:flex; gap:8px; width:min(560px,100%); }
+  .grade { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
+           background:transparent; border:1px solid var(--border); border-top-width:2px;
+           padding:8px 6px 7px; cursor:pointer; font:inherit; color:var(--fg); }
+  .grade:hover { background: var(--hover-bg, rgba(127,127,127,.08)); }
+  .grade .nm { font-size:11px; letter-spacing:.1em; text-transform:uppercase; }
+  .grade.hard { border-top-color:var(--violet); } .grade.hard:hover .nm { color:var(--violet); }
+  .grade.good { border-top-color:var(--blue); }   .grade.good:hover .nm { color:var(--blue); }
+  .grade.easy { border-top-color:var(--teal); }   .grade.easy:hover .nm { color:var(--teal); }
+  .done { text-align:center; display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .done .big { font-family:'Lora', Georgia, serif; font-size:22px; color:var(--fg); }
+  .done .sub { font-size:11.5px; color:var(--text-muted); }
+  .done .sub b { color:var(--fg); }
+  .statusline { flex:none; height:26px; display:flex; align-items:center; gap:6px; padding:0 16px;
+                border-top:1px solid var(--border-soft); font-size:10.5px; color:var(--faint);
+                overflow:hidden; white-space:nowrap; }
+  [hidden] { display:none !important; }
+</style></head><body class="ink">
+  <div class="viewbar">
+    <span class="crumb"><span class="asc-eyebrow">FLASHCARDS</span>
+      <span style="color:var(--text-muted);white-space:nowrap">deck: attention</span></span>
+    <div class="vbar-sp"></div>
+    <button class="btn btn--text" title="browse, add, edit and delete every card (list + bulk-add modes)">[ cards ]</button>
+    <button class="btn btn--text btn--unselected" id="cram" title="review every card, no scheduling writes">[ cram ]</button>
+  </div>
+  <div class="revhead">
+    <div>
+      <div class="count" id="count"></div>
+      <div class="fcbar"><i id="fill"></i></div>
+    </div>
+    <div class="tally">
+      <span class="h">HARD <b id="tH">0</b></span>
+      <span class="g">GOOD <b id="tG">0</b></span>
+      <span class="e">EASY <b id="tE">0</b></span>
+    </div>
+  </div>
+  <div class="stage" id="stage"></div>
+  <div class="statusline">SM-2 · card faces render markdown in Lora serif · bidirectional rows schedule fwd / rev independently · cram loops until every card is easy and never writes scheduling</div>
+<script>
+  // Mirrors app/src/bases/FlashcardsView.tsx + flashcardsQueue.ts:
+  // 3 grades (1 hard / 2 good / 3 easy); normal mode drops a graded card from the
+  // queue and pos stays put; cram retires a card only on easy (good/hard resurface).
+  const ROWS = [
+    { front: "What does the daemon do with an orphan note — no inbound edge for 90 days?",
+      back:  "Archives it to <code>vault/.attic/</code> — reversible for 30 days." },
+    { front: "la atención dividida", back: "divided attention", bidi: true },
+    { front: "Which columns does a reverse-direction review write?",
+      back:  "The <code>*Back</code> companions: <code>dueBack</code> / <code>easeBack</code> / <code>intervalBack</code>." },
+  ];
+  // Bidirectional row #1 contributes a fwd AND a rev entry (independently due).
+  const DUE = [ {r:0,dir:"fwd"}, {r:1,dir:"fwd"}, {r:1,dir:"rev"}, {r:2,dir:"fwd"} ];
+  let cram = false, queue = [], pos = 0, revealed = false;
+  let tally = { hard:0, good:0, easy:0 }, retired = new Set(), total = 0;
+  const key = (it) => it.r + ":" + it.dir;
+  const graded = () => tally.hard + tally.good + tally.easy;
+
+  function reset() {
+    queue = (cram ? ROWS.flatMap((row,i)=> row.bidi ? [{r:i,dir:"fwd"},{r:i,dir:"rev"}] : [{r:i,dir:"fwd"}])
+                  : DUE.slice());
+    pos = 0; revealed = false; tally = {hard:0,good:0,easy:0}; retired = new Set();
+    total = queue.length;
+    render();
+  }
+  function grade(g) {
+    if (!revealed) return;
+    tally[g]++;
+    revealed = false;
+    if (cram) {
+      if (g === "easy") retired.add(key(queue[pos]));
+      let np = -1;
+      for (let s = 1; s <= queue.length; s++) {
+        const c = (pos + s) % queue.length;
+        if (!retired.has(key(queue[c]))) { np = c; break; }
+      }
+      pos = (np === -1) ? queue.length : np;
+    } else {
+      queue.splice(pos, 1); // due date pushed forward -> drops out; pos stays put
+    }
+    render();
+  }
+  function render() {
+    const it = pos < queue.length ? queue[pos] : null;
+    const num = cram ? retired.size : Math.min(graded() + 1, total);
+    const dir = it && ROWS[it.r].bidi ? ' · <span class="dir">' + (it.dir === "fwd" ? "front → back" : "back → front") + '</span>' : "";
+    document.getElementById("count").innerHTML = "<b>" + num + "</b> / " + total + dir + (cram ? ' · <span class="dir">cram</span>' : "");
+    document.getElementById("fill").style.width = (total ? ((cram ? retired.size : graded()) / total) * 100 : 0) + "%";
+    ["hard","good","easy"].forEach((g,i) => document.getElementById("t" + "HGE"[i]).textContent = tally[g]);
+    const stage = document.getElementById("stage");
+    if (!it) {
+      stage.innerHTML = '<div class="done"><div class="big">' + (cram ? "Cram complete" : "Deck complete") + '</div>' +
+        '<div class="sub">' + (cram
+          ? 'Every card is easy — you mastered <b>' + total + '</b> cards in <b>' + graded() + '</b> reviews.'
+          : 'You reviewed <b>' + graded() + '</b> cards.') + '</div>' +
+        '<button class="btn btn--text btn--primary" id="again">[ review again ]</button></div>';
+      document.getElementById("again").addEventListener("click", reset);
+      return;
+    }
+    const row = ROWS[it.r];
+    const prompt = it.dir === "fwd" ? row.front : row.back;
+    const answer = it.dir === "fwd" ? row.back : row.front;
+    const acts = '<div class="actions"><button class="btn btn--text" title="edit this card" style="padding:0 4px">[e]</button><button class="btn btn--text btn--danger" title="delete this card" style="padding:0 4px">[x]</button></div>';
+    stage.innerHTML = revealed
+      ? '<div class="fcard">' + acts +
+          '<div class="qcap">' + prompt + '</div><div class="fcdiv"></div>' +
+          '<div class="abody">' + answer + '</div></div>' +
+        '<div class="grades">' +
+          ['hard','good','easy'].map((g,i) =>
+            '<button class="grade ' + g + '" data-g="' + g + '"><span class="nm">' + g + '</span>' +
+            '<span class="asc-kbd"><span class="asc-key">' + (i+1) + '</span></span></button>').join("") +
+        '</div>'
+      : '<div class="fcard" id="flip">' + acts +
+          '<div class="prose">' + prompt + '</div>' +
+          '<div class="hint"><span class="asc-kbd"><span class="asc-key">space</span></span> REVEAL ANSWER</div></div>';
+    if (revealed) stage.querySelectorAll(".grade").forEach(b => b.addEventListener("click", () => grade(b.dataset.g)));
+    else document.getElementById("flip").addEventListener("click", () => { revealed = true; render(); });
+  }
+  document.getElementById("cram").addEventListener("click", () => {
+    cram = !cram;
+    const b = document.getElementById("cram");
+    b.classList.toggle("btn--selected", cram); b.classList.toggle("btn--unselected", !cram);
+    reset();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space") { e.preventDefault(); if (!revealed && pos < queue.length) { revealed = true; render(); } return; }
+    const i = ["1","2","3"].indexOf(e.key);
+    if (i > -1 && revealed) grade(["hard","good","easy"][i]);
+  });
+  reset();
+</script>
+</body></html>

@@ -42,8 +42,11 @@
         "@codemirror/search": "^6.7.0",
         "@codemirror/state": "^6.6.0",
         "@codemirror/view": "^6.43.0",
-        "@fontsource/lora": "^5.2.8",
-        "@fontsource/monaspace-xenon": "^5.2.5",
+        "@fontsource/monaspace-argon": "^5.3.0",
+        "@fontsource/monaspace-krypton": "^5.3.0",
+        "@fontsource/monaspace-neon": "^5.3.0",
+        "@fontsource/monaspace-radon": "^5.3.0",
+        "@fontsource/monaspace-xenon": "^5.3.0",
         "@huggingface/transformers": "^4.2.0",
         "@lezer/highlight": "^1.2.3",
         "@milkdown/core": "^7.21.2",
@@ -79,6 +82,7 @@
         "yaml": "^2.9.0",
       },
       "devDependencies": {
+        "@hackernoon/pixel-icon-library": "^1.1.0",
         "@resvg/resvg-js": "^2.6.2",
         "@tauri-apps/cli": "^2",
         "@types/bun": "latest",
@@ -376,13 +380,21 @@
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
 
-    "@fontsource/lora": ["@fontsource/lora@5.2.8", "", {}, "sha512-AQlfsHw4TP1x/eb2IZ6VjQ70ctKa39m9JN9A4zlvDOeKYLrCs+GaYIEQ86Y6YfSPGHn01bErXkRcyktOW0LOPQ=="],
+    "@fontsource/monaspace-argon": ["@fontsource/monaspace-argon@5.3.0", "", {}, "sha512-sfP9wbeL7OLt/vxHCOtssa4AadPFjQAClYg1rl+PybqfJLw8yG86f8q3qtx4dCHpsN82x8Cb2z0BmP7y93QUNQ=="],
 
-    "@fontsource/monaspace-xenon": ["@fontsource/monaspace-xenon@5.2.5", "", {}, "sha512-k10RCF5nek9ee/rKSALaeYgOcJjjvzxxGkIlPwkSAoasjrsEeVKOSJ6ii1dMXOZwL9ZtW3p56Dxhgaw0Gtwvaw=="],
+    "@fontsource/monaspace-krypton": ["@fontsource/monaspace-krypton@5.3.0", "", {}, "sha512-dAvofm5VNugRpprnOYMOEnlcnlAJWrQXcoy0PEnmdc9NU+fyDeSDYOTFoJPmJBADwcnVqXA6fLgTlz7TUQQx6g=="],
+
+    "@fontsource/monaspace-neon": ["@fontsource/monaspace-neon@5.3.0", "", {}, "sha512-a4B4L4nmW+mW42gDb6JUugy2fA3DC0QKi2yRMXKzuNsN+wHhUvrqgYndIBMds+Evq/cWaMJgd06x14dHuBNxwA=="],
+
+    "@fontsource/monaspace-radon": ["@fontsource/monaspace-radon@5.3.0", "", {}, "sha512-aadcdk9Gg4yOwk4Zei93k3pzL1jufhrPQIxpLluqO+RoVv5MoSqNlsvFuYEEthE5N1ORaS3RleohBdP0yBzDGQ=="],
+
+    "@fontsource/monaspace-xenon": ["@fontsource/monaspace-xenon@5.3.0", "", {}, "sha512-f65HlIRnq072ZMGJL2AMCPE1198EMog1i5vko3BrmEn06+Z+Ttvyv6lgXkKlo04oa/E1ObZit1xHHNVFg8mA/Q=="],
 
     "@grpc/grpc-js": ["@grpc/grpc-js@1.14.4", "", { "dependencies": { "@grpc/proto-loader": "^0.8.0", "@js-sdsl/ordered-map": "^4.4.2" } }, "sha512-k9Dj3DV/itK9D06Y8f190Qgop7/Ui+D0njFV3LHMPwPT75DpXLQohE9Wmz0QElrJnzsjB7KPWiKJbOl7IPDArQ=="],
 
     "@grpc/proto-loader": ["@grpc/proto-loader@0.8.1", "", { "dependencies": { "lodash.camelcase": "^4.3.0", "long": "^5.0.0", "protobufjs": "^7.5.5", "yargs": "^17.7.2" }, "bin": { "proto-loader-gen-types": "build/bin/proto-loader-gen-types.js" } }, "sha512-wtF6h+DY6M3YaDBPAmvuuA6jV8Sif9MjtOI5euKFWRgCDl5PeDpPsHR9u2l6St5ceY8AZgoNDww5+HvEsXFsGg=="],
+
+    "@hackernoon/pixel-icon-library": ["@hackernoon/pixel-icon-library@1.1.0", "", {}, "sha512-VEdDskTYRc37quKh3LFt65nMtriJlxuov/ifOmlomAyfK2hty4IPdL6IIXNvATOaQwZYjlfyxJTCGO+JgWbgIw=="],
 
     "@hono/node-server": ["@hono/node-server@1.19.14", "", { "peerDependencies": { "hono": "^4" } }, "sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw=="],
 

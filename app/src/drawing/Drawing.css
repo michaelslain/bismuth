@@ -3,7 +3,7 @@
 /* The page keeps the letter aspect ratio; the canvases inside fill it via inset:0 +
    100%. The width cap + centering live on the .draw-page-zoom wrapper (which the zoom
    control scales), so the shadow simply fills its wrapper. */
-.draw-page-shadow { box-shadow: 0 6px 28px rgba(0,0,0,.45); width: 100%; }
+.draw-page-shadow { box-shadow: var(--shadow-card); width: 100%; }
 .draw-page { position: relative; width: 100%; aspect-ratio: 816 / 1056; }
 /* Zoom wrapper: width = zoom × stage width (capped at zoom × 1400px), centered. At
    zoom > 1 it overflows the stage horizontally, which scrolls. DrawingCanvas.toLocal
@@ -13,13 +13,15 @@
 
 /* Floating bottom-center tool dock (the design's .drawtools) — a single non-wrapping
    row of groups: tools | a stacked color-over-size dot column | smooth | paper | tidy |
-   undo/redo | zoom. Groups are divided by hairline rules. */
+   undo/redo | zoom. Groups are divided by hairline rules. Flat register chrome (the
+   same --r-panel/--shadow-popup a popover uses — the closest analog to a floating
+   dock in this system) rather than the old rounded 14px pill. */
 .draw-toolbar {
   position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 5;
   display: flex; flex-direction: column; gap: 5px; align-items: center; padding: 7px 9px;
   max-width: calc(100% - 24px);
-  background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
-  box-shadow: var(--shadow-card);
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-panel, 5px);
+  box-shadow: var(--shadow-popup, var(--shadow-card));
 }
 /* One story: a single non-wrapping row of groups. */
 .draw-row { display: flex; flex-wrap: nowrap; justify-content: center; gap: 4px; align-items: center; }
@@ -31,10 +33,20 @@
 .draw-label { display: none; }
 /* Icon segments (tools / size dots / smoothness lines) — icon centered. */
 .draw-iconseg.btn svg { display: block; }
-/* Active tool / color / size / smoothing segment: accent-soft fill + accent ring.
-   Colors and sizes are now both dot SegmentedToggles, so a selected color dot reads
-   exactly like a selected size dot. */
+/* Active tool / size / smoothing / paper segment: accent-soft fill + accent ring. */
 .draw-iconseg.btn--selected { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* Color row: five swatches BUTTED (no gaps) inside a single --border frame, per the
+   register (design/ascii-extended PORTING.md §2c / view-sheets-draw.card.html .swatches
+   + .sw-c) — a different shape from the other groups' individually-boxed segments. The
+   active swatch takes an inset 2px --fg ring instead of the accent treatment above (a
+   swatch already IS a color; ringing it in --accent would fight the ink color itself). */
+.draw-colorrow.segmented { gap: 0; border: 1px solid var(--border); }
+.draw-colorseg.btn { padding: 0; border-radius: 0 !important; background: none; }
+.draw-colorseg.btn--selected {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--bg), inset 0 0 0 2px var(--fg);
+}
 /* A 2-row column inside a group (colors/sizes, smooth/paper, undo-redo/zoom). Both rows
    left-align and share the same gap so segments line up into a tidy grid and the dock
    stays half as wide as a single long row. */

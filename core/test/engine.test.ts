@@ -81,6 +81,12 @@ test("two disconnected clusters get distinct community ids", async () => {
   expect(comm("a")).not.toBe(comm("x"));
   // Exemplar labels stamped onto every node.
   expect(g.nodes.find((n) => n.id === "a")!.communityLabel).toBeDefined();
+  // Hierarchy stamped alongside, with the flat fields as its finest level. This vault is far below
+  // the 2-level breakpoint (360 nodes), so the path is a single level — same grouping as before.
+  for (const n of g.nodes) {
+    expect(n.communityPath).toEqual([n.community!]);
+    expect(n.communityPathLabels).toEqual([n.communityLabel!]);
+  }
 });
 
 test("multiple memory notes can link to same vault note", async () => {

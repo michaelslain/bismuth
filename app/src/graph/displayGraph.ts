@@ -10,7 +10,7 @@
 // node is a different, unrelated construct (the literal root of the session tree), injected by
 // `layoutAgentGraph()` in `agentLayout.ts`, not by anything in this file.
 import type { GraphData, ViewLayout } from "../../../core/src/graph";
-import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../../core/src/graph";
+import { subgraphByKinds, localSubgraph, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../../core/src/graph";
 import type { GraphMode } from "../commands";
 
 /**
@@ -38,6 +38,8 @@ export interface DisplayGraphSources {
   agents: GraphData;
   /** The "daemon" graph (hub + crons/processes) — never has a self node. */
   daemon: GraphData;
+  /** The focused note's graph node id (its path minus ".md"), or null. Only "local" mode reads it. */
+  activeId?: string | null;
 }
 
 /**
@@ -56,5 +58,13 @@ export function selectDisplayGraph(mode: GraphMode, sources: DisplayGraphSources
       return sources.daemon; // daemon mode centers on the daemon hub node — no "you" injection
     case "both":
       return sources.graph; // full brain, no "you" hub
+    case "local":
+      // Just what the open note touches: it, its neighbours in BOTH directions (outbound links and
+      // backlinks alike), and the edges among them. `localSubgraph` strips the hierarchy fields, so
+      // the renderers fall back to one flat level — a local neighbourhood has no super-clusters to
+      // read, and colouring a dozen notes by the whole vault's community structure said nothing.
+      // Positions come from a whole-vault layout and are meaningless at this scale; GraphView re-lays
+      // the subgraph out for this mode.
+      return localSubgraph(subgraphByKinds(sources.graph, SECOND_BRAIN_KINDS), sources.activeId ?? "");
   }
 }

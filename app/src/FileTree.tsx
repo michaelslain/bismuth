@@ -18,6 +18,7 @@ import { applyNewNoteTemplate } from "../../core/src/newNoteTemplate";
 import { NOTE_EXT_RE } from "../../core/src/pathUtils";
 import { setPendingCursor } from "./pendingCursor";
 import { createRenameSettleRegistry } from "./renameSettle";
+import { treePrefix } from "./ui/ascii/treePrefix";
 
 import { buildTree, reconcileTree, type TreeNode } from "./fileTreeModel";
 
@@ -510,7 +511,8 @@ export function FileTree(props: {
     for (const row of VISIBILITY_ROWS) {
       const active = own === row.value;
       submenu.push({
-        label: active ? `✓ ${row.label}` : row.label,
+        label: row.label,
+        icon: active ? "Check" : undefined,
         onSelect: () => applyVisibility(node, isDir, row.value),
       });
     }
@@ -807,26 +809,29 @@ function Level(props: {
     e.stopPropagation(); // don't let a nested row's press bubble to an ancestor row
     props.startItemDrag(e, kind, node.path, label);
   };
+  // Snapshot once per render: <For>'s (item, index) pair needs the sibling count to know
+  // whether a row is the LAST child (picks `|--` vs `` `-- `` in the connector prefix below —
+  // design/ascii/README.md "Components", ascii-tree.card.html). Depth-driven padding is gone;
+  // the connector string itself now encodes indentation.
+  const kids = sortedChildren(props.node);
   return (
-    <For each={sortedChildren(props.node)}>
-      {(child) => {
-        const indent = `${props.depth * 12 + 6}px`;
-        // Files have no chevron, so without compensation their icon sits left of a
-        // sibling folder's icon. Add the chevron (14) + gap (4) so file icons align
-        // under the folder's icon and read as nested inside it.
-        const fileIndent = `${props.depth * 12 + 6 + 18}px`;
+    <For each={kids}>
+      {(child, i) => {
+        const prefix = treePrefix(props.depth, i() === kids.length - 1);
         return child.children ? (
           <div>
             <div
               class="ft-row"
               classList={{ "drop-target": props.dropHighlight() === child.path, system: !!child.isSystemFolder, selected: props.selected.has(child.path) }}
-              style={{ "padding-left": indent }}
               data-drop-folder={child.isSystemFolder ? undefined : child.path}
               onPointerDown={(e) => onRowPointerDown(e, child, "folder", child.label ?? child.name)}
               onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.toggle(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
-              <Icon value={props.open.has(child.path) ? "ChevronDown" : "ChevronRight"} size={14} class="ft-chevron" />
+              <span class="ft-prefix">{prefix}</span>
+              {/* One glyph, not two: the folder icon's own shape IS the disclosure state (Folder "▸" /
+                  FolderOpen "▾" — see icons/registry.ts), so there is no separate chevron icon here.
+                  A bare ChevronRight/ChevronDown alongside it drew the same triangle twice. */}
               <Icon value={child.icon} fallback={child.isSystemFolder ? "Settings2" : props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class="ft-icon" />
               <VisibilityBadge visibility={child.visibility} />
               <Show when={props.editing === child.path} fallback={child.label ?? child.name}>
@@ -847,11 +852,11 @@ function Level(props: {
           <div
             class="ft-row file"
             classList={{ active: child.path === props.activeFile, system: child.path === SETTINGS_FILE, selected: props.selected.has(child.path) }}
-            style={{ "padding-left": fileIndent }}
             onPointerDown={(e) => onRowPointerDown(e, child, "note", child.label ?? displayName(child.name))}
             onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.onOpen(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
+            <span class="ft-prefix">{prefix}</span>
             <Icon value={child.icon} fallback={child.name.endsWith(".sheet") ? "Table" : "FileText"} size={16} class="ft-icon" />
             <VisibilityBadge visibility={child.visibility} />
             <Show when={props.editing === child.path} fallback={child.label ?? displayName(child.name)}>

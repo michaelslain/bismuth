@@ -1,0 +1,50 @@
+<!-- @dsCard group="Components" viewport="700x230" subtitle="Button · IconButton · TextButton · IconTextButton · SegmentedToggle · Chip" name="Core" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>body{margin:0;font-family:var(--ui-font-stack);font-variant-ligatures:none;background:var(--bg);color:var(--fg);font-size:var(--fs-ui)}
+.wrap{padding:14px 16px;display:grid;gap:13px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lbl{font-size:10.5px;color:var(--faint);width:104px;flex:none}</style></head>
+<body class="ink"><div class="wrap">
+  <div class="row"><span class="lbl">button</span>
+    <button class="btn btn--text btn--primary">[&nbsp;accept&nbsp;]</button>
+    <button class="btn btn--text btn--normal">[&nbsp;edit&nbsp;]</button>
+    <button class="btn btn--text btn--unselected">[&nbsp;dismiss&nbsp;]</button>
+    <button class="btn btn--text btn--danger">[&nbsp;delete&nbsp;]</button>
+    <button class="btn btn--text btn--normal" disabled>[&nbsp;disabled&nbsp;]</button>
+  </div>
+  <div class="row"><span class="lbl">sizes</span>
+    <button class="btn btn--text btn--normal btn--sm">SM</button>
+    <button class="btn btn--text btn--normal">MD</button>
+    <button class="btn btn--text btn--normal btn--lg">LG</button>
+  </div>
+  <div class="row"><span class="lbl">icon</span>
+    <button class="btn btn--icon btn--selected">⁘</button>
+    <button class="btn btn--icon btn--unselected">✎</button>
+    <button class="btn btn--icon btn--unselected">▤</button>
+    <button class="btn btn--icon btn--normal">x</button>
+    <button class="btn btn--icon btn--danger">[x]</button>
+  </div>
+  <div class="row"><span class="lbl">icon + text</span>
+    <button class="btn btn--text btn--selected"><span class="btn-glyph">✳</span><span>DAEMON</span></button>
+    <button class="btn btn--text btn--unselected"><span class="btn-glyph">◈</span><span>CLAUDE</span></button>
+    <button class="btn btn--text btn--unselected"><span class="btn-glyph">▤</span><span>reading.base</span></button>
+  </div>
+  <div class="row"><span class="lbl">segmented</span>
+    <div class="segmented">
+      <button class="btn btn--text btn--selected">MONTH</button>
+      <button class="btn btn--text btn--unselected">WEEK</button>
+      <button class="btn btn--text btn--unselected">DAY</button>
+    </div>
+    <div class="segmented">
+      <button class="btn btn--text btn--selected">2D</button>
+      <button class="btn btn--text btn--unselected">3D</button>
+    </div>
+  </div>
+  <div class="row"><span class="lbl">chip</span>
+    <button class="chip-toggle tone-accent selected">#attention 41</button>
+    <button class="chip-toggle">#walking 18</button>
+    <button class="chip-toggle tone-teal selected">match case</button>
+    <button class="chip-toggle tone-gold selected">#lichen 4</button>
+    <button class="chip-toggle tone-rose selected">abandoned</button>
+  </div>
+</div></body></html>

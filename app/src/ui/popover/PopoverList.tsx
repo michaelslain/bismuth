@@ -14,6 +14,11 @@ export type PopoverRow = {
   /** A small custom element rendered before the label (e.g. a color swatch dot). */
   prefix?: JSX.Element;
   detail?: string;
+  /** A REAL keybinding, in the app's combo syntax ("Mod+Shift+D") — rendered right-aligned via
+   *  the shared Kbd primitive (ui/ascii/Kbd.tsx). Only set this from an actual
+   *  settings.keybindings entry (see CommandPalette.tsx's COMMAND_KEYBINDINGS map for the
+   *  pattern) — never a fabricated hint for a row with no real binding. */
+  shortcut?: string;
   danger?: boolean;
   disabled?: boolean;
   separatorBefore?: boolean;
@@ -45,6 +50,7 @@ export function PopoverList(props: {
               icon={item.icon}
               prefix={item.prefix}
               detail={item.detail}
+              shortcut={item.shortcut}
               danger={item.danger}
               disabled={item.disabled}
               hasSubmenu={item.hasSubmenu}

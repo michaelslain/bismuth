@@ -1,0 +1,55 @@
+<!-- @dsCard group="Components" viewport="700x330" subtitle="Glyph · AsciiTree · AsciiMeter · AsciiChart · GraphField · TabRail" name="ASCII primitives" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>body{margin:0;font-family:var(--ui-font-stack);font-variant-ligatures:none;background:var(--bg);color:var(--fg);font-size:var(--fs-ui)}
+.wrap{display:grid;grid-template-columns:236px 1fr 46px;height:330px}
+.lbl{font-size:10.5px;color:var(--faint)}</style></head>
+<body class="ink"><div class="wrap">
+  <div style="border-right:1px solid var(--border);background:var(--rail);padding:12px 0;display:flex;flex-direction:column;gap:14px">
+    <div>
+      <div style="padding:0 12px 6px"><span class="asc-eyebrow">VAULT</span></div>
+      <div class="asc-tree">
+        <div class="asc-tree-row">|-- ▸ journal/</div>
+        <div class="asc-tree-row active">|   |-- ✎ 2029-09-15  _</div>
+        <div class="asc-tree-row">|   `-- ✎ 2029-09-12</div>
+        <div class="asc-tree-row">|-- ▸ bases/</div>
+        <div class="asc-tree-row">|   `-- ▤ reading.base</div>
+        <div class="asc-tree-row">`-- ▸ inbox/          (3)</div>
+      </div>
+    </div>
+    <div>
+      <div style="padding:0 12px 6px"><span class="asc-eyebrow">NIGHTJAR</span></div>
+      <div style="padding:1px 12px;white-space:pre;color:var(--text-muted)">index    <span class="asc-meter">[<span style="color:var(--accent)">########</span><span class="empty">..</span>]</span> 82%</div>
+      <div style="padding:1px 12px;white-space:pre;color:var(--text-muted)">fs-watch     <span style="color:var(--green)">on</span></div>
+      <div style="padding:1px 12px;white-space:pre;color:var(--text-muted)">agent-relay  <span style="color:var(--faint)">off</span></div>
+    </div>
+  </div>
+  <div class="asc-field" style="position:relative">
+    
+    <pre class="edges" style="padding:8px;font-size:10.5px;line-height:11px">                                                              
+      +-------------------\                                   
+      |                    \------------+                     
+      |                                  \                    
+      |            /---------------------+-------\            
+      +-----------/                                \          
+                 |                                  +         
+                 |                                            
+        /--------+                                            
+       /                                                      </pre>
+    <span class="asc-node-label" style="left:22px;top:20px;color:var(--graph-0)">[[attention]]</span>
+    <span class="asc-node-label active" style="left:200px;top:64px">[[2029-09-15 journal]]</span>
+    <span class="asc-node-label" style="left:96px;top:106px;color:var(--graph-1)">[[walking notes]]</span>
+    <span class="asc-node-label" style="left:300px;top:88px;color:var(--graph-3)">[[third brain]]</span>
+  </div>
+  <div style="border-left:1px solid var(--border);background:var(--rail);padding:12px 0;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--text-muted)">
+    <div style="color:var(--faint);padding-bottom:6px">&lt;&lt;</div>
+    <div style="position:relative;width:100%;text-align:center;padding:7px 0;font-size:14px;background:var(--accent-soft);color:var(--fg)">
+      <span style="position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--grad)"></span>⁘</div>
+    <div style="padding:7px 0;font-size:14px">✎</div>
+    <div style="padding:7px 0;font-size:14px">▤</div>
+    <div style="padding:7px 0;font-size:14px">▦</div>
+    <div style="padding:7px 0;font-size:14px">◈</div>
+    <div style="padding:7px 0;font-size:14px">✳</div>
+    <div style="padding:6px 0;color:var(--faint)">+</div>
+  </div>
+</div></body></html>

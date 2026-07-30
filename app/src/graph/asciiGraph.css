@@ -1,0 +1,141 @@
+/* app/src/graph/asciiGraph.css
+ * The ASCII knowledge graph: the character-field viewport (AsciiGraphRenderer) plus the two
+ * overlays that sit on it — the cluster legend and the graph find panel — restyled into the
+ * ASCII register. Source: design/ascii/design-system/guidelines/ascii-graph.card.html and
+ * design/ascii/design-system/ui_kits/bismuth-app/GraphView.jsx.
+ *
+ * The base overlay geometry (position/size of .graph-legend-card, .graph-find-panel, …) stays in
+ * App.css; this file only re-registers their surface + type, so it deliberately uses slightly
+ * heavier selectors than the App.css rules it lands on top of.
+ */
+
+/* The character grid's cell metrics (design/ascii/design-system/tokens/ascii.css). --cell-w is the
+   font's own advance width at --fs-ui (11.5px) — if the font size changes this must change with it,
+   or the drawing shears. --cell-h is NOT derived from the font: it's the app's unified row unit
+   (--row-h, ui/ui.css — the same rhythm the sidebar tree/tabs/tables use), so the field's line box
+   matches the rest of the chrome. GRID LAW: line-height == cell height, always — never scale a
+   glyph. AsciiGraphRenderer reads both live off the host (asciiGrid.ts's CELL_W/CELL_H are only the
+   pre-mount/test fallbacks); Glyph.tsx reads --cell-h straight from here. One cell size for both the
+   main pane and the sidebar mini-graph — there is no denser variant any more. */
+:root {
+  --cell-w: 6.3px;               /* advance width at --fs-ui (11.5px) */
+  --cell-h: var(--row-h, 18px);  /* line box = the app's unified row unit */
+  --cell-w-dense: 4.2px;         /* advance width at 7px — Glyph.tsx's own dense cell (unrelated primitive, not used by the graph field) */
+  --cell-h-dense: 7px;
+}
+
+/* ── The field ───────────────────────────────────────────────────────────── */
+/* .asc-field (ui.css) already gives us position/overflow and the flat --graph-bg ground the
+   design calls for — no atmosphere glow, no vignette, no gradient. */
+/* Both classes are on the same element and .asc-field declares `position: relative`, so this rule
+   is written at two-class specificity — stylesheet import order must not decide the layout. */
+.asc-field.asc-graph-viewport {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  /* Own stacking context so the canvas can't paint over the floating legend / stats / find panel. */
+  isolation: isolate;
+}
+.asc-field.asc-graph-viewport.is-dragging { cursor: grabbing; }
+
+/* The single canvas the whole field is drawn on — every glyph is a fillText at a fixed cell.
+   NEVER give this a transform: scale; zoom is resolution (ascii-zoom.card.html). */
+.asc-graph-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ── The two floating overlays, on the .asc-popover surface ──────────────── */
+/* App.css still owns where they sit and how big they are; these rules only re-register the
+   SURFACE: a hairline rule, the panel radius, no soft 11px pill corners. Written at two-class
+   specificity so stylesheet import order can't decide who wins. */
+.graph-legend-card.asc-popover,
+.graph-find-panel.asc-popover {
+  border: var(--rule);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow-popup);
+}
+.graph-legend-card.asc-popover { padding: 8px 10px; }
+/* Card heading = the design's uppercase, widely-tracked eyebrow. */
+.graph-legend-card .graph-card-h {
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  margin-bottom: 6px;
+}
+
+/* ── Cluster legend ──────────────────────────────────────────────────────── */
+/* The swatch is a coloured "@" — the hub glyph from the degree ramp — not a rounded chip. */
+.graph-legend-card .cluster-legend { font-size: var(--fs-ui); gap: 0; }
+.graph-legend-card .cluster-row {
+  border-radius: var(--r-chip);
+  padding: 1px 5px;
+  color: var(--text-muted);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.graph-legend-card .cluster-row:hover { background: var(--hover-bg); color: var(--fg); }
+.graph-legend-card .cluster-row.selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-shadow: var(--glow-text);
+}
+.graph-legend-card .cluster-glyph {
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  line-height: var(--cell-h);
+  width: var(--cell-w);
+  flex: 0 0 auto;
+  text-align: center;
+}
+.graph-legend-card .cluster-count {
+  font-size: var(--fs-micro);
+  color: var(--faint);
+}
+
+/* ── Graph find panel ────────────────────────────────────────────────────── */
+.graph-find-panel .graph-search-bar { padding: 6px 9px; gap: 7px; }
+.graph-find-panel .graph-search-bar .search-bar-input { font-size: var(--fs-ui); }
+.graph-find-panel .graph-search-list { font-size: var(--fs-ui); padding: 3px; }
+.graph-find-panel .graph-search-row {
+  border-radius: var(--r-chip);
+  padding: 1px 5px;
+  gap: 6px;
+  color: var(--text-muted);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.graph-find-panel .graph-search-row:hover { background: var(--hover-bg); }
+.graph-find-panel .graph-search-row.selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-shadow: var(--glow-text);
+}
+.graph-find-panel .graph-search-row.selected .graph-search-label { color: var(--accent); }
+/* Each result carries the same node glyph the field draws it with, so a row and its node read
+   as the same object. */
+.graph-find-panel .graph-search-glyph {
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  color: var(--faint);
+  width: var(--cell-w);
+  flex: 0 0 auto;
+  text-align: center;
+}
+.graph-find-panel .graph-search-row.selected .graph-search-glyph { color: var(--accent); }
+.graph-find-panel .graph-search-sub { font-size: var(--fs-micro); color: var(--faint); }
+.graph-find-panel .graph-search-empty {
+  padding: 6px 7px;
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+}
+
+/* ── Footer readout ──────────────────────────────────────────────────────── */
+/* "N nodes · M edges · 2nd brain · 40%" — the zoom figure is the RESOLUTION percentage from
+   the design's viewbar (0% = fit, 100% = every note named). */
+.graph-stats .graph-zoom-pct {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}

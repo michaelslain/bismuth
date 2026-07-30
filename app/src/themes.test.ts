@@ -2,15 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { THEMES, THEME_NAMES, DEFAULT_THEME, resolveTheme, resolveAppearance } from "./themes";
 
 describe("themes registry", () => {
-  it("exposes 6 dark themes + 6 light counterparts, oxide-duotone first (the default)", () => {
-    expect(THEME_NAMES[0]).toBe("oxide-duotone");
-    expect(DEFAULT_THEME).toBe("oxide-duotone");
-    expect(THEME_NAMES).toEqual([
-      "oxide-duotone", "gunmetal-teal", "rose-gold",
-      "indigo-oxide", "forest-oxide", "full-sheen",
-      "oxide-duotone-light", "gunmetal-teal-light", "rose-gold-light",
-      "indigo-oxide-light", "forest-oxide-light", "full-sheen-light",
-    ]);
+  it("exposes the 4 ASCII scopes, ink first (the default)", () => {
+    expect(THEME_NAMES[0]).toBe("ink");
+    expect(DEFAULT_THEME).toBe("ink");
+    expect(THEME_NAMES).toEqual(["ink", "paper", "cathode", "riso"]);
   });
 
   it("every theme carries the full base color token set", () => {
@@ -23,24 +18,24 @@ describe("themes registry", () => {
     }
   });
 
-  it("oxide-duotone holds the mockup's duotone values", () => {
-    expect(THEMES["oxide-duotone"].background).toBe("#0D0E16");
-    expect(THEMES["oxide-duotone"].accent).toBe("#5E8DE6");
-    expect(THEMES["oxide-duotone"].surface).toBe("#161827");
+  it("ink holds the ASCII redesign's default values", () => {
+    expect(THEMES.ink.background).toBe("#15161A");
+    expect(THEMES.ink.accent).toBe("#93BDB0");
+    expect(THEMES.ink.surface).toBe("#20222A");
   });
 });
 
 describe("resolveTheme / resolveAppearance", () => {
   it("resolves a known theme to its tokens", () => {
-    expect(resolveTheme("indigo-oxide")).toEqual(THEMES["indigo-oxide"]);
+    expect(resolveTheme("cathode")).toEqual(THEMES.cathode);
   });
 
   it("falls back to the default theme for an unknown name", () => {
-    expect(resolveTheme("nope")).toEqual(THEMES["oxide-duotone"]);
+    expect(resolveTheme("nope")).toEqual(THEMES.ink);
   });
 
   it("resolveAppearance reads the theme off the appearance subtree", () => {
-    expect(resolveAppearance({ theme: "forest-oxide" })).toEqual(THEMES["forest-oxide"]);
-    expect(resolveAppearance({ theme: "" })).toEqual(THEMES["oxide-duotone"]);
+    expect(resolveAppearance({ theme: "cathode" })).toEqual(THEMES.cathode);
+    expect(resolveAppearance({ theme: "" })).toEqual(THEMES.ink);
   });
 });
