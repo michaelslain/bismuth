@@ -251,6 +251,9 @@ export async function sendCodexMessage(message: string, ctx: VaultContext, opts?
     ...(process.env as Record<string, string>),
     PATH: augmentPath(process.env.PATH || "/usr/bin:/bin:/usr/sbin:/sbin"),
     CODEX_HOME: codexHome,
+    // Same signal session.ts's Claude path stamps — core/src/visibilityCliGate.ts's CLI-dispatch
+    // gate reads this to tell the daemon's own `bismuth` invocations from the vault owner's.
+    BISMUTH_AGENT_CHANNEL: "daemon",
   }
 
   const ac = opts?.abortController

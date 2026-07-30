@@ -221,14 +221,14 @@ test("buildDenyPaths: a folder rule covers NON-markdown files too (badge vs deny
   expect((await buildDenyPaths(vault, "chat")).every((e) => e.abs.startsWith(root))).toBe(true);
 });
 
-test("buildDenyPaths: a .draw.png / .draw.pdf export sidecar is NOT treated as a deniable file", async () => {
+test("buildDenyPaths: a .draw.png / .draw.pdf export sidecar of a hidden drawing IS denied (regression: it used to be explicitly excluded as an 'export artifact')", async () => {
   const vault = makeVault({
     "private/sketch.draw.png": "binary",
     "private/real.md": "# Real\n",
   });
   await setFolderVisibility(vault, "private", "hidden");
   const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
-  expect(denied).toEqual(["private/real.md"]); // export sidecar excluded
+  expect(denied).toEqual(["private/real.md", "private/sketch.draw.png"]);
 });
 
 test("setFolderVisibility + resolveVisibility: a trailing-slash folder key still enforces", async () => {
@@ -291,4 +291,147 @@ test("isDeniedPath does not match an unrelated path, or a mere prefix collision"
 test("isDeniedPath is safe on empty input", () => {
   expect(isDeniedPath([], "anything.md")).toBe(false);
   expect(isDeniedPath(ENTRIES, "")).toBe(false);
+});
+
+// --- discovery-walk fixes: extension allowlist, dot-directories, frontmatter on any extension,
+// export-sidecar stem inheritance, 512-byte head escalation. Each of these fails against the OLD
+// implementation (isTreeSurfacedFile's extension allowlist + isMd-gated frontmatter reads).
+
+test("buildDenyPaths: EVERY extension inside a hidden folder is denied, not just the recognized note types (T-D1)", async () => {
+  const vault = makeVault({
+    "priv/note.md": "# Note\n",
+    "priv/notes.txt": "some plain text, no frontmatter\n",
+    "priv/data.json": '{"k":"v"}\n',
+    "priv/sketch.draw": "drawing json blob\n",
+    "priv/sketch.draw.png": "binary\n",
+    "public.md": "# Public\n",
+  });
+  await setFolderVisibility(vault, "priv", "hidden");
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  expect(denied).toEqual([
+    "priv/data.json",
+    "priv/note.md",
+    "priv/notes.txt",
+    "priv/sketch.draw",
+    "priv/sketch.draw.png",
+  ]);
+});
+
+test("buildDenyPaths: an explicit visibility: all override inside the same hidden folder still exempts that one file", async () => {
+  const vault = makeVault({
+    "priv/note.md": "# Note\n",
+    "priv/notes.txt": "plain text\n",
+    "priv/exposed.md": "---\nvisibility: all\n---\n# Exposed\n",
+  });
+  await setFolderVisibility(vault, "priv", "hidden");
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  expect(denied).toEqual(["priv/note.md", "priv/notes.txt"]);
+});
+
+test("buildDenyPaths: a note stashed in a DOT-DIRECTORY is still walked and denied (dot-dirs are no longer skipped wholesale)", async () => {
+  const vault = makeVault({
+    ".stash/inside.md": "---\nvisibility: hidden\n---\n# Stashed\n",
+    "public.md": "# Public\n",
+  });
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  expect(denied).toEqual([".stash/inside.md"]);
+});
+
+test("buildDenyPaths: .git and .settings are still excluded from the walk (not treated as vault content)", async () => {
+  const vault = makeVault({
+    ".git/HEAD": "ref: refs/heads/main\n",
+    ".settings": "folderVisibility: {}\n",
+    "public.md": "# Public\n",
+  });
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  expect(denied).toEqual([]);
+});
+
+test("buildDenyPaths: a hidden note's frontmatter is honored on a NON-.md extension too (copy/rename/hard-link carry the same bytes)", async () => {
+  const secretBody = "---\nvisibility: hidden\n---\n# Secret\nTOKEN-9001\n";
+  const vault = makeVault({
+    "secret.md": secretBody,
+    // Same frontmatter bytes, untracked extensions, no folder rule involved at all — the OLD
+    // isMd-gated read never opened these, so they leaked regardless of extension widening.
+    "secret-copy.txt": secretBody,
+    "secret.json": secretBody,
+  });
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  expect(denied).toEqual(["secret-copy.txt", "secret.json", "secret.md"]);
+});
+
+test("buildDenyPaths: a hard-linked copy of a hidden note is denied too (same inode, different name/extension)", async () => {
+  const vault = makeVault({ "secret.md": "---\nvisibility: hidden\n---\n# Secret\n" });
+  const { linkSync } = await import("node:fs");
+  linkSync(join(vault, "secret.md"), join(vault, "secret-hard.txt"));
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  expect(denied).toEqual(["secret-hard.txt", "secret.md"]);
+});
+
+test("buildDenyPaths: frontmatter whose closing fence lies PAST the 512-byte head is still parsed (head-read escalates to a bigger read)", async () => {
+  // Pad the frontmatter well past 512 bytes with an inert filler key before the real value, so
+  // the closing `---` cannot possibly be within the first read.
+  const filler = "notes: |\n" + Array.from({ length: 40 }, (_, i) => `  line ${i} filler filler filler filler`).join("\n") + "\n";
+  const body = `---\n${filler}visibility: hidden\n---\n# Big frontmatter\n`;
+  expect(body.indexOf("---", 4)).toBeGreaterThan(512); // sanity: the fixture actually exercises escalation
+  const vault = makeVault({ "big.md": body });
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel);
+  expect(denied).toEqual(["big.md"]);
+});
+
+test("buildDenyPaths: frontmatter whose closing fence lies past even the 64 KiB escalation ceiling is NOT parsed (fails toward the cascade, never toward a crash)", async () => {
+  const filler = "notes: |\n" + "x".repeat(70 * 1024) + "\n";
+  const body = `---\n${filler}visibility: hidden\n---\n# Huge frontmatter\n`;
+  const vault = makeVault({ "huge.md": body });
+  // No folder rule and no successfully-parsed override → falls back to "all" (cascade default),
+  // not to a thrown error and not to a false "hidden".
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel);
+  expect(denied).toEqual([]);
+});
+
+test("stem inheritance (T-D2): a hidden drawing's export sidecars inherit its restriction even with NO folder rule involved", async () => {
+  const vault = makeVault({
+    "diagram.md": "---\nvisibility: hidden\n---\n# Diagram\n",
+    "diagram.draw": "drawing json blob\n",
+    "diagram.draw.png": "binary\n",
+    "diagram.draw.pdf": "binary\n",
+    "other.png": "unrelated sibling, different stem\n",
+  });
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  expect(denied).toEqual(["diagram.draw", "diagram.draw.pdf", "diagram.draw.png", "diagram.md"]);
+});
+
+test("stem inheritance (T-D2b): an explicit visibility: all file still wins for itself even beside a hidden same-stem sibling", async () => {
+  const vault = makeVault({
+    "note.draw": "drawing json blob\n",
+    // Folder-cascade-free: note.draw becomes restricted only via a THIRD stem-mate that's
+    // explicitly hidden, so note.md's own "all" override must still win for itself.
+    "note.hidden-marker.md": "---\nvisibility: hidden\n---\n# Marker\n",
+    "note.md": "---\nvisibility: all\n---\n# Note\n",
+  });
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  // "note.hidden-marker.md" stems to "note" (pre-first-dot), same as "note.draw" and "note.md".
+  expect(denied).toEqual(["note.draw", "note.hidden-marker.md"]);
+  expect(denied).not.toContain("note.md");
+});
+
+test("verification scenario from the task: a.md/b.txt/c.json/sketch.draw+.png in a hidden folder are ALL denied, and an explicit override survives", async () => {
+  const vault = makeVault({
+    "hidden-folder/a.md": "# A\n",
+    "hidden-folder/b.txt": "plain text\n",
+    "hidden-folder/c.json": '{"a":1}\n',
+    "hidden-folder/sketch.draw": "drawing blob\n",
+    "hidden-folder/sketch.draw.png": "binary\n",
+    "hidden-folder/exempt.md": "---\nvisibility: all\n---\n# Exempt\n",
+  });
+  await setFolderVisibility(vault, "hidden-folder", "hidden");
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  expect(denied).toEqual([
+    "hidden-folder/a.md",
+    "hidden-folder/b.txt",
+    "hidden-folder/c.json",
+    "hidden-folder/sketch.draw",
+    "hidden-folder/sketch.draw.png",
+  ]);
+  expect(denied).not.toContain("hidden-folder/exempt.md");
 });

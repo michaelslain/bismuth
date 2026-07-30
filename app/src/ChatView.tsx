@@ -41,7 +41,7 @@ import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
 import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, computeChromeToggle, computeChromeCommand } from "./chatSlashCommands";
 import { chatComputerUse, setChatComputerUse } from "./chatComputerUse";
 import { resolveInitialModel, reconcileManifestModel, modelOptionFor, modelLabelFor } from "./chatModelResolution";
-import { CHAT_PROVIDER_OPTIONS, modelPriceBadge, modelStorageKeys, opencodeAuthSummary, OPENCODE_LOGIN_COMMAND, providerCan, providerStorageKey, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
+import { CHAT_PROVIDER_OPTIONS, modelPriceBadge, modelStorageKeys, opencodeAuthSummary, OPENCODE_LOGIN_COMMAND, providerCan, providerLabel, providerStorageKey, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
 import { restoreQueuedComposerState } from "./chatQueueRestore";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
@@ -398,6 +398,12 @@ export function ChatView(props: {
   // Replaces the transcript with provider-specific guidance + a one-click switch to the other
   // provider (card #90: gate gracefully, never crash).
   const [setupError, setSetupError] = createSignal<ChatProviderChoice | null>(null);
+  // A DISTINCT fatal state from setupError (card visibility/all-backends): this vault restricts
+  // notes and the chosen backend+channel has no verified mechanism to honour that — see the
+  // `"visibility-refused"` ChatFrame (core/src/chat.ts) and docs/vault/visibility.md. Never tells
+  // the user to install anything (unlike setupError) — the backend IS installed, it just can't be
+  // trusted with hidden notes. `binary` is the refused backend's id, for the title + label lookup.
+  const [gateRefusal, setGateRefusal] = createSignal<{ binary: string; message: string } | null>(null);
   // A non-fatal per-turn error to show inline below the conversation (spawn/exit/error).
   const [turnError, setTurnError] = createSignal<string | null>(null);
   // The models this login can run (`models` frame, once per session) — powers the header picker.
@@ -851,6 +857,7 @@ export function ChatView(props: {
         setStreaming(false);
         if (frame.code === "no-claude") setSetupError("claude");
         else if (frame.code === "no-opencode") setSetupError("opencode");
+        else if (frame.code === "visibility-refused") setGateRefusal({ binary: frame.binary ?? "", message: frame.message });
         else {
           setTurnError(frame.message || "Something went wrong.");
           // exit/error ended the session — a queued follow-up still gets dispatched (chatSend
@@ -1141,7 +1148,7 @@ export function ChatView(props: {
     const atts = attachments();
     // A message needs SOMETHING to send — text or at least one image attachment. (Streaming no
     // longer blocks: a mid-turn send STAGES the message instead — see the queued branch below.)
-    if ((!text && atts.length === 0) || setupError()) return;
+    if ((!text && atts.length === 0) || setupError() || gateRefusal()) return;
     // Row 75: `/rename` / `/color` are handled CLIENT-SIDE and never sent to the model. Intercept
     // before everything else (they take no attachments, no wire message). A consumed command clears
     // the composer; an unrecognized `/color` value leaves the draft + shows an inline error.
@@ -1333,8 +1340,10 @@ export function ChatView(props: {
     forgetChatSession(props.chatId);
     setHistoryOpen(false);
     // A missing CLI blanks the transcript with the setup screen — switching providers must clear
-    // it (the whole point of a second provider when the first one isn't installed).
+    // it (the whole point of a second provider when the first one isn't installed). Same for a
+    // visibility refusal (the whole point of the "USE CLAUDE CODE INSTEAD" escape hatch).
     setSetupError(null);
+    setGateRefusal(null);
     resetTranscript();
     reconnectOn(crypto.randomUUID());
     focusComposer();
@@ -1961,6 +1970,21 @@ export function ChatView(props: {
         <IconButton icon="Plus" label="New chat" onClick={startNewChat} />
       </ViewBar>
 
+      {/* A visibility refusal is a DISTINCT dead end from setupError (card visibility/all-backends):
+          the CLI is installed, it just can't be trusted with this vault's hidden notes. Kept as its
+          own top-level Show (not folded into setupError's fallback) so this block stays a single,
+          easy-to-re-apply diff — see the visibility task's integrator notes. */}
+      <Show when={gateRefusal()}>
+        <div class="chat-setup">
+          <div class="chat-setup-icon">
+            <IconButton icon="EyeOff" label="Visibility" iconSize={28} disabled />
+          </div>
+          <h3>{providerLabel(sanitizeChatProvider(gateRefusal()!.binary))} can't honour this vault's hidden notes</h3>
+          <p>{gateRefusal()!.message}</p>
+          <TextButton onClick={() => switchProvider("claude")}>USE CLAUDE CODE INSTEAD</TextButton>
+        </div>
+      </Show>
+      <Show when={!gateRefusal()}>
       <Show
         when={!setupError()}
         fallback={
@@ -2160,6 +2184,7 @@ export function ChatView(props: {
             </Show>
           </div>
         </div>
+      </Show>
       </Show>
       {/* Floating "Reply" on an active text selection inside a bubble (FEATURE #18). onMouseDown +
           preventDefault keeps the selection alive so replyToMessage quotes it before it collapses. */}

@@ -284,11 +284,35 @@ fn pick_free_port() -> (Option<std::net::TcpListener>, u16) {
     }
 }
 
+// Mint a random 32-byte hex owner token from the OS CSPRNG, no extra crate needed: /dev/urandom
+// is a standard, always-present Unix device (macOS + Linux; Tauri desktop doesn't target
+// anything else today). Mirrors core/src/ownerToken.ts's own mintOwnerToken() — this native
+// mint exists ONLY because it needs to be minted HERE and handed to the sidecar (via
+// BISMUTH_OWNER_TOKEN) so this SAME process can also inject it into the webview; the sidecar
+// itself would happily mint its own if left to do so, but then it and the webview would
+// disagree. Returns None on the (essentially never, on these platforms) failure to read the
+// device — the caller treats that exactly like a backend spawn failure.
+fn mint_owner_token() -> Option<String> {
+    use std::io::Read;
+    let mut buf = [0u8; 32];
+    std::fs::File::open("/dev/urandom").ok()?.read_exact(&mut buf).ok()?;
+    Some(buf.iter().map(|b| format!("{b:02x}")).collect())
+}
+
 // Spawn the bundled `bismuth-core` sidecar on a free port for the given vault + memory.
-// Returns the port on success so the caller can point the webview at it (via
-// window.__BISMUTH_API__). Stores the child so it's killed on exit. Best-effort: returns None
-// if the spawn fails (the app still opens, against the frontend's default / "disconnected").
-fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<u16> {
+// Returns the port + this boot's owner token on success (see core/src/ownerToken.ts — a request
+// presenting the token via X-Bismuth-Token is treated as the vault's own owner, unfiltered;
+// everything else gets visibility-filtered) so the caller can point the webview at the port
+// (window.__BISMUTH_API__) AND hand it the SAME token (window.__BISMUTH_OWNER_TOKEN__) — without
+// that second half, every request this app itself makes would be treated as a non-owner agent
+// and hidden/chat-only notes would silently stop working in the app's own editor. Stores the
+// child so it's killed on exit. Best-effort: returns None if the spawn (or the token mint)
+// fails — the app still opens, against the frontend's default / "disconnected".
+fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<(u16, String)> {
+    let Some(token) = mint_owner_token() else {
+        eprintln!("bismuth: could not mint an owner token (/dev/urandom unreadable) — not starting the sidecar");
+        return None;
+    };
     // Hold the bound listener through all the setup below so the port stays reserved; it's
     // released (dropped) right before spawn so the sidecar can claim it (see B53).
     let (listener, port) = pick_free_port();
@@ -298,7 +322,12 @@ fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<u1
         Ok(c) => c,
         Err(e) => { eprintln!("bismuth: sidecar resolve failed: {e}"); return None; }
     };
-    let mut cmd = sidecar.args(["--vault", vault, "--memory", memory, "--port", &port.to_string()]);
+    let mut cmd = sidecar
+        .args(["--vault", vault, "--memory", memory, "--port", &port.to_string()])
+        // Told to core/src/server.ts via ownerToken.ts's mint override — the sidecar uses
+        // exactly this value instead of minting its own, so it agrees with what we're about to
+        // inject into the webview below.
+        .env("BISMUTH_OWNER_TOKEN", &token);
     // Point the sidecar at bundled resources: relay/ (terminal-tab shim → relay auto-attach +
     // memory injection), bismuth-tools/ (compiled cli + mcp + docs → machine-wide install on
     // boot), and daemon/ (the compiled per-vault daemon → core copies it to ~/.bismuth/bin +
@@ -327,18 +356,21 @@ fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<u1
             // Drain the event stream so its buffer never blocks the child's IO.
             tauri::async_runtime::spawn(async move { while rx.recv().await.is_some() {} });
             eprintln!("bismuth: core sidecar started (vault={vault}, :{port})");
-            Some(port)
+            Some((port, token))
         }
         Err(e) => { eprintln!("bismuth: failed to spawn core sidecar: {e}"); None }
     }
 }
 
-// Build the main window. `injected` (Some when we spawned a backend on a known port) is
-// set as `window.__BISMUTH_API__` before any app JS runs, so the frontend talks to our spawned
-// core. In dev (no spawn) it's None → the frontend uses its :4321 default. `first_run`
-// sets `window.__BISMUTH_FIRST_RUN__`, telling index.tsx to render the intro instead of App
-// (there's no backend yet — the intro's CTA picks the vault and relaunches).
-fn build_main_window(app: &tauri::AppHandle, injected: Option<String>, first_run: bool, has_vault: bool) -> tauri::Result<()> {
+// Build the main window. `injected` (Some when we spawned a backend on a known port + owner
+// token) sets `window.__BISMUTH_API__` AND `window.__BISMUTH_OWNER_TOKEN__` before any app JS
+// runs, so the frontend talks to our spawned core AND is treated as its owner (core/src/api.ts's
+// resolveOwnerToken / core/src/ownerToken.ts) rather than a filtered non-owner channel. In dev
+// (no spawn) it's None → the frontend uses its :4321 default with no token (dev's OWN token
+// plumbing goes through VITE_OWNER_TOKEN instead — see app/scripts/dev.ts). `first_run` sets
+// `window.__BISMUTH_FIRST_RUN__`, telling index.tsx to render the intro instead of App (there's
+// no backend yet — the intro's CTA picks the vault and relaunches).
+fn build_main_window(app: &tauri::AppHandle, injected: Option<(String, String)>, first_run: bool, has_vault: bool) -> tauri::Result<()> {
     // NOTE: we intentionally KEEP Tauri v2's native file drag-drop handler ENABLED (its default).
     // It is the ONLY source of a dragged OS file's REAL absolute path — a browser/webview `drop`
     // DataTransfer exposes only a basename. The frontend's nativeDrop.ts subscribes to it and
@@ -351,8 +383,9 @@ fn build_main_window(app: &tauri::AppHandle, injected: Option<String>, first_run
         .title("Bismuth")
         .inner_size(1200.0, 800.0);
     let mut script = String::new();
-    if let Some(api) = injected {
+    if let Some((api, token)) = injected {
         script.push_str(&format!("window.__BISMUTH_API__={api:?};"));
+        script.push_str(&format!("window.__BISMUTH_OWNER_TOKEN__={token:?};"));
     }
     if first_run {
         script.push_str("window.__BISMUTH_FIRST_RUN__=true;");
@@ -519,7 +552,7 @@ pub fn run() {
             } else {
                 valid
                     .and_then(|(vault, memory)| start_backend(&app.handle(), &vault, &memory))
-                    .map(|p| format!("http://localhost:{p}"))
+                    .map(|(p, token)| (format!("http://localhost:{p}"), token))
             };
             build_main_window(&app.handle(), injected, first_run, has_vault)?;
             Ok(())

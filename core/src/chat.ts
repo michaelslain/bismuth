@@ -115,9 +115,21 @@ export type ChatFrame =
   /** A fatal problem. `no-claude` = the `claude` CLI isn't installed (surface setup, never fall
    *  back to an API); `no-opencode` = the `opencode` CLI isn't installed (the opencode provider —
    *  see chatProviders/); `no-binary` = an ACP agent's CLI isn't installed (chatProviders/acp/ —
-   *  `binary` names which one, e.g. "cline"/"gemini"); `spawn`/`exit` = the child failed; `error` =
-   *  an SDK/turn error. */
-  | { type: "error"; code: "no-claude" | "no-opencode" | "no-binary" | "spawn" | "exit" | "error"; message: string; binary?: string };
+   *  `binary` names which one, e.g. "cline"/"gemini"); `visibility-refused` = this vault restricts
+   *  one or more notes and Bismuth has no VERIFIED mechanism to enforce that on the chosen
+   *  backend+channel (docs/vault/visibility.md's per-backend table) — `binary` names the refused
+   *  backend, `restrictedCount` is how many notes/folders are restricted (a COUNT only — never their
+   *  names or paths, since naming a hidden note in an error message would defeat the point of hiding
+   *  it), and `message` is the full user-facing explanation built by {@link visibilityRefusalMessage}.
+   *  Emitted INSTEAD OF opening the session — never as a mid-turn failure; `spawn`/`exit` = the
+   *  child failed; `error` = an SDK/turn error. */
+  | {
+      type: "error";
+      code: "no-claude" | "no-opencode" | "no-binary" | "visibility-refused" | "spawn" | "exit" | "error";
+      message: string;
+      binary?: string;
+      restrictedCount?: number;
+    };
 
 export type ChatSink = (frame: ChatFrame) => void;
 
@@ -712,6 +724,30 @@ export function formatMcpStatus(servers: ChatMcpServerSummary[]): string {
 }
 
 /**
+ * Pure: the body text for a `"visibility-refused"` error frame — pushed INSTEAD of opening a
+ * session, when this vault restricts one or more notes and Bismuth has no VERIFIED mechanism to
+ * enforce that on the chosen backend+channel (the per-backend table in docs/vault/visibility.md).
+ *
+ * Takes only a COUNT of restricted notes/folders, never their names or paths: naming a hidden note
+ * in an error message would defeat the entire point of hiding it. `backendLabel` is the backend's
+ * already-resolved display name (e.g. "Cline", "Codex") — this module has no dependency on the
+ * backend catalog, so the caller (whichever chokepoint resolves the per-channel capability — see
+ * docs/vault/visibility.md) is responsible for resolving the id to a label before calling this.
+ *
+ * The two ways out are stated explicitly, matching the non-negotiable that a refusal must never be
+ * a dead end: switch to a backend that DOES enforce the gate (Claude Code, today), or unhide the
+ * restricted notes.
+ */
+export function visibilityRefusalMessage(backendLabel: string, restrictedCount: number): string {
+  const notes = restrictedCount === 1 ? "1 note" : `${restrictedCount} notes`;
+  return (
+    `This vault marks ${notes} off-limits to AI sessions, and Bismuth has no verified way to enforce ` +
+    `that on ${backendLabel}. Rather than run unprotected, this chat won't start — switch to Claude ` +
+    `Code (which does enforce it), or unhide the restricted notes.`
+  );
+}
+
+/**
  * Answer "/mcp" LOCALLY from the SDK's own control-plane (Query.mcpServerStatus(), the same call
  * emitInitManifest already makes for the header's connected/total count) instead of forwarding the
  * text into the input queue — see isMcpCommand for why. Emits the SAME frame shape a normal turn
@@ -1028,6 +1064,13 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
       options: {
         pathToClaudeCodeExecutable: session.bin,
         cwd: session.cwd,
+        // Explicit `env` (SPREADING process.env, never replacing it — see the SDK's own doc comment
+        // on Options.env) so BISMUTH_AGENT_CHANNEL reaches this session's `claude` subprocess: the
+        // signal core/src/visibilityCliGate.ts's CLI-dispatch gate reads to tell an agent's own hand
+        // (this session, running its own Bash tool) from the vault owner's (an unstamped `bismuth`
+        // invocation). This IS the chat surface, so "chat" — never "daemon", which is the DIFFERENT
+        // always-on session daemon/src/daemon/session.ts spawns.
+        env: { ...process.env, BISMUTH_AGENT_CHANNEL: "chat" },
         includePartialMessages: true,
         // resume an existing Claude Code session (keeps its history + session_id) when asked; a
         // brand-new session simply omits it.
