@@ -18,13 +18,14 @@
 //     comments for what "wrong" meant concretely in each) and has since been corrected and then
 //     VERIFIED by the definition above.
 //   - PARTIALLY VERIFIED: some of the row's mapping was confirmed live, but not the full "a turn
-//     completes end to end" bar above — and this label covers two DELIBERATELY DIFFERENT states,
-//     never conflated: gemini means "driver-verified" (the real production driver, real handshake,
-//     real zero-real-network-access confirmation — everything EXCEPT a completed turn, which this
-//     task could not get gemini-cli to do against the mock; see that case's own comment for why).
-//     openclaw means "config mechanism only" (only the two env vars that redirect its config/state
-//     location were confirmed live; the actual model-ROUTING mechanism through its Gateway
-//     architecture was never executed at all — a materially weaker claim than gemini's).
+//     completes end to end" bar above. Currently only openclaw wears this label ("config mechanism
+//     only" — only the two env vars that redirect its config/state location were confirmed live;
+//     the actual model-ROUTING mechanism through its Gateway architecture was never executed at
+//     all). gemini used to wear this label too (driver-verified, handshake + zero-real-network-access
+//     confirmed, but NOT a completed turn) — upgraded to VERIFIED on the offline2/gemini branch once
+//     the actual root cause (an additional non-user-facing `generateJson` call per turn that needs
+//     its OWN JSON-shaped fixture — see that case's own comment) was found and fixed, rather than
+//     accepted as a permanent limitation.
 //   - Throws: no env-var (or file-based) mapping exists that actually works for how Bismuth spawns
 //     that backend. NO row currently uses this label (cline used to be the one exception — see its
 //     case comment for how a LATER task found a real, source-cited bypass and corrected it to
@@ -176,52 +177,99 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
       };
 
     // --------------------------------------------------------------------------------------
-    // PARTIALLY VERIFIED live (Task 4) — the "driver-verified, turn not confirmed" sense of that
-    // label (see this file's header vocabulary section) — upgraded from a pure guess, but NOT fully
-    // to "verified end-to-end" the way claude/opencode/codex/goose are, and this row says exactly
-    // where the line falls:
-    //   - CONFIRMED, live, through BOTH a raw ACP JSON-RPC handshake AND Bismuth's own
-    //     CHAT_BACKENDS.gemini.sendMessage (chatProviders/acp/driver.ts, unmodified): this mapping
-    //     correctly redirects a real `gemini` 0.53.0's outbound calls to the mock — zero real
-    //     network access. `initialize` -> `session/new` succeeds with NO prior `authenticate` call
-    //     (the API-key env var alone satisfies it; driver.ts never calls `authenticate` at all,
-    //     which matters because this task separately found that cline's ACP mode, below, does
+    // VERIFIED live end-to-end (offline2/gemini branch — upgraded from Task 4's PARTIALLY VERIFIED,
+    // whose text is preserved in git history rather than here). Everything below IS confirmed live:
+    //   - Through BOTH a raw ACP JSON-RPC handshake AND Bismuth's own CHAT_BACKENDS.gemini.sendMessage
+    //     (chatProviders/acp/driver.ts, unmodified): this mapping correctly redirects a real `gemini`
+    //     0.53.0's outbound calls to the mock — zero real network access. `initialize` -> `session/new`
+    //     succeeds with NO prior `authenticate` call (the API-key env var alone satisfies it; driver.ts
+    //     never calls `authenticate` at all, which matters because cline's ACP mode, below, does
     //     require it and hangs without real OAuth). `session/new`'s response is genuinely the OLD
-    //     `models.availableModels`/`currentModelId` shape — a real, live confirmation of
-    //     protocol.ts's "old" branch that this task's fake-agent test (acpFakeAgent.test.ts)
-    //     otherwise only proves synthetically.
-    //   - NOT CONFIRMED: a full turn's assistant text arriving. `session/prompt` against this
-    //     mock's single generic fixture reliably reaches 3-5 successful (200, fixture-matched)
-    //     hits on the mock — proving no real API call ever happens — but gemini-cli 0.53.0 never
-    //     emits an `agent_message_chunk`/settles the turn afterward, in EITHER `--acp` mode or
-    //     plain `-p`/headless mode; the same shape was observed both times (silent stall after a
-    //     bounded handful of retries, no stderr, no crash). This was investigated at length (the
-    //     "next speaker check" skip-by-default setting was ruled out by reading gemini-cli's own
-    //     bundle) but not root-caused within this task's budget — most likely gemini-cli issues
-    //     additional, non-user-facing model calls per turn (loop/function-call-shape detection,
-    //     history compression) that expect a response shape this generic single-fixture mock
-    //     doesn't provide, and retries/gives up rather than surfacing an error. See the task
-    //     report for the full account. geminiMocked.test.ts asserts what IS confirmed (handshake,
-    //     old-shape models, zero real network calls) and does not assert full turn completion.
-    //   - Everything below this line is UNCHANGED from the original guess (still never
-    //     independently re-verified beyond what's stated above): GOOGLE_GEMINI_BASE_URL, read
-    //     directly from google-gemini/gemini-cli's source
+    //     `models.availableModels`/`currentModelId` shape — a real, live confirmation of protocol.ts's
+    //     "old" branch that the fake-agent test (acpFakeAgent.test.ts) otherwise only proves
+    //     synthetically.
+    //   - A FULL TURN completing: root cause of the earlier stall, found by reading gemini-cli 0.53.0's
+    //     own bundled source (installed OUTSIDE this repo to a scratch dir, per this task's brief) and
+    //     confirmed live via a raw-JSON-RPC repro against a real llmock instance with `--metrics` and its
+    //     `GET /__aimock/journal` request log. A real turn makes TWO model calls, not one, on TWO
+    //     DIFFERENT endpoints: `POST /v1beta/models/{model}:generateContent` (non-streaming) and
+    //     `POST /v1beta/models/{model}:streamGenerateContent` (streamed) — confirmed live and important
+    //     to keep straight, since a naive substring filter on "generateContent" (lowercase g) silently
+    //     misses the streamed one (capital G in `streamGenerateContent`); see geminiMocked.test.ts's
+    //     `hitCount` for where this bit a first version of that file's own /metrics assertion. The
+    //     FIRST call, on `:generateContent`, is NOT the `flash`/`pro` `ClassifierStrategy` a naive read
+    //     of the routing code suggests (that one bails out with zero network calls the moment its own precondition is
+    //     met — see below), it is `NumericalClassifierStrategy.route` (packages/core/src/routing/
+    //     strategies/numericalClassifierStrategy.ts): confirmed via the journal's own captured request
+    //     body, whose system message is verbatim "You are a specialized Task Routing AI... assign a
+    //     **Complexity Score** from 1 to 100" and whose JSON schema is `{complexity_reasoning,
+    //     complexity_score}` — NOT `{reasoning, model_choice}`. Why THIS strategy and not the other: this
+    //     gemini-cli's own default model resolves through the `"auto"` alias to a Gemini-3-family model
+    //     (its real turn's own journal entry shows `"model":"gemini-3.5-flash"` — DEFAULT_GEMINI_3_5_
+    //     FLASH_MODEL in packages/core/src/config/models.ts), and `getNumericalRoutingEnabled()` defaults
+    //     to `true` when no remote experiments are fetched (true here — see the selectedType bullet
+    //     below for why no Code-Assist-Server call happens at all with `gemini-api-key` auth); with BOTH
+    //     of those true, `ClassifierStrategy.route`'s own FIRST check (`if (await config2.
+    //     getNumericalRoutingEnabled() && isGemini3Model(model, config2)) return null`) intentionally
+    //     defers to `NumericalClassifierStrategy` instead, which then makes the actual call.
+    //     `BaseLlmClient.generateJson`'s `shouldRetryOnContent` treats any response that doesn't
+    //     `JSON.parse` as a retryable failure — `retryWithBackoff` with `DEFAULT_MAX_ATTEMPTS2 = 5`
+    //     attempts, backoff starting at 5000ms and doubling to a 30000ms cap (packages/core/src/
+    //     utils/retry.ts's `DEFAULT_RETRY_OPTIONS`). Against the old single generic fixture
+    //     (`{"userMessage":"hello"}` -> plain-text `"Hello!"`), the classifier call's response never
+    //     parses as JSON, so it silently burns all 5 attempts (~65-90s of pure exponential backoff,
+    //     confirmed live: 90440ms end to end in the raw-JSON-RPC repro, with the mock's own /metrics
+    //     showing exactly 5 attempts on `:generateContent` — the classifier's own path, never the
+    //     turn's — before the retry loop finally throws, NumericalClassifierStrategy catches it and
+    //     falls through to the default model, and ONLY THEN does the real turn's own (always-fine)
+    //     call run — on the DIFFERENT `:streamGenerateContent` path — which is EXACTLY the "3-5
+    //     successful (200, fixture-matched) hits and then goes silent... waited up to 90s" symptom the
+    //     earlier investigation reported: not a true hang, but a real turn that DOES eventually
+    //     complete, just ~90s after it starts — past the 30s timeout the earlier version of
+    //     geminiMocked.test.ts's turn test used, which is why it read as "never completes".
+    //     `checkNextSpeaker` (packages/core/src/utils/nextSpeakerChecker.ts), the OTHER model-calling
+    //     utility this file used to suspect, is confirmed NOT reachable at all through Bismuth's driver:
+    //     gemini-cli's own `skipNextSpeakerCheck` config resolves as `isAcpMode || settings.model?.
+    //     skipNextSpeakerCheck` — ACP mode (exactly the mode `--experimental-acp`/`--acp` puts
+    //     gemini-cli into, which is all Bismuth's driver ever uses) unconditionally forces it `true`, so
+    //     `checkNextSpeaker` never runs, confirmed both by this exact line of bundled source AND by the
+    //     repro's own timeline showing no second retry storm after the classifier's, and by the journal
+    //     showing exactly 2 requests total for a completed turn once fixed — one on `:generateContent`
+    //     (the classifier), one on `:streamGenerateContent` (the turn), never a third anywhere.
+    //     THE FIX (in `core/test/fixtures/llm-gemini/basic-turn.json`, a fixture directory SEPARATE
+    //     from the shared `core/test/fixtures/llm/` so it can never affect another backend's mocked
+    //     test): one fixture ahead of the "hello" one, `match.systemMessage` gated on a substring of
+    //     NumericalClassifierStrategy's own system prompt ("assign a **Complexity Score** from 1 to
+    //     100"), returning valid JSON matching ITS schema (`{complexity_reasoning, complexity_score}`)
+    //     — so `generateJson` succeeds on the FIRST attempt and the retry storm never starts. Confirmed
+    //     live, same repro, same fixture directory: session/prompt now settles in 53ms (not 90440ms),
+    //     the journal shows exactly 2 requests total — one `:generateContent`, one
+    //     `:streamGenerateContent`, both fixture-matched on attempt 1 — and the driver emits a real
+    //     `assistant-text` frame carrying the fixture's exact "Hello!" before `result`/`done`. See
+    //     geminiMocked.test.ts's header (fixture contents, fixture-order dependency) and its own
+    //     `hitCount` helper (the exact-count assertions on both endpoints, and the code-review finding
+    //     about why a loose substring filter on "generateContent" alone silently missed the streamed
+    //     endpoint) for the full account.
+    //   - GOOGLE_GEMINI_BASE_URL, read directly from google-gemini/gemini-cli's source
     //     (packages/core/src/core/contentGenerator.ts, and packages/cli/src/acp/
     //     acpSessionManager.ts — the ACP path Bismuth actually drives); must be loopback or HTTPS
     //     (satisfied, our mock always binds 127.0.0.1).
-    //   - THE selectedType HAZARD, AND WHERE ITS FIX ACTUALLY LIVES (code-review finding: this
-    //     comment used to describe the hazard and stop, with the mitigation living somewhere this
-    //     reader could not see): a persisted `security.auth.selectedType` in the user's real
-    //     `~/.gemini/settings.json` is checked BEFORE these env vars (confirmed live: even a
-    //     BLANK `$HOME` fails a different way — gemini-cli's own `validateAuthMethod` reads that
-    //     persisted setting, not the env var, for a non-interactive run) and could silently defeat
-    //     this mapping on a machine with a prior real gemini login. This function does NOT close
-    //     that hole itself — it only returns the two env vars above. The mitigation lives in the
-    //     CALLER: geminiMocked.test.ts's `setup()` redirects `$HOME` to a throwaway temp dir with a
-    //     minimal pre-seeded `.gemini/settings.json` (`{"security":{"auth":{"selectedType":
-    //     "gemini-api-key"}}}`) before ever touching this mapping. Any OTHER caller of
-    //     `backendMockEnv("gemini", ...)` inherits the hole and must do the same — this function's
-    //     return value alone is not safe to trust for gemini on a machine with prior real usage.
+    //   - THE selectedType HAZARD, AND WHERE ITS FIX ACTUALLY LIVES: a persisted
+    //     `security.auth.selectedType` in the user's real `~/.gemini/settings.json` is checked BEFORE
+    //     these env vars (confirmed live: even a BLANK `$HOME` fails a different way — gemini-cli's own
+    //     `validateAuthMethod` reads that persisted setting, not the env var, for a non-interactive
+    //     run) and could silently defeat this mapping on a machine with a prior real gemini login. This
+    //     function does NOT close that hole itself — it only returns the two env vars above. The
+    //     mitigation lives in the CALLER: geminiMocked.test.ts's `setup()` redirects `$HOME` to a
+    //     throwaway temp dir with a minimal pre-seeded `.gemini/settings.json`
+    //     (`{"security":{"auth":{"selectedType":"gemini-api-key"}}}`) before ever touching this
+    //     mapping. Any OTHER caller of `backendMockEnv("gemini", ...)` inherits the hole and must do
+    //     the same — this function's return value alone is not safe to trust for gemini on a machine
+    //     with prior real usage. Also confirmed live this task: with `gemini-api-key` auth,
+    //     `getCodeAssistServer` returns `undefined` (that class is OAuth-Code-Assist-only), so
+    //     gemini-cli's separate experiments/admin-controls/quota fetches — which all short-circuit on
+    //     an undefined server before touching the network — never reach ANY endpoint, real or mock,
+    //     for this auth type. One less thing to isolate, not a hazard.
     // --------------------------------------------------------------------------------------
     case "gemini":
       return {

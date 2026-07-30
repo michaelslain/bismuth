@@ -5,14 +5,17 @@
 // claudeMocked.test.ts's shape (Task 3): runs by default in `bun test core`, skips only when the
 // `goose` binary itself is missing — a missing-BINARY skip, never a missing-account skip.
 //
-// This is the ONE ACP-native backend (of cline/gemini/goose/openclaw) this task could verify FULLY
-// end to end: `goose acp`'s `session/new` succeeds immediately (no `authenticate` gate, unlike
-// cline's ACP mode), and `session/prompt` streamed a real `agent_message_chunk` carrying the mock
-// fixture's exact "Hello!" text, settling with `stopReason:"end_turn"` — a clean assistant-text
-// frame through the driver, confirmed via the mock's own /metrics: exactly one `GET /v1/models` hit
-// (session/new discovering the configured provider's models) and two `POST /v1/messages` hits (both
-// 200, fixture-matched), never a real anthropic.com request. See backendEnv.ts's `goose` case
-// comment for the full write-up (upgraded from GUESSED to VERIFIED this task).
+// At the time this task ran, this was the ONE ACP-native backend (of cline/gemini/goose/openclaw)
+// that task could verify FULLY end to end: `goose acp`'s `session/new` succeeds immediately (no
+// `authenticate` gate, unlike cline's ACP mode), and `session/prompt` streamed a real
+// `agent_message_chunk` carrying the mock fixture's exact "Hello!" text, settling with
+// `stopReason:"end_turn"` — a clean assistant-text frame through the driver, confirmed via the mock's
+// own /metrics: exactly one `GET /v1/models` hit (session/new discovering the configured provider's
+// models) and two `POST /v1/messages` hits (both 200, fixture-matched), never a real anthropic.com
+// request. See backendEnv.ts's `goose` case comment for the full write-up (upgraded from GUESSED to
+// VERIFIED this task). gemini later joined it (offline2/gemini branch — see geminiMocked.test.ts's
+// header): goose just never needed extra fixtures for gemini-cli's own routing/next-speaker-check
+// calls, since goose doesn't make them.
 //
 // LOCAL-STATE ISOLATION: goose persists config/session state under
 // $XDG_CONFIG_HOME/$XDG_DATA_HOME/$XDG_STATE_HOME (confirmed live via `goose info`'s own path
