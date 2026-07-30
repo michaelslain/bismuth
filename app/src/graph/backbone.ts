@@ -249,31 +249,55 @@ export function edgeWeightBucketRange(
 //
 // MARKS column (masses vs individual glyphs — this is the part a recipe naming only the edges
 // would silently miss):
-//   `lod.ts`'s `lodMix()` currently computes its mass weight (`cA`) as `1 - fileLabelAlpha(t)`,
-//   and `AsciiGraphRenderer.ts:1433` hard-gates the ENTIRE leaf/glyph raster pass on that SAME
-//   `fileLabelAlpha(t)` value (stored as `leafAlpha`): `if (this.lodOn && this.leafAlpha <=
-//   LOD_ALPHA_EPS) return;`. That gate knows only "masses" vs "leaves (glyphs + real edges,
-//   bundled)" — it has no concept of a mid band. Concretely, at t=0.6 (inside the mid band:
-//   `bandsForT(0.6, N)` ≈ `{massAlpha:0, backboneAlpha:1, memberAlpha:0}` for any reasonable N),
-//   `fileLabelAlpha(0.6)` is STILL 0 (`FILE_LABEL_REVEAL_T` is 0.75), so the leaf pass stays
-//   skipped and NO glyphs rasterize — the mid band would show backbone lines drawn over
-//   full-strength territory masses, which is neither of the two pictures the band is meant to
-//   show. Task 12 MUST re-key BOTH of these to `massAlpha`, not merely multiply the edge draws:
-//     - `lodMix`'s `cA` (mass weight, and the multiplier on its per-level `clusterLevelAlphas`
-//       split) → `bandsForT(t, levelCount).massAlpha`, replacing `1 - fileLabelAlpha(t)`.
-//     - the leaf-pass gate's `leafAlpha` → `1 - bandsForT(t, levelCount).massAlpha` (equivalently
-//       `backboneAlpha + memberAlpha`) — glyphs rasterize whenever the field is NOT purely in the
-//       mass band, i.e. across BOTH the mid and near bands, not only the near one.
+//   `lod.ts`'s `lodMix()` currently computes its mass weight (`cA`) as `1 - fileLabelAlpha(t)`.
+//   That single number (`mix.leafAlpha`, assigned into `this.leafAlpha` at
+//   `AsciiGraphRenderer.ts:1103`) then feeds THREE separate consumers, not one — a correct recipe
+//   has to name all three, because in the mid band they must diverge from each other:
+//     1. `AsciiGraphRenderer.ts:1433` — the glyph/leaf-RASTER gate: `if (this.lodOn &&
+//        this.leafAlpha <= LOD_ALPHA_EPS) return;`. Skips the entire leaf pass (no glyphs at all)
+//        below the threshold.
+//     2. `AsciiGraphRenderer.ts:1598` (inside `strokeEdges()`) — the REAL MEMBER EDGE alpha:
+//        `const base = this.edgeBaseAlpha * this.leafAlpha;`.
+//   Both currently read the SAME `fileLabelAlpha(t)`-derived field, which is fine pre-merge
+//   (glyphs and real edges always arrive together) but WRONG for the mid band, where they must
+//   diverge: glyphs must be ON (individual notes are what's on screen) while real member edges
+//   must be OFF (the backbone is standing in for them). Concretely, at t=0.6 (inside the mid band:
+//   `bandsForT(0.6, N)` ≈ `{massAlpha:0, backboneAlpha:1, memberAlpha:0}` for any reasonable N):
+//     - `fileLabelAlpha(0.6)` is 0 (`FILE_LABEL_REVEAL_T` is 0.75) — consumer 1 would (wrongly)
+//       skip the leaf pass entirely, showing backbone lines over full-strength masses with no
+//       glyphs at all (the ORIGINAL finding).
+//     - if consumer 1 is naively fixed by re-keying `leafAlpha` itself to `1 - massAlpha` (≈1 in
+//       the mid band) WITHOUT separately fixing consumer 2, `strokeEdges()` reads that SAME fixed
+//       field and draws real member edges at FULL strength (`1 - massAlpha = 1.0`) across the
+//       entire mid band — exactly the hairball the backbone exists to replace, while this file's
+//       own EDGES column (below) says member edges should be `memberAlpha ≈ 0` there. One field
+//       cannot correctly serve both roles in the mid band; they are NUMERICALLY DIFFERENT values
+//       once masses hand off (`1 - massAlpha` ends the mid band at ≈1, `memberAlpha` starts it at
+//       ≈0). Task 12 MUST split this into two separate quantities, not one shared field:
+//     - `lod.ts`'s `lodMix`'s `cA` (mass weight, and the multiplier on its per-level
+//       `clusterLevelAlphas` split) → `bandsForT(t, levelCount).massAlpha`, replacing
+//       `1 - fileLabelAlpha(t)`.
+//     - consumer 1, the glyph/leaf-RASTER gate (`AsciiGraphRenderer.ts:1433`) → gate on
+//       `1 - bandsForT(t, levelCount).massAlpha` (equivalently `backboneAlpha + memberAlpha`) —
+//       glyphs rasterize whenever the field is NOT purely in the mass band, i.e. across BOTH the
+//       mid and near bands, not only the near one.
+//     - consumer 2, the real-member-edge alpha (`AsciiGraphRenderer.ts:1598`,
+//       `this.edgeBaseAlpha * this.leafAlpha`) → multiply by `bandsForT(t, levelCount).memberAlpha`
+//       INSTEAD, not by the glyph gate's `1 - massAlpha`. In practice this means introducing a
+//       second field (e.g. a `memberEdgeAlpha`) alongside the retained `leafAlpha` glyph gate —
+//       reusing one field for both can't work, per the divergence above.
 //   `lodMix`'s per-level `clusterLevelAlphas` split (WHICH level's masses/names show while masses
 //   own the field) needs no change — only the overall on/off weight it's multiplied by does.
 //
 // EDGES column (which edges draw, once glyphs are rasterizing — mid vs near):
 //   a level L's backbone line draws at `computeEdgeLevelWeights(t, levelCount, revealT)[L] ×
 //   bandsForT(t, levelCount).backboneAlpha`; real member edges draw at
-//   `bandsForT(t, levelCount).memberAlpha`. `computeEdgeLevelWeights`'s OWN internal real-edge
-//   weight (its `[levelCount]` entry) is superseded by `memberAlpha` here, and its `revealT` must
-//   be passed explicitly as `FILE_LABEL_REVEAL_T` — see that function's doc comment for why its
-//   ported default cannot be trusted unchanged.
+//   `bandsForT(t, levelCount).memberAlpha` — this is consumer 2 above
+//   (`AsciiGraphRenderer.ts:1598`), NOT the glyph gate's `1 - massAlpha`.
+//   `computeEdgeLevelWeights`'s OWN internal real-edge weight (its `[levelCount]` entry) is
+//   superseded by `memberAlpha` here, and its `revealT` must be passed explicitly as
+//   `FILE_LABEL_REVEAL_T` — see that function's doc comment for why its ported default cannot be
+//   trusted unchanged.
 // ---------------------------------------------------------------------------------------------
 
 export interface Bands {
@@ -322,13 +346,30 @@ export const MEMBER_FADE_SPAN = 0.14;
  *  edges in sooner" — could shrink this gap to ~0 and leave every one of those assertions green:
  *  the backbone would become two back-to-back crossfade shoulders with no genuine plateau, i.e.
  *  no mid band at all in practice, and nothing relative would notice. This is the one ABSOLUTE
- *  check, enforced at IMPORT TIME (not only in a test) so a hand-edit of the four constants above
- *  fails immediately and loudly instead of silently shipping a knife-edge backbone. 0.15 is itself
- *  a judgement call, not a measurement — comfortably bigger than the 0.14 crossfade spans on
- *  either side of it, so the plateau reads as its own thing rather than a rounding artifact of the
- *  two fades meeting in the middle. */
+ *  check. 0.15 is itself a judgement call, not a measurement — comfortably bigger than the 0.14
+ *  crossfade spans on either side of it, so the plateau reads as its own thing rather than a
+ *  rounding artifact of the two fades meeting in the middle.
+ *
+ *  Enforced at IMPORT TIME, but gated on `import.meta.env?.DEV` — the same pattern
+ *  `app/src/ui/devWarn.ts`/`uiLint.ts` document ("the components call them behind an
+ *  `import.meta.env.DEV` guard") and `IconButton.tsx`/`TextButton.tsx` etc. actually use. A raw
+ *  top-level `throw` (no gate) would have three problems an earlier version of this file had: (1)
+ *  it reaches PRODUCTION — `bun build --minify` keeps it, `import.meta.env.DEV` is not
+ *  constant-folded away by a bare Node/Bun build the way Vite's own bundling of the app does; (2)
+ *  a top-level ESM throw poisons every importer up the chain (`backbone` → `AsciiGraphRenderer` →
+ *  `GraphView`), and on first run (`VaultIntro` renders a graph) that is a white screen, not a
+ *  degraded graph; (3) most importantly, an unconditional throw makes this the ONLY enforcement —
+ *  a plateau-violating retune stops the module importing AT ALL, so the `bun test` assertion in
+ *  `backbone.test.ts` that checks this same floor can never actually fail as a test, and the two
+ *  guards collapse into one. Gating on DEV removes the production path and restores the test as
+ *  an independently meaningful, separately-failing check — which is why that test inlines the
+ *  literal `0.15` rather than importing `MIN_BACKBONE_PLATEAU_T`: the test must keep meaning the
+ *  same thing even if this constant's value or gating drifts. Under `bun test` specifically,
+ *  `import.meta.env.DEV` is `undefined` (Bun does not set it the way Vite's dev server does), so
+ *  this throw is INERT during the test run — the inlined-literal test assertion is what actually
+ *  catches a bad retune there; the throw's job is the real `bun run dev` boot path. */
 export const MIN_BACKBONE_PLATEAU_T = 0.15;
-if (MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN) <= MIN_BACKBONE_PLATEAU_T) {
+if (import.meta.env?.DEV && MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN) <= MIN_BACKBONE_PLATEAU_T) {
   throw new Error(
     "backbone.ts: the mid band's plateau (MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN) = " +
     `${(MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN)).toFixed(3)}) must exceed ` +

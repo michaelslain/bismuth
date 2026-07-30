@@ -366,12 +366,22 @@ describe("bandsForT", () => {
   // MEMBER_FADE_SPAN, so a retune that shrinks the mid band's plateau to ~0 (masses lasting longer,
   // real edges arriving sooner is a plausible-sounding tweak) would leave all of them green — the
   // backbone would become two back-to-back crossfade shoulders with no genuine plateau, i.e. no mid
-  // band in practice. This is the one ABSOLUTE check. The module also enforces this at IMPORT TIME
-  // (see MIN_BACKBONE_PLATEAU_T's doc comment in backbone.ts) — this test additionally documents the
-  // intent and would already have failed to even import if the shipped constants violated it.
+  // band in practice. This is the one ABSOLUTE check. The module ALSO enforces this at IMPORT TIME,
+  // but only behind `import.meta.env?.DEV` (see MIN_BACKBONE_PLATEAU_T's doc comment in
+  // backbone.ts) — under `bun test`, `import.meta.env.DEV` is `undefined`, so that guard is INERT
+  // here and this assertion is the ONLY thing that actually catches a collapsed plateau during a
+  // test run. The literal `0.15` is written out rather than compared against
+  // `MIN_BACKBONE_PLATEAU_T` on purpose: the assertion must keep meaning "at least the floor this
+  // file documents as the real requirement" even if a future edit changes what the exported
+  // constant equals (or removes the DEV gate's condition) — two independent guards, not one
+  // mechanism read twice. The constant's own current value is still checked separately below.
   it("the mid band's plateau clears the absolute floor — a knife-edge backbone with no plateau must be impossible to ship silently", () => {
     const plateau = MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN);
-    expect(plateau).toBeGreaterThan(MIN_BACKBONE_PLATEAU_T);
+    expect(plateau).toBeGreaterThan(0.15);
+  });
+
+  it("MIN_BACKBONE_PLATEAU_T is currently 0.15, matching the literal the test above independently asserts", () => {
+    expect(MIN_BACKBONE_PLATEAU_T).toBe(0.15);
   });
 
   // MEMBER_START_T's doc comment records the REAL reason it's 0.68, not the "symmetric around the
