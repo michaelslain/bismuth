@@ -1,8 +1,12 @@
-// Exercises the ACTUAL mock LLM server (`bunx llmock`, from the @copilotkit/aimock devDependency)
+// Exercises the ACTUAL mock LLM server (`llmock`, from the @copilotkit/aimock devDependency)
 // end-to-end — never a real model API, and no dependency on any agent CLI being installed (this
 // harness itself doesn't spawn claude/codex/opencode/etc; core/test/support/backendEnv.ts's per-CLI
 // mapping is exercised as a pure function here, not by actually running a CLI).
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { DEFAULT_FIXTURE_DIR, startMockLlm } from "./mockLlm";
 import { backendMockEnv } from "./backendEnv";
 import { BACKEND_IDS } from "../../src/agentBackends/catalog";
@@ -43,6 +47,69 @@ describe("startMockLlm", () => {
       '"Fixtures path not found" and exits immediately without ever printing its listening banner)',
     async () => {
       await expect(startMockLlm("/nonexistent-fixture-dir-for-real")).rejects.toThrow();
+    },
+    20_000,
+  );
+
+  // Reproduces (rather than infers) the orphan-child failure mode: a caller that starts a mock
+  // server and then crashes — an uncaught exception, never reaching stop() — must not leave the
+  // spawned `node .../aimock/dist/cli.js` running forever, holding its port. This can't be proven
+  // from INSIDE this test process (this process reaching its own "exit" would tear down the whole
+  // test run), so it drives a genuinely separate `bun` child: that child starts a mock server,
+  // prints its URL, then throws — simulating exactly the crash-before-stop() scenario — and this
+  // test asserts the mock's port is unreachable once that child has actually exited, proving
+  // mockLlm.ts's own `process.on("exit", …)` safety net fired inside the child.
+  test(
+    "an abnormal exit (crash before stop()) does not orphan the mock server — process.on('exit') safety net",
+    async () => {
+      const scriptDir = mkdtempSync(join(tmpdir(), "mockllm-crash-test-"));
+      const scriptPath = join(scriptDir, "crash.ts");
+      const mockLlmSpecifier = pathToFileURL(join(import.meta.dir, "mockLlm.ts")).href;
+      writeFileSync(
+        scriptPath,
+        [
+          `import { startMockLlm } from ${JSON.stringify(mockLlmSpecifier)};`,
+          `const mock = await startMockLlm(${JSON.stringify(DEFAULT_FIXTURE_DIR)});`,
+          `console.log("MOCK_URL:" + mock.url);`,
+          `throw new Error("simulated crash — deliberately never calls stop()");`,
+          "",
+        ].join("\n"),
+      );
+
+      const child = Bun.spawn(["bun", "run", scriptPath], { stdout: "pipe", stderr: "pipe" });
+
+      // Read stdout only until the URL line arrives — the child crashes right after printing it,
+      // so its stdout closes on its own shortly after.
+      let out = "";
+      let url = "";
+      const decoder = new TextDecoder();
+      for await (const chunk of child.stdout as ReadableStream<Uint8Array>) {
+        out += decoder.decode(chunk, { stream: true });
+        const m = out.match(/MOCK_URL:(\S+)/);
+        if (m) {
+          url = m[1];
+          break;
+        }
+      }
+      expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+
+      const code = await child.exited;
+      expect(code).not.toBe(0); // confirms it really crashed rather than exiting cleanly
+
+      // The grandchild mock server must not survive its parent's crash. Poll briefly: the exit
+      // handler's kill() fires synchronously inside the child, but the OS can take a moment to
+      // fully release the socket after that.
+      const deadline = Date.now() + 5000;
+      let stillListening = true;
+      while (stillListening && Date.now() < deadline) {
+        try {
+          await fetch(url, { signal: AbortSignal.timeout(300) });
+          await new Promise((r) => setTimeout(r, 100));
+        } catch {
+          stillListening = false;
+        }
+      }
+      expect(stillListening).toBe(false);
     },
     20_000,
   );

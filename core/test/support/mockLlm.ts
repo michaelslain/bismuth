@@ -42,8 +42,40 @@
 // banner never arrives within STARTUP_TIMEOUT_MS. A test harness whose mock failed to start must
 // fail loud immediately, not silently let a caller's CLI fall through to a real API — the same
 // property the task brief calls out for a misconfigured ANTHROPIC_BASE_URL.
+//
+// ORPHAN SAFETY NET: mirrors opencodeServer.ts's own `process.on("exit", shutdownAll)` — every
+// spawned child is tracked in a module-level `liveProcs` Set (registered once, not per call, so a
+// suite starting many servers doesn't accumulate `process` listeners) and killed on this host
+// process's own exit, so a test that throws before reaching stop() (a genuine crash, not just a
+// failed assertion) can't leave an orphaned `node .../aimock/dist/cli.js` holding its port forever
+// — reproduced live: without this, exactly that happened.
 import { join, dirname } from "node:path";
 import { readFileSync } from "node:fs";
+
+/** Every child this process has spawned and not yet confirmed exited. `process.on("exit", …)`
+ *  below kills whatever's still in here when this host process itself is going down — whether
+ *  from a normal end-of-suite exit, an explicit process.exit(), or an uncaught exception crashing
+ *  the process (Node/Bun both still fire "exit" in that case). */
+const liveProcs = new Set<ReturnType<typeof Bun.spawn>>();
+
+/** Kill every still-tracked child. Safe to call more than once and safe to call on a child that
+ *  already exited on its own (proc.kill() on a dead process is a no-op/rejects internally in Bun —
+ *  either way wrapped in try/catch here, same idiom as opencodeServer.ts's shutdownAll) — an
+ *  already-stopped server must never make this throw. */
+function killAllLiveProcs(): void {
+  for (const proc of liveProcs) {
+    try {
+      proc.kill();
+    } catch {
+      /* already exited */
+    }
+  }
+  liveProcs.clear();
+}
+// Registered ONCE at module load, not per startMockLlm() call — this module is imported once per
+// test file/process, so this never accumulates listeners across however many servers a suite
+// starts (which would otherwise trip Node's max-listeners warning).
+process.on("exit", killAllLiveProcs);
 
 /** How long to wait for the "aimock server listening on <url>" banner before giving up. Generous
  *  relative to opencodeServer.ts's 8s to leave headroom on a loaded CI machine's first `node`
@@ -102,6 +134,12 @@ export function startMockLlm(fixtureDir: string = DEFAULT_FIXTURE_DIR): Promise<
       reject(err instanceof Error ? err : new Error(String(err)));
       return;
     }
+
+    // Tracked from the moment it exists — even a child that never prints its banner (timeout, or
+    // an immediate startup failure) still gets caught by the exit-time safety net until its own
+    // `proc.exited` resolves and untracks it below.
+    liveProcs.add(proc);
+    void proc.exited.finally(() => liveProcs.delete(proc)).catch(() => {});
 
     let settled = false;
     const finishOk = (url: string) => {
