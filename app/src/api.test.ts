@@ -1,6 +1,6 @@
 // app/src/api.test.ts
 import { test, expect, describe } from "bun:test";
-import { api, resolveBase, httpTransport, setTransport, apiBase, eventsUrl, type Transport } from "./api";
+import { api, resolveBase, resolveOwnerToken, httpTransport, setTransport, apiBase, eventsUrl, type Transport } from "./api";
 import type { Schema } from "../../core/src/schema/types";
 
 test("api exposes a schema() method returning a Schema promise", () => {
@@ -79,5 +79,20 @@ describe("resolveBase (runtime backend selection for ?api= windows)", () => {
     expect(resolveBase("?api=http://localhost:4323", undefined)).not.toBe(
       resolveBase("?api=http://localhost:4324", undefined),
     );
+  });
+});
+
+describe("resolveOwnerToken (core/src/ownerToken.ts's X-Bismuth-Token, injected per window)", () => {
+  test("the injected (Tauri-shell) value wins over the build env", () => {
+    expect(resolveOwnerToken("env-token", "injected-token")).toBe("injected-token");
+  });
+  test("falls back to the build env (dev's VITE_OWNER_TOKEN) when nothing is injected", () => {
+    expect(resolveOwnerToken("env-token", undefined)).toBe("env-token");
+  });
+  test("resolves to undefined when neither is set — the transport then sends no token header", () => {
+    expect(resolveOwnerToken(undefined, undefined)).toBeUndefined();
+  });
+  test("an empty injected string is treated as unset, not as an empty token", () => {
+    expect(resolveOwnerToken("env-token", "")).toBe("env-token");
   });
 });

@@ -111,8 +111,16 @@ function realUsername(): string | null {
 // passing `env` at all means the caller owns building a COMPLETE one — this is that builder,
 // reused by every `query()` call that spawns the user's own `claude` (currently searchPrompt.ts;
 // chat.ts should adopt it too).
+//
+// `agentChannel`, when given, stamps `BISMUTH_AGENT_CHANNEL` into the returned env — the signal
+// core/src/visibilityCliGate.ts's CLI-dispatch gate reads to tell an agent's own hand from the
+// vault owner's. Every caller that spawns a CHAT backend (this is the shared builder for the
+// codex/ACP chat drivers) passes `"chat"`; callers with no channel concept (searchPrompt.ts, and
+// anything not spawning an agent that could itself invoke `bismuth`) simply omit it, unchanged from
+// before this parameter existed.
 export function claudeSpawnEnv(
   env: Record<string, string | undefined> = process.env,
+  agentChannel?: "chat" | "daemon",
 ): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = { ...env, PATH: claudeLookupPath(env), HOME: env.HOME || homedir() };
   if (!out.USER || !out.LOGNAME) {
@@ -122,5 +130,6 @@ export function claudeSpawnEnv(
       out.LOGNAME = out.LOGNAME || username;
     }
   }
+  if (agentChannel) out.BISMUTH_AGENT_CHANNEL = agentChannel;
   return out;
 }

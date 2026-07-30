@@ -27,6 +27,12 @@ function makeVault(files: Record<string, string>): string {
   return dir
 }
 
+/** Write a `.settings` file with a single folderVisibility entry — the daemon reads
+ *  folderVisibility from `.settings` (or its interim shapes) independently of core. */
+function setFolderVisibility(vault: string, folder: string, value: "chat-only" | "hidden"): void {
+  writeFileSync(join(vault, ".settings"), `folderVisibility:\n  ${JSON.stringify(folder)}: ${value}\n`)
+}
+
 // --- resolveVisibility ---
 
 test("resolveVisibility: absence with no folder rules inherits to 'all'", () => {
@@ -97,4 +103,112 @@ test("buildManagedSettingsDeny: emits Read/Edit/Grep/Glob rules for BOTH path fo
 
 test("absDenyPaths: pulls just the absolute form", () => {
   expect(absDenyPaths(SAMPLE_ENTRIES)).toEqual(["/vault/secret.md"])
+})
+
+// --- discovery-walk fixes: same bugs, same fixes as core/test/visibility.test.ts (this file is
+// a literal port and must stay in step — see visibility.ts's header comment).
+
+test("buildDenyPaths: EVERY extension inside a hidden folder is denied, not just recognized note types", async () => {
+  const vault = makeVault({
+    "priv/note.md": "# Note\n",
+    "priv/notes.txt": "plain text, no frontmatter\n",
+    "priv/data.json": '{"k":"v"}\n',
+    "priv/sketch.draw": "drawing json blob\n",
+    "priv/sketch.draw.png": "binary\n",
+    "public.md": "# Public\n",
+  })
+  setFolderVisibility(vault, "priv", "hidden")
+  const denied = (await buildDenyPaths(vault)).map((e) => e.rel).sort()
+  expect(denied).toEqual(["priv/data.json", "priv/note.md", "priv/notes.txt", "priv/sketch.draw", "priv/sketch.draw.png"])
+})
+
+test("buildDenyPaths: an explicit visibility: all override inside the same hidden folder still exempts that file", async () => {
+  const vault = makeVault({
+    "priv/note.md": "# Note\n",
+    "priv/exposed.md": "---\nvisibility: all\n---\n# Exposed\n",
+  })
+  setFolderVisibility(vault, "priv", "hidden")
+  const denied = (await buildDenyPaths(vault)).map((e) => e.rel).sort()
+  expect(denied).toEqual(["priv/note.md"])
+})
+
+test("buildDenyPaths: a note stashed in a dot-directory is still walked and denied", async () => {
+  const vault = makeVault({
+    ".stash/inside.md": "---\nvisibility: hidden\n---\n# Stashed\n",
+    "public.md": "# Public\n",
+  })
+  const denied = (await buildDenyPaths(vault)).map((e) => e.rel).sort()
+  expect(denied).toEqual([".stash/inside.md"])
+})
+
+test("buildDenyPaths: .git and .settings are excluded from the walk", async () => {
+  const vault = makeVault({
+    ".git/HEAD": "ref: refs/heads/main\n",
+    "public.md": "# Public\n",
+  })
+  setFolderVisibility(vault, "nonexistent", "hidden")
+  const denied = (await buildDenyPaths(vault)).map((e) => e.rel).sort()
+  expect(denied).toEqual([])
+})
+
+test("buildDenyPaths: a hidden note's frontmatter is honored on a non-.md extension too (copy/rename carries the same bytes)", async () => {
+  const secretBody = "---\nvisibility: hidden\n---\n# Secret\nTOKEN-9001\n"
+  const vault = makeVault({
+    "secret.md": secretBody,
+    "secret-copy.txt": secretBody,
+  })
+  const denied = (await buildDenyPaths(vault)).map((e) => e.rel).sort()
+  expect(denied).toEqual(["secret-copy.txt", "secret.md"])
+})
+
+test("buildDenyPaths: frontmatter whose closing fence lies past the 512-byte head is still parsed", async () => {
+  const filler = "notes: |\n" + Array.from({ length: 40 }, (_, i) => `  line ${i} filler filler filler filler`).join("\n") + "\n"
+  const body = `---\n${filler}visibility: hidden\n---\n# Big frontmatter\n`
+  expect(body.indexOf("---", 4)).toBeGreaterThan(512)
+  const vault = makeVault({ "big.md": body })
+  const denied = (await buildDenyPaths(vault)).map((e) => e.rel)
+  expect(denied).toEqual(["big.md"])
+})
+
+test("stem inheritance: a hidden drawing's export sidecars inherit its restriction with no folder rule involved", async () => {
+  const vault = makeVault({
+    "diagram.md": "---\nvisibility: hidden\n---\n# Diagram\n",
+    "diagram.draw": "drawing json blob\n",
+    "diagram.draw.png": "binary\n",
+    "other.png": "unrelated sibling, different stem\n",
+  })
+  const denied = (await buildDenyPaths(vault)).map((e) => e.rel).sort()
+  expect(denied).toEqual(["diagram.draw", "diagram.draw.png", "diagram.md"])
+})
+
+test("stem inheritance: an explicit visibility: all file still wins for itself even beside a hidden same-stem sibling", async () => {
+  const vault = makeVault({
+    "note.draw": "drawing json blob\n",
+    "note.hidden-marker.md": "---\nvisibility: hidden\n---\n# Marker\n",
+    "note.md": "---\nvisibility: all\n---\n# Note\n",
+  })
+  const denied = (await buildDenyPaths(vault)).map((e) => e.rel).sort()
+  expect(denied).toEqual(["note.draw", "note.hidden-marker.md"])
+  expect(denied).not.toContain("note.md")
+})
+
+test("verification scenario: a.md/b.txt/c.json/sketch.draw+.png in a hidden folder are ALL denied, and an explicit override survives", async () => {
+  const vault = makeVault({
+    "hidden-folder/a.md": "# A\n",
+    "hidden-folder/b.txt": "plain text\n",
+    "hidden-folder/c.json": '{"a":1}\n',
+    "hidden-folder/sketch.draw": "drawing blob\n",
+    "hidden-folder/sketch.draw.png": "binary\n",
+    "hidden-folder/exempt.md": "---\nvisibility: all\n---\n# Exempt\n",
+  })
+  setFolderVisibility(vault, "hidden-folder", "hidden")
+  const denied = (await buildDenyPaths(vault)).map((e) => e.rel).sort()
+  expect(denied).toEqual([
+    "hidden-folder/a.md",
+    "hidden-folder/b.txt",
+    "hidden-folder/c.json",
+    "hidden-folder/sketch.draw",
+    "hidden-folder/sketch.draw.png",
+  ])
+  expect(denied).not.toContain("hidden-folder/exempt.md")
 })

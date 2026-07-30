@@ -27,6 +27,37 @@ const BASE = resolveBase(
  *  can build "new window" / "open folder" URLs that pin the right backend via `?api=`. */
 export const apiBase = (): string => transport.base();
 
+// Owner token (see core/src/ownerToken.ts): identifies THIS window as the vault's own app/editor
+// — not an agent process — so core's content routes (GET /file, POST /search, …) keep serving
+// everything unfiltered, exactly as before that gate existed. Resolved the same way as `BASE`
+// above: the packaged app's Tauri shell injects `window.__BISMUTH_OWNER_TOKEN__` (mirroring
+// `__BISMUTH_API__`); the dev server passes `VITE_OWNER_TOKEN` (see app/scripts/dev.ts — Vite's
+// default `VITE_`-prefix env exposure needs no vite.config.ts change). Deliberately no
+// `?api=`-style query-param form: unlike the backend base, a token must never end up in a URL
+// that could be logged, screenshotted, or pasted into a bug report — it only ever rides as a
+// header, which every transport call below attaches.
+//
+// KNOWN GAP (verified, not fixed here): this value is resolved once per WINDOW, at module load.
+// The bundled app's Tauri shell only runs its `window.__BISMUTH_OWNER_TOKEN__`-injecting
+// initialization script for the FIRST window (`build_main_window` in lib.rs) — a window opened
+// afterwards via "New window" or "Open folder" (`appWindow.ts`'s `openAppWindow`, which
+// constructs a `WebviewWindow` directly from JS) has no equivalent hook: Tauri v2's JS-side
+// `WebviewWindow` API has no per-window `initializationScript` option, only the Rust builder
+// does. So a SECOND window's requests present as the (filtered) "daemon" channel, and the owner
+// will see hidden/chat-only notes 403 in that window specifically, even though the FIRST window
+// works correctly. Dev mode's "New window" is unaffected (VITE_OWNER_TOKEN is baked into the one
+// JS bundle every window loads), but dev's "Open folder" spawns a genuinely separate core
+// process with its OWN freshly-minted token and has the identical gap. Fixing this needs a new
+// Tauri command that builds the window in Rust (so `.initialization_script()` is reachable) —
+// out of scope for this pass; flagged here rather than silently left for someone to rediscover.
+export function resolveOwnerToken(envToken: string | undefined, injected: string | undefined): string | undefined {
+  return injected || envToken || undefined;
+}
+const OWNER_TOKEN = resolveOwnerToken(
+  import.meta.env.VITE_OWNER_TOKEN,
+  (globalThis as { __BISMUTH_OWNER_TOKEN__?: string }).__BISMUTH_OWNER_TOKEN__,
+);
+
 import type { GraphData, TreeEntry, ViewLayout } from "../../core/src/graph";
 import type { SearchOpts, SearchResult } from "./searchOpts";
 import type { Task } from "../../core/src/tasks";
@@ -102,6 +133,14 @@ export interface Transport {
 const BOOT_RETRY_BUDGET_MS = 20_000;
 const BOOT_RETRY_STEP_MS = 250;
 
+// Every request this window makes carries the owner token (when one was resolved) so core's
+// content routes treat it as the vault's own app, never as a non-owner agent channel — see
+// core/src/ownerToken.ts. A plain object (not `Headers`) so callers below can spread it
+// alongside their own headers with a simple `{...}` merge.
+function ownerTokenHeaders(): Record<string, string> {
+  return OWNER_TOKEN ? { "X-Bismuth-Token": OWNER_TOKEN } : {};
+}
+
 /** HTTP transport: the original fetch-against-`base` behavior, plus boot-time connect retry on GETs. */
 export function httpTransport(base: string): Transport {
   /** Generic fetch wrapper: throw server error text on non-2xx, optionally parse JSON/text. */
@@ -113,10 +152,11 @@ export function httpTransport(base: string): Transport {
   ): Promise<T | Response | string> {
     const init: RequestInit = {
       method,
-      ...(body !== undefined && {
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }),
+      headers: {
+        ...ownerTokenHeaders(),
+        ...(body !== undefined && { "Content-Type": "application/json" }),
+      },
+      ...(body !== undefined && { body: JSON.stringify(body) }),
     };
     // Only GETs ride out a not-yet-listening backend; mutations must not auto-retry.
     const deadline = method === "GET" ? Date.now() + BOOT_RETRY_BUDGET_MS : 0;
@@ -146,7 +186,7 @@ export function httpTransport(base: string): Transport {
     writeFileChecked: async (path: string, contents: string, baseText: string) => {
       const r = await fetch(`${base}/file`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...ownerTokenHeaders() },
         body: JSON.stringify({ path, contents, baseText }),
       });
       if (r.status === 409) {
@@ -159,7 +199,7 @@ export function httpTransport(base: string): Transport {
     uploadAsset: async (targetPath: string, bytes: ArrayBuffer): Promise<string> => {
       const r = await fetch(`${base}/asset?path=${encodeURIComponent(targetPath)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
+        headers: { "Content-Type": "application/octet-stream", ...ownerTokenHeaders() },
         body: bytes,
       });
       if (!r.ok) throw new Error(await r.text());

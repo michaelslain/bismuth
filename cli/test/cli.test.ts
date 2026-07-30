@@ -2,7 +2,7 @@ import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeSampleVault } from "../../core/test/helpers";
+import { makeSampleVault, makeVault } from "../../core/test/helpers";
 import { resolveCore } from "../src/commands/app";
 
 test("`bismuth graph --vault <dir>` prints graph JSON with the vault nodes", async () => {
@@ -17,6 +17,69 @@ test("`bismuth graph --vault <dir>` prints graph JSON with the vault nodes", asy
   expect(g.nodes.some((n: any) => n.id === "internship")).toBe(true);
   expect(g.nodes.some((n: any) => n.id === "essay")).toBe(true);
 });
+
+// --- visibility CLI gate (core/src/visibilityCliGate.ts), wired at the real dispatch point --------
+// End-to-end through an ACTUAL spawned `bismuth` process (not just the gate function's own unit
+// tests) — this is the exact invocation shape an agent's Bash tool uses.
+
+test("BISMUTH_AGENT_CHANNEL unset (the owner's own hand) reads a hidden note straight through", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nTHE-SECRET-STRING-42\n" });
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "read", "Private/secret.md", "--vault", vault], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, BISMUTH_AGENT_CHANNEL: undefined },
+  });
+  const [out, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(0);
+  expect(out).toContain("THE-SECRET-STRING-42");
+});
+
+test("the SAME command with BISMUTH_AGENT_CHANNEL=daemon is refused before it ever reads the file", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nTHE-SECRET-STRING-42\n" });
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "read", "Private/secret.md", "--vault", vault], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, BISMUTH_AGENT_CHANNEL: "daemon" },
+  });
+  const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(out).not.toContain("THE-SECRET-STRING-42");
+  expect(err).toContain("Private/secret.md");
+});
+
+test("`checkpoint diff` refuses under an agent channel against a REAL git repo, via --dir", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nTHE-SECRET-STRING-42\n" }, "bismuth-checkpoint-vis-");
+  await Bun.spawn(["git", "init", "-q"], { cwd: vault }).exited;
+  await Bun.spawn(["git", "-c", "user.email=t@t.com", "-c", "user.name=t", "add", "-A"], { cwd: vault }).exited;
+  await Bun.spawn(["git", "-c", "user.email=t@t.com", "-c", "user.name=t", "commit", "-q", "-m", "initial"], { cwd: vault }).exited;
+
+  const daemon = Bun.spawn(["bun", "run", "cli/src/index.ts", "checkpoint", "diff", "vis-test", "--dir", vault], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, BISMUTH_AGENT_CHANNEL: "daemon" },
+  });
+  const [, daemonErr, daemonCode] = await Promise.all([
+    new Response(daemon.stdout).text(),
+    new Response(daemon.stderr).text(),
+    daemon.exited,
+  ]);
+  expect(daemonCode).toBe(1);
+  expect(daemonErr).toContain("checkpoint");
+
+  // The owner (channel unset) still gets the real diff.
+  const owner = Bun.spawn(["bun", "run", "cli/src/index.ts", "checkpoint", "diff", "vis-test", "--dir", vault], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, BISMUTH_AGENT_CHANNEL: undefined },
+  });
+  const [ownerOut, , ownerCode] = await Promise.all([
+    new Response(owner.stdout).text(),
+    new Response(owner.stderr).text(),
+    owner.exited,
+  ]);
+  expect(ownerCode).toBe(0);
+  expect(JSON.parse(ownerOut).files.some((f: any) => f.path === "Private/secret.md")).toBe(true);
+}, 30_000);
 
 // --- `app` group: core discovery precedence + `page` group headless create ---------------------
 

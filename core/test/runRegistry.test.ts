@@ -1,5 +1,5 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,6 +8,7 @@ import {
   deleteRunRecord,
   resolveRunRegistryBase,
   runKey,
+  runRecordPath,
 } from "../src/runRegistry";
 
 // A pid that's essentially guaranteed to be free (mirrors core/test/daemon.test.ts's convention).
@@ -33,6 +34,20 @@ test("write then read a record", () => {
   const recs = readRunRecords();
   expect(recs).toHaveLength(1);
   expect(recs[0]).toEqual({ port: 4322, vault: "/v/one", pid: PID });
+});
+
+test("a record's optional token round-trips through write + read (ownerToken.ts's X-Bismuth-Token)", () => {
+  writeRunRecord({ port: 4322, vault: "/v/one", pid: PID, token: "abc123" });
+  const recs = readRunRecords();
+  expect(recs).toHaveLength(1);
+  expect(recs[0]).toEqual({ port: 4322, vault: "/v/one", pid: PID, token: "abc123" });
+});
+
+test("runRecordPath names the exact file writeRunRecord creates, written 0600 (it now carries a secret)", () => {
+  writeRunRecord({ port: 4322, vault: "/v/one", pid: PID, token: "abc123" });
+  const file = runRecordPath("/v/one");
+  expect(statSync(file).mode & 0o777).toBe(0o600);
+  expect(JSON.parse(readFileSync(file, "utf8")).token).toBe("abc123");
 });
 
 test("re-writing the same vault overwrites its record (stable filename)", () => {

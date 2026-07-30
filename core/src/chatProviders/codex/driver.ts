@@ -134,7 +134,12 @@ function buildCodexEnv(): Record<string, string> {
   // claudeSpawnEnv's name is a historical artifact (see core/src/claudeWhich.ts) — it's a general
   // "spawn env for a CLI that needs Keychain/PATH access" builder, already reused unmodified by
   // ../opencode.ts and ../acp/driver.ts for their own (non-Claude) child processes.
-  return claudeSpawnEnv() as Record<string, string>;
+  //
+  // "chat": this IS the chat surface (an alternate backend for the same in-app chat core/src/chat.ts
+  // drives for Claude) — stamps BISMUTH_AGENT_CHANNEL so a `bismuth` invocation from this codex
+  // process's own Bash-equivalent tool is gated by core/src/visibilityCliGate.ts rather than running
+  // as the vault owner's own hand (the unstamped default).
+  return claudeSpawnEnv(process.env, "chat") as Record<string, string>;
 }
 
 interface CodexExecArgsInput {

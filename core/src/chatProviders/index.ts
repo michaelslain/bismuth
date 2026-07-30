@@ -17,6 +17,7 @@
 import type { ChatFrame, ChatImage, ChatSink } from "../chat";
 import { CHAT_BACKENDS, CHAT_BACKEND_LIST, type ChatBackend } from "./backends";
 import { BACKEND_IDS, DEFAULT_BACKEND, resolveBackendId, type BackendId } from "../agentBackends/catalog";
+import { resolveVisibilityGate } from "../agentBackends/visibilityGate";
 
 /** Kept as an alias so existing imports (server.ts, tests, docs) keep working — the ids now come
  *  from the backend catalog, which is also what the `chat.provider` settings enum derives from. */
@@ -56,6 +57,39 @@ function fallbackBackend(chatId: string): ChatBackend {
   return owningBackend(chatId) ?? CHAT_BACKENDS[DEFAULT_CHAT_PROVIDER];
 }
 
+
+/**
+ * THE visibility chokepoint for chat. Every session-CREATING verb passes through here before a
+ * backend is spawned, so a backend with no verified enforcement mechanism cannot start against a
+ * vault that hides notes — it gets a `visibility-refused` frame instead.
+ *
+ * This lives in the router, not in the drivers, deliberately. The seven non-Claude drivers were each
+ * written separately and not one of them checked visibility; the docs said "refused" while the code
+ * would have run ungated. One gate here means a NEW backend is refused by default (its catalog entry
+ * starts at "none") rather than silently unprotected until someone remembers.
+ *
+ * Async by necessity (it reads the vault), while the verbs it guards are fire-and-forget `void`. So
+ * it resolves first and dispatches in the continuation: on refusal nothing is ever spawned, and the
+ * caller's synchronous contract is unchanged.
+ *
+ * The channel is always "chat" here — the daemon's equivalent gate is resolveDaemonBackend
+ * (daemon/src/daemon/session.ts), which refuses on the stricter daemon tier.
+ */
+function withVisibilityGate(
+  provider: ChatProviderId,
+  cwd: string,
+  sink: ChatSink,
+  dispatch: () => void,
+): void {
+  void resolveVisibilityGate(provider, "chat", cwd).then((verdict) => {
+    if (verdict.allowed) {
+      dispatch();
+      return;
+    }
+    sink({ type: "error", code: "visibility-refused", binary: provider, message: verdict.message });
+  });
+}
+
 export function openSession(
   chatId: string,
   cwd: string,
@@ -64,7 +98,9 @@ export function openSession(
   computerUse: boolean,
   provider: ChatProviderId,
 ): void {
-  target(chatId, provider).openSession({ chatId, cwd, sink, memoryDir, computerUse });
+  withVisibilityGate(provider, cwd, sink, () =>
+    target(chatId, provider).openSession({ chatId, cwd, sink, memoryDir, computerUse }),
+  );
 }
 
 export function sendMessage(
@@ -77,7 +113,9 @@ export function sendMessage(
   computerUse: boolean,
   provider: ChatProviderId,
 ): void {
-  target(chatId, provider).sendMessage({ chatId, text, cwd, sink, images, memoryDir, computerUse });
+  withVisibilityGate(provider, cwd, sink, () =>
+    target(chatId, provider).sendMessage({ chatId, text, cwd, sink, images, memoryDir, computerUse }),
+  );
 }
 
 export function resumeSession(
@@ -94,7 +132,9 @@ export function resumeSession(
   // backend tears down its own (each driver's resumeSession is idempotent).
   const chosen = CHAT_BACKENDS[resolveChatProvider(provider)];
   for (const b of CHAT_BACKEND_LIST) if (b !== chosen && b.hasSession(chatId)) b.closeChat(chatId);
-  chosen.resumeSession({ chatId, sessionId, cwd, sink, memoryDir, computerUse });
+  withVisibilityGate(provider, cwd, sink, () =>
+    chosen.resumeSession({ chatId, sessionId, cwd, sink, memoryDir, computerUse }),
+  );
 }
 
 /** Replay a past session as ChatFrames — dispatched by the id's PROVIDER (each backend's store is

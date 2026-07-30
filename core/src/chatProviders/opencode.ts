@@ -25,6 +25,28 @@
 // moment), and never flips mid-session — a session started before opencode's server support was
 // detected (or before the shared server crashed) simply keeps running the mode it started in.
 //
+// VISIBILITY GATE (docs/vault/visibility.md): opencode has no native per-path deny of its own, so
+// the only real gate available is agentBackends/sandboxWrapper.ts's OS-level Seatbelt wrapper. A
+// prior design pass verified the raw mechanism live against a real `opencode run` turn
+// (opencode/deepseek-v4-flash-free, $0 cost via Zen's free rotation — see /private/tmp/claude-501/-Users-michaelslain-Documents-dev-bismuth/28ea2c63-ba06-4a2e-b1e2-e93bc7fd4baf/scratchpad/visibility/DESIGN.md
+// §2.5); THIS integration (getOrCreateSession/runTurnLegacy/runTurn below) was independently
+// re-verified live end to end through openSession/setModel/sendMessage exactly as chatProviders/
+// index.ts calls them — opencode/big-pickle (also a free Zen model, $0 cost) — the read tool AND a
+// Bash `cat` fallback of a hidden note were BOTH denied in one real turn, with the secret in no
+// frame, while a sibling PUBLIC note in the SAME restricted vault stayed fully readable in a second
+// turn (the wrapper gates per-file, not per-vault). Two hard consequences follow:
+//  - The wrapper can only apply to a DEDICATED per-turn subprocess (sandboxWrapper.ts's P3), never
+//    the shared `opencode serve` process — that ONE process is multiplexed across every vault this
+//    core hosts, so a profile scoped to one vault's restricted files can't be applied to it without
+//    leaking (or wrongly restricting) every OTHER vault's session on the same process. A RESTRICTED
+//    vault is therefore forced onto RUN mode unconditionally — see getOrCreateSession below — even
+//    when the installed opencode is perfectly capable of serving.
+//  - Where the wrapper itself is unavailable (non-macOS, `sandbox-exec` missing — see
+//    checkSandboxWrapperAvailability) and the vault restricts anything, the session/turn is REFUSED
+//    outright. Never silently spawn unwrapped: a gate that quietly does nothing on failure isn't one.
+// An UNRESTRICTED vault (buildDenyPaths returns nothing) is completely unaffected by any of this —
+// the feature stays invisible until the vault actually marks something hidden/chat-only.
+//
 // Both modes share: the Zen free-model rotation (`withZenFreeRotate`/`pickZenFreeModel`, card #90),
 // the command registry powering `/` autocomplete (server mode: `GET /command`; run mode: `opencode
 // debug config` + built-ins), the auth pill (`opencode auth list` — a plain CLI spawn, safe to run
@@ -38,6 +60,16 @@ import { recallMemory } from "@bismuth/memory";
 import { emit, rebindSessionSink, scheduleSessionClose } from "./sessionSink";
 import { claudeLookupPath, claudeSpawnEnv } from "../claudeWhich";
 import { ensureOpencodeServer, registerOpencodeServerListener, type OpencodeServerHandle } from "./opencodeServer";
+import { buildDenyPaths, type DenyEntry } from "../visibility";
+import { can } from "../agentBackends/catalog";
+import {
+  buildSandboxDenyPaths,
+  checkSandboxWrapperAvailability,
+  describeSandboxWrapperUnavailable,
+  isSandboxApplyFailure,
+  materializeSandboxProfile,
+  wrapArgv,
+} from "../agentBackends/sandboxWrapper";
 import {
   buildOpencodePromptParts,
   commandEntriesFromApi,
@@ -123,10 +155,30 @@ export function sessionCount(): number {
   return sessions.size;
 }
 
+/**
+ * `claudeSpawnEnv`'s env, with `PWD` forced to match `cwd`. LIVE-VERIFIED load-bearing fix: Bun's
+ * `cwd` spawn option correctly `chdir()`s the child before exec, but does NOT update the inherited
+ * `PWD` environment variable — and `opencode run` was found to trust `PWD` over the process's real
+ * working directory. Reproduced directly: spawning `opencode run` with `cwd: "/tmp/ocwd-test"` but
+ * an inherited `PWD` from a DIFFERENT directory made its own `bash` tool's `pwd`/`cat` operate in
+ * the STALE PWD directory, not the one just `chdir()`'d to; forcing `PWD` to match `cwd` (or passing
+ * `--dir <cwd>` — this is the cheaper fix, no extra argv) made every tool call resolve correctly.
+ * `claudeSpawnEnv` itself just spreads the CALLING process's env (Bismuth's own core server's own
+ * launch directory, irrelevant to any vault it serves), so every opencode spawn in this file must
+ * override PWD explicitly or a stale one silently redirects the whole turn to the wrong directory.
+ * This is exactly why the visibility gate matters here beyond "denies the right paths": the deny
+ * list (buildDenyPaths/materializeSandboxProfile, both keyed on `cwd`) and the agent's actual
+ * operating directory must be THE SAME directory, or a deny list is enforcement theater — it would
+ * faithfully deny paths under a vault the agent was never even operating in.
+ */
+function opencodeSpawnEnv(cwd: string): Record<string, string> {
+  return { ...claudeSpawnEnv(process.env, "chat"), PWD: cwd } as Record<string, string>;
+}
+
 /** One opencode CLI invocation → stdout text (stderr ignored). Every RUN-mode open-time discovery
  *  (`models`, `debug config`) and the auth pill (`auth list`, BOTH modes) goes through here. */
 async function runCliText(bin: string, cwd: string, args: string[]): Promise<string> {
-  const proc = Bun.spawn([bin, ...args], { cwd, stdout: "pipe", stderr: "ignore", env: claudeSpawnEnv() as Record<string, string> });
+  const proc = Bun.spawn([bin, ...args], { cwd, stdout: "pipe", stderr: "ignore", env: opencodeSpawnEnv(cwd) });
   const out = await new Response(proc.stdout as ReadableStream).text();
   await proc.exited;
   return out;
@@ -221,10 +273,34 @@ function emitOpenFrames(s: OpencodeSession, server: OpencodeServerHandle | null)
   });
 }
 
+/** Human-facing refusal text for a restricted vault opencode can't (or can no longer) protect —
+ *  shared by session open (getOrCreateSession) and every per-turn re-check (runTurnLegacy, runTurn's
+ *  server-mode guard). `why` names the SPECIFIC unmet precondition — never a vague "can't protect
+ *  this" — so the message never claims a mechanism that wasn't actually checked.
+ *
+ *  DISTINCT from core/src/chat.ts's `visibilityRefusalMessage`, and deliberately not merged with it:
+ *  that one answers "this backend has no verified mechanism at all" (decided up-front by the router's
+ *  chokepoint, agentBackends/visibilityGate.ts), whereas this one answers "opencode normally CAN
+ *  enforce, but a specific precondition failed right here" — wrong platform, no sandbox-exec, or a
+ *  session already bound to shared server mode. The `why` is the whole value; collapsing the two
+ *  would throw it away. Renamed off the shared name so the distinction is visible at every call. */
+function opencodePreconditionRefusal(denyEntries: DenyEntry[], why: string): string {
+  const n = denyEntries.length;
+  return (
+    `This vault marks ${n} note${n === 1 ? "" : "s"} off-limits to AI sessions, but ${why}. ` +
+    "Switch to Claude Code, or clear the vault's hidden/chat-only notes to use opencode here."
+  );
+}
+
 /** Create (or resume) a session, preferring server mode when the shared `opencode serve` process is
  *  up (or comes up within its startup timeout) — see ./opencodeServer.ts. Async because both modes
  *  now involve awaiting something before the session is ready to use (the shared server's startup
- *  promise; a fresh session's `session.create()` call in server mode). */
+ *  promise; a fresh session's `session.create()` call in server mode).
+ *
+ *  A RESTRICTED vault (see this file's top-of-file VISIBILITY GATE note) never even attempts server
+ *  mode — `ensureOpencodeServer` is skipped entirely, so `server` stays null and `mode` resolves to
+ *  "run" below, unconditionally. When the OS wrapper itself is unavailable for a restricted vault,
+ *  the session is refused outright rather than created unprotected. */
 async function getOrCreateSession(
   chatId: string,
   cwd: string,
@@ -237,7 +313,20 @@ async function getOrCreateSession(
     sink({ type: "error", code: "no-opencode", message: "The `opencode` CLI was not found. Install opencode (opencode.ai) to use this provider." });
     return null;
   }
-  const server = await ensureOpencodeServer(bin).catch(() => null);
+
+  // Visibility gate (docs/vault/visibility.md): resolved fresh at every session open, mirroring
+  // chat.ts's createSession — see this file's top-of-file note for the full rationale.
+  const denyEntries = await buildDenyPaths(cwd, "chat");
+  const restricted = denyEntries.length > 0;
+  if (restricted) {
+    const availability = checkSandboxWrapperAvailability({ selfSandboxes: can("opencode", "selfSandboxes") });
+    if (!availability.available) {
+      sink({ type: "error", code: "visibility-refused", binary: "opencode", message: opencodePreconditionRefusal(denyEntries, describeSandboxWrapperUnavailable(availability.reason)) });
+      return null;
+    }
+  }
+
+  const server = restricted ? null : await ensureOpencodeServer(bin).catch(() => null);
   const session: OpencodeSession = {
     id: chatId,
     cwd,
@@ -372,12 +461,43 @@ async function runTurnServer(s: OpencodeSession, text: string, images: ChatImage
   if (next) void runTurn(s, next.text, next.images);
 }
 
+/** Emit a terminal error+result+done for a turn that never ran (a visibility refusal, a lost
+ *  server connection, …) and dispatch whatever's queued next — the four-frame tail every
+ *  early-refusal path needs. */
+function refuseTurn(s: OpencodeSession, message: string, code: "error" | "visibility-refused" = "error"): void {
+  s.turnActive = true;
+  emit(s, { type: "error", code, ...(code === "visibility-refused" ? { binary: "opencode" } : {}), message });
+  emit(s, { type: "result", isError: true, numTurns: 1, costUsd: null });
+  emit(s, { type: "done" });
+  s.turnActive = false;
+  s.lastActivityAt = Date.now();
+  const next = s.queue.shift();
+  if (next) void runTurn(s, next.text, next.images);
+}
+
 /** Spawn one `opencode run --format json` for this turn and stream its events as ChatFrames (RUN
- *  mode — the fallback path for an opencode too old to `serve`). Unchanged from the original
- *  single-mode driver. */
+ *  mode — the fallback path for an opencode too old to `serve`, OR the forced path for a vault the
+ *  visibility gate restricts — see this file's top-of-file VISIBILITY GATE note). */
 async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
   s.turnActive = true;
   s.lastActivityAt = Date.now();
+
+  // Visibility gate, recomputed FRESH every turn — never cached. Run mode's one-subprocess-per-turn
+  // shape means a vault edit (a note just marked hidden, or un-marked) takes effect on the very next
+  // turn with nothing to invalidate, unlike Claude's spawn-fixed managedSettings (which needs an
+  // explicit respawn — see docs/vault/visibility.md's "Mid-session change" table). This also covers
+  // a session whose MODE was locked to "run" for an unrelated reason (an old opencode with no
+  // `serve` support) at a point when the vault had nothing restricted yet.
+  const denyEntries = await buildDenyPaths(s.cwd, "chat");
+  let profilePath: string | null = null;
+  if (denyEntries.length > 0) {
+    const availability = checkSandboxWrapperAvailability({ selfSandboxes: can("opencode", "selfSandboxes") });
+    if (!availability.available) {
+      return refuseTurn(s, opencodePreconditionRefusal(denyEntries, describeSandboxWrapperUnavailable(availability.reason)), "visibility-refused");
+    }
+    profilePath = await materializeSandboxProfile(s.cwd, buildSandboxDenyPaths(denyEntries, s.cwd));
+  }
+
   // opencode's local sqlite rejects concurrent openers at cold start ("database is locked" —
   // observed live when a session-open discovery fetch and the first turn's run spawned together).
   // Await the shared open-info chain before spawning so the first turn never races it; afterwards
@@ -406,9 +526,13 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
     ...(model ? ["-m", model] : []),
     ...(slash ? ["--command", slash.command, ...(slash.args ? [slash.args] : [])] : [text]),
   ];
+  // Wrapped only when `profilePath` is non-null (something restricted AND the OS wrapper is
+  // available — see above); an unrestricted vault's argv is byte-identical to before this gate
+  // existed, never paying sandbox-exec's overhead.
+  const wrappedArgs = wrapArgv(args, profilePath);
   let proc: ReturnType<typeof Bun.spawn>;
   try {
-    proc = Bun.spawn(args, { cwd: s.cwd, stdout: "pipe", stderr: "pipe", env: claudeSpawnEnv() as Record<string, string> });
+    proc = Bun.spawn(wrappedArgs, { cwd: s.cwd, stdout: "pipe", stderr: "pipe", env: opencodeSpawnEnv(s.cwd) });
   } catch (e) {
     s.turnActive = false;
     emit(s, { type: "error", code: "spawn", message: (e as Error).message });
@@ -463,10 +587,18 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
   // The session may have been closed (closeChat) while this turn ran — nothing left to report to.
   if (sessions.get(s.id) !== s) return;
 
-  const failed = exitCode !== 0 && !wasAborting;
+  // `sandbox_apply` failing (exit 71) means the OS gate never actually engaged for this turn —
+  // ALWAYS a refusal to surface plainly, never an ordinary CLI failure to fold into the generic
+  // stderr-tail message below (agentBackends/sandboxWrapper.ts's isSandboxApplyFailure/P4). Only
+  // meaningful when this turn WAS wrapped (profilePath !== null) — an unwrapped turn exiting 71 for
+  // some unrelated reason (opencode's own use of that code, however unlikely) gets the normal path.
+  const sandboxApplyFailed = profilePath !== null && isSandboxApplyFailure(exitCode);
+  const failed = (exitCode !== 0 && !wasAborting) || sandboxApplyFailed;
   if (failed && !sawErrorFrame) {
-    const tail = stderr.trim().split("\n").slice(-3).join("\n").trim();
-    emit(s, { type: "error", code: "error", message: tail || `opencode exited with code ${exitCode}` });
+    const message = sandboxApplyFailed
+      ? "The OS sandbox could not be applied to this turn (exit 71) — refusing rather than running it unprotected."
+      : stderr.trim().split("\n").slice(-3).join("\n").trim() || `opencode exited with code ${exitCode}`;
+    emit(s, { type: "error", code: "error", message });
   }
   // A run that streamed an error event still EXITS 0 (verified live: an API 401 → error event,
   // exit code 0) — the result must report the failure either way or the footer shows a clean turn.
@@ -492,21 +624,28 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
 /** Dispatch one turn on whichever mode this session settled on at creation. A SERVER-mode session
  *  whose shared server has since crashed (rare — see opencodeServer.ts's watchExit) reports a clean
  *  error rather than silently spawning a run-mode subprocess mid-session (the two modes have
- *  different opencode session-id semantics; switching underneath a live chat would be surprising). */
+ *  different opencode session-id semantics; switching underneath a live chat would be surprising).
+ *
+ *  A SERVER-mode session can never be retrofitted with the OS wrapper (this file's top-of-file
+ *  VISIBILITY GATE note, P3: the shared `serve` process multiplexes every vault this core hosts, so
+ *  a profile scoped to ONE vault can't be applied to it). If this vault has since restricted a note
+ *  (it had nothing restricted when the session was created — see getOrCreateSession), the turn is
+ *  refused outright rather than answered unprotected; closing the chat and reopening it re-runs the
+ *  gate at session-creation time and correctly lands on the wrapped run path. */
 async function runTurn(s: OpencodeSession, text: string, images?: ChatImage[]): Promise<void> {
   if (s.mode === "run") return runTurnLegacy(s, text);
-  const server = await ensureOpencodeServer(s.bin).catch(() => null);
-  if (!server) {
-    s.turnActive = true;
-    emit(s, { type: "error", code: "error", message: "Lost connection to the opencode server." });
-    emit(s, { type: "result", isError: true, numTurns: 1, costUsd: null });
-    emit(s, { type: "done" });
-    s.turnActive = false;
-    s.lastActivityAt = Date.now();
-    const next = s.queue.shift();
-    if (next) void runTurn(s, next.text, next.images);
-    return;
+
+  const denyEntries = await buildDenyPaths(s.cwd, "chat");
+  if (denyEntries.length > 0) {
+    return refuseTurn(
+      s,
+      opencodePreconditionRefusal(denyEntries, "this chat already started on opencode's shared server mode, which can't enforce that — close this chat and start a new one"),
+      "visibility-refused",
+    );
   }
+
+  const server = await ensureOpencodeServer(s.bin).catch(() => null);
+  if (!server) return refuseTurn(s, "Lost connection to the opencode server.");
   return runTurnServer(s, text, images, server);
 }
 
@@ -582,7 +721,7 @@ export async function sessionHistoryFrames(sessionId: string, cwd: string): Prom
     }
   }
   try {
-    const proc = Bun.spawn([bin, "export", sessionId], { cwd, stdout: "pipe", stderr: "ignore", env: claudeSpawnEnv() as Record<string, string> });
+    const proc = Bun.spawn([bin, "export", sessionId], { cwd, stdout: "pipe", stderr: "ignore", env: opencodeSpawnEnv(cwd) });
     const out = await new Response(proc.stdout as ReadableStream).text();
     await proc.exited;
     const json = JSON.parse(out) as unknown;

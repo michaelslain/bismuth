@@ -26,11 +26,23 @@ test("buildQueryOptions wires mcpServers.bismuth with vault-scoped env when the 
         BISMUTH_MEMORY_DIR: "/vault/.daemon/memory",
         BISMUTH_DOCS_DIR: "/home/me/.bismuth/docs",
         BISMUTH_CLI: "/home/me/.bismuth/bin/bismuth",
+        BISMUTH_MCP_CHANNEL: "daemon",
+        BISMUTH_AGENT_CHANNEL: "daemon",
       },
     },
   })
   // Explicit-only: the daemon must not inherit a human's ambient `-s user` MCP servers.
   expect(o.settingSources).toEqual([])
+})
+
+// The CLI-dispatch visibility gate (core/src/visibilityCliGate.ts) reads BISMUTH_AGENT_CHANNEL to
+// tell the daemon's own `bismuth` invocations (this session's Bash tool) from the vault owner's
+// (unstamped) ones. Stamped on BOTH the base session env and the MCP server's own env — see the
+// comments in session.ts for why the MCP block needs it set explicitly (it's a replacement object,
+// not a spread of process.env).
+test("buildQueryOptions stamps BISMUTH_AGENT_CHANNEL=daemon on the base session env", () => {
+  const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" })
+  expect((o.env as Record<string, string>).BISMUTH_AGENT_CHANNEL).toBe("daemon")
 })
 
 test("buildQueryOptions omits the MCP block entirely when the mcp binary is absent (graceful degrade)", () => {

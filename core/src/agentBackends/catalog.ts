@@ -69,6 +69,40 @@ export type McpRegistrationMode = "cli" | "config" | "none";
 export type MemoryInjectionMode = "hooks" | "systemPrompt" | "agentsMd" | "mcpOnly";
 
 /**
+ * How a backend's VISIBILITY GATE (docs/vault/visibility.md) is enforced on ONE channel (chat or
+ * daemon) — never a blanket claim spanning both, and never a claim spanning platforms:
+ *  - "native":       the CLI's own policy/sandbox layer enforces it (Claude Code's
+ *                    managedSettings.permissions.deny + sandbox.filesystem.denyRead +
+ *                    disallowedTools + a live canUseTool, together — see catalog CLAUDE below).
+ *  - "wrapper-macos": Bismuth wraps the spawned process in an OS-level read-deny sandbox
+ *                    (agentBackends/sandboxWrapper.ts, Seatbelt/`sandbox-exec`). The suffix IS the
+ *                    precondition: on any non-Darwin host, when `sandbox-exec` is missing, or when
+ *                    the backend self-sandboxes (nesting fails — see `selfSandboxes` below), this
+ *                    resolves to a REFUSAL at runtime, never to "probably fine anyway".
+ *  - "none":         nothing enforces it. A vault with any restricted note MUST refuse this
+ *                    backend on this channel rather than run it unprotected.
+ *
+ * Never add a value that means "advisory" — a system-prompt appendix naming off-limits notes is
+ * explicitly NOT a gate (defense-in-depth only), on every backend that has one.
+ *
+ * HONESTY RULE, in these words: a value here is a claim that a mechanism is wired AND was verified
+ * live on that specific backend. Changing "none" to "wrapper-macos" for a new backend requires a
+ * recorded live acceptance run (read tool denied AND a Bash/shell fallback denied, in one real
+ * turn) for that specific CLI — "it should work, it's the same OS primitive" is not sufficient.
+ * That exact shortcut is the failure mode docs/chat/backends.md's closing section warns about.
+ */
+export type VisibilityEnforcement = "native" | "wrapper-macos" | "none";
+
+/** Per-channel visibility-gate support — replaces a single boolean, which could not say "enforced
+ *  for chat but not the daemon" (true for opencode: a per-turn subprocess can be wrapped, but the
+ *  daemon's process model can't — see sandboxWrapper.ts's P3), "only on macOS", or "only because we
+ *  wrap it, not because the CLI itself enforces anything". */
+export interface VisibilityGateSupport {
+  chat: VisibilityEnforcement;
+  daemon: VisibilityEnforcement;
+}
+
+/**
  * What a backend can do, so no surface has to branch on a backend ID.
  *
  * This replaces the old `providerSupportsClaudeControls(provider) => provider === "claude"` in
@@ -130,15 +164,23 @@ export interface BackendCapabilities {
   /** Can run a vault's daemon brain (unattended, resumable, headless). */
   daemon: boolean;
   /**
-   * Can enforce the vault's per-note VISIBILITY GATE (docs/vault/visibility.md).
-   *
-   * True only for Claude Code today: the gate needs `managedSettings.permissions.deny` +
-   * `sandbox.filesystem.denyRead` + `disallowedTools` together (daemon/src/daemon/session.ts
-   * buildQueryOptions). The system-prompt appendix is advisory only and explicitly NOT the gate,
-   * so a backend without this flag MUST be refused as a daemon backend for a vault that has any
-   * hidden notes — otherwise a real security boundary silently becomes a suggestion.
+   * Can enforce the vault's per-note VISIBILITY GATE (docs/vault/visibility.md), PER CHANNEL — see
+   * {@link VisibilityGateSupport}. A channel resolving to anything but "native"/"wrapper-macos" MUST
+   * be refused as that backend's chat/daemon target for a vault that has any restricted note —
+   * otherwise a real security boundary silently becomes a suggestion. The system-prompt appendix
+   * every backend's driver may ALSO write is advisory only and explicitly never counted here.
    */
-  visibilityGate: boolean;
+  visibilityGate: VisibilityGateSupport;
+  /**
+   * Applies its OWN OS-level sandbox when it runs (Claude Code's `sandbox.filesystem.denyRead`,
+   * Codex's Seatbelt in `codex-rs/sandboxing/src/seatbelt.rs`) — read ONLY by
+   * `agentBackends/sandboxWrapper.ts`'s availability check (P2): Seatbelt profiles do not nest, so
+   * wrapping a self-sandboxing backend in ANOTHER profile fails the whole spawn
+   * (`sandbox_apply: Operation not permitted`, exit 71) rather than layering protection — verified
+   * live, see sandboxWrapper.ts's header. `true` for `claude` and `codex`; `false` for everything
+   * else in this catalog (none of the rest apply any OS sandbox of their own).
+   */
+  selfSandboxes: boolean;
   mcp: McpRegistrationMode;
   memory: MemoryInjectionMode;
 }
@@ -203,7 +245,13 @@ const CLAUDE: BackendDescriptor = {
     agentsGraph: "hooks",
     subagents: true,
     daemon: true,
-    visibilityGate: true,
+    // "native" on both channels: chat.ts and daemon/session.ts each set
+    // managedSettings.permissions.deny + sandbox.filesystem.denyRead + disallowedTools together
+    // (chat additionally layers a live canUseTool check) — verified live, repeatedly, by two
+    // independent passes (docs/vault/visibility.md's Step-0 spike + the design pass's red team).
+    visibilityGate: { chat: "native", daemon: "native" },
+    // Applies sandbox.filesystem.denyRead itself when enabled — never a wrap TARGET.
+    selfSandboxes: true,
     mcp: "cli",
     memory: "hooks",
   },
@@ -285,7 +333,23 @@ const OPENCODE: BackendDescriptor = {
     agentsGraph: "none",
     subagents: false,
     daemon: false,
-    visibilityGate: false,
+    // chat: "wrapper-macos" — chatProviders/opencode.ts wraps each RESTRICTED vault's per-turn
+    // `opencode run` subprocess in a Seatbelt profile (agentBackends/sandboxWrapper.ts). Verified
+    // live against a real turn (opencode/deepseek-v4-flash-free, $0 cost): both the structured read
+    // tool AND a Bash `cat` fallback were denied in the same turn — see opencode.ts's top-of-file
+    // note for the exact probe. The suffix is load-bearing: on non-macOS, or when `sandbox-exec` is
+    // missing, this resolves to a runtime refusal (checkSandboxWrapperAvailability), never a silent
+    // unwrapped spawn.
+    // daemon: "none" — a restricted vault can NEVER select opencode as the daemon backend today.
+    // Not because opencode can't self-sandbox (it can't, see selfSandboxes below) but because the
+    // wrapper's own precondition P3 (agentBackends/sandboxWrapper.ts) requires a dedicated
+    // per-session-or-per-turn process for ONE vault — opencode's daemon integration doesn't exist
+    // in this codebase at all yet (sendMessage in daemon/src/daemon/session.ts only dispatches
+    // "claude"/"codex"), so there is nothing to verify a gate against.
+    visibilityGate: { chat: "wrapper-macos", daemon: "none" },
+    // Confirmed false: opencode applies no OS sandbox of its own (nothing in its CLI wraps itself
+    // in Seatbelt/Landlock/etc — this is exactly what makes it wrappable).
+    selfSandboxes: false,
     // Server mode COULD register MCP dynamically per session (POST /mcp, no config file) instead of
     // a static config-file merge — not wired up here (out of scope for this backend-upgrade task);
     // the mechanism stays "config" until that's built.
@@ -382,7 +446,21 @@ const CODEX: BackendDescriptor = {
     agentsGraph: "hooks",
     subagents: true,
     daemon: true,
-    visibilityGate: false,
+    // "none" on both channels: `codex exec`'s per-path deny lives in a self-described BETA
+    // `[permissions.*].filesystem` layer that has already had one upstream deny-read bypass fixed
+    // (PR #23943); it is UNVERIFIED whether headless `codex exec` — Bismuth's actual invocation —
+    // honours a project `.codex/config.toml` profile at all, and codex is not installed on the
+    // machine this catalog was authored on, so none of it could be verified live. Never claim
+    // "wrapper-macos" either: codex self-sandboxes with its own Seatbelt profile (see
+    // selfSandboxes below), so Bismuth's wrapper cannot nest around it (verified: a non-identical
+    // inner profile fails the whole spawn with `sandbox_apply: Operation not permitted`, exit 71).
+    // daemon/src/daemon/session.ts's resolveDaemonBackend is the chokepoint that refuses codex the
+    // moment any note is hidden, degrading to Claude with a logged reason.
+    visibilityGate: { chat: "none", daemon: "none" },
+    // Verified from codex's own source (codex-rs/sandboxing/src/seatbelt.rs): it applies its own
+    // Seatbelt profile when sandboxed. Per R1 (profiles don't nest), this backend can never be a
+    // wrap target.
+    selfSandboxes: true,
     mcp: "cli",
     memory: "agentsMd",
   },
@@ -407,10 +485,17 @@ const CODEX: BackendDescriptor = {
  *    live, so claiming cost/contextUsage there would be a guess this driver cannot back — false
  *    across the board is the honest default until a specific agent is verified to emit it.
  *  - computerUse: false — no `--chrome`-equivalent capability exists in the verified ACP surface.
- *  - agentsGraph/subagents/daemon/visibilityGate: false — Surface 3/4 dead ends per the research
- *    report (no session-lifecycle telemetry, no systemPrompt field for the daemon's persona
- *    injection, and visibilityGate specifically requires Claude Code's own
- *    managedSettings/sandbox/disallowedTools trio, which no ACP agent exposes).
+ *  - agentsGraph/subagents/daemon: false — Surface 3/4 dead ends per the research report (no
+ *    session-lifecycle telemetry, no systemPrompt field for the daemon's persona injection).
+ *  - visibilityGate: {chat:"none", daemon:"none"} for EVERY agent sharing this profile. None
+ *    exposes Claude Code's own managedSettings/sandbox/disallowedTools trio, and none has been
+ *    proven wrappable: cline/gemini/goose are not installed on the machine this catalog was
+ *    authored on (unverifiable), and openclaw — installed, but never exercised under the OS
+ *    wrapper — is the first graduation candidate should that live acceptance test ever be run and
+ *    recorded (see agentBackends/sandboxWrapper.ts + the honesty rule on VisibilityEnforcement
+ *    above: "should work, same primitive" does not license flipping this to "wrapper-macos").
+ *    claude-code-acp/codex-acp bridge a CLI that self-sandboxes (Claude Code / Codex), so even a
+ *    verified wrapper could never apply to them (R1 forbids nesting).
  *
  *  - effort: true — the driver implements session/set_config_option for a "thought_level" category
  *    option (see driver.ts setEffort).
@@ -444,7 +529,12 @@ const ACP_SHARED_CAPABILITIES: BackendCapabilities = {
   agentsGraph: "none",
   subagents: false,
   daemon: false,
-  visibilityGate: false,
+  visibilityGate: { chat: "none", daemon: "none" },
+  // Default for the four NATIVE-ACP agents sharing this object as-is (cline/gemini/goose/openclaw):
+  // none of them apply an OS sandbox of their own. The two ADAPTER entries below (claude-code-acp,
+  // codex-acp) override this to `true` — they bridge a CLI (Claude Code / Codex) that DOES
+  // self-sandbox, per the same research finding backing CODEX's own `selfSandboxes` above.
+  selfSandboxes: false,
   mcp: "cli",
   memory: "mcpOnly",
 };
@@ -502,7 +592,12 @@ const CLAUDE_CODE_ACP: BackendDescriptor = {
   installHint: "Runs Claude Code through Zed's ACP adapter (`npx @zed-industries/claude-code-acp`) — requires Node/npx and your own Claude Code login.",
   // Hidden from the picker: the native driver above supersedes this bridge. See `hidden`.
   hidden: true,
-  capabilities: ACP_SHARED_CAPABILITIES,
+  // selfSandboxes: true (overriding the shared default) — this adapter is built on the Claude
+  // Agent SDK, which can apply the same OS-level sandbox the native "claude" backend uses. Per R1
+  // (Seatbelt profiles don't nest), Bismuth's wrapper can never apply around it — see DESIGN's
+  // finding on both ACP adapter entries. visibilityGate stays {chat:"none",daemon:"none"}: no
+  // policy layer is reachable THROUGH the ACP bridge itself either way.
+  capabilities: { ...ACP_SHARED_CAPABILITIES, selfSandboxes: true },
 };
 
 /** Codex CLI via `@agentclientprotocol/codex-acp` — an ADAPTER bridging Codex's App Server onto
@@ -514,7 +609,9 @@ const CODEX_ACP: BackendDescriptor = {
   installHint: "Runs the Codex CLI through its ACP adapter (`npx @agentclientprotocol/codex-acp`) — requires Node/npx and your own Codex/ChatGPT login.",
   // Hidden from the picker: the native driver above supersedes this bridge. See `hidden`.
   hidden: true,
-  capabilities: ACP_SHARED_CAPABILITIES,
+  // selfSandboxes: true — see CLAUDE_CODE_ACP's identical override above; this adapter bridges
+  // Codex's App Server, which self-sandboxes per CODEX's own `selfSandboxes` entry above.
+  capabilities: { ...ACP_SHARED_CAPABILITIES, selfSandboxes: true },
 };
 
 /** Every backend, keyed by id. */

@@ -95,11 +95,22 @@ function bismuthMcpBin(): string | null {
 
 /** Build `session/new`'s `mcpServers` array: Bismuth's own MCP server, with `BISMUTH_VAULT` always
  *  set and `BISMUTH_MEMORY_DIR` added only when this chat's vault has the daemon enabled (mirrors
- *  terminal.ts's PTY injection gate). Empty array when the binary isn't installed. */
+ *  terminal.ts's PTY injection gate). Empty array when the binary isn't installed.
+ *
+ *  Also stamps `BISMUTH_MCP_CHANNEL`/`BISMUTH_AGENT_CHANNEL` = "chat": this config object is a
+ *  REPLACEMENT env (no `...process.env` spread), so nothing here inherits either var from the
+ *  parent unless set explicitly — and mcp/src/cli.ts's `runCli()` passes `process.env` straight
+ *  through when it spawns the `bismuth` binary, so whatever channel this MCP server's own process
+ *  sees is exactly what a `bismuth_cli` call (or a direct CLI invocation shelled out from this MCP
+ *  server's own process, however unlikely) will be gated as. */
 function buildMcpServers(vaultRoot: string, memoryDir?: string): AcpMcpServerStdio[] {
   const bin = bismuthMcpBin();
   if (!bin) return [];
-  const env: { name: string; value: string }[] = [{ name: "BISMUTH_VAULT", value: vaultRoot }];
+  const env: { name: string; value: string }[] = [
+    { name: "BISMUTH_VAULT", value: vaultRoot },
+    { name: "BISMUTH_MCP_CHANNEL", value: "chat" },
+    { name: "BISMUTH_AGENT_CHANNEL", value: "chat" },
+  ];
   if (memoryDir) env.push({ name: "BISMUTH_MEMORY_DIR", value: memoryDir });
   return [{ name: "bismuth", command: bin, args: [], env }];
 }
@@ -194,7 +205,10 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
-        env: claudeSpawnEnv() as Record<string, string>,
+        // "chat": every ACP agent here is a chat backend. Stamps BISMUTH_AGENT_CHANNEL so a
+        // `bismuth` invocation from THIS process's own shell/tool-use (not just through the MCP
+        // server above) is gated by core/src/visibilityCliGate.ts.
+        env: claudeSpawnEnv(process.env, "chat") as Record<string, string>,
       });
     } catch {
       return null;

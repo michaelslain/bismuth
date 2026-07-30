@@ -17,7 +17,7 @@ import {
 import { whichClaude } from "./claudeWhich";
 import { loadSessionModel, saveSessionModel } from "./chatModelStore";
 import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
-import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet, type DenyEntry } from "./visibility";
+import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, isDeniedPath, type DenyEntry } from "./visibility";
 import { readDaemonSessionIds } from "./daemon";
 import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
 import { emit, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
@@ -115,9 +115,21 @@ export type ChatFrame =
   /** A fatal problem. `no-claude` = the `claude` CLI isn't installed (surface setup, never fall
    *  back to an API); `no-opencode` = the `opencode` CLI isn't installed (the opencode provider —
    *  see chatProviders/); `no-binary` = an ACP agent's CLI isn't installed (chatProviders/acp/ —
-   *  `binary` names which one, e.g. "cline"/"gemini"); `spawn`/`exit` = the child failed; `error` =
-   *  an SDK/turn error. */
-  | { type: "error"; code: "no-claude" | "no-opencode" | "no-binary" | "spawn" | "exit" | "error"; message: string; binary?: string };
+   *  `binary` names which one, e.g. "cline"/"gemini"); `visibility-refused` = this vault restricts
+   *  one or more notes and Bismuth has no VERIFIED mechanism to enforce that on the chosen
+   *  backend+channel (docs/vault/visibility.md's per-backend table) — `binary` names the refused
+   *  backend, `restrictedCount` is how many notes/folders are restricted (a COUNT only — never their
+   *  names or paths, since naming a hidden note in an error message would defeat the point of hiding
+   *  it), and `message` is the full user-facing explanation built by {@link visibilityRefusalMessage}.
+   *  Emitted INSTEAD OF opening the session — never as a mid-turn failure; `spawn`/`exit` = the
+   *  child failed; `error` = an SDK/turn error. */
+  | {
+      type: "error";
+      code: "no-claude" | "no-opencode" | "no-binary" | "visibility-refused" | "spawn" | "exit" | "error";
+      message: string;
+      binary?: string;
+      restrictedCount?: number;
+    };
 
 export type ChatSink = (frame: ChatFrame) => void;
 
@@ -367,7 +379,10 @@ interface ChatSession {
   model?: string;
   /** LIVE chat-visibility deny set (both path forms), read by canUseTool at call time so a
    *  mid-session visibility change takes effect without a stale captured copy. Rebuilt on respawn. */
-  deniedPathSet: Set<string>;
+  /** LIVE restricted entries for this session's channel, checked via isDeniedPath (which
+   *  case-folds + matches subpaths). Replaced the exact-match Set, which a differently-cased
+   *  path defeated. */
+  deniedEntries: DenyEntry[];
   /** Enable Claude's --chrome (browser/computer-use) capability. Read from settings at spawn —
    *  respawns preserve the flag via this field (like effort). */
   computerUse?: boolean;
@@ -709,6 +724,30 @@ export function formatMcpStatus(servers: ChatMcpServerSummary[]): string {
 }
 
 /**
+ * Pure: the body text for a `"visibility-refused"` error frame — pushed INSTEAD of opening a
+ * session, when this vault restricts one or more notes and Bismuth has no VERIFIED mechanism to
+ * enforce that on the chosen backend+channel (the per-backend table in docs/vault/visibility.md).
+ *
+ * Takes only a COUNT of restricted notes/folders, never their names or paths: naming a hidden note
+ * in an error message would defeat the entire point of hiding it. `backendLabel` is the backend's
+ * already-resolved display name (e.g. "Cline", "Codex") — this module has no dependency on the
+ * backend catalog, so the caller (whichever chokepoint resolves the per-channel capability — see
+ * docs/vault/visibility.md) is responsible for resolving the id to a label before calling this.
+ *
+ * The two ways out are stated explicitly, matching the non-negotiable that a refusal must never be
+ * a dead end: switch to a backend that DOES enforce the gate (Claude Code, today), or unhide the
+ * restricted notes.
+ */
+export function visibilityRefusalMessage(backendLabel: string, restrictedCount: number): string {
+  const notes = restrictedCount === 1 ? "1 note" : `${restrictedCount} notes`;
+  return (
+    `This vault marks ${notes} off-limits to AI sessions, and Bismuth has no verified way to enforce ` +
+    `that on ${backendLabel}. Rather than run unprotected, this chat won't start — switch to Claude ` +
+    `Code (which does enforce it), or unhide the restricted notes.`
+  );
+}
+
+/**
  * Answer "/mcp" LOCALLY from the SDK's own control-plane (Query.mcpServerStatus(), the same call
  * emitInitManifest already makes for the header's connected/total count) instead of forwarding the
  * text into the input queue — see isMcpCommand for why. Emits the SAME frame shape a normal turn
@@ -910,7 +949,7 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
     alwaysAllow: new Set(),
     sessionId: null,
     bin,
-    deniedPathSet: denyPathSet(denyEntries),
+    deniedEntries: denyEntries,
     computerUse,
     apiKeySource: "none",
     turnActive: false,
@@ -954,7 +993,7 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
  */
 function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?: string): boolean {
   // canUseTool fires ONLY for tools not already allowed by the user's settings (pre-allowed tools
-  // run silently — correct Claude Code behavior). It reads session.deniedPathSet LIVE so a respawn
+  // run silently — correct Claude Code behavior). It reads session.deniedEntries LIVE so a respawn
   // that swapped the set takes effect immediately.
   const canUseTool = (
     toolName: string,
@@ -968,7 +1007,10 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
     // and absolute forms are in deniedPathSet (the model isn't consistent — see denyPathSet).
     for (const key of ["file_path", "notebook_path", "path"] as const) {
       const p = toolInput[key];
-      if (typeof p === "string" && session.deniedPathSet.has(p)) {
+      // isDeniedPath, NOT deniedPathSet.has(p): the set is an exact byte comparison, and a model's
+      // reported path is not byte-identical to ours. On macOS's case-insensitive filesystem
+      // "Private/SECRET.md" opens the same file as "Private/secret.md" and slipped straight through.
+      if (typeof p === "string" && isDeniedPath(session.deniedEntries, p)) {
         return Promise.resolve({ behavior: "deny", message: "This file is marked hidden from chat (visibility)." });
       }
     }
@@ -1022,6 +1064,13 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
       options: {
         pathToClaudeCodeExecutable: session.bin,
         cwd: session.cwd,
+        // Explicit `env` (SPREADING process.env, never replacing it — see the SDK's own doc comment
+        // on Options.env) so BISMUTH_AGENT_CHANNEL reaches this session's `claude` subprocess: the
+        // signal core/src/visibilityCliGate.ts's CLI-dispatch gate reads to tell an agent's own hand
+        // (this session, running its own Bash tool) from the vault owner's (an unstamped `bismuth`
+        // invocation). This IS the chat surface, so "chat" — never "daemon", which is the DIFFERENT
+        // always-on session daemon/src/daemon/session.ts spawns.
+        env: { ...process.env, BISMUTH_AGENT_CHANNEL: "chat" },
         includePartialMessages: true,
         // resume an existing Claude Code session (keeps its history + session_id) when asked; a
         // brand-new session simply omits it.
@@ -1069,7 +1118,7 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         ...(denyEntries.length > 0
           ? {
               managedSettings: { permissions: { deny: buildManagedSettingsDeny(denyEntries) } },
-              sandbox: { enabled: true, failIfUnavailable: false, filesystem: { denyRead: absDenyPaths(denyEntries) } },
+              sandbox: { enabled: true, failIfUnavailable: false, filesystem: { denyRead: sandboxDenyRead(denyEntries, session.cwd) } },
             }
           : {}),
         // Memory auto-recall (daemon-gated). The visual chat is an SDK session with NO relay
@@ -1160,7 +1209,7 @@ async function respawnSession(session: ChatSession): Promise<void> {
   session.visibilityDirty = false;
   session.spawnOptionsDirty = false;
   const denyEntries = await buildDenyPaths(session.cwd, "chat");
-  session.deniedPathSet = denyPathSet(denyEntries);
+  session.deniedEntries = denyEntries;
   // Tear down the old query() (interrupt any in-flight, then close) — NOT closeChat, which would
   // capture-to-memory and drop the session from the registry. NOTE: no await between the close and
   // spawnChatQuery below — session.q must already point at the NEW query when the old drain loop's
@@ -2022,7 +2071,12 @@ function captureToMemory(s: ChatSession): void {
       // denyPathSet carries BOTH the vault-relative form (matches editor-context paths + a
       // relative tool file_path) AND the canonical-absolute form (matches the SDK's own absolute
       // path reporting), so a check against either form is safe.
-      const restricted = denyPathSet(await buildDenyPaths(cwd, "daemon"));
+      const restrictedEntries = await buildDenyPaths(cwd, "daemon");
+      // isDeniedPath rather than an exact-match Set: case-folds and matches subpaths, so a
+      // differently-cased path can't smuggle a restricted file's content into daemon memory.
+      const restricted = { has: (p: string) => isDeniedPath(restrictedEntries, p) };
+      // Both path forms, for the Bash-command substring scan below.
+      const restrictedForms = restrictedEntries.flatMap((e) => [e.rel, e.abs]).filter(Boolean);
       const touchedRestricted = entries.some((e) => {
         // (1) Any daemon-restricted file NAMED in the fixed <editor-context> preamble.
         const text = extractText(e.message);
@@ -2046,7 +2100,8 @@ function captureToMemory(s: ChatSession): void {
           }
           const cmd = input.command; // Bash: best-effort substring match on the restricted paths
           if (typeof cmd === "string") {
-            for (const p of restricted) if (p && cmd.includes(p)) return true;
+            const lower = cmd.toLowerCase();
+            for (const p of restrictedForms) if (lower.includes(p.toLowerCase())) return true;
           }
           return false;
         });

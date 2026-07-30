@@ -5,7 +5,7 @@ import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"
 import { whichClaude } from "../lib/claudeWhich.ts"
 import { augmentPath } from "../lib/childEnv.ts"
-import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, type DenyEntry } from "../lib/visibility.ts"
+import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, type DenyEntry } from "../lib/visibility.ts"
 import { mcpBin, cliBin, docsDir } from "../lib/bismuthPaths.ts"
 import { recordDaemonSessionId } from "./sessionIds.ts"
 import { sendCodexMessage } from "./codexSession.ts"
@@ -117,22 +117,42 @@ export interface BotResponse {
 }
 
 /**
+ * Per-backend, DAEMON-channel visibility-gate enforcement — a deliberate, literal duplication of
+ * the "daemon" side of `core/src/agentBackends/catalog.ts`'s per-channel `visibilityGate` capability
+ * (`BackendCapabilities.visibilityGate: { chat, daemon }`, each a `VisibilityEnforcement` of
+ * `"native" | "wrapper-macos" | "none"`). This workspace has NO dependency on `@bismuth/core` (see
+ * `../lib/visibility.ts`'s header comment for why — a separately-bundled binary that must stay lean,
+ * same rationale as `claudeWhich.ts`/`bismuthPaths.ts`), so the fact is ported here by hand rather
+ * than imported — port any change to catalog.ts's daemon column into this set in the SAME commit,
+ * exactly like `../lib/visibility.ts` is kept in lockstep with `../../core/src/visibility.ts`.
+ *
+ * A backend belongs here iff catalog.ts resolves its `visibilityGate.daemon` to `"native"` — i.e. it
+ * has its OWN policy/sandbox layer that enforces the gate on the daemon's `bypassPermissions`
+ * session (Claude: `managedSettings.permissions.deny` + `sandbox.filesystem.denyRead` +
+ * `disallowedTools`, set together by `buildQueryOptions` below — verified, Step-0 spike,
+ * docs/vault/visibility.md). `"wrapper-macos"` never qualifies here, even for a backend that has it
+ * for CHAT (opencode does): the OS wrapper needs a dedicated per-session-or-per-turn process for ONE
+ * vault, and this runtime's whole shape is the opposite — one process multiplexing every enabled
+ * vault's brain. There is no opencode daemon integration in this codebase at all today regardless
+ * (`sendMessage` below only ever dispatches `"claude"`/`"codex"`). The system-prompt appendix that
+ * names hidden notes (see `buildSystemPrompt` above) is explicitly ADVISORY — "defense-in-depth
+ * ONLY … never the gate" — and never makes a backend belong here.
+ */
+const DAEMON_BACKENDS_WITH_VISIBILITY_GATE: ReadonlySet<string> = new Set(["claude"])
+
+/**
  * Which agent CLI may run a vault's daemon brain — and the one hard constraint on that choice.
  *
- * The vault VISIBILITY GATE (docs/vault/visibility.md) is enforced by three Claude-Code-specific
- * mechanisms that buildQueryOptions sets together: `managedSettings.permissions.deny`,
- * `sandbox.filesystem.denyRead`, and `disallowedTools`. The system-prompt appendix that names the
- * hidden notes is explicitly ADVISORY — "defense-in-depth ONLY … never the gate".
- *
- * No other agent CLI has an equivalent triple. So for a vault with ANY hidden note, a non-Claude
- * backend cannot enforce the gate, and running one would quietly convert a real security boundary
- * into a polite request the model is free to ignore. This function is the chokepoint that refuses
- * that combination: it is deliberately pure so the rule is unit-tested, and it MUST be the only way
- * a daemon backend is chosen — any future non-Claude backend has to come through here.
+ * No agent CLI outside {@link DAEMON_BACKENDS_WITH_VISIBILITY_GATE} can enforce the vault visibility
+ * gate on the daemon channel. So for a vault with ANY hidden note, a backend outside that set cannot
+ * enforce the gate, and running one would quietly convert a real security boundary into a polite
+ * request the model is free to ignore. This function is the chokepoint that refuses that
+ * combination: it is deliberately pure so the rule is unit-tested, and it MUST be the only way a
+ * daemon backend is chosen — any future backend has to come through here.
  *
  * The refusal degrades to Claude rather than throwing: the daemon is an always-on service whose
- * crons must keep firing, and Claude is both the default and the only backend that can enforce the
- * gate. The caller logs `refusal` so the choice is never silent.
+ * crons must keep firing, and Claude is both the default and (today) the only backend in the
+ * enforcing set. The caller logs `refusal` so the choice is never silent.
  *
  * This guardrail deliberately landed BEFORE the first alternative backend existed, so the
  * constraint was in place before there was anything tempting to point at it. There is now one:
@@ -145,7 +165,7 @@ export function resolveDaemonBackend(
   hiddenNoteCount: number,
 ): { backend: string; refusal?: string } {
   const want = (requested || "claude").trim() || "claude"
-  if (want === "claude") return { backend: "claude" }
+  if (DAEMON_BACKENDS_WITH_VISIBILITY_GATE.has(want)) return { backend: want }
   if (hiddenNoteCount > 0) {
     return {
       backend: "claude",
@@ -216,6 +236,10 @@ export function buildQueryOptions(
       BISMUTH_MEMORY_DIR: ctx.memoryDir,
       PATH: augmentPath(process.env.PATH || "/usr/bin:/bin:/usr/sbin:/sbin"),
       ...(tools.cli ? { BISMUTH_CLI: tools.cli } : {}),
+      // The signal core/src/visibilityCliGate.ts's CLI-dispatch gate reads to tell this daemon
+      // session's OWN Bash-tool `bismuth` invocations from the vault owner's (unstamped) ones. This
+      // is the always-on daemon brain, never a chat session — "daemon", the stricter channel.
+      BISMUTH_AGENT_CHANNEL: "daemon",
     },
     appendSystemPrompt: tools.systemPrompt,
     model: opts?.model ?? "haiku",
@@ -233,7 +257,18 @@ export function buildQueryOptions(
   }
 
   if (tools.mcp) {
-    const env: Record<string, string> = { BISMUTH_VAULT: ctx.root, BISMUTH_MEMORY_DIR: ctx.memoryDir }
+    // BISMUTH_MCP_CHANNEL/BISMUTH_AGENT_CHANNEL: "daemon" — this env object is a REPLACEMENT (no
+    // ...process.env spread), so nothing here inherits either var from the parent unless set
+    // explicitly. mcp/src/cli.ts's runCli() passes process.env straight through when it spawns the
+    // actual `bismuth` binary, so whatever this MCP server process's own env says is exactly what
+    // BOTH the existing mcp/src/visibilityGate.ts gate (BISMUTH_MCP_CHANNEL) and the newer CLI-
+    // dispatch gate (BISMUTH_AGENT_CHANNEL, core/src/visibilityCliGate.ts) will see.
+    const env: Record<string, string> = {
+      BISMUTH_VAULT: ctx.root,
+      BISMUTH_MEMORY_DIR: ctx.memoryDir,
+      BISMUTH_MCP_CHANNEL: "daemon",
+      BISMUTH_AGENT_CHANNEL: "daemon",
+    }
     if (tools.docs) env.BISMUTH_DOCS_DIR = tools.docs
     if (tools.cli) env.BISMUTH_CLI = tools.cli
     options.mcpServers = { bismuth: { command: tools.mcp, env } }
@@ -246,7 +281,7 @@ export function buildQueryOptions(
   // unrestricted vault is unaffected.
   if (denyEntries.length > 0) {
     options.managedSettings = { permissions: { deny: buildManagedSettingsDeny(denyEntries) } }
-    options.sandbox = { enabled: true, failIfUnavailable: false, filesystem: { denyRead: absDenyPaths(denyEntries) } }
+    options.sandbox = { enabled: true, failIfUnavailable: false, filesystem: { denyRead: sandboxDenyRead(denyEntries, ctx.root) } }
     // When ANY file is restricted, hard-disable the bismuth_cli MCP tool (its `file read` can
     // target any vault, escaping the managedSettings deny) AND Grep/Glob (an unscoped whole-vault
     // scan returns a hidden file's lines — the daemon has no canUseTool second layer, so an

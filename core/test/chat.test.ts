@@ -24,6 +24,7 @@ import {
   unstreamedAssistantFrames,
   isMcpCommand,
   formatMcpStatus,
+  visibilityRefusalMessage,
   withLocalSlashCommands,
   LOCAL_SLASH_COMMANDS,
   computerUseChange,
@@ -296,6 +297,31 @@ describe("formatMcpStatus (BUG #39: the /mcp reply body)", () => {
   test("a tool count of 0 is still shown (an explicit zero, not omitted)", () => {
     const text = formatMcpStatus([{ name: "empty", status: "connected", toolCount: 0 }]);
     expect(text).toContain("0 tools");
+  });
+});
+
+// The "visibility-refused" ChatFrame's body text — pushed when a backend+channel has no verified
+// mechanism to honour this vault's hidden notes (docs/vault/visibility.md). The load-bearing
+// invariant: it must say WHICH notes are restricted in COUNT terms only — never a name or path,
+// since naming a hidden note in an error message defeats the whole point of hiding it.
+describe("visibilityRefusalMessage (never names a restricted note, only counts them)", () => {
+  test("names the backend and states both ways out", () => {
+    const text = visibilityRefusalMessage("Cline", 3);
+    expect(text).toContain("Cline");
+    expect(text).toContain("Claude Code");
+    expect(text).toContain("unhide");
+  });
+
+  test("pluralizes the note count correctly", () => {
+    expect(visibilityRefusalMessage("Codex", 3)).toContain("3 notes");
+    expect(visibilityRefusalMessage("Codex", 1)).toContain("1 note");
+    expect(visibilityRefusalMessage("Codex", 1)).not.toContain("1 notes");
+  });
+
+  test("never contains a path separator or a file extension — a count, not a listing", () => {
+    const text = visibilityRefusalMessage("Gemini CLI", 7);
+    expect(text).not.toMatch(/\.md\b/);
+    expect(text).not.toContain("/");
   });
 });
 

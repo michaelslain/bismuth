@@ -23,6 +23,17 @@
 // subcommand, a parse failure, a timeout) resolves null so the caller falls back to the per-turn
 // `run` path rather than breaking the provider.
 //
+// VISIBILITY GATE (docs/vault/visibility.md): this module is deliberately VAULT-AGNOSTIC — the one
+// server it starts is shared across every vault this core process hosts, scoped per-request only via
+// each call's `directory` query param. That shape is exactly why it can NEVER carry an OS-level
+// (Seatbelt) read-deny profile scoped to one vault's restricted files: a profile applied to THIS
+// process would apply to every other vault's session riding it too (agentBackends/sandboxWrapper.ts's
+// precondition P3 — "a dedicated per-session-or-per-turn process for ONE vault"). The constraint is
+// therefore enforced by the CALLER, not here: chatProviders/opencode.ts's getOrCreateSession never
+// even calls `ensureOpencodeServer` for a vault the visibility gate restricts, forcing it onto the
+// per-turn `run` path (which CAN be wrapped, one profile per subprocess) instead. Nothing in this
+// file needs to know which vault(s) are restricted for that invariant to hold.
+//
 // Event shapes verified LIVE against opencode 1.18.4 (`GET /event`, a real prompt + a real
 // permission ask/reply cycle, captured byte-for-byte) differ from @opencode-ai/sdk@1.18.9's
 // generated types.gen.d.ts in real, load-bearing ways:
@@ -160,7 +171,18 @@ function spawnAndWaitForBanner(bin: string): Promise<LiveServer | null> {
         cwd: homedir(),
         stdout: "pipe",
         stderr: "pipe",
-        env: claudeSpawnEnv() as Record<string, string>,
+        // "chat": every session this shared server ever hosts is a chat session (the daemon has no
+        // opencode integration — see catalog.ts's OPENCODE.capabilities.daemon) — stamped so the
+        // CLI-dispatch visibility gate (core/src/visibilityCliGate.ts) can tell any `bismuth` Bash
+        // call this process's own children make from the vault owner's (unstamped) ones.
+        //
+        // PWD: homedir() — matches `cwd` above explicitly. Bun's `cwd` option chdir()s the child but
+        // does NOT update an inherited `PWD` env var, and `opencode run` was found LIVE to trust a
+        // stale `PWD` over the real working directory for its own tool calls (see opencode.ts's
+        // `opencodeSpawnEnv`, the per-turn RUN-mode equivalent of this same fix) — harmless here
+        // either way (every server-mode request scopes itself via its own `directory` query param,
+        // not process cwd), but cheap insurance against depending on that distinction staying true.
+        env: { ...(claudeSpawnEnv(process.env, "chat") as Record<string, string>), PWD: homedir() },
       });
     } catch {
       resolve(null);

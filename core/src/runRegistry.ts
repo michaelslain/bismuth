@@ -17,11 +17,16 @@ import { mkdirSync, writeFileSync, renameSync, readdirSync, readFileSync, unlink
 import { pidAlive } from "./daemonState";
 import { isTempPath } from "./tempPath";
 
-/** One running-core record: which port serves which vault (+ pid, for future liveness checks). */
+/** One running-core record: which port serves which vault (+ pid, for future liveness checks).
+ *  `token` (added for the owner-token gate — see ownerToken.ts) is this boot's random secret; a
+ *  request presenting it via `X-Bismuth-Token` is treated as the vault's own owner, unfiltered.
+ *  Optional so a record written by an older core (or read by tooling that predates the gate)
+ *  still round-trips through readRunRecords' shape check below. */
 export interface RunRecord {
   port: number;
   vault: string;
   pid: number;
+  token?: string;
 }
 
 /** `~/.bismuth/run` — where each running core drops its discovery record. Overridable via
@@ -36,7 +41,10 @@ export function runKey(vault: string): string {
   return Buffer.from(vault).toString("base64url");
 }
 
-function recordFile(vault: string): string {
+/** Path of this vault's run record. Exported (not just used internally) so the owner-token gate
+ *  (ownerToken.ts's `ownerTokenDenyPath`) can name the exact file that must be denied to every
+ *  agent channel — it carries this boot's token (see `RunRecord.token` above). */
+export function runRecordPath(vault: string): string {
   return join(runRegistryDir(), `${runKey(vault)}.json`);
 }
 
@@ -49,9 +57,14 @@ export function writeRunRecord(rec: RunRecord): void {
   try {
     const dir = runRegistryDir();
     mkdirSync(dir, { recursive: true });
-    const file = recordFile(rec.vault);
+    const file = runRecordPath(rec.vault);
     const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(rec, null, 2));
+    // 0600: this record now carries the boot's owner token (ownerToken.ts) — a per-process
+    // secret that must not be world-readable. The mode applies to the tmp file at CREATE time
+    // (writeFileSync always creates `tmp` fresh — its name is unique per pid+file, so it never
+    // already exists); renameSync then moves that same inode onto `file`, so the mode survives
+    // the rename rather than being reset to the destination path's prior permissions.
+    writeFileSync(tmp, JSON.stringify(rec, null, 2), { mode: 0o600 });
     renameSync(tmp, file);
     cleanupVault = rec.vault;
     if (!cleanupInstalled) {
@@ -69,7 +82,7 @@ export function writeRunRecord(rec: RunRecord): void {
 
 export function deleteRunRecord(vault: string): void {
   try {
-    unlinkSync(recordFile(vault));
+    unlinkSync(runRecordPath(vault));
   } catch {
     /* already gone */
   }
