@@ -2,13 +2,13 @@
 //
 // LEVEL-OF-DETAIL for the ASCII knowledge graph (2D): the pure half.
 //
-// STATUS: OPT-IN, not the shipped default. The shipped ASCII field (AsciiGraphRenderer, see
-// rasterize()'s `showLodMasses` gate) renders every individual node as a glyph at EVERY zoom stop —
-// the hierarchy reads through zoom-driven node COLOR + the cluster-name labels instead (see
-// AsciiGraphRenderer.ts's LEVEL-DRIVEN COLOR block), never an aggregate mass. This module's
-// aggregate-entity machinery is retained but unreachable from the app — only
-// AsciiGraphRenderer.test.ts / lod.test.ts exercise it via GraphConfig.showLodMasses —
-// everything below still describes exactly what it does when that flag is on.
+// STATUS: LIVE, the shipped default. GraphView.tsx sets GraphConfig.showLodMasses whenever the
+// ascii renderer is active outside "local" mode — which is the app's shipped default view — so the
+// field rasterizes AGGREGATE ENTITIES + AGGREGATE EDGES at coarse zoom stops (see rasterize()'s
+// `showLodMasses` gate) instead of an individual glyph per node. The hierarchy ALSO still reads
+// through zoom-driven node COLOR + the cluster-name labels (see AsciiGraphRenderer.ts's
+// LEVEL-DRIVEN COLOR block) once the leaf pass takes over near the deep stops. Wired live in commit
+// 3842b68 (2026-07-29) — AsciiGraphRenderer.test.ts / lod.test.ts exercise the flag both on and off.
 //
 // THE IDEA (the summarizing algorithm, when enabled): zoomed out, the field does NOT rasterize
 // every note and every link. It renders each community of the ACTIVE HIERARCHY LEVEL as one

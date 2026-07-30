@@ -435,3 +435,31 @@ Also unify while in here: the two renderers weight bloom points differently — 
 `depthAlpha(nv.dr)`, Canvas uses `max(0.2, nv.pscale)`. Under one renderer that choice has to be made
 once. `depthAlpha` is the right one: it is the same curve the marks themselves fade by, so the
 atmosphere stays *emitted by* the field rather than being a second, independently-tuned depth cue.
+
+---
+
+## 8. Task 3 confirmations (writing `CanvasGraphRenderer.test.ts`)
+
+Re-verified while writing the characterization suite — restated here because Task 3's own brief
+(`task-3-brief.md`) repeated some of the plan's original, already-superseded claims:
+
+- **`LabelLayer.ts` is dead code**, not Canvas-only as the plan originally assumed (§0/§2.2 above
+  already correct this — restated for anyone reading only this task's diff). It is imported by
+  nobody; delete it in the merge rather than porting it to either renderer.
+- **`VaultIntro.tsx` and `EmbeddedGraph.tsx` depend on `CanvasGraphRenderer` by concrete class**,
+  through off-seam methods (`setFitMargin`, `setFrameOffsetY`, `applyGraphConfig(renderer:
+  CanvasGraphRenderer, …)`) that aren't part of the `GraphRenderer` interface — and **neither has a
+  single test**. This task did not add coverage for them (out of scope: they're first-run/embedded
+  surfaces, not the Canvas-only renderer behaviours this task was scoped to), so they remain exactly
+  as risky for the merge's step 8 as §3/§5.5 already describe.
+- **`syncSize()` is ASCII-only.** Canvas has no equivalent per-frame host-box reconciliation in
+  `tick()` — it relies solely on `ResizeObserver` + `measure()` at mount/build. Confirmed directly:
+  porting AsciiGraphRenderer.test.ts's "picks the host box up from the render loop when no
+  ResizeObserver notification arrives" test onto `CanvasGraphRenderer` as-is would fail (Canvas stays
+  blank at the degenerate 0×0 box forever, since nothing re-measures without an RO callback). Not
+  added to `CanvasGraphRenderer.test.ts` — it characterizes an ASCII behaviour Canvas doesn't have,
+  not a Canvas-only behaviour, and this task's brief scoped it to the latter.
+- **The ASCII test file has 55 tests, not the 63 this task's own brief claimed** (`task-3-brief.md`
+  reproduced the plan's stale count verbatim). §0/§4 above already have the corrected number;
+  `CanvasGraphRenderer.test.ts` adds 7 more, bringing `app/src/graph/` to 252 passing tests total
+  across 12 files (`bun test app/src/graph/`).

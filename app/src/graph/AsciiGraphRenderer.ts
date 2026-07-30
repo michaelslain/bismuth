@@ -1037,15 +1037,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   /** Project every ACTIVE primitive onto the grid, then draw the layers into the cell buffers.
    *
-   *  LEVEL OF DETAIL (2D + a community hierarchy) — OPT-IN via GraphConfig.showLodMasses, off in
-   *  the shipped app (see the `lodOn` gate below). When enabled, the zoom ladder maps onto the
-   *  hierarchy: coarse stops rasterize the active level's AGGREGATE ENTITIES + AGGREGATE EDGES only
-   *  (a frame costs O(clusters + inter-cluster connectors)); the leaf passes below — per-node
+   *  LEVEL OF DETAIL (2D + a community hierarchy) — LIVE by default via GraphConfig.showLodMasses
+   *  (GraphView.tsx sets it whenever the ascii renderer is active outside "local" mode — see the
+   *  `lodOn` gate below). When enabled, the zoom ladder maps onto the hierarchy: coarse stops
+   *  rasterize the active level's AGGREGATE ENTITIES + AGGREGATE EDGES only (a frame costs
+   *  O(clusters + inter-cluster connectors)); the leaf passes below — per-node
    *  projection, the real edge loop, the real node loop — simply do not run until `lodMix`'s leaf
    *  alpha comes up near the deep stops. Crossfades between adjacent levels (and between the finest
    *  level and the leaves) reuse the exact alphas of the cluster-name/file-name label crossfade, so
    *  geometry and naming always move together. 3D keeps the original full-detail path untouched.
-   *  By default (flag off), every node rasterizes as a glyph at every zoom stop. */
+   *  With the flag off (e.g. local mode), every node rasterizes as a glyph at every zoom stop instead. */
   private rasterize(is2d: boolean) {
     const m = this.m;
     const cells = m.cols * m.rows;
@@ -1090,11 +1091,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
     const t = resolutionT(this.res, this.maxRes);
 
-    // GraphConfig.showLodMasses opts IN to the LOD aggregate-entity/edge passes below — OFF by
-    // default. The shipped ASCII redesign renders every individual node as a glyph at every zoom
-    // stop; the hierarchy still reads through node COLOR (see the LEVEL-DRIVEN COLOR block below)
-    // + the existing cluster-name labels, never an aggregate mass. The mass/aggregate-edge code
-    // is retained but unreachable from the app — only AsciiGraphRenderer.test.ts sets this flag.
+    // GraphConfig.showLodMasses opts IN to the LOD aggregate-entity/edge passes below — LIVE by
+    // default (GraphView.tsx sets it whenever the ascii renderer is active outside "local" mode).
+    // With the flag off (e.g. local mode) every individual node rasterizes as a glyph at every zoom
+    // stop instead; the hierarchy then reads only through node COLOR (see the LEVEL-DRIVEN COLOR
+    // block below) + the cluster-name labels, never an aggregate mass.
     const lodOn = this.cfg.showLodMasses === true && is2d && this.levelCount > 0 && this.entityLevels.length > 0;
     this.lodOn = lodOn;
     const mix = lodOn ? lodMix(t, this.levelCount) : null;

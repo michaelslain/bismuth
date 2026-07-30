@@ -42,16 +42,17 @@ export interface GraphConfig {
   /** ASCII renderer only: graph.backgroundNoise (settingsSchema.ts) — the faint ASCII noise texture
    *  under the field. Off by default; unused by this (legacy) Canvas2D renderer. */
   backgroundNoise?: boolean;
-  // --- Not a settings-backed field: no settingsSchema entry, and no real caller sets it. Retained
-  // implementation of the aggregate-mass LOD; unreachable from the app — only
-  // AsciiGraphRenderer.test.ts / lod.test.ts set it. ---
+  // --- Not a settings-backed field: no settingsSchema entry. GraphView sets it directly (not
+  // through this Canvas renderer, which has no aggregate-mass path — see below) whenever the ascii
+  // renderer is active outside "local" mode, which is the app's shipped default view. ---
   /** AsciiGraphRenderer only: opt IN to LOD cluster summarization (aggregate entity masses +
-   *  aggregate edges) at coarse zoom stops — OFF by default. The shipped ASCII field renders every
-   *  individual node as a glyph at every zoom stop instead, with the hierarchy read through
-   *  zoom-driven node COLOR + the cluster-name labels (see AsciiGraphRenderer.ts colorLevelsFor /
-   *  the LEVEL-DRIVEN COLOR block) rather than an aggregate mass. Retained implementation of the
-   *  aggregate-mass LOD; unreachable from the app — only AsciiGraphRenderer.test.ts / lod.test.ts
-   *  set it. */
+   *  aggregate edges) at coarse zoom stops — LIVE by default for the shipped ascii field (GraphView
+   *  sets it whenever ascii is active outside "local" mode). With the flag off (e.g. local mode),
+   *  ASCII renders every individual node as a glyph at every zoom stop instead, with the hierarchy
+   *  read through zoom-driven node COLOR + the cluster-name labels (see AsciiGraphRenderer.ts
+   *  colorLevelsFor / the LEVEL-DRIVEN COLOR block) rather than an aggregate mass. This Canvas
+   *  renderer has no aggregate-mass path at all (2D-only there too) — the field only matters to
+   *  AsciiGraphRenderer, and only AsciiGraphRenderer.test.ts / lod.test.ts exercise it directly. */
   showLodMasses?: boolean;
 }
 
