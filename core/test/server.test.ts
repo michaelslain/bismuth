@@ -2116,3 +2116,25 @@ test("POST /daemon/pages creates a validated page under .daemon/pages and lists 
     server.stop(true);
   }
 });
+
+test("GET /asset is channel-filtered: a hidden asset's BYTES are not readable without the owner token", async () => {
+  // The owner-token pass deliberately left /asset unfiltered because its callers are native
+  // <img src>/<embed> elements. But a hidden PDF or image is exactly the kind of note a user hides,
+  // and the bytes are one `curl` away — the route returns file content like any other read route.
+  const { vault, memory } = await makeSampleVault();
+  await Bun.write(join(vault, "Private", "diagram.md"), "---\nvisibility: hidden\n---\nSENTINEL-ASSET\n");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // Tokenless = an agent. Defaults to the strictest channel and must be refused.
+    const agent = await fetch(`${base}/asset?path=Private/diagram.md`);
+    expect(agent.status).toBe(403);
+    expect(await agent.text()).not.toContain("SENTINEL-ASSET");
+
+    // A visible asset is still served tokenless — the gate must not break ordinary embeds.
+    const ok = await fetch(`${base}/asset?path=essay.md`);
+    expect(ok.status).toBe(200);
+  } finally {
+    server.stop(true);
+  }
+});

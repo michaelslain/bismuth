@@ -71,7 +71,14 @@ export function mcpChannel(env: Record<string, string | undefined> = process.env
  */
 export function cliAgentChannel(env: Record<string, string | undefined> = process.env): VisibilityChannel | "owner" {
   const raw = env.BISMUTH_AGENT_CHANNEL;
-  if (raw === undefined) return "owner";
+  // EMPTY counts as absent, not as a garbled agent value. `export BISMUTH_AGENT_CHANNEL=` and shells
+  // that propagate empty vars are ordinary in a human's environment, and Bismuth itself never writes
+  // an empty value — it always stamps "chat" or "daemon" explicitly. So an empty value can only have
+  // come from the OWNER's own shell, and treating it as an agent locked them out of their own CLI
+  // (found by the acceptance run). Nothing is lost by being lenient here: this signal is an honesty
+  // boundary, and an agent that could set the var to "" could equally `unset` it — the layer that
+  // actually ENFORCES against a determined process is the OS sandbox wrapper, not this env var.
+  if (raw === undefined || raw.trim() === "") return "owner";
   return raw === "chat" ? "chat" : "daemon";
 }
 

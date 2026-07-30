@@ -816,9 +816,20 @@ export function createServer(cfg: CoreConfig) {
     // guesses) its path, same class as the existing "existence isn't secret" gap (`ls -la`, /tree's
     // badge) — now extended to binary bytes specifically. Closing it needs a different mechanism
     // (e.g. a short-lived signed asset URL) and is out of scope for this pass.
-    "GET /asset": async (_, url) => {
+    "GET /asset": async (req, url) => {
       const path = requireQueryParam(url, "path");
       const abs = await resolveAsset(cfg.vault, path);
+      // Channel-filtered like every other content-returning read route. This route serves BYTES —
+      // a hidden PDF, image or drawing is exactly the kind of note someone hides, and it is one
+      // `curl` away otherwise. The owner (the app, which carries the token) is never filtered, so
+      // ordinary <img src>/<embed> rendering is unaffected. Checked AFTER resolution so the
+      // symlink-resolved path is what gets tested, matching how the deny list is built.
+      if (abs) {
+        const denied = await denyEntriesForRequest(req);
+        if (denied.length > 0 && (isDeniedPath(denied, abs) || isDeniedPath(denied, path))) {
+          return error("forbidden", 403, { "Cache-Control": "no-store" });
+        }
+      }
       // `no-store` on the miss (#38): a "not found" is only ever a TRANSIENT fact about a
       // mutable vault — the file can be created/renamed into place moments later (a pasted
       // screenshot, a race with the file watcher, a wikilink clicked before its target

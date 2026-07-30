@@ -42,10 +42,12 @@ describe("cliAgentChannel", () => {
     expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "chat" })).toBe("chat");
     expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "daemon" })).toBe("daemon");
   });
-  test("a garbled value fails safe to 'daemon', NOT to 'owner'", () => {
+  test("a garbled NON-EMPTY value fails safe to 'daemon', NOT to 'owner'", () => {
     // Unset and garbled must not collapse to the same answer — a corrupted signal should still gate.
     expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "nonsense" })).toBe("daemon");
-    expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "" })).toBe("daemon");
+    // NOTE: an EMPTY value used to assert "daemon" here. The acceptance run showed that locks the
+    // OWNER out of their own CLI (`export BISMUTH_AGENT_CHANNEL=` is ordinary in a human shell), and
+    // Bismuth never writes an empty value itself. See the dedicated empty-value test below.
   });
 });
 
@@ -279,4 +281,16 @@ describe("gateCliInvocation (the CLI's own dispatch-point gate)", () => {
   test("no vault at all allows through regardless of channel — nothing to protect", async () => {
     expect((await gateCliInvocation(["--help"], { BISMUTH_AGENT_CHANNEL: "daemon" })).allowed).toBe(true);
   });
+});
+
+test("an EMPTY channel value is the owner, not an agent — found by the acceptance run", () => {
+  // `export BISMUTH_AGENT_CHANNEL=` is ordinary in a human's shell, and Bismuth never writes an
+  // empty value itself, so an empty one can only be the owner's. Treating it as an agent locked the
+  // owner out of their own CLI — a violation of the one non-negotiable this feature has.
+  expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "" })).toBe("owner");
+  expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "   " })).toBe("owner");
+  expect(cliAgentChannel({})).toBe("owner");
+  // A garbled NON-empty value still fails safe to the stricter channel.
+  expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "nonsense" })).toBe("daemon");
+  expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "chat" })).toBe("chat");
 });
