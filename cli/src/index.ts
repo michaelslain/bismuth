@@ -25,6 +25,7 @@ import { commands as pageCmds } from "./commands/page";
 import { commands as installCmds } from "./commands/install";
 import { commands as backendsCmds } from "./commands/backends";
 import { commands as checkpointCmds } from "./commands/checkpoint";
+import { gateCliInvocation } from "../../core/src/visibilityCliGate";
 
 const registry: CommandMap = {
   ...fileCmds, ...noteCmds, ...searchCmds, ...graphCmds, ...taskCmds, ...baseCmds,
@@ -71,6 +72,18 @@ if (three && registry[three]) {
 if (!cmdKey) {
   console.error(`unknown command: ${argv.slice(0, 3).join(" ")}\n`);
   printHelp();
+  process.exit(1);
+}
+
+// The visibility gate (core/src/visibilityCliGate.ts), checked HERE — the one place every
+// invocation of this binary passes through, no matter which command was matched or how it was
+// invoked (a script, a subprocess, an agent's Bash tool). Keyed on BISMUTH_AGENT_CHANNEL, which is
+// unset for the vault OWNER's own hand (their shell, a dev script, CI) — so this is a no-op for
+// every interactive/headless use of the CLI today, and only refuses when Bismuth itself spawned the
+// process that's running this command (see that file's header for the full design).
+const gate = await gateCliInvocation(argv);
+if (!gate.allowed) {
+  console.error(gate.reason ?? "Refused by the vault's visibility settings.");
   process.exit(1);
 }
 

@@ -185,7 +185,32 @@ run the brain. `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) is the pu
 enforces this, and every backend selection must pass through it. It degrades to Claude with a logged
 reason rather than throwing, because the daemon is always-on and its crons must keep firing.
 
-`capabilities.visibilityGate` is the flag, and it is true for exactly one backend.
+## The visibility gate is a per-channel capability, not a flag
+
+`capabilities.visibilityGate` used to be a single boolean — "true for exactly one backend" — which
+could not say "enforced for chat but not the daemon," "only on macOS," or "only because Bismuth wraps
+it, not because the CLI itself enforces anything." All three of those are real for at least one
+backend today (opencode's chat channel is wrapped, on macOS only, and its daemon channel is refused
+outright), so the flag became a per-channel, mechanism-naming value:
+
+```ts
+type VisibilityEnforcement = "native" | "wrapper-macos" | "none";
+interface VisibilityGateSupport { chat: VisibilityEnforcement; daemon: VisibilityEnforcement }
+```
+
+`"native"` means the CLI's own policy layer enforces it (Claude only). `"wrapper-macos"` means
+Bismuth wraps the spawned process in an OS-level read-deny sandbox (`agentBackends/sandboxWrapper.ts`)
+— a real, additional mechanism for a backend with no native per-path deny of its own, gated on
+platform + a `selfSandboxes` precondition (a backend that already applies its own OS sandbox can't be
+wrapped in a second one — Seatbelt profiles don't nest). `"none"` means a restricted vault MUST refuse
+that backend on that channel rather than run it unprotected.
+
+The full per-backend/per-channel table — which nine backends land where, on which platform, by which
+mechanism, and **verified or not** — lives in
+[../vault/visibility.md](../vault/visibility.md#per-backendper-channel-enforcement), not here, so
+there is exactly one place it can go stale. That page also documents a real, currently-open gap: the
+catalog says which backends are *supposed* to be refused, but not every chat driver has been wired to
+actually check it yet.
 
 ## Adding a backend
 
@@ -222,6 +247,13 @@ knows**, and it has shown up four times:
    instead and never claiming a version for an adapter fetched on demand.
 4. `@opencode-ai/sdk`'s generated types disagreeing with the running server about both the delta
    event and the permission event. Fixed by reading those events as untyped JSON.
+5. `capabilities.visibilityGate` itself, in its original boolean form, had **zero consumers** —
+   grepping for anywhere it was read outside the catalog's own declaration returned nothing.
+   `resolveDaemonBackend` hardcoded `want === "claude"` instead of reading it. A flag nobody reads is
+   the purest form of this failure mode: it costs nothing to set and asserts nothing true. Fixed by
+   turning it into the per-channel shape above and making it the thing two real chokepoints
+   (`resolveDaemonBackend`, and — partially, see the gap noted in
+   [../vault/visibility.md](../vault/visibility.md) — the chat provider router) actually branch on.
 
 The lesson generalises: when a flag, a payload field, or a generated type asserts a capability,
 prefer the version of the code that can be wrong *loudly*. A missing control is a small annoyance; a

@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { watch } from "node:fs";
 import { createSseRegistry, formatEvent } from "./sse";
 import { createAsyncCache } from "./asyncCache";
@@ -14,7 +14,7 @@ import { buildTaskRows } from "./bases/tasksData";
 import { parseBaseFile } from "./bases/parse";
 import { resolveSource } from "./bases/source";
 import { upsertRow, deleteRow, reorderRow } from "./bases/rowOps";
-import type { GraphData, TreeEntry } from "./graph";
+import type { GraphData, GraphNode, TreeEntry } from "./graph";
 import {
   collectVaultTasks,
   toggleTaskLine,
@@ -23,9 +23,9 @@ import {
   archiveResolvedTasks,
 } from "./tasks";
 import { todayISO } from "./dates";
-import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
+import { dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
 import { applyReviewToRow } from "./srs/reviewRow";
-import type { ReviewResponse } from "./srs/types";
+import type { ReviewResponse, Deck } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession, getSessionByTermId, scheduleSessionKill, cancelSessionKill, listSessionIds, claimPooledSession, attachSink, detachSink, prewarmPool, setPoolMemoryDir } from "./terminal";
 // Chat verbs route through the PROVIDER router (core/src/chatProviders/) so each chat session can
@@ -59,9 +59,10 @@ import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSes
 import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarget, sendCommand, resolveReply, type UiTabsSnapshot } from "./uiControl";
 import { UI_CONTROL_BLOCKLIST } from "./commands";
 import { writeRunRecord } from "./runRegistry";
+import { mintOwnerToken, resolveRequestChannel, type RequestChannel } from "./ownerToken";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, readMcpRegisterWith, type AppConfig, SETTINGS_FILE, setFolderIcon, setFolderVisibility, readDailyNotes } from "./settings";
-import { resolveVisibility, resolveFolderVisibility, type Visibility } from "./visibility";
+import { resolveVisibility, resolveFolderVisibility, buildDenyPaths, isDeniedPath, type Visibility, type DenyEntry } from "./visibility";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 import { searchVault, invalidateSearchIndex, updateSearchIndex } from "./search";
@@ -481,6 +482,75 @@ export function createServer(cfg: CoreConfig) {
     }
   }
 
+  // --- Owner-token gate (closes the unauthenticated HTTP content oracle — see ownerToken.ts) ---
+  // Minted fresh per boot, held only in memory + this vault's 0600 run record. A request
+  // presenting it via X-Bismuth-Token is the vault's OWN app/CLI — every content route below
+  // stays unfiltered for it, exactly as before this gate existed. Every other request is treated
+  // as an agent acting on the owner's behalf (chat or daemon, defaulting to the stricter daemon)
+  // and gets the SAME visibility filter that already gates Claude's own tools, so the HTTP API
+  // can never see more than the tool-level gate does.
+  //
+  // BISMUTH_OWNER_TOKEN lets WHOEVER SPAWNED this process supply the value instead of us minting
+  // our own — required so that spawner can also hand the SAME value to the frontend it's about
+  // to point at us: the Tauri shell (app/src-tauri/src/lib.rs's start_backend, which injects
+  // window.__BISMUTH_OWNER_TOKEN__) and the dev script (app/scripts/dev.ts, which sets
+  // VITE_OWNER_TOKEN for the same value). Without this override, core would mint its OWN random
+  // token that neither of those could ever guess, and the app's own requests would be
+  // (indistinguishable from an agent's and therefore) filtered. Absent (bare `bun run
+  // core/src/server.ts`, `bismuth serve`, tests) → mint fresh, exactly as before.
+  const ownerToken = process.env.BISMUTH_OWNER_TOKEN || mintOwnerToken();
+
+  function requestChannel(req: Request): RequestChannel {
+    return resolveRequestChannel(req.headers, ownerToken);
+  }
+
+  // The restricted-path list for a request's channel — [] for the owner (never filtered) or for
+  // an unrestricted vault (buildDenyPaths itself returns [] when nothing is marked). NOT cached:
+  // buildDenyPaths already resolves fresh on every call (see visibility.ts), so a visibility edit
+  // takes effect on the very next request — and only NON-owner traffic (agents, not the app's own
+  // high-frequency polling) ever pays for the walk, since the owner's requests short-circuit here.
+  async function denyEntriesForRequest(req: Request): Promise<DenyEntry[]> {
+    const channel = requestChannel(req);
+    if (channel === "owner") return [];
+    return buildDenyPaths(cfg.vault, channel);
+  }
+
+  // The vault-relative path a graph node's content lives at, for the two node kinds that carry
+  // note bodies (note ids are the path minus ".md" — see vault.ts's noteId; memory ids are
+  // "mem:<path-under-.daemon/memory-minus-.md>" — see memory.ts). Every other kind (tag/agent/
+  // self/daemon/cron/process) carries no note content, so it's never subject to this filter.
+  function graphContentPath(node: GraphNode): string | null {
+    if (node.kind === "note") return `${node.id}.md`;
+    if (node.kind === "memory") return `.daemon/memory/${node.id.slice("mem:".length)}.md`;
+    return null;
+  }
+
+  // Drop nodes (and any edge touching one) whose backing note/memory path is restricted for this
+  // request's channel. Never mutates the cached graph in place — graphCache.get() returns the
+  // SAME object across every request (and GET /graph/views mutates its `.views` in place), so an
+  // in-place filter here would permanently corrupt the OWNER's next /graph too.
+  function filterGraph(graph: GraphData, entries: DenyEntry[]): GraphData {
+    if (entries.length === 0) return graph;
+    const dropped = new Set<string>();
+    for (const n of graph.nodes) {
+      const rel = graphContentPath(n);
+      if (rel && isDeniedPath(entries, rel)) dropped.add(n.id);
+    }
+    if (dropped.size === 0) return graph;
+    return {
+      ...graph,
+      nodes: graph.nodes.filter((n) => !dropped.has(n.id)),
+      edges: graph.edges.filter((e) => !dropped.has(e.from) && !dropped.has(e.to)),
+    };
+  }
+
+  // Omit items whose note path is restricted for this request's channel — the "a legitimately
+  // searching agent gets the visible subset, not an error" half of the design, as opposed to a
+  // single directly-requested path (GET /file et al.), which 403s instead.
+  function filterByPath<T>(items: T[], entries: DenyEntry[], pathOf: (item: T) => string): T[] {
+    return entries.length === 0 ? items : items.filter((item) => !isDeniedPath(entries, pathOf(item)));
+  }
+
   try {
     watch(cfg.vault, { recursive: true }, (_event, filename) => {
       // Ignore churn in .git (backup commits), .trash, and the daemon's DAEMON.md status
@@ -527,14 +597,27 @@ export function createServer(cfg: CoreConfig) {
     // scan pages the store until it has `limit` sessions of that scope, which a client filtering a
     // fetched page cannot do (see core/src/chat.ts). Absent/unknown → "user", the default, so an old
     // client or a hand-typed URL gets exactly the pre-filter behavior.
-    "GET /chat/sessions": async (_, url) => {
+    //
+    // Owner-token gate: blanket owner-only, not per-path filtered like /file et al. A past
+    // conversation transcript has no single vault path to check visibility against (it may quote
+    // the contents of any number of notes, hidden or not, across its whole history), so there's no
+    // way to filter it down to "the visible subset" the way a row/search-hit list can be — and
+    // there's no legitimate reason for a chat/daemon AGENT (as opposed to the owner's own History
+    // picker UI) to read arbitrary past session content over HTTP at all. Refuse outright.
+    "GET /chat/sessions": async (req, url) => {
+      if (requestChannel(req) !== "owner") return error("forbidden", 403);
       return ok({ sessions: await listChatSessions(cfg.vault, undefined, parseChatScope(url.searchParams.get("scope"))) });
     },
 
     // Replay one past session as ChatFrames (in order) so the client can rehydrate the transcript
     // before binding/resuming it. Empty `id` → empty replay. `provider=opencode` replays from the
     // opencode store (`opencode export`) instead of the Claude Code SDK store.
-    "GET /chat/session-messages": async (_, url) => {
+    //
+    // Owner-token gate: blanket owner-only — same reasoning as GET /chat/sessions above (a full
+    // transcript replay is exactly the content this route exists to serve, so there's no partial
+    // "safe" response to fall back to).
+    "GET /chat/session-messages": async (req, url) => {
+      if (requestChannel(req) !== "owner") return error("forbidden", 403);
       const id = url.searchParams.get("id");
       const provider = resolveChatProvider(url.searchParams.get("provider") ?? undefined, (appConfig.chat as Record<string, unknown> | undefined)?.provider);
       return ok({ frames: id ? await sessionHistoryFrames(id, cfg.vault, provider) : [] });
@@ -545,7 +628,13 @@ export function createServer(cfg: CoreConfig) {
     // search). Read-only despite POST (the body carries the query), so it lives in routes, not
     // mutatingRoutes — no cache-invalidate / SSE. Empty query → no hits. `scope` mirrors
     // GET /chat/sessions so search always searches the list the picker is showing.
+    //
+    // Owner-token gate: blanket owner-only, same reasoning as GET /chat/sessions above — this is
+    // literally the "one of the enumerated ambient content routes" from the design (a hit's
+    // snippet can quote any past turn's text, hidden-note-derived or not, with no path to filter
+    // against), not an oversight.
     "POST /chat/search": async (req, __) => {
+      if (requestChannel(req) !== "owner") return error("forbidden", 403);
       const { query, scope } = (await req.json()) as { query?: string; scope?: string };
       return ok({ hits: await searchChatSessions(cfg.vault, query ?? "", undefined, parseChatScope(scope)) });
     },
@@ -587,8 +676,10 @@ export function createServer(cfg: CoreConfig) {
       });
     },
 
-    "GET /graph": async (_, __) => {
-      return ok(await graphCache.get());
+    "GET /graph": async (req, __) => {
+      const graph = await graphCache.get();
+      const denyEntries = await denyEntriesForRequest(req);
+      return ok(filterGraph(graph, denyEntries));
     },
 
     "GET /graph/views": async (_, __) => {
@@ -644,12 +735,18 @@ export function createServer(cfg: CoreConfig) {
       return ok(entries);
     },
 
-    "GET /vault-data": async (_, __) => {
-      return ok(await rowsCache.get());
+    "GET /vault-data": async (req, __) => {
+      const rows = await rowsCache.get();
+      const denyEntries = await denyEntriesForRequest(req);
+      return ok(filterByPath(rows, denyEntries, (r) => r.file.path));
     },
 
-    "GET /base": async (_, url) => {
+    "GET /base": async (req, url) => {
       const path = requireQueryParam(url, "file");
+      // Owner-token gate: a non-owner request whose channel can't see this base file at all
+      // gets the same 403 GET /file gives — checked BEFORE the read, like /file below.
+      const denyEntries = await denyEntriesForRequest(req);
+      if (isDeniedPath(denyEntries, path)) return error("forbidden", 403);
       // readNote() runs the path through resolveInVault (rejects traversal) and
       // throws on a missing file — both surface as 404, with no separate
       // exists() probe that could leak existence or race the read.
@@ -663,7 +760,7 @@ export function createServer(cfg: CoreConfig) {
       return ok(parseBaseFile(text, { name, path }));
     },
 
-    "GET /file": async (_, url) => {
+    "GET /file": async (req, url) => {
       const path = requireQueryParam(url, "path");
       // settings.yaml is opened as a normal file, but a vault that never had one
       // must not surface a blank editor — reconcile the schema defaults on open
@@ -671,6 +768,11 @@ export function createServer(cfg: CoreConfig) {
       // and write-only-if-changed; the boot reconcile can't be relied on alone since
       // it's fire-and-forget and a long-running server may predate a schema change.
       if (path === SETTINGS_FILE) await reconcileSettings(cfg.vault);
+      // Owner-token gate: THE verified live bypass this whole gate exists to close
+      // (`curl 'localhost:4321/file?path=Private/secret.md'`) — a non-owner request whose
+      // channel can't see this path is refused outright, never served empty-or-partial.
+      const denyEntries = await denyEntriesForRequest(req);
+      if (isDeniedPath(denyEntries, path)) return error("forbidden", 403);
       const noteText = await readNoteOrEmpty(cfg.vault, path);
       return new Response(noteText, { status: 200 });
     },
@@ -704,9 +806,30 @@ export function createServer(cfg: CoreConfig) {
     // Serve a vault file as BINARY (image/PDF/audio/video) for `![[...]]` embeds. Resolves
     // FILENAME-FIRST (resolveAsset), streams the bytes with a Content-Type inferred from the
     // extension (Bun.file). Read-only; traversal is guarded inside resolveAsset/resolveInVault.
-    "GET /asset": async (_, url) => {
+    //
+    // NOT gated by the owner-token filter (deliberate, documented gap — see docs/vault/visibility.md
+    // and the audit that closed the rest of this oracle): this URL is handed straight to a native
+    // `<img src>`/`<embed>`/`<video src>`/`<source>` element (app/src/PreviewView.tsx, CardsView.tsx,
+    // embedSpec.ts) — none of which can attach a custom header, so gating this route would 403 the
+    // OWNER's own image/PDF/audio/video embeds with no way for the frontend to prove who it is. A
+    // hidden note's BINARY attachment therefore stays reachable by an agent that already knows (or
+    // guesses) its path, same class as the existing "existence isn't secret" gap (`ls -la`, /tree's
+    // badge) — now extended to binary bytes specifically. Closing it needs a different mechanism
+    // (e.g. a short-lived signed asset URL) and is out of scope for this pass.
+    "GET /asset": async (req, url) => {
       const path = requireQueryParam(url, "path");
       const abs = await resolveAsset(cfg.vault, path);
+      // Channel-filtered like every other content-returning read route. This route serves BYTES —
+      // a hidden PDF, image or drawing is exactly the kind of note someone hides, and it is one
+      // `curl` away otherwise. The owner (the app, which carries the token) is never filtered, so
+      // ordinary <img src>/<embed> rendering is unaffected. Checked AFTER resolution so the
+      // symlink-resolved path is what gets tested, matching how the deny list is built.
+      if (abs) {
+        const denied = await denyEntriesForRequest(req);
+        if (denied.length > 0 && (isDeniedPath(denied, abs) || isDeniedPath(denied, path))) {
+          return error("forbidden", 403, { "Cache-Control": "no-store" });
+        }
+      }
       // `no-store` on the miss (#38): a "not found" is only ever a TRANSIENT fact about a
       // mutable vault — the file can be created/renamed into place moments later (a pasted
       // screenshot, a race with the file watcher, a wikilink clicked before its target
@@ -746,10 +869,21 @@ export function createServer(cfg: CoreConfig) {
     // /asset; traversal-guarded inside resolveAsset). Backs the preview tab's "Open in default
     // app" / "Reveal in Finder" affordances, which need a real filesystem path to hand to the OS
     // opener. Read-only; 404 when nothing matches (never cached — see GET /asset above).
-    "GET /abs-path": async (_, url) => {
+    //
+    // Owner-token gate: unlike /asset (below — a native `<img src>`/`<embed>`/`<video>` load that
+    // CANNOT carry a custom header, so it stays ungated), this route is only ever called via the
+    // frontend's own fetch() (api.ts's absPath()), which — like every other transport call —
+    // attaches X-Bismuth-Token. Gating it costs the owner nothing and closes a residual leak (an
+    // agent learning a hidden note's real filesystem path). resolveAsset resolves FILENAME-FIRST
+    // (the query `path` may be a bare basename that lives anywhere in the vault), so the deny
+    // check runs on the RESOLVED path (relative() unjoins resolveAsset's `join(root, hit.rel)`
+    // back to a vault-relative form with no realpath/symlink assumptions), not the raw query.
+    "GET /abs-path": async (req, url) => {
       const path = requireQueryParam(url, "path");
       const abs = await resolveAsset(cfg.vault, path);
       if (!abs) return error("not found", 404, { "Cache-Control": "no-store" });
+      const denyEntries = await denyEntriesForRequest(req);
+      if (isDeniedPath(denyEntries, relative(cfg.vault, abs))) return error("forbidden", 403, { "Cache-Control": "no-store" });
       return ok({ path: abs });
     },
 
@@ -775,8 +909,10 @@ export function createServer(cfg: CoreConfig) {
       return ok({ path: finalRel });
     },
 
-    "GET /meta": async (_, url) => {
+    "GET /meta": async (req, url) => {
       const path = requireQueryParam(url, "path");
+      const denyEntries = await denyEntriesForRequest(req);
+      if (isDeniedPath(denyEntries, path)) return error("forbidden", 403);
       const noteText = await readNoteOrEmpty(cfg.vault, path);
       const { data } = parseFrontmatter(noteText);
       return ok(data);
@@ -880,8 +1016,10 @@ export function createServer(cfg: CoreConfig) {
       return ok(await sendCommand(target.id, action, args));
     },
 
-    "GET /tasks": async (_, __) => {
-      return ok(await collectVaultTasks(cfg.vault));
+    "GET /tasks": async (req, __) => {
+      const tasks = await collectVaultTasks(cfg.vault);
+      const denyEntries = await denyEntriesForRequest(req);
+      return ok(filterByPath(tasks, denyEntries, (t) => t.path));
     },
 
     // Single source-resolution endpoint: resolve a SourceSpec (base | notes | tasks)
@@ -901,7 +1039,8 @@ export function createServer(cfg: CoreConfig) {
         vaultRows: () => (rowsMemo ??= rowsCache.get()),
         vaultTasks: () => (tasksMemo ??= tasksCache.get()),
       });
-      return ok(rows);
+      const denyEntries = await denyEntriesForRequest(req);
+      return ok(filterByPath(rows, denyEntries, (r) => r.file.path));
     },
 
     "POST /backup": async (_, __) => {
@@ -959,7 +1098,8 @@ export function createServer(cfg: CoreConfig) {
       };
       try {
         const results = await searchVault(cfg.vault, query, opts);
-        return Response.json(results);
+        const denyEntries = await denyEntriesForRequest(req);
+        return Response.json(filterByPath(results, denyEntries, (r) => r.path));
       } catch (e) {
         // Invalid regex etc. — surface as a 400 so the UI shows it inline.
         return new Response((e as Error).message, { status: 400 });
@@ -973,7 +1113,9 @@ export function createServer(cfg: CoreConfig) {
     "POST /search-prompt": async (req, __) => {
       const { query } = (await req.json()) as { query: string };
       try {
-        return Response.json(await promptSearch(cfg.vault, query));
+        const results = await promptSearch(cfg.vault, query);
+        const denyEntries = await denyEntriesForRequest(req);
+        return Response.json(filterByPath(results, denyEntries, (r) => r.path));
       } catch (e) {
         const status = e instanceof AppError ? e.statusCode : 500;
         return new Response((e as Error).message, { status });
@@ -988,22 +1130,41 @@ export function createServer(cfg: CoreConfig) {
       return ok({ entries: await listFsPaths(path ?? "", only) });
     },
 
-    "GET /cards/decks": async (_, __) => {
-      return ok(await collectDecks(cfg.vault, todayISO()));
+    "GET /cards/decks": async (req, __) => {
+      const denyEntries = await denyEntriesForRequest(req);
+      const cards = filterByPath(await collectCards(cfg.vault), denyEntries, (c) => c.notePath);
+      // Recomputed here (rather than calling collectDecks, which re-derives from ITS OWN
+      // un-filtered collectCards call) so a restricted note's cards never leak through as deck
+      // totals/due-counts — mirrors collectDecks' own aggregation (core/src/srs/cards.ts).
+      const today = todayISO();
+      const decks = new Map<string, Deck>();
+      for (const c of cards) {
+        const d = decks.get(c.deck) ?? { name: c.deck, total: 0, due: 0 };
+        d.total++;
+        if (c.due === null || c.due <= today) d.due++;
+        decks.set(c.deck, d);
+      }
+      return ok([...decks.values()].sort((a, b) => a.name.localeCompare(b.name)));
     },
 
-    "GET /cards/all": async (_, __) => {
-      return ok(await collectCards(cfg.vault));
+    "GET /cards/all": async (req, __) => {
+      const cards = await collectCards(cfg.vault);
+      const denyEntries = await denyEntriesForRequest(req);
+      return ok(filterByPath(cards, denyEntries, (c) => c.notePath));
     },
 
-    "GET /cards/note": async (_, url) => {
+    "GET /cards/note": async (req, url) => {
       const path = requireQueryParam(url, "path");
+      const denyEntries = await denyEntriesForRequest(req);
+      if (isDeniedPath(denyEntries, path)) return error("forbidden", 403);
       return ok(await noteCards(cfg.vault, path));
     },
 
-    "GET /cards/due": async (_, url) => {
+    "GET /cards/due": async (req, url) => {
       const deck = url.searchParams.get("deck") ?? undefined;
-      return ok(await dueCards(cfg.vault, todayISO(), deck));
+      const cards = await dueCards(cfg.vault, todayISO(), deck);
+      const denyEntries = await denyEntriesForRequest(req);
+      return ok(filterByPath(cards, denyEntries, (c) => c.notePath));
     },
 
     // Daemon supervision. These read the shared machine-identity state files under the
@@ -2004,11 +2165,16 @@ export function createServer(cfg: CoreConfig) {
     },
   });
 
-  // Drop this core's discovery record (~/.bismuth/run/<vault>.json = {port, vault, pid}) now that
-  // Bun.serve has bound its (possibly dynamic) port, so an out-of-app caller — the `bismuth app …`
-  // CLI, the launchd daemon — can find which port serves this vault. Best-effort; cleaned up on exit.
+  // Drop this core's discovery record (~/.bismuth/run/<vault>.json = {port, vault, pid, token}) now
+  // that Bun.serve has bound its (possibly dynamic) port, so an out-of-app caller — the `bismuth
+  // app …` CLI, the launchd daemon — can find which port serves this vault, AND (new) this boot's
+  // owner token, giving a future owner-side CLI caller a path to read it and present it (nothing
+  // in THIS change makes the `bismuth` CLI itself do so yet — see the integrator note in
+  // ownerToken.ts / this task's final report; until it does, a bare `bismuth api …` is treated as
+  // a non-owner "daemon"-channel request, same as any other tokenless caller).
+  // Best-effort; cleaned up on exit. Written 0600 (runRegistry.ts) since it now carries a secret.
   if (typeof server.port === "number") {
-    writeRunRecord({ port: server.port, vault: cfg.vault, pid: process.pid });
+    writeRunRecord({ port: server.port, vault: cfg.vault, pid: process.pid, token: ownerToken });
   }
 
   // Pre-warm one login shell so the first terminal tab paints its prompt instantly
