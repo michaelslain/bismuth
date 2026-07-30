@@ -160,32 +160,90 @@ function rewire(adj: number[][], rnd: () => number): number[][] {
 
 /**
  * Mean + sd of the BEST modularity achievable over degree-preserving random graphs — i.e. for each
- * rewired graph, its own best-effort partition (`louvainBest`), not the caller's `comm`. `comm` is
- * accepted (and part of the exported interface, for symmetry with `significance`/`modularity`) but
- * deliberately unused here: reusing the real partition against rewired edges is the trap this
- * module exists to avoid (see the `louvainBest` doc comment above).
+ * rewired graph, its own best-effort partition (`louvainBest`). Depends ONLY on `adj`: the null is a
+ * property of the graph's DEGREE SEQUENCE, not of any particular partition (see the `void comm` note
+ * on `nullModelModularity` below). Exported standalone so a caller gating SEVERAL partitions of the
+ * SAME graph (e.g. every level of a community hierarchy) can compute this ONCE and reuse it, instead
+ * of paying for it per level via `nullModelModularity`/`significance` — measured gating a 3-level
+ * hierarchy: ~1.7s recomputing per level vs ~0.6s computed once and shared.
+ *
+ * PRECONDITION: `adj` must contain no self-loops (no `adj[i]` listing `i`) — `rewire`'s double-edge
+ * swap assumes every edge joins two distinct nodes. Not defended here (deliberately: the current
+ * caller, `engine.ts`'s graph builder, already excludes self-edges before this module ever sees the
+ * adjacency, so the condition is unreachable today); a future caller feeding in raw/untrusted edges
+ * would need to filter self-loops first.
+ */
+export function nullModelForGraph(
+  adj: number[][], trials = 30, seed = 4242,
+): { mean: number; sd: number } {
+  // trials <= 1 cannot estimate a spread at all: `reduce` over 0-1 samples silently produced
+  // mean=0, sd=0, which made `significance` treat EVERY graph with Q > 0 as significant without
+  // running a single real trial (the `sd === 0` branch below then divides-by-zero to Infinity, i.e.
+  // the gate was always open). Clamp toward MORE evidence, never toward none — this is what makes a
+  // `trials` perf knob exposed to a caller safe to turn down aggressively.
+  const t = Math.max(2, trials | 0);
+  const rnd = lcg(seed);
+  const qs: number[] = [];
+  for (let i = 0; i < t; i++) {
+    const nullAdj = rewire(adj, rnd);
+    qs.push(modularity(nullAdj, louvainBest(nullAdj)));
+  }
+  const mean = qs.reduce((s, v) => s + v, 0) / qs.length;
+  const sd = Math.sqrt(qs.reduce((s, v) => s + (v - mean) ** 2, 0) / qs.length);
+  return { mean, sd };
+}
+
+/**
+ * Mean + sd of Q for the same partition over degree-preserving random graphs — kept for interface
+ * compatibility; delegates entirely to `nullModelForGraph`, which is what actually runs.
+ *
+ * `comm` IS ACCEPTED BUT DELIBERATELY IGNORED. Do not "fix" this by wiring it back in: re-scoring
+ * `comm` against a rewired graph is the EXACT semantics this module exists to reject (see
+ * `louvainBest`'s doc comment above) — a fixed, index-defined partition evaluated against scrambled
+ * edges reads as near-zero regardless of whether the source graph has real structure, which makes
+ * the significance test always pass. Measured on the naive design this module replaced: null mean
+ * ≈ -0.014 for a ring, ≈ -0.029 for two cliques, ≈ -0.005 for the reference vault — every one of
+ * those collapses the test to "is Q > 0?", which any Louvain output satisfies by construction, real
+ * structure or not. The test file pins this invariance directly (`nullModelModularity is invariant
+ * to comm`) — if that test starts failing because `comm` got wired back in, the test is correct and
+ * the change is the regression.
  */
 export function nullModelModularity(
   adj: number[][], comm: number[], trials = 30, seed = 4242,
 ): { mean: number; sd: number } {
   void comm;
-  const rnd = lcg(seed);
-  const qs: number[] = [];
-  for (let t = 0; t < trials; t++) {
-    const nullAdj = rewire(adj, rnd);
-    qs.push(modularity(nullAdj, louvainBest(nullAdj)));
-  }
-  const mean = qs.reduce((s, v) => s + v, 0) / (qs.length || 1);
-  const sd = Math.sqrt(qs.reduce((s, v) => s + (v - mean) ** 2, 0) / (qs.length || 1));
-  return { mean, sd };
+  return nullModelForGraph(adj, trials, seed);
 }
 
-/** `significant` = the partition's Q is at least 2 sd above the degree-preserving null. */
+/**
+ * `significant` = the partition's Q is at least 2 sd above the degree-preserving null.
+ *
+ * Two things this number does NOT mean — read before wiring it into any downstream decision:
+ *
+ *  - **`z` is not comparable across graph sizes, or between vaults/levels.** Textbook-perfect,
+ *    fully-separated cliques still under-report on small graphs: two cliques of 3 nodes measure
+ *    z≈0.42 (a false negative against the z>=2 gate); of 4, z≈1.84 (still a false negative); of 6,
+ *    z≈3.55; ten cliques of 6, z≈26.6. A small vault can fail this test with perfect community
+ *    structure simply for being small. Never rank levels, or compare vaults, by z magnitude — it
+ *    only answers yes/no for THIS partition of THIS graph.
+ *  - **A large z is margin ÷ a very small null spread, not a Gaussian tail probability.** On the
+ *    2262-node reference vault, sd(Q_null) ≈ 0.0024 (a coefficient of variation of ~0.55% on a
+ *    null mean of ~0.44), so z≈102 reads as "102 null-standard-deviations", not a sigma count with
+ *    a meaningful tail probability behind it — the null model has no probability mass out there to
+ *    speak of. If a downstream decision needs to explain itself to a person, report the raw margin
+ *    (Q minus nullMean — 0.26 / 0.18 / 0.04 across that vault's three levels, against a spread of
+ *    0.0024) rather than "z=102".
+ */
 export function significance(
   adj: number[][], comm: number[], trials = 30,
 ): { q: number; nullMean: number; nullSd: number; z: number; significant: boolean } {
   const q = modularity(adj, comm);
   const { mean, sd } = nullModelModularity(adj, comm, trials);
-  const z = sd === 0 ? (q > mean ? Infinity : 0) : (q - mean) / sd;
+  // Fail CLOSED when the null has no measured spread: a zero-variance null carries no evidence
+  // either way (with trials clamped to >= 2 in `nullModelForGraph`, this is now a rare residual
+  // case — e.g. two sampled null graphs coincidentally tying in Q — rather than the guaranteed
+  // empty-array case trials<=1 used to produce), so `q > mean` alone must never read as
+  // "significant". The old `q > mean ? Infinity : 0` did exactly that.
+  const z = sd === 0 ? 0 : (q - mean) / sd;
   return { q, nullMean: mean, nullSd: sd, z, significant: z >= 2 };
 }
