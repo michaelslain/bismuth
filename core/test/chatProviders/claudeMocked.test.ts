@@ -30,9 +30,10 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeChat, newChatId, sendMessage, type ChatFrame } from "../../src/chat";
+import { closeChat, newChatId, sendMessage } from "../../src/chat";
 import { whichClaude } from "../../src/claudeWhich";
 import { backendMockEnv } from "../support/backendEnv";
+import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
 
 const HAS_CLAUDE = whichClaude() !== null;
@@ -43,56 +44,26 @@ if (!HAS_CLAUDE) {
   console.warn("[claudeMocked.test] skipped — the `claude` CLI is not installed on this machine (nothing to drive).");
 }
 
-/** A tolerant async frame collector — records every ChatFrame and lets a test await one matching
- *  a predicate. Mirrors chat.test.ts's own makeCollector (kept local here since that one isn't
- *  exported), sized for a single trivial turn against a LOCAL mock server rather than a live CLI. */
-function makeCollector() {
-  const frames: ChatFrame[] = [];
-  const waiters: { match: (f: ChatFrame) => boolean; resolve: (f: ChatFrame) => void }[] = [];
-
-  const sink = (frame: ChatFrame) => {
-    frames.push(frame);
-    for (let i = waiters.length - 1; i >= 0; i--) {
-      if (waiters[i].match(frame)) {
-        waiters[i].resolve(frame);
-        waiters.splice(i, 1);
-      }
-    }
-  };
-
-  function waitFor(match: (f: ChatFrame) => boolean, timeoutMs = 60_000): Promise<ChatFrame> {
-    const already = frames.find(match);
-    if (already) return Promise.resolve(already);
-    return new Promise<ChatFrame>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const idx = waiters.findIndex((w) => w.resolve === wrapped);
-        if (idx >= 0) waiters.splice(idx, 1);
-        reject(new Error("timeout waiting for frame; saw: " + JSON.stringify(frames.map((f) => f.type))));
-      }, timeoutMs);
-      const wrapped = (f: ChatFrame) => {
-        clearTimeout(timer);
-        resolve(f);
-      };
-      waiters.push({ match, resolve: wrapped });
-    });
-  }
-
-  return { sink, frames, waitFor };
-}
-
 describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, against a mock LLM (zero account API calls)", () => {
   // Env vars this test overrides for the duration of the suite, and their ORIGINAL values (which
   // may be a real machine's real ANTHROPIC_* vars, or undefined) — restored in afterAll so this
   // test can never leave a poisoned env behind for any other test file sharing this process.
   const ENV_KEYS = ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
+  // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — a code-review finding on the
+  // sibling Task 4 test files (fixed there, and here on re-review): populating this AFTER an await
+  // that can throw leaves it empty, and afterAll's restore loop then unconditionally `delete`s
+  // every ENV_KEY from the shared `bun test` process. This file is the one where that would have
+  // mattered most: `claude` is the one backend installed on most machines, so this describe block
+  // does NOT skip — a rejected startMockLlm() here would have wiped a developer's real
+  // ANTHROPIC_API_KEY for the rest of the run, not just failed loudly and left everything alone.
   const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
+  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   let mock: MockLlmHandle | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
 
   async function setup(): Promise<void> {
     mock = await startMockLlm(); // default fixture dir: core/test/fixtures/llm (basic-turn.json)
-    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     // This is the ONE row backendEnv.ts marks VERIFIED live on a real machine (see that file's
     // header): env auth takes precedence over Claude Code's own keychain OAuth login.
     const mockEnv = backendMockEnv("claude", mock.url);
@@ -128,7 +99,7 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
       const cwd = await newTempDir(); // never the real vault — a throwaway temp dir
       const chatId = newChatId();
       chatIds.push(chatId);
-      const { sink, frames, waitFor } = makeCollector();
+      const { sink, frames, waitFor } = makeChatFrameCollector(60_000);
 
       // "hello" is the fixture's exact match key (core/test/fixtures/llm/basic-turn.json). chat.ts
       // sends a bare-string user turn (makeUserMessage: no images → plain string), so this is the

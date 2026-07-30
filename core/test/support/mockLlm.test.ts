@@ -3,7 +3,7 @@
 // harness itself doesn't spawn claude/codex/opencode/etc; core/test/support/backendEnv.ts's per-CLI
 // mapping is exercised as a pure function here, not by actually running a CLI).
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -120,9 +120,12 @@ describe("backendMockEnv", () => {
 
   test("every backend id core/src/agentBackends/catalog.ts knows about either maps to real env vars or is explicitly unmapped", () => {
     // Not every BACKEND_IDS entry is expected to be covered (the ACP-adapter entries bridge a
-    // CLI that already has its own native row — see catalog.ts's `hidden` doc comment), but every
-    // id the task brief named must resolve to a non-empty mapping.
-    for (const id of ["claude", "codex", "opencode", "gemini", "cline", "goose"] as const) {
+    // CLI that already has its own native row — see catalog.ts's `hidden` doc comment). codex/
+    // openclaw need a `workDir` third argument (a file-based mechanism — see backendEnv.ts's case
+    // comments) so they're exercised separately below; cline is DELIBERATELY excluded from this
+    // loop — Task 4 found its only real mechanism can't reach the ACP mode Bismuth drives, so it
+    // throws instead of mapping (see its own dedicated test below).
+    for (const id of ["claude", "opencode", "gemini", "goose"] as const) {
       expect(BACKEND_IDS as readonly string[]).toContain(id);
       const env = backendMockEnv(id, MOCK_URL);
       expect(Object.keys(env).length).toBeGreaterThan(0);
@@ -130,7 +133,7 @@ describe("backendMockEnv", () => {
     }
   });
 
-  test("claude maps ANTHROPIC_BASE_URL/AUTH_TOKEN/API_KEY — the one row verified live end-to-end", () => {
+  test("claude maps ANTHROPIC_BASE_URL/AUTH_TOKEN/API_KEY — verified live end-to-end", () => {
     expect(backendMockEnv("claude", MOCK_URL)).toEqual({
       ANTHROPIC_BASE_URL: MOCK_URL,
       ANTHROPIC_AUTH_TOKEN: "mock",
@@ -138,11 +141,16 @@ describe("backendMockEnv", () => {
     });
   });
 
-  test("codex maps OPENAI_BASE_URL/OPENAI_API_KEY", () => {
-    expect(backendMockEnv("codex", MOCK_URL)).toEqual({
-      OPENAI_BASE_URL: MOCK_URL,
-      OPENAI_API_KEY: "mock",
-    });
+  test("codex requires a workDir (its real mechanism is a $CODEX_HOME/config.toml file, not a bare env var — verified live this task; the old OPENAI_BASE_URL row was confirmed WRONG)", () => {
+    expect(() => backendMockEnv("codex", MOCK_URL)).toThrow(/workDir/);
+
+    const dir = mkdtempSync(join(tmpdir(), "backendenv-codex-test-"));
+    const env = backendMockEnv("codex", MOCK_URL, dir);
+    expect(env.CODEX_HOME).toBe(dir);
+    const toml = readFileSync(join(dir, "config.toml"), "utf8");
+    expect(toml).toContain(`base_url = "${MOCK_URL}/v1"`);
+    expect(toml).toContain('wire_api = "responses"'); // "chat" is REJECTED by this codex version
+    expect(toml).toContain('model_provider = "mock"');
   });
 
   test("opencode maps a runtime OPENCODE_CONFIG_CONTENT carrying an inline custom-provider block pointed at the mock", () => {
@@ -151,17 +159,31 @@ describe("backendMockEnv", () => {
     expect(config.provider.mock.options.baseURL).toBe(`${MOCK_URL}/v1`);
   });
 
-  test("gemini maps GOOGLE_GEMINI_BASE_URL/GEMINI_API_KEY", () => {
+  test("gemini maps GOOGLE_GEMINI_BASE_URL/GEMINI_API_KEY — env routing + old-shape handshake verified live; full turn completion not (see the case comment)", () => {
     expect(backendMockEnv("gemini", MOCK_URL)).toEqual({
       GOOGLE_GEMINI_BASE_URL: MOCK_URL,
       GEMINI_API_KEY: "mock",
     });
   });
 
-  test("goose maps ANTHROPIC_HOST + GOOSE_PROVIDER=anthropic (source-verified against goose's own env-override resolution order)", () => {
+  test('cline throws — its only real mock mechanism (the `auth` subcommand) cannot reach the ACP mode Bismuth actually drives, which demands real OAuth (verified live this task)', () => {
+    expect(() => backendMockEnv("cline", MOCK_URL)).toThrow(/authenticate|OAuth/);
+  });
+
+  test("goose maps ANTHROPIC_HOST + GOOSE_PROVIDER=anthropic — verified live end-to-end this task (upgraded from GUESSED)", () => {
     const env = backendMockEnv("goose", MOCK_URL);
     expect(env.ANTHROPIC_HOST).toBe(MOCK_URL);
     expect(env.GOOSE_PROVIDER).toBe("anthropic");
+  });
+
+  test("openclaw requires a workDir (a config.json5 file, not a bare env var); config-path redirection verified live, full turn routing was not (see the case comment)", () => {
+    expect(() => backendMockEnv("openclaw", MOCK_URL)).toThrow(/workDir/);
+
+    const dir = mkdtempSync(join(tmpdir(), "backendenv-openclaw-test-"));
+    const env = backendMockEnv("openclaw", MOCK_URL, dir);
+    expect(env.OPENCLAW_CONFIG_PATH).toBe(join(dir, "openclaw.json5"));
+    const config = JSON.parse(readFileSync(env.OPENCLAW_CONFIG_PATH, "utf8"));
+    expect(config.models.providers.mock.baseUrl).toBe(`${MOCK_URL}/v1`);
   });
 
   test("an unrecognized backend id throws rather than silently returning an empty (no-op) mapping", () => {

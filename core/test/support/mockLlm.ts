@@ -118,15 +118,24 @@ function resolveLlmockBin(): string {
  * Start a local mock LLM server rooted at `fixtureDir` (defaults to {@link DEFAULT_FIXTURE_DIR}),
  * resolving once its readiness banner has been observed on stdout. Rejects (never resolves a
  * broken handle) on a spawn failure, an unrecognized/missing `llmock`, or a startup timeout.
+ *
+ * `extraArgs` (Task 4): appended after the fixed `-p 0 -f fixtureDir` args, verbatim — e.g.
+ * `["--latency", "40"]`. Added because opencodeMocked.test.ts's SERVER-mode turn needs it: a
+ * zero-latency instant reply can complete (and the mock record the hit) BEFORE opencode's own
+ * `GET /event` SSE subscription attaches, so the assistant's whole reply is emitted onto a stream
+ * with no listener yet and is silently lost — reproduced live, see that test's own header for the
+ * full account. A small `--latency` value gives the subscription time to attach first. Every OTHER
+ * caller (claudeMocked.test.ts, mockLlm.test.ts) omits this and is completely unaffected — an empty
+ * default changes nothing about the exact spawn argv they already depend on.
  */
-export function startMockLlm(fixtureDir: string = DEFAULT_FIXTURE_DIR): Promise<MockLlmHandle> {
+export function startMockLlm(fixtureDir: string = DEFAULT_FIXTURE_DIR, extraArgs: readonly string[] = []): Promise<MockLlmHandle> {
   return new Promise((resolve, reject) => {
     let proc: ReturnType<typeof Bun.spawn>;
     try {
       const bin = resolveLlmockBin();
       // Spawned via `node <resolved cli.js>` rather than relying on the file's own shebang +
       // execute bit (portable across filesystems/platforms where that bit might not survive).
-      proc = Bun.spawn(["node", bin, "-p", "0", "-f", fixtureDir], {
+      proc = Bun.spawn(["node", bin, "-p", "0", "-f", fixtureDir, ...extraArgs], {
         stdout: "pipe",
         stderr: "pipe",
       });
