@@ -653,11 +653,18 @@ describe("Task 9 — clusterVisual wiring: community colours are RANK-based, clu
     c.r.destroy();
   });
 
-  /** Shared by the two hub-anchor tests below: one high-degree hub far to the right, four
-   *  low-degree leaves clustered far to the left, all in one community. The OLD centroid-of-all-
+  /** Shared by the two hub-anchor tests below: one high-degree hub far to the RIGHT, four
+   *  low-degree leaves spread across the LEFT half, all in one community. The OLD centroid-of-all-
    *  members anchor lands far to the LEFT (dragged there by the 4-vs-1 leaf majority); the hub
-   *  anchor must land at the hub's own (far-RIGHT) position instead — as long as the hub is
-   *  actually on screen (see the pan-stability test for what happens once it isn't). */
+   *  anchor must land at the hub's own (far-RIGHT) position instead.
+   *
+   *  The leaves are SPREAD (-300, -220, -140, -60), not stacked within 3 world units of each other:
+   *  co-located leaves enter and leave the viewport as a single block, so a fixture built that way
+   *  can never show what happens while a community is PARTIALLY visible — every member-set-dependent
+   *  quantity (the `clusterAgg` membership, and `clusterExtent`'s lift, which is fed visible-only
+   *  members by contract) stays constant right up until the whole community vanishes at once. The
+   *  leftmost leaf stays at -300 so the graph's bounding box — and therefore fit() and every column
+   *  the hub-anchor test below measures — is unchanged by the spread. */
   function hubAndLeavesGraph() {
     const nodes = [
       {
@@ -667,8 +674,8 @@ describe("Task 9 — clusterVisual wiring: community colours are RANK-based, clu
       },
       ...[0, 1, 2, 3].map((k) => ({
         id: `leaf${k}`, label: `leaf${k}`, kind: "note" as const,
-        position: [-300 - k, k % 2 === 0 ? -10 : 10, 0] as [number, number, number],
-        position2d: [-300 - k, k % 2 === 0 ? -10 : 10] as [number, number],
+        position: [-300 + k * 80, k % 2 === 0 ? -10 : 10, 0] as [number, number, number],
+        position2d: [-300 + k * 80, k % 2 === 0 ? -10 : 10] as [number, number],
         community: 0, communityLabel: "Group",
       })),
     ];
@@ -693,57 +700,133 @@ describe("Task 9 — clusterVisual wiring: community colours are RANK-based, clu
     r.destroy();
   });
 
-  it("PAN STABILITY — once the hub itself pans off-frame, the name tracks its still-visible members (centroid fallback) instead of freezing at the field edge", () => {
-    // Regression: layoutClusterNames used to gate the anchor on `hub.projValid` only, never
-    // `inViewport`. A hub that pans off-grid still leaves `col0` way out of range, and the
-    // pre-existing edge clamp (`col + wCells > m.cols` etc., needed so an ON-SCREEN label can't run
-    // off the grid) then parks the label at a fixed edge column — motionless while the community it
-    // names keeps sliding across the field underneath it as the user keeps panning. Canvas never had
-    // this failure mode (it draws at the hub's raw x with no clamp, so an off-frame hub just renders
-    // off-canvas); ASCII's clamp was only ever safe while the anchor was guaranteed on-grid.
-    const { r, viewport } = mountRenderer("2d", hubAndLeavesGraph());
+  /**
+   * Sweeps a 2D pan in FINE steps and samples (hub column, cluster-label column) every frame.
+   *
+   * One continuous gesture, not a series of down/move/up drags: `onPointerMove` only starts panning
+   * once the pointer has travelled DRAG_THRESHOLD (5px) from where it went down, so a fresh gesture
+   * per 3px step would pan by exactly nothing. Prime past the threshold once, then every subsequent
+   * move pans by its own dx. (The test this replaced used one-shot `drag(500)`/`drag(200)` gestures,
+   * which is why it stepped clean over the field edge without ever sampling a frame near it — the
+   * boundary is the only place the placement rule can be discontinuous, and it never looked there.)
+   */
+  function panSweep(dxPerStep: number, steps: number, graph = hubAndLeavesGraph()) {
+    const { r, viewport } = mountRenderer("2d", graph);
     const priv = r as unknown as {
-      nodes: { node: { id: string }; sx: number; col: number }[];
-      labels: { text: string; col: number; eyebrow?: boolean }[];
-      W: number;
+      nodes: { node: { id: string }; col: number }[];
+      labels: { col: number; widthCells: number; eyebrow?: boolean }[];
+      m: { cols: number };
     };
+    let px = 400, t = 100;
+    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: px, clientY: 300 }));
+    px += 20 * Math.sign(dxPerStep); // prime past DRAG_THRESHOLD
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: px, clientY: 300 }));
+    frame((t += 16));
 
-    const drag = (dx: number) => {
-      viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
-      window.dispatchEvent(new PointerEvent("pointermove", { clientX: 400 + dx, clientY: 300 }));
-      frame(32);
-      window.dispatchEvent(new PointerEvent("pointerup", { clientX: 400 + dx, clientY: 300 }));
-    };
-    const inFrame = (n: { sx: number }) => n.sx >= -40 && n.sx <= priv.W + 40;
-
-    // First pan: push the hub (world +300, right-of-centre at fit) off the right edge, while the
-    // leaves (world ~-300, left-of-centre at fit — ~600 world units further from the edge) are still
-    // comfortably on screen.
-    drag(500);
-    const hub1 = priv.nodes.find((n) => n.node.id === "hub")!;
-    const leaf1 = priv.nodes.find((n) => n.node.id === "leaf0")!;
-    expect(inFrame(hub1)).toBe(false); // sanity: the hub really did leave the frame
-    expect(inFrame(leaf1)).toBe(true); // sanity: a member is still visible
-    const label1 = priv.labels.find((l) => l.eyebrow);
-    expect(label1).toBeDefined();
-    const offset1 = label1!.col - leaf1.col;
-
-    // Second pan, further in the same direction — the hub stays off-frame, the leaves keep sliding
-    // (but not so far that THEY leave the frame too — 2D pan is a 1:1 screen-px translate, so this
-    // stays well inside the ~880px of leeway leaf0 had after the first drag).
-    drag(200);
-    const leaf2 = priv.nodes.find((n) => n.node.id === "leaf0")!;
-    expect(inFrame(leaf2)).toBe(true); // sanity: still visible after the second pan too
-    const label2 = priv.labels.find((l) => l.eyebrow);
-    expect(label2).toBeDefined();
-    const offset2 = label2!.col - leaf2.col;
-
-    // BUG: a frozen (edge-clamped) label keeps an ABSOLUTE column while the members keep moving, so
-    // its offset from a member drifts by roughly however far the second drag moved the field.
-    // FIX: the label moves WITH its visible members (the centroid fallback), so the offset — label
-    // column minus member column — stays close to constant across the pan.
-    expect(Math.abs(offset2 - offset1)).toBeLessThanOrEqual(3);
+    const samples: { hubCol: number; labelCol: number | null; wCells: number | null }[] = [];
+    for (let i = 0; i <= steps; i++) {
+      if (i > 0) {
+        px += dxPerStep;
+        window.dispatchEvent(new PointerEvent("pointermove", { clientX: px, clientY: 300 }));
+        frame((t += 16));
+      }
+      const label = priv.labels.find((l) => l.eyebrow);
+      samples.push({
+        hubCol: priv.nodes.find((n) => n.node.id === "hub")!.col,
+        labelCol: label ? label.col : null,
+        wCells: label ? label.widthCells : null,
+      });
+    }
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: px, clientY: 300 }));
+    const cols = priv.m.cols;
     r.destroy();
+    return { samples, cols };
+  }
+
+  /** Asserts the two placement invariants over a fine pan sweep that genuinely crosses one field
+   *  edge. Shared by the left- and right-edge cases below so neither can drift from the other.
+   *
+   *  Both invariants are evaluated across the WHOLE sweep and asserted on the worst case, rather
+   *  than asserted inside the loop: an in-loop `expect` aborts at the first violation, which for
+   *  this failure mode is a marginal one-column overshoot several frames BEFORE the actual teleport
+   *  — so the diagnostic would name the symptom's foothills instead of the 99-column cliff. */
+  function assertEdgeCrossingIsContinuous(dxPerStep: number, steps: number, graph?: ReturnType<typeof hubAndLeavesGraph>) {
+    const { samples, cols } = panSweep(dxPerStep, steps, graph);
+
+    // Sanity FIRST — every assertion below is vacuous if the sweep never reached the edge, or if the
+    // name was never drawn at all. A boundary test that never visits the boundary passes against
+    // anything, and a sweep whose community goes fully off-screen before its hub does silently stops
+    // testing the placement rule at all (which is why the left-edge case needs a MIRRORED fixture:
+    // with the hub on the right, panning left takes every leaf off the field before the hub, so the
+    // name is already gone for want of members by the time the edge matters).
+    expect(samples.some((s) => s.hubCol >= 0 && s.hubCol < cols)).toBe(true); // anchor was on-grid...
+    expect(samples.some((s) => s.hubCol < 0 || s.hubCol >= cols)).toBe(true); // ...and later was not
+    expect(samples.filter((s) => s.labelCol != null).length).toBeGreaterThan(5);
+    // The name must still be on the field on a frame where the hub is ALREADY off it, or neither
+    // invariant below ever gets to look at the far side of the boundary.
+    expect(samples.some((s) => s.labelCol != null && (s.hubCol < 0 || s.hubCol >= cols))).toBe(true);
+
+    // (A) ANCHOR TRACKING. The name is centred on its hub's cell (`col0 - floor(w/2)`), so the gap
+    // between the two is `floor(w/2)` — plus, inside the clamp's band, at most another
+    // `ceil(w/2) - 1` of legitimate nudge to keep an on-screen name inside the grid. `w` is
+    // therefore the exact ceiling, and it is what makes a FREEZE fail: an edge-parked label keeps an
+    // absolute column while its anchor slides on, so this gap grows without bound. It is also what
+    // makes a WRONG ANCHOR fail: the visible-member centroid sits ~117 columns from the hub in this
+    // fixture, by construction — that separation is the entire premise of hub-anchoring.
+    //
+    // (B) CONTINUITY. Frame to frame, the name may not move any further than its anchor did — except
+    // for the clamp switching on or off, which contributes at most its own maximum displacement,
+    // `ceil(w/2)`. This is the no-teleport bound: switching between two anchors that are far apart by
+    // construction blew it by ~99 columns of a 124-column field in ONE frame.
+    let worstGap = { v: 0, at: "" }, worstStep = { v: 0, at: "" };
+    for (let i = 1; i < samples.length; i++) {
+      const a = samples[i - 1], b = samples[i];
+      if (b.labelCol == null || b.wCells == null) continue;
+      const w = b.wCells;
+      const gap = Math.abs(b.labelCol - b.hubCol) - w;
+      if (gap > worstGap.v) worstGap = { v: gap, at: `frame ${i}: labelCol ${b.labelCol} vs hubCol ${b.hubCol}, w=${w}` };
+      if (a.labelCol == null) continue; // name was absent last frame — no delta to compare
+      const excess = Math.abs((b.labelCol - a.labelCol) - (b.hubCol - a.hubCol)) - Math.ceil(w / 2);
+      if (excess > worstStep.v) worstStep = { v: excess, at: `frame ${i}: labelCol ${a.labelCol}->${b.labelCol} while hubCol ${a.hubCol}->${b.hubCol}, w=${w}` };
+    }
+    // `v` is the amount by which the bound was EXCEEDED, so 0 means "within bound" and the message
+    // carries the offending frame.
+    expect(`gap ${worstGap.v} ${worstGap.at}`).toBe("gap 0 ");
+    expect(`step ${worstStep.v} ${worstStep.at}`).toBe("step 0 ");
+  }
+
+  it("BOUNDARY CONTINUITY (right edge) — the name never teleports and never freezes as its hub pans across the field edge", () => {
+    assertEdgeCrossingIsContinuous(3, 40);
+  });
+
+  it("BOUNDARY CONTINUITY (left edge) — same, in the other direction (the left clamp is a separate branch)", () => {
+    // MIRRORED fixture — see the sanity block in the helper for why the right-edge one cannot test
+    // this direction: x is negated so the hub leads the community off the LEFT edge, leaving its
+    // leaves on the field behind it, which is the arrangement that makes an off-grid anchor
+    // observable at all.
+    const g = hubAndLeavesGraph();
+    for (const n of g.nodes) { n.position[0] *= -1; n.position2d[0] *= -1; }
+    assertEdgeCrossingIsContinuous(-3, 40, g);
+  });
+
+  it("ACCEPTED COST — a community whose hub has left the field loses its name entirely rather than parking it at the edge", () => {
+    // This is a REGRESSION against the pre-task centroid anchor, and it is deliberate: it is the
+    // price of having exactly one anchor rule. See layoutClusterNames' doc for why a quiet omission
+    // beats the alternatives (a frozen label captioning whatever drifts under it, or a ~99-column
+    // one-frame teleport when switching to a second, screen-derived anchor). Asserted explicitly so
+    // the trade-off is recorded in the suite rather than only in a commit message — and so that
+    // anyone who later restores a fallback has to come here and delete this on purpose.
+    // Swept LEFTWARD: at fit the hub already sits at column ~122 of 124, so a rightward sweep leaves
+    // only about three on-grid frames to sample — too few to tell "drawn while on-grid" from noise.
+    // Going the other way it crosses the whole field first, then exits past column 0.
+    const { samples, cols } = panSweep(-3, 300);
+    const wellOff = samples.filter((s) => s.hubCol <= -4);
+    expect(wellOff.length).toBeGreaterThan(3); // the sweep really did leave the hub far off-grid
+    expect(wellOff.every((s) => s.labelCol == null)).toBe(true);
+    // ...and while the hub WAS on the grid, the name was drawn — the omission is scoped to the hub
+    // being gone, not a blanket "cluster names stopped working".
+    const onGridDrawn = samples.filter((s) => s.hubCol >= 0 && s.hubCol < cols && s.labelCol != null);
+    expect(onGridDrawn.length).toBeGreaterThan(50);
   });
 
   it("the pathOf level clamp is applied consistently in the exemplar-NAME table too, not just the colour tally and hub race — a shallow-only community still gets its real name at a deeper level, not the 'cluster N' placeholder", () => {
