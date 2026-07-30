@@ -134,12 +134,17 @@ export interface LayoutOptions {
    *                 separates them, which is what makes the community forces unnecessary.
    *   - "linear"  — CONTROL ARM (Task 4 measurement only, not a shipped path). Reuses
    *                 `linLogLinkForce`'s exact structure/integration (symmetric 50/50 correction,
-   *                 raw positions, same alpha handling) but with attraction ~ d instead of
-   *                 ~ ln(1+d) — i.e. the same magnitude LAW as "spring" run through LinLog's
-   *                 integration instead of forceLink's. Isolates whether a LinLog-vs-spring result
-   *                 is caused by the ln(1+d) force law or by the OTHER two ways `linLogLinkForce`
-   *                 differs from `forceLink` (no per-node degree division of the correction; raw
-   *                 rather than velocity-predicted positions) — see core/src/linlog.ts's header.
+   *                 raw positions, same alpha handling) but with attraction ~ (d - linkDist)
+   *                 instead of ~ ln(1+d) — i.e. the same magnitude LAW as "spring" (a Hooke spring
+   *                 with the same base rest length), run through LinLog's integration instead of
+   *                 forceLink's. MEANT to isolate whether a LinLog-vs-spring result is caused by
+   *                 the ln(1+d) force law or by the OTHER two ways `linLogLinkForce` differs from
+   *                 `forceLink` (no per-node degree division of the correction; raw rather than
+   *                 velocity-predicted positions) — but on this vault's hub topology this arm is
+   *                 numerically UNSTABLE in both the rest-length-free and rest-length variants
+   *                 measured (diverges over 240 ticks; see the prepareLayout comment at its link-
+   *                 force registration and the Task 4 report), so that isolation has not yet
+   *                 actually been achieved — see core/src/linlog.ts's header.
    * Temporary during the energy-model migration; removed once one path ships for good.
    */
   energyModel?: "spring" | "linlog" | "linear";
@@ -1597,19 +1602,35 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
     .alpha(1)
     .force("charge", forceManyBody<RN>().strength(chargeStrength).theta(MANYBODY_THETA));
   // Link force per LayoutOptions.energyModel:
-  //   - "linlog"/"linear" replace the spring entirely — no rest length, so linkDistFor is unused
-  //     here. "linear" is Task 4's CONTROL ARM: the exact same linLogLinkForce integration
-  //     (symmetric 50/50 correction, raw positions) as "linlog", but with attraction ~ d instead of
-  //     ~ ln(1+d) — isolating the force LAW from the OTHER two ways this integration differs from
-  //     forceLink (no degree-splitting of the correction; raw vs. predicted positions). See
-  //     linlog.ts's header and LayoutOptions.energyModel's doc comment.
+  //   - "linlog" replaces the spring entirely — no rest length, so linkDistFor is unused here.
+  //   - "linear" is Task 4's CONTROL ARM, meant to isolate the force LAW (attraction ~ d instead of
+  //     ~ ln(1+d)) from the OTHER two ways this integration differs from forceLink: no
+  //     degree-splitting of the correction, and raw vs. velocity-predicted positions. attraction ~
+  //     (d - linkDist) gives it forceLink's own rest-length semantics (repels below linkDist, same
+  //     base `linkDist` the spring arm uses — LayoutOptions.linkDistance, default 5,
+  //     dimension-adjusted the same way, NOT community-intra/inter-adjusted the way linkDistFor is).
+  //     STATUS (round 1 of measurement, both recorded in the Task 4 report): a rest-length-FREE
+  //     version (attraction ~ d, mag = s·attraction(d)/d = s·d/d = s — a constant per-component
+  //     multiplier whose resulting FORCE VECTOR (dx,dy,dz)·mag still has magnitude d·s, i.e.
+  //     genuinely proportional to d as intended) diverges over 240 explicit-Euler ticks on this
+  //     vault's hub topology (measured d3.nnMedian ~1e82, NaN fields) — expected, since nothing
+  //     bounds a hub's summed non-degree-split pull from hundreds of neighbours. Adding the rest
+  //     length above (this version) was tried specifically to fix that — but it ALSO diverges,
+  //     nearly identically (nnMedian ~3e82, same NaN fields): a rest length only shifts the
+  //     single-pair EQUILIBRIUM point, it doesn't bound the force MAGNITUDE as d grows past it, so
+  //     it does nothing for a hub whose many neighbours are simultaneously far from equilibrium.
+  //     Per explicit instruction this was NOT tuned further (a control that needs tuning to survive
+  //     stops being comparable to arms that didn't) — "linear" remains numerically unstable on this
+  //     vault in both variants measured; a diverged run cannot be used to attribute the LinLog win
+  //     to the force law vs. the other two differences. See linlog.ts's header and
+  //     LayoutOptions.energyModel's doc comment.
   //   - "spring" (default) keeps the original forceLink instance built above.
   if (o.energyModel === "linlog" || o.energyModel === "linear") {
     sim.force("link", linLogLinkForce<RN, LLLink>(links as LLLink[], {
       id: (d: RN) => d.id,
       strength: (l: LLLink) => (l.virtual ? o.virtualLinkStrength : linkStrengthFor(l)),
       dim,
-      attraction: o.energyModel === "linear" ? (d: number) => d : undefined,
+      attraction: o.energyModel === "linear" ? (d: number) => d - linkDist : undefined,
     }) as unknown as Parameters<typeof sim.force>[1]);
   } else {
     sim.force("link", linkForce);
