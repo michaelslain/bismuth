@@ -156,13 +156,34 @@ Beyond the table above: **every non-macOS host** stays refused for every non-Cla
 - **A stripped copy.** If the exact bytes are written to a new path with no `visibility:` key and no restricted stem or folder — by a human, or by an agent before a note was hidden — no path-based deny list can know. The widened walk and stem inheritance close the *organic* cases (export sidecars, hidden folders, copies that keep frontmatter); a deliberate strip of the frontmatter is out of reach of this design, and of any deny-list design.
 - **The within-turn window.** A note marked hidden *during* a turn is not covered until that turn ends, on every backend including Claude — a mid-turn rename was verified to defeat an already-built deny list. A `subpath` deny on an already-restricted *folder* closes the common case (a new file added to a folder that was already hidden is covered immediately), but a file restricted mid-turn for the first time is not retroactively gated within that same turn.
 
-### A known gap in the current wiring, stated plainly
+### The chokepoint, and why it lives in the router
 
-The wire and UI for a graceful refusal exist end to end (see "UI" below): a `"visibility-refused"` `ChatFrame` error code, and a dedicated ChatView panel. **As of this page, the chokepoint that would call it for every backend is not fully wired.** Concretely:
+The wire and UI for a graceful refusal exist end to end (see "UI" below): a `"visibility-refused"`
+`ChatFrame` error code, and a dedicated ChatView panel. The decision that emits it lives in **one
+place** — `resolveVisibilityGate` (`core/src/agentBackends/visibilityGate.ts`), called from the chat
+router's session-creating verbs (`core/src/chatProviders/index.ts`).
 
-- `claude` never needs it (native, both channels).
-- `opencode` checks the wrapper's availability itself, inside `chatProviders/opencode.ts`, before opening a session or a per-turn `run` — but as of this writing it pushes its refusal on the generic `code: "error"` rather than the dedicated `"visibility-refused"` code, so it currently renders as an inline turn error rather than the dedicated panel. Reconciling the two is a small follow-up (see this feature's integrator notes).
-- `codex` and every ACP backend (`cline`/`gemini`/`goose`/`openclaw`/the two hidden adapters) have **no check at all** in their chat drivers today — `core/src/chatProviders/codex/driver.ts` and `core/src/chatProviders/acp/driver.ts` never call `buildDenyPaths` or anything downstream of it for chat. Picking one of those backends against a restricted vault does not refuse and does not protect the notes — it is silently permissive, which is exactly the failure mode this whole feature exists to avoid. The catalog already says `visibilityGate.chat: "none"` for all of them, so the *data* is honest; the *enforcement* of that data at the chat-session chokepoint (`core/src/chatProviders/index.ts`, per this feature's design notes) is the outstanding piece. Do not read the catalog table above as "these are all refused today" — read it as "these are all *supposed* to be refused," and verify the chokepoint before relying on it.
+That location is the whole point. An earlier revision of this page had to record a genuine gap: the
+seven non-Claude drivers were written independently and **not one of them checked visibility**, so
+the catalog said `"none"` (honest data) while picking one of those backends against a restricted
+vault was silently permissive (dishonest behaviour). Seven drivers cannot be kept in agreement by
+review. One chokepoint can — and a **new** backend is refused by default, because its catalog entry
+starts at `"none"` and the router reads the catalog rather than trusting the driver.
+
+- `claude` never reaches a refusal (native, both channels).
+- `opencode` additionally checks the wrapper's own preconditions inside `chatProviders/opencode.ts`
+  — platform, `sandbox-exec`, and whether the session is already bound to shared server mode — and
+  pushes `code: "visibility-refused"` so the dedicated panel renders. That check is deliberately
+  *not* merged into the router's: the router answers "this backend has no verified mechanism at
+  all", while opencode's answers "opencode normally can enforce, but a specific precondition failed
+  right here", and naming the specific precondition is the whole value of the message.
+- `codex` and every ACP backend (`cline`/`gemini`/`goose`/`openclaw`/the two hidden adapters) are
+  refused by the router before their driver is ever spawned.
+
+Verified by `core/test/agentBackends/visibilityGate.test.ts`, which asserts all seven are refused,
+that an unknown backend id refuses rather than inheriting the default backend's answer, that an
+unreadable vault refuses, and that `chat-only` restricts the daemon channel but not chat. The
+end-to-end behaviour is recorded in [visibility-acceptance.md](visibility-acceptance.md).
 
 ---
 
