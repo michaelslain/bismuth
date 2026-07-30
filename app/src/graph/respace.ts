@@ -103,19 +103,36 @@ export function medianNearestNeighborDistance(positions: readonly Vec3[]): numbe
  * input coordinates are scrubbed to 0 the same way graphFit.ts's `finiteOr` does. Never mutates
  * `positions` — always returns a fresh array, even when `scale` ends up 1.
  *
- * One cliff worth knowing about, because it has no equivalent in Canvas's formula-based version:
- * once HALF OR MORE of the cloud sits exactly on its own centroid (real inputs: a just-created vault
- * where many notes never got laid out, or a batch of nodes the backend punted to the origin), the
- * MEDIAN nearest-neighbour distance itself hits ~0 — not because the cloud has no spacing anywhere,
- * but because "typical" (the median) is dominated by the coincident majority. `scale` then falls back
- * to 1 (a silent no-op: `targetSpacing` was requested but never applied) rather than exploding: the
- * only alternative would be to divide by ~0 and blow the well-spaced minority out to Infinity, which
- * is worse. This is a real, cheap-to-hit cliff a caller might want to know about, so — unlike every
- * other guard above, which are all silent by design — this one specific case logs a single
- * `console.warn` (never throws, never changes the still-correct `scale=1` output) so it doesn't fail
- * silently forever. See `medianNearestNeighborDistance`'s own doc for why the median (not min/mean)
- * is what's being measured here.
+ * One cliff worth knowing about, because it has no equivalent in Canvas's formula-based version: once
+ * MORE THAN HALF the cloud coincides at a single point — ANYWHERE, not necessarily the centroid; all
+ * that matters is that a strict majority of points share one location (real inputs: a just-created
+ * vault where many notes never got laid out, or a batch of nodes the backend punted to the same spot)
+ * — the MEDIAN nearest-neighbour distance itself hits ~0, not because the cloud has no spacing
+ * anywhere, but because "typical" (the median) is dominated by the coincident majority. Note the
+ * threshold is a STRICT majority, not "half or more": at exactly half (e.g. 250 of 500 coincident),
+ * the two middle-ranked distances the even-length median averages straddle the coincident/well-spaced
+ * boundary, so the median still comes out as a real, nonzero number (verified: 249/500 -> no cliff,
+ * 250/500 -> no cliff, 251/500 -> cliff, at that exact boundary). `scale` then falls back to 1 (a
+ * silent no-op: `targetSpacing` was requested but never applied) rather than exploding: the only
+ * alternative would be to divide by ~0 and blow the well-spaced minority out to Infinity, which is
+ * worse. This is a real, cheap-to-hit cliff a caller might want to know about, so — unlike every other
+ * guard above, which are all silent by design — this one specific case logs a `console.warn` (never
+ * throws, never changes the still-correct `scale=1` output), THROTTLED to once per PROCESS (not once
+ * per call — an uncached caller hitting this every frame on a genuinely degenerate graph would
+ * otherwise flood the console at frame rate; see `resetSpacingWarningForTests`) so it doesn't fail
+ * silently forever without also becoming its own new kind of noise. See
+ * `medianNearestNeighborDistance`'s own doc for why the median (not min/mean) is what's being measured
+ * here.
  */
+let warnedDegenerateSpacingOnce = false;
+
+/** Test-only escape hatch: `scaleToSpacing`'s degenerate-majority warning (see its doc) fires at most
+ *  once per process, so a test suite exercising it more than once needs to reset the flag between
+ *  cases. Not meant for production callers. */
+export function resetSpacingWarningForTests(): void {
+  warnedDegenerateSpacingOnce = false;
+}
+
 export function scaleToSpacing(positions: readonly Vec3[], targetSpacing: number): Vec3[] {
   const n = positions.length;
   if (n === 0) return [];
@@ -130,10 +147,12 @@ export function scaleToSpacing(positions: readonly Vec3[], targetSpacing: number
   // coincident") — already covered by its own doc note above, so it's excluded here to keep this
   // warning specifically about the majority-coincidence cliff.
   const degenerate = n >= 2 && target > 0 && current <= EPS;
-  if (degenerate) {
+  if (degenerate && !warnedDegenerateSpacingOnce) {
+    warnedDegenerateSpacingOnce = true;
     console.warn(
       `respace: scaleToSpacing — ${n} points, requested targetSpacing=${target}, but the median ` +
-      "nearest-neighbour distance is ~0 (half or more of the cloud is coincident); rescale skipped (scale=1).",
+      "nearest-neighbour distance is ~0 (a majority of the cloud coincides at a single point); " +
+      "rescale skipped (scale=1). Further occurrences are suppressed for this process.",
     );
   }
   const scale = current > EPS && target > 0 ? target / current : 1;
@@ -155,16 +174,24 @@ export function scaleToSpacing(positions: readonly Vec3[], targetSpacing: number
 // likes (`structuralGraphSig` in Canvas/Ascii). This module deliberately doesn't know or reach for
 // that machinery — see task-6-brief.md's ambiguity note.
 //
-// COPY-ON-READ, always, hit or miss: `getOrCompute` never hands out the exact reference it has
-// stored, only a fresh copy made via the caller-supplied `clone`. Ported from Canvas's OWN cache-hit
-// path (`:654`, `for (const nv of this.nodes) { const p = hit.get(nv.node.id); if (p) nv.p3 = [p[0],
-// p[1], p[2]]; }`) — it never aliased a live node's position onto the cached one either. A first cut
-// of this memo skipped that and returned the stored reference directly, which is exactly the kind of
-// footgun this cache exists to prevent: the 2D<->3D morph a caller runs this under lerps positions IN
-// PLACE every frame, and mutating a hit's return value would silently corrupt every later hit under
-// that signature. `clone` is required, not defaulted, so a caller can't opt into the unsafe version
-// by accident — see `cloneVec3Array` below for the ready-made one this module's own primary value
-// type (`Vec3[]`) needs.
+// NEVER ALIASED, in either direction: `getOrCompute` clones via the caller-supplied `clone` on the
+// way INTO the cache (before `cache.set`, on a miss) as well as on the way OUT (on every return, hit
+// or miss alike) — so the Map's own stored value is never the same reference as anything a caller of
+// `compute` retains, AND never the same reference as anything a caller of `getOrCompute` gets back.
+// Ported from Canvas's OWN cache-hit path (`:654`, `for (const nv of this.nodes) { const p =
+// hit.get(nv.node.id); if (p) nv.p3 = [p[0], p[1], p[2]]; }`) — it never aliased a live node's
+// position onto the cached one either. An earlier cut of this memo cloned only on the way out, which
+// closes the "caller mutates what it got back" hole but not the "compute()'s OWN closure still holds
+// the array it just returned, and mutates that later" one — a real footgun, not a hypothetical one:
+// the 2D<->3D morph a caller runs this under lerps positions IN PLACE every frame. `clone` is
+// required, not defaulted, so a caller can't opt into the unsafe version by accident — see
+// `cloneVec3Array` below for the ready-made one this module's own primary value type (`Vec3[]`)
+// needs. IMPORTANT for any OTHER T: `clone` must not be an identity function (`(v) => v`) for a
+// reference type — that silently reinstates the exact hazard this cache exists to prevent, with no
+// type-level signal that anything is wrong. Identity is only safe for primitives (see this module's
+// own tests, which use `(n: number) => n` for a `SpacingCache<number>`). A caller wrapping Canvas's
+// old `Map<string, Vec3>` per-view shape as `T` has no ready-made clone here — bring your own (a
+// fresh `Map` of freshly-cloned `Vec3` entries, not `(m) => m`).
 
 export interface SpacingCache<T> {
   /** Returns an INDEPENDENT copy (via `clone`, see `createSpacingCache`) of the value for `sig`,
@@ -189,9 +216,11 @@ export function cloneVec3Array(v: readonly Vec3[]): Vec3[] {
 /**
  * A tiny FIFO-capped memo keyed by an opaque signature string. On overflow, evicts the OLDEST
  * inserted entry (`Map` iteration order is insertion order) — the same eviction Canvas used, not a
- * true LRU: a re-hit does not move an entry to the back of the queue. `clone` runs on EVERY return
- * (hit and miss alike) so the contract is uniform: whatever you get back from `getOrCompute` is
- * always yours to mutate, never the cache's own copy.
+ * true LRU: a re-hit does not move an entry to the back of the queue. `clone` runs BOTH when a fresh
+ * `compute()` result is stored (so the cache is never aliased to whatever the caller of `compute`
+ * keeps) AND on every return (hit and miss alike, so whatever you get back from `getOrCompute` is
+ * always yours to mutate, never the cache's own copy) — see the header block above for why both
+ * directions matter.
  */
 export function createSpacingCache<T>(
   clone: (value: T) => T,
@@ -200,14 +229,19 @@ export function createSpacingCache<T>(
   const cache = new Map<string, T>();
   return {
     getOrCompute(sig, compute) {
-      if (cache.has(sig)) return clone(cache.get(sig) as T);
-      const value = compute();
-      cache.set(sig, value);
-      if (cache.size > maxEntries) {
-        const oldest = cache.keys().next().value;
-        if (oldest !== undefined) cache.delete(oldest);
+      if (!cache.has(sig)) {
+        // Clone BEFORE storing, not just on the way out: `compute()` may return an array its own
+        // caller/closure also retains a reference to (a real case, not hypothetical — see task-6
+        // review round 2). Storing that reference directly would let a later external mutation of
+        // the ORIGINAL corrupt the cache even though nothing ever mutated what `getOrCompute` itself
+        // handed back. Store our own copy so the cache is never aliased to anything outside it.
+        cache.set(sig, clone(compute()));
+        if (cache.size > maxEntries) {
+          const oldest = cache.keys().next().value;
+          if (oldest !== undefined) cache.delete(oldest);
+        }
       }
-      return clone(value);
+      return clone(cache.get(sig) as T); // and clone AGAIN on the way out — see the header block above
     },
   };
 }

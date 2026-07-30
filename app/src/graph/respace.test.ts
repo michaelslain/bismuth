@@ -1,12 +1,19 @@
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import {
   type Vec3,
   medianNearestNeighborDistance,
   scaleToSpacing,
   createSpacingCache,
   cloneVec3Array,
+  resetSpacingWarningForTests,
   SPACING_CACHE_MAX_ENTRIES,
 } from "./respace";
+
+// scaleToSpacing's degenerate-majority console.warn is throttled to once PER PROCESS (see respace.ts
+// and task-6 review round 2), which — left alone — would make whichever test in this file happens to
+// exercise that path FIRST silently absorb the warning for every test after it. Reset before every
+// test, unconditionally, so each one observes the warning fresh regardless of run order.
+beforeEach(() => { resetSpacingWarningForTests(); });
 
 // ---- fixtures -------------------------------------------------------------------------------
 //
@@ -286,18 +293,38 @@ describe("scaleToSpacing — degenerate-majority warning", () => {
     return [...zeros, ...spread];
   }
 
-  it("warns exactly once, and never throws, when >=50% of the cloud is coincident and a real target was requested", () => {
+  /** `n` points, `coincidentCount` of them piled at the origin, the rest a well-spread, mutually
+   *  distinct cluster far away (so it can never accidentally coincide with the origin or with itself). */
+  function majorityCloud(n: number, coincidentCount: number): Vec3[] {
+    const coincident: Vec3[] = Array.from({ length: coincidentCount }, (): Vec3 => [0, 0, 0]);
+    const rest = spiralCloud(n - coincidentCount, 50).map(([x, y, z]): Vec3 => [x + 5000, y + 5000, z + 5000]);
+    return [...coincident, ...rest];
+  }
+
+  it("fires on a single call when the cloud is majority-coincident and a real target was requested (never throws)", () => {
     const cloud = coincidentMajorityCloud();
     let out: Vec3[] = [];
     const warnings = captureWarnings(() => { out = scaleToSpacing(cloud, 25); });
     expect(warnings.length).toBe(1);
     expect(String(warnings[0][0])).toContain("scaleToSpacing");
-    expect(String(warnings[0][0])).toContain("coincident");
+    expect(String(warnings[0][0])).toContain("coincide");
     for (const p of out) {
       expect(Number.isFinite(p[0])).toBe(true);
       expect(Number.isFinite(p[1])).toBe(true);
       expect(Number.isFinite(p[2])).toBe(true);
     }
+  });
+
+  it("throttles to ONE warning per process across many repeated degenerate calls, not once per call", () => {
+    // The bug this guards against: an uncached caller invoking scaleToSpacing every frame on a
+    // genuinely degenerate graph would otherwise flood the console at frame rate (120 uncached calls
+    // -> 120 warnings, per task-6 review round 2). This is deliberately NOT the same test as the one
+    // above — that one only proves a SINGLE call warns; this one proves REPEATED calls don't re-warn.
+    const cloud = coincidentMajorityCloud();
+    const warnings = captureWarnings(() => {
+      for (let i = 0; i < 120; i++) scaleToSpacing(cloud, 25);
+    });
+    expect(warnings.length).toBe(1);
   });
 
   it("does not warn for a well-spaced cloud", () => {
@@ -310,10 +337,41 @@ describe("scaleToSpacing — degenerate-majority warning", () => {
     const cloud: Vec3[] = [[2, 2, 2], [2, 2, 2], [2, 2, 2]];
     const warnings = captureWarnings(() => {
       scaleToSpacing(cloud, 0);
+      resetSpacingWarningForTests(); // each sub-check must be observed independently
       scaleToSpacing(cloud, -5);
+      resetSpacingWarningForTests();
       scaleToSpacing(cloud, NaN);
     });
     expect(warnings.length).toBe(0);
+  });
+
+  it("the cliff is a STRICT majority, not half-or-more: 249/500 and exactly-half 250/500 stay silent, 251/500 fires", () => {
+    // Pins the exact boundary the docstring claims and the review verified by hand (249/500 -> no
+    // warn, 250/500 -> no warn, 251/500 -> warn at median NN 0.0000). "Half or more" was the ORIGINAL
+    // (wrong) docstring wording — this test is what would fail if that wrong version were re-applied.
+    resetSpacingWarningForTests();
+    const w249 = captureWarnings(() => { scaleToSpacing(majorityCloud(500, 249), 10); });
+    expect(w249.length).toBe(0);
+
+    resetSpacingWarningForTests();
+    const w250 = captureWarnings(() => { scaleToSpacing(majorityCloud(500, 250), 10); });
+    expect(w250.length).toBe(0); // EXACTLY half is not enough
+
+    resetSpacingWarningForTests();
+    const w251 = captureWarnings(() => { scaleToSpacing(majorityCloud(500, 251), 10); });
+    expect(w251.length).toBe(1); // the first true (strict) majority
+  });
+
+  it("fires for a coincident majority far from the centroid, not just one sitting on it", () => {
+    // The ORIGINAL (wrong) docstring said the cloud "sits exactly on its own centroid" — this fixture
+    // is the review's own repro shape: a large coincident cluster nowhere near [0,0,0]. Coincidence
+    // ANYWHERE triggers this, not specifically coincidence AT the centroid.
+    const cluster: Vec3[] = Array.from({ length: 300 }, (): Vec3 => [9999, 9999, 9999]);
+    const rest = spiralCloud(50, 20); // near the origin — nowhere near the cluster, and nowhere near
+                                       // the overall centroid either, which sits somewhere between them
+    const cloud = [...cluster, ...rest];
+    const warnings = captureWarnings(() => { scaleToSpacing(cloud, 10); });
+    expect(warnings.length).toBe(1);
   });
 });
 
@@ -357,6 +415,21 @@ describe("createSpacingCache", () => {
     (first[0] as [number, number, number])[2] = -9999;
     const second = cache.getOrCompute("sig-a", compute);
     expect(second[0]).not.toEqual([-9999, -9999, -9999]);
+  });
+
+  it("clones ON WRITE too: mutating compute()'s own retained array after storage does NOT corrupt the cache", () => {
+    // The bug this guards against (task-6 review round 2): `cache.set(sig, value)` used to store
+    // compute()'s return value directly, uncloned. If the CALLER of compute() also kept a reference
+    // to that same array (realistic — compute() is often a closure over data the caller already
+    // owns) and mutated it AFTER the cache had stored it, the mutation leaked straight into the
+    // cache, because the stored value and the caller's retained value were the literal same object.
+    // The review demonstrated this live: a later hit returned [-999,5,5] instead of [5,5,5].
+    const cache = createSpacingCache<Vec3[]>(cloneVec3Array);
+    const retained: Vec3[] = [[5, 5, 5]];
+    cache.getOrCompute("sig-a", () => retained); // compute() hands back `retained` itself, not a copy
+    (retained[0] as [number, number, number])[0] = -999; // the CALLER mutates its own retained array
+    const hit = cache.getOrCompute("sig-a", () => { throw new Error("must be a cache hit, not a recompute"); });
+    expect(hit).toEqual([[5, 5, 5]]); // NOT corrupted by the external mutation of `retained`
   });
 
   it("recomputes for a changed signature", () => {
