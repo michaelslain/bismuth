@@ -27,6 +27,7 @@
 //
 // No production files were changed for this task.
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { readdirSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -82,6 +83,13 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
   let mock: MockLlmHandle | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
+  // Captured so the test body can assert this dir was ACTUALLY used (see setup()'s CLAUDE_CONFIG_DIR
+  // comment and the test's own runtime-signal assertion below) — a code-review finding: the isolation
+  // previously had zero runtime signal in the shipped test itself, only a one-time manual observation
+  // recorded in a comment that the test couldn't report on. The whole branch exists to stop shipping
+  // assertions that would pass even if the thing they prove never happened; this isolation is the fix
+  // for the branch's own Critical finding, so it gets held to that standard too.
+  let claudeConfigDir: string | undefined;
 
   async function newTempDir(prefix = "bismuth-claude-mocked-"): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), prefix));
@@ -108,16 +116,27 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
     // documented Claude Code settings key) could inject exactly the Bedrock/Vertex vars just
     // cleared above right back in, or any other override, and this test would never know. Fixed via
     // `CLAUDE_CONFIG_DIR` — a real env var the installed binary honors (confirmed via `strings`:
-    // "Use CLAUDE_CONFIG_DIR=/tmp for ephemeral local writes") to relocate its ENTIRE `~/.claude`-
-    // equivalent config/session/credentials tree. Deliberately NOT a full `$HOME` redirect (unlike
-    // gemini's): `$HOME` would also move the claude BINARY's own installation discovery
-    // (`~/.local/share/claude/...`, unrelated to `~/.claude` config) into the isolated dir, and
-    // there is nothing there — CLAUDE_CONFIG_DIR isolates exactly the state that matters here
-    // without touching where the binary itself is found. Verified live: a real turn against the
-    // mock still completes correctly under this isolation (assistant-text "Hello!",
-    // result.isError:false), and the isolated dir picks up genuine session/project state
-    // (sessions/, projects/, .claude.json) proving it's actually in use, not a no-op.
-    process.env.CLAUDE_CONFIG_DIR = await newTempDir("bismuth-claude-config-");
+    // "Use CLAUDE_CONFIG_DIR=/tmp for ephemeral local writes") to relocate its `~/.claude`-equivalent
+    // config/session tree. Deliberately NOT a full `$HOME` redirect (unlike gemini's): `$HOME` would
+    // also move the claude BINARY's own installation discovery (`~/.local/share/claude/...`,
+    // unrelated to `~/.claude` config) into the isolated dir, and there is nothing there —
+    // CLAUDE_CONFIG_DIR isolates the config/session state without touching where the binary itself
+    // is found. A re-review found it does MORE than that: the keychain service-name builder appends
+    // a `-<sha256(configDir)>` suffix whenever this var is set, so the developer's real OAuth
+    // keychain credential becomes unreachable too, not just settings.json — a bonus this comment
+    // didn't originally claim and isn't relying on (env auth already takes precedence over keychain
+    // regardless, per this file's other comment above), but a real added layer.
+    //
+    // NOT COVERED by this redirect, so said explicitly rather than overclaimed (a second re-review
+    // finding): macOS managed/MDM policy at `/Library/Application Support/ClaudeCode/
+    // managed-settings.json` (and `/etc/claude-code` on Linux/WSL) is deliberately NOT relocated by
+    // CLAUDE_CONFIG_DIR — it's an admin-managed policy layer, outside any per-user config dir by
+    // design — and its own `env` block could in principle re-inject CLAUDE_CODE_USE_BEDROCK after
+    // the deletes above. Confirmed no such file exists on this machine (not live risk here), but a
+    // machine under real MDM/enterprise policy management is exactly where this test's Bedrock/
+    // Vertex guard could still be silently defeated, and CLAUDE_CONFIG_DIR does nothing about it.
+    claudeConfigDir = await newTempDir("bismuth-claude-config-");
+    process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
   }
 
   afterAll(async () => {
@@ -174,6 +193,15 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
       if (resultFrame.type === "result") {
         expect(resultFrame.isError).toBe(false);
       }
+
+      // RUNTIME SIGNAL for the CLAUDE_CONFIG_DIR isolation itself (code-review finding): without
+      // this, the isolation above has ZERO effect on whether this test passes — it would pass
+      // identically if CLAUDE_CONFIG_DIR were misspelled, silently ignored by a future claude
+      // version, or never actually read. Asserting the isolated dir is non-empty after a real turn
+      // proves the running claude process actually wrote session/config state INTO it, not just that
+      // the env var was set on this test process.
+      expect(claudeConfigDir).toBeDefined();
+      if (claudeConfigDir) expect(readdirSync(claudeConfigDir).length).toBeGreaterThan(0);
     },
     60_000,
   );

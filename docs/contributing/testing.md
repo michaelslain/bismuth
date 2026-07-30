@@ -127,8 +127,11 @@ applies to two distinct kinds of test that could otherwise spend real money or c
    needed) precisely because they spend nothing, and skip when the relevant CLI **binary** isn't
    installed (a portability/CI concern), never when an **account** isn't logged in — a
    missing-binary skip and a missing-account skip must never be conflated (see each test file's own
-   header for why). They are NOT all the same shape, and the difference matters (corrected here
-   after an earlier version of this paragraph overstated it for two of the six files):
+   header for why). They are NOT all the same shape, and the difference matters (corrected here after
+   an earlier version of this paragraph overstated it: this item covers SEVEN files total, not six —
+   the six `*Mocked.test.ts` files plus `acpFakeAgent.test.ts` — and the overstatement affected one
+   of the six `*Mocked.test.ts` files (`clineMocked`, which starts no mock) plus `acpFakeAgent.test.ts`
+   itself, the seventh file, which isn't one of the six at all and isn't a real CLI):
    - `claudeMocked`/`opencodeMocked`/`codexMocked`/`gooseMocked`/`geminiMocked.test.ts` drive a REAL
      agent CLI binary (`claude`/`opencode`/`codex`/`goose`/`gemini`) through Bismuth's OWN
      production chat driver, pointed at a **local mock LLM server** instead of the real provider API

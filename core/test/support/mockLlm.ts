@@ -140,15 +140,28 @@ function resolveLlmockBin(): string {
  * caller (claudeMocked.test.ts, mockLlm.test.ts) omits this and is completely unaffected — an empty
  * default changes nothing about the exact spawn argv they already depend on.
  *
- * DENYLISTED (final-review minor): `--record`/`--provider-*` turn `llmock` from a mock into a
- * REAL-PROVIDER PROXY (see `docs/contributing/testing.md`'s "Recording a new fixture" section) —
- * exactly the one thing this whole harness exists to prevent a test from doing by accident. Any
- * `extraArgs` entry matching either is rejected synchronously (before any spawn attempt) rather than
- * silently starting a mock that isn't one; a future test file that needs to record a NEW fixture
- * must do so as the deliberate, manual, real-account act the docs describe, never as a value handed
- * to this function.
+ * DENYLISTED (final-review minor, corrected on re-review): `--record`, `--proxy-only`, and the AG-UI
+ * proxy trio `--agui-record`/`--agui-upstream`/`--agui-proxy-only` all turn `llmock` from a mock into
+ * a REAL-PROVIDER (or real-upstream-AGENT) PROXY (see aimock's own `dist/cli.js` flag parsing, and
+ * `docs/contributing/testing.md`'s "Recording a new fixture" section) — exactly the one thing this
+ * whole harness exists to prevent a test from doing by accident. An earlier version of this denylist
+ * only covered `--record`/`--provider-*`, missing `--proxy-only` and the three `--agui-*` proxy
+ * flags entirely — listed explicitly now rather than relying on a narrower pattern.
+ *
+ * This denylist is DEFENSE-IN-DEPTH, not the only thing standing between `extraArgs` and a real
+ * network call: aimock's own parser already fails closed on `--record`/`--proxy-only` without an
+ * accompanying `--provider-*` flag (`cli.js`: proxy modes error out unless at least one upstream
+ * provider URL is configured) — and every `--provider-*` value is independently denylisted below
+ * regardless. It is also fail-closed against the obvious ways to sneak a value past a naive check:
+ * `--record=x` still matches (`--record` is a boolean-typed CLI option in aimock's parser, which
+ * throws on being given an `=value` form rather than silently accepting it as a distinct string this
+ * regex wouldn't see), `-record` (a single dash) is not `--record` and would be parsed by aimock as
+ * an unrecognized short-option GROUP and rejected on its own, and there is no shell involved anywhere
+ * in this call chain (`extraArgs` are literal array entries passed straight to `Bun.spawn`, never
+ * through a shell) so there is no quoting/splitting trick that turns one denylisted string into two
+ * that individually slip through.
  */
-const DENYLISTED_ARG_RE = /^--record$|^--provider-/;
+const DENYLISTED_ARG_RE = /^--record$|^--provider-|^--proxy-only$|^--agui-record$|^--agui-upstream$|^--agui-proxy-only$/;
 
 export function startMockLlm(fixtureDir: string = DEFAULT_FIXTURE_DIR, extraArgs: readonly string[] = []): Promise<MockLlmHandle> {
   return new Promise((resolve, reject) => {
