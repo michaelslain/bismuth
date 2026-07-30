@@ -25,13 +25,23 @@
 // distances at all; multiplying every distance by the same positive scalar can't flip which of two
 // distances is smaller) — see respace.test.ts's neighbour-rank test, which is that guarantee's guard.
 //
-// Deliberately NOT ported here: the "self" node pin-at-origin + golden-angle nudge for coincident
-// points (CanvasGraphRenderer.ts:256-296). Those are a caller/identity concern — which point IS
-// "you", and re-associating output positions back to node ids — and this module works over bare
-// position arrays with no notion of node identity or kind. A caller wanting that behaviour applies
-// it around this call (exclude "you" before calling, re-insert it at the origin after; the centroid
-// this module recenters onto already lands "you" at the origin exactly as before, since "you" was
-// excluded from the ORIGINAL centroid too).
+// Deliberately NOT ported here:
+//
+//  - The "self" node pin-at-origin + golden-angle nudge for coincident points
+//    (CanvasGraphRenderer.ts:256-296). Those are a caller/identity concern — which point IS "you",
+//    and re-associating output positions back to node ids — and this module works over bare position
+//    arrays with no notion of node identity or kind. A caller wanting that behaviour applies it
+//    around this call (exclude "you" before calling, re-insert it at the origin after; the centroid
+//    this module recenters onto already lands "you" at the origin exactly as before, since "you" was
+//    excluded from the ORIGINAL centroid too).
+//  - `settlePositions`'s own guard, `if (n < 2 || this.hasIntentionalLayout()) return;`
+//    (CanvasGraphRenderer.ts:652) — skip respacing ENTIRELY for graphs that "arrive pre-laid-out"
+//    (agents/daemon graphs, keyed off `node.kind`). Like the self-pin, this is a node-KIND decision,
+//    and this module never sees `kind` — it only sees bare coordinates. The `n < 2` half is ported
+//    (see `scaleToSpacing`'s early return below); the `hasIntentionalLayout()` half is entirely a
+//    caller-side routing decision: don't call `scaleToSpacing` at all for a graph you know arrived
+//    pre-laid-out. A caller that ignores this and calls it anyway gets a real (if unwanted) rescale,
+//    not a crash — this module has no way to detect "pre-laid-out" from coordinates alone.
 
 /** A 3D point. 2D callers pass z=0 for every point — the distance math naturally degenerates to 2D
  *  when every input shares the same z, so this module never needs a separate 2D/3D mode (matching
@@ -92,6 +102,19 @@ export function medianNearestNeighborDistance(positions: readonly Vec3[]): numbe
  * back to `scale=1` (a straight recenter, no rescale) rather than propagating garbage. Non-finite
  * input coordinates are scrubbed to 0 the same way graphFit.ts's `finiteOr` does. Never mutates
  * `positions` — always returns a fresh array, even when `scale` ends up 1.
+ *
+ * One cliff worth knowing about, because it has no equivalent in Canvas's formula-based version:
+ * once HALF OR MORE of the cloud sits exactly on its own centroid (real inputs: a just-created vault
+ * where many notes never got laid out, or a batch of nodes the backend punted to the origin), the
+ * MEDIAN nearest-neighbour distance itself hits ~0 — not because the cloud has no spacing anywhere,
+ * but because "typical" (the median) is dominated by the coincident majority. `scale` then falls back
+ * to 1 (a silent no-op: `targetSpacing` was requested but never applied) rather than exploding: the
+ * only alternative would be to divide by ~0 and blow the well-spaced minority out to Infinity, which
+ * is worse. This is a real, cheap-to-hit cliff a caller might want to know about, so — unlike every
+ * other guard above, which are all silent by design — this one specific case logs a single
+ * `console.warn` (never throws, never changes the still-correct `scale=1` output) so it doesn't fail
+ * silently forever. See `medianNearestNeighborDistance`'s own doc for why the median (not min/mean)
+ * is what's being measured here.
  */
 export function scaleToSpacing(positions: readonly Vec3[], targetSpacing: number): Vec3[] {
   const n = positions.length;
@@ -103,6 +126,16 @@ export function scaleToSpacing(positions: readonly Vec3[], targetSpacing: number
 
   const current = medianNearestNeighborDistance(positions);
   const target = finite(targetSpacing, 0);
+  // n < 2 is a DIFFERENT, unsurprising degenerate case (nothing to measure at all, not "the cloud is
+  // coincident") — already covered by its own doc note above, so it's excluded here to keep this
+  // warning specifically about the majority-coincidence cliff.
+  const degenerate = n >= 2 && target > 0 && current <= EPS;
+  if (degenerate) {
+    console.warn(
+      `respace: scaleToSpacing — ${n} points, requested targetSpacing=${target}, but the median ` +
+      "nearest-neighbour distance is ~0 (half or more of the cloud is coincident); rescale skipped (scale=1).",
+    );
+  }
   const scale = current > EPS && target > 0 ? target / current : 1;
 
   return positions.map((p): Vec3 => [
@@ -121,10 +154,23 @@ export function scaleToSpacing(positions: readonly Vec3[], targetSpacing: number
 // wraps that shape as T) — and keyed on an OPAQUE signature string the caller computes however it
 // likes (`structuralGraphSig` in Canvas/Ascii). This module deliberately doesn't know or reach for
 // that machinery — see task-6-brief.md's ambiguity note.
+//
+// COPY-ON-READ, always, hit or miss: `getOrCompute` never hands out the exact reference it has
+// stored, only a fresh copy made via the caller-supplied `clone`. Ported from Canvas's OWN cache-hit
+// path (`:654`, `for (const nv of this.nodes) { const p = hit.get(nv.node.id); if (p) nv.p3 = [p[0],
+// p[1], p[2]]; }`) — it never aliased a live node's position onto the cached one either. A first cut
+// of this memo skipped that and returned the stored reference directly, which is exactly the kind of
+// footgun this cache exists to prevent: the 2D<->3D morph a caller runs this under lerps positions IN
+// PLACE every frame, and mutating a hit's return value would silently corrupt every later hit under
+// that signature. `clone` is required, not defaulted, so a caller can't opt into the unsafe version
+// by accident — see `cloneVec3Array` below for the ready-made one this module's own primary value
+// type (`Vec3[]`) needs.
 
 export interface SpacingCache<T> {
-  /** Returns the cached value for `sig`, computing (and storing) it via `compute` on a miss. Never
-   *  calls `compute` on a hit — the whole point is to skip the O(n²) recompute. */
+  /** Returns an INDEPENDENT copy (via `clone`, see `createSpacingCache`) of the value for `sig`,
+   *  computing (and storing) it via `compute` on a miss. Never calls `compute` on a hit — the whole
+   *  point is to skip the O(n²) recompute. Safe to mutate whatever comes back; the cache's own copy
+   *  is never exposed. */
   getOrCompute(sig: string, compute: () => T): T;
 }
 
@@ -133,23 +179,35 @@ export interface SpacingCache<T> {
  *  a general-purpose store. */
 export const SPACING_CACHE_MAX_ENTRIES = 8;
 
+/** `clone` for a `SpacingCache<Vec3[]>` — a fresh outer array of fresh inner tuples. This is the
+ *  clone this module's own values (`scaleToSpacing`'s return) need; a cache over some other T brings
+ *  its own. */
+export function cloneVec3Array(v: readonly Vec3[]): Vec3[] {
+  return v.map((p): Vec3 => [p[0], p[1], p[2]]);
+}
+
 /**
  * A tiny FIFO-capped memo keyed by an opaque signature string. On overflow, evicts the OLDEST
  * inserted entry (`Map` iteration order is insertion order) — the same eviction Canvas used, not a
- * true LRU: a re-hit does not move an entry to the back of the queue.
+ * true LRU: a re-hit does not move an entry to the back of the queue. `clone` runs on EVERY return
+ * (hit and miss alike) so the contract is uniform: whatever you get back from `getOrCompute` is
+ * always yours to mutate, never the cache's own copy.
  */
-export function createSpacingCache<T>(maxEntries = SPACING_CACHE_MAX_ENTRIES): SpacingCache<T> {
+export function createSpacingCache<T>(
+  clone: (value: T) => T,
+  maxEntries = SPACING_CACHE_MAX_ENTRIES,
+): SpacingCache<T> {
   const cache = new Map<string, T>();
   return {
     getOrCompute(sig, compute) {
-      if (cache.has(sig)) return cache.get(sig) as T;
+      if (cache.has(sig)) return clone(cache.get(sig) as T);
       const value = compute();
       cache.set(sig, value);
       if (cache.size > maxEntries) {
         const oldest = cache.keys().next().value;
         if (oldest !== undefined) cache.delete(oldest);
       }
-      return value;
+      return clone(value);
     },
   };
 }

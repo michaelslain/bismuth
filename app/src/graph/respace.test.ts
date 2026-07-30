@@ -4,6 +4,7 @@ import {
   medianNearestNeighborDistance,
   scaleToSpacing,
   createSpacingCache,
+  cloneVec3Array,
   SPACING_CACHE_MAX_ENTRIES,
 } from "./respace";
 
@@ -62,6 +63,22 @@ function measuredSpacing(positions: readonly Vec3[]): number {
   const s = [...nn].sort((a, b) => a - b);
   const mid = s.length >> 1;
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/** Runs `fn` with `console.warn` replaced by a recording stub, restores the original afterward, and
+ *  returns the args of every call captured. bun:test's `spyOn(console, "warn")` doesn't reliably
+ *  intercept calls made from other modules in this Bun version (see core/test/daemon.test.ts's
+ *  console.log precedent for the same workaround) — this manually monkeypatches instead. */
+function captureWarnings(fn: () => void): unknown[][] {
+  const warnings: unknown[][] = [];
+  const orig = console.warn;
+  console.warn = (...args: unknown[]) => { warnings.push(args); };
+  try {
+    fn();
+  } finally {
+    console.warn = orig;
+  }
+  return warnings;
 }
 
 // ---- medianNearestNeighborDistance -----------------------------------------------------------
@@ -174,34 +191,56 @@ describe("scaleToSpacing — degenerate inputs stay finite", () => {
     expect(scaleToSpacing([[3, 4, 5]], 10)).toEqual([[0, 0, 0]]);
   });
 
-  it("does not divide by zero on a fully coincident cloud", () => {
+  it("does not divide by zero on a fully coincident cloud (and warns once — see Minor 2)", () => {
     const pts: Vec3[] = [[2, 2, 2], [2, 2, 2], [2, 2, 2]];
-    const out = scaleToSpacing(pts, 10);
-    for (const p of out) {
-      expect(Number.isFinite(p[0])).toBe(true);
-      expect(Number.isFinite(p[1])).toBe(true);
-      expect(Number.isFinite(p[2])).toBe(true);
-    }
+    const warnings = captureWarnings(() => {
+      const out = scaleToSpacing(pts, 10);
+      for (const p of out) {
+        expect(Number.isFinite(p[0])).toBe(true);
+        expect(Number.isFinite(p[1])).toBe(true);
+        expect(Number.isFinite(p[2])).toBe(true);
+      }
+    });
+    // 100% coincident, target=10 > 0 -> the degenerate-majority guard fires exactly once.
+    expect(warnings.length).toBe(1);
   });
 
-  it("scrubs non-finite input coordinates instead of propagating NaN", () => {
+  it("scrubs non-finite input coordinates WITHOUT collapsing the cloud (not just staying finite)", () => {
+    // This exact fixture (2 of 3 points carry a NaN/Infinity coordinate — a MAJORITY) is pinned to
+    // real numbers, not just checked for isFinite(). An isFinite()-only check is too weak to catch
+    // the bug this test exists for: a prior version of `nearestDistance` that dropped `finite()`
+    // scrubbing left `best` stuck at its initial `Infinity` for any point whose distance math ever
+    // touched a NaN/Infinity coordinate (IEEE754: `d < best` is always false when `d` is NaN or when
+    // both are Infinity, so a corrupt candidate can never WIN the "nearest" comparison — it just never
+    // updates `best` away from Infinity either). With 2 of 3 points affected here, that Infinity lands
+    // in the MEDIAN itself, sending `current` to Infinity and `scale` to `target/Infinity = 0` — and
+    // `0` is still `Number.isFinite`, so the whole cloud silently collapsing onto `[0,0,0]` used to
+    // pass an isFinite()-only version of this test undetected (bug caught in task-6 review).
+    // Expected values are the real scrubbed-coordinate math (each NaN/Infinity component treated as 0
+    // for BOTH the distance measurement and the final position, via respace.ts's per-call `finite()`)
+    // worked by hand; a collapse regression produces [[0,0,0], [0,0,0], [0,0,0]] instead.
     const pts: Vec3[] = [[0, 0, 0], [NaN, 5, Infinity], [3, -Infinity, 1]];
     const out = scaleToSpacing(pts, 10);
-    for (const p of out) {
-      expect(Number.isFinite(p[0])).toBe(true);
-      expect(Number.isFinite(p[1])).toBe(true);
-      expect(Number.isFinite(p[2])).toBe(true);
+    const EXPECTED: Vec3[] = [
+      [-3.16228, -5.27046, -1.05409],
+      [-3.16228, 10.54093, -1.05409],
+      [6.32456, -5.27046, 2.10819],
+    ];
+    for (let i = 0; i < out.length; i++) {
+      for (let k = 0; k < 3; k++) expect(out[i][k]).toBeCloseTo(EXPECTED[i][k], 2);
     }
+    // Belt-and-suspenders, independent of the exact pinned numbers: the cloud has REAL spread, not a
+    // single collapsed point.
+    const spread = Math.hypot(out[0][0] - out[1][0], out[0][1] - out[1][1], out[0][2] - out[1][2]);
+    expect(spread).toBeGreaterThan(1);
   });
 
   it("one non-finite point among many well-formed ones doesn't poison the whole cloud's rescale", () => {
     // graphFit.ts's discipline ("a NaN/Infinity coordinate ... can never take the layout down")
-    // applies here too: a single corrupt point should scrub to something harmless, NOT make the
-    // measured spacing NaN and silently fall the ENTIRE cloud back to scale=1 (no rescale at all).
-    // If nearest-neighbour distances involving the bad point aren't scrubbed before the median is
-    // taken, `current` goes NaN, `scale` falls back to 1 (NaN > EPS is false), and every well-formed
-    // point is left at its RAW spacing instead of the requested target — this test's whole point is
-    // to distinguish that failure from a genuine rescale.
+    // applies here too — but in a MINORITY regime (1 of 50 = 2%), distinct from the majority-corrupt
+    // fixture above: the median is robust to a single Infinity outlier (it only affects the sort
+    // order at the very edge, never the middle), so this stays a genuine rescale even without needing
+    // the majority case's collapse-prevention math to kick in.
     const cloud = spiralCloud(50, 8);
     const raw = measuredSpacing(cloud);
     const corrupted = cloud.map((p, i): Vec3 => (i === 7 ? [NaN, p[1], Infinity] : p));
@@ -234,35 +273,109 @@ describe("scaleToSpacing — degenerate inputs stay finite", () => {
   });
 });
 
+// ---- scaleToSpacing: the degenerate-majority warning (Minor 2) --------------------------------
+
+describe("scaleToSpacing — degenerate-majority warning", () => {
+  /** 6 of 10 points (a majority) piled exactly on the origin, plus 4 well-spread, mutually distinct
+   *  points far away — the median nearest-neighbour distance is dominated by the coincident majority
+   *  (their own NN distance is 0), so `current` <= EPS even though the cloud isn't UNIFORMLY
+   *  degenerate. Mirrors the review's own repro ("51% at origin -> median NN 0.000 -> scale 1.000"). */
+  function coincidentMajorityCloud(): Vec3[] {
+    const zeros: Vec3[] = Array.from({ length: 6 }, (): Vec3 => [0, 0, 0]);
+    const spread = spiralCloud(4, 50).map(([x, y, z]): Vec3 => [x + 500, y + 500, z + 500]);
+    return [...zeros, ...spread];
+  }
+
+  it("warns exactly once, and never throws, when >=50% of the cloud is coincident and a real target was requested", () => {
+    const cloud = coincidentMajorityCloud();
+    let out: Vec3[] = [];
+    const warnings = captureWarnings(() => { out = scaleToSpacing(cloud, 25); });
+    expect(warnings.length).toBe(1);
+    expect(String(warnings[0][0])).toContain("scaleToSpacing");
+    expect(String(warnings[0][0])).toContain("coincident");
+    for (const p of out) {
+      expect(Number.isFinite(p[0])).toBe(true);
+      expect(Number.isFinite(p[1])).toBe(true);
+      expect(Number.isFinite(p[2])).toBe(true);
+    }
+  });
+
+  it("does not warn for a well-spaced cloud", () => {
+    const cloud = spiralCloud(40, 10);
+    const warnings = captureWarnings(() => { scaleToSpacing(cloud, 20); });
+    expect(warnings.length).toBe(0);
+  });
+
+  it("does not warn when the target itself is invalid, even on a fully coincident cloud", () => {
+    const cloud: Vec3[] = [[2, 2, 2], [2, 2, 2], [2, 2, 2]];
+    const warnings = captureWarnings(() => {
+      scaleToSpacing(cloud, 0);
+      scaleToSpacing(cloud, -5);
+      scaleToSpacing(cloud, NaN);
+    });
+    expect(warnings.length).toBe(0);
+  });
+});
+
+// ---- cloneVec3Array -------------------------------------------------------------------------
+
+describe("cloneVec3Array", () => {
+  it("returns an independent copy: fresh outer array, fresh inner tuples", () => {
+    const original: Vec3[] = [[1, 2, 3], [4, 5, 6]];
+    const copy = cloneVec3Array(original);
+    expect(copy).toEqual(original);
+    expect(copy).not.toBe(original);
+    expect(copy[0]).not.toBe(original[0]);
+    (copy[0] as [number, number, number])[0] = 999;
+    expect(original[0][0]).toBe(1); // the source is untouched by mutating the copy
+  });
+});
+
 // ---- signature-keyed memo -----------------------------------------------------------------------
 
 describe("createSpacingCache", () => {
-  it("returns the identical array for an unchanged signature (compute not called again)", () => {
+  it("returns an independent copy on every call, never the stored reference (compute not called again on a hit)", () => {
     let calls = 0;
-    const cache = createSpacingCache<Vec3[]>();
+    const cache = createSpacingCache<Vec3[]>(cloneVec3Array);
     const compute = () => { calls++; return scaleToSpacing(spiralCloud(10), 5); };
     const first = cache.getOrCompute("sig-a", compute);
     const second = cache.getOrCompute("sig-a", compute);
-    expect(second).toBe(first); // same reference, not just deep-equal
-    expect(calls).toBe(1);
+    expect(second).toEqual(first);   // same values...
+    expect(second).not.toBe(first);  // ...but never the same reference (see task-6 review, Minor 3)
+    expect(calls).toBe(1);           // still only computed once
+  });
+
+  it("mutating a returned array does NOT corrupt a later hit under the same signature", () => {
+    // The regression this cache exists to prevent: a caller (the 2D<->3D morph, per the task-6
+    // review) lerps positions IN PLACE every frame. If getOrCompute ever handed out its own stored
+    // reference, that mutation would permanently corrupt every future hit under this signature.
+    const cache = createSpacingCache<Vec3[]>(cloneVec3Array);
+    const compute = () => scaleToSpacing(spiralCloud(10), 5);
+    const first = cache.getOrCompute("sig-a", compute);
+    (first[0] as [number, number, number])[0] = -9999;
+    (first[0] as [number, number, number])[1] = -9999;
+    (first[0] as [number, number, number])[2] = -9999;
+    const second = cache.getOrCompute("sig-a", compute);
+    expect(second[0]).not.toEqual([-9999, -9999, -9999]);
   });
 
   it("recomputes for a changed signature", () => {
     let calls = 0;
-    const cache = createSpacingCache<Vec3[]>();
+    const cache = createSpacingCache<Vec3[]>(cloneVec3Array);
     const a = cache.getOrCompute("sig-a", () => { calls++; return [[1, 1, 1]]; });
     const b = cache.getOrCompute("sig-b", () => { calls++; return [[2, 2, 2]]; });
     expect(calls).toBe(2);
     expect(a).not.toEqual(b);
     // Re-visiting "sig-a" is still a hit after a different signature was inserted.
     const aAgain = cache.getOrCompute("sig-a", () => { calls++; return [[9, 9, 9]]; });
-    expect(aAgain).toBe(a);
+    expect(aAgain).toEqual(a);
     expect(calls).toBe(2);
   });
 
   it("evicts the OLDEST entry once past the cap (FIFO, not LRU)", () => {
+    const identity = (n: number) => n;
     const cap = 3;
-    const cache = createSpacingCache<number>(cap);
+    const cache = createSpacingCache<number>(identity, cap);
     cache.getOrCompute("s1", () => 1);
     cache.getOrCompute("s2", () => 2);
     cache.getOrCompute("s3", () => 3);
@@ -283,7 +396,8 @@ describe("createSpacingCache", () => {
   });
 
   it("defaults its cap to SPACING_CACHE_MAX_ENTRIES", () => {
-    const cache = createSpacingCache<number>();
+    const identity = (n: number) => n;
+    const cache = createSpacingCache<number>(identity);
     for (let i = 0; i < SPACING_CACHE_MAX_ENTRIES; i++) cache.getOrCompute(`s${i}`, () => i);
     // The first entry is still present right at the cap...
     let firstCalls = 0;
