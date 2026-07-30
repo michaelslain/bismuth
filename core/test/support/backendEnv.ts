@@ -188,9 +188,14 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
     //   - A FULL TURN completing: root cause of the earlier stall, found by reading gemini-cli 0.53.0's
     //     own bundled source (installed OUTSIDE this repo to a scratch dir, per this task's brief) and
     //     confirmed live via a raw-JSON-RPC repro against a real llmock instance with `--metrics` and its
-    //     `GET /__aimock/journal` request log. A real turn makes TWO `generateContent` calls, not one —
-    //     and the FIRST one is NOT the `flash`/`pro` `ClassifierStrategy` a naive read of the routing
-    //     code suggests (that one bails out with zero network calls the moment its own precondition is
+    //     `GET /__aimock/journal` request log. A real turn makes TWO model calls, not one, on TWO
+    //     DIFFERENT endpoints: `POST /v1beta/models/{model}:generateContent` (non-streaming) and
+    //     `POST /v1beta/models/{model}:streamGenerateContent` (streamed) — confirmed live and important
+    //     to keep straight, since a naive substring filter on "generateContent" (lowercase g) silently
+    //     misses the streamed one (capital G in `streamGenerateContent`); see geminiMocked.test.ts's
+    //     `hitCount` for where this bit a first version of that file's own /metrics assertion. The
+    //     FIRST call, on `:generateContent`, is NOT the `flash`/`pro` `ClassifierStrategy` a naive read
+    //     of the routing code suggests (that one bails out with zero network calls the moment its own precondition is
     //     met — see below), it is `NumericalClassifierStrategy.route` (packages/core/src/routing/
     //     strategies/numericalClassifierStrategy.ts): confirmed via the journal's own captured request
     //     body, whose system message is verbatim "You are a specialized Task Routing AI... assign a
@@ -211,9 +216,10 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
     //     (`{"userMessage":"hello"}` -> plain-text `"Hello!"`), the classifier call's response never
     //     parses as JSON, so it silently burns all 5 attempts (~65-90s of pure exponential backoff,
     //     confirmed live: 90440ms end to end in the raw-JSON-RPC repro, with the mock's own /metrics
-    //     showing exactly 5 `generateContent` hits before the real turn's 6th) before the retry loop
-    //     throws, NumericalClassifierStrategy catches it and falls through to the default model, and
-    //     ONLY THEN does the real turn's own (always-fine) call run — which is EXACTLY the "3-5
+    //     showing exactly 5 attempts on `:generateContent` — the classifier's own path, never the
+    //     turn's — before the retry loop finally throws, NumericalClassifierStrategy catches it and
+    //     falls through to the default model, and ONLY THEN does the real turn's own (always-fine)
+    //     call run — on the DIFFERENT `:streamGenerateContent` path — which is EXACTLY the "3-5
     //     successful (200, fixture-matched) hits and then goes silent... waited up to 90s" symptom the
     //     earlier investigation reported: not a true hang, but a real turn that DOES eventually
     //     complete, just ~90s after it starts — past the 30s timeout the earlier version of
@@ -225,7 +231,8 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
     //     gemini-cli into, which is all Bismuth's driver ever uses) unconditionally forces it `true`, so
     //     `checkNextSpeaker` never runs, confirmed both by this exact line of bundled source AND by the
     //     repro's own timeline showing no second retry storm after the classifier's, and by the journal
-    //     showing exactly 2 requests total for a completed turn once fixed.
+    //     showing exactly 2 requests total for a completed turn once fixed — one on `:generateContent`
+    //     (the classifier), one on `:streamGenerateContent` (the turn), never a third anywhere.
     //     THE FIX (in `core/test/fixtures/llm-gemini/basic-turn.json`, a fixture directory SEPARATE
     //     from the shared `core/test/fixtures/llm/` so it can never affect another backend's mocked
     //     test): one fixture ahead of the "hello" one, `match.systemMessage` gated on a substring of
@@ -233,10 +240,13 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
     //     100"), returning valid JSON matching ITS schema (`{complexity_reasoning, complexity_score}`)
     //     — so `generateJson` succeeds on the FIRST attempt and the retry storm never starts. Confirmed
     //     live, same repro, same fixture directory: session/prompt now settles in 53ms (not 90440ms),
-    //     the journal shows exactly 2 requests (both fixture-matched on attempt 1), and the driver
-    //     emits a real `assistant-text` frame carrying the fixture's exact "Hello!" before `result`/
-    //     `done`. See geminiMocked.test.ts's header for the fixture contents and this task's report for
-    //     the full repro transcript (before/after).
+    //     the journal shows exactly 2 requests total — one `:generateContent`, one
+    //     `:streamGenerateContent`, both fixture-matched on attempt 1 — and the driver emits a real
+    //     `assistant-text` frame carrying the fixture's exact "Hello!" before `result`/`done`. See
+    //     geminiMocked.test.ts's header (fixture contents, fixture-order dependency) and its own
+    //     `hitCount` helper (the exact-count assertions on both endpoints, and the code-review finding
+    //     about why a loose substring filter on "generateContent" alone silently missed the streamed
+    //     endpoint) for the full account.
     //   - GOOGLE_GEMINI_BASE_URL, read directly from google-gemini/gemini-cli's source
     //     (packages/core/src/core/contentGenerator.ts, and packages/cli/src/acp/
     //     acpSessionManager.ts — the ACP path Bismuth actually drives); must be loopback or HTTPS
