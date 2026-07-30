@@ -29,9 +29,31 @@
 // Tolerant by construction, like every other piece of this harness: a malformed/unrecognized method
 // gets a generic empty result rather than crashing the process — a fake agent that dies mid-test
 // would just look like a flaky test, not a useful failure signal.
+import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 type JsonRpcMsg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: unknown; result?: unknown; error?: unknown };
+
+/**
+ * Optional echo file (a code-review addition — see acpFakeAgent.test.ts's setModel test): when
+ * `FAKE_ACP_ECHO_FILE` is set, every inbound JSON-RPC REQUEST (never a notification we send
+ * ourselves) is appended to it as one `{method, params}` JSON line, so a test can observe WHICH wire
+ * method the driver actually sent — driver.ts's setModel is fire-and-forget with a swallowed
+ * `.catch()`, so nothing about its own success/failure is otherwise observable from outside the
+ * driver; this file is the only way a test can distinguish "the driver sent
+ * session/set_config_option" from "the driver silently sent nothing at all". Best-effort: a write
+ * failure (missing dir, permissions) is swallowed rather than crashing the fake agent over what is
+ * purely a test-observability channel, not part of the ACP protocol itself.
+ */
+function echo(method: string, params: unknown): void {
+  const path = process.env.FAKE_ACP_ECHO_FILE;
+  if (!path) return;
+  try {
+    appendFileSync(path, JSON.stringify({ method, params }) + "\n");
+  } catch {
+    /* best-effort observability only */
+  }
+}
 
 function writeLine(obj: unknown): void {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -58,8 +80,6 @@ const modelShape = process.env.FAKE_ACP_MODEL_SHAPE === "old" ? "old" : "new";
 const FAKE_TURN_TEXT = "Hello from the fake ACP agent";
 
 let sessionCounter = 0;
-/** Learned once per fake session, so setModel's dispatch-target assertions can check it changed. */
-const currentModel = new Map<string, string>();
 
 function handleInitialize(id: number | string): void {
   respond(id, {
@@ -78,7 +98,6 @@ function handleSessionNew(id: number | string): void {
   sessionCounter += 1;
   const sessionId = `fake-session-${modelShape}-${sessionCounter}`;
   if (modelShape === "old") {
-    currentModel.set(sessionId, "fake-model-a");
     respond(id, {
       sessionId,
       models: {
@@ -90,7 +109,6 @@ function handleSessionNew(id: number | string): void {
       },
     });
   } else {
-    currentModel.set(sessionId, "fake-model-x");
     respond(id, {
       sessionId,
       configOptions: [
@@ -132,16 +150,13 @@ function handleSessionPrompt(id: number | string, params: unknown): void {
 
 /** Acks BOTH setModel dispatch targets driver.ts can send (session/set_config_option for the "new"
  *  shape, session/set_model for the "old" one) — see driver.ts's setModel, which branches on
- *  s.modelShape.shape to pick exactly one of these per session. */
-function handleSetConfigOption(id: number | string, params: unknown): void {
-  const p = (params && typeof params === "object" ? params : {}) as { sessionId?: string; value?: string };
-  if (p.sessionId && typeof p.value === "string") currentModel.set(p.sessionId, p.value);
+ *  s.modelShape.shape to pick exactly one of these per session. Which one actually arrived (and
+ *  with what params) is observable via the FAKE_ACP_ECHO_FILE mechanism above, not tracked here. */
+function handleSetConfigOption(id: number | string): void {
   respond(id, {});
 }
 
-function handleSetModelOld(id: number | string, params: unknown): void {
-  const p = (params && typeof params === "object" ? params : {}) as { sessionId?: string; modelId?: string };
-  if (p.sessionId && typeof p.modelId === "string") currentModel.set(p.sessionId, p.modelId);
+function handleSetModelOld(id: number | string): void {
   respond(id, {});
 }
 
@@ -156,6 +171,7 @@ function handleLine(raw: string): void {
   }
   if (!msg || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") return; // a response/notification we sent isn't looped back, but stay defensive
   const { method, params, id } = msg;
+  echo(method, params);
 
   switch (method) {
     case "initialize":
@@ -168,10 +184,10 @@ function handleLine(raw: string): void {
       if (id !== undefined) handleSessionPrompt(id, params);
       return;
     case "session/set_config_option":
-      if (id !== undefined) handleSetConfigOption(id, params);
+      if (id !== undefined) handleSetConfigOption(id);
       return;
     case "session/set_model":
-      if (id !== undefined) handleSetModelOld(id, params);
+      if (id !== undefined) handleSetModelOld(id);
       return;
     case "session/cancel":
       return; // notification — nothing to reply to; a real cancel-then-settle isn't this fake's job

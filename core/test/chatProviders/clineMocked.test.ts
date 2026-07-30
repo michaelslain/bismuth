@@ -28,7 +28,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { whichBinary } from "../../src/claudeWhich";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
-import type { ChatFrame } from "../../src/chat";
+import { makeChatFrameCollector } from "../support/chatFrameCollector";
 
 const HAS_CLINE = whichBinary("cline") !== null;
 const describeOrSkip = HAS_CLINE ? describe : describe.skip;
@@ -38,42 +38,17 @@ if (!HAS_CLINE) {
   console.warn("[clineMocked.test] skipped — the `cline` CLI is not installed on this machine (nothing to drive).");
 }
 
-function makeCollector() {
-  const frames: ChatFrame[] = [];
-  const waiters: { match: (f: ChatFrame) => boolean; resolve: (f: ChatFrame) => void }[] = [];
-
-  const sink = (frame: ChatFrame) => {
-    frames.push(frame);
-    for (let i = waiters.length - 1; i >= 0; i--) {
-      if (waiters[i].match(frame)) {
-        waiters[i].resolve(frame);
-        waiters.splice(i, 1);
-      }
-    }
-  };
-
-  function waitFor(match: (f: ChatFrame) => boolean, timeoutMs = 20_000): Promise<ChatFrame> {
-    const already = frames.find(match);
-    if (already) return Promise.resolve(already);
-    return new Promise<ChatFrame>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const idx = waiters.findIndex((w) => w.resolve === wrapped);
-        if (idx >= 0) waiters.splice(idx, 1);
-        reject(new Error("timeout waiting for frame; saw: " + JSON.stringify(frames.map((f) => f.type))));
-      }, timeoutMs);
-      const wrapped = (f: ChatFrame) => {
-        clearTimeout(timer);
-        resolve(f);
-      };
-      waiters.push({ match, resolve: wrapped });
-    });
-  }
-
-  return { sink, frames, waitFor };
-}
-
 describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver — proves the account-auth wall fails SAFELY (see header)", () => {
-  const savedClineDir = process.env.CLINE_DIR;
+  // ENV_KEYS: CLINE_DIR isolates cline's OWN persisted auth (the actual gate this test proves), but
+  // this test starts NO mock at all — a code-review finding on this task points out that if a FUTURE
+  // cline version ever drops the ACP `authenticate` gate and starts consulting ambient provider keys
+  // the way its other (non-ACP) mode's `openai-compatible` provider does, a developer's real
+  // OPENAI_API_KEY/ANTHROPIC_API_KEY sitting in their shell would be the one thing standing between
+  // "safe" and "a real account call slips through unnoticed". Cleared defensively here even though
+  // nothing in this task's own investigation found cline's ACP mode reading either today.
+  const ENV_KEYS = ["CLINE_DIR", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const;
+  const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
+  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
 
@@ -82,8 +57,10 @@ describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver —
     for (const dir of tempDirs.splice(0)) {
       await rm(dir, { recursive: true, force: true }).catch(() => {});
     }
-    if (savedClineDir === undefined) delete process.env.CLINE_DIR;
-    else process.env.CLINE_DIR = savedClineDir;
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
   });
 
   async function newTempDir(prefix: string): Promise<string> {
@@ -98,11 +75,15 @@ describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver —
       // Isolates this run from any real ~/.cline a developer's own machine might have — the ONE
       // thing standing between "safe" and "silently drives whatever account is signed in there".
       process.env.CLINE_DIR = await newTempDir("bismuth-cline-isolated-");
+      // Defensive (see ENV_KEYS comment above) — this test starts no mock, so these must never be
+      // ambiently available to the spawned `cline` process.
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.ANTHROPIC_API_KEY;
 
       const cwd = await newTempDir("bismuth-cline-cwd-");
       const chatId = "cline-mocked-" + Date.now();
       chatIds.push(chatId);
-      const { sink, waitFor } = makeCollector();
+      const { frames, sink, waitFor } = makeChatFrameCollector(20_000);
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd, sink, computerUse: false, text: "hello" });
 
@@ -111,9 +92,15 @@ describeOrSkip("the real cline CLI's ACP mode, driven through the ACP driver —
       if (errorFrame.type === "error") {
         expect(errorFrame.message).toContain("Authentication required");
       }
-      // Never got here: an "assistant-text"/"result" pair, which would mean either a real signed-in
-      // account answered (catastrophic — this test's whole purpose is to prove that can't happen
-      // with an isolated CLINE_DIR) or this finding has gone stale and needs re-verifying.
+
+      // The actual safety assertion (a code-review finding on this task: `waitFor` above resolves
+      // on the FIRST "error" frame and ignores everything before it, so on its own it would still
+      // pass even if a real signed-in account had already answered with real text before this error
+      // — e.g. a stray success frame followed by an unrelated later error). Every frame this chat
+      // ever emitted is in `frames` by now (createSession's error path is a dead end — nothing else
+      // fires afterward), so this checks the WHOLE transcript, not just the one frame waited for.
+      expect(frames.some((f) => f.type === "assistant-text")).toBe(false);
+      expect(frames.some((f) => f.type === "result")).toBe(false);
     },
     20_000,
   );

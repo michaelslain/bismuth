@@ -23,11 +23,11 @@
 //
 // No production files were changed for this task.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
-import type { ChatFrame } from "../../src/chat";
+import { makeChatFrameCollector } from "../support/chatFrameCollector";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 const FAKE_TURN_TEXT = "Hello from the fake ACP agent"; // must match fakeAcpAgent.ts's own constant
@@ -42,53 +42,44 @@ function makeStubBinDir(): string {
   return dir;
 }
 
-/** Collects every ChatFrame for one chat and lets a test await one matching a predicate — same
- *  shape as claudeMocked.test.ts's own local makeCollector (kept local here too: neither is
- *  exported). */
-function makeCollector() {
-  const frames: ChatFrame[] = [];
-  const waiters: { match: (f: ChatFrame) => boolean; resolve: (f: ChatFrame) => void }[] = [];
-
-  const sink = (frame: ChatFrame) => {
-    frames.push(frame);
-    for (let i = waiters.length - 1; i >= 0; i--) {
-      if (waiters[i].match(frame)) {
-        waiters[i].resolve(frame);
-        waiters.splice(i, 1);
-      }
-    }
-  };
-
-  function waitFor(match: (f: ChatFrame) => boolean, timeoutMs = 10_000): Promise<ChatFrame> {
-    const already = frames.find(match);
-    if (already) return Promise.resolve(already);
-    return new Promise<ChatFrame>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const idx = waiters.findIndex((w) => w.resolve === wrapped);
-        if (idx >= 0) waiters.splice(idx, 1);
-        reject(new Error("timeout waiting for frame; saw: " + JSON.stringify(frames.map((f) => f.type))));
-      }, timeoutMs);
-      const wrapped = (f: ChatFrame) => {
-        clearTimeout(timer);
-        resolve(f);
-      };
-      waiters.push({ match, resolve: wrapped });
-    });
+/** One `{method, params}` line per inbound JSON-RPC request the fake agent received, in arrival
+ *  order — see fakeAcpAgent.ts's `echo()`. Tolerant of the file not existing yet (an empty array,
+ *  not a throw) since a test may poll this before the fake agent has written its first line. */
+function readEchoLines(path: string): { method: string; params: unknown }[] {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return [];
   }
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as { method: string; params: unknown });
+}
 
-  return { sink, frames, waitFor };
+async function waitForCondition(check: () => boolean, timeoutMs: number, description: string): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (check()) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error(`timeout waiting for: ${description}`);
 }
 
 describe("the ACP driver against a fake agent (zero network access, zero CLI dependency)", () => {
   let stubDir: string;
   let savedPath: string | undefined;
   let savedShape: string | undefined;
+  let savedEchoFile: string | undefined;
   const chatIds: string[] = [];
 
   beforeEach(() => {
     stubDir = makeStubBinDir();
     savedPath = process.env.PATH;
     savedShape = process.env.FAKE_ACP_MODEL_SHAPE;
+    savedEchoFile = process.env.FAKE_ACP_ECHO_FILE;
     // Prepended, not appended: must win over any real `cline` this machine happens to have
     // installed elsewhere on PATH (this task installed one temporarily under .offline-cli-tools/ —
     // see the task report).
@@ -101,6 +92,8 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
     else process.env.PATH = savedPath;
     if (savedShape === undefined) delete process.env.FAKE_ACP_MODEL_SHAPE;
     else process.env.FAKE_ACP_MODEL_SHAPE = savedShape;
+    if (savedEchoFile === undefined) delete process.env.FAKE_ACP_ECHO_FILE;
+    else process.env.FAKE_ACP_ECHO_FILE = savedEchoFile;
     rmSync(stubDir, { recursive: true, force: true });
   });
 
@@ -109,6 +102,7 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
     // never leave a later, unrelated test file in this same process pointed at a stub PATH.
     if (savedPath !== undefined) process.env.PATH = savedPath;
     if (savedShape !== undefined) process.env.FAKE_ACP_MODEL_SHAPE = savedShape;
+    if (savedEchoFile !== undefined) process.env.FAKE_ACP_ECHO_FILE = savedEchoFile;
   });
 
   test(
@@ -117,7 +111,7 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       process.env.FAKE_ACP_MODEL_SHAPE = "old";
       const chatId = "acp-fake-old-" + Date.now();
       chatIds.push(chatId);
-      const { sink, frames, waitFor } = makeCollector();
+      const { sink, frames, waitFor } = makeChatFrameCollector(15_000);
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
 
@@ -157,7 +151,7 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       process.env.FAKE_ACP_MODEL_SHAPE = "new";
       const chatId = "acp-fake-new-" + Date.now();
       chatIds.push(chatId);
-      const { sink, waitFor } = makeCollector();
+      const { sink, waitFor } = makeChatFrameCollector(15_000);
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
 
@@ -189,24 +183,55 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
   );
 
   test(
-    "setModel dispatches to session/set_config_option for the NEW shape without erroring, and a turn started right after still completes",
+    "setModel dispatches the NEW shape's session/set_config_option with the new value on the wire, and a turn started right after still completes",
     async () => {
+      // Code-review finding on this task's first pass: the old version of this test never observed
+      // WHICH wire method setModel actually sent (driver.ts's setModel is fire-and-forget with a
+      // swallowed `.catch()`, so `expect(...).not.toThrow()` could not fail for any input, including
+      // a typo'd chatId), and it called setModel LAST, so its title's "a turn started right after
+      // still completes" claim was untested. Fixed: FAKE_ACP_ECHO_FILE makes the fake agent record
+      // every inbound {method, params} to a file this test reads directly (see fakeAcpAgent.ts's
+      // `echo()`), and a SECOND real turn is sent and awaited after setModel.
       process.env.FAKE_ACP_MODEL_SHAPE = "new";
+      const echoDir = mkdtempSync(join(tmpdir(), "bismuth-acp-fake-echo-"));
+      const echoFile = join(echoDir, "echo.jsonl");
+      process.env.FAKE_ACP_ECHO_FILE = echoFile;
+
       const chatId = "acp-fake-setmodel-" + Date.now();
       chatIds.push(chatId);
-      const { sink, waitFor } = makeCollector();
+      const { sink, frames, waitFor } = makeChatFrameCollector(15_000);
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
       await waitFor((f) => f.type === "models");
-      // The session/set_config_option round trip settles asynchronously (driver.ts's setModel is
-      // fire-and-forget) — awaiting the turn's own "done" below is what actually proves the session
-      // survived the call, not a fixed sleep.
-      await waitFor((f) => f.type === "done");
+      await waitFor((f) => f.type === "done"); // first turn settled
 
-      // Best-effort in the driver (see driver.ts's setModel) — this call must not throw, and the
-      // fake agent's session/set_config_option handler (fakeAcpAgent.ts) always acks it.
-      expect(() => CHAT_BACKENDS.cline.setModel(chatId, "fake-model-y")).not.toThrow();
+      const doneCountBeforeSecondTurn = frames.filter((f) => f.type === "done").length;
+
+      CHAT_BACKENDS.cline.setModel(chatId, "fake-model-y");
+
+      // The actual dispatch assertion: wait for the fake agent to have logged a
+      // session/set_config_option call carrying the new value — not just "setModel didn't throw"
+      // (which proves nothing; see the finding above), but that the RIGHT wire method fired with
+      // the RIGHT payload.
+      await waitForCondition(
+        () => readEchoLines(echoFile).some((l) => l.method === "session/set_config_option" && (l.params as { value?: string })?.value === "fake-model-y"),
+        5_000,
+        'a session/set_config_option echo line with value:"fake-model-y"',
+      );
+      const setModelCalls = readEchoLines(echoFile).filter((l) => l.method === "session/set_config_option");
+      expect(setModelCalls.length).toBeGreaterThanOrEqual(1);
+      expect((setModelCalls[0].params as { configId?: string }).configId).toBe("model-config");
+      // And NOT the old shape's method — proves the driver's shape-branch actually picked the NEW
+      // dispatch target for a NEW-shape session, not just "some" method.
+      expect(readEchoLines(echoFile).some((l) => l.method === "session/set_model")).toBe(false);
+
+      // The second clause of this test's title: a turn started right after setModel must still
+      // complete. Waiting for a NEW "done" (by count, not by predicate-match) — makeChatFrameCollector's
+      // waitFor would otherwise resolve immediately off the FIRST turn's already-collected "done"
+      // frame, proving nothing about this second turn.
+      CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello again" });
+      await waitForCondition(() => frames.filter((f) => f.type === "done").length > doneCountBeforeSecondTurn, 10_000, "a second \"done\" frame after setModel");
     },
-    15_000,
+    20_000,
   );
 });

@@ -33,8 +33,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { whichBinary } from "../../src/claudeWhich";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
-import type { ChatFrame } from "../../src/chat";
 import { backendMockEnv } from "../support/backendEnv";
+import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
 
 const HAS_OPENCODE = whichBinary("opencode") !== null;
@@ -43,40 +43,6 @@ const describeOrSkip = HAS_OPENCODE ? describe : describe.skip;
 if (!HAS_OPENCODE) {
   // eslint-disable-next-line no-console
   console.warn("[opencodeMocked.test] skipped — the `opencode` CLI is not installed on this machine (nothing to drive).");
-}
-
-function makeCollector() {
-  const frames: ChatFrame[] = [];
-  const waiters: { match: (f: ChatFrame) => boolean; resolve: (f: ChatFrame) => void }[] = [];
-
-  const sink = (frame: ChatFrame) => {
-    frames.push(frame);
-    for (let i = waiters.length - 1; i >= 0; i--) {
-      if (waiters[i].match(frame)) {
-        waiters[i].resolve(frame);
-        waiters.splice(i, 1);
-      }
-    }
-  };
-
-  function waitFor(match: (f: ChatFrame) => boolean, timeoutMs = 30_000): Promise<ChatFrame> {
-    const already = frames.find(match);
-    if (already) return Promise.resolve(already);
-    return new Promise<ChatFrame>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const idx = waiters.findIndex((w) => w.resolve === wrapped);
-        if (idx >= 0) waiters.splice(idx, 1);
-        reject(new Error("timeout waiting for frame; saw: " + JSON.stringify(frames.map((f) => f.type))));
-      }, timeoutMs);
-      const wrapped = (f: ChatFrame) => {
-        clearTimeout(timer);
-        resolve(f);
-      };
-      waiters.push({ match, resolve: wrapped });
-    });
-  }
-
-  return { sink, frames, waitFor };
 }
 
 /** The exact argv chatProviders/opencodeServer.ts's spawnAndWaitForBanner uses for the ONE shared
@@ -101,8 +67,13 @@ function opencodeServePids(): string[] {
 }
 
 describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts, against a mock LLM (zero account API calls)", () => {
-  const ENV_KEYS = ["OPENCODE_CONFIG_CONTENT"] as const;
+  const ENV_KEYS = ["OPENCODE_CONFIG_CONTENT", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"] as const;
+  // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — a code-review finding on this
+  // task: populating this AFTER an await that can throw leaves it empty, and afterAll's restore loop
+  // then unconditionally `delete`s every ENV_KEY from the shared `bun test` process, including a
+  // developer's real ANTHROPIC_*/XDG_* vars this test never touched.
   const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
+  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   let mock: MockLlmHandle | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
@@ -123,14 +94,34 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
   // named opencode" sweep that could disrupt an unrelated opencode process on a developer's machine).
   const pidsBefore = new Set<string>();
 
+  async function newTempDir(prefix = "bismuth-opencode-mocked-"): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), prefix));
+    tempDirs.push(dir);
+    return dir;
+  }
+
   async function setup(): Promise<void> {
     for (const pid of opencodeServePids()) pidsBefore.add(pid);
     // --latency 40: see this file's header, finding #2 — a zero-latency reply can beat opencode
     // server mode's own event-stream subscription.
     mock = await startMockLlm(undefined, ["--latency", "40"]);
-    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     const mockEnv = backendMockEnv("opencode", mock.url);
     for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v;
+    // STATE ISOLATION (code-review finding): OPENCODE_CONFIG_CONTENT overrides opencode's config,
+    // not its STORED CREDENTIALS (`~/.local/share/opencode/auth.json`) — verified live that
+    // XDG_DATA_HOME/XDG_CONFIG_HOME/XDG_CACHE_HOME/XDG_STATE_HOME genuinely redirect opencode's
+    // storage (a real `opencode auth list` under a fresh XDG_DATA_HOME reports zero credentials,
+    // vs this machine's own real Moonshot/Zen providers with the defaults). Without this, the ONLY
+    // thing preventing a real billed call on a machine with prior real opencode usage is that
+    // setModel("mock/mock") below runs before sendMessage — real, but call-ordering-only, with no
+    // backstop if that ordering ever regresses. With this, there is no real provider to fall back
+    // to even if it did: re-verified live that a turn still completes correctly against the mock
+    // with all four redirected (the "auth" ChatFrame reports zero providers, "assistant-text" is
+    // still the fixture's exact "Hello!").
+    process.env.XDG_CONFIG_HOME = await newTempDir("bismuth-opencode-xdgconfig-");
+    process.env.XDG_DATA_HOME = await newTempDir("bismuth-opencode-xdgdata-");
+    process.env.XDG_CACHE_HOME = await newTempDir("bismuth-opencode-xdgcache-");
+    process.env.XDG_STATE_HOME = await newTempDir("bismuth-opencode-xdgstate-");
   }
 
   afterAll(async () => {
@@ -156,12 +147,6 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
     }
   });
 
-  async function newTempDir(): Promise<string> {
-    const dir = await mkdtemp(join(tmpdir(), "bismuth-opencode-mocked-"));
-    tempDirs.push(dir);
-    return dir;
-  }
-
   test(
     "a turn sent through CHAT_BACKENDS.opencode returns the fixture's exact text, then terminates with result + done",
     async () => {
@@ -170,7 +155,7 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       const cwd = await newTempDir();
       const chatId = "opencode-mocked-" + Date.now();
       chatIds.push(chatId);
-      const { sink, frames, waitFor } = makeCollector();
+      const { sink, frames, waitFor } = makeChatFrameCollector();
 
       CHAT_BACKENDS.opencode.openSession({ chatId, cwd, sink, computerUse: false });
       // Finding #1 (this file's header): a fresh session must pick the mock's model EXPLICITLY —

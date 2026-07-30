@@ -29,8 +29,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { whichBinary } from "../../src/claudeWhich";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
-import type { ChatFrame } from "../../src/chat";
 import { backendMockEnv } from "../support/backendEnv";
+import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
 
 const HAS_CODEX = whichBinary("codex") !== null;
@@ -41,43 +41,14 @@ if (!HAS_CODEX) {
   console.warn("[codexMocked.test] skipped — the `codex` CLI is not installed on this machine (nothing to drive).");
 }
 
-function makeCollector() {
-  const frames: ChatFrame[] = [];
-  const waiters: { match: (f: ChatFrame) => boolean; resolve: (f: ChatFrame) => void }[] = [];
-
-  const sink = (frame: ChatFrame) => {
-    frames.push(frame);
-    for (let i = waiters.length - 1; i >= 0; i--) {
-      if (waiters[i].match(frame)) {
-        waiters[i].resolve(frame);
-        waiters.splice(i, 1);
-      }
-    }
-  };
-
-  function waitFor(match: (f: ChatFrame) => boolean, timeoutMs = 30_000): Promise<ChatFrame> {
-    const already = frames.find(match);
-    if (already) return Promise.resolve(already);
-    return new Promise<ChatFrame>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const idx = waiters.findIndex((w) => w.resolve === wrapped);
-        if (idx >= 0) waiters.splice(idx, 1);
-        reject(new Error("timeout waiting for frame; saw: " + JSON.stringify(frames.map((f) => f.type))));
-      }, timeoutMs);
-      const wrapped = (f: ChatFrame) => {
-        clearTimeout(timer);
-        resolve(f);
-      };
-      waiters.push({ match, resolve: wrapped });
-    });
-  }
-
-  return { sink, frames, waitFor };
-}
-
 describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts, against a mock LLM (zero account API calls)", () => {
   const ENV_KEYS = ["CODEX_HOME", "OPENAI_BASE_URL", "OPENAI_API_KEY", "MOCK_CODEX_API_KEY"] as const;
+  // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — a code-review finding on this
+  // task: populating this AFTER an await that can throw leaves it empty, and afterAll's restore loop
+  // then unconditionally `delete`s every ENV_KEY from the shared `bun test` process, including a
+  // developer's real OPENAI_API_KEY this test never touched.
   const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
+  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   let mock: MockLlmHandle | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
@@ -90,7 +61,6 @@ describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts
 
   async function setup(): Promise<void> {
     mock = await startMockLlm();
-    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     // Never OPENAI_BASE_URL/OPENAI_API_KEY for codex (see this file's header) — clear any that a
     // developer's own shell might already have set, so this test can't accidentally pass for the
     // wrong reason (codex silently using a real key it happens to find).
@@ -124,7 +94,7 @@ describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts
       const cwd = await newTempDir("bismuth-codex-cwd-");
       const chatId = "codex-mocked-" + Date.now();
       chatIds.push(chatId);
-      const { sink, frames, waitFor } = makeCollector();
+      const { sink, frames, waitFor } = makeChatFrameCollector();
 
       CHAT_BACKENDS.codex.sendMessage({ chatId, cwd, sink, computerUse: false, text: "hello" });
 
