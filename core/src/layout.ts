@@ -31,6 +31,7 @@ import {
   type SimNode,
   type SimLink,
 } from "d3-force-3d";
+import { linLogLinkForce } from "./linlog";
 
 export interface LayoutInput {
   /** `community` is the FINEST detected community id already stamped on every graph node by
@@ -126,6 +127,27 @@ export interface LayoutOptions {
    * previous — already gridded — build gave them).
    */
   clusterLayout?: "grid" | "organic";
+  /**
+   * Which attraction model links use.
+   *   - "spring"  — d3 forceLink (Hooke). The pre-2026-07 behaviour.
+   *   - "linlog"  — Noack's LinLog: attraction ~ ln(1+d). Clusters separate because the model
+   *                 separates them, which is what makes the community forces unnecessary.
+   *   - "linear"  — CONTROL ARM (Task 4 measurement only, not a shipped path). Reuses
+   *                 `linLogLinkForce`'s exact structure/integration (symmetric 50/50 correction,
+   *                 raw positions, same alpha handling) but with attraction ~ d instead of
+   *                 ~ ln(1+d) — i.e. the same magnitude LAW as "spring" run through LinLog's
+   *                 integration instead of forceLink's. Isolates whether a LinLog-vs-spring result
+   *                 is caused by the ln(1+d) force law or by the OTHER two ways `linLogLinkForce`
+   *                 differs from `forceLink` (no per-node degree division of the correction; raw
+   *                 rather than velocity-predicted positions) — see core/src/linlog.ts's header.
+   * Temporary during the energy-model migration; removed once one path ships for good.
+   */
+  energyModel?: "spring" | "linlog" | "linear";
+  /**
+   * Scale many-body repulsion by (degree + 1), per ForceAtlas2. A vault is scale-free; uniform
+   * repulsion crushes leaf nodes against their hubs ("forests of leaves").
+   */
+  degreeRepulsion?: boolean;
 }
 
 export type Positions = Record<string, [number, number, number]>;
@@ -1233,6 +1255,15 @@ type RL = SimLink<RN>;
  *  component into the main mass (stronger + shorter than a real link; see prepareLayout's reel-in),
  *  and (when community forces are active) whether both endpoints sit in the SAME community. */
 type VL = RL & { virtual?: boolean; intra?: boolean; island?: boolean };
+/** Same shape as `VL`, but with `source`/`target` narrowed to plain strings instead of `string |
+ *  RN`. `SimLink.source`/`.target` widen to the resolved node once d3's `forceLink` mutates them
+ *  in place during its own `initialize()` — `linLogLinkForce` never does that mutation (it looks
+ *  ids up into a side `Map` instead), so at every point IT touches `links`, `source`/`target` are
+ *  still the plain ids `prepareLayout` constructed them with. Exists only so
+ *  `linLogLinkForce`'s `L extends { source: string; target: string }` constraint is satisfied
+ *  without loosening that constraint (which exists to keep the module's own id-lookup code honest)
+ *  or duplicating the module. */
+type LLLink = Omit<VL, "source" | "target"> & { source: string; target: string };
 
 /** Everything the grid plan and the forces need that depends ONLY on the input — never on the seed
  *  or the settle: the undirected adjacency, the per-node collide radii, and the community level
@@ -1557,10 +1588,32 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   const centering = dim === 2
     ? o.centering * (anchorX ? GRID_CENTERING_MULT : MODE_2D_CENTERING_MULT)
     : o.centering;
+  // degreeRepulsion (ForceAtlas2-style): scale many-body repulsion by (degree + 1) instead of the
+  // uniform default, so hubs push harder than leaves — see LayoutOptions.degreeRepulsion.
+  const chargeStrength = o.degreeRepulsion
+    ? (_n: RN, i: number) => repulsion * (realDeg[i] + 1)
+    : () => repulsion;
   const sim = forceSimulation<RN>(nodes, dim)
     .alpha(1)
-    .force("charge", forceManyBody<RN>().strength(repulsion).theta(MANYBODY_THETA))
-    .force("link", linkForce);
+    .force("charge", forceManyBody<RN>().strength(chargeStrength).theta(MANYBODY_THETA));
+  // Link force per LayoutOptions.energyModel:
+  //   - "linlog"/"linear" replace the spring entirely — no rest length, so linkDistFor is unused
+  //     here. "linear" is Task 4's CONTROL ARM: the exact same linLogLinkForce integration
+  //     (symmetric 50/50 correction, raw positions) as "linlog", but with attraction ~ d instead of
+  //     ~ ln(1+d) — isolating the force LAW from the OTHER two ways this integration differs from
+  //     forceLink (no degree-splitting of the correction; raw vs. predicted positions). See
+  //     linlog.ts's header and LayoutOptions.energyModel's doc comment.
+  //   - "spring" (default) keeps the original forceLink instance built above.
+  if (o.energyModel === "linlog" || o.energyModel === "linear") {
+    sim.force("link", linLogLinkForce<RN, LLLink>(links as LLLink[], {
+      id: (d: RN) => d.id,
+      strength: (l: LLLink) => (l.virtual ? o.virtualLinkStrength : linkStrengthFor(l)),
+      dim,
+      attraction: o.energyModel === "linear" ? (d: number) => d : undefined,
+    }) as unknown as Parameters<typeof sim.force>[1]);
+  } else {
+    sim.force("link", linkForce);
+  }
   // ORDER MATTERS: the community force must be registered BEFORE "collide". d3 runs forces in
   // insertion order and forceCollide resolves overlaps against `x + vx` — i.e. it can only see (and
   // undo) the velocity contributed by forces that ran earlier in the same tick. Registered after
