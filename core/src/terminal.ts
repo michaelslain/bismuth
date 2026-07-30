@@ -320,6 +320,14 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
   // is the gate (recall/collect hooks + memory MCP tools no-op without it). The caller only
   // sets memoryDir when settings.daemon.enabled, so "off" simply omits it.
   if (p.memoryDir) env.BISMUTH_MEMORY_DIR = p.memoryDir;
+  // Deliberately NOT stamped here: BISMUTH_AGENT_CHANNEL (core/src/visibilityCliGate.ts's
+  // CLI-dispatch gate). A terminal tab is the OWNER's own interactive shell — the same threat model
+  // that keeps visibility from restricting "your own interactive terminal Claude sessions"
+  // (docs/vault/visibility.md) applies here verbatim: whoever is typing in this PTY is the vault
+  // owner, not an agent Bismuth spawned on its own, so a `bismuth` invocation from inside it must
+  // stay ungated. Do not "fix" this by adding the var — that would lock the owner out of their own
+  // terminal's CLI.
+
   if (p.shimAvailable) {
     // zsh: load our init dir, which sources the user's rc then defines a `claude` function
     // (un-shadowable by PATH ordering) that loads the relay plugin. Works even without a

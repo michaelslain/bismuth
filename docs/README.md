@@ -42,6 +42,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Wikilinks & tags](vault/wikilinks-tags.md) — `[[links]]`, `#tags`, matching rules
 - [Attachments & embeds](vault/attachments.md) — `![[file]]` / `![](url)`, asset storage, sizing
 - [Visibility controls](vault/visibility.md) — per-file/folder AI restrictions on the daemon + in-app chat, inheritance, enforcement, threat model
+- [Visibility acceptance run](vault/visibility-acceptance.md) — the recorded adversarial pass: every route tried, what closed, what leaked, and what is explicitly NOT verified
 
 ## Editor
 
