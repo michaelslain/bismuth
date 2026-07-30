@@ -174,10 +174,21 @@ export function buildColorSlots(
 // ---------------------------------------------------------------------------
 
 /**
- * The anchor of a community: its highest-degree member, ties broken by lowest id — the same rule
- * the backend uses to pick a community's exemplar, so the anchor never flickers between two
- * equal-degree members frame to frame. Ported from the hub pass of `buildLevelEdges`
+ * The anchor of a community: its highest-degree member, ties broken by lowest id — NOT the same
+ * rule the backend uses to pick a community's exemplar (`pickExemplar`, core/src/community.ts,
+ * degree DESC then label LENGTH then id, over a degree-fraction pool, preferring tag-kind members —
+ * a much richer rule aimed at a SHORT readable label, not a stable anchor point). This function only
+ * needs the latter: a total order that never flickers between two equal-degree members frame to
+ * frame, which "highest degree, ties by lowest id" already guarantees on its own — it does not need
+ * to reproduce the exemplar rule to do that job. Ported from the hub pass of `buildLevelEdges`
  * (CanvasGraphRenderer.ts:865-874: "Hubs first — the anchors both the lines and the names use.").
+ *
+ * Generic over `id`'s type: the ported source compares `nv.node.id < cur.node.id`, i.e. a STRING
+ * (`GraphNode.id`) — callers with numeric ids (e.g. a synthetic index) work identically, since `<`
+ * total-orders both. Passing a caller-invented numeric surrogate (array index, insertion order, …)
+ * instead of the real id changes WHICH member a tie resolves to versus the ported source, even
+ * though both are equally "stable" in the sense of never flickering frame to frame — prefer the
+ * real id when one is available.
  *
  * `drawClusterNames`'s doc comment (:1559-1562) is the rationale for hub over centroid: "A vault's
  * communities are hub-and-spoke and sprawling, so the centroid of a 400-node community routinely
@@ -209,8 +220,8 @@ export function buildColorSlots(
  * every frame from whatever happens to be on screen and visibly jump as the user pans — invisible to
  * any test in this module, since nothing here owns "the same frame" or "the previous frame".
  */
-export function pickHubAnchor(members: Iterable<{ id: number; degree: number }>): number | undefined {
-  let best: { id: number; degree: number } | undefined;
+export function pickHubAnchor<T extends string | number>(members: Iterable<{ id: T; degree: number }>): T | undefined {
+  let best: { id: T; degree: number } | undefined;
   for (const m of members) {
     if (!best || m.degree > best.degree || (m.degree === best.degree && m.id < best.id)) best = m;
   }

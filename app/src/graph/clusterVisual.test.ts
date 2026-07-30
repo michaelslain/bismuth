@@ -197,6 +197,23 @@ describe("pickHubAnchor — highest-degree member, not first-listed or centroid-
   it("a single member is always its own hub", () => {
     expect(pickHubAnchor([{ id: 7, degree: 0 }])).toBe(7);
   });
+
+  it("is generic over STRING ids — a degree tie breaks by lexicographic id, not by array position (GraphNode.id is a string; the ported source compares nv.node.id < cur.node.id)", () => {
+    // Six equal-degree members, deliberately listed in an order where the LAST element ("alpha") is
+    // lexicographically first — a caller that quietly substituted array index (or insertion order)
+    // for the real id would pick "zulu" (first-listed) here instead of "alpha" (lexicographically
+    // lowest), which is exactly the bug this test exists to catch.
+    const members = [
+      { id: "zulu", degree: 5 }, { id: "yankee", degree: 5 }, { id: "xray", degree: 5 },
+      { id: "whiskey", degree: 5 }, { id: "victor", degree: 5 }, { id: "alpha", degree: 5 },
+    ];
+    expect(pickHubAnchor(members)).toBe("alpha");
+  });
+
+  it("string ids: higher degree still wins regardless of lexicographic id order", () => {
+    const members = [{ id: "zulu", degree: 9 }, { id: "alpha", degree: 1 }];
+    expect(pickHubAnchor(members)).toBe("zulu");
+  });
 });
 
 describe("trimDanglingWord", () => {

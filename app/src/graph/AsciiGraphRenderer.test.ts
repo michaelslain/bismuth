@@ -281,17 +281,27 @@ const allText = () => ctx.fills.map((f) => f.text).join("");
 /** Every line segment the vector-edge pass (strokeEdges()) actually stroked this paint, flattened
  *  across all batched `stroke()` calls. */
 const strokeSegs = () => ctx.strokes.flatMap((s) => s.segs);
+// The fallback --graph-0..4 tokens (COLOR_FALLBACK's first 5 entries in AsciiGraphRenderer.ts) —
+// happy-dom resolves no CSS vars, so this is the exact palette rebuildCommunityColors() passes to
+// buildColorSlots() in every test in this file. Declared before nodeRuns() (below), which depends on it.
+const RAMP_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a"];
 // happy-dom resolves no CSS vars, so the renderer falls back to its literal token table. Community
 // colours are no longer one of a fixed 5-entry ramp (buildColorSlots ranks-and-boosts against the
 // --graph-0..4 tokens, so the actual hex a community lands on is a saturation/lightness-boosted, and
 // possibly hue-rotated, DERIVATIVE of those tokens — see clusterVisual.ts) — so "is this a node run"
-// is now: NOT one of the fixed non-community roles (self/muted/faint/accent/edge — the only fills
-// still drawn at the LITERAL fallback hex), AND matching the glyph-only vocabulary. That excludes the
-// self-hub glyph, dimmed daemon glyphs, and the noise texture, while still counting any
-// community-derived colour (nodes AND entity masses share one colour per community by design — see
-// colorLevelsFor's doc — so this can't tell the two apart, but no test here needs to).
-const FIXED_UI_COLORS = new Set(["#e8e8ee", "#9aa0b4", "#6b7086", "#3f6bf0", "#3C4048"]); // C_FG, C_MUTED, C_FAINT, C_ACCENT, C_EDGE
-const nodeRuns = () => ctx.fills.filter((f) => !FIXED_UI_COLORS.has(f.color) && /^[.o@ ]+$/.test(f.text));
+// is a WHITELIST, computed via the real buildColorSlots (not hand-copied, and not a blacklist): a
+// blacklist of the five FIXED roles (self/muted/faint/accent/edge) is wrong in both directions — it
+// accidentally excludes `#3f6bf0`, which is BOTH `--accent`'s fallback AND `--graph-2`'s (a
+// coincidence in COLOR_FALLBACK), hiding a legitimate community-coloured glyph from every assertion
+// built on it; and it admits ANY other stray colour (e.g. a regression that mis-painted an
+// accent/self glyph) as if it were a real community node run. sampleGraph() gives its three
+// communities (ids 0/1/2) an exact 8-member size TIE, so buildColorSlots ranks them by id ascending
+// — ids 0/1/2 -> ranks 0/1/2, all within the palette's first cycle (3 < 5, no hue rotation yet) — a
+// small, closed, exactly-computable set.
+const SAMPLE_GRAPH_COMMUNITY_COLORS = new Set(
+  buildColorSlots(new Map([[0, 8], [1, 8], [2, 8]]), RAMP_FALLBACK).values(),
+);
+const nodeRuns = () => ctx.fills.filter((f) => SAMPLE_GRAPH_COMMUNITY_COLORS.has(f.color) && /^[.o@ ]+$/.test(f.text));
 // A real wheel event always carries the cursor position — default to the field's centre (2D zoom
 // is cursor-ANCHORED now). happy-dom's WheelEvent constructor DROPS MouseEvent init fields
 // (clientX comes out undefined), so the coordinates are pinned on afterwards.
@@ -600,11 +610,6 @@ describe("N-level semantic labels — the zoom ladder walks communityPath, coars
   });
 });
 
-// The fallback --graph-0..4 tokens (COLOR_FALLBACK's first 5 entries in AsciiGraphRenderer.ts) —
-// happy-dom resolves no CSS vars, so this is the exact palette rebuildCommunityColors() passes to
-// buildColorSlots() in every test in this file.
-const RAMP_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a"];
-
 describe("Task 9 — clusterVisual wiring: community colours are RANK-based, cluster names are HUB-anchored", () => {
   /** `sizeById[c]` notes tagged `community: c` (finest-level only, no hierarchy) — no edges needed,
    *  getCommunityCentroids() only reads community membership + colour. */
@@ -648,46 +653,12 @@ describe("Task 9 — clusterVisual wiring: community colours are RANK-based, clu
     c.r.destroy();
   });
 
-  it("a node with only a finest-level community (no communityPath) still counts toward a DEEPER level's community tally — the pathOf level clamp", () => {
-    // Two-level hierarchy: top is uniformly 0, sub varies 0/1/2. Sub sizes 2/4/3 — sub 0 is the
-    // STRICT smallest among the three deep-only sizes. One extra SHALLOW node (community: 0, no
-    // communityPath at all) should count toward sub 0's tally too (clamped to its own deepest known
-    // community), tying it with sub 2 at 3 — and buildColorSlots' tie-break (lowest id) then ranks
-    // sub 0 ABOVE sub 2. Drop the clamp and sub 0 stays strictly smaller than sub 2, changing its rank
-    // (and therefore its colour) entirely.
-    const nodes: unknown[] = [];
-    let i = 0;
-    const subSizes = [2, 4, 3];
-    for (let sub = 0; sub < subSizes.length; sub++) {
-      for (let k = 0; k < subSizes[sub]; k++) {
-        nodes.push({
-          id: `d${sub}_${k}`, label: `deep ${sub} ${k}`, kind: "note" as const,
-          position: [i * 5, sub * 50, 0] as [number, number, number], position2d: [i * 5, sub * 50] as [number, number],
-          community: sub, communityLabel: `Sub ${sub}`,
-          communityPath: [0, sub], communityPathLabels: ["Top 0", `Sub ${sub}`],
-        });
-        i++;
-      }
-    }
-    nodes.push({
-      id: "shallow", label: "shallow", kind: "note" as const,
-      position: [i * 5, -50, 0] as [number, number, number], position2d: [i * 5, -50] as [number, number],
-      community: 0, communityLabel: "Sub 0",
-    });
-    const { r } = mountRenderer("3d", { nodes: nodes as never, edges: [] });
-
-    // Independently reconstruct what the CORRECTLY-clamped per-level tally should be (sub 0 = 2 deep
-    // + 1 clamped shallow = 3) and feed it through the real buildColorSlots — the same palette the
-    // renderer falls back to under happy-dom (no CSS vars resolved).
-    const expected = buildColorSlots(new Map([[0, 3], [1, 4], [2, 3]]), RAMP_FALLBACK);
-    expect(r.getCommunityCentroids().get(0)!.color).toBe(expected.get(0));
-    r.destroy();
-  });
-
-  it("anchors a cluster name on the community's HUB (highest-degree member), not the member centroid", () => {
-    // One high-degree hub far to the right; four low-degree leaves clustered far to the left. The
-    // OLD centroid-of-all-members anchor lands far to the LEFT (dragged there by the 4-vs-1 leaf
-    // majority); the hub anchor must land at the hub's own (far-RIGHT) position instead.
+  /** Shared by the two hub-anchor tests below: one high-degree hub far to the right, four
+   *  low-degree leaves clustered far to the left, all in one community. The OLD centroid-of-all-
+   *  members anchor lands far to the LEFT (dragged there by the 4-vs-1 leaf majority); the hub
+   *  anchor must land at the hub's own (far-RIGHT) position instead — as long as the hub is
+   *  actually on screen (see the pan-stability test for what happens once it isn't). */
+  function hubAndLeavesGraph() {
     const nodes = [
       {
         id: "hub", label: "Hub", kind: "note" as const,
@@ -702,7 +673,11 @@ describe("Task 9 — clusterVisual wiring: community colours are RANK-based, clu
       })),
     ];
     const edges = [0, 1, 2, 3].map((k) => ({ from: "hub", to: `leaf${k}`, kind: "link" as const }));
-    const { r } = mountRenderer("2d", { nodes, edges });
+    return { nodes, edges };
+  }
+
+  it("anchors a cluster name on the community's HUB (highest-degree member), not the member centroid", () => {
+    const { r } = mountRenderer("2d", hubAndLeavesGraph());
     const priv = r as unknown as {
       nodes: { node: { id: string }; col: number; row: number }[];
       labels: { text: string; col: number; row: number; eyebrow?: boolean }[];
@@ -715,6 +690,137 @@ describe("Task 9 — clusterVisual wiring: community colours are RANK-based, clu
     expect(label).toBeDefined();
     expect(Math.abs(label!.col - hub.col)).toBeLessThanOrEqual(4);
     expect(Math.abs(label!.col - oldCentroidCol)).toBeGreaterThan(10);
+    r.destroy();
+  });
+
+  it("PAN STABILITY — once the hub itself pans off-frame, the name tracks its still-visible members (centroid fallback) instead of freezing at the field edge", () => {
+    // Regression: layoutClusterNames used to gate the anchor on `hub.projValid` only, never
+    // `inViewport`. A hub that pans off-grid still leaves `col0` way out of range, and the
+    // pre-existing edge clamp (`col + wCells > m.cols` etc., needed so an ON-SCREEN label can't run
+    // off the grid) then parks the label at a fixed edge column — motionless while the community it
+    // names keeps sliding across the field underneath it as the user keeps panning. Canvas never had
+    // this failure mode (it draws at the hub's raw x with no clamp, so an off-frame hub just renders
+    // off-canvas); ASCII's clamp was only ever safe while the anchor was guaranteed on-grid.
+    const { r, viewport } = mountRenderer("2d", hubAndLeavesGraph());
+    const priv = r as unknown as {
+      nodes: { node: { id: string }; sx: number; col: number }[];
+      labels: { text: string; col: number; eyebrow?: boolean }[];
+      W: number;
+    };
+
+    const drag = (dx: number) => {
+      viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
+      window.dispatchEvent(new PointerEvent("pointermove", { clientX: 400 + dx, clientY: 300 }));
+      frame(32);
+      window.dispatchEvent(new PointerEvent("pointerup", { clientX: 400 + dx, clientY: 300 }));
+    };
+    const inFrame = (n: { sx: number }) => n.sx >= -40 && n.sx <= priv.W + 40;
+
+    // First pan: push the hub (world +300, right-of-centre at fit) off the right edge, while the
+    // leaves (world ~-300, left-of-centre at fit — ~600 world units further from the edge) are still
+    // comfortably on screen.
+    drag(500);
+    const hub1 = priv.nodes.find((n) => n.node.id === "hub")!;
+    const leaf1 = priv.nodes.find((n) => n.node.id === "leaf0")!;
+    expect(inFrame(hub1)).toBe(false); // sanity: the hub really did leave the frame
+    expect(inFrame(leaf1)).toBe(true); // sanity: a member is still visible
+    const label1 = priv.labels.find((l) => l.eyebrow);
+    expect(label1).toBeDefined();
+    const offset1 = label1!.col - leaf1.col;
+
+    // Second pan, further in the same direction — the hub stays off-frame, the leaves keep sliding
+    // (but not so far that THEY leave the frame too — 2D pan is a 1:1 screen-px translate, so this
+    // stays well inside the ~880px of leeway leaf0 had after the first drag).
+    drag(200);
+    const leaf2 = priv.nodes.find((n) => n.node.id === "leaf0")!;
+    expect(inFrame(leaf2)).toBe(true); // sanity: still visible after the second pan too
+    const label2 = priv.labels.find((l) => l.eyebrow);
+    expect(label2).toBeDefined();
+    const offset2 = label2!.col - leaf2.col;
+
+    // BUG: a frozen (edge-clamped) label keeps an ABSOLUTE column while the members keep moving, so
+    // its offset from a member drifts by roughly however far the second drag moved the field.
+    // FIX: the label moves WITH its visible members (the centroid fallback), so the offset — label
+    // column minus member column — stays close to constant across the pan.
+    expect(Math.abs(offset2 - offset1)).toBeLessThanOrEqual(3);
+    r.destroy();
+  });
+
+  it("the pathOf level clamp is applied consistently in the exemplar-NAME table too, not just the colour tally and hub race — a shallow-only community still gets its real name at a deeper level, not the 'cluster N' placeholder", () => {
+    // Two ordinary 2-level nodes establish levelCount=2. A THIRD, SHALLOW node (community only, no
+    // communityPath) carries community id 99 — a community with NO deep member at all, so its name
+    // can only ever reach level 1 via the SAME clamp (`path[Math.min(L, path.length-1)]`) the colour
+    // tally and hub race already use. Drop the clamp here specifically and level 1 never learns
+    // community 99's name at all, even though the colour/hub tables (independently clamped) still
+    // happily rank and anchor it — an inconsistency invisible to any test that only checks colour.
+    const nodes = [
+      {
+        id: "d0", label: "d0", kind: "note" as const, position: [0, 0, 0] as [number, number, number], position2d: [0, 0] as [number, number],
+        community: 0, communityLabel: "Sub Zero", communityPath: [0, 0], communityPathLabels: ["Top", "Sub Zero"],
+      },
+      {
+        id: "d1", label: "d1", kind: "note" as const, position: [10, 0, 0] as [number, number, number], position2d: [10, 0] as [number, number],
+        community: 1, communityLabel: "Sub One", communityPath: [0, 1], communityPathLabels: ["Top", "Sub One"],
+      },
+      {
+        id: "shallow", label: "shallow", kind: "note" as const, position: [20, 0, 0] as [number, number, number], position2d: [20, 0] as [number, number],
+        community: 99, communityLabel: "Shallow Only",
+      },
+    ];
+    const { r } = mountRenderer("3d", { nodes, edges: [] });
+    const priv = r as unknown as { communityNamesByLevel: Map<number, string>[] };
+    expect(priv.communityNamesByLevel[1]?.get(99)).toBe("Shallow Only");
+    r.destroy();
+  });
+});
+
+describe("Task 9 — LOD entity masses share the node glyphs' colour (the invariant colorLevelsFor's doc claims)", () => {
+  it("an entity mass's colour slot is the EXACT SAME per-level community slot its member nodes would show at that level", () => {
+    // lodGraph() (see its own describe block above): a 2-level hierarchy, TOP 0 = blobs 0+1, TOP 1 =
+    // blobs 2+3. At fit with LOD masses on, only the coarsest (TOP) entities are on the field.
+    const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
+    const priv = r as unknown as {
+      entityFlat: { level: number; community: number; color: number }[];
+      nodes: { node: { id: string }; colorByLevel: number[] }[];
+    };
+    const topEntity0 = priv.entityFlat.find((e) => e.level === 0 && e.community === 0);
+    const topEntity1 = priv.entityFlat.find((e) => e.level === 0 && e.community === 1);
+    expect(topEntity0).toBeDefined();
+    expect(topEntity1).toBeDefined();
+    const memberOf0 = priv.nodes.find((n) => n.node.id === "b0k0")!; // blob 0 -> TOP community 0
+    const memberOf1 = priv.nodes.find((n) => n.node.id === "b2k0")!; // blob 2 -> TOP community 1
+    // Level 0 (TOP) is the COARSEST of this fixture's 2 levels, i.e. colorByLevel[0].
+    expect(memberOf0.colorByLevel[0]).toBe(topEntity0!.color);
+    expect(memberOf1.colorByLevel[0]).toBe(topEntity1!.color);
+    // ...and the two top-level communities are still coloured DIFFERENTLY from each other.
+    expect(topEntity0!.color).not.toBe(topEntity1!.color);
+    r.destroy();
+  });
+});
+
+describe("Task 9 — trimDanglingWord wired into the live cluster-name pass", () => {
+  it("a cluster name ending on a dangling word (\"AND\") loses it, on the field, not just in the pure helper", () => {
+    // The exemplar name is short enough that clusterLabelText's char-cap truncation never fires —
+    // this exercises trimDanglingWord as wired into layoutClusterNames itself, not the pure function
+    // in isolation (already covered in clusterVisual.test.ts).
+    const nodes = [
+      {
+        id: "n0", label: "n0", kind: "note" as const,
+        position: [0, 0, 0] as [number, number, number], position2d: [0, 0] as [number, number],
+        community: 0, communityLabel: "Ludwig Feuerbach and",
+      },
+      {
+        id: "n1", label: "n1", kind: "note" as const,
+        position: [40, 0, 0] as [number, number, number], position2d: [40, 0] as [number, number],
+        community: 0, communityLabel: "Ludwig Feuerbach and",
+      },
+    ];
+    const { r } = mountRenderer("2d", { nodes, edges: [] });
+    const priv = r as unknown as { labels: { text: string; eyebrow?: boolean }[] };
+    const label = priv.labels.find((l) => l.eyebrow);
+    expect(label).toBeDefined();
+    expect(label!.text).toBe("LUDWIG FEUERBACH");
+    expect(label!.text.endsWith("AND")).toBe(false);
     r.destroy();
   });
 });

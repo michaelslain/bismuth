@@ -392,8 +392,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private communitySlotByLevel: Map<number, number>[] = [];
   private commColors: string[] = [];
   private commColorsRGB: [number, number, number][] = [];
-  // Lazily-memoized LEVEL-DRIVEN COLOR blend results this frame (see blendColorSlot()) — cleared
-  // whenever a crossfade starts being rebuilt (rasterize()'s `colorW1` gate), not every frame.
+  // Lazily-memoized LEVEL-DRIVEN COLOR blend results THIS FRAME (see blendColorSlot()) — cleared at
+  // the top of EVERY frame rasterize()'s `colorW1` gate finds a crossfade actually in progress, not
+  // just once when the crossfade begins: `w1` (the blend weight) changes every one of those frames,
+  // so a memo entry from a previous frame's `w1` is stale and must not survive into this one — caching
+  // across the whole crossfade instead of per-frame would freeze the animation partway through.
   private blendColors: string[] = [];
   private blendIndex = new Map<number, number>();
   // Whole-graph, PRECOMPUTED per-level community → hub member id (pickHubAnchor) — built once per
@@ -617,16 +620,24 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const path = pathOf(nv.node);
       if (path && path.length > this.levelCount) this.levelCount = path.length;
     }
+    // Loops `L < this.levelCount` (the GRAPH's deepest level), not `L < path.length` (this NODE's
+    // own depth) — with the same `Math.min(L, path.length - 1)` clamp `rebuildCommunityColors()` and
+    // `clusterHubByLevel` use, so all three per-level tables agree on which community a shallow
+    // node belongs to at a level it doesn't itself reach. Without the clamp here specifically, a
+    // mixed-depth graph could tally/anchor a deeper level's community correctly (via the other two
+    // tables) while this one never learns that community's exemplar name, painting the literal
+    // `cluster ${id}` placeholder instead.
     this.communityNamesByLevel = Array.from({ length: this.levelCount }, () => new Map<number, string>());
     for (const nv of this.nodes) {
       const path = pathOf(nv.node);
       if (!path) continue;
       const labels = nodePathLabels(nv.node);
-      for (let L = 0; L < path.length; L++) {
-        const id = path[L];
+      for (let L = 0; L < this.levelCount; L++) {
+        const li = Math.min(L, path.length - 1);
+        const id = path[li];
         const map = this.communityNamesByLevel[L];
         if (id == null || !map || map.has(id)) continue;
-        map.set(id, labels?.[L] ?? `cluster ${id}`);
+        map.set(id, labels?.[li] ?? `cluster ${id}`);
       }
     }
 
@@ -637,19 +648,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // uses below (rebuildCommunityColors) — a node whose own path is shallower than L still counts
     // toward L's hub race, under its own deepest known community.
     //
-    // pickHubAnchor's `id` is a bare `number` (its cited source, CanvasGraphRenderer.ts:865-874,
-    // actually compares the STRING `nv.node.id` — GraphNode ids are strings here too), so members are
-    // keyed by their INDEX into `this.nodes` rather than their real id, and the winning index is
-    // mapped back to the real string id afterward. This does not weaken the "never flickers frame to
-    // frame" guarantee the tie-break exists for — `this.nodes`' order is fixed for the lifetime of one
-    // build() — it only means a rare exact-degree tie may not byte-for-byte match whatever tie-break
-    // the backend's OWN exemplar-picking used.
+    // pickHubAnchor is generic over the id type; fed the real string `node.id` (not a synthetic
+    // numeric surrogate), its tie-break (lowest id) matches the ported source's own
+    // `nv.node.id < cur.node.id` comparison exactly, not just "some stable order".
     this.clusterHubByLevel = Array.from({ length: this.levelCount }, () => new Map<number, string>());
     if (this.levelCount > 0) {
-      const membersByLevel: Map<number, { id: number; degree: number }[]>[] =
+      const membersByLevel: Map<number, { id: string; degree: number }[]>[] =
         Array.from({ length: this.levelCount }, () => new Map());
-      for (let i = 0; i < this.nodes.length; i++) {
-        const nv = this.nodes[i];
+      for (const nv of this.nodes) {
         const path = pathOf(nv.node);
         if (!path) continue;
         for (let L = 0; L < this.levelCount; L++) {
@@ -657,13 +663,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
           const map = membersByLevel[L];
           let arr = map.get(c);
           if (!arr) { arr = []; map.set(c, arr); }
-          arr.push({ id: i, degree: nv.deg });
+          arr.push({ id: nv.node.id, degree: nv.deg });
         }
       }
       for (let L = 0; L < this.levelCount; L++) {
         for (const [c, members] of membersByLevel[L]) {
-          const hubIdx = pickHubAnchor(members);
-          if (hubIdx != null) this.clusterHubByLevel[L].set(c, this.nodes[hubIdx].node.id);
+          const hubId = pickHubAnchor(members);
+          if (hubId != null) this.clusterHubByLevel[L].set(c, hubId);
         }
       }
     }
@@ -1372,12 +1378,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   /** Lazily-memoized LEVEL-DRIVEN COLOR blend: the RGB lerp between two community colours (`a`, `b`
    *  — both `commColors`-range colorBuf slots) at crossfade weight `w1`, cached per (a,b) pair for
-   *  the remainder of THIS crossfade (rasterize()'s `colorW1` gate clears the cache the moment a new
-   *  crossfade starts). Replaces the old RAMP.length²=25-entry full precompute: the community
+   *  THIS FRAME ONLY — rasterize()'s `colorW1` gate clears `blendColors`/`blendIndex` at the top of
+   *  every frame a crossfade is in progress (`w1` itself changes every one of those frames, so a
+   *  memo entry computed against a stale `w1` would freeze the animation partway through if it
+   *  survived past one frame). Replaces the old RAMP.length²=25-entry full precompute: the community
    *  colour space is no longer a small fixed 5, so this only ever materializes the (a,b) pairs a
-   *  frame actually asks for — bounded by distinct on-grid community transitions, not the full cross
-   *  product. `MAX_BLEND_SLOTS` is a hard ceiling so a pathological community count can't overrun
-   *  `colorBuf`'s Uint16 range; past it, callers get a hard cut (`a`, no blend) instead of an
+   *  frame actually asks for — bounded by distinct on-grid community transitions this frame, not the
+   *  full cross product. `MAX_BLEND_SLOTS` is a hard ceiling so a pathological community count can't
+   *  overrun `colorBuf`'s Uint16 range; past it, callers get a hard cut (`a`, no blend) instead of an
    *  out-of-range slot. */
   private blendColorSlot(a: number, b: number, w1: number): number {
     const key = a * BLEND_KEY_MUL + b;
@@ -1629,16 +1637,28 @@ export class AsciiGraphRenderer implements GraphRenderer {
   }
 
   /** Cluster-name pass for ONE hierarchy `level` (0 = coarsest): one label per that level's
-   *  community, ANCHORED ON ITS HUB (pickHubAnchor — clusterVisual.ts), not a member centroid — a
-   *  vault's communities are hub-and-spoke and sprawling, so a centroid routinely lands in empty
-   *  space (the failure this replaces; see clusterVisual.ts's module doc). The hub comes from
-   *  `clusterHubByLevel`, precomputed ONCE per structural rebuild over the WHOLE community (not
-   *  filtered to what's on screen) — the anchor never jumps as members pan in and out of frame.
+   *  community, ANCHORED ON ITS HUB (pickHubAnchor — clusterVisual.ts) WHEN THE HUB IS ON SCREEN,
+   *  not a member centroid — a vault's communities are hub-and-spoke and sprawling, so a centroid
+   *  routinely lands in empty space (the failure this replaces; see clusterVisual.ts's module doc).
+   *  The hub comes from `clusterHubByLevel`, precomputed ONCE per structural rebuild over the WHOLE
+   *  community (not filtered to what's on screen) — the anchor never jumps as members pan in and out
+   *  of frame WHILE THE HUB ITSELF STAYS VISIBLE.
+   *
+   *  But the hub can itself pan or orbit OUT of frame while most of the community is still on
+   *  screen — Canvas is immune (it draws at the hub's raw, possibly off-canvas, x/y with no clamp),
+   *  ASCII is not: the col/row placement clamp a few lines down (`col + wCells > m.cols` etc.) exists
+   *  to keep an ON-SCREEN label from running off the grid, but fed an off-screen hub it instead PARKS
+   *  the label at the grid edge — a stationary label the field visibly slides out from under as the
+   *  user keeps panning (see AsciiGraphRenderer.test.ts's pan-stability test, the regression this
+   *  guards). So: anchor on the hub only while `hubOnScreen` (projValid + inViewport); otherwise fall
+   *  back to the plain average screen position of THIS FRAME's visible members — degrading to
+   *  exactly the pre-hub-anchor behaviour instead of freezing or dropping the name outright.
+   *
    *  Reserved first so file labels — and any OTHER level's names drawn the same frame during a
    *  level-to-level crossfade — never draw over each other. Larger communities (more VISIBLE members
    *  this frame) claim contested cells first — same greedy-by-worth idea as the file-label loop.
    *
-   *  The name lifts above the hub's cell by `clusterLabelLift(clusterExtent(...))` — a constant
+   *  The name lifts above the anchor's cell by `clusterLabelLift(clusterExtent(...))` — a constant
    *  minimum plus the community's own on-screen reach, so a big mass's name clears the whole mass.
    *  `clusterExtent` — UNLIKE the hub — takes only this frame's VIEWPORT-VISIBLE members: it measures
    *  how far the label has to reach across what the user can actually see right now, which is a
@@ -1666,11 +1686,23 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const items = [...agg.entries()].sort((a, b) => b[1].length - a[1].length || a[0] - b[0]);
     for (const [community, members] of items) {
       const hubId = hubs.get(community);
-      const hub = hubId != null ? this.byId.get(hubId) : undefined;
-      if (!hub || !hub.projValid) continue; // no valid whole-graph anchor on screen this frame
-      const col0 = Math.round((hub.sx - m.padX) / m.cellW);
-      const row0 = Math.round((hub.sy - m.padY) / m.cellH);
-      const extent = clusterExtent({ sx: hub.sx, sy: hub.sy }, members);
+      const hubNode = hubId != null ? this.byId.get(hubId) : undefined;
+      const hubOnScreen = !!hubNode && hubNode.projValid && inViewport(hubNode.sx, hubNode.sy, this.W, this.H, VIEWPORT_LABEL_PAD);
+      let anchorSx: number, anchorSy: number;
+      if (hubOnScreen) {
+        anchorSx = hubNode!.sx; anchorSy = hubNode!.sy;
+      } else {
+        // The hub panned/rotated out of frame — fall back to the average screen position of this
+        // frame's VISIBLE members (the pre-hub-anchor behaviour) rather than parking a stale label
+        // at the field edge or dropping the name. `members` is always non-empty here (it's the key
+        // this very entry was aggregated under).
+        let sxSum = 0, sySum = 0;
+        for (const mm of members) { sxSum += mm.sx; sySum += mm.sy; }
+        anchorSx = sxSum / members.length; anchorSy = sySum / members.length;
+      }
+      const col0 = Math.round((anchorSx - m.padX) / m.cellW);
+      const row0 = Math.round((anchorSy - m.padY) / m.cellH);
+      const extent = clusterExtent({ sx: anchorSx, sy: anchorSy }, members);
       const liftRows = Math.round(clusterLabelLift(extent) / m.cellH);
       const row = row0 - liftRows; // "up" = decreasing row, off the TOP of the hub's cell
       if (row < 0 || row >= m.rows) continue;
