@@ -2,8 +2,10 @@ import { spawn as spawnPty } from "bun-pty";
 import type { IPty } from "bun-pty";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
-import { existsSync } from "node:fs";
-import { whichClaude } from "./claudeWhich";
+import { existsSync, mkdtempSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { whichClaude, whichBinary } from "./claudeWhich";
+import { BACKEND_LIST } from "./agentBackends/catalog";
 
 export interface Session {
   id: string;
@@ -79,6 +81,166 @@ const REAL_CLAUDE = whichClaude();
 // rather than pointing ZDOTDIR at a nonexistent dir.
 const SHIM_AVAILABLE = existsSync(ZDOTDIR_DIR);
 
+// Generic multi-call PATH shim (relay/shim/agent-shim) — the non-zsh equivalent of the per-backend
+// zsh functions below. One symlink per resolvable "wrapper"-mode backend is created at module load
+// (see buildWrapperShimDir), each pointing here; the script dispatches on its OWN invoked name.
+const AGENT_SHIM_SCRIPT = join(SHIM_DIR, "agent-shim");
+
+// --- Per-backend shim specs ---------------------------------------------------------------------
+// Generalizes the single hardcoded `claude` shell function into one entry per agent-CLI backend
+// (core/src/agentBackends/catalog.ts), so relay/shim/zdotdir/.zshrc can define a shell function per
+// entry instead of one hardcoded name, and non-zsh shells get an equivalent PATH-shim entry per
+// resolvable "wrapper"-mode backend (see buildWrapperShimDir below).
+
+/** Minimal shape shimSpecsFor needs from a backend descriptor. Deliberately structural (not
+ *  importing BackendId/BackendCapabilities) so this stays trivially unit-testable with plain
+ *  fixtures, independent of the catalog module's exact shape. */
+export interface BackendShimCandidate {
+  /** Backend id (e.g. "claude", "opencode") — becomes wrap.ts's `backendId` argv + the relay
+   *  registry's `backend` field, so the agents graph can show what's running in a tab. */
+  id: string;
+  /** Binary/function name to resolve + wrap (BackendDescriptor.binary). */
+  binary: string;
+  /** BackendCapabilities.agentsGraph — the sole input for whether/how this backend gets wrapped. */
+  agentsGraph: "hooks" | "wrapper" | "none";
+  /** BackendCapabilities.terminal — a chat-only backend with no terminal surface gets no shim. */
+  terminal: boolean;
+}
+
+/** One backend's resolved shim wiring — what the zsh init (and, for wrapper-mode backends, the
+ *  non-zsh multi-call shim script) needs to decide whether and how to wrap a bare invocation of
+ *  `binary`. */
+export interface ShimSpec {
+  /** Backend id — see {@link BackendShimCandidate.id}. */
+  id: string;
+  /** Binary/function name (also the PATH-shim symlink's / zsh function's name). */
+  binary: string;
+  /**
+   * Absolute path resolved by the caller's `resolve()` (production: `whichBinary()` against the
+   * augmented lookup PATH — see claudeWhich.ts), or null when core couldn't resolve it. The zsh
+   * init still gets a shot at it via `whence -p` AFTER the user's rc loads — the same fallback
+   * `claude` already relied on (see relay/shim/zdotdir/.zshrc) — so a null realPath here does NOT
+   * mean "no function": it means "resolve at shell-init time instead." Non-zsh shells have no such
+   * second chance (there is no rc-sourcing step before a PATH shim runs), so a null realPath here
+   * means no non-zsh PATH-shim entry for this backend (see buildWrapperShimDir).
+   */
+  realPath: string | null;
+  /** "hooks" → inject the relay plugin directly (today: only claude, `--plugin-dir <relay>`).
+   *  "wrapper" → route through relay/bin/wrap.ts for session-start/end telemetry, since a CLI with
+   *  no hook system of its own has no other way to appear in the agents graph. */
+  mode: "hooks" | "wrapper";
+}
+
+/**
+ * Whether a "wrapper"-mode backend (BackendCapabilities.agentsGraph === "wrapper" — a CLI with no
+ * hook system of its own) gets wrapped through relay/bin/wrap.ts for agents-graph session
+ * telemetry. DEFAULT OFF.
+ *
+ * Wrapping an interactive TUI in an extra process risks signal handling, tty ownership, and
+ * exit-code fidelity; the payoff is one node in a graph. That trade is only worth taking once the
+ * risk is actually retired, not merely assumed away — and today it isn't: relay/bin/wrap.ts's
+ * signal-forwarding + exit-code relay is verified against a STUB child (a bash script trapping
+ * SIGINT/SIGTERM, driven with real `kill -INT`/`-TERM` against the wrapper's own pid — see the
+ * task notes this shipped with for the exact commands and output), never against a real
+ * interactive agent CLI's own tty/signal handling (some TUIs treat Ctrl+C as "cancel this turn",
+ * not "exit"), and never inside a real PTY's foreground process-group semantics. A broken terminal
+ * tab is far worse than a missing graph node, so this stays off until a human has verified, by
+ * hand, that a wrapped backend's signals and exit codes survive under a REAL pty.
+ *
+ * Flip to `true` here once that hand-verification has happened — shimSpecsFor, wrap.ts, and both
+ * consumers (the zsh init + relay/shim/agent-shim) already react correctly the moment this flips.
+ * The catalog's per-backend `agentsGraph: "wrapper"` flag remains the OTHER gate: both must agree
+ * before a given backend is actually wrapped.
+ */
+const WRAPPER_REPORTING_ENABLED = false;
+
+/**
+ * Pure: which backends get a shim (a shell function in zsh; a PATH-shim entry elsewhere) and how.
+ * The sole input for intent is each backend's `agentsGraph`:
+ *  - "hooks"   → inject the relay plugin directly (claude today).
+ *  - "wrapper" → route through relay/bin/wrap.ts — but ONLY when `wrapperReportingEnabled`; when
+ *    false, a "wrapper" backend is treated exactly like "none" (no spec, no function, no PATH
+ *    entry — zero behavior change from before this feature existed). See WRAPPER_REPORTING_ENABLED.
+ *  - "none"    → no shim at all; the backend resolves via the shell's ordinary PATH, untouched.
+ *
+ * `resolve` abstracts binary lookup (production: `whichBinary()`) so this stays pure and
+ * unit-testable with a stub. A backend `resolve` can't find still gets a spec entry with
+ * `realPath: null` — dropping it entirely would lose the zsh init's only signal that "there IS a
+ * backend here, please retry via `whence -p`", regressing exactly the fallback claude relies on
+ * today. Never emits a "wrapper" entry for claude, even if the catalog were ever misconfigured to
+ * claim one — see relay/bin/wrap.ts's header for why Claude Code must never be wrapped.
+ */
+export function shimSpecsFor(
+  backends: readonly BackendShimCandidate[],
+  resolve: (binary: string) => string | null,
+  opts: { wrapperReportingEnabled: boolean },
+): ShimSpec[] {
+  const specs: ShimSpec[] = [];
+  for (const b of backends) {
+    if (!b.terminal) continue;
+    if (b.agentsGraph === "none") continue;
+    if (b.agentsGraph === "wrapper" && (!opts.wrapperReportingEnabled || b.id === "claude")) continue;
+    specs.push({ id: b.id, binary: b.binary, realPath: resolve(b.binary), mode: b.agentsGraph });
+  }
+  return specs;
+}
+
+// ASCII Unit Separator / Record Separator — reserved by the ASCII standard for exactly this
+// purpose (delimiting fields/records in plain text) and, for that reason, never legitimately typed
+// into a filesystem path by any installer/shell a user would use to get an agent CLI onto PATH.
+// Chosen over a printable delimiter (":", ",", "|", …) precisely because those DO occasionally
+// occur in real paths/URLs/flags; these two effectively never do. zsh splits on them directly —
+// `${(ps:\x1e:)str}` / `${(ps:\x1f:)str}`, where the `p` flag makes zsh recognize the `\x1e`/`\x1f`
+// escapes in the delimiter literal — with no `jq`/`python` dependency (see
+// relay/shim/zdotdir/.zshrc + relay/shim/agent-shim, which parses the same format with plain `IFS`
+// word-splitting).
+export const SHIM_RECORD_SEP = "\x1e";
+export const SHIM_FIELD_SEP = "\x1f";
+
+/** Serialize shim specs into BISMUTH_SHIM_SPECS's wire format: SHIM_FIELD_SEP-joined fields
+ *  (id, binary, realPath-or-empty, mode) per record, SHIM_RECORD_SEP-joined records. Pure. */
+export function serializeShimSpecs(specs: readonly ShimSpec[]): string {
+  return specs.map((s) => [s.id, s.binary, s.realPath ?? "", s.mode].join(SHIM_FIELD_SEP)).join(SHIM_RECORD_SEP);
+}
+
+/** Every backend this build knows, reduced to what shimSpecsFor needs — built once from the
+ *  (read-only, owned by the concurrent backends task) catalog. */
+const BACKEND_SHIM_CANDIDATES: BackendShimCandidate[] = BACKEND_LIST.map((b) => ({
+  id: b.id,
+  binary: b.binary,
+  agentsGraph: b.capabilities.agentsGraph,
+  terminal: b.capabilities.terminal,
+}));
+
+/** Resolved once at module load (mirrors REAL_CLAUDE's "resolved once" pattern) — includes claude
+ *  itself (mode "hooks"), so the zsh init's per-backend loop replaces its old single hardcoded
+ *  `claude()` definition with one generated from this same data, claude included. */
+const SHIM_SPECS: ShimSpec[] = shimSpecsFor(BACKEND_SHIM_CANDIDATES, whichBinary, {
+  wrapperReportingEnabled: WRAPPER_REPORTING_ENABLED,
+});
+
+/**
+ * Create (once, at module load) a temp dir holding one symlink per resolvable "wrapper"-mode
+ * backend, each pointing at the generic multi-call shim script (relay/shim/agent-shim) — the
+ * non-zsh equivalent of the per-backend zsh functions. Returns undefined when there's nothing to
+ * wire up (today, always: WRAPPER_REPORTING_ENABLED is false, so `specs` never contains a resolved
+ * "wrapper" entry). Best-effort: any fs failure degrades to "no wrapper shim dir" rather than
+ * breaking terminal spawning — mirrors ensurePool's try/catch discipline below.
+ */
+function buildWrapperShimDir(specs: readonly ShimSpec[]): string | undefined {
+  const wrapperEntries = specs.filter((s) => s.mode === "wrapper" && s.realPath);
+  if (!wrapperEntries.length) return undefined;
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "bismuth-agent-shim-"));
+    for (const s of wrapperEntries) symlinkSync(AGENT_SHIM_SCRIPT, join(dir, s.binary));
+    return dir;
+  } catch {
+    return undefined;
+  }
+}
+
+const WRAPPER_SHIM_DIR = buildWrapperShimDir(SHIM_SPECS);
+
 export interface PtyEnvParams {
   base: Record<string, string | undefined>;
   /** Base URL of this app's core server — where the relay hooks POST. */
@@ -97,6 +259,23 @@ export interface PtyEnvParams {
    *  enabled. Its presence is the gate: the relay recall/collect hooks + the memory MCP
    *  tools target this dir, and no-op when it's absent (daemon off / non-Bismuth session). */
   memoryDir?: string;
+  /**
+   * Per-backend shim specs — claude (mode "hooks") plus any resolvable "wrapper"-mode backends,
+   * built once at module load by shimSpecsFor() over agentBackends/catalog.ts's BACKEND_LIST (see
+   * SHIM_SPECS). Serialized into BISMUTH_SHIM_SPECS so the zsh init (relay/shim/zdotdir/.zshrc)
+   * defines one shell function per entry, replacing the old single hardcoded `claude` function.
+   * Omitted/empty → no BISMUTH_SHIM_SPECS is set at all, and the zsh init's own `whence -p`
+   * fallback is the only resolution path left (unchanged from before this field existed).
+   */
+  shimSpecs?: ShimSpec[];
+  /**
+   * PATH dir holding a symlink-per-wrapper-backend to relay/shim/agent-shim — the non-zsh
+   * equivalent of the wrapper-mode zsh functions (see buildWrapperShimDir). Undefined/omitted when
+   * there's nothing to wire up (including always, today: WRAPPER_REPORTING_ENABLED defaults false).
+   * Only prepended to PATH when `shimSpecs` actually contains a resolved wrapper-mode entry —
+   * otherwise an empty dir would be added to PATH for no reason.
+   */
+  wrapperShimDir?: string;
 }
 
 /**
@@ -146,11 +325,21 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
     // pre-resolved binary — the zdotdir .zshrc resolves `claude` from the rc-loaded PATH.
     env.BISMUTH_RELAY_PLUGIN = p.pluginDir;
     env.ZDOTDIR = p.zdotDir;
+    // Data-driven shim specs (claude + any enabled wrapper-mode backends) for the zsh init's
+    // per-backend loop — see shimSpecsFor/serializeShimSpecs above. Omitted when there's nothing
+    // to describe, so an old-shaped caller (no shimSpecs passed) produces byte-identical env to
+    // before this field existed.
+    if (p.shimSpecs && p.shimSpecs.length) env.BISMUTH_SHIM_SPECS = serializeShimSpecs(p.shimSpecs);
     if (p.realClaude) {
       env.BISMUTH_REAL_CLAUDE = p.realClaude;
       // Fallback for non-zsh shells: prepend the PATH shim (avoid a trailing empty PATH
       // element, which POSIX reads as cwd). Needs a resolved binary to exec.
       env.PATH = env.PATH ? `${p.shimDir}:${env.PATH}` : p.shimDir;
+    }
+    // Non-zsh equivalent for wrapper-mode backends: prepend the per-backend symlink dir, but only
+    // when it actually holds a resolved wrapper entry (an empty/absent dir has nothing to add).
+    if (p.wrapperShimDir && p.shimSpecs?.some((s) => s.mode === "wrapper" && s.realPath)) {
+      env.PATH = env.PATH ? `${p.wrapperShimDir}:${env.PATH}` : p.wrapperShimDir;
     }
   }
   return env;
@@ -199,6 +388,8 @@ function spawnSession(opts: SpawnOpts): Session {
     shimDir: SHIM_DIR,
     zdotDir: ZDOTDIR_DIR,
     memoryDir: opts.memoryDir,
+    shimSpecs: SHIM_SPECS,
+    wrapperShimDir: WRAPPER_SHIM_DIR,
   });
 
   const pty = spawnPty(shell, loginShellArgs(), {

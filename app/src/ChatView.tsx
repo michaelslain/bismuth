@@ -41,7 +41,7 @@ import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
 import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, computeChromeToggle, computeChromeCommand } from "./chatSlashCommands";
 import { chatComputerUse, setChatComputerUse } from "./chatComputerUse";
 import { resolveInitialModel, reconcileManifestModel, modelOptionFor, modelLabelFor } from "./chatModelResolution";
-import { CHAT_PROVIDER_OPTIONS, modelPriceBadge, modelStorageKeys, opencodeAuthSummary, OPENCODE_LOGIN_COMMAND, providerStorageKey, providerSupportsClaudeControls, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
+import { CHAT_PROVIDER_OPTIONS, modelPriceBadge, modelStorageKeys, opencodeAuthSummary, OPENCODE_LOGIN_COMMAND, providerCan, providerStorageKey, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
 import { restoreQueuedComposerState } from "./chatQueueRestore";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
@@ -697,15 +697,14 @@ export function ChatView(props: {
           // Claude-only: opencode has no permission modes / effort levels — its sessions run
           // `--auto` (the same effective posture) and these controls are hidden in the header.
           modeEnforced = true;
-          const claudeControls = providerSupportsClaudeControls(provider());
-          if (claudeControls && frame.manifest.permissionMode !== permMode()) {
+          if (providerCan(provider(), "permissionModes") && frame.manifest.permissionMode !== permMode()) {
             sendJson({ type: "set_permission_mode", mode: permMode() });
           }
           // Re-apply the user's persisted reasoning-effort level (FEATURE #63) to this fresh session
           // so it sticks across new/resumed chats — the wire carries no current-effort to reconcile
           // against, so we push it once here. Only when a level was actually chosen ("" leaves the
           // model default). applyFlagSettings server-side no-ops a level the model doesn't support.
-          if (claudeControls && effort()) sendJson({ type: "set_effort", effort: effort() });
+          if (providerCan(provider(), "effort") && effort()) sendJson({ type: "set_effort", effort: effort() });
           // Model precedence (Bug #89): a RESUMED conversation owns its model — the manifest
           // reports the session's own saved choice (server per-session store; the CLI restores it
           // too), so ADOPT it into this tab's key. A FRESH session instead inherits the user's
@@ -1490,7 +1489,7 @@ export function ChatView(props: {
     // config/plugin commands + /init + /review, RE-FIX #90) but have no --chrome capability;
     // the provider-agnostic client commands (/rename, /color) ride along for both providers.
     const cmds = withClientSlashCommands(manifest()?.slashCommands ?? []).filter(
-      (c) => providerSupportsClaudeControls(provider()) || c !== "chrome",
+      (c) => providerCan(provider(), "computerUse") || c !== "chrome",
     );
     return cmds.filter((c) => c.toLowerCase().startsWith(q)).slice(0, 50);
   });
@@ -1915,11 +1914,12 @@ export function ChatView(props: {
             </Show>
           </div>
         </Show>
-        {/* Claude-specific controls (card #90 graceful degradation): permission modes, --chrome,
-            and the Claude Code session-history picker have no opencode counterpart (`opencode run`
-            is non-interactive + a separate session store) — hidden rather than broken. The Effort
-            picker above hides itself (opencode models carry no effortLevels). */}
-        <Show when={providerSupportsClaudeControls(provider())}>
+        {/* Graceful degradation (card #90), now per-CAPABILITY rather than per-provider: each
+            control renders iff the active backend declares the capability it needs
+            (core/src/agentBackends/catalog.ts). A backend that lacks one hides that control rather
+            than breaking — and a backend that HAS it (e.g. a CLI with real approval modes) gets it
+            without a code change here. The Effort picker above hides itself off the models frame. */}
+        <Show when={providerCan(provider(), "computerUse")}>
           {/* Browser/computer-use (--chrome): same toggle as the /chrome slash command
               (toggleComputerUse) — persists the setting AND retargets the LIVE session, which picks
               the flag up on the next message via a respawn that resumes this conversation (BUG #87). */}
@@ -1930,6 +1930,8 @@ export function ChatView(props: {
             variant={chatComputerUse(props.chatId) ? "selected" : "normal"}
             onClick={toggleComputerUse}
           />
+        </Show>
+        <Show when={providerCan(provider(), "permissionModes")}>
           {/* Permission mode: rendered from the START (not gated on the manifest) so the header is
               populated the instant the chat opens (BUG #14). Seeded to the app default (Bypass) and
               updated live — the user's picks and each manifest flow through permMode(). */}
@@ -1939,8 +1941,11 @@ export function ChatView(props: {
             options={PERMISSION_MODES}
             onChange={setPermissionMode}
           />
-          {/* History (resume a past Claude Code session) — always available, even before the first
-              turn's manifest. The history panel anchors to this wrapper. */}
+        </Show>
+        <Show when={providerCan(provider(), "sessionPicker")}>
+          {/* History (resume a past session from the backend's own store) — always available, even
+              before the first turn's manifest. The history panel anchors to this wrapper. Gated on
+              sessionPicker, NOT resume: opencode resumes per tab but exposes no cross-session list. */}
           <div class="chat-history-anchor">
             <IconButton
               icon="MessagesSquare"

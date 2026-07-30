@@ -34,14 +34,21 @@ async function knownVaultRoots(): Promise<string[]> {
 interface DaemonSettings {
   enabled: boolean
   name: string
+  /** settings.daemon.backend — a REQUEST, not a grant; session.ts's resolveDaemonBackend is the
+   *  actual gate. Defaults to "claude" on anything missing/malformed. */
+  backend: string
+  /** settings.codex.writeAgentsMd — opt-in, default false; see VaultContext.codexWriteAgentsMd. */
+  codexWriteAgentsMd: boolean
 }
 
-/** A vault's daemon config: the `enabled` master switch from the vault's `.settings` file, and the
- *  `name` from the .daemon/identity.md frontmatter (the name lives WITH the identity, not in
- *  settings). A missing/corrupt settings reads as disabled; a missing identity → default name.
- *  Never throws. */
+/** A vault's daemon config: the `enabled` master switch + `backend`/`codexWriteAgentsMd` choices
+ *  from the vault's `.settings` file, and the `name` from the .daemon/identity.md frontmatter (the
+ *  name lives WITH the identity, not in settings). A missing/corrupt settings reads as disabled +
+ *  "claude" + off; a missing identity → default name. Never throws. */
 async function readDaemonSettings(root: string): Promise<DaemonSettings> {
   let enabled = false
+  let backend = "claude"
+  let codexWriteAgentsMd = false
   // Settings live in the single `.settings` file. The daemon is a separate process that may read a
   // vault BEFORE core migrates it, so fall back to the interim `.settings/settings.yaml` and the
   // legacy root `settings.yaml` — first readable wins. (Reading a dir, e.g. an interim `.settings/`,
@@ -49,9 +56,14 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
   for (const rel of [".settings", join(".settings", "settings.yaml"), "settings.yaml"]) {
     try {
       const doc = parse(await readFile(join(root, rel), "utf-8")) as
-        | { daemon?: { enabled?: unknown } }
+        | { daemon?: { enabled?: unknown; backend?: unknown }; codex?: { writeAgentsMd?: unknown } }
         | null
-      if (doc !== null) { enabled = doc.daemon?.enabled === true; break }
+      if (doc !== null) {
+        enabled = doc.daemon?.enabled === true
+        if (typeof doc.daemon?.backend === "string" && doc.daemon.backend.trim()) backend = doc.daemon.backend.trim()
+        codexWriteAgentsMd = doc.codex?.writeAgentsMd === true
+        break
+      }
     } catch {
       // unreadable/missing/dir → try the next shape
     }
@@ -65,7 +77,7 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
     // no identity.md → vaultPaths falls back to "daemon"
   }
 
-  return { enabled, name }
+  return { enabled, name, backend, codexWriteAgentsMd }
 }
 
 // ── "Last seen" must mean "actually in use" ───────────────────────────────────────────────────
@@ -170,7 +182,7 @@ export async function loadEnabledVaults(): Promise<VaultContext[]> {
   const out: VaultContext[] = []
   for (const root of await knownVaultRoots()) {
     const s = await readDaemonSettings(root)
-    if (s.enabled) out.push(vaultPaths(root, s.name))
+    if (s.enabled) out.push(vaultPaths(root, s.name, s.backend, s.codexWriteAgentsMd))
   }
   // Serving these vaults IS the "still in use" signal core's TTL is asking about — record it.
   // Fire-and-forget + throttled: a cron tick never waits on a registry write.
@@ -184,7 +196,7 @@ export async function loadAllVaults(): Promise<Array<{ ctx: VaultContext; enable
   const out: Array<{ ctx: VaultContext; enabled: boolean }> = []
   for (const root of await knownVaultRoots()) {
     const s = await readDaemonSettings(root)
-    out.push({ ctx: vaultPaths(root, s.name), enabled: s.enabled })
+    out.push({ ctx: vaultPaths(root, s.name, s.backend, s.codexWriteAgentsMd), enabled: s.enabled })
   }
   return out
 }

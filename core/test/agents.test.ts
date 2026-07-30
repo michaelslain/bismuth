@@ -298,3 +298,33 @@ test("several subagents under one session, plus a second session whose tab is cl
   expect(g.edges).toContainEqual({ from: "agent:sess:s1", to: "agent:sub:a2", kind: "message" });
   expect(g.edges.some((e) => e.to === "agent:sub:a3")).toBe(false);
 });
+
+// --- multi-backend session nodes -----------------------------------------------------------------
+
+test("a non-claude session node carries its backend; a claude one omits it", () => {
+  const g = buildAgentGraph(
+    {
+      sessions: [
+        { sessionId: "s1", terminalId: "t1", cwd: "/x/vault", backend: "claude", lastSeen: 1000 },
+        { sessionId: "s2", terminalId: "t2", cwd: "/x/vault", backend: "codex", lastSeen: 1000 },
+      ],
+      subagents: [],
+    },
+    new Set(["t1", "t2"]),
+    1000,
+  );
+  const claudeNode = g.nodes.find((n) => n.id === "agent:sess:s1");
+  const codexNode = g.nodes.find((n) => n.id === "agent:sess:s2");
+  // Omitted for claude so an all-Claude graph's payload is byte-identical to before.
+  expect(claudeNode).not.toHaveProperty("backend");
+  expect(codexNode?.backend).toBe("codex");
+});
+
+test("a session with no backend at all (an old reporter's snapshot) renders as before", () => {
+  const g = buildAgentGraph(
+    { sessions: [{ sessionId: "s1", terminalId: "t1", cwd: "/x/vault", lastSeen: 1000 }], subagents: [] },
+    new Set(["t1"]),
+    1000,
+  );
+  expect(g.nodes.find((n) => n.id === "agent:sess:s1")).not.toHaveProperty("backend");
+});

@@ -84,6 +84,9 @@ export function buildAgentGraph(
       label: basename(s.cwd) || s.terminalId,
       kind: "agent",
       state: awake ? "awake" : "idle",
+      // Which CLI is running in this tab. Omitted for "claude" so the payload — and the rendering
+      // of an all-Claude graph, which is what most vaults have — is byte-identical to before.
+      ...(s.backend && s.backend !== "claude" ? { backend: s.backend } : {}),
     });
   }
 

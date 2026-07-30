@@ -146,6 +146,8 @@ export interface PtyEnvParams {
   pluginDir: string;      // relay/ dir — BISMUTH_RELAY_BUNDLE in the bundle, else ../../relay
   shimDir: string;        // path to relay/shim/
   zdotDir: string;        // path to relay/shim/zdotdir/ (zsh-only init)
+  shimSpecs?: ShimSpec[];      // per-backend shim specs (claude + any enabled wrapper backends) — see below
+  wrapperShimDir?: string;     // PATH dir of per-wrapper-backend symlinks to relay/shim/agent-shim
 }
 
 export function buildPtyEnv(p: PtyEnvParams): Record<string, string>
@@ -177,6 +179,18 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string>
 | `BISMUTH_REAL_CLAUDE` | Resolved path to the real `claude` binary |
 | `PATH` | `shimDir:${original PATH}` — prepends the shim for non-zsh shells (needs a resolved binary to exec) |
 
+**Additionally, when `shimSpecs` is non-empty (see "Generalizing beyond claude" below):**
+
+| Variable | Value |
+|----------|-------|
+| `BISMUTH_SHIM_SPECS` | `serializeShimSpecs(shimSpecs)` — one delimited record per backend |
+
+**Additionally, when `wrapperShimDir` is set AND `shimSpecs` contains a resolved `"wrapper"`-mode entry:**
+
+| Variable | Value |
+|----------|-------|
+| `PATH` | `wrapperShimDir:${PATH}` — the non-zsh multi-call shim dir, prepended in front of whatever else is already there |
+
 The decoupling matters in the bundled app: the sidecar's minimal launchd `PATH` may not contain the user's `claude`, so `realClaude` is null — but the zdotdir `.zshrc` sources the user's `~/.zshrc` and then resolves `claude` itself (`whence -p claude`), so the relay `claude` function is still defined.
 
 ### Relay dir + claude binary resolution
@@ -184,6 +198,60 @@ The decoupling matters in the bundled app: the sidecar's minimal launchd `PATH` 
 `RELAY_PLUGIN_DIR` is `process.env.BISMUTH_RELAY_BUNDLE ?? resolve(import.meta.dir, "..", "..", "relay")` — the Tauri-staged relay resource in the bundle (where `import.meta.dir` is a virtual path), the source `relay/` in dev. `SHIM_AVAILABLE = existsSync(<zdotdir>)`.
 
 `REAL_CLAUDE` is resolved **once at module load** via `whichClaude()` (`core/src/claudeWhich.ts`) — `Bun.which("claude", …)` against a `PATH` augmented with `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin`, and the nvm node bins (`$NVM_DIR/versions/node/<version>/bin`, default-alias version first then the rest newest-first — `nvmBinPaths()`), so it resolves a `claude` installed via Homebrew *or* nvm even from a packaged GUI app's minimal `PATH`. Resolved before the shim dir is on `PATH`, so the shim's `exec` never recurses. Null when not found — see the zdotdir fallback above.
+
+### Generalizing beyond claude: `shimSpecsFor` + per-backend wrapping
+
+The `claude`-only mechanism above generalizes to any agent-CLI backend (`core/src/agentBackends/catalog.ts`'s `BACKEND_LIST`) via a pure spec builder, exported alongside `buildPtyEnv`:
+
+```ts
+export interface BackendShimCandidate {
+  id: string;                                        // backend id, e.g. "claude", "opencode"
+  binary: string;                                     // binary/function name to resolve + wrap
+  agentsGraph: "hooks" | "wrapper" | "none";           // BackendCapabilities.agentsGraph
+  terminal: boolean;                                   // BackendCapabilities.terminal
+}
+
+export interface ShimSpec {
+  id: string;
+  binary: string;
+  realPath: string | null;    // resolved path, or null — the zsh init retries via `whence -p`
+  mode: "hooks" | "wrapper";
+}
+
+export function shimSpecsFor(
+  backends: readonly BackendShimCandidate[],
+  resolve: (binary: string) => string | null,
+  opts: { wrapperReportingEnabled: boolean },
+): ShimSpec[]
+
+export function serializeShimSpecs(specs: readonly ShimSpec[]): string
+```
+
+`shimSpecsFor` is the pure decision function, unit-tested the same way `buildPtyEnv` is:
+- **`"hooks"`** (today: only claude) → always included — the relay plugin is injected directly (`--plugin-dir <relay>`).
+- **`"wrapper"`** (a CLI with no hook system of its own) → included **only** when `wrapperReportingEnabled` is true; otherwise treated exactly like `"none"` (no spec, no function, no PATH entry — zero behavior change). See `WRAPPER_REPORTING_ENABLED` below.
+- **`"none"`** → never included; the backend resolves via the shell's ordinary `PATH`, untouched.
+- A backend `resolve()` can't find still gets a spec entry with `realPath: null` (not dropped) — the zsh init gets its own `whence -p` shot at it after the user's rc loads, same as claude always could. Non-zsh PATH-shim generation only wires up entries that DID resolve (there's no rc-sourcing step to retry after for a plain PATH shim).
+- Claude can never receive a `"wrapper"` entry, even if the catalog were ever misconfigured to claim one.
+
+**Delimiter choice**: `BISMUTH_SHIM_SPECS` is a flat string, `SHIM_RECORD_SEP` (`\x1e`, ASCII Record Separator) between records and `SHIM_FIELD_SEP` (`\x1f`, ASCII Unit Separator) between fields (`id`, `binary`, `realPath`-or-empty, `mode`) within a record. Both are reserved by the ASCII standard for exactly this — delimiting fields/records in plain text — and, for that reason, never legitimately appear in a filesystem path. zsh splits on them with the `(ps:\x1e:)`/`(ps:\x1f:)` parameter-expansion flags (the `p` flag makes zsh recognize the `\x1e`/`\x1f` escapes in the delimiter literal); the non-zsh shim script (`relay/shim/agent-shim`) parses the same format with plain `IFS` word-splitting. No `jq`/`python` dependency either way.
+
+**`WRAPPER_REPORTING_ENABLED`** (`core/src/terminal.ts`, currently `false`): wrapping an interactive TUI in an extra process risks signal handling, tty ownership, and exit-code fidelity for the payoff of one agents-graph node. It defaults OFF until a human has verified, by hand, that a wrapped backend's signals and exit codes survive under a **real** PTY — `relay/test/wrap.test.ts` verifies the mechanism itself (signal forwarding, exit-code relay, the never-wrap-claude guard) against a stub binary + a mock relay server, which is not the same as a real agent CLI's own tty/signal semantics. Flip the constant once that's been checked; every consumer (`shimSpecsFor`, `wrap.ts`, the zsh init, `agent-shim`) already reacts correctly the moment it does. The catalog's per-backend `agentsGraph: "wrapper"` flag remains the OTHER gate — both must agree before a given backend is actually wrapped.
+
+### `relay/bin/wrap.ts` — the generic session reporter
+
+For a `"wrapper"`-mode backend, the generated shell function (or PATH-shim symlink) execs `relay/bin/wrap.ts <backendId> <realBinaryPath> [args…]` instead of the real binary directly:
+
+1. Mints a session id, and — only when `CLAUDE_TERMINAL_ID` is set and `backendId !== "claude"` — `POST /relay/session` with `{ sessionId, terminalId, cwd, backend: backendId }` (reusing `relay/lib/report.ts`'s `terminalId()`/`postRelay()`, the same best-effort/short-timeout/all-errors-swallowed discipline every relay hook follows).
+2. Runs the real binary via `Bun.spawn` with `stdio: ["inherit", "inherit", "inherit"]`, so it keeps owning the tty.
+3. Installs `SIGINT`/`SIGTERM` handlers that forward the signal to the child — registering a handler suppresses Bun's default terminate-on-signal action for the wrapper itself, so it survives long enough to relay the child's real exit code and report session end, instead of racing its own teardown against the child's.
+4. Awaits `child.exited` (which already encodes signal termination as `128+N`, matching normal shell convention), reports `/relay/session/end` (if it reported start), and `process.exit`s with that same code.
+
+Never wraps Claude Code — see the guard in `wrap.ts`'s own header. It has real hooks; adding a process layer around a user's daily driver would be pure risk for zero telemetry gain.
+
+### `relay/shim/agent-shim` — the non-zsh equivalent for wrapper backends
+
+A generic multi-call script (like `busybox`): `core/src/terminal.ts`'s `buildWrapperShimDir` creates one symlink per resolvable `"wrapper"`-mode backend, named after its binary, all pointing at this one file. It reads its own invoked name (`${0##*/}`), looks it up in `BISMUTH_SHIM_SPECS`, and either `exec`s the real binary directly (`"hooks"` mode) or through `wrap.ts` (`"wrapper"` mode). `claude` keeps its own dedicated `relay/shim/claude` file, fed by `BISMUTH_REAL_CLAUDE`/`BISMUTH_RELAY_PLUGIN` exactly as before — unchanged.
 
 ### Gotchas
 
@@ -590,4 +658,4 @@ The "you" hub and `you → session` edges are injected on the frontend. The `Age
 - **Multiple windows**: each Bismuth window runs its own backend (different port). In-tab `claude` sessions report to that window's backend only, because `CLAUDE_RELAY_URL` is set to `http://localhost:<server.port>` at session creation time.
 - **Sessions without `CLAUDE_TERMINAL_ID`**: if `claude` is run outside a Bismuth terminal (e.g. in a standalone shell), the relay hook is not loaded at all (requires `--plugin-dir`). Even if somehow loaded, the `CLAUDE_TERMINAL_ID` gate in `lib/report.ts` makes every hook a no-op.
 
-Source: `core/src/terminal.ts`, `app/src/Terminal.tsx`, `relay/hooks/hooks.json`, `relay/bin/session-start-hook.ts`, `relay/bin/recall-hook.ts`, `relay/bin/subagent-start-hook.ts`, `relay/bin/subagent-stop-hook.ts`, `relay/lib/report.ts`, `relay/shim/claude`, `relay/shim/zdotdir/.zshrc`, `relay/shim/zdotdir/.zprofile`, `relay/shim/zdotdir/.zshenv`, `core/src/relay.ts`, `core/src/agents.ts`, `core/src/server.ts`, `app/src/graph/agentGraphSig.ts`, `app/src/graph/AgentsGraph.tsx`, `core/test/terminal.test.ts`, `core/test/relay.test.ts`, `core/test/agents.test.ts`
+Source: `core/src/terminal.ts`, `app/src/Terminal.tsx`, `relay/hooks/hooks.json`, `relay/bin/session-start-hook.ts`, `relay/bin/recall-hook.ts`, `relay/bin/subagent-start-hook.ts`, `relay/bin/subagent-stop-hook.ts`, `relay/bin/wrap.ts`, `relay/lib/report.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `relay/shim/zdotdir/.zshrc`, `relay/shim/zdotdir/.zprofile`, `relay/shim/zdotdir/.zshenv`, `core/src/agentBackends/catalog.ts`, `core/src/relay.ts`, `core/src/agents.ts`, `core/src/server.ts`, `app/src/graph/agentGraphSig.ts`, `app/src/graph/AgentsGraph.tsx`, `core/test/terminal.test.ts`, `core/test/relay.test.ts`, `core/test/agents.test.ts`, `relay/test/wrap.test.ts`

@@ -5,8 +5,10 @@ import {
   modelStorageKeys,
   opencodeAuthSummary,
   OPENCODE_LOGIN_COMMAND,
+  providerCan,
+  providerInstallHint,
+  providerLabel,
   providerStorageKey,
-  providerSupportsClaudeControls,
   sanitizeChatProvider,
 } from "./chatProvider";
 
@@ -39,12 +41,81 @@ describe("model persistence keys", () => {
 });
 
 describe("header gating + options", () => {
-  test("Claude-specific controls render only for claude", () => {
-    expect(providerSupportsClaudeControls("claude")).toBe(true);
-    expect(providerSupportsClaudeControls("opencode")).toBe(false);
+  // Each header control asks for the capability it actually needs, so the degradation profile is
+  // per-capability data (core/src/agentBackends/catalog.ts) rather than a `provider === "claude"`
+  // check that would give every future backend Claude's exact profile whether or not it applied.
+  test("Claude declares the interactive capabilities its header controls need", () => {
+    expect(providerCan("claude", "permissionModes")).toBe(true);
+    expect(providerCan("claude", "computerUse")).toBe(true);
+    expect(providerCan("claude", "sessionPicker")).toBe(true);
+    expect(providerCan("claude", "effort")).toBe(true);
   });
-  test("both providers are offered, claude first (the default)", () => {
-    expect(CHAT_PROVIDER_OPTIONS.map((o) => o.value)).toEqual(["claude", "opencode"]);
+  test("opencode hides exactly the controls neither server nor run mode can drive", () => {
+    // permissionModes/computerUse/sessionPicker/effort stay hidden either way (no drivable mode
+    // switch, no --chrome equivalent, no cross-session list, no effort levels reported). images
+    // flipped to true once server mode's real FilePartInput attachment path was verified live —
+    // see catalog.ts's OPENCODE descriptor.
+    expect(providerCan("opencode", "permissionModes")).toBe(false);
+    expect(providerCan("opencode", "computerUse")).toBe(false);
+    expect(providerCan("opencode", "sessionPicker")).toBe(false);
+    expect(providerCan("opencode", "effort")).toBe(false);
+    expect(providerCan("opencode", "images")).toBe(true);
+  });
+  test("resume and sessionPicker are distinct: opencode resumes per tab with no cross-session list", () => {
+    expect(providerCan("opencode", "resume")).toBe(true);
+    expect(providerCan("opencode", "historyReplay")).toBe(true);
+    expect(providerCan("opencode", "sessionPicker")).toBe(false);
+  });
+  test("permission PROMPTS and permission MODES are separate capabilities", () => {
+    // These were one flag. An ACP backend can park a session/request_permission as a live
+    // `permission` frame but has no mode picker, so the single flag rendered a picker whose
+    // selections silently went nowhere — a capability claiming something the backend cannot do.
+    // Claude has both. opencode's server mode raises a real `permission` ask/respond cycle
+    // (verified live for both allow and deny) but still has no MODE-switch equivalent, so it now
+    // matches ACP's split exactly: prompts true, modes false.
+    expect(providerCan("claude", "permissionPrompts")).toBe(true);
+    expect(providerCan("claude", "permissionModes")).toBe(true);
+    expect(providerCan("opencode", "permissionPrompts")).toBe(true);
+    expect(providerCan("opencode", "permissionModes")).toBe(false);
+    expect(providerCan("cline", "permissionPrompts")).toBe(true);
+    expect(providerCan("cline", "permissionModes")).toBe(false);
+  });
+  test("an unknown backend id degrades to the default's capabilities instead of throwing", () => {
+    expect(providerCan("gpt-cli" as never, "permissionModes")).toBe(true);
+  });
+  test("every known backend is offered, claude first (the default)", () => {
+    // Grew from ["claude","opencode"] once the ACP agents (chatProviders/acp/) landed, then grew
+    // again with the native "codex" backend (chatProviders/codex/) — core/src/agentBackends/
+    // catalog.ts BACKEND_IDS is the single source of truth this list mirrors.
+    expect(CHAT_PROVIDER_OPTIONS.map((o) => o.value)).toEqual([
+      "claude",
+      "opencode",
+      "codex",
+      "cline",
+      "gemini",
+      "goose",
+      "openclaw",
+    ]);
+    expect(CHAT_PROVIDER_OPTIONS[0]?.label).toBe("Claude Code");
+  });
+  test("the ACP adapters are hidden from the picker but still selectable by id", () => {
+    // "Claude Code (ACP)" beside "Claude Code" is a trap: strictly worse (a third-party bridge
+    // fetched by npx, fewer capabilities) while reading as though it were newer. Same for
+    // "Codex (ACP)" now that a native codex driver exists. They stay resolvable so a hand-edited
+    // .settings or an existing per-tab key keeps working.
+    const offered = CHAT_PROVIDER_OPTIONS.map((o) => o.value);
+    expect(offered).not.toContain("claude-code-acp");
+    expect(offered).not.toContain("codex-acp");
+    expect(sanitizeChatProvider("claude-code-acp")).toBe("claude-code-acp");
+    expect(sanitizeChatProvider("codex-acp")).toBe("codex-acp");
+  });
+  test("native codex is offered, and it is NOT the ACP bridge", () => {
+    expect(CHAT_PROVIDER_OPTIONS.find((o) => o.value === "codex")?.label).toBe("OpenAI Codex");
+  });
+  test("labels + install hints come from the catalog", () => {
+    expect(providerLabel("opencode")).toBe("opencode");
+    expect(providerInstallHint("opencode")).toContain("opencode.ai");
+    expect(providerInstallHint("claude")).toContain("claude");
   });
   test("provider key is per-tab", () => {
     expect(providerStorageKey("a")).not.toBe(providerStorageKey("b"));

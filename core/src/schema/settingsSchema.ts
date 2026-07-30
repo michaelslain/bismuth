@@ -8,6 +8,14 @@ import type { Schema, SchemaEntry, PropertyType } from "./types";
 import { COMMAND_IDS } from "../commands";
 import { KEYBINDING_CATALOG } from "../keybindings";
 import { THEME_NAMES as THEME_NAME_TUPLE } from "../theme/tokens";
+import { BACKEND_IDS, BACKEND_LIST, DEFAULT_BACKEND } from "../agentBackends/catalog";
+
+// Which backends can run a vault's daemon brain at all — derived from the catalog (today: just
+// "claude" and "codex"), so this enum never drifts from BackendCapabilities.daemon. Note this is
+// NOT the security gate: resolveDaemonBackend (daemon/src/daemon/session.ts) still refuses any
+// non-Claude backend for a vault with hidden notes regardless of what's picked here — this enum
+// only bounds the settings UI to backends that HAVE a daemon implementation at all.
+const DAEMON_BACKEND_IDS = BACKEND_LIST.filter((b) => b.capabilities.daemon).map((b) => b.id);
 
 // Kept in lockstep with app/src/settings.ts FONT_STACKS. One family does the whole
 // interface: all five Monaspace variants, no serif/system-ui.
@@ -24,6 +32,14 @@ const ICON_NAMES = [
 // CALENDAR_VIEWS must stay in sync with `ViewType` in app/src/calendar/types.ts
 // (currently 'month' | 'week' | '3day' | 'day'). If ViewType changes, update here.
 const CALENDAR_VIEWS = ["month", "week", "3day", "day"];
+// The chat-provider enum is sourced from the agent-backend catalog
+// (core/src/agentBackends/catalog.ts) — the same source the router, the frontend picker and the
+// capability gating read, so adding a backend never needs a schema edit. catalog.ts is import-free
+// by design, so pulling it in here keeps this module bundle-safe for the app.
+const CHAT_PROVIDER_IDS = [...BACKEND_IDS];
+const CHAT_PROVIDER_DOC =
+  `Default chat provider for NEW chat tabs: ${BACKEND_LIST.map((b) => `"${b.id}" runs ${b.label}`).join(", ")}. ` +
+  "Each chat can still pick its own provider in the header.";
 
 const enumType = (values: string[]): PropertyType => ({ kind: "enum", values });
 const object = (fields: Schema): SchemaEntry => ({ type: { kind: "object", fields } });
@@ -202,6 +218,11 @@ export const SETTINGS_SCHEMA: Schema = {
   daemon: object({
     enabled: { type: "boolean", default: false, doc: "Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the .daemon folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (.daemon/identity.md frontmatter), not here." },
     inboxRetentionDays: { type: "number", default: 7, min: 1, max: 90, doc: "How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker." },
+    backend: {
+      type: enumType(DAEMON_BACKEND_IDS),
+      default: DEFAULT_BACKEND,
+      doc: 'Which agent CLI runs this vault\'s daemon brain (unattended, resumable, headless): "claude" (default) or "codex". This is a REQUEST, not a guarantee — resolveDaemonBackend (daemon/src/daemon/session.ts) refuses any non-Claude backend for a vault with even one hidden/chat-only note (only Claude Code can enforce the visibility gate) and degrades to "claude" instead, logging why. Clear the vault\'s hidden notes to actually run another backend.',
+    },
   }),
   // Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself
   // (see core/src/selfUpdate.ts); by default that's manual via the update banner.
@@ -217,8 +238,39 @@ export const SETTINGS_SCHEMA: Schema = {
   }),
   chat: object({
     computerUse: { type: "boolean", default: false, doc: "Enable Claude's browser/computer-use capability (--chrome) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave). Claude Code provider only." },
-    // Coupled to ChatProviderId in core/src/chatProviders/index.ts.
-    provider: { type: enumType(["claude", "opencode"]), default: "claude", doc: "Default chat provider for NEW chat tabs: \"claude\" runs Claude Code, \"opencode\" runs the opencode CLI. Each chat can still pick its own provider in the header." },
+    // Derived from the agent-backend catalog — no hand-maintained copy to drift from BACKEND_IDS.
+    provider: { type: enumType(CHAT_PROVIDER_IDS), default: DEFAULT_BACKEND, doc: CHAT_PROVIDER_DOC },
+  }),
+  // Multi-CLI MCP registration (core/src/agentBackends/mcpRegistrars.ts): which OTHER agent CLIs,
+  // besides Claude Code (which always auto-registers on boot via bismuthInstall.ts), also get
+  // Bismuth's stdio MCP server (docs + bismuth CLI + memory tools) written into their own global
+  // config. Deliberately opt-in and empty by default — writing into a user's Codex/Cline/OpenClaw/
+  // Gemini/Qwen/Copilot/Amp/Droid/Crush/Goose config uninvited is intrusive in a way `claude mcp
+  // add` isn't for a Claude-first app. Register via `bismuth install --mcp <cli>` (or `--mcp
+  // all`); this setting just records the user's chosen set for a future UI toggle to read/write.
+  mcp: object({
+    registerWith: {
+      type: { kind: "list", item: "string" },
+      default: [],
+      doc: 'Additional agent CLIs (besides Claude Code, which always auto-registers) to register Bismuth\'s MCP server with, e.g. ["codex", "gemini"] — so those CLIs get Bismuth\'s docs/CLI/memory tools. Registrar ids: codex, cline, openclaw, gemini, qwen, copilot, amp, droid, crush, goose. Listing a CLI here IS the opt-in: registration runs on the next app start (and on demand via `bismuth install --mcp <cli>` / `--mcp all`). Empty by default, so Bismuth never writes into another CLI\'s config uninvited. Registration is idempotent and never clobbers an entry it didn\'t write.',
+    },
+  }),
+  // OpenAI Codex-specific opt-ins (core/src/agentBackends/agentsMd.ts + codexHooks.ts). Codex has no
+  // system-prompt flag and no PATH-shim hook mechanism — AGENTS.md and a project-scoped
+  // .codex/hooks.json are its OWN designed channels for memory + session telemetry, but both mean
+  // writing into files the user may hand-edit, so — same precedent as mcp.registerWith — both
+  // default off and are opt-in.
+  codex: object({
+    writeAgentsMd: {
+      type: "boolean",
+      default: false,
+      doc: "Let Bismuth write/refresh a managed block in this vault's AGENTS.md with a short persona/memory note for the Codex CLI (its chat + daemon sessions have no system-prompt flag — AGENTS.md is Codex's own designed channel for this, and Cursor/Amp/Droid share the same convention). The block is delimited by markers and never touches surrounding prose; off by default because writing into a file you may hand-edit is opt-in.",
+    },
+    installRelayHooks: {
+      type: "boolean",
+      default: false,
+      doc: "Let Bismuth write a project-scoped .codex/hooks.json (+ its small reporting script) into this vault so a Codex session run in a Bismuth terminal tab or chat reports its lifecycle into the in-app agents graph — the same role Claude Code's relay plugin plays. Off by default: writing into the vault is opt-in.",
+    },
   }),
   srs: object({
     baseEase: { type: "number", default: 250, min: 130, max: 400, doc: "Starting ease factor for a new flashcard (SM-2; higher = longer intervals)." },

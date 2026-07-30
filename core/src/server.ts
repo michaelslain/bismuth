@@ -60,7 +60,7 @@ import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarge
 import { UI_CONTROL_BLOCKLIST } from "./commands";
 import { writeRunRecord } from "./runRegistry";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, type AppConfig, SETTINGS_FILE, setFolderIcon, setFolderVisibility, readDailyNotes } from "./settings";
+import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, readMcpRegisterWith, type AppConfig, SETTINGS_FILE, setFolderIcon, setFolderVisibility, readDailyNotes } from "./settings";
 import { resolveVisibility, resolveFolderVisibility, type Visibility } from "./visibility";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
@@ -815,10 +815,12 @@ export function createServer(cfg: CoreConfig) {
     // update the in-process agent registry; they are NOT vault mutations, so they
     // live in the read table (no cache invalidation). All are best-effort: the hooks
     // never block the user, so a 400 here is silently swallowed client-side.
+    // `backend` names which agent CLI is reporting (a backend id — "claude", "codex", …). Optional:
+    // the original Claude-only hooks don't send it, and the registry defaults it to "claude".
     "POST /relay/session": async (req) => {
-      const { sessionId, terminalId, cwd } = (await req.json()) as { sessionId?: string; terminalId?: string; cwd?: string };
+      const { sessionId, terminalId, cwd, backend } = (await req.json()) as { sessionId?: string; terminalId?: string; cwd?: string; backend?: string };
       if (!sessionId || !terminalId) return error("missing sessionId/terminalId", 400);
-      registerSession({ sessionId, terminalId, cwd: cwd ?? "" });
+      registerSession({ sessionId, terminalId, cwd: cwd ?? "", backend });
       return ok({ ok: true });
     },
 
@@ -2080,7 +2082,12 @@ if (import.meta.main) {
   // staged tools resource (BISMUTH_INSTALL_SRC). Version-gated → no-op when unchanged.
   // Best-effort + non-blocking; never crashes the server.
   if (process.env.BISMUTH_INSTALL_SRC) {
-    ensureBismuthInstalled(process.env.BISMUTH_INSTALL_SRC)
+    // `mcp.registerWith` names the OTHER agent CLIs the user opted into (Claude always registers).
+    // Read here rather than inside the installer so bismuthInstall.ts stays settings-agnostic and
+    // unit-testable; an unreadable settings file yields [] and changes nothing.
+    readMcpRegisterWith(vault)
+      .catch(() => [] as string[])
+      .then((registerWith) => ensureBismuthInstalled(process.env.BISMUTH_INSTALL_SRC, undefined, { registerWith }))
       .then((r) => {
         console.log(`bismuth tools: ${r.action}`);
         for (const w of r.warnings) console.warn(`bismuth tools: ${w}`);

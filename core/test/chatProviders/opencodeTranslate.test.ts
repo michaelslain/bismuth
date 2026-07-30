@@ -2,18 +2,28 @@
 // against event shapes captured from a live `opencode run --format json` (v1.17.15).
 import { describe, expect, test } from "bun:test";
 import {
+  buildOpencodePromptParts,
+  commandEntriesFromApi,
+  modelEntriesFromProviders,
+  type OpencodeApiProvider,
+  newOpencodeServerTurnState,
   newOpencodeTurnState,
   opencodeErrorMessage,
+  opencodePermissionResponse,
   opencodeTitleFromPrompt,
   OPENCODE_BUILTIN_COMMANDS,
   parseOpencodeAuthList,
   parseOpencodeDebugConfigCommands,
   parseOpencodeModels,
   parseOpencodeModelsVerbose,
+  parseOpencodePermissionAsk,
   parseOpencodeRunCommand,
   pickZenFreeModel,
+  splitOpencodeModelId,
   translateOpencodeEvent,
   translateOpencodeExport,
+  translateOpencodeServerEvent,
+  translateOpencodeSessionMessages,
   withOpencodeBuiltinCommands,
   withZenFreeRotate,
   zenFreeModelIds,
@@ -428,5 +438,305 @@ describe("Zen free-model rotation", () => {
 
   test("the virtual id looks like provider/model (setModel's shape check must accept it)", () => {
     expect(/^[\w.-]+\/[\w.:-]+$/.test(ZEN_FREE_ROTATE_ID)).toBe(true);
+  });
+});
+
+// ── opencode SERVER mode (`opencode serve` + @opencode-ai/sdk) ──────────────────────────────────────
+// Every fixture below is captured byte-shape-accurate from a REAL `opencode serve` (1.18.4) session:
+// a real prompt, a real bash tool call behind a permission ask (both "once" and "reject" answered
+// live), and a real image attachment — not paraphrased from the SDK's generated types, which were
+// independently confirmed to have drifted from live behavior (see opencodeServer.ts).
+
+const SES = "ses_05009a939ffetx8dxiZyL3yO6d";
+
+function messageUpdated(id: string, role: "user" | "assistant"): unknown {
+  return { type: "message.updated", properties: { sessionID: SES, info: { id, sessionID: SES, role } } };
+}
+function partUpdated(part: Record<string, unknown>): unknown {
+  return { type: "message.part.updated", properties: { sessionID: SES, part: { sessionID: SES, ...part } } };
+}
+function partDelta(messageID: string, partID: string, delta: string): unknown {
+  return { type: "message.part.delta", properties: { sessionID: SES, messageID, partID, field: "text", delta } };
+}
+
+describe("translateOpencodeServerEvent", () => {
+  test("a delta for the user's OWN echoed prompt part is never re-rendered as assistant output", () => {
+    const state = newOpencodeServerTurnState();
+    translateOpencodeServerEvent(messageUpdated("msg_u1", "user"), state);
+    expect(translateOpencodeServerEvent(partUpdated({ id: "prt_u1", messageID: "msg_u1", type: "text", text: "hello" }), state)).toEqual([]);
+    expect(translateOpencodeServerEvent(partDelta("msg_u1", "prt_u1", "hello"), state)).toEqual([]);
+  });
+
+  test("real token-level deltas stream as assistant-text, keyed off the part's kind learned from its creation event", () => {
+    const state = newOpencodeServerTurnState();
+    translateOpencodeServerEvent(messageUpdated("msg_a1", "assistant"), state);
+    // The part is CREATED with empty text (verified live: reasoning/text parts always start this way).
+    translateOpencodeServerEvent(partUpdated({ id: "prt_r1", messageID: "msg_a1", type: "reasoning", text: "" }), state);
+    expect(translateOpencodeServerEvent(partDelta("msg_a1", "prt_r1", "The"), state)).toEqual([{ type: "thinking", text: "The" }]);
+    expect(translateOpencodeServerEvent(partDelta("msg_a1", "prt_r1", " user"), state)).toEqual([{ type: "thinking", text: " user" }]);
+    translateOpencodeServerEvent(partUpdated({ id: "prt_t1", messageID: "msg_a1", type: "text", text: "" }), state);
+    expect(translateOpencodeServerEvent(partDelta("msg_a1", "prt_t1", "Hi"), state)).toEqual([{ type: "assistant-text", text: "Hi" }]);
+  });
+
+  test("the FINAL settled message.part.updated snapshot is de-duped against deltas already streamed", () => {
+    const state = newOpencodeServerTurnState();
+    translateOpencodeServerEvent(messageUpdated("msg_a1", "assistant"), state);
+    translateOpencodeServerEvent(partUpdated({ id: "prt_t1", messageID: "msg_a1", type: "text", text: "" }), state);
+    translateOpencodeServerEvent(partDelta("msg_a1", "prt_t1", "Hi"), state);
+    // The settled snapshot repeats the FULL text — already-emitted length is subtracted (unseenSuffix).
+    expect(translateOpencodeServerEvent(partUpdated({ id: "prt_t1", messageID: "msg_a1", type: "text", text: "Hi" }), state)).toEqual([]);
+  });
+
+  test("a part that never streamed deltas at all still replays in full off its ONE settled snapshot", () => {
+    const state = newOpencodeServerTurnState();
+    translateOpencodeServerEvent(messageUpdated("msg_a1", "assistant"), state);
+    expect(translateOpencodeServerEvent(partUpdated({ id: "prt_t1", messageID: "msg_a1", type: "text", text: "whole thing" }), state)).toEqual([
+      { type: "assistant-text", text: "whole thing" },
+    ]);
+  });
+
+  test("tool lifecycle (pending -> running -> completed) — real live capture", () => {
+    const state = newOpencodeServerTurnState();
+    translateOpencodeServerEvent(messageUpdated("msg_a1", "assistant"), state);
+    expect(
+      translateOpencodeServerEvent(
+        partUpdated({ id: "prt_tool1", messageID: "msg_a1", type: "tool", tool: "bash", callID: "call_1", state: { status: "pending", input: {}, raw: "" } }),
+        state,
+      ),
+    ).toEqual([{ type: "tool-use", id: "call_1", name: "bash", input: {} }]);
+    expect(
+      translateOpencodeServerEvent(
+        partUpdated({
+          id: "prt_tool1",
+          messageID: "msg_a1",
+          type: "tool",
+          tool: "bash",
+          callID: "call_1",
+          state: { status: "running", input: { command: "echo hi" }, time: { start: 1 } },
+        }),
+        state,
+      ),
+    ).toEqual([]); // already-started chip, still running — no new frame
+    expect(
+      translateOpencodeServerEvent(
+        partUpdated({
+          id: "prt_tool1",
+          messageID: "msg_a1",
+          type: "tool",
+          tool: "bash",
+          callID: "call_1",
+          state: { status: "completed", input: { command: "echo hi" }, output: "hi\n", title: "echo hi", time: { start: 1, end: 2 } },
+        }),
+        state,
+      ),
+    ).toEqual([{ type: "tool-result", id: "call_1", content: "hi\n", isError: false }]);
+  });
+
+  test("a denied tool call surfaces the rejection message as an errored tool-result — real live capture", () => {
+    const state = newOpencodeServerTurnState();
+    translateOpencodeServerEvent(messageUpdated("msg_a1", "assistant"), state);
+    translateOpencodeServerEvent(partUpdated({ id: "prt_tool1", messageID: "msg_a1", type: "tool", tool: "bash", callID: "call_1", state: { status: "pending", input: {}, raw: "" } }), state);
+    const frames = translateOpencodeServerEvent(
+      partUpdated({
+        id: "prt_tool1",
+        messageID: "msg_a1",
+        type: "tool",
+        tool: "bash",
+        callID: "call_1",
+        state: { status: "error", input: { command: "whoami" }, error: "The user rejected permission to use this specific tool call.", time: { start: 1, end: 2 } },
+      }),
+      state,
+    );
+    expect(frames).toEqual([{ type: "tool-result", id: "call_1", content: "The user rejected permission to use this specific tool call.", isError: true }]);
+  });
+
+  test("step-start/step-finish/session/permission events carry no frame here (permission is a separate function)", () => {
+    const state = newOpencodeServerTurnState();
+    expect(translateOpencodeServerEvent({ type: "step-start" }, state)).toEqual([]);
+    expect(translateOpencodeServerEvent({ type: "session.idle", properties: { sessionID: SES } }, state)).toEqual([]);
+    expect(translateOpencodeServerEvent({ type: "permission.asked", properties: { id: "per_1" } }, state)).toEqual([]);
+    expect(translateOpencodeServerEvent(partUpdated({ id: "p", messageID: "m", type: "step-finish", reason: "stop", cost: 1 }), state)).toEqual([]);
+  });
+
+  test("malformed events never throw", () => {
+    const state = newOpencodeServerTurnState();
+    expect(translateOpencodeServerEvent(null, state)).toEqual([]);
+    expect(translateOpencodeServerEvent("garbage", state)).toEqual([]);
+    expect(translateOpencodeServerEvent({}, state)).toEqual([]);
+  });
+});
+
+describe("translateOpencodeSessionMessages", () => {
+  // Same shape GET /session/{id}/message returns (server mode), verified live: Array<{info:{role},
+  // parts}> — no top-level {info:{title},messages} wrapper, unlike `opencode export`'s JSON.
+  const messages = [
+    { info: { role: "user", id: "m1" }, parts: [{ type: "text", text: "list the files" }] },
+    {
+      info: { role: "assistant", id: "m2" },
+      parts: [
+        { type: "reasoning", text: "checking" },
+        { type: "tool", tool: "read", callID: "call_1", state: { status: "completed", input: { p: 1 }, output: "note.md" } },
+        { type: "text", text: "One file: note.md" },
+      ],
+    },
+  ];
+
+  test("replays the same frame sequence translateOpencodeExport produces for the equivalent export doc", () => {
+    expect(translateOpencodeSessionMessages(messages)).toEqual([
+      { type: "user-message", text: "list the files" },
+      { type: "thinking", text: "checking" },
+      { type: "tool-use", id: "call_1", name: "read", input: { p: 1 } },
+      { type: "tool-result", id: "call_1", content: "note.md", isError: false },
+      { type: "assistant-text", text: "One file: note.md" },
+    ]);
+  });
+
+  test("tolerates malformed input", () => {
+    expect(translateOpencodeSessionMessages(null)).toEqual([]);
+    expect(translateOpencodeSessionMessages("garbage")).toEqual([]);
+    expect(translateOpencodeSessionMessages([{ info: { role: "user" } }])).toEqual([]);
+  });
+});
+
+describe("parseOpencodePermissionAsk", () => {
+  test("the LIVE observed shape (permission.asked, 'permission'/'patterns'/'metadata', no 'title')", () => {
+    // Byte-accurate capture (opencode 1.18.4): a real bash-tool permission ask.
+    const ev = {
+      type: "permission.asked",
+      properties: {
+        id: "per_faff75445001RF7wMtJI0tPp3D",
+        sessionID: SES,
+        permission: "bash",
+        patterns: ["echo hello-bismuth-test"],
+        metadata: { command: "echo hello-bismuth-test" },
+        always: ["echo *"],
+        tool: { messageID: "msg_1", callID: "call_1" },
+      },
+    };
+    expect(parseOpencodePermissionAsk(ev)).toEqual({
+      id: "per_faff75445001RF7wMtJI0tPp3D",
+      toolName: "bash",
+      input: { command: "echo hello-bismuth-test" },
+    });
+  });
+
+  test("falls back to patterns when metadata is empty", () => {
+    const ev = { type: "permission.asked", properties: { id: "per_1", permission: "webfetch", patterns: ["https://example.com"], metadata: {} } };
+    expect(parseOpencodePermissionAsk(ev)).toEqual({ id: "per_1", toolName: "webfetch", input: { pattern: ["https://example.com"] } });
+  });
+
+  test("also accepts the SDK-DECLARED shape (permission.updated, 'type'/'pattern'/'title') in case a future release reverts to it", () => {
+    const ev = {
+      type: "permission.updated",
+      properties: { id: "per_2", type: "edit", pattern: "src/*.ts", title: "Edit file", metadata: {}, sessionID: SES, messageID: "m", time: { created: 1 } },
+    };
+    expect(parseOpencodePermissionAsk(ev)).toEqual({ id: "per_2", toolName: "edit", input: { pattern: "src/*.ts" } });
+  });
+
+  test("non-permission events and malformed input yield null", () => {
+    expect(parseOpencodePermissionAsk({ type: "session.idle", properties: {} })).toBeNull();
+    expect(parseOpencodePermissionAsk({ type: "permission.asked", properties: {} })).toBeNull(); // no id
+    expect(parseOpencodePermissionAsk(null)).toBeNull();
+    expect(parseOpencodePermissionAsk("garbage")).toBeNull();
+  });
+});
+
+describe("opencodePermissionResponse", () => {
+  test("maps allow/deny/always onto the server's once/reject/always — verified live for once + reject", () => {
+    expect(opencodePermissionResponse("allow")).toBe("once");
+    expect(opencodePermissionResponse("allow", false)).toBe("once");
+    expect(opencodePermissionResponse("allow", true)).toBe("always");
+    expect(opencodePermissionResponse("deny")).toBe("reject");
+    expect(opencodePermissionResponse("deny", true)).toBe("reject"); // deny always wins over "always"
+  });
+});
+
+describe("splitOpencodeModelId", () => {
+  test("splits at the FIRST slash", () => {
+    expect(splitOpencodeModelId("opencode/big-pickle")).toEqual({ providerID: "opencode", modelID: "big-pickle" });
+    expect(splitOpencodeModelId("moonshotai/kimi-k2.5")).toEqual({ providerID: "moonshotai", modelID: "kimi-k2.5" });
+  });
+
+  test("rejects anything that doesn't look like a model id", () => {
+    expect(splitOpencodeModelId("not-a-model-id")).toBeNull();
+    expect(splitOpencodeModelId("")).toBeNull();
+    expect(splitOpencodeModelId("has spaces/model")).toBeNull();
+  });
+});
+
+describe("modelEntriesFromProviders", () => {
+  // Trimmed from a REAL `GET /config/providers` response (opencode 1.18.4).
+  const providers: OpencodeApiProvider[] = [
+    {
+      id: "opencode",
+      models: {
+        "big-pickle": { id: "big-pickle", name: "Big Pickle", cost: { input: 0, output: 0 } },
+        "claude-sonnet-4-6": { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", cost: { input: 3, output: 15 } },
+        "kimi-k2.5": { id: "kimi-k2.5", name: "Kimi K2.5", cost: { input: 0.6, output: 2.5 } },
+      },
+    },
+    {
+      id: "moonshotai",
+      models: { "kimi-k2.5": { id: "kimi-k2.5", name: "Kimi K2.5", cost: { input: 0.6, output: 3 } } },
+    },
+  ];
+
+  test("classifies free vs paid off real cost fields and disambiguates name collisions across providers", () => {
+    const out = modelEntriesFromProviders(providers);
+    expect(out.find((m) => m.value === "opencode/big-pickle")).toEqual({ value: "opencode/big-pickle", label: "Big Pickle", description: "opencode/big-pickle", effortLevels: [], free: true });
+    expect(out.find((m) => m.value === "opencode/claude-sonnet-4-6")?.free).toBe(false);
+    expect(out.find((m) => m.value === "opencode/kimi-k2.5")?.label).toBe("Kimi K2.5 (opencode)");
+    expect(out.find((m) => m.value === "moonshotai/kimi-k2.5")?.label).toBe("Kimi K2.5 (moonshotai)");
+  });
+
+  test("tolerates malformed/missing providers or models", () => {
+    expect(modelEntriesFromProviders([])).toEqual([]);
+    expect(modelEntriesFromProviders([{ id: "x" }])).toEqual([]);
+    expect(modelEntriesFromProviders([null as never, { id: "opencode", models: { a: { id: "a" } } }])).toEqual([
+      { value: "opencode/a", label: "opencode/a", description: "opencode/a", effortLevels: [] },
+    ]);
+  });
+});
+
+describe("commandEntriesFromApi", () => {
+  // Trimmed from a REAL `GET /command` response (opencode 1.18.4).
+  const commands = [
+    { name: "init", description: "guided AGENTS.md setup", source: "command", template: "Create or update..." },
+    { name: "deepwork", template: "Start a deepwork session for a complex coding task" },
+    { name: "has space", template: "unusable" },
+  ];
+
+  test("description wins, template's first line stands in, un-typable names are skipped", () => {
+    expect(commandEntriesFromApi(commands)).toEqual([
+      { name: "init", description: "guided AGENTS.md setup" },
+      { name: "deepwork", description: "Start a deepwork session for a complex coding task" },
+    ]);
+  });
+
+  test("tolerates empty/malformed input", () => {
+    expect(commandEntriesFromApi([])).toEqual([]);
+  });
+});
+
+describe("buildOpencodePromptParts", () => {
+  test("text only", () => {
+    expect(buildOpencodePromptParts("hello")).toEqual([{ type: "text", text: "hello" }]);
+  });
+
+  test("text + image rides a FilePartInput with a data: URL — verified live (200, model read real pixels)", () => {
+    expect(buildOpencodePromptParts("what color?", [{ media_type: "image/png", data: "AAAA" }])).toEqual([
+      { type: "text", text: "what color?" },
+      { type: "file", mime: "image/png", url: "data:image/png;base64,AAAA" },
+    ]);
+  });
+
+  test("multiple images each get their own file part", () => {
+    const parts = buildOpencodePromptParts("compare", [
+      { media_type: "image/png", data: "AAAA" },
+      { media_type: "image/jpeg", data: "BBBB" },
+    ]);
+    expect(parts).toHaveLength(3);
+    expect(parts[1]).toEqual({ type: "file", mime: "image/png", url: "data:image/png;base64,AAAA" });
+    expect(parts[2]).toEqual({ type: "file", mime: "image/jpeg", url: "data:image/jpeg;base64,BBBB" });
   });
 });

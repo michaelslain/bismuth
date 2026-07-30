@@ -132,6 +132,51 @@ export function readDaemonEnabledSync(vault: string): boolean {
   return fallback;
 }
 
+/**
+ * The `mcp.registerWith` list: which OTHER agent CLIs the user opted into registering Bismuth's
+ * MCP server with (Claude Code always registers; see core/src/bismuthInstall.ts). Naming a CLI
+ * there is the consent, so boot acts on it — a setting that only recorded the choice would silently
+ * ignore a user who added one and restarted.
+ *
+ * Tolerant by design: a missing/corrupt file, a non-list value, or non-string entries all yield the
+ * safe empty list rather than throwing. Unknown ids are harmless — they simply match no registrar.
+ */
+export async function readMcpRegisterWith(vault: string): Promise<string[]> {
+  try {
+    const res = await readSettings(vault);
+    const mcp = res?.data?.mcp as { registerWith?: unknown } | undefined;
+    const list = mcp?.registerWith;
+    if (!Array.isArray(list)) return [];
+    return list.filter((v): v is string => typeof v === "string" && v.trim() !== "");
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The `codex.*` opt-ins (core/src/agentBackends/agentsMd.ts + codexHooks.ts): whether Bismuth may
+ * write a managed AGENTS.md block and/or a project-scoped `.codex/hooks.json` into this vault.
+ * Naming precedent: `readMcpRegisterWith` above — writing into a file the user may hand-edit is
+ * opt-in, so a missing/corrupt file or a non-boolean value all degrade to "off" rather than "on".
+ */
+export interface CodexOptIns {
+  writeAgentsMd: boolean;
+  installRelayHooks: boolean;
+}
+
+export async function readCodexOptIns(vault: string): Promise<CodexOptIns> {
+  try {
+    const res = await readSettings(vault);
+    const codex = res?.data?.codex as { writeAgentsMd?: unknown; installRelayHooks?: unknown } | undefined;
+    return {
+      writeAgentsMd: codex?.writeAgentsMd === true,
+      installRelayHooks: codex?.installRelayHooks === true,
+    };
+  } catch {
+    return { writeAgentsMd: false, installRelayHooks: false };
+  }
+}
+
 /** Parse the `properties:` section of settings.yaml into a validation Schema,
  *  merged over the built-in properties (tags/aliases/cssclasses). */
 export async function getVaultSchema(vault: string): Promise<Schema> {
