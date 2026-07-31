@@ -11,7 +11,7 @@
 // singletons lazily off `globalThis.window`. So the DOM globals are installed in beforeAll (NOT at
 // module top level) and exactly what we added is deleted in afterAll.
 import { GlobalWindow } from "happy-dom";
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import {
   AsciiGraphRenderer, DIM_ALPHA, EDGE_DIM_ALPHA, EDGE_W_GAIN, EDGE_W_MAX,
   deriveEdgeBaseAlpha, safeDepthBand, trimSegmentForClearance,
@@ -2727,26 +2727,41 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     levelCount: number; cellNode: Int32Array; glyphAlpha: number;
   }
 
+  /** Every renderer mounted by this block, torn down in afterEach — NOT by a `r.destroy()` at the
+   *  end of each test body. A failing `expect` throws, the trailing destroy never runs, and the
+   *  abandoned renderer keeps answering the shared rAF pump: its ticks then paint this fixture's
+   *  `[[note N]]` labels into the shared recording ctx and fail an unrelated later test, which
+   *  turns one honest failure into a confusing cascade (it did, while mutation-testing this block). */
+  const mounted: AsciiGraphRenderer[] = [];
+  afterEach(() => { for (const r of mounted.splice(0)) r.destroy(); });
+
   /** Mount with a bloom sink attached, returning the LAST field emitted. Not `mountRenderer` — that
    *  helper has no way to wire `setBloomCallback` before the first frame. */
   function mountBloom(graph: ReturnType<typeof spreadClusterGraph>, lod: boolean) {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const r = new AsciiGraphRenderer();
+    mounted.push(r);
     let last: Float32Array | null = null;
     r.mount(host, () => {});
     r.setBloomCallback((f) => { last = f; });
     r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: lod });
     r.render(graph);
+    ctx.fills.length = 0;
+    ctx.strokes.length = 0;
     frame();
     return { r, priv: r as unknown as BloomPriv, field: () => last as Float32Array | null };
   }
 
   /** Park a bloom-sinked renderer at an exact resolution progress `t` and repaint once (the band
-   *  boundaries are constants in `t`; a wheel notch is a 10% zoom stop and the two do not line up). */
+   *  boundaries are constants in `t`; a wheel notch is a 10% zoom stop and the two do not line up).
+   *  Clears the recording ctx first, as `parkAtT` does — 275 nodes x 41 stops x 2 renderers is a lot
+   *  of fills to keep around, and nothing here reads them. */
   function park(priv: BloomPriv, t: number) {
     priv.res = priv.goalRes = resFromT(t, priv.maxRes);
     priv.dirty = true;
+    ctx.fills.length = 0;
+    ctx.strokes.length = 0;
     frame(9999);
   }
 
@@ -2797,7 +2812,6 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     const stats = r.computeStats();
     expect(stats.bloomPoints).toBeGreaterThan(0);
     expect(stats.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6);
-    r.destroy();
   });
 
   it("REQUIRED — the far band's atmosphere sits where the members are, at their size (not a spike at the centroid)", () => {
@@ -2824,7 +2838,6 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     expect(mm.sdy / lm.sdy).toBeGreaterThan(0.85);
     expect(mm.sdy / lm.sdy).toBeLessThan(1.15);
     expect(lm.sdx / lm.sdy).toBeGreaterThan(1.5);               // the fixture really is anisotropic
-    masses.r.destroy(); leaves.r.destroy();
   });
 
   it("REQUIRED — no dark window and no pop anywhere on the ladder: the summarized field tracks the un-summarized one", () => {
@@ -2857,7 +2870,6 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     // construction. What "no pop" actually needs — that the handover is a genuine blend of the two
     // contributions rather than a switch — is pinned mechanically in the next test.
     // Measured range on this fixture: 0.69 .. 1.47.
-    masses.r.destroy(); leaves.r.destroy();
   });
 
   it("the handover is a BLEND: both contributions are in the point list mid-crossfade, neither is outside it", () => {
@@ -2893,7 +2905,6 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     const near = r.computeStats();
     expect(near.bloomPoints).toBe(SPREAD_COUNT);
     expect(near.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6);
-    r.destroy();
   });
 
   it("with no mass band in play the emitter is byte-for-byte the original glyph-only pass", () => {
@@ -2903,16 +2914,18 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     const host = document.createElement("div");
     document.body.appendChild(host);
     const r = new AsciiGraphRenderer();
+    mounted.push(r);                                // teardown is afterEach's job — see `mounted`
     r.mount(host, () => {});
     r.setBloomCallback(() => {});
     r.setConfig({ ...CONFIG, viewMode: "3d", showLodMasses: true });
     r.render(spreadClusterGraph());
+    ctx.fills.length = 0;
+    ctx.strokes.length = 0;
     frame();
     const stats = r.computeStats();
     expect(stats.bloomPoints).toBe(SPREAD_COUNT);   // one point per node, no clouds
     expect(stats.bloomWeight).toBeGreaterThan(0);
     expect(stats.bloomWeight).toBeLessThanOrEqual(SPREAD_COUNT); // depthAlpha <= 1 per node
-    r.destroy();
   });
 });
 
