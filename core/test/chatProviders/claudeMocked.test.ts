@@ -31,7 +31,7 @@ import { readdirSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeChat, newChatId, sendMessage } from "../../src/chat";
+import { closeChat, detachSink, newChatId, sendMessage } from "../../src/chat";
 import { whichClaude } from "../../src/claudeWhich";
 import { backendMockEnv } from "../support/backendEnv";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
@@ -202,6 +202,63 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
       // the env var was set on this test process.
       expect(claudeConfigDir).toBeDefined();
       if (claudeConfigDir) expect(readdirSync(claudeConfigDir).length).toBeGreaterThan(0);
+    },
+    60_000,
+  );
+
+  test(
+    "sendMessage()'s reopen branch (reattachSessionSink) flushes a buffered turn to the NEW sink without an extra synthetic done",
+    async () => {
+      // Regression coverage for core/src/chat.ts's sendMessage() "existing session" branch, which
+      // must call sessionSink.ts's reattachSessionSink (flush, no synthetic `done`) rather than
+      // rebindSessionSink (flush, THEN push a synthetic `done` whenever no turn is active — which it
+      // always is right here, since turn 1 below finishes before turn 2 is sent). Swapping the two
+      // is a one-word change that no prior test in this file catches: same signature, same import.
+      await setup();
+
+      const cwd = await newTempDir();
+      const chatId = newChatId();
+      chatIds.push(chatId);
+      const { sink: sink1, frames: frames1 } = makeChatFrameCollector(60_000);
+
+      // Queue turn 1, then detach the sink IMMEDIATELY (synchronously, same tick) — the drain loop's
+      // own model call is asynchronous (at least one microtask + real subprocess I/O away), so this
+      // reliably wins the race: nothing has been emitted to sink1 yet at the moment of detach.
+      await sendMessage(chatId, "hello", cwd, sink1);
+      detachSink(chatId);
+
+      // Give the whole first turn (assistant-text, result, done) time to complete while detached —
+      // generous relative to this mock's typical <200ms local turn time (see other tests in this
+      // file) — so everything it produces lands in the buffer, none of it on sink1.
+      await new Promise((r) => setTimeout(r, 2000));
+      expect(frames1.some((f) => f.type === "assistant-text")).toBe(false);
+      expect(frames1.some((f) => f.type === "done")).toBe(false);
+
+      // Reopen with a FRESH sink — this is sendMessage()'s "existing session" branch (chat.ts:783-onward).
+      const { sink: sink2, frames: frames2, waitFor: waitFor2 } = makeChatFrameCollector(60_000);
+      await sendMessage(chatId, "hello", cwd, sink2);
+
+      // Wait for the FULL picture to settle — 2 done frames total (turn 1's buffered done, then
+      // turn 2's own done) — BEFORE checking anything about order. Checking order right after the
+      // first assistant-text (before turn 1's own result/done have necessarily landed yet) is a race;
+      // waiting for both dones first makes every ordering check below run against a stable array.
+      await waitFor2((_f) => frames2.filter((x) => x.type === "done").length >= 2, 60_000);
+
+      // Turn 1's buffered tail must have arrived on sink2 (the flush) — assistant-text then done, in
+      // order — as the FIRST content, ahead of turn 2's own.
+      const firstAssistantIdx = frames2.findIndex((f) => f.type === "assistant-text");
+      expect(firstAssistantIdx).toBeGreaterThanOrEqual(0);
+      const firstAssistant = frames2[firstAssistantIdx];
+      if (firstAssistant.type === "assistant-text") expect(firstAssistant.text).toBe("Hello!");
+      const firstDoneIdx = frames2.findIndex((f) => f.type === "done");
+      expect(firstDoneIdx).toBeGreaterThan(firstAssistantIdx);
+
+      // THE discriminating assertion: exactly ONE done per real turn (2 total), never a THIRD,
+      // synthetic one squeezed in between them by a mistaken rebindSessionSink call — reattach never
+      // pushes a synthetic done; rebind always does when no turn is active, which is the case at the
+      // exact moment this reopen's flush runs (turn 1 already finished).
+      expect(frames2.filter((f) => f.type === "done").length).toBe(2);
+      expect(frames2.filter((f) => f.type === "assistant-text").length).toBe(2);
     },
     60_000,
   );

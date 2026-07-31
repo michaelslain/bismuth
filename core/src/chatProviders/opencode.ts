@@ -57,7 +57,7 @@
 // sequential — irrelevant once a server is already up and warm).
 import type { ChatFrame, ChatImage, ChatSink } from "../chat";
 import { recallMemory } from "@bismuth/memory";
-import { emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "./sessionSink";
+import { detachSessionSink, emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "./sessionSink";
 import { claudeLookupPath, claudeSpawnEnv } from "../claudeWhich";
 import { ensureOpencodeServer, registerOpencodeServerListener, type OpencodeServerHandle } from "./opencodeServer";
 import { buildDenyPaths, type DenyEntry } from "../visibility";
@@ -811,8 +811,8 @@ export function scheduleClose(chatId: string, ms: number): void {
 }
 
 /** Re-point a live session's sink at a reconnected socket, flushing frames buffered while
- *  detached; a between-turns rebind pushes a synthetic `done` (idempotent client-side) so a
- *  terminating frame lost to the dead socket can't wedge the streaming state. Mirrors chat.ts. */
+ *  detached; a between-turns rebind pushes a synthetic `done` so a terminating frame lost to the
+ *  dead socket can't wedge the streaming state. Mirrors chat.ts. */
 export function rebindSink(chatId: string, sink: ChatSink): boolean {
   const s = sessions.get(chatId);
   if (!s) return false;
@@ -820,10 +820,10 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
   return true;
 }
 
-export function detachSink(chatId: string): void {
+export function detachSink(chatId: string, sink?: ChatSink): void {
   const s = sessions.get(chatId);
   if (!s) return;
-  s.detached = true;
+  detachSessionSink(s, sink);
 }
 
 // Kill any in-flight RUN-mode opencode children on backend shutdown (mirrors chat.ts/terminal.ts).

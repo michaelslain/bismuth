@@ -52,7 +52,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { FileSink } from "bun";
 import type { ChatFrame, ChatImage, ChatManifest, ChatSink } from "../../chat";
-import { emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "../sessionSink";
+import { detachSessionSink, emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "../sessionSink";
 import { claudeSpawnEnv, whichBinary } from "../../claudeWhich";
 import type { ChatBackend, ChatTurnContext } from "../backends";
 import { readCodexOptIns } from "../../settings";
@@ -481,9 +481,9 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
   return true;
 }
 
-export function detachSink(chatId: string): void {
+export function detachSink(chatId: string, sink?: ChatSink): void {
   const s = sessions.get(chatId);
-  if (s) s.detached = true;
+  if (s) detachSessionSink(s, sink);
 }
 
 // Kill any in-flight Codex children on backend shutdown (mirrors chat.ts/opencode.ts/acp/driver.ts).

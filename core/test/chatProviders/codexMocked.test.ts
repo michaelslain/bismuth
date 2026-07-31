@@ -119,4 +119,57 @@ describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts
     },
     60_000,
   );
+
+  test(
+    "sendMessage()'s reopen branch (reattachSessionSink) flushes a buffered turn to the NEW sink without an extra synthetic done",
+    async () => {
+      // Regression coverage for core/src/chatProviders/codex/driver.ts's sendMessage() "existing
+      // session" branch, which must call sessionSink.ts's reattachSessionSink (flush, no synthetic
+      // `done`) rather than rebindSessionSink (flush, THEN push a synthetic `done` whenever no turn
+      // is active — which it always is right here, since turn 1 finishes before turn 2 is sent).
+      // Swapping the two is a one-word change no prior test in this file catches.
+      await setup();
+
+      const cwd = await newTempDir("bismuth-codex-cwd-");
+      const chatId = "codex-mocked-reopen-" + Date.now();
+      chatIds.push(chatId);
+      const { sink: sink1, frames: frames1 } = makeChatFrameCollector();
+
+      // createSession() registers the session into the driver's Map SYNCHRONOUSLY (before any
+      // subprocess I/O), so detaching immediately after this call is safe — no pre-creation wait
+      // needed here (unlike the ACP driver, whose openSession/sendMessage register asynchronously).
+      CHAT_BACKENDS.codex.sendMessage({ chatId, cwd, sink: sink1, computerUse: false, text: "hello" });
+      CHAT_BACKENDS.codex.detachSink(chatId);
+
+      // Give the whole first turn (assistant-text, result, done) time to complete while detached.
+      await new Promise((r) => setTimeout(r, 3000));
+      expect(frames1.some((f) => f.type === "assistant-text")).toBe(false);
+      expect(frames1.some((f) => f.type === "done")).toBe(false);
+
+      // Reopen with a FRESH sink — the driver's sendMessage() "existing session" branch.
+      const { sink: sink2, frames: frames2, waitFor: waitFor2 } = makeChatFrameCollector();
+      CHAT_BACKENDS.codex.sendMessage({ chatId, cwd, sink: sink2, computerUse: false, text: "hello" });
+
+      // Wait for the FULL picture to settle — 2 done frames total (turn 1's buffered done, then
+      // turn 2's own done) — BEFORE checking anything about order. Checking order right after the
+      // first assistant-text (before turn 1's own result/done have necessarily landed yet) is a race;
+      // waiting for both dones first makes every ordering check below run against a stable array.
+      await waitFor2((_f) => frames2.filter((x) => x.type === "done").length >= 2, 60_000);
+
+      // Turn 1's buffered tail must have arrived on sink2 (the flush) — assistant-text then done, in
+      // order — as the FIRST content, ahead of turn 2's own.
+      const firstAssistantIdx = frames2.findIndex((f) => f.type === "assistant-text");
+      expect(firstAssistantIdx).toBeGreaterThanOrEqual(0);
+      const firstAssistant = frames2[firstAssistantIdx];
+      if (firstAssistant.type === "assistant-text") expect(firstAssistant.text).toBe("Hello!");
+      const firstDoneIdx = frames2.findIndex((f) => f.type === "done");
+      expect(firstDoneIdx).toBeGreaterThan(firstAssistantIdx);
+
+      // THE discriminating assertion: exactly ONE done per real turn (2 total), never a THIRD,
+      // synthetic one squeezed in between them by a mistaken rebindSessionSink call.
+      expect(frames2.filter((f) => f.type === "done").length).toBe(2);
+      expect(frames2.filter((f) => f.type === "assistant-text").length).toBe(2);
+    },
+    60_000,
+  );
 });

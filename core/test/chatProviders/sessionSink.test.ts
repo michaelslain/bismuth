@@ -7,6 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ChatFrame, ChatSink } from "../../src/chat";
 import {
+  detachSessionSink,
   emit,
   MAX_BUFFERED_FRAMES,
   reattachSessionSink,
@@ -107,7 +108,7 @@ describe("rebindSessionSink — flush order", () => {
     expect(s.detached).toBe(false);
   });
 
-  test("a sink that throws mid-flush retains the failed frame + tail for one retry, without re-detaching", () => {
+  test("a sink that throws mid-flush retains the failed frame + tail, without re-detaching", () => {
     const buffered: ChatFrame[] = [textFrame(0), textFrame(1), textFrame(2)];
     const s = makeSession({ detached: true, buffer: [...buffered], turnActive: true });
     const received: ChatFrame[] = [];
@@ -120,43 +121,16 @@ describe("rebindSessionSink — flush order", () => {
 
     // f0 delivered, f1 attempted (and threw), f2 never attempted this round.
     expect(received).toEqual([textFrame(0), textFrame(1)]);
-    // The un-flushed tail is retained for one retry on the next flush — INCLUDING f1 itself, since
-    // a throw from sink(f1) proves only that THIS write failed, not that f1 was never delivered.
+    // The un-flushed tail is retained for the next flush attempt — INCLUDING f1 itself, since a
+    // throw from sink(f1) proves only that THIS write failed, not that f1 was never delivered (no
+    // reachable ChatSink actually throws today — server.ts's two ws.send wrappers both swallow their
+    // own errors — so this is defence-in-depth for a hypothetical future sink, not a live path).
     expect(s.buffer).toEqual([textFrame(1), textFrame(2)]);
     // A single write failing does NOT prove the socket is dead (an oversized frame or an unrelated
     // RangeError throws on an otherwise-healthy socket too) — only the WS close handler decides
     // that. Re-detaching here would leave the session detached with no grace-close timer armed to
     // ever reap it, buffering into the void with nothing watching.
     expect(s.detached).toBe(false);
-  });
-
-  test("a frame that fails twice is dropped, and the flush continues past it to the rest", () => {
-    const buffered: ChatFrame[] = [textFrame(0), textFrame(1), textFrame(2)];
-    const s = makeSession({ detached: true, buffer: [...buffered], turnActive: true });
-
-    // First rebind: f1 throws for the FIRST time — retained for its one retry.
-    const attempt1: ChatFrame[] = [];
-    const throwsOnF1: ChatSink = (f) => {
-      attempt1.push(f);
-      if ((f as { text: string }).text === "f1") throw new Error("write failed");
-    };
-    rebindSessionSink(s, throwsOnF1);
-    expect(attempt1).toEqual([textFrame(0), textFrame(1)]);
-    expect(s.buffer).toEqual([textFrame(1), textFrame(2)]);
-
-    // Second rebind: the SAME f1 (same object identity, carried over via the retained buffer)
-    // throws again. Its one retry is now exhausted — it must be dropped, and the flush must
-    // continue on to attempt (and deliver) f2 in this very call, rather than re-queuing itself
-    // forever and blocking everything after it.
-    const attempt2: ChatFrame[] = [];
-    const throwsOnF1Again: ChatSink = (f) => {
-      attempt2.push(f);
-      if ((f as { text: string }).text === "f1") throw new Error("write failed again");
-    };
-    rebindSessionSink(s, throwsOnF1Again);
-
-    expect(attempt2).toEqual([textFrame(1), textFrame(2)]);
-    expect(s.buffer).toEqual([]);
   });
 
   test("a re-entrant emit during a failed flush is preserved alongside the retained tail, not destroyed", () => {
@@ -348,6 +322,40 @@ describe("reattachSessionSink", () => {
     expect(s.closeTimer).toBeUndefined();
     await sleep(50);
     expect(closed).toBe(false);
+  });
+});
+
+describe("detachSessionSink — identity guard", () => {
+  test("detaches unconditionally when no sink is passed (the no-identity-available caller)", () => {
+    const liveSink: ChatSink = () => {};
+    const s = makeSession({ detached: false, sink: liveSink });
+
+    detachSessionSink(s);
+
+    expect(s.detached).toBe(true);
+  });
+
+  test("detaches when the passed sink matches the session's CURRENT sink", () => {
+    const liveSink: ChatSink = () => {};
+    const s = makeSession({ detached: false, sink: liveSink });
+
+    detachSessionSink(s, liveSink);
+
+    expect(s.detached).toBe(true);
+  });
+
+  test("does NOT detach when the passed sink does not match the session's current sink (stale-close race)", () => {
+    // The scenario this guards: a half-open drop (lid close/wifi loss/NAT timeout) — the client
+    // already reconnected with a NEW socket, whose `open` rebound the session to sinkB, BEFORE the
+    // OLD socket's (sinkA) close event finally lands and calls detachSink(chatId, sinkA). Without
+    // the guard, that stale close would re-detach a session that's live under sinkB.
+    const sinkA: ChatSink = () => {};
+    const sinkB: ChatSink = () => {};
+    const s = makeSession({ detached: false, sink: sinkB }); // already rebound to sinkB
+
+    detachSessionSink(s, sinkA); // the stale close, arriving late
+
+    expect(s.detached).toBe(false);
   });
 });
 

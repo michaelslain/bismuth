@@ -20,7 +20,7 @@ import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writ
 import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, isDeniedPath, type DenyEntry } from "./visibility";
 import { readDaemonSessionIds } from "./daemon";
 import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
-import { emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
+import { detachSessionSink, emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
 // One source of truth for how long a subagent lives in the agents graph, so the chat and relay
 // paths can't drift apart (they render as the same thing in the same view).
 import { DONE_SUBAGENT_TTL_MS, RUNNING_SUBAGENT_MAX_MS } from "./relay";
@@ -2181,10 +2181,10 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
 /** Mark a session's sink detached after an abnormal WS drop: frames buffer for the reconnect
  *  (rebindSink flushes them) instead of being fired into the dead socket and lost. Paired with
  *  scheduleClose by the server's close handler. */
-export function detachSink(chatId: string): void {
+export function detachSink(chatId: string, sink?: ChatSink): void {
   const s = sessions.get(chatId);
   if (!s) return;
-  s.detached = true;
+  detachSessionSink(s, sink);
 }
 
 export function chatSessionCount(): number {

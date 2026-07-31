@@ -41,7 +41,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ChatFrame, ChatImage, ChatSink } from "../../chat";
-import { emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "../sessionSink";
+import { detachSessionSink, emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "../sessionSink";
 import { claudeSpawnEnv, whichBinary } from "../../claudeWhich";
 import type { ChatBackend, ChatTurnContext } from "../backends";
 import type { BackendId } from "../../agentBackends/catalog";
@@ -703,10 +703,10 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
       return true;
     },
 
-    detachSink: (chatId: string) => {
+    detachSink: (chatId: string, sink?: ChatSink) => {
       const s = sessions.get(chatId);
       if (!s) return;
-      s.detached = true;
+      detachSessionSink(s, sink);
     },
 
     respondPermission: (chatId: string, id: string, behavior: "allow" | "deny", always?: boolean) => {

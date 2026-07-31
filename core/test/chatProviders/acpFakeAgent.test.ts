@@ -257,4 +257,63 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
     },
     20_000,
   );
+
+  test(
+    "sendMessage()'s reopen branch (reattachSessionSink) flushes a buffered turn to the NEW sink without an extra synthetic done",
+    async () => {
+      // Regression coverage for core/src/chatProviders/acp/driver.ts's sendMessage() "existing
+      // session" branch, which must call sessionSink.ts's reattachSessionSink (flush, no synthetic
+      // `done`) rather than rebindSessionSink (flush, THEN push a synthetic `done` whenever no turn
+      // is active — which it always is right here, since turn 1 finishes before turn 2 is sent).
+      // Swapping the two is a one-word change no prior test in this file catches — and this is the
+      // ONE driver of the four whose coverage needs no real CLI binary at all (the fake agent),
+      // guaranteed to run on every machine regardless of what's installed.
+      process.env.FAKE_ACP_MODEL_SHAPE = "old";
+      const chatId = "acp-fake-reopen-" + Date.now();
+      chatIds.push(chatId);
+      const { sink: sink1, frames: frames1, waitFor: waitFor1 } = makeChatFrameCollector(12_000);
+
+      // Pre-create the session and wait for the handshake to finish (openSession/sendMessage both
+      // spawn+register the session ASYNCHRONOUSLY — detaching before the "session" frame arrives
+      // would find no session yet and silently no-op).
+      CHAT_BACKENDS.cline.openSession({ chatId, cwd: "/tmp", sink: sink1, computerUse: false });
+      await waitFor1((f) => f.type === "session");
+
+      // Queue turn 1 (kicks off session/prompt), then detach IMMEDIATELY (synchronously, same tick)
+      // — runOrQueue's own turn work is asynchronous past its first await, so this reliably wins the
+      // race: nothing from THIS turn's prompt response has been emitted to sink1 yet.
+      CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink: sink1, computerUse: false, text: "hello" });
+      CHAT_BACKENDS.cline.detachSink(chatId);
+
+      // Give the whole first turn (assistant-text, result, done) time to complete while detached.
+      await new Promise((r) => setTimeout(r, 2000));
+      expect(frames1.some((f) => f.type === "assistant-text")).toBe(false);
+      expect(frames1.some((f) => f.type === "done")).toBe(false);
+
+      // Reopen with a FRESH sink — the driver's sendMessage() "existing session" branch.
+      const { sink: sink2, frames: frames2, waitFor: waitFor2 } = makeChatFrameCollector(12_000);
+      CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink: sink2, computerUse: false, text: "hello" });
+
+      // Wait for the FULL picture to settle — 2 done frames total (turn 1's buffered done, then
+      // turn 2's own done) — BEFORE checking anything about order. Checking order right after the
+      // first assistant-text (before turn 1's own result/done have necessarily landed yet) is a race;
+      // waiting for both dones first makes every ordering check below run against a stable array.
+      await waitFor2((_f) => frames2.filter((x) => x.type === "done").length >= 2, 12_000);
+
+      // Turn 1's buffered tail must have arrived on sink2 (the flush) — assistant-text then done, in
+      // order — as the FIRST content, ahead of turn 2's own.
+      const firstAssistantIdx = frames2.findIndex((f) => f.type === "assistant-text");
+      expect(firstAssistantIdx).toBeGreaterThanOrEqual(0);
+      const firstAssistant = frames2[firstAssistantIdx];
+      if (firstAssistant.type === "assistant-text") expect(firstAssistant.text).toBe(FAKE_TURN_TEXT);
+      const firstDoneIdx = frames2.findIndex((f) => f.type === "done");
+      expect(firstDoneIdx).toBeGreaterThan(firstAssistantIdx);
+
+      // THE discriminating assertion: exactly ONE done per real turn (2 total), never a THIRD,
+      // synthetic one squeezed in between them by a mistaken rebindSessionSink call.
+      expect(frames2.filter((f) => f.type === "done").length).toBe(2);
+      expect(frames2.filter((f) => f.type === "assistant-text").length).toBe(2);
+    },
+    20_000,
+  );
 });
