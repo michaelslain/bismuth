@@ -183,7 +183,7 @@ export function applyGraphConfig(renderer: GraphRenderer, name: ThemeName) {
     // vestigial: the field's viewport otherwise paints an opaque --graph-bg, and the two IntroGraph
     // layers CROSS-FADE (opacity 0↔1), so an opaque ground would fade the whole page background
     // between --bg and --graph-bg on every slide change — visible in three of the four themes
-    // (riso #EAE4D4 vs #DBD3BC worst). See AsciiGraphRenderer.applyGround().
+    // (riso's pair is the widest gap). See AsciiGraphRenderer.applyGround().
     transparent: true,
     backgroundColor: hexToInt(ap.background, 0x14151b),
     labelTextColor: "rgba(0,0,0,0)",

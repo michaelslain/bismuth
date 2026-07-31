@@ -1025,7 +1025,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
    * wrong for the first-run Vault Intro, which cross-fades TWO full-bleed graph layers (opacity
    * 0↔1) over the page's own `--bg`. An opaque ground there fades the entire page background
    * between `--bg` and `--graph-bg` on every slide change, and those two tokens differ in three of
-   * the four themes (riso #EAE4D4 vs #DBD3BC most visibly). The canvas itself is already
+   * the four themes (riso's pair is the widest gap). The canvas itself is already
    * transparent — paint() clears it rather than filling — so suppressing this one background is the
    * whole of it.
    *
