@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { accumulate, blur, normalise, buildBloom, FIELD_W, FIELD_H } from "./densityField";
+import {
+  accumulate, blur, normalise, buildBloom, pushCloud, cloudGrid, cloudSampleCount, FIELD_W, FIELD_H,
+  type BloomPoint,
+} from "./densityField";
 
 const sum = (f: Float32Array) => f.reduce((s, v) => s + v, 0);
 
@@ -111,6 +114,151 @@ test("buildBloom really blurs, at the right resolution and orientation", () => {
   expect(f[cy * FIELD_W + cx + 3]).toBe(0);
   expect(f[(cy + 2) * FIELD_W + cx]).toBeGreaterThan(0);
   expect(f[(cy + 3) * FIELD_W + cx]).toBe(0);
+});
+
+// --- pushCloud: emitting one SUMMARY as the cloud it stands for ---------------------------------
+
+/** Weighted mean + per-axis weighted population standard deviation of a point list. */
+function moments(pts: BloomPoint[]) {
+  let w = 0, sx = 0, sy = 0, sxx = 0, syy = 0;
+  for (const p of pts) {
+    const pw = p.weight ?? 1;
+    w += pw; sx += pw * p.x; sy += pw * p.y; sxx += pw * p.x * p.x; syy += pw * p.y * p.y;
+  }
+  const mx = sx / w, my = sy / w;
+  return { w, mx, my, sdx: Math.sqrt(Math.max(0, sxx / w - mx * mx)), sdy: Math.sqrt(Math.max(0, syy / w - my * my)) };
+}
+
+test("pushCloud spends cloudSampleCount points and preserves the total weight exactly", () => {
+  const out: BloomPoint[] = [];
+  pushCloud(out, 0.5, 0.5, 0.1, 0.05, 300);
+  expect(out.length).toBe(cloudSampleCount(0.1, 0.05));
+  expect(moments(out).w).toBeCloseTo(300, 6);
+  // ...and appends, so several aggregates can share one list.
+  const before = out.length;
+  pushCloud(out, 0.2, 0.2, 0.01, 0.01, 40);
+  expect(out.length).toBe(before + cloudSampleCount(0.01, 0.01));
+  expect(moments(out).w).toBeCloseTo(340, 6);
+});
+
+test("cloudGrid samples DENSER as the cloud grows — the spacing, not the count, is what is fixed", () => {
+  // A fixed sample count is a spacing that degrades with magnification: the samples spread apart
+  // until each is its own spike again. Small clouds stay at the floor (cheap — the common case is
+  // dozens of aggregates at fit), big ones climb to the cap.
+  expect(cloudGrid(0.002, 0.002)).toEqual({ rings: 2, perRing: 6 });   // the floor
+  expect(cloudGrid(2, 2)).toEqual({ rings: 8, perRing: 16 });          // the cap
+  // Monotone non-decreasing in spread, and genuinely climbing between the two ends.
+  const ladder = [0.002, 0.01, 0.03, 0.06, 0.1, 0.2, 0.5, 2].map((sd) => cloudSampleCount(sd, sd));
+  for (let i = 1; i < ladder.length; i++) expect(ladder[i]).toBeGreaterThanOrEqual(ladder[i - 1]);
+  expect(ladder.at(-1)! / ladder[0]).toBeGreaterThan(5);
+  // ...and what that buys: the gap between neighbouring samples on the outer ring stays well inside
+  // the blur's 12-cell reach as the cloud grows, instead of scaling with it.
+  const arcGap = (sd: number) => (2 * Math.PI * 2 * sd * FIELD_W) / cloudGrid(sd, 0).perRing;
+  const radGap = (sd: number) => (2 * sd * FIELD_W) / cloudGrid(sd, 0).rings;
+  for (const sd of [0.005, 0.02, 0.05, 0.08]) {
+    expect(arcGap(sd)).toBeLessThan(6);
+    expect(radGap(sd)).toBeLessThan(6);
+  }
+  // The exact-moment identity needs at least 3 evenly spaced points per ring at EVERY size.
+  for (const sd of [0, 0.001, 0.01, 0.1, 1]) expect(cloudGrid(sd, sd).perRing).toBeGreaterThanOrEqual(3);
+});
+
+test("pushCloud's exact moments survive every sample count cloudGrid can pick", () => {
+  // The identity is per-ring, so it must hold at the floor, at the cap, and in between — otherwise
+  // the spread an aggregate emits would drift with how magnified it happens to be.
+  for (const sd of [0.001, 0.01, 0.05, 0.12, 0.5, 3]) {
+    const out: BloomPoint[] = [];
+    pushCloud(out, 0.5, 0.5, sd, sd / 2, 100);
+    const m = moments(out);
+    expect(m.mx).toBeCloseTo(0.5, 9);
+    expect(m.my).toBeCloseTo(0.5, 9);
+    expect(m.sdx).toBeCloseTo(sd, 9);
+    expect(m.sdy).toBeCloseTo(sd / 2, 9);
+    expect(m.w).toBeCloseTo(100, 6);
+  }
+});
+
+test("pushCloud reproduces the requested centre and per-axis spread — the property emitBloom relies on", () => {
+  // The whole point: an aggregate must contribute light with the SAME second moment as the members
+  // it summarizes, or the summary out-peaks them and normalise() crushes the rest of the field to
+  // black. A uniform disc has per-axis sd R/2; dropping pushCloud's 2x scale (or emitting the
+  // aggregate as a bare point) shows up here as a spread that is half (or zero) what was asked for.
+  const out: BloomPoint[] = [];
+  pushCloud(out, 0.4, 0.6, 0.12, 0.03, 100);
+  const m = moments(out);
+  expect(m.mx).toBeCloseTo(0.4, 9);
+  expect(m.my).toBeCloseTo(0.6, 9);
+  expect(m.sdx).toBeCloseTo(0.12, 9);
+  expect(m.sdy).toBeCloseTo(0.03, 9);
+  // Anisotropy is honoured, not averaged into one radius.
+  expect(m.sdx / m.sdy).toBeCloseTo(4, 9);
+});
+
+test("pushCloud with zero spread collapses onto the centre — a point-like aggregate stays point-like", () => {
+  const out: BloomPoint[] = [];
+  pushCloud(out, 0.3, 0.7, 0, 0, 9);
+  expect(out.every((p) => p.x === 0.3 && p.y === 0.7)).toBe(true);
+  expect(moments(out).w).toBeCloseTo(9, 6);
+});
+
+test("a non-finite or negative spread degrades to that same point, and NEVER to silence", () => {
+  // This module's own version of the bug it exists to fix. Unguarded, a NaN sd makes both of
+  // pushCloud's loop bounds NaN and the aggregate emits ZERO points while its caller still counts
+  // its full weight — healthy counters, dark field, exactly the regression signature. An infinite
+  // one gets there by the other road: points `accumulate` silently drops as out-of-range.
+  for (const [sx, sy] of [[NaN, 0.1], [0.1, NaN], [NaN, NaN], [Infinity, 0.1], [0.1, -0.2]] as const) {
+    const out: BloomPoint[] = [];
+    pushCloud(out, 0.5, 0.5, sx, sy, 24);
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
+    expect(moments(out).w).toBeCloseTo(24, 6);                 // the light is not lost
+    // ...and the field really does receive it, rather than accumulate() dropping every point.
+    expect(buildBloom(out).some((v) => v > 0)).toBe(true);
+    // The bad axis reads as 0 spread; a good one alongside it is still honoured.
+    const m = moments(out);
+    expect(m.sdx).toBeCloseTo(Number.isFinite(sx) && sx > 0 ? sx : 0, 9);
+    expect(m.sdy).toBeCloseTo(Number.isFinite(sy) && sy > 0 ? sy : 0, 9);
+  }
+  // The sample count stays a real integer too — that is what goes NaN first.
+  for (const bad of [NaN, Infinity, -1]) {
+    expect(Number.isInteger(cloudSampleCount(bad, bad))).toBe(true);
+    expect(cloudSampleCount(bad, bad)).toBeGreaterThan(0);
+  }
+});
+
+test("a spread cloud does NOT out-peak the individual points it stands for", () => {
+  // The regression this exists for, at field resolution. 60 leaves spread across a wide region vs
+  // ONE aggregate of the same total weight standing in for them. Emitted as a bare point the
+  // aggregate blurs to a spike far brighter than the leaves' own field; emitted as a cloud it does
+  // not. The comparison is against the LEAVES' peak, not against a constant, so it stays true if
+  // the blur radius or the field resolution changes.
+  // Spread WIDER than the blur kernel (0.63 x 0.55 of the field vs the kernel's ~0.39 x 0.62): that
+  // is the magnified-camera regime where a point and the cloud it stands for genuinely diverge, and
+  // the regime the 60% stop is in.
+  const leaves: BloomPoint[] = [];
+  for (let i = 0; i < 60; i++) {
+    leaves.push({ x: 0.5 + ((i % 10) - 4.5) * 0.07, y: 0.5 + (Math.floor(i / 10) - 2.5) * 0.11, weight: 1 });
+  }
+  const lm = moments(leaves);
+  const asPoint: BloomPoint[] = [{ x: lm.mx, y: lm.my, weight: 60 }];
+  const asCloud: BloomPoint[] = [];
+  pushCloud(asCloud, lm.mx, lm.my, lm.sdx, lm.sdy, 60);
+
+  // Normalise hides absolute peaks (it pins every field's max to 1), so the peak comparison is on
+  // the PRE-normalisation blurred fields. One shared bracket, so the two assertions really are
+  // opposite sides of the same line: measured 6.7x for the point, 1.5x for the cloud.
+  const peak = (pts: BloomPoint[]) => Math.max(...blur(accumulate(pts, FIELD_W, FIELD_H), FIELD_W, FIELD_H, 6));
+  const leafPeak = peak(leaves);
+  expect(peak(asPoint)).toBeGreaterThan(leafPeak * 2);            // the bug: a spike
+  expect(peak(asCloud)).toBeLessThan(leafPeak * 2);               // the fix: not a spike
+  expect(peak(asCloud)).toBeGreaterThan(leafPeak * 0.5);          // ...and not a whisper either
+
+  // And what that costs on screen, post-normalisation: how much of the field survives the
+  // atmosphere's own v^4 alpha curve (GraphAtmosphere.tsx) at all, i.e. v > 0.02^(1/4).
+  const lit = (pts: BloomPoint[]) => buildBloom(pts).filter((v) => v > 0.376).length;
+  const leafLit = lit(leaves);
+  expect(lit(asPoint)).toBeLessThan(leafLit * 0.25);              // the bug: the field goes dark
+  expect(lit(asCloud)).toBeGreaterThan(leafLit * 0.5);            // the fix: it does not
 });
 
 test("denser regions are brighter — the whole point of the effect", () => {

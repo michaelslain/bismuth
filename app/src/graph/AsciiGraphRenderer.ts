@@ -64,7 +64,7 @@ import {
   EDGE_WEIGHT_BUCKETS, buildLevelEdges, computeEdgeLevelWeights, edgeWeightBucketRange,
 } from "./backbone";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
-import { buildBloom, type DensityField } from "./densityField";
+import { buildBloom, pushCloud, type BloomPoint, type DensityField } from "./densityField";
 import { dollyForT, zoomT } from "./cameraModel";
 import {
   scaleToSpacing, createSpacingCache, cloneVec3Array, type SpacingCache, type Vec3 as RespaceVec3,
@@ -91,6 +91,19 @@ export interface AsciiGraphStats {
                            // many pairs exist" — buildLevelEdges returns it precisely so a QA hook can say so.
   inkCoverage: number;     // bounding-box area of non-empty cells / (cols*rows) — glyph/label ink only;
                            // NO edge of any kind occupies a cell any more, so this is pure glyph/label ink
+  bloomPoints: number;     // points handed to buildBloom this frame (masses in the far band, glyphs in the
+                           // mid/near band, both across the crossfade — see emitBloom)
+  bloomWeight: number;     // their total PRE-NORMALISATION weight. Measured on the INPUT on purpose:
+                           // buildBloom normalises its peak to exactly 1, so the emitted field looks
+                           // equally bright whether it came from 2000 nodes or from none. ~conserved
+                           // across the mass->glyph handover; a dip here is the atmosphere going dark.
+  bloomSdx: number;        // weighted per-axis spread of those points, in 0..1 SCREEN FRACTIONS, also
+  bloomSdy: number;        // pre-blur. The blur adds a fixed ~5.3-cell variance to whatever it is
+                           // handed, which on the emitted FIELD swallows per-axis scale errors up to
+                           // ~25% — so "the summary is the right SIZE" is only checkable here, before
+                           // that convolution. Separate x and y, never one radius: the two convert
+                           // through different denominators (W vs H) and swapping them is exactly the
+                           // kind of error a single number hides.
 }
 import {
   CELL_H, CELL_W, FONT_PX,
@@ -109,6 +122,9 @@ const FOV_DEG = 60;              // same camera as the old renderer, so framing 
 // is within this fraction of the camera plane, capping `persp` at 1/NEAR_PLANE_SLACK ≈ 67×.
 const NEAR_PLANE_SLACK = 0.015;
 const MIN_PERSP = 0.05;          // far cull: a node 20x the FOCAL length behind the target is gone (see projectNodes)
+/** Shared, never-mutated "this frame has no mass band" value for `massLevelAlphas` — 3D, "local"
+ *  mode and community-less graphs assign it every frame, so it must not allocate. */
+const NO_MASS_LEVELS: readonly number[] = [];
 const ORBIT_SPEED = 0.005;       // rad per px of drag (copied)
 const DRAG_THRESHOLD = 5;        // px before a press becomes an orbit/pan rather than a click
 // TIME-based (not frame-rate dependent) exponential ease-out toward the camera goal (resolution +
@@ -362,6 +378,9 @@ interface EntityView {
   community: number;
   count: number;
   wx: number; wy: number; // members' 2D world centroid (same space as NodeView.p2)
+  sdx: number; sdy: number; // members' per-axis world spread about it (lod.ts LodCluster.sdx/sdy) —
+                          // how big the summarized thing IS, which the bloom needs and the compact
+                          // mass GLYPH's own rowR/colR deliberately are not. See emitBloom().
   color: number;          // ramp slot — the SAME key layoutClusterNames uses, so mass == name colour
   name: string;
   rowR: number; colR: number; // uncapped mass radii in cells (sqrt scaling — lod.ts massRadii)
@@ -505,6 +524,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
   /** The REAL MEMBER EDGE alpha (`bandsForT`'s near band). Consumed by strokeEdges()'s member
    *  passes only. NOT the glyph gate. */
   private memberEdgeAlpha = 1;
+  /** Per-hierarchy-level MASS alpha this frame — `lodMix()`'s `levelAlphas` (`clusterLevelAlphas ×
+   *  massAlpha`) — or `NO_MASS_LEVELS` on any frame with no mass band in play (3D, "local" mode, a
+   *  community-less graph). `emitBloom()` is its ONLY consumer, and it needs its own field rather
+   *  than reading `glyphAlpha`: the bloom's two inputs (masses, glyphs) are nonzero in DIFFERENT
+   *  bands, so one number cannot tell it which pass has ink on the field this frame. An entry above
+   *  `LOD_ALPHA_EPS` also certifies that `projectEntities(L)` ran this frame (rasterize()'s far-band
+   *  loop skips a level only when its mass alpha is at-or-below that same epsilon AND its names are
+   *  gone), so the screen positions the bloom reads off that level are never stale. */
+  private massLevelAlphas: readonly number[] = NO_MASS_LEVELS;
   private hoverEntityIdx = -1;
 
   // Per-frame QA/debug counters (see computeStats/window.__asciiGraphStats) — reset + incremented in
@@ -523,6 +551,20 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *  tier that early-returns on alpha contributes nothing. Reset by strokeEdges(), not rasterize():
    *  it counts paint work, and paint() runs after rasterize(). */
   private edgesStrokedFrame = 0;
+  /** Points handed to `buildBloom` this frame, and their total PRE-NORMALISATION weight (see
+   *  emitBloom). Both are deliberately measured on the INPUT, not the emitted field: `buildBloom`
+   *  normalises its peak cell to exactly 1, so an emitted field is equally "bright" whether it was
+   *  built from two thousand nodes or from one — a check on the output cannot tell a healthy
+   *  atmosphere from a nearly-empty one, which is exactly the failure mode this pair exists to make
+   *  visible. `bloomWeight` is the continuity number: it is ~conserved across the mass→glyph
+   *  handover by construction (a mass carries its members' weight), so a dip in it IS the dark
+   *  window. Written by emitBloom(), which runs after rasterize() in tick(). */
+  private bloomPointsFrame = 0;
+  private bloomWeightFrame = 0;
+  /** ...and their weighted per-axis spread, in screen fractions — see `AsciiGraphStats.bloomSdx`
+   *  for why the size of what the bloom emits is only measurable BEFORE `buildBloom`'s blur. */
+  private bloomSdxFrame = 0;
+  private bloomSdyFrame = 0;
 
   // Per-frame edge STROKE BUCKETS — rasterize() sorts surviving edges into these (by the alpha
   // they'll be stroked at), and paint()'s strokeEdges() issues one batched `stroke()` call per
@@ -889,7 +931,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const { rowR, colR } = massRadii(c.count, this.cellW, this.cellH);
       const ev: EntityView = {
         flat: this.entityFlat.length, level: L, community: c.community, count: c.count,
-        wx: c.wx, wy: c.wy,
+        wx: c.wx, wy: c.wy, sdx: c.sdx, sdy: c.sdy,
         color: C_FAINT, // placeholder — restyle() (called at the end of build()) assigns the real
                          // per-level community colour via rebuildEntityColors() before any paint runs
         name: this.communityNamesByLevel[L]?.get(c.community) ?? `cluster ${c.community}`,
@@ -1276,22 +1318,95 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (pct !== this.lastZoomPct) { this.lastZoomPct = pct; this.onZoom?.(pct); }
   }
 
-  /** Emit the per-frame node-density field for the phosphor bloom (densityField.ts). This field
-   *  had no atmosphere at all before — the flat --graph-bg ground drew alone. Reads the screen
-   *  positions projectNodes() already wrote this frame (nv.sx/nv.sy) rather than re-projecting —
-   *  there is only ever one projection pass per frame — and drops any node that isn't in front of
-   *  the camera (nv.projValid, the same test drawn nodes/edges gate on; buildBloom itself drops
-   *  anything that lands outside the 0..1 field once converted to a screen fraction). */
+  /**
+   * Emit the per-frame node-density field for the phosphor bloom (densityField.ts). This field had
+   * no atmosphere at all before — the flat --graph-bg ground drew alone.
+   *
+   * IT EMITS FROM WHICHEVER PASS ACTUALLY RAN. That is not a refinement, it is the whole point:
+   * the bloom is *node density* light, and which primitive carries the density on screen changes
+   * with the band (backbone.ts `bandsForT`). Reading only `this.nodes`, as this did originally, is
+   * a silent black screen across the entire far band — `rasterize()` gates `projectNodes()` on
+   * `glyphAlpha > LOD_ALPHA_EPS` (a real optimisation: it skips an O(n) projection over thousands
+   * of nodes in a band where none of them draw), so at fit every `nv.projValid` is false, the point
+   * list comes out empty, and the atmosphere goes dark in the app's DEFAULT 2D view. Neither the
+   * suite nor three reviews caught that, because the bloom is a different subsystem from the band
+   * ladder that broke it; a screenshot did. Do not re-key this off `this.nodes` alone, and do not
+   * "fix" a future version of that bug by hoisting the projection out of its gate.
+   *
+   *   far band  — the MASSES own the field: each aggregate entity emits a CLOUD (densityField.ts's
+   *               `pushCloud`) centred on its projected centroid, carrying MEMBER COUNT × that
+   *               level's own mass alpha (its depth in the hierarchy ladder) and spread over the
+   *               members' own projected extent (`sdx`/`sdy` × the same world→screen scale
+   *               `projectEntities` uses). Both halves of that are load-bearing. The COUNT weight
+   *               is what makes the handover continuous rather than merely non-empty: a mass
+   *               standing in for `count` notes contributes exactly the light those `count` glyphs
+   *               contribute once they rasterize, and `blur()` is mass-conserving, so the total
+   *               does not jump when the bands swap. The SPREAD is what stops it doing so as a
+   *               spike — see `pushCloud`'s comment for the measurement, and note the spread is the
+   *               MEMBERS' extent, not the compact mass glyph's `drawnRowR`/`drawnColR`: the bloom
+   *               summarizes the same notes the mass does, at the size those notes actually occupy.
+   *               `massLevelAlphas[L] > LOD_ALPHA_EPS` also certifies `projectEntities(L)` ran this
+   *               frame — see that field's doc comment.
+   *   mid/near  — the GLYPHS own it: the screen positions `projectNodes()` already wrote this frame
+   *               (nv.sx/nv.sy), never a re-projection (there is only ever one projection pass per
+   *               frame), dropping any node not in front of the camera (`nv.projValid`, the same
+   *               test drawn nodes/edges gate on). Weighted by depth — the same `depthAlpha` curve
+   *               the nodes themselves fade by, rather than a second invented one.
+   *   crossfade — BOTH contribute, each scaled by its own band weight (`massAlpha` distributed over
+   *               `levelAlphas`, and `glyphAlpha`), which sum to 1. No pop, no dark window.
+   *
+   * With no mass band in play (3D, "local" mode, community-less graphs) `massLevelAlphas` is empty
+   * and `glyphAlpha` is 1, so this reduces EXACTLY to the original glyph-only pass.
+   *
+   * `buildBloom` itself drops anything that lands outside the 0..1 field once converted to a screen
+   * fraction, so neither loop needs its own viewport clip.
+   */
   private emitBloom() {
     if (!this.onBloom) return;
-    const pts: { x: number; y: number; weight: number }[] = [];
-    for (const nv of this.nodes) {
-      if (!nv.projValid) continue;
-      const x = nv.sx / this.W, y = nv.sy / this.H;
-      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-      // Weight by depth so near nodes contribute more light than far ones — the same depthAlpha
-      // curve nodes themselves already fade by, rather than inventing a second one.
-      pts.push({ x, y, weight: depthAlpha(nv.dr) });
+    const pts: BloomPoint[] = [];
+    let weight = 0;
+    // The world→screen scale projectEntities() used this frame, so the emitted cloud lands exactly
+    // where the members would have. (2D only, which is the only place a mass band exists.)
+    const s = this.pxPerWorld * this.res;
+    for (let L = 0; L < this.entityLevels.length; L++) {
+      const a = this.massLevelAlphas[L] ?? 0;
+      if (a <= LOD_ALPHA_EPS) continue;
+      for (const ev of this.entityLevels[L]) {
+        const x = ev.sx / this.W, y = ev.sy / this.H;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        const w = ev.count * a;
+        pushCloud(pts, x, y, (ev.sdx * s) / this.W, (ev.sdy * s) / this.H, w);
+        weight += w;
+      }
+    }
+    if (this.glyphAlpha > LOD_ALPHA_EPS) {
+      for (const nv of this.nodes) {
+        if (!nv.projValid) continue;
+        const x = nv.sx / this.W, y = nv.sy / this.H;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        const w = depthAlpha(nv.dr) * this.glyphAlpha;
+        pts.push({ x, y, weight: w });
+        weight += w;
+      }
+    }
+    this.bloomPointsFrame = pts.length;
+    this.bloomWeightFrame = weight;
+    // Second moment of what we are about to emit. One extra pass over the list we just built (a
+    // handful of flops per point, against buildBloom's own ~128k-tap blur on the next line), and it
+    // is the ONLY place the emitted size is observable: `blur` adds a fixed variance that swamps
+    // per-axis scale errors of up to ~25% by the time the field reaches a consumer.
+    let mx = 0, my = 0, mxx = 0, myy = 0;
+    for (const p of pts) {
+      const pw = p.weight ?? 1;
+      mx += pw * p.x; my += pw * p.y;
+      mxx += pw * p.x * p.x; myy += pw * p.y * p.y;
+    }
+    if (weight > 0) {
+      const ex = mx / weight, ey = my / weight;
+      this.bloomSdxFrame = Math.sqrt(Math.max(0, mxx / weight - ex * ex));
+      this.bloomSdyFrame = Math.sqrt(Math.max(0, myy / weight - ey * ey));
+    } else {
+      this.bloomSdxFrame = 0; this.bloomSdyFrame = 0;
     }
     this.onBloom(buildBloom(pts));
   }
@@ -1414,6 +1529,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const glyphA = mix ? mix.glyphAlpha : 1;
     this.glyphAlpha = glyphA;
     this.memberEdgeAlpha = mix ? mix.memberAlpha : 1;
+    // The bloom's far-band input (see emitBloom). Assigned HERE, above the leaf gate, so it is
+    // always the CURRENT frame's mix — a frame that returns early out of any pass below still
+    // leaves the atmosphere reading this frame's bands, never the last one's.
+    this.massLevelAlphas = mix ? mix.levelAlphas : NO_MASS_LEVELS;
 
     // ---- LEVEL-DRIVEN COLOR: which (at most two, adjacent) hierarchy levels are "active" this ----
     // ---- frame, and the crossfade weight between them — off the SAME clusterLevelAlphas the -------
@@ -2841,6 +2960,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
       edgesStroked: this.edgesStrokedFrame,
       backbonePairsDropped: this.levelPairsDropped.reduce((a, b) => a + b, 0),
       inkCoverage,
+      bloomPoints: this.bloomPointsFrame,
+      bloomWeight: this.bloomWeightFrame,
+      bloomSdx: this.bloomSdxFrame,
+      bloomSdy: this.bloomSdyFrame,
     };
   }
 }

@@ -47,6 +47,15 @@ export interface LodCluster {
   /** Members' centroid in the SAME 2D world space the renderer projects (its `p2`). */
   wx: number;
   wy: number;
+  /** Per-axis population STANDARD DEVIATION of the members about that centroid, same world space.
+   *  This is how big the thing the mass summarizes actually IS — the mass GLYPH's own radii
+   *  (`massRadii`) are a compact ~√count summary and deliberately are not. Consumed by the phosphor
+   *  bloom (AsciiGraphRenderer's `emitBloom` → `densityField.ts`'s `pushCloud`), which has to emit
+   *  an aggregate as the cloud it stands for rather than as a point: see `pushCloud`'s comment for
+   *  what emitting it as a point does to the atmosphere. Costs one extra sum-of-squares in the
+   *  same single pass that already accumulates the centroid. */
+  sdx: number;
+  sdy: number;
   memberIds: string[];
 }
 
@@ -105,21 +114,32 @@ export function buildLodIndex(
 
   const out: LodLevel[] = [];
   for (let L = 0; L < levelCount; L++) {
-    const groups = new Map<number, { sx: number; sy: number; ids: string[] }>();
+    const groups = new Map<number, { sx: number; sy: number; sxx: number; syy: number; ids: string[] }>();
     for (const n of nodes) {
       const c = n.path?.[L];
       if (c == null) continue;
       let g = groups.get(c);
-      if (!g) { g = { sx: 0, sy: 0, ids: [] }; groups.set(c, g); }
-      g.sx += n.x; g.sy += n.y; g.ids.push(n.id);
+      if (!g) { g = { sx: 0, sy: 0, sxx: 0, syy: 0, ids: [] }; groups.set(c, g); }
+      g.sx += n.x; g.sy += n.y;
+      g.sxx += n.x * n.x; g.syy += n.y * n.y;
+      g.ids.push(n.id);
     }
     const clusters: LodCluster[] = [...groups.entries()]
       .filter(([, g]) => g.ids.length >= minCluster)
-      .map(([community, g]) => ({
-        level: L, community, count: g.ids.length,
-        wx: g.sx / g.ids.length, wy: g.sy / g.ids.length,
-        memberIds: g.ids,
-      }))
+      .map(([community, g]) => {
+        const n = g.ids.length;
+        const mx = g.sx / n, my = g.sy / n;
+        // E[x²] − E[x]² can go very slightly negative on floating-point cancellation for a tight
+        // cluster; clamp at 0 so `sdx`/`sdy` are never NaN (a NaN would propagate into a bloom
+        // point and silently drop it).
+        return {
+          level: L, community, count: n,
+          wx: mx, wy: my,
+          sdx: Math.sqrt(Math.max(0, g.sxx / n - mx * mx)),
+          sdy: Math.sqrt(Math.max(0, g.syy / n - my * my)),
+          memberIds: g.ids,
+        };
+      })
       .sort((a, b) => b.count - a.count || a.community - b.community);
     const indexByCommunity = new Map<number, number>();
     clusters.forEach((c, i) => indexByCommunity.set(c.community, i));
