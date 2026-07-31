@@ -259,6 +259,28 @@ Everything in §2.3. Concretely, zero tests exist for: the dolly camera and `zoo
 `trimDanglingWord`, `inViewport`, `clearAroundSelf`, `drawWorkflowLanes`, `scaleToSpacing` + the position
 caches, `BACK_INTERACT_CUTOFF`, `setFitMargin`/`setFrameOffsetY`, `VaultIntro`, `EmbeddedGraph`.
 
+### 4.4 ⚠️ CORRECTION (2026-07-31, Task 12): four listed tests moved, none of them in §4.1
+
+Wiring the three-band ladder changed behaviour three of §4.2's "LOD masses / LOD interaction" tests
+were describing. None of §4.1's 26 was touched. Recorded here so the next task does not read §4.2 as
+still literally true:
+
+- **"aggregate connectors" (LOD masses)** asserted `layerBuf` held at least one `LAYER_EDGE` cell.
+  The connectors are VECTOR strokes now — the last grid-traced primitive is gone, and no edge of any
+  kind occupies a cell. Replaced with a strictly stronger assertion (exact stroke count, both
+  endpoints matched against the two masses' cell centres, plus "no cell is ever at the edge layer").
+- **"stepping in expands to children in place"** and **"clicking the coarsest entity expands exactly
+  one level"** both asserted `cellNode` was empty at the level-boundary stop (t ≈ 0.4). That stop is
+  now INSIDE the mass→glyph crossfade `[0.32, 0.46]`, so glyphs emerging through a dissolving mass is
+  the designed behaviour — `drawEntityMasses`' "members emerge through the dissolving parent" always
+  described exactly this, it just used to happen at `FILE_LABEL_REVEAL_T`. What still separates "one
+  level in" from "straight to the leaves" is the LABEL ladder, so both now assert that instead.
+- **"hover dims by strict incidence" (§4.1)** was NOT weakened: it read the private field
+  `leafAlpha`, which is `memberEdgeAlpha` now. A rename in the cast, nothing else.
+
+Two §4.3 gaps are also closed: `buildLevelEdges`/`levelPairs` and the intra-cluster mesh both have
+end-to-end coverage in `AsciiGraphRenderer.test.ts`'s "THE THREE-BAND LADDER" block.
+
 ---
 
 ## 5. Merge order

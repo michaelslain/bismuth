@@ -29,8 +29,18 @@
 //
 // The pure arithmetic (grid sizing, world→cell snapping, the glyph ramp, the cell hit test) lives
 // in ./asciiGrid.ts and is unit-tested there. Its Bresenham trace ("- | / \" with "+" junctions) is
-// now used only by the opt-in LOD AGGREGATE connectors (drawAggregateEdges) — real leaf edges are
-// vector-stroked instead (see strokeEdges()).
+// no longer used by this renderer at all: the LOD aggregate connectors were its last caller, and
+// they are vector strokes now too (see the GROUP LINES block) — a character is an order of
+// magnitude more ink than a hairline, and at the default 2D view they read as a stair-stepped grey
+// scribble across the field rather than as structure. EVERY line the field draws is a vector stroke.
+//
+// THE ZOOM LADDER runs in three bands (backbone.ts `bandsForT`, MERGE-NOTES.md §5.4):
+//   far  — territory masses + cluster names, joined by aggregate connectors (lod.ts)
+//   mid  — individual glyphs, joined by a hub-to-hub BACKBONE over the active hierarchy level
+//   near — individual glyphs, joined by their real member edges
+// plus the colour-tinted intra-cluster mesh at every stop the glyphs are on. The two handovers are
+// crossfades, not switches, and `lodMix` owns both ends of the first one — see the field docs on
+// `glyphAlpha`/`memberEdgeAlpha` for the trap of collapsing them into a single number.
 
 import "./asciiGraph.css";
 import type { GraphData, GraphNode } from "../../../core/src/graph";
