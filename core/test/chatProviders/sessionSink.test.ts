@@ -56,24 +56,39 @@ describe("emit", () => {
     expect(s.buffer).toEqual([frame]);
   });
 
-  test("MAX_BUFFERED_FRAMES caps the buffer: keeps the earliest frames, drops the overflow", () => {
+  test("MAX_BUFFERED_FRAMES caps the buffer: keeps the most recent frames, drops the earliest", () => {
     const s = makeSession({ detached: true });
     const overflowBy = 5;
     const total = MAX_BUFFERED_FRAMES + overflowBy;
 
     for (let i = 0; i < total; i++) emit(s, textFrame(i));
 
-    // Exact length, not "grew" or "some cap applied" — an off-by-one here (<=  vs <) would show up
+    // Exact length, not "grew" or "some cap applied" — an off-by-one here (>  vs >=) would show up
     // as MAX_BUFFERED_FRAMES + 1.
     expect(s.buffer.length).toBe(MAX_BUFFERED_FRAMES);
-    // Exact identity of what survived: the FIRST 2000, not the last 2000 (a wrong-end drop would
-    // pass a bare length check but fail this).
-    expect(s.buffer[0]).toEqual(textFrame(0));
-    expect(s.buffer[MAX_BUFFERED_FRAMES - 1]).toEqual(textFrame(MAX_BUFFERED_FRAMES - 1));
+    // Exact identity of what survived: the LAST 2000 (f5..f2004), not the first 2000 — the terminal
+    // frames (result/done/permission) arrive near the end of a turn, so eviction must favor them.
+    // A wrong-end drop (keeping the head instead) would pass a bare length check but fail this.
+    expect(s.buffer[0]).toEqual(textFrame(overflowBy));
+    expect(s.buffer[MAX_BUFFERED_FRAMES - 1]).toEqual(textFrame(total - 1));
     const survivingTexts = new Set(s.buffer.map((f) => (f as { text: string }).text));
-    for (let i = MAX_BUFFERED_FRAMES; i < total; i++) {
+    for (let i = 0; i < overflowBy; i++) {
       expect(survivingTexts.has(`f${i}`)).toBe(false);
     }
+  });
+});
+
+describe("rebindSessionSink — re-points the sink", () => {
+  test("re-points the session sink so subsequent frames reach the NEW socket", () => {
+    const oldSink: ChatFrame[] = [];
+    const newSink: ChatFrame[] = [];
+    const s = makeSession({ detached: true, sink: (f) => oldSink.push(f) });
+
+    rebindSessionSink(s, (f) => newSink.push(f));
+    emit(s, textFrame(9));
+
+    expect(newSink).toEqual([textFrame(9)]);
+    expect(oldSink).toEqual([]);
   });
 });
 
@@ -91,7 +106,7 @@ describe("rebindSessionSink — flush order", () => {
     expect(s.detached).toBe(false);
   });
 
-  test("a sink that throws mid-flush stops the flush and does not re-buffer what's left", () => {
+  test("a sink that throws mid-flush preserves the un-flushed tail for the next rebind", () => {
     const buffered: ChatFrame[] = [textFrame(0), textFrame(1), textFrame(2)];
     const s = makeSession({ detached: true, buffer: [...buffered], turnActive: true });
     const received: ChatFrame[] = [];
@@ -102,11 +117,15 @@ describe("rebindSessionSink — flush order", () => {
 
     rebindSessionSink(s, throwingSink);
 
-    // f0 delivered, f1 attempted (and threw), f2 never attempted.
+    // f0 delivered, f1 attempted (and threw), f2 never attempted this round.
     expect(received).toEqual([textFrame(0), textFrame(1)]);
-    // The un-flushed tail is dropped, not requeued into the buffer.
-    expect(s.buffer).toEqual([]);
-    expect(s.detached).toBe(false);
+    // The un-flushed tail is preserved for the next rebind — INCLUDING f1 itself, since a throw
+    // from sink(f1) doesn't prove f1 was never delivered (a possible duplicate on retry is far
+    // less harmful than silently losing it, e.g. if it had been the turn's `done`/`permission`).
+    expect(s.buffer).toEqual([textFrame(1), textFrame(2)]);
+    // The socket that just threw is treated as dead again, not "reconnected" — otherwise
+    // subsequent emit() calls would fire straight into a proven-broken sink.
+    expect(s.detached).toBe(true);
   });
 });
 
@@ -127,6 +146,9 @@ describe("rebindSessionSink — synthetic done rule", () => {
     rebindSessionSink(s, (f) => received.push(f));
 
     expect(received).toEqual([]);
+    // Not just "no done frame arrived" — the rebind must have actually succeeded (reattached),
+    // otherwise this could pass on a no-op that never called sink at all.
+    expect(s.detached).toBe(false);
   });
 
   test("a between-turns rebind flushes buffered frames THEN appends the synthetic done last", () => {
@@ -137,6 +159,43 @@ describe("rebindSessionSink — synthetic done rule", () => {
     rebindSessionSink(s, (f) => received.push(f));
 
     expect(received).toEqual([...buffered, { type: "done" }]);
+  });
+
+  test("a sink that throws only on the synthetic done still delivers the buffered frames first", () => {
+    const buffered: ChatFrame[] = [textFrame(0), textFrame(1)];
+    const s = makeSession({ detached: true, buffer: [...buffered], turnActive: false });
+    const received: ChatFrame[] = [];
+    const doneThrowingSink: ChatSink = (f) => {
+      if (f.type === "done") throw new Error("socket died on the very last write");
+      received.push(f);
+    };
+
+    // The catch around the synthetic-done write must swallow this — it must not propagate out of
+    // rebindSessionSink (that would crash whatever WS-open handler called it).
+    expect(() => rebindSessionSink(s, doneThrowingSink)).not.toThrow();
+    // And the flush that happened BEFORE the failed done write must still have gone through.
+    expect(received).toEqual(buffered);
+  });
+});
+
+describe("rebindSessionSink — re-entrancy during flush", () => {
+  test("a frame emitted mid-flush lands in the fresh buffer, not the sink (documented, not a bug)", () => {
+    // s.detached is only cleared AFTER the flush loop finishes, so a sink that calls back into
+    // emit() while still mid-flush observes detached===true and buffers instead of being written
+    // straight through — it will replay on the NEXT rebind, out of order relative to frames the
+    // current flush delivers after it. Pinned here so a refactor can't silently change this.
+    const buffered: ChatFrame[] = [textFrame(0), textFrame(1)];
+    const s = makeSession({ detached: true, buffer: [...buffered], turnActive: true });
+    const received: ChatFrame[] = [];
+    const reentrantSink: ChatSink = (f) => {
+      received.push(f);
+      if ((f as { text: string }).text === "f0") emit(s, textFrame(99));
+    };
+
+    rebindSessionSink(s, reentrantSink);
+
+    expect(received).toEqual([textFrame(0), textFrame(1)]);
+    expect(s.buffer).toEqual([textFrame(99)]);
   });
 });
 
