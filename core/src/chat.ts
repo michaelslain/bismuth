@@ -2181,10 +2181,10 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
 /** Mark a session's sink detached after an abnormal WS drop: frames buffer for the reconnect
  *  (rebindSink flushes them) instead of being fired into the dead socket and lost. Paired with
  *  scheduleClose by the server's close handler. */
-export function detachSink(chatId: string, sink?: ChatSink): void {
+export function detachSink(chatId: string, sink: ChatSink): boolean {
   const s = sessions.get(chatId);
-  if (!s) return;
-  detachSessionSink(s, sink);
+  if (!s) return false;
+  return detachSessionSink(s, sink);
 }
 
 export function chatSessionCount(): number {

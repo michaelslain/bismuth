@@ -52,6 +52,12 @@ describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts
   let mock: MockLlmHandle | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
+  // Separate from tempDirs (cleaned per-test in afterEach): setup() is now idempotent (see its own
+  // comment) and only actually runs its body once, for the FIRST test — CODEX_HOME (and the
+  // config.toml backendMockEnv writes into it) is set up ONCE and reused by every later test in this
+  // file. Deleting it after the FIRST test's afterEach would point every SUBSEQUENT test's `codex`
+  // invocation at a directory whose config.toml no longer exists. Cleaned up only in afterAll.
+  const setupDirs: string[] = [];
 
   async function newTempDir(prefix: string): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), prefix));
@@ -59,14 +65,28 @@ describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts
     return dir;
   }
 
+  /** Like newTempDir, but tracked in setupDirs (survives every afterEach, cleaned only in afterAll)
+   *  — see setupDirs' own comment. */
+  async function newSetupTempDir(prefix: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), prefix));
+    setupDirs.push(dir);
+    return dir;
+  }
+
   async function setup(): Promise<void> {
+    // IDEMPOTENT — this file now has more than one test, and each calls setup() at its own start.
+    // Without this guard, a second call reassigns `mock` (a single `let`), orphaning the FIRST mock
+    // LLM server: afterAll's `mock?.stop()` only ever stops the LATEST one. Reproduced live in the
+    // sibling claudeMocked.test.ts/opencodeMocked.test.ts: an orphaned `aimock` process (PPID 1)
+    // after every run without this guard.
+    if (mock) return;
     mock = await startMockLlm();
     // Never OPENAI_BASE_URL/OPENAI_API_KEY for codex (see this file's header) — clear any that a
     // developer's own shell might already have set, so this test can't accidentally pass for the
     // wrong reason (codex silently using a real key it happens to find).
     delete process.env.OPENAI_BASE_URL;
     delete process.env.OPENAI_API_KEY;
-    const codexHome = await newTempDir("bismuth-codex-home-");
+    const codexHome = await newSetupTempDir("bismuth-codex-home-");
     const mockEnv = backendMockEnv("codex", mock.url, codexHome);
     for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v;
   }
@@ -77,6 +97,9 @@ describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts
       else process.env[k] = savedEnv[k];
     }
     await mock?.stop();
+    for (const dir of setupDirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
   });
 
   afterEach(async () => {
@@ -139,7 +162,7 @@ describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts
       // subprocess I/O), so detaching immediately after this call is safe — no pre-creation wait
       // needed here (unlike the ACP driver, whose openSession/sendMessage register asynchronously).
       CHAT_BACKENDS.codex.sendMessage({ chatId, cwd, sink: sink1, computerUse: false, text: "hello" });
-      CHAT_BACKENDS.codex.detachSink(chatId);
+      CHAT_BACKENDS.codex.detachSink(chatId, sink1);
 
       // Give the whole first turn (assistant-text, result, done) time to complete while detached.
       await new Promise((r) => setTimeout(r, 3000));
@@ -165,8 +188,14 @@ describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts
       const firstDoneIdx = frames2.findIndex((f) => f.type === "done");
       expect(firstDoneIdx).toBeGreaterThan(firstAssistantIdx);
 
-      // THE discriminating assertion: exactly ONE done per real turn (2 total), never a THIRD,
-      // synthetic one squeezed in between them by a mistaken rebindSessionSink call.
+      // THE discriminating assertion. Under the reattach→rebind sabotage, rebindSessionSink's
+      // synthetic `done` fires SYNCHRONOUSLY inside THIS sendMessage call (turnActive is false at
+      // the exact moment the reopen branch runs — turn 1 already finished), so frames2 already
+      // holds 2 done frames (turn 1's real one + the spurious synthetic one) before turn 2's OWN
+      // text has even been requested — done.length === 2 PASSES even under the sabotage, since the
+      // wait above resolves off that already-collected count without ever waiting for turn 2 to
+      // run. It's assistant-text.length that actually catches it: turn 2 never gets the chance to
+      // produce its own text before this synchronous check runs.
       expect(frames2.filter((f) => f.type === "done").length).toBe(2);
       expect(frames2.filter((f) => f.type === "assistant-text").length).toBe(2);
     },

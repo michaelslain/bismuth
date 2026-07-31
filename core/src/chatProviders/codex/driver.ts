@@ -481,9 +481,9 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
   return true;
 }
 
-export function detachSink(chatId: string, sink?: ChatSink): void {
+export function detachSink(chatId: string, sink: ChatSink): boolean {
   const s = sessions.get(chatId);
-  if (s) detachSessionSink(s, sink);
+  return s ? detachSessionSink(s, sink) : false;
 }
 
 // Kill any in-flight Codex children on backend shutdown (mirrors chat.ts/opencode.ts/acp/driver.ts).

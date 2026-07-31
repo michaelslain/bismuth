@@ -192,8 +192,8 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
   return fallbackBackend(chatId).rebindSink(chatId, sink);
 }
 
-export function detachSink(chatId: string, sink?: ChatSink): void {
-  fallbackBackend(chatId).detachSink(chatId, sink);
+export function detachSink(chatId: string, sink: ChatSink): boolean {
+  return fallbackBackend(chatId).detachSink(chatId, sink);
 }
 
 export { owner };

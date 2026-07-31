@@ -283,7 +283,7 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       // — runOrQueue's own turn work is asynchronous past its first await, so this reliably wins the
       // race: nothing from THIS turn's prompt response has been emitted to sink1 yet.
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink: sink1, computerUse: false, text: "hello" });
-      CHAT_BACKENDS.cline.detachSink(chatId);
+      CHAT_BACKENDS.cline.detachSink(chatId, sink1);
 
       // Give the whole first turn (assistant-text, result, done) time to complete while detached.
       await new Promise((r) => setTimeout(r, 2000));
@@ -309,8 +309,15 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       const firstDoneIdx = frames2.findIndex((f) => f.type === "done");
       expect(firstDoneIdx).toBeGreaterThan(firstAssistantIdx);
 
-      // THE discriminating assertion: exactly ONE done per real turn (2 total), never a THIRD,
-      // synthetic one squeezed in between them by a mistaken rebindSessionSink call.
+      // THE discriminating assertion. Under the reattach→rebind sabotage, rebindSessionSink's
+      // synthetic `done` fires SYNCHRONOUSLY inside sendMessage's "existing session" branch
+      // whenever turnActive is false at that moment — true both for the FIRST sendMessage call
+      // above (the session already exists via openSession, caught by the earlier
+      // frames1.some(done) assertion) and for THIS reopen call (turn 1 already finished), so
+      // frames2 already holds 2 done frames before turn 2's OWN text has even been requested —
+      // done.length === 2 PASSES even under the sabotage, since the wait above resolves off that
+      // already-collected count without ever waiting for turn 2 to run. It's assistant-text.length
+      // that actually catches it here.
       expect(frames2.filter((f) => f.type === "done").length).toBe(2);
       expect(frames2.filter((f) => f.type === "assistant-text").length).toBe(2);
     },

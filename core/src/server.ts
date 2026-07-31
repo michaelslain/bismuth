@@ -2148,15 +2148,20 @@ export function createServer(cfg: CoreConfig) {
           // the same chatId) resumes the same conversation instead of spawning a fresh one. The next
           // sendMessage/rebind cancels the timer. IDENTITY-GUARDED (ws.data.sink, same as
           // uiControl.ts's unregisterWindow): on a half-open drop (lid close, wifi loss, NAT
-          // timeout), the client can already have reconnected with a NEW socket — whose `open`
-          // rebound the session to a NEWER sink — before THIS stale socket's close event lands. Without
-          // the guard that stale close would re-detach a session that's live and actively watched
-          // under the new sink, silently buffering into the void and arming a 30s teardown of a chat
-          // still in use.
+          // timeout) the client can already have reconnected with a NEW socket — whose `open`
+          // rebound the session to a NEWER sink — before THIS stale socket's close event lands
+          // (the common case, not an edge one: ChatView's own reconnect fires off the client's
+          // `onclose` within seconds, while this server has no `idleTimeout` set on the WS upgrade,
+          // so the OLD half-open socket's close can lag well behind). chatDetachSink returns whether
+          // it actually detached (false on a rejected guard) — the teardown timer below is armed
+          // ONLY then: arming it unconditionally would kill a session that's live and actively
+          // watched under the new sink 30s later, sending no frame, even though the guard just
+          // correctly left it alone. A rejected guard leaks nothing: the newer socket's OWN close
+          // will arm its own timer when it eventually happens, and a since-vanished session makes
+          // scheduleClose a no-op regardless.
           if (code === 1000) {
             closeChat(ws.data.chatId);
-          } else {
-            chatDetachSink(ws.data.chatId, ws.data.sink);
+          } else if (chatDetachSink(ws.data.chatId, ws.data.sink!)) {
             scheduleChatClose(ws.data.chatId, 30_000);
           }
           return;

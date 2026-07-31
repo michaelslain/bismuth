@@ -326,25 +326,17 @@ describe("reattachSessionSink", () => {
 });
 
 describe("detachSessionSink — identity guard", () => {
-  test("detaches unconditionally when no sink is passed (the no-identity-available caller)", () => {
+  test("detaches when the passed sink matches the session's CURRENT sink, and returns true", () => {
     const liveSink: ChatSink = () => {};
     const s = makeSession({ detached: false, sink: liveSink });
 
-    detachSessionSink(s);
+    const detached = detachSessionSink(s, liveSink);
 
+    expect(detached).toBe(true);
     expect(s.detached).toBe(true);
   });
 
-  test("detaches when the passed sink matches the session's CURRENT sink", () => {
-    const liveSink: ChatSink = () => {};
-    const s = makeSession({ detached: false, sink: liveSink });
-
-    detachSessionSink(s, liveSink);
-
-    expect(s.detached).toBe(true);
-  });
-
-  test("does NOT detach when the passed sink does not match the session's current sink (stale-close race)", () => {
+  test("does NOT detach when the passed sink does not match the session's current sink, and returns false", () => {
     // The scenario this guards: a half-open drop (lid close/wifi loss/NAT timeout) — the client
     // already reconnected with a NEW socket, whose `open` rebound the session to sinkB, BEFORE the
     // OLD socket's (sinkA) close event finally lands and calls detachSink(chatId, sinkA). Without
@@ -353,9 +345,55 @@ describe("detachSessionSink — identity guard", () => {
     const sinkB: ChatSink = () => {};
     const s = makeSession({ detached: false, sink: sinkB }); // already rebound to sinkB
 
-    detachSessionSink(s, sinkA); // the stale close, arriving late
+    const detached = detachSessionSink(s, sinkA); // the stale close, arriving late
 
+    // Not just "the session wasn't detached" — the return value is what the caller (server.ts's
+    // close handler) MUST branch on to decide whether to arm a teardown timer. A version that
+    // correctly skipped `s.detached = true` but still returned `true` would pass a bare
+    // `s.detached` check while still arming a spurious close underneath a live session.
+    expect(detached).toBe(false);
     expect(s.detached).toBe(false);
+  });
+
+  test("close-handler simulation: a rejected guard must ALSO skip scheduling the teardown timer (session survives)", async () => {
+    // Mirrors server.ts's WS close handler EXACTLY: `if (chatDetachSink(id, sink)) scheduleChatClose(...)`.
+    // This is the regression the guard alone didn't catch — detachSessionSink returning false is
+    // useless if the caller schedules the close anyway. ws2 reconnects and rebinds first...
+    const sinkA: ChatSink = () => {};
+    const sinkB: ChatSink = () => {};
+    const s = makeSession({ detached: false, sink: sinkA });
+    rebindSessionSink(s, sinkB);
+
+    // ...THEN ws1's stale close lands.
+    let closed = false;
+    if (detachSessionSink(s, sinkA)) {
+      scheduleSessionClose(s, 30, () => {
+        closed = true;
+      });
+    }
+
+    await sleep(60);
+    expect(s.detached).toBe(false);
+    expect(closed).toBe(false);
+    expect(s.closeTimer).toBeUndefined();
+  });
+
+  test("close-handler simulation, control: a genuine detach (matching sink) still schedules and fires the close", async () => {
+    // The counterpart to the test above — proves the `if` gate doesn't ALSO accidentally suppress a
+    // LEGITIMATE close (the ordinary case: no reconnect ever happened before this socket closed).
+    const sinkA: ChatSink = () => {};
+    const s = makeSession({ detached: false, sink: sinkA });
+
+    let closed = false;
+    if (detachSessionSink(s, sinkA)) {
+      scheduleSessionClose(s, 10, () => {
+        closed = true;
+      });
+    }
+
+    await sleep(50);
+    expect(s.detached).toBe(true);
+    expect(closed).toBe(true);
   });
 });
 

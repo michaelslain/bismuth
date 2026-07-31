@@ -83,6 +83,12 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
   let mock: MockLlmHandle | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
+  // Separate from tempDirs (cleaned per-test in afterEach): setup() is now idempotent (see its own
+  // comment) and only actually runs its body once, for the FIRST test — CLAUDE_CONFIG_DIR is set
+  // ONCE and reused (unchanged) by every later test in this file. Deleting it after the FIRST test's
+  // afterEach would point every SUBSEQUENT test's `claude` invocation at a directory that no longer
+  // exists. Cleaned up only in afterAll, once nothing in this file can still be depending on it.
+  const setupDirs: string[] = [];
   // Captured so the test body can assert this dir was ACTUALLY used (see setup()'s CLAUDE_CONFIG_DIR
   // comment and the test's own runtime-signal assertion below) — a code-review finding: the isolation
   // previously had zero runtime signal in the shipped test itself, only a one-time manual observation
@@ -97,7 +103,23 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
     return dir;
   }
 
+  /** Like newTempDir, but tracked in setupDirs (survives every afterEach, cleaned only in afterAll)
+   *  — see setupDirs' own comment for why a dir created inside the now-idempotent setup() must
+   *  outlive the single test that happened to trigger it. */
+  async function newSetupTempDir(prefix: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), prefix));
+    setupDirs.push(dir);
+    return dir;
+  }
+
   async function setup(): Promise<void> {
+    // IDEMPOTENT — this file now has more than one test, and each calls setup() at its own start.
+    // Without this guard, a second call reassigns `mock` (a single `let`), orphaning the FIRST mock
+    // LLM server: afterAll's `mock?.stop()` only ever stops the LATEST one, and mockLlm.ts's own
+    // `process.on("exit")` net does NOT save it either (see that file's header on why it's not a
+    // safety net for a crash/leak inside `bun test` itself). Reproduced live: two tests without this
+    // guard left one orphaned `aimock` process (PPID 1) after every run.
+    if (mock) return;
     mock = await startMockLlm(); // default fixture dir: core/test/fixtures/llm (basic-turn.json)
     // Never a real Bedrock/Vertex escape hatch for this test (see ENV_KEYS comment above) — clear
     // any that a developer's own shell might already have exported, so this test can't accidentally
@@ -135,7 +157,7 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
     // the deletes above. Confirmed no such file exists on this machine (not live risk here), but a
     // machine under real MDM/enterprise policy management is exactly where this test's Bedrock/
     // Vertex guard could still be silently defeated, and CLAUDE_CONFIG_DIR does nothing about it.
-    claudeConfigDir = await newTempDir("bismuth-claude-config-");
+    claudeConfigDir = await newSetupTempDir("bismuth-claude-config-");
     process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
   }
 
@@ -145,6 +167,9 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
       else process.env[k] = savedEnv[k];
     }
     await mock?.stop();
+    for (const dir of setupDirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
   });
 
   afterEach(async () => {
@@ -225,7 +250,7 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
       // own model call is asynchronous (at least one microtask + real subprocess I/O away), so this
       // reliably wins the race: nothing has been emitted to sink1 yet at the moment of detach.
       await sendMessage(chatId, "hello", cwd, sink1);
-      detachSink(chatId);
+      detachSink(chatId, sink1);
 
       // Give the whole first turn (assistant-text, result, done) time to complete while detached —
       // generous relative to this mock's typical <200ms local turn time (see other tests in this
@@ -253,10 +278,14 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
       const firstDoneIdx = frames2.findIndex((f) => f.type === "done");
       expect(firstDoneIdx).toBeGreaterThan(firstAssistantIdx);
 
-      // THE discriminating assertion: exactly ONE done per real turn (2 total), never a THIRD,
-      // synthetic one squeezed in between them by a mistaken rebindSessionSink call — reattach never
-      // pushes a synthetic done; rebind always does when no turn is active, which is the case at the
-      // exact moment this reopen's flush runs (turn 1 already finished).
+      // THE discriminating assertion. Under the reattach→rebind sabotage, rebindSessionSink's
+      // synthetic `done` fires SYNCHRONOUSLY inside THIS sendMessage call (turnActive is false at
+      // the exact moment the reopen branch runs — turn 1 already finished), so frames2 already
+      // holds 2 done frames (turn 1's real one + the spurious synthetic one) before turn 2's OWN
+      // text has even been requested — done.length === 2 PASSES even under the sabotage, since the
+      // wait above resolves off that already-collected count without ever waiting for turn 2 to
+      // run. It's assistant-text.length that actually catches it: turn 2 never gets the chance to
+      // produce its own text before this synchronous check runs.
       expect(frames2.filter((f) => f.type === "done").length).toBe(2);
       expect(frames2.filter((f) => f.type === "assistant-text").length).toBe(2);
     },

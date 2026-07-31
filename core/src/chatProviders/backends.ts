@@ -69,10 +69,11 @@ export interface ChatBackend {
   closeChat(chatId: string): void;
   scheduleClose(chatId: string, ms: number): void;
   rebindSink(chatId: string, sink: ChatSink): boolean;
-  /** Identity-guarded when `sink` is passed (see sessionSink.ts's detachSessionSink): a stale close
-   *  event from an OLD socket that already lost a reconnect race must not re-detach a session that's
-   *  live under a DIFFERENT (newer) sink. */
-  detachSink(chatId: string, sink?: ChatSink): void;
+  /** Identity-guarded (see sessionSink.ts's detachSessionSink): a stale close event from an OLD
+   *  socket that already lost a reconnect race must not re-detach a session that's live under a
+   *  DIFFERENT (newer) sink. Returns whether the detach actually happened — the caller MUST use this
+   *  to gate any teardown timer it was about to arm; see detachSessionSink's own doc comment. */
+  detachSink(chatId: string, sink: ChatSink): boolean;
 
   // --- optional: interactive surfaces a non-interactive CLI cannot offer -------------------
   /** Answer a `permission` frame. Present iff capabilities.permissionPrompts (NOT permissionModes —

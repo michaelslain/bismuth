@@ -96,16 +96,15 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
   // Separate from tempDirs (cleaned per-test in afterEach): the shared, process-lifetime `opencode
-  // serve` singleton (see the FINDING below) only reads XDG_*_HOME at the moment IT spawns — the
-  // FIRST setup() call in this file. Every later setup() call in the SAME file (this file now has
-  // more than one test) still creates fresh XDG dirs and re-points the env vars at them, but the
-  // ALREADY-RUNNING shared server keeps using the FIRST call's dirs for as long as it lives, which
-  // is this whole bun:test process (see the FINDING below — its own exit handler never fires under
-  // `bun test`). Deleting those from under it mid-suite (as tempDirs' per-test afterEach would) 404s
-  // the server's own storage: reproduced live, a SECOND test's session.create() fails with
-  // `{code:"spawn", message:"The opencode server could not start a session."}` once the FIRST test's
-  // afterEach has rm -rf'd the dirs the running server still expects to exist. Cleaned up only in
-  // afterAll, once nothing in this file can still be depending on the shared server.
+  // serve` singleton (see the FINDING below) only reads XDG_*_HOME at the moment IT spawns — setup()
+  // is idempotent (see its own comment) and this file now has more than one test, so these dirs are
+  // created exactly once, by the FIRST test, and the ALREADY-RUNNING shared server keeps using them
+  // for as long as it lives, which is this whole bun:test process (see the FINDING below — its own
+  // exit handler never fires under `bun test`). Deleting them after the FIRST test's afterEach (as
+  // tempDirs' per-test afterEach would) 404s the server's own storage: reproduced live, a SECOND
+  // test's session.create() fails with `{code:"spawn", message:"The opencode server could not start
+  // a session."}` once rm -rf'd out from under a server still expecting them to exist. Cleaned up
+  // only in afterAll, once nothing in this file can still be depending on the shared server.
   const xdgDirs: string[] = [];
   // FINDING (this task): chatProviders/opencode.ts spawns ONE shared, process-lifetime `opencode
   // serve` (chatProviders/opencodeServer.ts) the first time any opencode chat opens — by design,
@@ -122,7 +121,13 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
   // server's PID before/after itself and force-kills anything NEW in afterAll — a test-only safety
   // net, matched by the shared server's own exact, distinctive argv (never a general "kill anything
   // named opencode" sweep that could disrupt an unrelated opencode process on a developer's machine).
+  // Snapshotted ONCE here, at describe-collection time (NOT inside setup()) — this file now has more
+  // than one test, and setup() runs per-test. A snapshot taken inside setup() would, on the SECOND
+  // test's call, record the shared server THIS FILE'S OWN FIRST TEST just spawned as "pre-existing",
+  // so afterAll's `if (pidsBefore.has(pid)) continue` would skip killing it. Reproduced live: with
+  // the snapshot inside setup(), every run leaked one `opencode serve` (PPID 1).
   const pidsBefore = new Set<string>();
+  for (const pid of opencodeServePids()) pidsBefore.add(pid);
 
   async function newTempDir(prefix = "bismuth-opencode-mocked-"): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), prefix));
@@ -139,7 +144,13 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
   }
 
   async function setup(): Promise<void> {
-    for (const pid of opencodeServePids()) pidsBefore.add(pid);
+    // IDEMPOTENT — this file now has more than one test, and each calls setup() at its own start.
+    // Without this guard, a second call reassigns `mock` (a single `let`), orphaning the FIRST mock
+    // LLM server (afterAll's `mock?.stop()` only ever stops the LATEST one) — reproduced live as one
+    // leaked `aimock` process (PPID 1) per run. It also means every XDG dir below is now genuinely
+    // created only once, matching the shared opencode-serve singleton's own actual lifetime (see
+    // xdgDirs' comment) rather than being recreated-and-ignored on every later call.
+    if (mock) return;
     // --latency 40: see this file's header, finding #2 — a zero-latency reply can beat opencode
     // server mode's own event-stream subscription.
     mock = await startMockLlm(undefined, ["--latency", "40"]);
@@ -165,17 +176,13 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
     // server is PROCESS-LIFETIME (one `live` singleton reused for the rest of this core process —
     // see this file's header, finding #2, and opencodeServer.ts's own module doc comment) — if any
     // OTHER test file in the same `bun test` process ever opens an opencode chat BEFORE this file's
-    // FIRST setup() call runs, that earlier chat's `ensureOpencodeServer()` call would have already
-    // spawned the shared server with THAT call's env (real XDG dirs, not these), and this test would
-    // then be handed the SAME already-running server instead of a fresh isolated one. No such file
-    // exists in this suite today (this is the only one that drives a real opencode turn), so it's
-    // not live risk right now — but a future opencode test file MUST open its first chat only after
-    // its own XDG redirection is in place, and should not assume it starts the shared server fresh.
-    // WITHIN this file, only the FIRST setup() call's XDG dirs are ever actually read by the shared
-    // server (see xdgDirs' own comment) — every later call still creates fresh ones and re-points the
-    // env vars, which is harmless (the running server ignores them) but not pointless either: it's
-    // what a FUTURE first-caller-in-this-process would pick up if this file's own test order ever
-    // changed, and it costs nothing to keep doing.
+    // (idempotent, so effectively single) setup() call runs, that earlier chat's
+    // `ensureOpencodeServer()` call would have already spawned the shared server with THAT call's
+    // env (real XDG dirs, not these), and this test would then be handed the SAME already-running
+    // server instead of a fresh isolated one. No such file exists in this suite today (this is the
+    // only one that drives a real opencode turn), so it's not live risk right now — but a future
+    // opencode test file MUST open its first chat only after its own XDG redirection is in place,
+    // and should not assume it starts the shared server fresh.
   }
 
   afterAll(async () => {
@@ -279,7 +286,7 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       // fire-and-forget (not async), and the mock's own --latency 40 (see setup()) guarantees the
       // reply can't land before this synchronous detach call runs.
       CHAT_BACKENDS.opencode.sendMessage({ chatId, cwd, sink: sink1, computerUse: false, text: "hello" });
-      CHAT_BACKENDS.opencode.detachSink(chatId);
+      CHAT_BACKENDS.opencode.detachSink(chatId, sink1);
 
       // Give the whole first turn (assistant-text, result, done) time to complete while detached.
       await new Promise((r) => setTimeout(r, 3000));
@@ -305,8 +312,15 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       const firstDoneIdx = frames2.findIndex((f) => f.type === "done");
       expect(firstDoneIdx).toBeGreaterThan(firstAssistantIdx);
 
-      // THE discriminating assertion: exactly ONE done per real turn (2 total), never a THIRD,
-      // synthetic one squeezed in between them by a mistaken rebindSessionSink call.
+      // THE discriminating assertion. Under the reattach→rebind sabotage, rebindSessionSink's
+      // synthetic `done` fires SYNCHRONOUSLY inside sendMessage's "existing session" branch
+      // whenever turnActive is false at that moment — true both for the FIRST sendMessage call
+      // above (the session already exists via openSession, caught by the earlier
+      // frames1.some(done) assertion) and for THIS reopen call (turn 1 already finished), so
+      // frames2 already holds 2 done frames before turn 2's OWN text has even been requested —
+      // done.length === 2 PASSES even under the sabotage, since the wait above resolves off that
+      // already-collected count without ever waiting for turn 2 to run. It's assistant-text.length
+      // that actually catches it here.
       expect(frames2.filter((f) => f.type === "done").length).toBe(2);
       expect(frames2.filter((f) => f.type === "assistant-text").length).toBe(2);
     },

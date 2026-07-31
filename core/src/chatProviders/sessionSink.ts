@@ -127,17 +127,20 @@ export function reattachSessionSink(s: SessionSink, sink: ChatSink): void {
 
 /** Mark a session detached — the counterpart to rebindSessionSink/reattachSessionSink, called from
  *  server.ts's WS close handler for an ABNORMAL close (a clean tab-close calls the provider's own
- *  closeChat() instead — no detach involved). IDENTITY-GUARDED when `sink` is passed, mirroring
- *  uiControl.ts's unregisterWindow: on a half-open drop (lid close, wifi loss, NAT timeout) the
- *  client's NEW socket can open and rebind the session to a different sink BEFORE the OLD socket's
- *  close event lands — without the guard, that stale close would re-detach a session that's live
- *  under someone else's (newer) sink: a chat the user is actively watching would silently start
- *  buffering into the void, and a 30s teardown would get armed underneath it. Passing no `sink`
- *  skips the guard (unconditional detach, matching the old behavior — used only where no per-socket
- *  identity is available to check). */
-export function detachSessionSink(s: SessionSink, sink?: ChatSink): void {
-  if (sink && s.sink !== sink) return;
+ *  closeChat() instead — no detach involved). IDENTITY-GUARDED, mirroring uiControl.ts's
+ *  unregisterWindow: on a half-open drop (lid close, wifi loss, NAT timeout) the client's NEW socket
+ *  can open and rebind the session to a different sink BEFORE the OLD socket's close event lands —
+ *  without the guard, that stale close would re-detach a session that's live under someone else's
+ *  (newer) sink: a chat the user is actively watching would silently start buffering into the void.
+ *  Returns whether the detach actually happened (`false` on a rejected guard). The caller MUST use
+ *  this to gate whatever teardown timer it was about to arm (scheduleSessionClose) — a rejected
+ *  detach means the session is live under a newer sink that will arm its OWN timer on its own close;
+ *  arming one here anyway would silently kill that live, newer connection 30s later with no frame
+ *  sent, even though the guard just correctly said "leave this session alone". */
+export function detachSessionSink(s: SessionSink, sink: ChatSink): boolean {
+  if (s.sink !== sink) return false;
   s.detached = true;
+  return true;
 }
 
 /** Cancel any pending grace-close timer and arm a fresh one that runs `close` after `ms` of no

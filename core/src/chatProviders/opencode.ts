@@ -671,6 +671,13 @@ function dispatchTurn(s: OpencodeSession, text: string, images?: ChatImage[]): v
 export function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink, images?: ChatImage[], memoryDir?: string): void {
   const existing = sessions.get(chatId);
   if (!existing) {
+    // PRE-EXISTING GAP, out of scope here: getOrCreateSession is async, so the session isn't
+    // registered in `sessions` until this await resolves. A WS close landing in that window finds
+    // no session yet (detachSink no-ops) and, once creation DOES complete, the now-dead sink is
+    // never detached and no grace-close timer is ever armed for it — an attached session with
+    // nowhere to send frames and no teardown scheduled. Not reachable via the identity-guard work in
+    // this file (that guards an EXISTING session's re-detach, not a session that doesn't exist yet);
+    // would need its own fix (e.g. a placeholder session registered before the await).
     void (async () => {
       const created = await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir);
       if (!created) return; // no-opencode/spawn error already pushed
@@ -820,10 +827,10 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
   return true;
 }
 
-export function detachSink(chatId: string, sink?: ChatSink): void {
+export function detachSink(chatId: string, sink: ChatSink): boolean {
   const s = sessions.get(chatId);
-  if (!s) return;
-  detachSessionSink(s, sink);
+  if (!s) return false;
+  return detachSessionSink(s, sink);
 }
 
 // Kill any in-flight RUN-mode opencode children on backend shutdown (mirrors chat.ts/terminal.ts).
