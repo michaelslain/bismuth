@@ -1,10 +1,12 @@
 // The graph's bloom, computed from where the nodes actually ARE.
 //
 // The previous atmosphere was three CSS radial-gradients parked at cluster centroids, tuned against
-// a saturated palette (#f0509b / #9b53e8 / #27c7d9). The redesign palette is desaturated
-// (#C98CA8 / #A190C4 / #83B4AE), so the same 26%-alpha screen blend reads as a whisper: the effect
-// did not break, its input did. Iridescence — many competing hues, soft and diffuse — is also what
-// clashes with the ASCII aesthetic.
+// the OLD saturated category ramp. The redesign ramp is desaturated, so the same 26%-alpha screen
+// blend reads as a whisper: the effect did not break, its input did. Iridescence — many competing
+// hues, soft and diffuse — is also what clashes with the ASCII aesthetic. (Both ramps live in
+// core/src/theme/tokens.ts; they are deliberately NOT quoted here, because themeGuard.test.ts's
+// anti-drift lint counts a literal swatch triple anywhere in app/src as a re-duplication — prose
+// included, and rightly so: a comment's copy goes stale exactly like code's.)
 //
 // This replaces it with phosphor: ONE hue, brightness driven by node DENSITY. It works on a muted
 // palette because it is a luminance effect against a near-black ground rather than a saturation
