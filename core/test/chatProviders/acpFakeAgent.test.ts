@@ -283,7 +283,15 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       // — runOrQueue's own turn work is asynchronous past its first await, so this reliably wins the
       // race: nothing from THIS turn's prompt response has been emitted to sink1 yet.
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink: sink1, computerUse: false, text: "hello" });
-      CHAT_BACKENDS.cline.detachSink(chatId, sink1);
+      // Assert the return value itself, not just its side effect: nothing else in this suite pins
+      // that a driver's detachSink actually reports success/rejection (all four call sites were bare
+      // expression statements) — a driver rewritten to `detachSessionSink(s, sink); return true;`
+      // would re-arm the identity-guard bug for that backend with the whole suite green. This is the
+      // one CLI-free file among the four, so it's the one guaranteed to run and catch it everywhere.
+      expect(CHAT_BACKENDS.cline.detachSink(chatId, sink1)).toBe(true);
+      // The guard's negative case, exercised live (not just at the sessionSink.ts unit level): a
+      // mismatched sink must be rejected — false, no state change — even against a real session.
+      expect(CHAT_BACKENDS.cline.detachSink(chatId, () => {})).toBe(false);
 
       // Give the whole first turn (assistant-text, result, done) time to complete while detached.
       await new Promise((r) => setTimeout(r, 2000));

@@ -143,14 +143,24 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
     return dir;
   }
 
-  async function setup(): Promise<void> {
-    // IDEMPOTENT — this file now has more than one test, and each calls setup() at its own start.
-    // Without this guard, a second call reassigns `mock` (a single `let`), orphaning the FIRST mock
-    // LLM server (afterAll's `mock?.stop()` only ever stops the LATEST one) — reproduced live as one
-    // leaked `aimock` process (PPID 1) per run. It also means every XDG dir below is now genuinely
-    // created only once, matching the shared opencode-serve singleton's own actual lifetime (see
-    // xdgDirs' comment) rather than being recreated-and-ignored on every later call.
-    if (mock) return;
+  // IDEMPOTENT AND ALL-OR-NOTHING — this file now has more than one test, and each calls setup() at
+  // its own start. `setupOnce ??= doSetup()` latches on the PROMISE, not on a side effect of the
+  // first statement: an `if (mock) return` guard checked before `mock` is actually assigned would
+  // let a LATER test proceed into a half-initialized environment (e.g. the mock server up but the
+  // XDG redirection below not yet applied) if some await after the first one throws. `??=`
+  // guarantees every caller gets the exact same outcome (success or rejection) as whichever call
+  // actually ran doSetup(), and never re-runs it. Without the guard at all, a second call reassigns
+  // `mock` (a single `let`), orphaning the FIRST mock LLM server (afterAll's `mock?.stop()` only
+  // ever stops the LATEST one) — reproduced live as one leaked `aimock` process (PPID 1) per run. It
+  // also means every XDG dir below is now genuinely created only once, matching the shared
+  // opencode-serve singleton's own actual lifetime (see xdgDirs' comment) rather than being
+  // recreated-and-ignored on every later call.
+  let setupOnce: Promise<void> | undefined;
+  function setup(): Promise<void> {
+    return (setupOnce ??= doSetup());
+  }
+
+  async function doSetup(): Promise<void> {
     // --latency 40: see this file's header, finding #2 — a zero-latency reply can beat opencode
     // server mode's own event-stream subscription.
     mock = await startMockLlm(undefined, ["--latency", "40"]);
@@ -286,7 +296,7 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       // fire-and-forget (not async), and the mock's own --latency 40 (see setup()) guarantees the
       // reply can't land before this synchronous detach call runs.
       CHAT_BACKENDS.opencode.sendMessage({ chatId, cwd, sink: sink1, computerUse: false, text: "hello" });
-      CHAT_BACKENDS.opencode.detachSink(chatId, sink1);
+      expect(CHAT_BACKENDS.opencode.detachSink(chatId, sink1)).toBe(true);
 
       // Give the whole first turn (assistant-text, result, done) time to complete while detached.
       await new Promise((r) => setTimeout(r, 3000));

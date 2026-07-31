@@ -2179,8 +2179,10 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
 }
 
 /** Mark a session's sink detached after an abnormal WS drop: frames buffer for the reconnect
- *  (rebindSink flushes them) instead of being fired into the dead socket and lost. Paired with
- *  scheduleClose by the server's close handler. */
+ *  (rebindSink flushes them) instead of being fired into the dead socket and lost. Identity-guarded
+ *  and returns whether the detach actually happened — see `ChatBackend.detachSink`'s doc comment
+ *  (backends.ts) for the full contract every driver shares, including why the server's close
+ *  handler MUST gate `scheduleClose` on this return value. */
 export function detachSink(chatId: string, sink: ChatSink): boolean {
   const s = sessions.get(chatId);
   if (!s) return false;

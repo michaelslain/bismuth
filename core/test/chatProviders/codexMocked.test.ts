@@ -73,13 +73,22 @@ describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts
     return dir;
   }
 
-  async function setup(): Promise<void> {
-    // IDEMPOTENT — this file now has more than one test, and each calls setup() at its own start.
-    // Without this guard, a second call reassigns `mock` (a single `let`), orphaning the FIRST mock
-    // LLM server: afterAll's `mock?.stop()` only ever stops the LATEST one. Reproduced live in the
-    // sibling claudeMocked.test.ts/opencodeMocked.test.ts: an orphaned `aimock` process (PPID 1)
-    // after every run without this guard.
-    if (mock) return;
+  // IDEMPOTENT AND ALL-OR-NOTHING — this file now has more than one test, and each calls setup() at
+  // its own start. `setupOnce ??= doSetup()` latches on the PROMISE, not on a side effect of the
+  // first statement: an `if (mock) return` guard checked before `mock` is actually assigned would
+  // let a LATER test proceed into a half-initialized environment if some await after the first one
+  // throws. `??=` guarantees every caller gets the exact same outcome (success or rejection) as
+  // whichever call actually ran doSetup(), and never re-runs it. Without the guard at all, a second
+  // call reassigns `mock` (a single `let`), orphaning the FIRST mock LLM server: afterAll's
+  // `mock?.stop()` only ever stops the LATEST one. Reproduced live in the sibling
+  // claudeMocked.test.ts/opencodeMocked.test.ts: an orphaned `aimock` process (PPID 1) after every
+  // run without this guard.
+  let setupOnce: Promise<void> | undefined;
+  function setup(): Promise<void> {
+    return (setupOnce ??= doSetup());
+  }
+
+  async function doSetup(): Promise<void> {
     mock = await startMockLlm();
     // Never OPENAI_BASE_URL/OPENAI_API_KEY for codex (see this file's header) — clear any that a
     // developer's own shell might already have set, so this test can't accidentally pass for the
@@ -162,7 +171,7 @@ describeOrSkip("the real codex CLI, driven through chatProviders/codex/driver.ts
       // subprocess I/O), so detaching immediately after this call is safe — no pre-creation wait
       // needed here (unlike the ACP driver, whose openSession/sendMessage register asynchronously).
       CHAT_BACKENDS.codex.sendMessage({ chatId, cwd, sink: sink1, computerUse: false, text: "hello" });
-      CHAT_BACKENDS.codex.detachSink(chatId, sink1);
+      expect(CHAT_BACKENDS.codex.detachSink(chatId, sink1)).toBe(true);
 
       // Give the whole first turn (assistant-text, result, done) time to complete while detached.
       await new Promise((r) => setTimeout(r, 3000));

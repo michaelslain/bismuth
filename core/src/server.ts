@@ -2158,10 +2158,17 @@ export function createServer(cfg: CoreConfig) {
           // watched under the new sink 30s later, sending no frame, even though the guard just
           // correctly left it alone. A rejected guard leaks nothing: the newer socket's OWN close
           // will arm its own timer when it eventually happens, and a since-vanished session makes
-          // scheduleClose a no-op regardless.
+          // scheduleClose a no-op regardless. ws.data.sink is only TYPED optional because it's
+          // assigned after construction (see ChatWsData's comment) — always actually set by `open`
+          // before any `close` can fire. Read once into a local rather than asserted with `!` at the
+          // call site: an assertion would silently fail OPEN (skip the detach AND the teardown) on a
+          // hypothetically-undefined sink, exactly inverting the old unguarded code's fail-SAFE
+          // behavior (detach unconditionally). `!sink` here instead falls back to the same
+          // always-schedule behavior, never silently orphaning a session with no teardown path.
+          const sink = ws.data.sink;
           if (code === 1000) {
             closeChat(ws.data.chatId);
-          } else if (chatDetachSink(ws.data.chatId, ws.data.sink!)) {
+          } else if (!sink || chatDetachSink(ws.data.chatId, sink)) {
             scheduleChatClose(ws.data.chatId, 30_000);
           }
           return;

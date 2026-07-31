@@ -112,14 +112,25 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
     return dir;
   }
 
-  async function setup(): Promise<void> {
-    // IDEMPOTENT — this file now has more than one test, and each calls setup() at its own start.
-    // Without this guard, a second call reassigns `mock` (a single `let`), orphaning the FIRST mock
-    // LLM server: afterAll's `mock?.stop()` only ever stops the LATEST one, and mockLlm.ts's own
-    // `process.on("exit")` net does NOT save it either (see that file's header on why it's not a
-    // safety net for a crash/leak inside `bun test` itself). Reproduced live: two tests without this
-    // guard left one orphaned `aimock` process (PPID 1) after every run.
-    if (mock) return;
+  // IDEMPOTENT AND ALL-OR-NOTHING — this file now has more than one test, and each calls setup() at
+  // its own start. `setupOnce ??= doSetup()` latches on the PROMISE, not on a side effect of the
+  // first statement: a `let ran = false; if (ran) return; ran = true;`-style guard (or checking
+  // `if (mock) return` before `mock` is actually assigned) would let a LATER test proceed into a
+  // half-initialized environment if some await after the first one throws — for this file
+  // specifically, that means running the real `claude` CLI against the developer's own `~/.claude`
+  // instead of the mock. `??=` guarantees every caller gets the exact same outcome (success or
+  // rejection) as whichever call actually ran doSetup(), and never re-runs it. Without the guard at
+  // all, a second call reassigns `mock` (a single `let`), orphaning the FIRST mock LLM server:
+  // afterAll's `mock?.stop()` only ever stops the LATEST one, and mockLlm.ts's own
+  // `process.on("exit")` net does NOT save it either (see that file's header on why it's not a
+  // safety net for a crash/leak inside `bun test` itself). Reproduced live: two tests without any
+  // guard left one orphaned `aimock` process (PPID 1) after every run.
+  let setupOnce: Promise<void> | undefined;
+  function setup(): Promise<void> {
+    return (setupOnce ??= doSetup());
+  }
+
+  async function doSetup(): Promise<void> {
     mock = await startMockLlm(); // default fixture dir: core/test/fixtures/llm (basic-turn.json)
     // Never a real Bedrock/Vertex escape hatch for this test (see ENV_KEYS comment above) — clear
     // any that a developer's own shell might already have exported, so this test can't accidentally
@@ -250,7 +261,7 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
       // own model call is asynchronous (at least one microtask + real subprocess I/O away), so this
       // reliably wins the race: nothing has been emitted to sink1 yet at the moment of detach.
       await sendMessage(chatId, "hello", cwd, sink1);
-      detachSink(chatId, sink1);
+      expect(detachSink(chatId, sink1)).toBe(true);
 
       // Give the whole first turn (assistant-text, result, done) time to complete while detached —
       // generous relative to this mock's typical <200ms local turn time (see other tests in this
