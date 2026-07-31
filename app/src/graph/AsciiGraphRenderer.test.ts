@@ -1962,13 +1962,35 @@ describe("LEVEL OF DETAIL (opt-in, GraphConfig.showLodMasses) — coarse stops r
     r.destroy();
   });
 
-  it("draws aggregate connectors between entities at fit — the leaf edge pass never ran", () => {
+  // WAS: "draws aggregate connectors between entities at fit — the leaf edge pass never ran",
+  // asserting `layerBuf` held at least one LAYER_EDGE cell. Aggregate connectors are VECTOR strokes
+  // now (see the GROUP LINES block in AsciiGraphRenderer.ts) — a character is an order of magnitude
+  // more ink than a hairline, and at the default 2D view the reference vault's connectors read as a
+  // stair-stepped grey scribble across the field. The connectors themselves are unchanged (same
+  // pairs, same log-scaled weights, same anchors), so this asserts the same behaviour through the
+  // new medium — and strictly more of it: a cell count could not tell WHICH cells, so it passed
+  // for any Bresenham line anywhere, whereas this pins the exact endpoints and the exact count.
+  it("draws aggregate connectors between entities at fit — vector strokes anchored on the two masses, no grid characters", () => {
     const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
     const p = lodPriv(r);
-    // Any LAYER_EDGE cell at fit is an aggregate connector (the leaf passes are skipped wholesale).
-    let edgeCells = 0;
-    for (const v of p.layerBuf) if (v === LAYER_EDGE) edgeCells++;
-    expect(edgeCells).toBeGreaterThan(0);
+    // The leaf passes never ran at fit, so every line on the field is an aggregate connector...
+    expect([...p.cellNode].every((v) => v < 0)).toBe(true);
+    // ...and lodGraph's two TOP communities are joined by 6 real links, i.e. exactly ONE connector.
+    const segs = strokeSegs();
+    expect(segs.length).toBe(1);
+    // It runs between the two masses' own cell centres — where their ink actually sits.
+    const flats = new Set<number>();
+    for (const v of p.cellEntity) if (v >= 0) flats.add(v);
+    const ents = [...flats].map((f) => p.entityFlat[f]);
+    expect(ents.length).toBe(2);
+    const key = (x: number, y: number) => `${x.toFixed(2)},${y.toFixed(2)}`;
+    const want = ents
+      .map((e) => key(p.m.padX + e.col * p.m.cellW + p.m.cellW / 2, p.m.padY + e.row * p.m.cellH + p.m.cellH / 2))
+      .sort();
+    const got = [key(segs[0][0], segs[0][1]), key(segs[0][2], segs[0][3])].sort();
+    expect(got).toEqual(want);
+    // And NO edge of any kind occupies a cell any more — the edge layer is never written.
+    expect([...p.layerBuf].every((v) => v !== LAYER_EDGE)).toBe(true);
     r.destroy();
   });
 
@@ -1990,8 +2012,14 @@ describe("LEVEL OF DETAIL (opt-in, GraphConfig.showLodMasses) — coarse stops r
     for (const v of p.cellEntity) if (v >= 0) comms.add(p.entityFlat[v].community);
     expect(comms.size).toBeGreaterThan(0);
     expect([...comms].every((c) => c === 0 || c === 1)).toBe(true);
-    // Still no real notes this far out.
-    expect([...p.cellNode].every((v) => v < 0)).toBe(true);
+    // WAS: "Still no real notes this far out" (`cellNode` all < 0). 60% is t ≈ 0.4, which sits
+    // inside the mass→glyph crossfade [BACKBONE_START_T, +BACKBONE_FADE_SPAN] = [0.32, 0.46]: the
+    // children's own MEMBERS have begun emerging through the dissolving masses, which is exactly
+    // what drawEntityMasses' "members emerge through the dissolving parent" always described — it
+    // just used to happen at FILE_LABEL_REVEAL_T, because masses owned the field until then.
+    expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
+    // File NAMES are still far off, though — the crossfade to them starts at 0.75.
+    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(false);
     r.destroy();
   });
 
@@ -2112,10 +2140,15 @@ describe("interaction", () => {
     window.dispatchEvent(new PointerEvent("pointerup", { clientX: x, clientY: y }));
     settle(300);
     expect(clicks).toEqual([]);
-    // The child level now owns the field — the coarsest level has fully crossfaded away, and real
-    // notes are NOT on the field yet (one click expands one level, not straight to the leaves).
+    // The child level now owns the field — the coarsest level has fully crossfaded away...
     expect(entityLevelsOnGrid(p)).toEqual(new Set([1]));
-    expect([...p.cellNode].every((v) => v < 0)).toBe(true);
+    // ...and the click landed ONE level in, not at the leaves. WAS asserted as `cellNode` all < 0,
+    // which stopped meaning "not the leaves" once the mass→glyph crossfade moved to [0.32, 0.46]:
+    // individual glyphs legitimately emerge through a dissolving mass at this stop. What still
+    // separates "one level in" from "straight to the leaves" is the LABEL ladder — file names do
+    // not begin crossfading in until FILE_LABEL_REVEAL_T (0.75), well past this boundary.
+    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(false);
+    expect(ctx.fills.some((f) => f.text.startsWith("BLOB "))).toBe(true);
     r.destroy();
   });
 
@@ -2390,7 +2423,7 @@ describe("vector-edge fidelity — hover dims by strict incidence, at the EDGE c
     const priv = r as unknown as {
       m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
       nodes: { col: number; row: number; node: { id: string } }[];
-      edgeBaseAlpha: number; leafAlpha: number;
+      edgeBaseAlpha: number; memberEdgeAlpha: number;
     };
     const hub = priv.nodes.find((n) => n.node.id === "n0")!;
     const x = priv.m.padX + hub.col * priv.m.cellW + 1;
@@ -2407,18 +2440,19 @@ describe("vector-edge fidelity — hover dims by strict incidence, at the EDGE c
     expect(ctx.strokes.length).toBe(2);
     const [dimStroke, accentStroke] = ctx.strokes;
     expect(dimStroke.segs.length).toBeGreaterThan(0); // the ring edges actually landed in the dim bucket
-    const base = priv.edgeBaseAlpha * priv.leafAlpha;
+    const base = priv.edgeBaseAlpha * priv.memberEdgeAlpha;
     expect(dimStroke.alpha).toBeCloseTo(Math.min(1, base * EDGE_DIM_ALPHA), 5);
     // ...and specifically NOT the node constant (0.28, a past bug reused it — 5.6x too strong).
     expect(dimStroke.alpha).toBeLessThan(base * DIM_ALPHA);
 
-    // The accent (hovered-incident) pass strokes at `base`, not the bare leafAlpha they're equal
-    // only while edgeBaseAlpha is 1. happy-dom resolves no CSS vars, so this renderer's edgeBaseAlpha
-    // is computed off the FALLBACK token table (not 1 — see deriveEdgeBaseAlpha), which is exactly
-    // what makes this assertion meaningful: the old bug read alpha===leafAlpha (here, exactly 1).
+    // The accent (hovered-incident) pass strokes at `base`, not the bare memberEdgeAlpha — they're
+    // equal only while edgeBaseAlpha is 1. happy-dom resolves no CSS vars, so this renderer's
+    // edgeBaseAlpha is computed off the FALLBACK token table (not 1 — see deriveEdgeBaseAlpha),
+    // which is exactly what makes this assertion meaningful: the old bug read alpha===the band alpha
+    // (here, exactly 1).
     expect(priv.edgeBaseAlpha).toBeLessThan(1);
     expect(accentStroke.alpha).toBeCloseTo(Math.min(1, base), 5);
-    expect(accentStroke.alpha).not.toBeCloseTo(priv.leafAlpha, 3);
+    expect(accentStroke.alpha).not.toBeCloseTo(priv.memberEdgeAlpha, 3);
     expect(accentStroke.alpha).toBeGreaterThan(dimStroke.alpha);
     r.destroy();
   });
