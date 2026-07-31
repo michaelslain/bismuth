@@ -528,6 +528,117 @@ describe("semantic zoom — cluster names own the field zoomed out, file names c
   });
 });
 
+// The 3D twins of the three tests above. 3D takes the OTHER name pass — `showLodMasses` is forced
+// off in 3D ("3D never draws entities" is its own pinned test), so `layoutClusterNames` runs where
+// 2D runs `layoutEntityNames` — and until Task 15 nothing covered the 3D label ladder at ANY zoom.
+// What that hid: 2D can only name communities `buildLodIndex` built (LOD_MIN_CLUSTER members and
+// up); 3D named every community with a member on screen. On the reference vault that is 15 names
+// against 56 at fit — and the 41 extra belong to one- and two-note communities whose exemplar name
+// IS a note's own title, so the 3D field read as a wall of file names over the glyph field. It was
+// found by looking at a screenshot, with the whole suite green.
+describe("semantic zoom in 3D — the same ladder on the pass that has no LOD masses", () => {
+  /** Three REAL communities of eight notes each, plus twelve one-note communities whose exemplar
+   *  name is a note title ("Stray N") rather than a cluster's — the shape of the reference vault's
+   *  coarsest level (171 communities, 15 of them real), in miniature.
+   *
+   *  The strays are what makes this fixture worth anything: on a fixture whose every community is
+   *  big enough, BOTH name passes name all of them and the two branches agree by accident. Sizes are
+   *  written as literal 8 and 1, deliberately NOT as expressions over `LOD_MIN_CLUSTER` — a fixture
+   *  phrased in terms of the threshold under test cannot fail when the threshold moves.
+   *
+   *  The strays are spread across the lower half of the field on distinct rows so that, unfixed,
+   *  they genuinely reach the field: nothing crowds them out of the occupancy grid, so a failure
+   *  here is the roster, never the placement. */
+  const STRAY_COUNT = 12;
+  function soupGraph() {
+    const nodes = [];
+    const edges = [];
+    const REAL = [[-420, -260], [0, -300], [420, -260]];
+    for (let b = 0; b < REAL.length; b++) {
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        const x = (REAL[b][0] + Math.cos(a) * 30) * RING_SCALE;
+        const y = (REAL[b][1] + Math.sin(a) * 30) * RING_SCALE;
+        nodes.push({
+          id: `b${b}k${k}`, label: `note ${b}${k}`, kind: "note" as const,
+          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+          community: b, communityLabel: `Real Cluster ${b}`,
+        });
+      }
+      for (let k = 1; k < 8; k++) edges.push({ from: `b${b}k0`, to: `b${b}k${k}`, kind: "link" as const });
+    }
+    for (let s = 0; s < STRAY_COUNT; s++) {
+      const x = (-420 + (s % 4) * 280) * RING_SCALE;
+      const y = (60 + Math.floor(s / 4) * 130) * RING_SCALE;
+      nodes.push({
+        id: `s${s}`, label: `stray ${s}`, kind: "note" as const,
+        position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+        community: 100 + s, communityLabel: `Stray ${s}`,
+      });
+    }
+    return { nodes, edges };
+  }
+
+  const REAL_NAMES = ["REAL CLUSTER 0", "REAL CLUSTER 1", "REAL CLUSTER 2"];
+  const eyebrowNames = (r: AsciiGraphRenderer) =>
+    (r as unknown as { labels: { text: string; eyebrow?: boolean }[] }).labels
+      .filter((l) => l.eyebrow).map((l) => l.text).sort();
+
+  it("shows cluster names and NO file names at fit (100% zoom) — and names only REAL clusters, not one-note ones", () => {
+    const { r } = mountRenderer("3d", soupGraph());
+    // ABSOLUTE, not relative to the threshold: three names on the field, and they are these three.
+    // Unfixed this is fifteen — the twelve stray note titles as well.
+    expect(eyebrowNames(r)).toEqual([...REAL_NAMES].sort());
+    // Said again the other way round, because the failure output matters: a note title must never
+    // reach the field dressed as a cluster name.
+    expect(eyebrowNames(r).filter((t) => t.startsWith("STRAY"))).toEqual([]);
+    // ...and the file-label ladder is still shut at fit, exactly as in 2D. Asserted on BOTH sides of
+    // the alpha: nothing PAINTED (the 2D twin's assertion), and nothing LAID OUT either. At fit
+    // `fileLabelAlpha` is 0, so a file label that got past the budget is placed with alpha 0 and
+    // never reaches `ctx.fills` — the painted check alone cannot see a blown budget.
+    expect(ctx.fills.some((f) => f.text.includes("[["))).toBe(false);
+    const priv = r as unknown as { labels: { eyebrow?: boolean }[] };
+    expect(priv.labels.filter((l) => !l.eyebrow).length).toBe(0);
+    r.destroy();
+  });
+
+  it("lands on the SAME names 2D does at fit — the roster is not a property of which pass ran", () => {
+    // The two branches share nothing but the roster: 2D anchors an entity name under its mass from
+    // `entityLevels`, 3D anchors a hub name above its hub from `clusterHubByLevel`, through a
+    // different projection. Agreement here is a real measurement, not an identity — unfixed the two
+    // sides read 3 and 15 on this fixture.
+    const g = soupGraph();
+    const a = mountRenderer("2d", g, { showLodMasses: true });
+    const names2d = eyebrowNames(a.r);
+    a.r.destroy();
+    const b = mountRenderer("3d", g);
+    const names3d = eyebrowNames(b.r);
+    b.r.destroy();
+    expect(names2d).toEqual([...REAL_NAMES].sort()); // guard: neither side is empty
+    expect(names3d).toEqual(names2d);
+  });
+
+  it("crossfades to file names as the field zooms in — in 3D the camera really dollies in to get there", () => {
+    const { r, viewport } = mountRenderer("3d", soupGraph());
+    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(false); // where it starts
+    r.frameSubset(["b0k0"]);
+    wheelIn(viewport, 30);
+    settle(200);
+    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
+    r.destroy();
+  });
+
+  it("computeStats() reports zero label overlaps at fit in 3D, on the fixture that used to soup", () => {
+    const { r } = mountRenderer("3d", soupGraph());
+    const stats = r.computeStats();
+    expect(stats.labelsDrawn).toBe(REAL_NAMES.length);
+    expect(stats.labelOverlaps).toBe(0);
+    expect(stats.maxLabelChars).toBeLessThanOrEqual(CLUSTER_LABEL_MAX_CHARS);
+    expect(stats.entitiesDrawn).toBe(0); // 3D never draws entities — this is the non-LOD branch
+    r.destroy();
+  });
+});
+
 describe("N-level semantic labels — the zoom ladder walks communityPath, coarsest to finest", () => {
   /** Two top-level super-clusters (TOP 0/TOP 1), each split into two finer sub-clusters (SUB
    *  0..3) — a 2-level hierarchy, communityPath/communityPathLabels coarsest-first per graph.ts.
