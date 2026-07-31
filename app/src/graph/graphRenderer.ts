@@ -1,11 +1,18 @@
 // app/src/graph/graphRenderer.ts
 //
-// The renderer seam GraphView talks to. Two implementations satisfy it:
-//   • AsciiGraphRenderer — the character-grid renderer the app ships (ASCII redesign).
-//   • CanvasGraphRenderer — the previous dot-and-line Canvas2D renderer, kept in-tree
-//     (still used by the first-run Vault Intro and the embedded graph card).
-// Declaring the surface here means GraphView depends on the seam, not on either class, and the
-// type assertion at the bottom fails the build the moment one of them drifts out of the contract.
+// The renderer seam every consumer talks to. THREE of them now — GraphView (the knowledge-graph
+// pane), intro/VaultIntro (the first-run cloud) and EmbeddedGraph (a ` ```graph ` note block) —
+// and all three hold their renderer as a `GraphRenderer`, never as a concrete class. That is what
+// makes the surviving implementation swappable, and it is what unblocked deleting the other one.
+//
+// Two implementations satisfy it today:
+//   • AsciiGraphRenderer — the character-grid renderer the app ships (ASCII redesign). The one
+//     every consumer above constructs.
+//   • CanvasGraphRenderer — the previous dot-and-line Canvas2D renderer. Its last construction
+//     site is GraphView's `settings.graph.renderer === "standard"` branch; the intro and the graph
+//     block no longer name it. Deleted in Task 14 along with that branch, the type assertion at the
+//     bottom, and the GraphConfig/HoverNode ownership below.
+// The type assertion at the bottom fails the build the moment either drifts out of the contract.
 //
 // Types shared with the old renderer (GraphConfig, HoverNode) are re-exported from it by a TYPE-only
 // import — erased at compile time, so nothing here pulls graphCanvas.css into the bundle.
