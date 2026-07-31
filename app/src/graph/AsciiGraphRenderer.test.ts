@@ -1402,10 +1402,17 @@ describe("Task 11 — the 3D camera dolly is derived from the resolution ladder"
     settle(200);
   }
 
-  it("still paints real note glyphs at MAXIMUM zoom in 3D — the blank field this wiring exists to avoid", () => {
-    // THE required regression gate. A naive `zc = z2 + dollyForT(t, P)` — the dolly stacked on top of
-    // the res-scaled world, which is ALREADY a dolly of P(1 - 1/res) — magnifies twice and pushes
-    // essentially everything in front of the target through the near plane.
+  it("still paints real note glyphs at MAXIMUM zoom in 3D — a live field at the deepest stop", () => {
+    // A guard, and honestly labelled as one: it fires on a BLANK deep end, which is the catastrophic
+    // shape, but it is NOT what separates this camera from the naive `zc = z2 + dollyForT(t, P)`
+    // stacked on the res-scaled world. That was measured rather than assumed, and the prediction did
+    // not hold: the naive double-dolly does not blank a 3D field, it DEGRADES it — 33 nodes on grid
+    // against this camera's 43 on the ball below, and 2 against 3 on the 24-note ring, because the
+    // half of a cloud that is behind the camera compresses toward the vanishing point instead of
+    // disappearing. What actually separates the two is the ~17x over-magnification, and the test that
+    // catches it is "caps the approach at the camera ceiling" below (which fails under both the naive
+    // form and every partial version of it). Kept because a blank deep end is still the failure worth
+    // a named gate, and because a bare paint count is what MERGE-NOTES §6 asked this step to prove.
     withBall({ width: 320, height: 220 }, ({ viewport, painted, p }) => {
       assertDeepLadder(p);
       ctx.fills.length = 0;
@@ -1433,6 +1440,36 @@ describe("Task 11 — the 3D camera dolly is derived from the resolution ladder"
       expect(mag).toBeCloseTo(MAX_MAGNIFICATION, 6);     // ...which at this P is the asymptotic value
       expect(mag).toBeLessThan(p.maxRes);                // ...strictly short of what the ladder asked for
       expect(dollies[0]).toBeLessThan(p.P * MAX_ZOOM_FRAC + 1e-9);
+    });
+  });
+
+  it("approaches MONOTONICALLY across the ladder — every stop moves the camera further in, none past the ceiling", () => {
+    // The endpoint tests either side of this one pin where the approach STARTS and STOPS; this pins
+    // that it is an approach at all rather than a jump. It is also the only thing standing between a
+    // correct camera and one that ignores `t` and applies the full ceiling at every stop — which is
+    // invisible at the deepest stop (where the full ceiling is the right answer) and invisible on a
+    // shallow ladder (where `res` caps it anyway), i.e. invisible to every other test here.
+    withBall({ width: 320, height: 220 }, ({ viewport, p }) => {
+      assertDeepLadder(p);
+      let prevDolly = -Infinity, prevShortfall = -Infinity;
+      for (let step = 0; step <= 10; step++) {
+        if (step > 0) { wheelIn(viewport, 1, { x: BOX.width / 2, y: BOX.height / 2 }); settle(200); }
+        const dolly = recoveredDollies(p)[0];
+        expect(dolly).toBeGreaterThan(prevDolly);
+        prevDolly = dolly;
+        const mag = p.P / (p.P - dolly);
+        expect(mag).toBeLessThanOrEqual(ceilingMag(p.P) + 1e-9);   // never past Canvas's stop
+        expect(mag).toBeLessThanOrEqual(p.res + 1e-9);             // never more than the ladder asked for
+        // On a ladder DEEPER than the ceiling, the shortfall between what the ladder asks for and
+        // what a perspective camera can safely give must open GRADUALLY, one stop at a time — a
+        // camera that saturates at its stop early and then sits there gives a shortfall that is flat
+        // and then jumps, and reads as the approach simply ending partway down the wheel. (This is
+        // also the only assertion in the file that separates a `t`-driven ceiling from a constant
+        // one: at the deepest stop, and anywhere on a shallow ladder, the two agree exactly.)
+        if (step > 0) expect(p.res / mag).toBeGreaterThan(prevShortfall);
+        prevShortfall = p.res / mag;
+      }
+      expect(prevShortfall).toBeGreaterThan(1.1);   // measured 1.18 = maxRes / MAX_MAGNIFICATION
     });
   });
 

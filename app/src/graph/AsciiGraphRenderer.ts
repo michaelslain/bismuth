@@ -87,7 +87,7 @@ const FOV_DEG = 60;              // same camera as the old renderer, so framing 
 // NEAR_PLANE_SLACK is what keeps `persp` off the projection's singularity — a node is culled once it
 // is within this fraction of the camera plane, capping `persp` at 1/NEAR_PLANE_SLACK ≈ 67×.
 const NEAR_PLANE_SLACK = 0.015;
-const MIN_PERSP = 0.05;          // far cull: a node 20× the camera distance behind the target is gone
+const MIN_PERSP = 0.05;          // far cull: a node 20x the FOCAL length behind the target is gone (see projectNodes)
 const ORBIT_SPEED = 0.005;       // rad per px of drag (copied)
 const DRAG_THRESHOLD = 5;        // px before a press becomes an orbit/pan rather than a click
 // TIME-based (not frame-rate dependent) exponential ease-out toward the camera goal (resolution +
@@ -1628,17 +1628,22 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // is no camera to move, so `res` scales the world exactly as it always has.
     const dolly = this.cameraDolly(is2d);
     const s = is2d ? this.pxPerWorld * this.res : this.pxPerWorld;
-    // Distance from the camera to the TARGET plane. The near/far cull below is a fixed fraction of
-    // THIS, not of the focal length `P`: `persp` is uniformly `dollyMag`× larger once the camera has
-    // dollied in, so a threshold pinned to `P` would tighten by that factor and start culling nodes
-    // whose screen positions are perfectly finite — silently thinning the field as you approach,
-    // which is the same blank-at-high-zoom failure by a slower route. Rebased this way the two
-    // planes sit at the same WORLD distance from the target at every dolly, and reduce to the
-    // original `persp > 0.05 && zc < P * 0.985` exactly when `dolly` is 0 (2D, and 3D at fit).
+    // Distance from the camera to the TARGET plane. The NEAR plane below is a fixed fraction of
+    // THIS, not of the focal length `P`: `persp` is uniformly `P/camDist`× larger once the camera has
+    // dollied in, so a threshold pinned to `P` would tighten by that same factor and start culling
+    // nodes whose screen positions are perfectly finite — silently thinning the field as you
+    // approach, which is the same blank-at-high-zoom failure by a slower route. Rebased this way the
+    // plane sits at the same WORLD distance in front of the target at every dolly, and reduces to the
+    // original `zc < P * 0.985` exactly when `dolly` is 0 (all of 2D, and 3D at fit).
+    //
+    // MIN_PERSP — the FAR cull — is deliberately NOT rebased. It is a guard, not a behaviour: it
+    // fires only for a node more than 20× the camera distance BEHIND the target, and a fitted graph's
+    // own depth extent is at most `0.42 * boxPx / 0.866 ≈ 0.49 * P` from the centre (fitPxPerWorld's
+    // fraction over the FOV's own half-angle), i.e. under 1·P even with the target moved onto the
+    // rim by frameSubset. Un-rebased it needs 20·P and rebased it needs 20·camDist ≥ 1.2·P — both out
+    // of reach, so rebasing it would be an untestable change to unreachable code. Left literal.
     const camDist = Math.max(1, P - dolly);
-    const dollyMag = P / camDist;
     const nearPlane = P - camDist * NEAR_PLANE_SLACK;
-    const minPersp = MIN_PERSP * dollyMag;
     const tx = this.target[0], ty = this.target[1], tz = this.target[2];
     const rx = is2d ? 0 : this.rx, ry = is2d ? 0 : this.ry;
     const cyr = Math.cos(ry), syr = Math.sin(ry), cxr = Math.cos(rx), sxr = Math.sin(rx);
@@ -1667,9 +1672,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
       // `projValid`: the projection is meaningful at all (in front of the camera / past the near
       // clip) — independent of grid bounds, so edges can gate on it alone and then CLIP to the grid
       // (see rasterize()'s edge loop) instead of requiring both endpoints already on-screen. Both
-      // planes are dolly-relative (see `camDist` above), so they mean the same WORLD distance from
-      // the target at every stop rather than tightening as the camera comes in.
-      const projValid = persp > minPersp && zc < nearPlane;
+      // near plane is dolly-relative (see `camDist` above), so it means the same WORLD distance in
+      // front of the target at every stop rather than tightening as the camera comes in.
+      const projValid = persp > MIN_PERSP && zc < nearPlane;
       nv.projValid = projValid;
       nv.onGrid = projValid && col >= 0 && col < m.cols && row >= 0 && row < m.rows;
       if (zc < minZ) minZ = zc;
