@@ -241,6 +241,8 @@ const BLEND_KEY_MUL = 65536; // exceeds any possible colorBuf slot value — saf
 // label-candidate purposes — ported from CanvasGraphRenderer.ts's inViewport call sites (40px) via
 // clusterVisual.ts's inViewport(). See layoutLabels()/layoutClusterNames().
 const VIEWPORT_LABEL_PAD = 40;
+/** Shared empty roster — the fail-closed fallback in layoutClusterNames (see `namableByLevel`). */
+const EMPTY_COMMUNITY_SET: ReadonlySet<number> = new Set<number>();
 
 /** Parse a CSS colour STRING (the tokens table only ever holds `#rgb`/`#rrggbb` hex — see
  *  theme/tokens.ts — or, defensively, `rgb()`/`rgba()`) into 0..255 channels for the LEVEL-DRIVEN
@@ -499,6 +501,27 @@ export class AsciiGraphRenderer implements GraphRenderer {
   // cluster names to, so a name and the mass it labels never disagree about where "the cluster" is,
   // and the anchor doesn't jump as members pan in and out of frame.
   private clusterHubByLevel: Map<number, string>[] = [];
+  /** Per hierarchy level, WHICH communities are allowed to put a name on the field — the roster
+   *  `buildLodIndex` admits as aggregate entities (`LOD_MIN_CLUSTER` members and up). Built once per
+   *  structural build(), from `lodLevels`, so the two name passes read the SAME roster:
+   *  `layoutEntityNames` iterates the entities themselves, `layoutClusterNames` filters against this.
+   *
+   *  **This is the fix for the 3D "text soup".** The zoom LADDER — which level owns the field, at
+   *  what alpha, and when file names take over — was already shared: both passes are driven from
+   *  `clusterLevelAlphas`/`clusterLabelAlpha` off the one `resolutionT`. What was NOT shared was the
+   *  ROSTER, and that is what the picture showed. The reference vault's coarsest level holds 171
+   *  communities of which only 15 clear `LOD_MIN_CLUSTER`; 2D named the 15 (it can only name what
+   *  `buildLodIndex` built), 3D named every community it found on screen, and the other 156 are
+   *  one-, two- and three-note communities whose exemplar name IS a note's own title. So at fit 3D
+   *  drew 56 "cluster" names — "LAGGY EYE FOLLOWING", "ON TRANSNISTRIA", "MIDTERM 2 PRACTICE" — over
+   *  the glyph field, which reads as file-name soup and was reported as one. (It peaked at 109
+   *  around the 80%/60% stops, not at fit.) A community under this threshold is not one the LAYOUT
+   *  placed either (core/src/layout.ts uses the same 4 to decide which cluster earns a grid cell —
+   *  see LOD_MIN_CLUSTER's doc), so naming it was never naming a cluster.
+   *
+   *  Deliberately fail-CLOSED: a level with no entry names nothing. The alternative (skip the filter
+   *  when the roster is missing) fails back into exactly the soup this exists to prevent, silently. */
+  private namableByLevel: Set<number>[] = [];
   // Deepest hierarchy depth any node carries (1..4 typically; see core/src/graph.ts communityPath).
   // 0 means no node carries a community at all (no cluster names to draw).
   private levelCount = 0;
@@ -971,6 +994,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
       return ev;
     }));
     this.hoverEntityIdx = -1;
+
+    // The shared NAME ROSTER (see `namableByLevel`) — derived from the structure just built, not a
+    // second, parallel tally, so the two name passes cannot drift apart. Length is `levelCount`
+    // rather than `lodLevels.length` so every level `layoutLabels` can ask for has an entry:
+    // buildLodIndex derives its own depth from the same `pathOf` paths, so the two agree, and a
+    // level the index somehow skipped names nothing instead of falling open.
+    this.namableByLevel = Array.from(
+      { length: this.levelCount },
+      (_, L) => new Set((this.lodLevels[L]?.clusters ?? []).map((c) => c.community)),
+    );
 
     this.radius3 = boundingRadius(this.nodes.map((nv) => nv.p3));
     this.radius2 = boundingRadius(this.nodes.map((nv) => nv.p2));
@@ -2291,6 +2324,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *  level-to-level crossfade — never draw over each other. Larger communities (more VISIBLE members
    *  this frame) claim contested cells first — same greedy-by-worth idea as the file-label loop.
    *
+   *  **Only communities on the level's NAME ROSTER are candidates at all** (`namableByLevel` — read
+   *  that field's doc; it is the whole of Task 15). Without it this pass named every community it
+   *  found on screen while the 2D pass could only name the ones `buildLodIndex` had built, so the
+   *  same graph at the same stop showed 15 cluster names in 2D and 56 in 3D — the extra 41 being
+   *  one- and two-note communities named after a single note, i.e. the "text soup". The gate is
+   *  applied during aggregation, before `clusterExtent`/hub lookup, so a filtered community costs
+   *  nothing per frame.
+   *
    *  The name lifts above the hub's cell by `clusterLabelLift(clusterExtent(...))` — a constant
    *  minimum plus the community's own on-screen reach, so a big mass's name clears the whole mass.
    *  `clusterExtent` — UNLIKE the hub — takes only this frame's VIEWPORT-VISIBLE members: it measures
@@ -2303,6 +2344,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const names = this.communityNamesByLevel[level];
     const hubs = this.clusterHubByLevel[level];
     if (!names || !hubs) return;
+    // The level's NAME ROSTER — see this method's doc and `namableByLevel`. Fail-closed: a level
+    // with no roster names nothing, rather than falling back to naming everything.
+    const namable = this.namableByLevel[level] ?? EMPTY_COMMUNITY_SET;
     const agg = this.clusterAgg;
     agg.clear();
     for (const nv of this.nodes) {
@@ -2310,6 +2354,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const path = pathOf(nv.node);
       if (!path) continue;
       const c = path[Math.min(level, path.length - 1)];
+      if (!namable.has(c)) continue;
       let arr = agg.get(c);
       if (!arr) { arr = []; agg.set(c, arr); }
       arr.push(nv);

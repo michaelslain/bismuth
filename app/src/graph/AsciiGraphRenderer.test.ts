@@ -1014,18 +1014,16 @@ describe("Task 9 — trimDanglingWord wired into the live cluster-name pass", ()
     // The exemplar name is short enough that clusterLabelText's char-cap truncation never fires —
     // this exercises trimDanglingWord as wired into layoutClusterNames itself, not the pure function
     // in isolation (already covered in clusterVisual.test.ts).
-    const nodes = [
-      {
-        id: "n0", label: "n0", kind: "note" as const,
-        position: [0, 0, 0] as [number, number, number], position2d: [0, 0] as [number, number],
-        community: 0, communityLabel: "Ludwig Feuerbach and",
-      },
-      {
-        id: "n1", label: "n1", kind: "note" as const,
-        position: [40, 0, 0] as [number, number, number], position2d: [40, 0] as [number, number],
-        community: 0, communityLabel: "Ludwig Feuerbach and",
-      },
-    ];
+    //
+    // FOUR members, not the two this started with: a community only earns a name once it is on the
+    // level's name roster (`namableByLevel` — LOD_MIN_CLUSTER, Task 15), and a 2-note community is
+    // not a cluster the layout placed either. Nothing about what this test asserts changed; the
+    // fixture just has to be a real community for the pass under test to run at all.
+    const nodes = [0, 1, 2, 3].map((k) => ({
+      id: `n${k}`, label: `n${k}`, kind: "note" as const,
+      position: [k * 40, 0, 0] as [number, number, number], position2d: [k * 40, 0] as [number, number],
+      community: 0, communityLabel: "Ludwig Feuerbach and",
+    }));
     const { r } = mountRenderer("2d", { nodes, edges: [] });
     const priv = r as unknown as { labels: { text: string; eyebrow?: boolean }[] };
     const label = priv.labels.find((l) => l.eyebrow);
