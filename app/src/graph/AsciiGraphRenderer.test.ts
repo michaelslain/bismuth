@@ -2108,9 +2108,19 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     for (let g = 0; g < 16; g++) {
       const path = [g >> 3, g >> 2, g >> 1, g];
       const labels = [`Lzero ${path[0]}`, `Lone ${path[1]}`, `Ltwo ${path[2]}`, `Lthree ${path[3]}`];
+      // Each group is a HUB plus three satellites, and the hubs are deliberately packed into the
+      // middle while the satellites sit out on a wide ring. Zoom is RESOLUTION on a fixed ladder, so
+      // the mid band always shows about the central third of the graph's bounding box, whatever the
+      // fixture's absolute scale — the satellites are what set that box, and putting the hubs inside
+      // its middle third is the only way to have more than one hub-to-hub line on screen there to
+      // assert against. (Inflating the box with far-off outliers does NOT work: maxResFor derives
+      // the ladder from the fit scale, so a bigger box buys proportionally more magnification and
+      // the clusters come out SMALLER at the same t, not bigger.)
+      const hx = ((g % 4) - 1.5) * 11, hy = (Math.floor(g / 4) - 1.5) * 11;
       for (let k = 0; k < 4; k++) {
-        const x = (g % 4) * 60 + (k % 2) * 10 - 95;
-        const y = Math.floor(g / 4) * 60 + Math.floor(k / 2) * 10 - 95;
+        const a = ((g * 3 + k) / 48) * Math.PI * 2;
+        const x = k === 0 ? hx : Math.cos(a) * 100;
+        const y = k === 0 ? hy : Math.sin(a) * 100;
         nodes.push({
           id: `g${g}n${k}`, label: `note ${g}-${k}`, kind: "note" as const,
           position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
@@ -2128,7 +2138,7 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     res: number; goalRes: number; maxRes: number;
     cellNode: Int32Array; cellEntity: Int32Array;
     colors: string[]; edgeBaseAlpha: number;
-    levelPairs: { a: { node: { id: string }; col: number; row: number }; b: { node: { id: string }; col: number; row: number }; count: number }[][];
+    levelPairs: { a: { col: number; row: number; onGrid: boolean }; b: { col: number; row: number; onGrid: boolean }; count: number }[][];
     m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
   }
 
@@ -2152,6 +2162,17 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     ctx.strokes.filter((s) => s.color === priv.colors[9]).flatMap((s) => s.segs);
   const cellCentre = (priv: BandPriv, col: number, row: number) =>
     `${(priv.m.padX + col * priv.m.cellW + priv.m.cellW / 2).toFixed(2)},${(priv.m.padY + row * priv.m.cellH + priv.m.cellH / 2).toFixed(2)}`;
+  /** The hub-to-hub segments level `L`'s backbone SHOULD have drawn this frame: one per connected
+   *  community pair whose two hubs are both on the grid, keyed by their two cell centres. */
+  const expectedBackbone = (priv: BandPriv, L: number) => priv.levelPairs[L]
+    .filter((p) => p.a.onGrid && p.b.onGrid)
+    .map((p) => [cellCentre(priv, p.a.col, p.a.row), cellCentre(priv, p.b.col, p.b.row)].sort().join(" -> "))
+    .sort();
+  /** ...and the ones it actually did. Edge-colour strokes only — the intra-cluster mesh strokes in
+   *  each cluster's own colour, and folding it in here would blur the distinction under test. */
+  const drawnBackbone = (priv: BandPriv) => edgeColorSegs(priv)
+    .map((s) => [`${s[0].toFixed(2)},${s[1].toFixed(2)}`, `${s[2].toFixed(2)},${s[3].toFixed(2)}`].sort().join(" -> "))
+    .sort();
 
   // t = 0.48 sits inside the mid band's PLATEAU (bandsForT → {mass: 0, backbone: 1, member: 0}),
   // and inside the revealT disagreement window described on the fixture above.
@@ -2181,21 +2202,50 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     const priv = r as unknown as BandPriv;
     parkAtT(r, MID_T);
 
-    const segs = edgeColorSegs(priv);
-    // Level 2 owns the field at this t (asserted independently in the revealT test below): its 8
-    // connected community pairs, one line each, hub to hub.
-    const pairs = priv.levelPairs[2];
-    expect(pairs.length).toBe(8);
-    expect(segs.length).toBe(pairs.length);
+    // Level 2 owns the field at this t (asserted independently in the revealT test below): its
+    // connected community pairs, one line each, hub to hub — minus the ones the both-hubs-on-grid
+    // cull drops (a group line to an off-frame hub is a line to nowhere; see queueBackbone).
+    expect(priv.levelPairs[2].length).toBe(8);
+    const visible = expectedBackbone(priv, 2);
+    expect(visible.length).toBe(8);                     // every hub is on the grid at this stop
     // Every line runs between two HUBS — not between arbitrary members, and not the filtered
     // member-crossing edges the first attempt at this drew (see buildLevelEdges' doc comment).
-    const drawn = segs.map((s) => [`${s[0].toFixed(2)},${s[1].toFixed(2)}`, `${s[2].toFixed(2)},${s[3].toFixed(2)}`].sort().join(" -> ")).sort();
-    const want = pairs.map((p) => [cellCentre(priv, p.a.col, p.a.row), cellCentre(priv, p.b.col, p.b.row)].sort().join(" -> ")).sort();
-    expect(drawn).toEqual(want);
+    expect(drawnBackbone(priv)).toEqual(visible);
     // The graph has 48 intra-group spokes + 11 cross links = 59 real edges. If the member pass had
-    // leaked into this band there would be an order of magnitude more lines here than 8 — that
+    // leaked into this band there would be an order of magnitude more lines here than this — that
     // hairball is precisely what the backbone stands in for.
-    expect(segs.length).toBeLessThan(20);
+    expect(edgeColorSegs(priv).length).toBeLessThan(20);
+    r.destroy();
+  });
+
+  it("a group line whose hub has left the grid is not drawn — a line to nowhere, unlike a member edge", () => {
+    // The member-edge pass deliberately keeps an edge with ONE endpoint off-frame (the "edges vanish
+    // at deep zoom" fix): the relationship is still readable from the part that crosses the field.
+    // A GROUP line is different — it summarizes a whole community that isn't there — and the finest
+    // hierarchy levels have hundreds of them, so keeping them fans long lines off every edge of the
+    // field. Measured on the reference vault at 50%: ~620 such lines, which is the field-crossing
+    // noise the mid band exists to remove.
+    const { r, viewport } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    parkAtT(r, MID_T);
+    const before = drawnBackbone(priv);
+    expect(before.length).toBe(8);
+
+    // Pan far enough that some hubs leave the grid, but not so far that they all do.
+    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 420, clientY: 300 })); // prime past DRAG_THRESHOLD
+    frame(10016);
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 720, clientY: 300 }));
+    ctx.strokes.length = 0;  // only the POST-pan frame's strokes; the recording ctx accumulates
+    frame(10032);
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 720, clientY: 300 }));
+
+    const offGrid = priv.levelPairs[2].filter((p) => !p.a.onGrid || !p.b.onGrid);
+    expect(offGrid.length).toBeGreaterThan(0);          // the pan really did push hubs off...
+    expect(offGrid.length).toBeLessThan(8);             // ...but not all of them
+    // Exactly the surviving pairs, and nothing else.
+    expect(drawnBackbone(priv)).toEqual(expectedBackbone(priv, 2));
+    expect(drawnBackbone(priv).length).toBe(8 - offGrid.length);
     r.destroy();
   });
 
@@ -2221,12 +2271,17 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     // would pass for either constant and prove nothing — it is what makes MID_T a discriminating
     // sample rather than an arbitrary one.
     const ported = clusterLevelAlphas(MID_T, 4, DEFAULT_LEVEL_REVEAL_T);
-    expect(ported.indexOf(Math.max(...ported))).not.toBe(colourLevel);
-    // ...and those two levels have different pair counts, so the segment count can tell them apart.
-    expect(priv.levelPairs[colourLevel].length).not.toBe(priv.levelPairs[ported.indexOf(Math.max(...ported))].length);
+    const portedLevel = ported.indexOf(Math.max(...ported));
+    expect(portedLevel).not.toBe(colourLevel);
+    // ...and the two levels' visible pair sets genuinely differ, so one can be told from the other.
+    expect(expectedBackbone(priv, colourLevel).length).toBeGreaterThan(0);
+    expect(expectedBackbone(priv, portedLevel)).not.toEqual(expectedBackbone(priv, colourLevel));
 
-    // The backbone drew the COLOUR ladder's level, on this frame.
-    expect(edgeColorSegs(priv).length).toBe(priv.levelPairs[colourLevel].length);
+    // The backbone drew the COLOUR ladder's level, on this frame — compared as the exact SET of
+    // hub-to-hub segments, not a count, so two levels that happened to share a count could not pass
+    // for each other.
+    expect(drawnBackbone(priv)).toEqual(expectedBackbone(priv, colourLevel));
+    expect(drawnBackbone(priv)).not.toEqual(expectedBackbone(priv, portedLevel));
     r.destroy();
   });
 

@@ -1721,7 +1721,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const batch = this.groupBatch(alpha, width);
       for (const p of pairs) {
         if (p.count < lo || p.count >= hi) continue;
-        if (!p.a.projValid || !p.b.projValid) continue;
+        // BOTH hubs must be ON THE GRID — `CanvasGraphRenderer.ts:1266`'s `if (!p.a.onScreen ||
+        // !p.b.onScreen) continue`, and a DELIBERATE difference from the real member edges a few
+        // lines down, which gate on `projValid` alone so an edge with one endpoint off-frame still
+        // strokes its visible part (the "edges vanish at deep zoom" fix). A member edge with one end
+        // off-screen is a real relationship you can still read; a GROUP line with one end off-screen
+        // is a line to nowhere, and the finest levels have hundreds of them — measured on the
+        // reference vault at 50%, dropping this rule drew ~620 lines fanning off every edge of the
+        // field, which is the field-crossing noise this whole band exists to remove.
+        if (!p.a.onGrid || !p.b.onGrid) continue;
         batch.pts.push(this.cellCX(p.a.col), this.cellCY(p.a.row), this.cellCX(p.b.col), this.cellCY(p.b.row));
         this.edgesDrawnFrame++;
       }
