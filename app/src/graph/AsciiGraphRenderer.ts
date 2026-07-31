@@ -2682,14 +2682,40 @@ export class AsciiGraphRenderer implements GraphRenderer {
    * geometry and naming always agree on where a level "owns" the field.
    *
    * Landing EXACTLY at `levelBoundaries()[childLevel]` (rather than somewhere deeper inside the
-   * child's segment) is deliberate: per `clusterLevelAlphas`, the child level's own alpha is
-   * already FULLY IN right at that boundary (its crossfade completes there, it doesn't start
-   * there) — so that boundary is the MINIMUM resolution increase that reveals it. Going deeper only
-   * shrinks the visible world window further, which can push the child's own members back OFF the
-   * grid on a widely-spread hierarchy without buying anything for the crossfade (already at full
-   * strength). The LEAF pseudo-level is the one exception: the file-label alpha — and the leaf
-   * raster pass, gated the same way — is exactly 0 AT `FILE_LABEL_REVEAL_T` and only rises past it,
-   * so landing there wouldn't reveal anything; nudge half the fade span in instead.
+   * child's segment) is deliberate, and it is now doing TWO jobs at once:
+   *
+   *   1. It is the MINIMUM resolution increase that reveals the child grouping. Per
+   *      `clusterLevelAlphas`, the child level's own alpha is already FULLY IN right at that
+   *      boundary (its crossfade completes there, it doesn't start there). Going deeper only shrinks
+   *      the visible world window further, which can push the child's own members back OFF the grid
+   *      on a widely-spread hierarchy without buying anything for the crossfade.
+   *   2. It is also the stop within the child's whole window `[bounds[c], bounds[c+1])` where the
+   *      child's MASSES are strongest, because `bandsForT`'s `massAlpha` is non-increasing in `t`.
+   *      So if the children can be drawn as territory masses at all, this is where.
+   *
+   * **WHAT THE USER ACTUALLY SEES THERE DEPENDS ON DEPTH, and on a real vault it is often not
+   * masses.** The mass band ends at `BACKBONE_START_T + BACKBONE_FADE_SPAN` (0.46) while the level
+   * ladder runs to `FILE_LABEL_REVEAL_T` (0.75), so a level whose window STARTS past 0.46 has no
+   * stop anywhere at which it renders as masses. On the reference vault's 5-level hierarchy
+   * (`levelBoundaries(5) = [0, .15, .30, .45, .60, .75]`):
+   *
+   * | clicked level | target t | child mass alpha | what the click produces                       |
+   * |---|---|---|---|
+   * | 0 | 0.150 | 1.000  | child masses, named                                             |
+   * | 1 | 0.300 | 1.000  | child masses, named                                             |
+   * | 2 | 0.450 | 0.0146 | effectively glyphs (the masses are there but invisible)          |
+   * | 3 | 0.600 | 0.0000 | glyphs + the child level's backbone and names; no masses at all  |
+   *
+   * That is not a bug and it is not worked around here: clicking a deep mass DISSOLVES it into its
+   * members, and the child grouping is still revealed — through node colour, the cluster-name ladder
+   * and the hub-to-hub backbone, all of which switch to the child level at exactly this `t`. What
+   * this comment must not do is keep claiming the click "reveals its child hierarchy level" as
+   * masses unconditionally, because for levels 2+ it does not. Re-stretching the bands to make it
+   * true was considered and rejected — see MERGE-NOTES.md §5.4 and `backbone.ts`'s constants.
+   *
+   * The LEAF pseudo-level is a separate exception: the file-label alpha — and the leaf raster pass,
+   * gated the same way — is exactly 0 AT `FILE_LABEL_REVEAL_T` and only rises past it, so landing
+   * there wouldn't reveal anything; nudge half the fade span in instead.
    *
    * Only sets the GOAL state (`goalTarget`/`zoomPct`/`goalRes`); the normal per-frame glide in
    * tick() carries the camera there. Never steps OUT: the target percent is clamped so a click
@@ -2701,6 +2727,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const bounds = levelBoundaries(this.levelCount); // length levelCount+1, coarsest→finest, ends at FILE_LABEL_REVEAL_T
     const childLevel = Math.min(ev.level + 1, this.levelCount);
     const isLeaf = childLevel >= this.levelCount;
+    // `bounds[childLevel]` is both the minimum resolution that reveals the child grouping AND the
+    // strongest its masses ever get (massAlpha is non-increasing) — see this method's doc for what
+    // that means when the child's window starts past the end of the mass band.
     const targetT = isLeaf ? FILE_LABEL_REVEAL_T + FILE_LABEL_FADE_SPAN * 0.5 : bounds[childLevel];
     const targetPct = snapZoomPercent(resolutionPercent(resFromT(targetT, this.maxRes), this.maxRes));
     this.zoomPct = Math.min(this.zoomPct, targetPct);

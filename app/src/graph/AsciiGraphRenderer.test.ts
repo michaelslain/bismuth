@@ -2145,7 +2145,7 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
   interface BandPriv {
     res: number; goalRes: number; maxRes: number;
     cellNode: Int32Array; cellEntity: Int32Array;
-    colors: string[]; edgeBaseAlpha: number;
+    colors: string[]; edgeBaseAlpha: number; memberEdgeAlpha: number;
     levelPairs: { a: { col: number; row: number; onGrid: boolean }; b: { col: number; row: number; onGrid: boolean }; count: number }[][];
     m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
   }
@@ -2561,6 +2561,70 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     expect(Math.abs(heavy.alpha - priv.edgeBaseAlpha)).toBeLessThanOrEqual(1 / 24);
     expect(light.alpha).toBeCloseTo(priv.edgeBaseAlpha * (0.35 + 0.65 * (Math.log1p(1) / Math.log1p(20))), 1);
     r.destroy();
+  });
+
+  it("clicking a mass lands where its children are STRONGEST — which on a deep hierarchy is a glyph view, not more masses", () => {
+    // `clickEntity` targets `levelBoundaries()[childLevel]`, which is both the minimum resolution
+    // that reveals the child grouping and (massAlpha being non-increasing) the strongest its masses
+    // ever get. On a 4-level hierarchy that means two genuinely different outcomes, and the doc used
+    // to claim only the first:
+    //   click level 0 → t = 0.1875, massAlpha 1     → child masses
+    //   click level 2 → t = 0.5625, massAlpha 0     → glyphs + the child level's names and backbone
+    // Both are asserted here so neither can quietly change, and the alphas come from `bandsForT`
+    // rather than being asserted as literals.
+    const bounds = [0, 0.1875, 0.375, 0.5625, 0.75];
+    expect(bandsForT(bounds[1], 4).massAlpha).toBe(1);
+    expect(bandsForT(bounds[3], 4).massAlpha).toBe(0);
+
+    // --- shallow click: the children ARE masses ------------------------------------------------
+    {
+      const { r, viewport } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+      const p = lodPriv(r);
+      expect(entityLevelsOnGrid(p)).toEqual(new Set([0]));
+      const i = p.cellEntity.findIndex((v) => v >= 0);
+      const at = cellPx(p, i);
+      viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: at.x, clientY: at.y }));
+      window.dispatchEvent(new PointerEvent("pointerup", { clientX: at.x, clientY: at.y }));
+      settle(300);
+      expect(entityLevelsOnGrid(p)).toEqual(new Set([1]));       // child masses, drawn
+      r.destroy();
+    }
+
+    // --- deep click: there is no stop at which the children can be masses -----------------------
+    {
+      const { r, viewport } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+      const p = lodPriv(r);
+      const priv = r as unknown as BandPriv;
+      // Park where LEVEL 2's own masses are drawn (its window starts at 0.375, still inside the
+      // mass band) so there is a level-2 mass to click in the first place.
+      parkAtT(r, 0.40);
+      expect(entityLevelsOnGrid(p)).toEqual(new Set([2]));
+      const i = p.cellEntity.findIndex((v) => v >= 0);
+      expect(i).toBeGreaterThanOrEqual(0);
+      const at = cellPx(p, i);
+      viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: at.x, clientY: at.y }));
+      window.dispatchEvent(new PointerEvent("pointerup", { clientX: at.x, clientY: at.y }));
+      settle(300);
+      // The glide paints every intermediate frame into the recording ctx, including ones still
+      // mid-crossfade from LTWO to LTHREE, so only the FINAL settled frame answers "what does this
+      // stop look like" — force one repaint at the converged camera (the pattern the rest of this
+      // file uses).
+      ctx.fills.length = 0;
+      ctx.strokes.length = 0;
+      r.setSearchMatches(new Set());
+      frame(99999);
+      // The click zoomed in, and NOTHING is a mass at the stop it landed on...
+      expect(r.computeStats().zoomPct).toBeLessThan(60);
+      expect([...p.cellEntity].every((v) => v < 0)).toBe(true);
+      expect(r.computeStats().entitiesDrawn).toBe(0);
+      // ...but the child grouping is still revealed: individual members on the field, and the
+      // FINEST level's names in place of the level-2 ones. That is the honest contract.
+      expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
+      expect(ctx.fills.some((f) => f.text.startsWith("LTHREE "))).toBe(true);
+      expect(ctx.fills.some((f) => f.text.startsWith("LTWO "))).toBe(false);
+      expect(priv.memberEdgeAlpha).toBe(0);                      // still the mid band, not the near one
+      r.destroy();
+    }
   });
 
   it("the far band is unchanged: masses own the field at fit, and no glyph or member edge is drawn", () => {
