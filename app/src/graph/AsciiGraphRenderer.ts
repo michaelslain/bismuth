@@ -617,6 +617,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private zoomPct = 100;
   private wheelAccum = 0;
   private userTook = false;
+  // INTRO FRAMING (ported from CanvasGraphRenderer.ts:418/522/524 — its only two off-seam camera
+  // knobs, used by the first-run Vault Intro and nothing else). `fitMargin` divides the 100% fit
+  // scale, so >1 is extra zoom-OUT; `frameOffsetY` slides the graph's screen ORIGIN down by that
+  // fraction of the host height, leaving the canvas itself full-bleed. Both are static per mount —
+  // they are framing, not camera state — so neither is touched by fit(resetCamera)/resetView().
+  private fitMargin = 1;
+  private frameOffsetY = 0;
 
   // interaction
   private pressed = false; private dragging = false; private movedFar = false;
@@ -673,6 +680,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.ctx = this.canvas.getContext("2d");
     this.viewport.append(this.canvas);
     el.appendChild(this.viewport);
+    this.applyGround();
 
     this.readTokens();
     this.measure();
@@ -722,6 +730,27 @@ export class AsciiGraphRenderer implements GraphRenderer {
   setZoomCallback(cb: (pct: number) => void) { this.onZoom = cb; }
   setBloomCallback(cb: ((field: DensityField) => void) | undefined) { this.onBloom = cb; }
   setVisible(visible: boolean) { this.visible = visible; if (visible) { this.dirty = true; this.start(); } else this.stop(); }
+
+  /** Extra fit zoom-OUT (see the `fitMargin` field). Refits immediately; the floor mirrors
+   *  CanvasGraphRenderer's own `Math.max(0.2, m)` so a 0 can never divide the fit scale away. */
+  setFitMargin(m: number) {
+    this.fitMargin = Number.isFinite(m) ? Math.max(0.2, m) : 1;
+    this.fit();
+  }
+
+  /** Slide the graph's screen origin down by `frac` of the host height (see the `frameOffsetY`
+   *  field). No refit — the fit SCALE is unchanged, only where the origin lands. */
+  setFrameOffsetY(frac: number) {
+    this.frameOffsetY = Number.isFinite(frac) ? frac : 0;
+    this.dirty = true;
+  }
+
+  /** The screen px the world origin projects to, before perspective: grid centre + pan + the
+   *  intro's vertical frame offset. A helper rather than three inlined copies so the node
+   *  projection, the entity projection and the cursor-anchored zoom can never disagree about where
+   *  the graph's centre is — they all have to invert each other exactly. */
+  private originX(panPx: number) { return this.m.padX + (this.m.cols / 2) * this.m.cellW + panPx; }
+  private originY(panPx: number) { return this.m.padY + (this.m.rows / 2) * this.m.cellH + panPx + this.frameOffsetY * this.H; }
 
   // ---- data ----------------------------------------------------------------
 
@@ -964,6 +993,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
   setConfig(cfg: GraphConfig) {
     const prevMode = this.cfg.viewMode;
     this.cfg = cfg;
+    this.applyGround();
     // A theme switch reaches us through setConfig (the palette/background change), so that is where
     // the CSS tokens are re-read — the same trigger point the old renderer used for applyHostVars().
     // Note the colour fields on GraphConfig (palette/edgeColor/backgroundColor/…) are IGNORED here:
@@ -986,6 +1016,26 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.restyle();
     this.fit();
     this.dirty = true;
+  }
+
+  /**
+   * The field's GROUND, per `GraphConfig.transparent`.
+   *
+   * `.asc-field` (ui.css) paints an opaque `--graph-bg` behind the canvas — right for a graph pane,
+   * wrong for the first-run Vault Intro, which cross-fades TWO full-bleed graph layers (opacity
+   * 0↔1) over the page's own `--bg`. An opaque ground there fades the entire page background
+   * between `--bg` and `--graph-bg` on every slide change, and those two tokens differ in three of
+   * the four themes (riso #EAE4D4 vs #DBD3BC most visibly). The canvas itself is already
+   * transparent — paint() clears it rather than filling — so suppressing this one background is the
+   * whole of it.
+   *
+   * An inline style, not a modifier class: the rule then lives in the same file as the config field
+   * that drives it, and it is directly observable from a headless test (happy-dom applies no
+   * stylesheets, so a class would assert nothing).
+   */
+  private applyGround() {
+    if (!this.viewport) return;
+    this.viewport.style.background = this.cfg.transparent ? "transparent" : "";
   }
 
   private readTokens() {
@@ -1249,6 +1299,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const radius = Math.max(1e-6, this.radius3);
       this.pxPerWorld = fitPxPerWorld(this.m.cols, this.m.rows, this.m, radius);
     }
+    // Intro framing (CanvasGraphRenderer.ts:1128's `/ this.fitMargin`): applied to the FIT scale, so
+    // 100% means "the whole graph, zoomed out by this much" and every derived quantity follows —
+    // including `maxRes` below, whose ladder therefore still bottoms out at the same fixed absolute
+    // world-per-cell (asciiGrid.ts DEEPEST_WORLD_PER_CELL) rather than at a margin-dependent one.
+    this.pxPerWorld /= this.fitMargin;
     this.maxRes = maxResFor(this.pxPerWorld, this.cellW);
     if (resetCamera) {
       this.zoomPct = 100;
@@ -1429,9 +1484,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (this.cfg.viewMode !== "2d" || after === before) return;
     const sB = this.pxPerWorld * before, sA = this.pxPerWorld * after;
     if (!(sB > 0) || !(sA > 0)) return;
-    const m = this.m;
-    const ox = m.padX + (m.cols / 2) * m.cellW + this.panX;
-    const oy = m.padY + (m.rows / 2) * m.cellH + this.panY;
+    const ox = this.originX(this.panX);
+    const oy = this.originY(this.panY);
     // World point under the anchor px at the goal-before camera … stays put at the goal-after one.
     const wx = this.goalTarget[0] + (ax - ox) / sB;
     const wy = this.goalTarget[1] + (ay - oy) / sB;
@@ -1767,8 +1821,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const tx = this.target[0], ty = this.target[1];
     // The QUANTIZED pan (see rasterize()/asciiGrid.ts quantizePan) — same world→cell phase the node
     // projection below uses, so entity masses never wiggle relative to the notes they summarize.
-    const ox = m.padX + (m.cols / 2) * m.cellW + this.panXQ;
-    const oy = m.padY + (m.rows / 2) * m.cellH + this.panYQ;
+    const ox = this.originX(this.panXQ);
+    const oy = this.originY(this.panYQ);
     const capRow = Math.max(1, (m.rows / 7) | 0);
     const capCol = Math.max(2, (m.cols / 7) | 0);
     for (const ev of this.entityLevels[level]) {
@@ -2043,9 +2097,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // The QUANTIZED pan (see rasterize()/asciiGrid.ts quantizePan) — the pan-jitter fix: `panXQ`/
     // `panYQ` are always a whole multiple of the cell size, so the world→cell rounding PHASE below
     // never shifts mid-drag. The leftover sub-cell remainder (`panXFrac`/`panYFrac`) is applied only
-    // as a canvas translate at paint time, never here.
-    const ox = m.padX + (m.cols / 2) * m.cellW + this.panXQ;
-    const oy = m.padY + (m.rows / 2) * m.cellH + this.panYQ;
+    // as a canvas translate at paint time, never here. `originY` also folds in the intro's static
+    // vertical frame offset (see setFrameOffsetY) — a constant px shift, so unlike the drag pan it
+    // cannot re-phase the world→cell rounding mid-interaction and needs no quantization.
+    const ox = this.originX(this.panXQ);
+    const oy = this.originY(this.panYQ);
     let minZ = Infinity, maxZ = -Infinity;
     for (const nv of this.nodes) {
       const p = is2d ? nv.p2 : nv.p3;
@@ -2135,7 +2191,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
     for (const nv of this.nodes) {
       if (nv.projValid && inViewport(nv.sx, nv.sy, this.W, this.H, VIEWPORT_LABEL_PAD)) ordered.push(nv);
     }
-    const budget = fileLabelBudget(t, ordered.length);
+    // ALL-LABELS MODE (GraphConfig.labelEveryNode — see the seam's doc for why the old
+    // `graphLabelHubCount: 9999` sentinel never could work). Both zoom-driven gates come off: the
+    // BUDGET opens to every candidate, and the crossfade ALPHA is pinned to 1. Both are load-bearing
+    // and neither implies the other — `fileLabelBudget` and `fileLabelAlpha` are separate curves
+    // that are BOTH zero at/below FILE_LABEL_REVEAL_T (0.75), i.e. across the whole range a diagram
+    // opened at fit actually sits in, so dropping only one of them still shows nothing.
+    const everyNode = this.cfg.labelEveryNode === true;
+    const budget = everyNode ? ordered.length : fileLabelBudget(t, ordered.length);
 
     const forced = (nv: NodeView) => {
       const id = nv.node.id;
@@ -2145,6 +2208,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
     };
     const rank = (nv: NodeView) => (forced(nv) ? 1e9 : this.alwaysOn.has(nv.node.id) ? 1e6 + nv.deg : nv.deg + nv.dr);
     ordered.sort((a, b) => rank(b) - rank(a));
+
+    /** Is any cell of the [col-1, col+len] span on `row` already claimed by an earlier label? */
+    const taken = (col: number, len: number, row: number) => {
+      for (let c = col - 1; c <= col + len; c++) {
+        if (c < 0 || c >= m.cols) continue;
+        if (this.labelOccupied[row * m.cols + c]) return true;
+      }
+      return false;
+    };
 
     let drawn = 0;
     for (const nv of ordered) {
@@ -2157,12 +2229,17 @@ export class AsciiGraphRenderer implements GraphRenderer {
       if (col < 0) continue;
       const row = nv.row;
       if (row < 0 || row >= m.rows) continue;
-      let free = true;
-      for (let c = col - 1; c <= col + len && free; c++) {
-        if (c < 0 || c >= m.cols) continue;
-        if (this.labelOccupied[row * m.cols + c]) free = false;
+      let free = !taken(col, len, row);
+      // ALL-LABELS mode retries the OTHER side of the node before giving a label up — a diagram's
+      // names are its content, so "blocked on the right" should not silently unname a box while the
+      // space to its left is empty. The knowledge graph deliberately does NOT do this: there a
+      // dropped label is the budget doing its job, and a second placement attempt per candidate
+      // would spend the budget on whichever labels happen to be contested.
+      if (!free && everyNode) {
+        const alt = col === nv.col + 2 ? nv.col - 2 - len : nv.col + 2;
+        if (alt >= 0 && alt + len <= m.cols && !taken(alt, len, row)) { col = alt; free = true; }
       }
-      if (!free && !force) continue;
+      if (!free && !force && !everyNode) continue;
       for (let c = col - 1; c <= col + len; c++) {
         if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
       }
@@ -2170,7 +2247,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const colorSlot = accent ? C_ACCENT : is2d ? C_MUTED : nv.dr > 0.55 ? C_MUTED : C_FAINT;
       this.labels.push({
         text, col, row, color: this.resolveFillColor(colorSlot),
-        accent, alpha: force ? 1 : fAlpha, widthCells: len,
+        accent, alpha: force || everyNode ? 1 : fAlpha, widthCells: len,
       });
       drawn++;
     }
