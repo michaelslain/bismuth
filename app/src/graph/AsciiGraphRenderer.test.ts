@@ -2826,18 +2826,64 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     expect(leaves.priv.glyphAlpha).toBe(1);                     // glyphs own it
     expect([...leaves.priv.cellNode].some((v) => v >= 0)).toBe(true);
 
+    // THE EMITTED POINTS, before buildBloom. This is where the size is actually checkable: `blur`
+    // adds a fixed ~5.3-cell variance to whatever it is handed, and on this fixture that swamps the
+    // y spread — a quarter-scale per-axis error (converting y through W instead of H, say) survives
+    // the field comparison below entirely. Pre-blur the two agree to floating-point, because both
+    // are the same linear map of the same 275 world positions by two different routes: one projects
+    // each member, the other projects the centroid and reproduces the members' second moment.
+    const ms = masses.r.computeStats(), ls = leaves.r.computeStats();
+    expect(ms.bloomSdx).toBeCloseTo(ls.bloomSdx, 9);
+    expect(ms.bloomSdy).toBeCloseTo(ls.bloomSdy, 9);
+    expect(ls.bloomSdx / ls.bloomSdy).toBeGreaterThan(1.5);     // the fixture really is anisotropic
+    expect(ms.bloomSdy).toBeGreaterThan(0);                     // ...and neither axis is degenerate
+
+    // The FIELD, after buildBloom — the same claim about what actually reaches the screen, at the
+    // (much lower) resolution the convolution leaves. Kept as well as, not instead of: the pair
+    // above cannot see a mistake made after the point list is built.
     const mm = fieldMoments(masses.field()!);
     const lm = fieldMoments(leaves.field()!);
-    // Same place, to within a field cell.
-    expect(mm.mx).toBeCloseTo(lm.mx, 0);
+    expect(mm.mx).toBeCloseTo(lm.mx, 0);                        // same place, within a field cell
     expect(mm.my).toBeCloseTo(lm.my, 0);
-    // Same size, to within 15% per axis — and the fixture is 3:1 anisotropic, so this pins the two
-    // axes independently rather than one radius twice.
     expect(mm.sdx / lm.sdx).toBeGreaterThan(0.85);
     expect(mm.sdx / lm.sdx).toBeLessThan(1.15);
     expect(mm.sdy / lm.sdy).toBeGreaterThan(0.85);
     expect(mm.sdy / lm.sdy).toBeLessThan(1.15);
-    expect(lm.sdx / lm.sdy).toBeGreaterThan(1.5);               // the fixture really is anisotropic
+  });
+
+  it("REQUIRED — EVERY active hierarchy level emits, not just the first: a level crossfade keeps its whole weight", () => {
+    // The far band is a ladder of levels, and mid-crossfade TWO of them are simultaneously above
+    // LOD_ALPHA_EPS and both have to contribute. `spreadClusterGraph` deliberately has one
+    // community, so its `entityLevels` loop body runs once and could not tell a one-level emitter
+    // from a correct one; `lodGraph` is 2-level (2 tops of 12, 4 blobs of 6), which is what makes
+    // this checkable at all.
+    const { r, priv } = mountBloom(lodGraph(), true);
+    expect(priv.levelCount).toBe(2);
+
+    // The stop where BOTH levels own part of the field — read off `clusterLevelAlphas`, not
+    // assumed. On a 2-level graph the level-0/1 handover CENTRES near t = 0.29 (it is done by
+    // 0.375, which is why that is the wrong stop to sample), and `massAlpha` is still 1 there, so
+    // the mass band owns the field outright and every point emitted is a mass.
+    const CROSS_T = 0.29;
+    const levels = clusterLevelAlphas(CROSS_T, 2);
+    expect(levels[0]).toBeGreaterThan(0.3);                     // well clear of LOD_ALPHA_EPS...
+    expect(levels[1]).toBeGreaterThan(0.3);                     // ...on BOTH levels at once
+    expect(bandsForT(CROSS_T, 2).massAlpha).toBe(1);
+
+    // Every member of the graph is in a >= LOD_MIN_CLUSTER community at BOTH levels, so the
+    // conservation law says the emitted weight is the whole membership however the mass band is
+    // split across levels — and it only holds if every active level actually emits. Drop the
+    // second and this reads massAlpha*12 short.
+    park(priv, CROSS_T);
+    expect(r.computeStats().bloomWeight).toBeCloseTo(24, 6);
+
+    // The control: at a stop where ONE level owns the mass band outright the same total appears, so
+    // the assertion above is doing work at the crossfade specifically, not passing everywhere.
+    const soloLevels = clusterLevelAlphas(0.1, 2);
+    expect(soloLevels[0]).toBeGreaterThan(0.98);
+    expect(soloLevels[1]).toBeLessThan(0.02);
+    park(priv, 0.1);
+    expect(r.computeStats().bloomWeight).toBeCloseTo(24, 6);
   });
 
   it("REQUIRED — no dark window and no pop anywhere on the ladder: the summarized field tracks the un-summarized one", () => {

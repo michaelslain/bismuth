@@ -201,6 +201,31 @@ test("pushCloud with zero spread collapses onto the centre — a point-like aggr
   expect(moments(out).w).toBeCloseTo(9, 6);
 });
 
+test("a non-finite or negative spread degrades to that same point, and NEVER to silence", () => {
+  // This module's own version of the bug it exists to fix. Unguarded, a NaN sd makes both of
+  // pushCloud's loop bounds NaN and the aggregate emits ZERO points while its caller still counts
+  // its full weight — healthy counters, dark field, exactly the regression signature. An infinite
+  // one gets there by the other road: points `accumulate` silently drops as out-of-range.
+  for (const [sx, sy] of [[NaN, 0.1], [0.1, NaN], [NaN, NaN], [Infinity, 0.1], [0.1, -0.2]] as const) {
+    const out: BloomPoint[] = [];
+    pushCloud(out, 0.5, 0.5, sx, sy, 24);
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
+    expect(moments(out).w).toBeCloseTo(24, 6);                 // the light is not lost
+    // ...and the field really does receive it, rather than accumulate() dropping every point.
+    expect(buildBloom(out).some((v) => v > 0)).toBe(true);
+    // The bad axis reads as 0 spread; a good one alongside it is still honoured.
+    const m = moments(out);
+    expect(m.sdx).toBeCloseTo(Number.isFinite(sx) && sx > 0 ? sx : 0, 9);
+    expect(m.sdy).toBeCloseTo(Number.isFinite(sy) && sy > 0 ? sy : 0, 9);
+  }
+  // The sample count stays a real integer too — that is what goes NaN first.
+  for (const bad of [NaN, Infinity, -1]) {
+    expect(Number.isInteger(cloudSampleCount(bad, bad))).toBe(true);
+    expect(cloudSampleCount(bad, bad)).toBeGreaterThan(0);
+  }
+});
+
 test("a spread cloud does NOT out-peak the individual points it stands for", () => {
   // The regression this exists for, at field resolution. 60 leaves spread across a wide region vs
   // ONE aggregate of the same total weight standing in for them. Emitted as a bare point the

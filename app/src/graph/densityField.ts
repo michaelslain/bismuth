@@ -107,12 +107,33 @@ const CLOUD_MIN_PER_RING = 6, CLOUD_MAX_PER_RING = 16;
 
 const clampInt = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)));
 
+/**
+ * A spread that can actually be sampled: non-finite or negative becomes 0, i.e. the documented
+ * point-like behaviour.
+ *
+ * NOT defensive noise — it closes this module's own version of the bug it exists to fix. Left raw, a
+ * NaN `sd` makes `clampInt(NaN, …)` return NaN, both of `pushCloud`'s loops fail their first
+ * comparison, and the aggregate emits ZERO points while its caller still counts its full weight; an
+ * infinite `sd` gets there by the other road, emitting points `accumulate` then drops. Either way
+ * the QA counters read healthy and the field is dark — precisely the signature of the regression
+ * this file was changed for, and precisely what those counters exist to make impossible. Degrading
+ * to a point keeps the light (the CENTRE is still meaningful when only the spread has gone bad)
+ * rather than dropping the cluster.
+ *
+ * Not reachable from `layout.ts` today: `LodCluster`'s `sdx`/`sdy` come from `√(E[x²] − E[x]²)`
+ * clamped at 0, so it takes a member coordinate around 1e150 — big enough for the sum of squares to
+ * overflow while the plain sum stays finite. Guarded anyway, for the same reason `safeDepthBand`
+ * is: a non-finite that reaches the rAF path is a silent, permanent visual failure, not a throw.
+ */
+const sanitizeSpread = (v: number) => (Number.isFinite(v) && v > 0 ? v : 0);
+
 /** Rings × samples-per-ring `pushCloud` will spend on a cloud of this spread (0..1 fractions) —
- *  exported so tests and QA can predict the cost without re-deriving it. */
+ *  exported so tests and QA can predict the cost without re-deriving it. Never returns a non-finite
+ *  count: see `sanitizeSpread`. */
 export function cloudGrid(sdx: number, sdy: number): { rings: number; perRing: number } {
   // Outer radius in cells, worst axis. The field is not square, so a fraction means a different
   // number of cells in x than in y.
-  const rCells = Math.max(2 * sdx * FIELD_W, 2 * sdy * FIELD_H);
+  const rCells = Math.max(2 * sanitizeSpread(sdx) * FIELD_W, 2 * sanitizeSpread(sdy) * FIELD_H);
   return {
     rings: clampInt(rCells / CLOUD_SPACING_CELLS, CLOUD_MIN_RINGS, CLOUD_MAX_RINGS),
     perRing: clampInt((2 * Math.PI * rCells) / CLOUD_SPACING_CELLS, CLOUD_MIN_PER_RING, CLOUD_MAX_PER_RING),
@@ -143,14 +164,15 @@ export const cloudSampleCount = (sdx: number, sdy: number): number => {
  *
  * So: total weight is preserved exactly, and the emitted cloud reproduces the requested second
  * moment — a summary contributes the same light, in the same place, at the same spread, as the
- * individual points it stands for. `sd = 0` collapses every sample onto the centre, i.e. degrades to
- * exactly the single-point behaviour.
+ * individual points it stands for. `sd = 0` — or a non-finite/negative one, see `sanitizeSpread` —
+ * collapses every sample onto the centre, i.e. degrades to exactly the single-point behaviour, and
+ * the emitted weight is the same either way.
  */
 export function pushCloud(
   out: BloomPoint[], x: number, y: number, sdx: number, sdy: number, weight: number,
 ): void {
   const { rings, perRing } = cloudGrid(sdx, sdy);
-  const rx = 2 * sdx, ry = 2 * sdy;
+  const rx = 2 * sanitizeSpread(sdx), ry = 2 * sanitizeSpread(sdy);
   const w = weight / (rings * perRing);
   const step = (Math.PI * 2) / perRing;
   for (let j = 0; j < rings; j++) {

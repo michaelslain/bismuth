@@ -97,6 +97,13 @@ export interface AsciiGraphStats {
                            // buildBloom normalises its peak to exactly 1, so the emitted field looks
                            // equally bright whether it came from 2000 nodes or from none. ~conserved
                            // across the mass->glyph handover; a dip here is the atmosphere going dark.
+  bloomSdx: number;        // weighted per-axis spread of those points, in 0..1 SCREEN FRACTIONS, also
+  bloomSdy: number;        // pre-blur. The blur adds a fixed ~5.3-cell variance to whatever it is
+                           // handed, which on the emitted FIELD swallows per-axis scale errors up to
+                           // ~25% — so "the summary is the right SIZE" is only checkable here, before
+                           // that convolution. Separate x and y, never one radius: the two convert
+                           // through different denominators (W vs H) and swapping them is exactly the
+                           // kind of error a single number hides.
 }
 import {
   CELL_H, CELL_W, FONT_PX,
@@ -554,6 +561,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *  window. Written by emitBloom(), which runs after rasterize() in tick(). */
   private bloomPointsFrame = 0;
   private bloomWeightFrame = 0;
+  /** ...and their weighted per-axis spread, in screen fractions — see `AsciiGraphStats.bloomSdx`
+   *  for why the size of what the bloom emits is only measurable BEFORE `buildBloom`'s blur. */
+  private bloomSdxFrame = 0;
+  private bloomSdyFrame = 0;
 
   // Per-frame edge STROKE BUCKETS — rasterize() sorts surviving edges into these (by the alpha
   // they'll be stroked at), and paint()'s strokeEdges() issues one batched `stroke()` call per
@@ -1380,6 +1391,23 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
     this.bloomPointsFrame = pts.length;
     this.bloomWeightFrame = weight;
+    // Second moment of what we are about to emit. One extra pass over the list we just built (a
+    // handful of flops per point, against buildBloom's own ~128k-tap blur on the next line), and it
+    // is the ONLY place the emitted size is observable: `blur` adds a fixed variance that swamps
+    // per-axis scale errors of up to ~25% by the time the field reaches a consumer.
+    let mx = 0, my = 0, mxx = 0, myy = 0;
+    for (const p of pts) {
+      const pw = p.weight ?? 1;
+      mx += pw * p.x; my += pw * p.y;
+      mxx += pw * p.x * p.x; myy += pw * p.y * p.y;
+    }
+    if (weight > 0) {
+      const ex = mx / weight, ey = my / weight;
+      this.bloomSdxFrame = Math.sqrt(Math.max(0, mxx / weight - ex * ex));
+      this.bloomSdyFrame = Math.sqrt(Math.max(0, myy / weight - ey * ey));
+    } else {
+      this.bloomSdxFrame = 0; this.bloomSdyFrame = 0;
+    }
     this.onBloom(buildBloom(pts));
   }
 
@@ -2934,6 +2962,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
       inkCoverage,
       bloomPoints: this.bloomPointsFrame,
       bloomWeight: this.bloomWeightFrame,
+      bloomSdx: this.bloomSdxFrame,
+      bloomSdy: this.bloomSdyFrame,
     };
   }
 }
