@@ -21,16 +21,22 @@
 // LEVEL MAPPING — one source of truth with the label system: the same `resolutionT` progress
 // (0 = fit, 1 = deepest) that drives the cluster-name ladder drives the GEOMETRY. The hierarchy
 // levels split `[0, FILE_LABEL_REVEAL_T)` evenly (labelSelection.ts `levelBoundaries`), and
-// `lodMix()` below returns per-level draw alphas — `clusterLevelAlphas × clusterLabelAlpha` — plus
-// the leaf alpha (`fileLabelAlpha`). Entities and their names therefore always crossfade TOGETHER:
-// the stop where a level's names take over is exactly the stop where its masses take over, and the
-// stop where file names crossfade in is exactly where real notes/edges do.
+// `lodMix()` below returns per-level draw alphas — `clusterLevelAlphas × massAlpha` — so the stop
+// where a level's names take over is exactly the stop where its masses take over.
+//
+// WHICH BAND owns the field overall is NOT this file's decision any more: `backbone.ts`'s
+// `bandsForT` splits the ladder into far (masses) / mid (glyphs + hub-to-hub backbone) / near
+// (glyphs + real member edges), and `lodMix` reads its `massAlpha` for the mass band's share. Masses
+// therefore hand off to individual glyphs around t≈0.32–0.46, well BEFORE file names appear at
+// `FILE_LABEL_REVEAL_T` — the mid band is glyphs with a backbone and no file names. See
+// MERGE-NOTES.md §5.4 and backbone.ts's wiring recipe.
 //
 // Everything here is DOM-free and unit-tested (lod.test.ts); AsciiGraphRenderer owns the buffers,
 // projection and the rAF loop, and calls into this for structure (once per graph build) and the
 // per-frame alpha mix (once per frame — a ≤4-entry array, not a hot loop).
 
-import { clusterLevelAlphas, fileLabelAlpha } from "./labelSelection";
+import { clusterLevelAlphas } from "./labelSelection";
+import { bandsForT } from "./backbone";
 
 /** One aggregate entity: a community at one hierarchy level, positioned at its members' 2D world
  *  centroid. Built once per graph build — per-frame screen state lives on the renderer's view. */
@@ -195,12 +201,25 @@ export function massCellAlpha(d2: number): number {
 // --- Per-frame level mix ------------------------------------------------------------------------
 
 export interface LodMix {
-  /** Draw alpha per hierarchy level (coarsest → finest): `clusterLevelAlphas × clusterLabelAlpha`.
-   *  At most two adjacent levels are nonzero mid-crossfade; all go to 0 as leaves take over. */
+  /** Draw alpha per hierarchy level (coarsest → finest): `clusterLevelAlphas × massAlpha`. At most
+   *  two adjacent levels are nonzero mid-crossfade; all go to 0 as the mass band hands over. */
   levelAlphas: number[];
-  /** Real notes + real edges alpha (`fileLabelAlpha`): 0 at coarse stops — the leaf raster passes
-   *  simply don't run there — rising to 1 at the deep stops. */
-  leafAlpha: number;
+  /** How much of the field the territory MASSES own (`bandsForT`'s far band). The per-level split
+   *  above is this number distributed over the levels. */
+  massAlpha: number;
+  /** The leaf/glyph RASTER gate — `1 - massAlpha`, i.e. `backboneAlpha + memberAlpha`. Individual
+   *  note glyphs rasterize across BOTH the mid and the near band, not only the near one: the mid
+   *  band is "individual glyphs joined by a hub-to-hub backbone". This is NOT the member-edge
+   *  alpha; see `memberAlpha`. */
+  glyphAlpha: number;
+  /** How much of the field the hub-to-hub BACKBONE owns (`bandsForT`'s mid band) — the multiplier
+   *  on `backbone.ts`'s `computeEdgeLevelWeights` per-level group-line weights. */
+  backboneAlpha: number;
+  /** How much of the field the REAL, individual member edges own (`bandsForT`'s near band). The
+   *  renderer's `strokeEdges()` member passes take THIS, never `glyphAlpha` — in the mid band the
+   *  two are numerically different (glyphs ≈ 1, member edges ≈ 0), and collapsing them onto one
+   *  field draws the hairball the backbone exists to replace. See backbone.ts's wiring recipe. */
+  memberAlpha: number;
 }
 
 /**
@@ -208,13 +227,26 @@ export interface LodMix {
  * `levelCount` hierarchy levels. This is the ONE function tying geometry to the existing label
  * crossfade machinery: entities render at exactly the alpha their names do, and leaves render at
  * exactly the alpha file names crossfade in with.
+ *
+ * THE MASS WEIGHT IS `bandsForT`'s `massAlpha`, NOT `1 - fileLabelAlpha(t)`. Those two disagree
+ * across the whole mid band and the disagreement is not cosmetic: keyed off `fileLabelAlpha`, the
+ * masses owned the field outright until t = FILE_LABEL_REVEAL_T (0.75) — which, once the renderer
+ * gates its leaf raster pass on the same number, means t = 0.60 renders a hub-to-hub backbone
+ * painted over solid territory masses with ZERO individual glyphs: neither the mid band nor the far
+ * band. `bandsForT` is the single owner of that handover now (MERGE-NOTES.md §5.4); this function
+ * only distributes the mass band's share over the hierarchy levels, which is unchanged.
  */
 export function lodMix(t: number, levelCount: number): LodMix {
-  const leafAlpha = fileLabelAlpha(t);
-  const cA = 1 - leafAlpha;
+  const bands = bandsForT(t, levelCount);
   const levelAlphas = clusterLevelAlphas(t, levelCount);
-  for (let i = 0; i < levelAlphas.length; i++) levelAlphas[i] *= cA;
-  return { levelAlphas, leafAlpha };
+  for (let i = 0; i < levelAlphas.length; i++) levelAlphas[i] *= bands.massAlpha;
+  return {
+    levelAlphas,
+    massAlpha: bands.massAlpha,
+    glyphAlpha: 1 - bands.massAlpha,
+    backboneAlpha: bands.backboneAlpha,
+    memberAlpha: bands.memberAlpha,
+  };
 }
 
 /** Below this alpha a level (or the leaf pass) is skipped entirely — the raster work never runs. */

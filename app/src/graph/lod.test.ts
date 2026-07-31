@@ -150,54 +150,81 @@ describe("mass form — the degree-ramp vocabulary, core to fringe", () => {
 });
 
 describe("lodMix — the ladder-onto-levels mapping (level selection per stop)", () => {
-  /** The dominant level at progress t, or "leaves". */
+  /** The dominant level at progress t, or "glyphs" once the mass band has handed the field over. */
   function owner(t: number, levelCount: number): string {
-    const { levelAlphas, leafAlpha } = lodMix(t, levelCount);
-    let best = -1, bestA = leafAlpha;
+    const { levelAlphas, glyphAlpha } = lodMix(t, levelCount);
+    let best = -1, bestA = glyphAlpha;
     for (let i = 0; i < levelAlphas.length; i++) if (levelAlphas[i] > bestA) { best = i; bestA = levelAlphas[i]; }
-    return best === -1 ? "leaves" : `L${best}`;
+    return best === -1 ? "glyphs" : `L${best}`;
   }
 
-  it("walks coarsest → finest → leaves across the stops, for the reference 3-level shape", () => {
-    // Stops are t = 0, 0.1, …, 1 (10% each). With FILE_LABEL_REVEAL_T = 0.75 and 3 levels the
-    // segments are 0.25 wide: L0 owns 100–90%, L1 80–60%, L2 50–20%, leaves 10%–0%. (Aggregates
-    // deliberately own the majority of the ladder — see FILE_LABEL_REVEAL_T.)
+  it("walks coarsest → finest → glyphs across the stops, for the reference 3-level shape", () => {
+    // Stops are t = 0, 0.1, …, 1 (10% each). The level split still divides [0, FILE_LABEL_REVEAL_T)
+    // evenly (0.25-wide segments at 3 levels), but the MASS BAND itself now ends at
+    // BACKBONE_START_T + BACKBONE_FADE_SPAN = 0.46 (backbone.ts), so the ladder reaches individual
+    // glyphs far earlier than the old `1 - fileLabelAlpha` keying did: L0 owns 100–90%, L1 80–70%,
+    // and from 60% on the glyph bands (mid, then near) own the field.
     expect(owner(0.0, 3)).toBe("L0");   // 100%
     expect(owner(0.1, 3)).toBe("L0");   // 90%
     expect(owner(0.2, 3)).toBe("L1");   // 80%
     expect(owner(0.3, 3)).toBe("L1");   // 70%
-    expect(owner(0.4, 3)).toBe("L1");   // 60%
-    expect(owner(0.5, 3)).toBe("L2");   // 50%
-    expect(owner(0.7, 3)).toBe("L2");   // 30%
-    expect(owner(0.75, 3)).toBe("L2");  // 25% — the reveal point itself still belongs to entities
-    expect(owner(0.8, 3)).toBe("L2");   // 20% — leaves are fading in but do not own the field yet
-    expect(owner(0.9, 3)).toBe("leaves"); // 10%
-    expect(owner(1.0, 3)).toBe("leaves"); // 0%
+    expect(owner(0.4, 3)).toBe("glyphs"); // 60% — mid-crossfade, glyphAlpha already past half
+    expect(owner(0.5, 3)).toBe("glyphs"); // 50% — the mass band is over
+    expect(owner(0.75, 3)).toBe("glyphs");
+    expect(owner(1.0, 3)).toBe("glyphs"); // 0%
   });
 
-  it("entities own everything below the reveal point and are fully gone once leaves saturate", () => {
-    for (const t of [0, 0.2, 0.4, 0.6, FILE_LABEL_REVEAL_T]) {
-      const { levelAlphas, leafAlpha } = lodMix(t, 3);
-      expect(leafAlpha).toBe(0);
-      expect(levelAlphas.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 8);
+  it("masses own the far band outright, are gone by the mid plateau, and never come back", () => {
+    // Far band: masses hold the whole field, split over the levels.
+    for (const t of [0, 0.1, 0.2, 0.3]) {
+      const mix = lodMix(t, 3);
+      expect(mix.glyphAlpha).toBeLessThan(0.5);
+      expect(mix.levelAlphas.reduce((a, b) => a + b, 0)).toBeCloseTo(mix.massAlpha, 8);
     }
+    expect(lodMix(0, 3).massAlpha).toBe(1);
+    // Mid plateau onward: no mass weight at all, on any level.
+    for (const t of [0.5, 0.6, FILE_LABEL_REVEAL_T, 0.9, 1]) {
+      const mix = lodMix(t, 3);
+      expect(mix.massAlpha).toBe(0);
+      expect(mix.glyphAlpha).toBe(1);
+      expect(mix.levelAlphas.every((a) => a === 0)).toBe(true);
+    }
+  });
+
+  it("the mid band draws glyphs WITHOUT their real member edges — the two must not be one number", () => {
+    // The trap backbone.ts's wiring recipe names: `glyphAlpha` and `memberAlpha` are numerically
+    // different across the whole mid band, so a single shared `leafAlpha` cannot serve both. At the
+    // mid plateau glyphs are fully on while real member edges are fully off and the backbone owns
+    // the between-group story.
+    const mid = lodMix(0.6, 3);
+    expect(mid.glyphAlpha).toBe(1);
+    expect(mid.memberAlpha).toBe(0);
+    expect(mid.backboneAlpha).toBe(1);
+    // ...and at the deep end they agree again (both 1), which is why the collapse went unnoticed.
     const deep = lodMix(1, 3);
-    expect(deep.leafAlpha).toBe(1);
-    expect(deep.levelAlphas.every((a) => a === 0)).toBe(true);
+    expect(deep.glyphAlpha).toBe(1);
+    expect(deep.memberAlpha).toBe(1);
+    expect(deep.backboneAlpha).toBe(0);
   });
 
-  it("total drawn weight is conserved through every crossfade (entities + leaves sum to 1)", () => {
+  it("total drawn weight is conserved through every crossfade (masses + backbone + members sum to 1)", () => {
     for (let t = 0; t <= 1.0001; t += 0.05) {
-      const { levelAlphas, leafAlpha } = lodMix(t, 4);
-      const total = levelAlphas.reduce((a, b) => a + b, 0) + leafAlpha;
-      expect(total).toBeCloseTo(1, 8);
+      const mix = lodMix(t, 4);
+      // The per-level split exhausts the mass band exactly...
+      expect(mix.levelAlphas.reduce((a, b) => a + b, 0)).toBeCloseTo(mix.massAlpha, 8);
+      // ...and the three bands partition the field.
+      expect(mix.massAlpha + mix.backboneAlpha + mix.memberAlpha).toBeCloseTo(1, 8);
+      expect(mix.glyphAlpha).toBeCloseTo(mix.backboneAlpha + mix.memberAlpha, 8);
     }
   });
 
-  it("a 1-level graph is a single entity tier crossfading straight into leaves", () => {
-    expect(lodMix(0, 1)).toEqual({ levelAlphas: [1], leafAlpha: 0 });
+  it("a 1-level graph is a single entity tier crossfading straight into glyphs", () => {
+    expect(lodMix(0, 1)).toEqual({
+      levelAlphas: [1], massAlpha: 1, glyphAlpha: 0, backboneAlpha: 0, memberAlpha: 0,
+    });
     const deep = lodMix(1, 1);
     expect(deep.levelAlphas[0]).toBe(0);
-    expect(deep.leafAlpha).toBe(1);
+    expect(deep.glyphAlpha).toBe(1);
+    expect(deep.memberAlpha).toBe(1);
   });
 });
