@@ -133,6 +133,63 @@ const INITIALIZE_PARAMS = {
 
 const ABORT_GRACE_MS = 8000;
 
+/** How long a plain `proc.kill()` (SIGTERM) is given before this driver escalates to SIGKILL — used
+ *  at BOTH places this driver ever kills an agent process: closeChat() (below) and abortTurn()'s own
+ *  grace-timeout fallback (`ABORT_GRACE_MS` above; see its call site). REQUIRED, not
+ *  defense-in-depth — confirmed live (offline-testing openclaw task) that a real `openclaw acp`
+ *  process does NOT exit on SIGTERM alone: its own `serveAcpGateway`'s SIGTERM handler
+ *  (`dist/acp-cli-BQ740PFm.js`) gracefully stops its internal Gateway WebSocket connection but never
+ *  calls `process.exit()` itself, relying on the event loop draining naturally — which never happens
+ *  while this process still holds the child's stdin pipe open (the same pipe writeToProc() writes
+ *  JSON-RPC requests to), so the child survives indefinitely, not just briefly, after a plain
+ *  `proc.kill()`. Reproduced directly: `proc.exited` on a real openclaw ACP bridge child did not
+ *  resolve within 120s of a bare SIGTERM. Mirrors the SAME grace-then-SIGKILL shape
+ *  core/test/support/openclawGateway.ts's own `stopProcess` already uses for the Gateway process it
+ *  spawns (`mockLlm.ts`'s own `stopProcess` does NOT escalate — a bare kill()+await, correctly cited
+ *  here as the one that does NOT, after an earlier version of this comment miscited it as if it did)
+ *  — this is that same escalation pattern landing in the two places it was still missing in
+ *  PRODUCTION code: real chat-close and real turn-abort, not just a test's own teardown.
+ *
+ *  OPEN QUESTION, not verified either way: `npx`-spawned adapters (claude-code-acp, codex-acp,
+ *  agents.ts's two `adapter: true` entries) put an `npx` WRAPPER process, not the real agent, as the
+ *  direct child this module's `proc` handle names. Whether SIGKILL to that wrapper propagates to
+ *  whatever real process npx itself spawned underneath (or leaves it orphaned) was never exercised —
+ *  neither adapter was spawned during this task (no npx-resolvable install on the machine this was
+ *  verified on). Flagged here rather than assumed either way; only cline/gemini/goose/openclaw (the
+ *  four NATIVE, non-adapter agents) are actually confirmed covered by this escalation. */
+const KILL_ESCALATION_GRACE_MS = 3000;
+
+/** Send SIGTERM (`proc.kill()`), then SIGKILL after `graceMs` if `proc.exited` hasn't resolved by
+ *  then — see KILL_ESCALATION_GRACE_MS's own doc comment for why this is required, not
+ *  defense-in-depth, for at least one real agent (openclaw). Fire-and-forget: returns immediately,
+ *  callers (closeChat, abortTurn's grace-timeout) stay synchronous exactly as before this existed.
+ *  `proc` is the caller's own local/captured reference (never re-read from mutable session state
+ *  inside this function), so a session that respawns its process in the meantime can't redirect
+ *  which process this escalation ultimately signals — it always targets the exact process handle it
+ *  was given. `.catch(() => {})` on the race itself (not only inside `.then`) matches this file's
+ *  own convention for a `proc.exited` consumer that must never become an unhandled rejection (see
+ *  watchExit's identical `.catch(() => {})` and raceExit's `.catch(() => finish(...))` above). */
+function killWithEscalation(proc: ReturnType<typeof Bun.spawn>, graceMs: number): void {
+  try {
+    proc.kill();
+  } catch {
+    /* already exited */
+  }
+  void Promise.race([
+    proc.exited.then(() => false),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(true), graceMs)),
+  ])
+    .then((timedOut) => {
+      if (!timedOut) return;
+      try {
+        proc.kill(9);
+      } catch {
+        /* already exited between the timeout firing and this call */
+      }
+    })
+    .catch(() => {});
+}
+
 // ── Session state ───────────────────────────────────────────────────────────────────────────────
 
 interface AcpPendingCall {
@@ -361,7 +418,12 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
     s.usedFallbackArgs = true;
     const bin = whichBinary(agent.binary);
     if (!bin) return false;
-    const proc = spawnAcpProcess(bin, agent.fallbackArgs, s.cwd);
+    // Same per-chat argv extension as createSession's primary spawn (s.id is the chat id — see
+    // AcpSession's own `id` field doc comment) — currently dead for every agent that HAS
+    // fallbackArgs (only gemini, which has no sessionKeyArgs), kept consistent in case a future
+    // agent ever needs both.
+    const fallbackSpawnArgs = [...agent.fallbackArgs, ...(agent.sessionKeyArgs?.(s.id) ?? [])];
+    const proc = spawnAcpProcess(bin, fallbackSpawnArgs, s.cwd);
     if (!proc) return false;
     attachProc(s, proc);
     const second = await raceExit(s, call(s, "initialize", INITIALIZE_PARAMS));
@@ -385,12 +447,24 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
       });
       return null;
     }
-    const proc = spawnAcpProcess(bin, agent.args, cwd);
+    // agent.sessionKeyArgs (currently only openclaw): a per-CHAT argv extension, computed from THIS
+    // call's own chatId (already a parameter above — nothing new needed to reach it here). See
+    // agents.ts's openclaw entry for why a per-chat session key is required, not optional: a fixed
+    // constant here was shipped once and reverted after review found it leaks one chat's content
+    // into another's upstream request (the openclaw isolation test in openclawMocked.test.ts proves
+    // this stays closed). Every other agent leaves this undefined and gets byte-identical argv to
+    // before this field existed.
+    const spawnArgs = [...agent.args, ...(agent.sessionKeyArgs?.(chatId) ?? [])];
+    const proc = spawnAcpProcess(bin, spawnArgs, cwd);
     if (!proc) {
       sink({ type: "error", code: "spawn", message: `Failed to start ${agent.label}.` });
       return null;
     }
-    const mcpServers = buildMcpServers(cwd, memoryDir);
+    // agent.supportsSessionMcpServers === false (currently only openclaw — see its own agents.ts
+    // comment for the live-confirmed citation): that agent's session/new REJECTS a non-empty
+    // mcpServers array outright rather than ignoring/merging it, so sending [] here is required for
+    // EVERY turn to succeed at all, not an optional degrade.
+    const mcpServers = agent.supportsSessionMcpServers === false ? [] : buildMcpServers(cwd, memoryDir);
     const s: AcpSession = {
       id: chatId,
       cwd,
@@ -520,13 +594,11 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
     for (const [, p] of s.pendingCalls) p.reject(new Error("chat closed"));
     s.pendingCalls.clear();
     s.pendingPermissions.clear();
-    if (s.proc) {
-      try {
-        s.proc.kill();
-      } catch {
-        /* already exited */
-      }
-    }
+    // closeChat() itself stays synchronous (signature/callers unchanged) — killWithEscalation is
+    // fire-and-forget and force-kills a process that ignores the graceful signal, rather than
+    // leaving it running past this chat indefinitely. See KILL_ESCALATION_GRACE_MS's own doc comment
+    // for why this is required for a real agent (openclaw), not speculative hardening.
+    if (s.proc) killWithEscalation(s.proc, KILL_ESCALATION_GRACE_MS);
   }
 
   shutdownHooks.push(() => {
@@ -580,16 +652,17 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
       if (s.sessionId) writeToProc(s, encodeJsonRpcNotification("session/cancel", { sessionId: s.sessionId }));
       // Defensive: if the agent never settles the in-flight session/prompt after cancel, kill the
       // process rather than leaving the chat wedged forever — watchExit then reports the outcome
-      // and tears the session down (a later message spawns a fresh one). Untested against a real
-      // agent (none installed here); a well-behaved one is expected to settle promptly.
+      // and tears the session down (a later message spawns a fresh one). Same
+      // killWithEscalation/KILL_ESCALATION_GRACE_MS as closeChat, not a bare kill() — a bare SIGTERM
+      // here has the EXACT SAME failure mode KILL_ESCALATION_GRACE_MS's own doc comment documents for
+      // closeChat: a real openclaw ACP bridge process doesn't exit on SIGTERM alone, so without the
+      // escalation this fallback would leave `turnActive: true` against a half-dead bridge (its
+      // Gateway connection gone, watchExit never firing because the process itself never exits) until
+      // the chat is eventually closed.
       setTimeout(() => {
         const cur = sessions.get(chatId);
-        if (cur === s && cur.turnActive && cur.aborting) {
-          try {
-            cur.proc?.kill();
-          } catch {
-            /* already exited */
-          }
+        if (cur === s && cur.turnActive && cur.aborting && cur.proc) {
+          killWithEscalation(cur.proc, KILL_ESCALATION_GRACE_MS);
         }
       }, ABORT_GRACE_MS);
     },

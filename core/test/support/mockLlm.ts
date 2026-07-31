@@ -106,6 +106,11 @@ export const DEFAULT_FIXTURE_DIR = join(import.meta.dir, "..", "fixtures", "llm"
 export interface MockLlmHandle {
   /** Base URL of the running mock server, e.g. "http://127.0.0.1:54231". */
   url: string;
+  /** The spawned `node <llmock cli.js>` process's own pid — exposed so a caller that wants to
+   *  independently verify teardown (e.g. an OWNED `ps -p <pid>` check, rather than a machine-wide
+   *  `pgrep -f` that could match an unrelated process) can do so without re-deriving it. Every
+   *  existing caller destructures only `{url, stop}` and is unaffected by this additive field. */
+  pid: number;
   /** Kill the server and resolve once the process has fully exited (so the OS has released the
    *  port before the caller's next assertion). Idempotent-safe to call once. */
   stop(): Promise<void>;
@@ -200,7 +205,7 @@ export function startMockLlm(fixtureDir: string = DEFAULT_FIXTURE_DIR, extraArgs
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ url, stop: () => stopProcess(proc) });
+      resolve({ url, pid: proc.pid, stop: () => stopProcess(proc) });
     };
     const finishFail = (reason: Error) => {
       if (settled) return;

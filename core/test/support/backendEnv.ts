@@ -18,14 +18,19 @@
 //     comments for what "wrong" meant concretely in each) and has since been corrected and then
 //     VERIFIED by the definition above.
 //   - PARTIALLY VERIFIED: some of the row's mapping was confirmed live, but not the full "a turn
-//     completes end to end" bar above. Currently only openclaw wears this label ("config mechanism
-//     only" — only the two env vars that redirect its config/state location were confirmed live;
-//     the actual model-ROUTING mechanism through its Gateway architecture was never executed at
-//     all). gemini used to wear this label too (driver-verified, handshake + zero-real-network-access
-//     confirmed, but NOT a completed turn) — upgraded to VERIFIED on the offline2/gemini branch once
-//     the actual root cause (an additional non-user-facing `generateJson` call per turn that needs
-//     its OWN JSON-shaped fixture — see that case's own comment) was found and fixed, rather than
-//     accepted as a permanent limitation.
+//     completes end to end" bar above. NO row currently uses this label — it had two wearers, and
+//     both were upgraded off it in independent tasks that landed around the same time: gemini wore
+//     "driver-verified" (the real production driver, real handshake, real zero-real-network-access
+//     confirmation — everything EXCEPT a completed turn) until the offline2/gemini branch found the
+//     actual root cause (an additional non-user-facing `generateJson` call per turn that needs its
+//     OWN JSON-shaped fixture — see that case's own comment) and fixed it rather than accepting it as
+//     a permanent limitation. openclaw wore "config mechanism only" (only the two env vars that
+//     redirect its config/state location were confirmed live; the actual model-ROUTING mechanism
+//     through its Gateway architecture was never executed at all) until the offline-testing openclaw
+//     task stood up a real, separately-run `openclaw gateway run` process against the mock (see
+//     core/test/support/openclawGateway.ts) and closed that gap too. Both are VERIFIED below now.
+//     The label stays documented here (same reasoning as "Throws" below) in case a future backend
+//     genuinely lands in this partial state.
 //   - Throws: no env-var (or file-based) mapping exists that actually works for how Bismuth spawns
 //     that backend. NO row currently uses this label (cline used to be the one exception — see its
 //     case comment for how a LATER task found a real, source-cited bypass and corrected it to
@@ -55,7 +60,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export function backendMockEnv(backendId: string, mockUrl: string, workDir?: string): Record<string, string> {
+export function backendMockEnv(backendId: string, mockUrl: string, workDir?: string, openclawGatewayPort?: number): Record<string, string> {
   switch (backendId) {
     // --------------------------------------------------------------------------------------
     // VERIFIED live end-to-end (Task 3, re-confirmed this task): env auth takes precedence over
@@ -416,27 +421,55 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
       };
 
     // --------------------------------------------------------------------------------------
-    // ADDED this task (brief finding #2 — openclaw previously had NO row at all, despite being a
-    // live, non-hidden backend in core/src/agentBackends/catalog.ts). PARTIALLY VERIFIED, and
-    // specifically the "config mechanism only" sense of that label (see this file's header
-    // vocabulary section — a materially WEAKER claim than gemini's "driver-verified" sense just
-    // above: openclaw's model-ROUTING was never executed at all, only its config redirection). This
-    // row is explicit about the boundary rather than overclaiming:
-    //   - CONFIRMED live: `OPENCLAW_CONFIG_PATH` and `OPENCLAW_STATE_DIR` are real env vars that
-    //     redirect openclaw's config file location and local state directory respectively (`openclaw
-    //     config file` printed the overridden path back) — so this mapping can genuinely keep
-    //     openclaw off a developer's real `~/.openclaw` config/state.
-    //   - NOT CONFIRMED: that a turn actually routes through the mock. `openclaw acp` ("Run an ACP
-    //     bridge backed by the Gateway", per its own --help) is a THIN BRIDGE to a separately-running
-    //     (or auto-started) Gateway process that owns model routing via its OWN `models.providers.*`
-    //     JSON5 config (documented in openclaw's own docs/gateway/local-models.md) plus an
-    //     `agents.defaults.model.primary` selection — a materially heavier, multi-process
-    //     architecture than any other backend here (cline/gemini/goose are single-process CLIs that
-    //     speak ACP directly). Standing up that Gateway + agent + ACP bridge against this mock was
-    //     not completed within this task's time budget. This function writes the config shape
-    //     openclaw's own docs describe (best-effort, never run end-to-end), so a future task has a
-    //     concrete starting point rather than nothing — but does NOT claim this backend is
-    //     E2E-verified, and no openclawMocked.test.ts was added claiming that.
+    // VERIFIED live end-to-end (offline-testing openclaw task, upgraded from the prior task's
+    // "config mechanism only" PARTIALLY VERIFIED row). The prior row's boundary — config redirection
+    // confirmed, model routing never executed — is now fully closed:
+    //   - The config SHAPE below is not guessed: every field is read directly from the installed
+    //     package's OWN TypeScript declarations (`~/`openclaw`'s
+    //     `dist/plugin-sdk/src/config/types.models.d.ts`'s `ModelProviderConfig`/`ModelApi` —
+    //     `MODEL_APIS` literally includes `"openai-completions"` — and `types.agent-defaults.d.ts`'s
+    //     `AgentModelListConfig`), cross-checked against `openclaw config validate` accepting the
+    //     file live and `docs/gateway/local-models.md`'s own worked examples (same
+    //     `models.providers.<id>.{baseUrl,apiKey,api,models}` / `agents.defaults.model.primary`
+    //     shape, there pointed at LM Studio/vLLM instead of this mock).
+    //   - `openclaw acp` ("Run an ACP bridge backed by the Gateway") does NOT auto-start a Gateway —
+    //     confirmed by reading `dist/acp-cli-BQ740PFm.js`'s `serveAcpGateway`: it only ever CONNECTS
+    //     (as a WebSocket client) to `gateway.remote.url`/`OPENCLAW_GATEWAY_URL`/a local-loopback
+    //     default, and fails if nothing answers. core/test/support/openclawGateway.ts stands up a
+    //     REAL `openclaw gateway run` process (a genuine, if heavier, second child process — this
+    //     backend's own architecture, not a workaround) pointed at the SAME config this function
+    //     writes, so both processes agree on the port.
+    //   - A full turn was confirmed live through BOTH a raw ACP JSON-RPC handshake AND
+    //     `CHAT_BACKENDS.openclaw.sendMessage` (chatProviders/acp/driver.ts, unmodified): `initialize`
+    //     -> `session/new` -> `session/prompt` streamed a real `agent_message_chunk` carrying the mock
+    //     fixture's exact "Hello!" text, settling with `stopReason:"end_turn"` — through the driver, a
+    //     clean `assistant-text` frame then `result:{isError:false}` then `done`. The mock's own
+    //     `/metrics` (path-specific `POST /v1/chat/completions` counter, not merely the metrics
+    //     family's presence — see geminiMocked.test.ts's own finding on why that distinction matters)
+    //     confirmed exactly one hit, never a real provider host.
+    //   - REQUIRED, non-obvious config beyond model routing, each confirmed live and needed for the
+    //     turn to complete AT ALL (not cosmetic): `gateway.mode:"local"` + an explicit `gateway.port`
+    //     (both processes must agree — openclaw rejects `--port 0`, "Too small: expected number to be
+    //     >0", so the caller picks a free port itself, see openclawGateway.ts's getFreePort);
+    //     `gateway.auth.mode:"none"` (skips token/password setup for an isolated test loopback);
+    //     `agents.defaults.workspace` + `agents.defaults.skipBootstrap:true` (the embedded agent
+    //     runtime requires a workspace dir at all per `docs/concepts/agent.md`, "OpenClaw uses a
+    //     single agent workspace directory... as the agent's ONLY working directory"; skipBootstrap
+    //     avoids BOOTSTRAP.md/AGENTS.md template seeding a throwaway test workspace doesn't need);
+    //     `canvasHost.enabled:false` + `browser.enabled:false` (both auto-start their own
+    //     HTTP/CDP listeners on gateway boot otherwise — confirmed live via a second/third port
+    //     appearing in the startup log with neither set — pure test hygiene, no bearing on model
+    //     routing); `update.checkOnStart:false` (a bare config makes gateway startup perform a real
+    //     OUTBOUND update-check HTTP request — confirmed live, "[gateway] update available (latest):
+    //     v2026.7.1-2..." — not an account call, but still real unwanted egress this suppresses).
+    //   - THE ONE GENUINE BUG FOUND ALONG THE WAY, now fixed at its actual source
+    //     (chatProviders/acp/agents.ts's openclaw entry, not here): `openclaw acp` with NO
+    //     `--session` — i.e. Bismuth's OLD default spawn args — reliably fails the FIRST
+    //     `session/prompt` on any fresh Gateway with `ACP_SESSION_INIT_FAILED`, because the bridge's
+    //     own default session-key naming (`acp:<uuid>`) collides with an unrelated OpenClaw feature
+    //     that reserves that exact prefix. See agents.ts's openclaw entry for the full root-cause
+    //     writeup and citations — irrelevant to this file's OWN job (env/config mapping), but
+    //     necessary context for why this row could not reach VERIFIED without that fix landing too.
     // --------------------------------------------------------------------------------------
     case "openclaw": {
       if (!workDir) {
@@ -445,11 +478,35 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
             "vars (see this file's `openclaw` case comment). Pass a throwaway temp directory this call may write into.",
         );
       }
+      if (!openclawGatewayPort) {
+        throw new Error(
+          'backendMockEnv: "openclaw" requires a fourth `openclawGatewayPort` argument — the ACP bridge and a ' +
+            "separately-run `openclaw gateway run` (core/test/support/openclawGateway.ts) must agree on a port via " +
+            "this written config (see this file's `openclaw` case comment). Pass a free port, e.g. from " +
+            "openclawGateway.ts's getFreePort().",
+        );
+      }
+      const stateDir = join(workDir, "state");
+      const workspaceDir = join(workDir, "workspace");
+      mkdirSync(stateDir, { recursive: true });
+      mkdirSync(workspaceDir, { recursive: true });
       writeFileSync(
         join(workDir, "openclaw.json5"),
         JSON.stringify(
           {
-            agents: { defaults: { model: { primary: "mock/mock" }, models: { "mock/mock": { alias: "Mock" } } } },
+            gateway: { mode: "local", port: openclawGatewayPort, bind: "loopback", auth: { mode: "none" } },
+            canvasHost: { enabled: false },
+            browser: { enabled: false },
+            update: { checkOnStart: false, auto: { enabled: false } },
+            logging: { file: join(stateDir, "openclaw.log"), level: "info", consoleLevel: "info" },
+            agents: {
+              defaults: {
+                workspace: workspaceDir,
+                skipBootstrap: true,
+                model: { primary: "mock/mock" },
+                models: { "mock/mock": { alias: "Mock" } },
+              },
+            },
             models: {
               mode: "merge",
               providers: {
@@ -466,7 +523,7 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
           2,
         ),
       );
-      return { OPENCLAW_CONFIG_PATH: join(workDir, "openclaw.json5"), OPENCLAW_STATE_DIR: join(workDir, "state") };
+      return { OPENCLAW_CONFIG_PATH: join(workDir, "openclaw.json5"), OPENCLAW_STATE_DIR: stateDir };
     }
 
     default:

@@ -571,13 +571,26 @@ const GOOSE: BackendDescriptor = {
 
 /** OpenClaw — `openclaw acp`. Confirmed identical wire format to Zed's ACP (OpenClaw's own docs:
  *  "speaks ACP over stdio for IDEs"); the session runs against whatever Gateway/model the user has
- *  OpenClaw configured with. */
+ *  OpenClaw configured with.
+ *
+ *  `mcp: "none"` OVERRIDES the shared `ACP_SHARED_CAPABILITIES.mcp: "cli"` above — confirmed live
+ *  (offline-testing openclaw task, see chatProviders/acp/agents.ts's openclaw entry for the full
+ *  citation) that openclaw's ACP bridge REJECTS a non-empty `session/new.mcpServers` outright
+ *  ("ACP bridge mode does not support per-session MCP servers"), unlike cline/gemini/goose which
+ *  all accept it fine — so openclaw is the ONE agent in this shared-capabilities group that does
+ *  NOT get the "cli" per-session MCP injection the shared comment above describes. Consequence:
+ *  `memory: "mcpOnly"` (inherited from the shared object, unchanged since MemoryInjectionMode has
+ *  no "none" variant to override to) is effectively moot for openclaw too — its only memory
+ *  mechanism was the same MCP injection this override just disabled. Neither `mcp` nor `memory` is
+ *  read anywhere outside this file today (checked live), so this is a documentation-accuracy fix
+ *  for whenever that changes, not a behavior change on its own — the actual behavior fix (openclaw
+ *  chats get zero Bismuth MCP/memory tools) lives in driver.ts's createSession. */
 const OPENCLAW: BackendDescriptor = {
   id: "openclaw",
   label: "OpenClaw",
   binary: "openclaw",
   installHint: "Install OpenClaw to use this provider — it runs against your own configured Gateway/model.",
-  capabilities: ACP_SHARED_CAPABILITIES,
+  capabilities: { ...ACP_SHARED_CAPABILITIES, mcp: "none" },
 };
 
 /** Claude Code via Zed's `@zed-industries/claude-code-acp` adapter — an ADAPTER, not native ACP
