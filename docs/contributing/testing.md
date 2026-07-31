@@ -129,8 +129,9 @@ applies to two distinct kinds of test that could otherwise spend real money or c
    **account** isn't logged in — a missing-binary skip and a missing-account skip must never be
    conflated (see each test file's own header for why). They are NOT all the same shape, and the
    difference matters (corrected here after an earlier version of this paragraph overstated it: this
-   item covers NINE files total — the seven `*Mocked.test.ts` files plus two fake-agent files,
-   `acpFakeAgent.test.ts` and `clineAuthFakeAgent.test.ts`, neither of which is a real CLI. The
+   item covers TEN files total — the seven `*Mocked.test.ts` files plus three fake-agent files,
+   `acpFakeAgent.test.ts`, `clineAuthFakeAgent.test.ts` and `acpPermissionFakeAgent.test.ts`, none of
+   which is a real CLI. The
    `cline` and `openclaw` gaps this paragraph used to flag were both closed, in independent tasks that
    landed around the same time — all seven `*Mocked.test.ts` files now drive a real CLI through at
    least a partially mocked path):
@@ -154,6 +155,10 @@ applies to two distinct kinds of test that could otherwise spend real money or c
      needs no `cline` binary at all, so unlike `clineMocked.test.ts`'s real-E2E block it never skips.
      Proves Bismuth's driver both surfaces the auth-required refusal cleanly AND completes a full turn
      once the fake's gate is satisfied — coverage that did not exist anywhere in this repo before.
+   - `acpPermissionFakeAgent.test.ts` drives the SAME fake ACP agent in its held-prompt mode
+     (`FAKE_ACP_PROMPT_HOLD=permission`) to cover the `session/request_permission` ROUND TRIP — the
+     one path where Bismuth writes bytes back INTO an agent rather than translating one-way, and the
+     one whose failure mode is a turn that never completes. Also needs no CLI at all.
 
 ### The mock LLM server
 
@@ -207,6 +212,21 @@ result frame anywhere in the transcript; gate open (`FAKE_ACP_CLINE_AUTHED=1`, m
 then `done`. This needs no `cline` binary at all, so it is the coverage guaranteed to run on every
 machine regardless of what's installed — `clineMocked.test.ts`'s real-E2E block is the (also real,
 also verified) belt-and-suspenders version that only runs where a real `cline` happens to be present.
+
+The fake also has a **held-prompt mode** (`FAKE_ACP_PROMPT_HOLD=permission`, opt-in and decoupled the
+same way), which makes `session/prompt` NOT settle synchronously: the fake streams a `tool_call`,
+calls `session/request_permission` back into the client, and withholds the prompt's JSON-RPC response
+until a reply lands on its own stdin. That one capability is deliberately built as a generic
+mechanism — an outbound `callClient()`, inbound response routing, and a `heldPrompts`/`settlePrompt`
+registry — because four separate coverage gaps (turn queue, abort, resume, never-terminating turn)
+all need the same "a turn is observably in flight" window and none of them can be written without it.
+`acpPermissionFakeAgent.test.ts` uses it to prove the permission round trip through the real driver:
+the `permission` ChatFrame's id (which is the agent's own outbound rpc id), the exact bytes written
+back (`{outcome:{outcome:"selected", optionId}}` for allow AND deny, `{outcome:{outcome:"cancelled"}}`
+when the agent offers no selectable options), and the ordering — no `result`/`done` frame exists while
+the prompt is parked, all of them arrive after. Nothing can settle that prompt except a real,
+correctly-addressed, parseable reply, so a wrong rpc id, a missing `pendingPermissions` entry, a
+malformed outcome, or no reply at all each surface as a test timeout rather than a false pass.
 
 ### Recording a new fixture
 
