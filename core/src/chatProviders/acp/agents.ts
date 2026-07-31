@@ -114,6 +114,17 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
     // closing the leak while still avoiding the `acp:` prefix collision above (a chat id never
     // starts with `acp:` in this codebase).
     //
+    // KNOWN FOLLOW-UP, not fixed here — UNBOUNDED SESSION ACCUMULATION, the accepted cost of the
+    // per-chat fix above: openclaw persists each distinct session key as its own on-disk transcript
+    // (`<OPENCLAW_STATE_DIR>/agents/main/sessions/<uuid>.jsonl` + an entry in that dir's
+    // `sessions.json`) — confirmed live, two Bismuth chats produced two `.jsonl` files plus two
+    // `sessions.json` entries. driver.ts's closeChat() never removes these; openclaw itself has no
+    // observed auto-eviction. So a real user's `~/.openclaw` grows ONE new session file per Bismuth
+    // chat they ever open, forever — this is the correct trade against the content-leak alternative
+    // (a fixed key), not a free fix, and needs real follow-up (either Bismuth pruning old sessions on
+    // chat close, or an openclaw-side retention setting if one exists) rather than being silently
+    // carried as an unbounded-growth surprise.
+    //
     // `supportsSessionMcpServers: false` — a SECOND real bug found alongside the session-key one
     // above, confirmed live: on any machine where Bismuth's own MCP tools are installed
     // (`~/.bismuth/bin/bismuth-mcp` exists — true for every user of the bundled app, per

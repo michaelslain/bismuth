@@ -57,8 +57,17 @@ import { whichBinary } from "../../src/claudeWhich";
  *  on a mismatch, rather than reporting ready on any "listening on" line regardless of which port.
  *  Readiness itself is genuinely observed (a real banner from a real process, not a fixed timer), but
  *  without this comparison a gateway that silently ignored the configured port would still report
- *  ready here and only surface later as an opaque ACP-connect error with no link back to the cause. */
-const LISTEN_BANNER_RE = /\[gateway\][^\n]*listening on\s+wss?:\/\/[^:\s]+:(\d+)/;
+ *  ready here and only surface later as an opaque ACP-connect error with no link back to the cause.
+ *
+ *  The trailing `[,\s]` is REQUIRED, not decorative — this regex runs against `pending`, a buffer
+ *  accumulated across `for await` stdout CHUNKS, so it can be tested mid-write, before the full port
+ *  number has arrived. Without a delimiter after `(\d+)`, a chunk boundary landing inside the port
+ *  digits (e.g. the real banner is "...:53911, ws://..." but only "...:539" has arrived so far) makes
+ *  `(\d+)` match the truncated prefix "539" and this module wrongly rejects a healthy gateway as
+ *  "listening on port 539, not the requested 53911" — reproduced live. Requiring a comma or
+ *  whitespace immediately after the digits means an in-flight truncation simply doesn't match yet
+ *  (the loop reads the next chunk and retries) instead of matching a partial number early. */
+const LISTEN_BANNER_RE = /\[gateway\][^\n]*listening on\s+wss?:\/\/[^:\s]+:(\d+)[,\s]/;
 
 /** Generous relative to opencodeServer.ts's 8s / mockLlm.ts's 15s — the Gateway does more startup
  *  work (heartbeat, health monitor, model-provider registration) than either of those. */
@@ -69,7 +78,7 @@ const STOP_GRACE_MS = 5_000;
 
 /** Mirrors mockLlm.ts's own liveProcs/killAllLiveProcs pattern exactly — defense-in-depth for a
  *  plain `bun run`/standalone host process; NOT relied on as the primary teardown path under
- *  `bun test` (see openclawMocked.test.ts's own afterAll, which awaits stop() directly and this
+ *  `bun test` (see openclawMocked.test.ts's own afterEach, which awaits stop() directly and this
  *  module's header note on why `process.on("exit")` alone is not trustworthy there). Registered
  *  once at module load, not per start() call. */
 const liveProcs = new Set<ReturnType<typeof Bun.spawn>>();

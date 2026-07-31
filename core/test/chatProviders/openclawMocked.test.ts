@@ -34,9 +34,12 @@
 //      calls `process.exit()`, so `driver.ts`'s old `closeChat()` (a bare `proc.kill()`, never
 //      awaited) left it running indefinitely after a chat closed. Reproduced live: `proc.exited` on a
 //      real openclaw ACP bridge child did not resolve within 120s of a plain SIGTERM. Fixed with a
-//      grace-then-SIGKILL escalation (driver.ts's `CLOSE_KILL_GRACE_MS`) — see this file's own orphan
-//      check in `afterEach` below, which is what surfaces a regression here if this escalation ever
-//      breaks.
+//      shared grace-then-SIGKILL escalation (driver.ts's `killWithEscalation`/
+//      `KILL_ESCALATION_GRACE_MS`) at BOTH places this driver ever kills an agent process:
+//      `closeChat()` and `abortTurn()`'s own grace-timeout fallback (the same bare-`kill()` bug
+//      applied there too — a stuck turn-abort against openclaw would otherwise leave the chat wedged
+//      against a half-dead bridge indefinitely, not just briefly) — see this file's own orphan check
+//      in `afterEach` below, which is what surfaces a regression here if this escalation ever breaks.
 //
 // SABOTAGE NOTES (per this task's brief — every new assertion was broken once, confirmed it failed,
 // then reverted): the fixture-text assertion was flipped to expect literal "hello" (lowercase, the
@@ -46,8 +49,9 @@
 // `.toBe(true)` — failed as expected. The session-isolation test's own leak assertion was sabotaged
 // by reverting agents.ts's openclaw entry to a fixed-constant session key — failed as expected (chat
 // B's request DID contain chat A's marker). The orphan check itself was sabotaged by disabling
-// driver.ts's CLOSE_KILL_GRACE_MS escalation (bug #3 above) — both tests failed as expected, correctly
-// reporting the leaked `openclaw`/`openclaw-acp` pids. All reverted after confirming each failure.
+// driver.ts's KILL_ESCALATION_GRACE_MS escalation (bug #3 above) — both tests failed as expected,
+// correctly reporting the leaked `openclaw`/`openclaw-acp` pids. All reverted after confirming each
+// failure.
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -223,22 +227,32 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     if (mockPid !== undefined && pidAlive(mockPid)) {
       throw new Error(`openclawMocked.test: mock pid ${mockPid} still alive after mock.stop() resolved — a real leak.`);
     }
-    // ACP bridge: CHAT_BACKENDS.openclaw.closeChat() calls proc.kill() internally
-    // (chatProviders/acp/driver.ts's closeChat) but does NOT await proc.exited — so unlike the two
-    // checks above, an immediate single-shot check here would race the kill signal actually landing.
-    // Bounded poll (5s) of this test PROCESS's own descendant tree, scoped so it can never match an
-    // unrelated developer-started openclaw process (see collectDescendantPids's doc comment).
+    // ACP bridge: CHAT_BACKENDS.openclaw.closeChat() (chatProviders/acp/driver.ts) returns
+    // synchronously — its own SIGTERM-then-SIGKILL escalation (killWithEscalation,
+    // KILL_ESCALATION_GRACE_MS) runs fire-and-forget in the background, so unlike the two checks
+    // above, an immediate single-shot check here would race that escalation actually landing. Bounded
+    // poll (5s — comfortably past KILL_ESCALATION_GRACE_MS's own 3s) of this test PROCESS's own
+    // descendant tree, scoped so it can never match an unrelated developer-started openclaw process
+    // (see collectDescendantPids's doc comment).
+    //
+    // Filters on "openclaw" only, deliberately NOT "aimock" too (an earlier version of this filter
+    // said `/openclaw|aimock/i`, implying it covered the mock as defense-in-depth — it never did:
+    // `mockLlm.ts` spawns aimock via `Bun.spawn(["node", bin, ...])`, so its `comm` is the plain
+    // string "node", which that pattern can never match). The mock IS still fully covered — by the
+    // exact `pidAlive(mockPid)` check above, not this scan — so nothing is actually left unguarded;
+    // only the CLAIM in the old error message overstated what this specific check covers.
     const deadline = Date.now() + 5000;
     let remaining: number[] = [];
     while (Date.now() < deadline) {
-      remaining = collectDescendantPids(process.pid).filter((pid) => /openclaw|aimock/i.test(describePid(pid)));
+      remaining = collectDescendantPids(process.pid).filter((pid) => /openclaw/i.test(describePid(pid)));
       if (remaining.length === 0) break;
       await new Promise((r) => setTimeout(r, 100));
     }
     if (remaining.length > 0) {
       throw new Error(
-        `openclawMocked.test: ${remaining.length} openclaw/aimock-related descendant process(es) of this test ` +
-          `still running 5s after teardown: ${remaining.map(describePid).join(", ")}`,
+        `openclawMocked.test: ${remaining.length} openclaw-related descendant process(es) of this test ` +
+          `still running 5s after teardown (the ACP bridge's own SIGTERM-then-SIGKILL escalation, ` +
+          `driver.ts's KILL_ESCALATION_GRACE_MS, should have reaped these within ~3s): ${remaining.map(describePid).join(", ")}`,
       );
     }
   }, 15_000); // Bun's default hook timeout (5000ms) is shorter than the bounded poll above can
@@ -319,7 +333,13 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
       // isolation-after-close, a narrower and less realistic claim than what actually matters (the
       // normal "open a new chat later" case). afterEach still closes/tears down both regardless.
 
-      expect(capture!.captured.length).toBe(1); // sanity: exactly chat A's own request so far
+      expect(
+        capture!.captured.length,
+        "exactly one upstream request expected for chat A's own turn so far (before chat B sends anything) — a count " +
+          "other than 1 here means openclaw itself made an unexpected number of upstream calls for a single turn " +
+          "(e.g. a retry, or more than one model round-trip), which this test cannot distinguish from a real " +
+          "regression and is worth investigating on its own, independent of what this test is actually checking for",
+      ).toBe(1);
       expect(JSON.stringify(capture!.captured[0])).toContain(MARKER_A);
       expect(JSON.stringify(capture!.captured[0])).not.toContain(MARKER_B);
 
@@ -332,7 +352,12 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
       await collectorB.waitFor((f) => f.type === "assistant-text");
       await collectorB.waitFor((f) => f.type === "done");
 
-      expect(capture!.captured.length).toBe(2); // sanity: chat B's own request landed too
+      expect(
+        capture!.captured.length,
+        "exactly two upstream requests expected total (chat A's + chat B's own) — a count other than 2 here means " +
+          "either chat A or chat B's turn made an unexpected number of upstream calls (see the identical note on " +
+          "the count==1 check above); this test's own leak assertions below only make sense once this holds",
+      ).toBe(2);
       const chatBRequest = JSON.stringify(capture!.captured[1]);
       // The actual leak assertion: chat B's own marker must be present (it's B's own turn)...
       expect(chatBRequest).toContain(MARKER_B);
