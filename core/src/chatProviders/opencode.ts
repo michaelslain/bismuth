@@ -57,7 +57,7 @@
 // sequential — irrelevant once a server is already up and warm).
 import type { ChatFrame, ChatImage, ChatSink } from "../chat";
 import { recallMemory } from "@bismuth/memory";
-import { emit, rebindSessionSink, scheduleSessionClose } from "./sessionSink";
+import { detachSessionSink, emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "./sessionSink";
 import { claudeLookupPath, claudeSpawnEnv } from "../claudeWhich";
 import { ensureOpencodeServer, registerOpencodeServerListener, type OpencodeServerHandle } from "./opencodeServer";
 import { buildDenyPaths, type DenyEntry } from "../visibility";
@@ -671,6 +671,13 @@ function dispatchTurn(s: OpencodeSession, text: string, images?: ChatImage[]): v
 export function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink, images?: ChatImage[], memoryDir?: string): void {
   const existing = sessions.get(chatId);
   if (!existing) {
+    // PRE-EXISTING GAP, out of scope here: getOrCreateSession is async, so the session isn't
+    // registered in `sessions` until this await resolves. A WS close landing in that window finds
+    // no session yet (detachSink no-ops) and, once creation DOES complete, the now-dead sink is
+    // never detached and no grace-close timer is ever armed for it — an attached session with
+    // nowhere to send frames and no teardown scheduled. Not reachable via the identity-guard work in
+    // this file (that guards an EXISTING session's re-detach, not a session that doesn't exist yet);
+    // would need its own fix (e.g. a placeholder session registered before the await).
     void (async () => {
       const created = await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir);
       if (!created) return; // no-opencode/spawn error already pushed
@@ -678,12 +685,7 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
     })();
     return;
   }
-  if (existing.closeTimer) {
-    clearTimeout(existing.closeTimer);
-    existing.closeTimer = undefined;
-  }
-  existing.sink = sink;
-  existing.detached = false;
+  reattachSessionSink(existing, sink);
   existing.cwd = cwd;
   dispatchTurn(existing, text, images);
 }
@@ -816,8 +818,8 @@ export function scheduleClose(chatId: string, ms: number): void {
 }
 
 /** Re-point a live session's sink at a reconnected socket, flushing frames buffered while
- *  detached; a between-turns rebind pushes a synthetic `done` (idempotent client-side) so a
- *  terminating frame lost to the dead socket can't wedge the streaming state. Mirrors chat.ts. */
+ *  detached; a between-turns rebind pushes a synthetic `done` so a terminating frame lost to the
+ *  dead socket can't wedge the streaming state. Mirrors chat.ts. */
 export function rebindSink(chatId: string, sink: ChatSink): boolean {
   const s = sessions.get(chatId);
   if (!s) return false;
@@ -825,10 +827,10 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
   return true;
 }
 
-export function detachSink(chatId: string): void {
+export function detachSink(chatId: string, sink: ChatSink): boolean {
   const s = sessions.get(chatId);
-  if (!s) return;
-  s.detached = true;
+  if (!s) return false;
+  return detachSessionSink(s, sink);
 }
 
 // Kill any in-flight RUN-mode opencode children on backend shutdown (mirrors chat.ts/terminal.ts).

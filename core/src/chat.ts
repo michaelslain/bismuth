@@ -20,7 +20,7 @@ import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writ
 import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, isDeniedPath, type DenyEntry } from "./visibility";
 import { readDaemonSessionIds } from "./daemon";
 import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
-import { emit, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
+import { detachSessionSink, emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
 // One source of truth for how long a subagent lives in the agents graph, so the chat and relay
 // paths can't drift apart (they render as the same thing in the same view).
 import { DONE_SUBAGENT_TTL_MS, RUNNING_SUBAGENT_MAX_MS } from "./relay";
@@ -783,13 +783,9 @@ export async function sendMessage(chatId: string, text: string, cwd: string, sin
   const existing = sessions.get(chatId);
   if (existing) {
     // Existing session: a turn arriving cancels any pending grace-teardown (we reconnected), keeps
-    // the sink fresh (a reconnect installs a new socket), and queues the turn.
-    if (existing.closeTimer) {
-      clearTimeout(existing.closeTimer);
-      existing.closeTimer = undefined;
-    }
-    existing.sink = sink;
-    existing.detached = false;
+    // the sink fresh (a reconnect installs a new socket) AND flushes anything buffered while
+    // detached (reattachSessionSink — see sessionSink.ts), then queues the turn.
+    reattachSessionSink(existing, sink);
     existing.cwd = cwd;
     existing.lastActivityAt = Date.now();
     // BUG #87: --chrome (browser/computer-use) is a spawn-fixed CLI flag, so a session spawned
@@ -2183,12 +2179,14 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
 }
 
 /** Mark a session's sink detached after an abnormal WS drop: frames buffer for the reconnect
- *  (rebindSink flushes them) instead of being fired into the dead socket and lost. Paired with
- *  scheduleClose by the server's close handler. */
-export function detachSink(chatId: string): void {
+ *  (rebindSink flushes them) instead of being fired into the dead socket and lost. Identity-guarded
+ *  and returns whether the detach actually happened — see `ChatBackend.detachSink`'s doc comment
+ *  (backends.ts) for the full contract every driver shares, including why the server's close
+ *  handler MUST gate `scheduleClose` on this return value. */
+export function detachSink(chatId: string, sink: ChatSink): boolean {
   const s = sessions.get(chatId);
-  if (!s) return;
-  s.detached = true;
+  if (!s) return false;
+  return detachSessionSink(s, sink);
 }
 
 export function chatSessionCount(): number {

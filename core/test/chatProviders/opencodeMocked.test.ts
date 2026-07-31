@@ -95,6 +95,17 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
   let mock: MockLlmHandle | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
+  // Separate from tempDirs (cleaned per-test in afterEach): the shared, process-lifetime `opencode
+  // serve` singleton (see the FINDING below) only reads XDG_*_HOME at the moment IT spawns — setup()
+  // is idempotent (see its own comment) and this file now has more than one test, so these dirs are
+  // created exactly once, by the FIRST test, and the ALREADY-RUNNING shared server keeps using them
+  // for as long as it lives, which is this whole bun:test process (see the FINDING below — its own
+  // exit handler never fires under `bun test`). Deleting them after the FIRST test's afterEach (as
+  // tempDirs' per-test afterEach would) 404s the server's own storage: reproduced live, a SECOND
+  // test's session.create() fails with `{code:"spawn", message:"The opencode server could not start
+  // a session."}` once rm -rf'd out from under a server still expecting them to exist. Cleaned up
+  // only in afterAll, once nothing in this file can still be depending on the shared server.
+  const xdgDirs: string[] = [];
   // FINDING (this task): chatProviders/opencode.ts spawns ONE shared, process-lifetime `opencode
   // serve` (chatProviders/opencodeServer.ts) the first time any opencode chat opens — by design,
   // meant to outlive individual chats and be torn down only by opencodeServer.ts's own
@@ -110,7 +121,13 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
   // server's PID before/after itself and force-kills anything NEW in afterAll — a test-only safety
   // net, matched by the shared server's own exact, distinctive argv (never a general "kill anything
   // named opencode" sweep that could disrupt an unrelated opencode process on a developer's machine).
+  // Snapshotted ONCE here, at describe-collection time (NOT inside setup()) — this file now has more
+  // than one test, and setup() runs per-test. A snapshot taken inside setup() would, on the SECOND
+  // test's call, record the shared server THIS FILE'S OWN FIRST TEST just spawned as "pre-existing",
+  // so afterAll's `if (pidsBefore.has(pid)) continue` would skip killing it. Reproduced live: with
+  // the snapshot inside setup(), every run leaked one `opencode serve` (PPID 1).
   const pidsBefore = new Set<string>();
+  for (const pid of opencodeServePids()) pidsBefore.add(pid);
 
   async function newTempDir(prefix = "bismuth-opencode-mocked-"): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), prefix));
@@ -118,8 +135,32 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
     return dir;
   }
 
-  async function setup(): Promise<void> {
-    for (const pid of opencodeServePids()) pidsBefore.add(pid);
+  /** Like newTempDir, but tracked in xdgDirs (survives every afterEach, cleaned only in afterAll) —
+   *  see xdgDirs' own comment for why an XDG_*_HOME dir must outlive the single test that created it. */
+  async function newXdgTempDir(prefix: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), prefix));
+    xdgDirs.push(dir);
+    return dir;
+  }
+
+  // IDEMPOTENT AND ALL-OR-NOTHING — this file now has more than one test, and each calls setup() at
+  // its own start. `setupOnce ??= doSetup()` latches on the PROMISE, not on a side effect of the
+  // first statement: an `if (mock) return` guard checked before `mock` is actually assigned would
+  // let a LATER test proceed into a half-initialized environment (e.g. the mock server up but the
+  // XDG redirection below not yet applied) if some await after the first one throws. `??=`
+  // guarantees every caller gets the exact same outcome (success or rejection) as whichever call
+  // actually ran doSetup(), and never re-runs it. Without the guard at all, a second call reassigns
+  // `mock` (a single `let`), orphaning the FIRST mock LLM server (afterAll's `mock?.stop()` only
+  // ever stops the LATEST one) — reproduced live as one leaked `aimock` process (PPID 1) per run. It
+  // also means every XDG dir below is now genuinely created only once, matching the shared
+  // opencode-serve singleton's own actual lifetime (see xdgDirs' comment) rather than being
+  // recreated-and-ignored on every later call.
+  let setupOnce: Promise<void> | undefined;
+  function setup(): Promise<void> {
+    return (setupOnce ??= doSetup());
+  }
+
+  async function doSetup(): Promise<void> {
     // --latency 40: see this file's header, finding #2 — a zero-latency reply can beat opencode
     // server mode's own event-stream subscription.
     mock = await startMockLlm(undefined, ["--latency", "40"]);
@@ -136,21 +177,22 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
     // to even if it did: re-verified live that a turn still completes correctly against the mock
     // with all four redirected (the "auth" ChatFrame reports zero providers, "assistant-text" is
     // still the fixture's exact "Hello!").
-    process.env.XDG_CONFIG_HOME = await newTempDir("bismuth-opencode-xdgconfig-");
-    process.env.XDG_DATA_HOME = await newTempDir("bismuth-opencode-xdgdata-");
-    process.env.XDG_CACHE_HOME = await newTempDir("bismuth-opencode-xdgcache-");
-    process.env.XDG_STATE_HOME = await newTempDir("bismuth-opencode-xdgstate-");
+    process.env.XDG_CONFIG_HOME = await newXdgTempDir("bismuth-opencode-xdgconfig-");
+    process.env.XDG_DATA_HOME = await newXdgTempDir("bismuth-opencode-xdgdata-");
+    process.env.XDG_CACHE_HOME = await newXdgTempDir("bismuth-opencode-xdgcache-");
+    process.env.XDG_STATE_HOME = await newXdgTempDir("bismuth-opencode-xdgstate-");
     // RESIDUAL HAZARD, noted rather than fixed (flagged on re-review, no fix needed today): these
     // XDG vars only affect a FRESH `opencode serve` spawn. chatProviders/opencodeServer.ts's shared
     // server is PROCESS-LIFETIME (one `live` singleton reused for the rest of this core process —
     // see this file's header, finding #2, and opencodeServer.ts's own module doc comment) — if any
     // OTHER test file in the same `bun test` process ever opens an opencode chat BEFORE this file's
-    // setup() runs, that earlier chat's `ensureOpencodeServer()` call would have already spawned
-    // the shared server with THAT call's env (real XDG dirs, not these), and this test would then
-    // be handed the SAME already-running server instead of a fresh isolated one. No such file
-    // exists in this suite today (this is the only one that drives a real opencode turn), so it's
-    // not live risk right now — but a future opencode test file MUST open its first chat only after
-    // its own XDG redirection is in place, and should not assume it starts the shared server fresh.
+    // (idempotent, so effectively single) setup() call runs, that earlier chat's
+    // `ensureOpencodeServer()` call would have already spawned the shared server with THAT call's
+    // env (real XDG dirs, not these), and this test would then be handed the SAME already-running
+    // server instead of a fresh isolated one. No such file exists in this suite today (this is the
+    // only one that drives a real opencode turn), so it's not live risk right now — but a future
+    // opencode test file MUST open its first chat only after its own XDG redirection is in place,
+    // and should not assume it starts the shared server fresh.
   }
 
   afterAll(async () => {
@@ -171,6 +213,11 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       } catch {
         /* already gone */
       }
+    }
+    // Cleaned up LAST, after the shared server (if this file's tests started it) has been signaled
+    // to die above — see xdgDirs' own comment for why these can't be removed any earlier.
+    for (const dir of xdgDirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
     }
   });
 
@@ -222,6 +269,70 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
         expect(resultFrame.isError).toBe(false);
         expect(resultFrame.costUsd).toBe(0); // the mock's fixture reports zero cost
       }
+    },
+    60_000,
+  );
+
+  test(
+    "sendMessage()'s reopen branch (reattachSessionSink) flushes a buffered turn to the NEW sink without an extra synthetic done",
+    async () => {
+      // Regression coverage for core/src/chatProviders/opencode.ts's sendMessage() "existing
+      // session" branch, which must call sessionSink.ts's reattachSessionSink (flush, no synthetic
+      // `done`) rather than rebindSessionSink (flush, THEN push a synthetic `done` whenever no turn
+      // is active — which it always is right here, since turn 1 finishes before turn 2 is sent).
+      // Swapping the two is a one-word change no prior test in this file catches.
+      await setup();
+
+      const cwd = await newTempDir();
+      const chatId = "opencode-mocked-reopen-" + Date.now();
+      chatIds.push(chatId);
+      const { sink: sink1, frames: frames1, waitFor: waitFor1 } = makeChatFrameCollector();
+
+      CHAT_BACKENDS.opencode.openSession({ chatId, cwd, sink: sink1, computerUse: false });
+      await waitFor1((f) => f.type === "models");
+      CHAT_BACKENDS.opencode.setModel(chatId, "mock/mock");
+
+      // Queue turn 1, then detach IMMEDIATELY (synchronously, same tick) — sendMessage() here is
+      // fire-and-forget (not async), and the mock's own --latency 40 (see setup()) guarantees the
+      // reply can't land before this synchronous detach call runs.
+      CHAT_BACKENDS.opencode.sendMessage({ chatId, cwd, sink: sink1, computerUse: false, text: "hello" });
+      expect(CHAT_BACKENDS.opencode.detachSink(chatId, sink1)).toBe(true);
+
+      // Give the whole first turn (assistant-text, result, done) time to complete while detached.
+      await new Promise((r) => setTimeout(r, 3000));
+      expect(frames1.some((f) => f.type === "assistant-text")).toBe(false);
+      expect(frames1.some((f) => f.type === "done")).toBe(false);
+
+      // Reopen with a FRESH sink — opencode.ts's sendMessage() "existing session" branch.
+      const { sink: sink2, frames: frames2, waitFor: waitFor2 } = makeChatFrameCollector(60_000);
+      CHAT_BACKENDS.opencode.sendMessage({ chatId, cwd, sink: sink2, computerUse: false, text: "hello" });
+
+      // Wait for the FULL picture to settle — 2 done frames total (turn 1's buffered done, then
+      // turn 2's own done) — BEFORE checking anything about order. Checking order right after the
+      // first assistant-text (before turn 1's own result/done have necessarily landed yet) is a race;
+      // waiting for both dones first makes every ordering check below run against a stable array.
+      await waitFor2((_f) => frames2.filter((x) => x.type === "done").length >= 2, 60_000);
+
+      // Turn 1's buffered tail must have arrived on sink2 (the flush) — assistant-text then done, in
+      // order — as the FIRST content, ahead of turn 2's own.
+      const firstAssistantIdx = frames2.findIndex((f) => f.type === "assistant-text");
+      expect(firstAssistantIdx).toBeGreaterThanOrEqual(0);
+      const firstAssistant = frames2[firstAssistantIdx];
+      if (firstAssistant.type === "assistant-text") expect(firstAssistant.text).toBe("Hello!");
+      const firstDoneIdx = frames2.findIndex((f) => f.type === "done");
+      expect(firstDoneIdx).toBeGreaterThan(firstAssistantIdx);
+
+      // THE discriminating assertion. Under the reattach→rebind sabotage, rebindSessionSink's
+      // synthetic `done` fires SYNCHRONOUSLY inside sendMessage's "existing session" branch
+      // whenever turnActive is false at that moment — true both for the FIRST sendMessage call
+      // above (the session already exists via openSession, caught by the earlier
+      // frames1.some(done) assertion) and for THIS reopen call (turn 1 already finished), so
+      // frames2 already holds 2 done frames before turn 2's OWN text has even been requested —
+      // done.length === 2 PASSES even under the sabotage, since the wait above resolves off that
+      // already-collected count without ever waiting for turn 2 to run. It's assistant-text.length
+      // that actually catches it here.
+      expect(frames2.filter((f) => f.type === "done").length).toBe(2);
+      expect(frames2.filter((f) => f.type === "assistant-text").length).toBe(2);
     },
     60_000,
   );

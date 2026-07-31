@@ -1802,7 +1802,12 @@ export function createServer(cfg: CoreConfig) {
   // The WS payload is discriminated by `kind`: terminal sockets pipe a PTY, chat sockets
   // drive the headless Claude Code chat driver (core/src/chat.ts).
   type TermWsData = { kind: "terminal"; sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
-  type ChatWsData = { kind: "chat"; chatId: string; rebind: boolean };
+  // `sink` is the ONE frame-sender for this socket's whole lifetime, bound in `open` and reused by
+  // every `message` (not a fresh closure per message) so it has a stable identity `close` can hand
+  // to chatDetachSink for its identity guard (a stale close from an OLD socket, arriving after a
+  // reconnect already rebound the session to a NEWER sink, must not re-detach a live session — see
+  // sessionSink.ts's detachSessionSink).
+  type ChatWsData = { kind: "chat"; chatId: string; rebind: boolean; sink?: (frame: unknown) => void };
   // The per-window control socket (core/src/uiControl.ts). `send` is the JSON-frame sender bound in
   // `open`, kept so `close` can identity-guard unregister (a stale close must not drop a reconnected
   // window that already re-registered under the same windowId).
@@ -1947,11 +1952,15 @@ export function createServer(cfg: CoreConfig) {
           // and cancel its grace-period teardown, so in-flight drain frames (incl. the turn's tail
           // and `done`) flow here instead of the dead socket — rebindSink also flushes any frames
           // buffered while detached. A brand-new chat has no session yet — rebind is a no-op and
-          // the first {type:"user"} binds the sink via sendMessage.
+          // the first {type:"user"} binds the sink via sendMessage. The sink closure is created ONCE
+          // here and stashed on ws.data (see ChatWsData's own comment) — every `message` below reuses
+          // it, and `close` hands it back to chatDetachSink for the identity guard.
           const { chatId, rebind } = ws.data;
-          const rebound = chatRebindSink(chatId, (frame: unknown) => {
+          const sink = (frame: unknown) => {
             try { ws.send(JSON.stringify(frame)); } catch { /* socket closed mid-turn */ }
-          });
+          };
+          ws.data.sink = sink;
+          const rebound = chatRebindSink(chatId, sink);
           // The client RECONNECTED expecting its session, but the 30s grace already tore it down
           // (closeChat sends no frame) — tell it explicitly so a wedged mid-turn UI clears and the
           // user learns the conversation ended, instead of the next send silently starting fresh.
@@ -2030,13 +2039,10 @@ export function createServer(cfg: CoreConfig) {
           } catch {
             return;
           }
-          const chatSink = (frame: unknown) => {
-            try {
-              ws.send(JSON.stringify(frame));
-            } catch {
-              /* socket closed mid-turn */
-            }
-          };
+          // The SAME closure `open` bound to ws.data.sink — reused, not re-created, so its identity
+          // stays stable for the whole socket's lifetime (see ChatWsData's comment + `close` below).
+          // Always defined: `open` fires before any `message` for a given socket.
+          const chatSink = ws.data.sink!;
           // --chrome (browser/computer-use) capability. The client carries its CURRENT choice on
           // every open/user/resume message so a toggle takes effect on the next turn WITHOUT waiting
           // for the async .settings reload (BUG #87: relying on appConfig alone raced the file-watch
@@ -2139,12 +2145,30 @@ export function createServer(cfg: CoreConfig) {
           // ABNORMAL close (reload 1001, network drop 1006) → detach the sink (frames buffer for
           // the reconnect's rebindSink flush instead of vanishing into the dead socket) and keep
           // the session alive for a short grace window so a reconnect (the client retries with
-          // the same chatId) resumes the same `claude` conversation instead of spawning a fresh
-          // one. The next sendMessage/rebind cancels the timer.
+          // the same chatId) resumes the same conversation instead of spawning a fresh one. The next
+          // sendMessage/rebind cancels the timer. IDENTITY-GUARDED (ws.data.sink, same as
+          // uiControl.ts's unregisterWindow): on a half-open drop (lid close, wifi loss, NAT
+          // timeout) the client can already have reconnected with a NEW socket — whose `open`
+          // rebound the session to a NEWER sink — before THIS stale socket's close event lands
+          // (the common case, not an edge one: ChatView's own reconnect fires off the client's
+          // `onclose` within seconds, while this server has no `idleTimeout` set on the WS upgrade,
+          // so the OLD half-open socket's close can lag well behind). chatDetachSink returns whether
+          // it actually detached (false on a rejected guard) — the teardown timer below is armed
+          // ONLY then: arming it unconditionally would kill a session that's live and actively
+          // watched under the new sink 30s later, sending no frame, even though the guard just
+          // correctly left it alone. A rejected guard leaks nothing: the newer socket's OWN close
+          // will arm its own timer when it eventually happens, and a since-vanished session makes
+          // scheduleClose a no-op regardless. ws.data.sink is only TYPED optional because it's
+          // assigned after construction (see ChatWsData's comment) — always actually set by `open`
+          // before any `close` can fire. Read once into a local rather than asserted with `!` at the
+          // call site: an assertion would silently fail OPEN (skip the detach AND the teardown) on a
+          // hypothetically-undefined sink, exactly inverting the old unguarded code's fail-SAFE
+          // behavior (detach unconditionally). `!sink` here instead falls back to the same
+          // always-schedule behavior, never silently orphaning a session with no teardown path.
+          const sink = ws.data.sink;
           if (code === 1000) {
             closeChat(ws.data.chatId);
-          } else {
-            chatDetachSink(ws.data.chatId);
+          } else if (!sink || chatDetachSink(ws.data.chatId, sink)) {
             scheduleChatClose(ws.data.chatId, 30_000);
           }
           return;
