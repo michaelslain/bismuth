@@ -41,7 +41,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ChatFrame, ChatImage, ChatSink } from "../../chat";
-import { emit, rebindSessionSink, scheduleSessionClose } from "../sessionSink";
+import { emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "../sessionSink";
 import { claudeSpawnEnv, whichBinary } from "../../claudeWhich";
 import type { ChatBackend, ChatTurnContext } from "../backends";
 import type { BackendId } from "../../agentBackends/catalog";
@@ -625,12 +625,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         })();
         return;
       }
-      if (existing.closeTimer) {
-        clearTimeout(existing.closeTimer);
-        existing.closeTimer = undefined;
-      }
-      existing.sink = ctx.sink;
-      existing.detached = false;
+      reattachSessionSink(existing, ctx.sink);
       existing.cwd = ctx.cwd;
       runOrQueue(existing, ctx.text, ctx.images);
     },

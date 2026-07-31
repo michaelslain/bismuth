@@ -1,14 +1,15 @@
 // Tests for the pure session-frame buffering shared by every chat provider
 // (core/src/chatProviders/sessionSink.ts). No mock server, no CLI, no subprocess — this is the
-// generic reconnect-buffering slice (emit/rebindSessionSink/scheduleSessionClose) that both the
-// Claude chat driver (core/src/chat.ts) and the ACP/opencode providers hold verbatim, so a bug here
-// silently loses a turn's output or wedges the streaming spinner on WHICHEVER backend the user
-// picked, on every reconnect after a WS drop.
+// generic reconnect-buffering slice (emit/rebindSessionSink/reattachSessionSink/
+// scheduleSessionClose) that both the Claude chat driver (core/src/chat.ts) and the ACP/opencode/
+// codex providers hold verbatim, so a bug here silently loses a turn's output or wedges the
+// streaming spinner on WHICHEVER backend the user picked, on every reconnect after a WS drop.
 import { describe, expect, test } from "bun:test";
 import type { ChatFrame, ChatSink } from "../../src/chat";
 import {
   emit,
   MAX_BUFFERED_FRAMES,
+  reattachSessionSink,
   rebindSessionSink,
   scheduleSessionClose,
   type SessionSink,
@@ -106,26 +107,117 @@ describe("rebindSessionSink — flush order", () => {
     expect(s.detached).toBe(false);
   });
 
-  test("a sink that throws mid-flush preserves the un-flushed tail for the next rebind", () => {
+  test("a sink that throws mid-flush retains the failed frame + tail for one retry, without re-detaching", () => {
     const buffered: ChatFrame[] = [textFrame(0), textFrame(1), textFrame(2)];
     const s = makeSession({ detached: true, buffer: [...buffered], turnActive: true });
     const received: ChatFrame[] = [];
     const throwingSink: ChatSink = (f) => {
       received.push(f);
-      if ((f as { text: string }).text === "f1") throw new Error("dead socket");
+      if ((f as { text: string }).text === "f1") throw new Error("this write failed");
     };
 
     rebindSessionSink(s, throwingSink);
 
     // f0 delivered, f1 attempted (and threw), f2 never attempted this round.
     expect(received).toEqual([textFrame(0), textFrame(1)]);
-    // The un-flushed tail is preserved for the next rebind — INCLUDING f1 itself, since a throw
-    // from sink(f1) doesn't prove f1 was never delivered (a possible duplicate on retry is far
-    // less harmful than silently losing it, e.g. if it had been the turn's `done`/`permission`).
+    // The un-flushed tail is retained for one retry on the next flush — INCLUDING f1 itself, since
+    // a throw from sink(f1) proves only that THIS write failed, not that f1 was never delivered.
     expect(s.buffer).toEqual([textFrame(1), textFrame(2)]);
-    // The socket that just threw is treated as dead again, not "reconnected" — otherwise
-    // subsequent emit() calls would fire straight into a proven-broken sink.
-    expect(s.detached).toBe(true);
+    // A single write failing does NOT prove the socket is dead (an oversized frame or an unrelated
+    // RangeError throws on an otherwise-healthy socket too) — only the WS close handler decides
+    // that. Re-detaching here would leave the session detached with no grace-close timer armed to
+    // ever reap it, buffering into the void with nothing watching.
+    expect(s.detached).toBe(false);
+  });
+
+  test("a frame that fails twice is dropped, and the flush continues past it to the rest", () => {
+    const buffered: ChatFrame[] = [textFrame(0), textFrame(1), textFrame(2)];
+    const s = makeSession({ detached: true, buffer: [...buffered], turnActive: true });
+
+    // First rebind: f1 throws for the FIRST time — retained for its one retry.
+    const attempt1: ChatFrame[] = [];
+    const throwsOnF1: ChatSink = (f) => {
+      attempt1.push(f);
+      if ((f as { text: string }).text === "f1") throw new Error("write failed");
+    };
+    rebindSessionSink(s, throwsOnF1);
+    expect(attempt1).toEqual([textFrame(0), textFrame(1)]);
+    expect(s.buffer).toEqual([textFrame(1), textFrame(2)]);
+
+    // Second rebind: the SAME f1 (same object identity, carried over via the retained buffer)
+    // throws again. Its one retry is now exhausted — it must be dropped, and the flush must
+    // continue on to attempt (and deliver) f2 in this very call, rather than re-queuing itself
+    // forever and blocking everything after it.
+    const attempt2: ChatFrame[] = [];
+    const throwsOnF1Again: ChatSink = (f) => {
+      attempt2.push(f);
+      if ((f as { text: string }).text === "f1") throw new Error("write failed again");
+    };
+    rebindSessionSink(s, throwsOnF1Again);
+
+    expect(attempt2).toEqual([textFrame(1), textFrame(2)]);
+    expect(s.buffer).toEqual([]);
+  });
+
+  test("a re-entrant emit during a failed flush is preserved alongside the retained tail, not destroyed", () => {
+    const buffered: ChatFrame[] = [textFrame(0), textFrame(1), textFrame(2)];
+    const s = makeSession({ detached: true, buffer: [...buffered], turnActive: true });
+    const received: ChatFrame[] = [];
+    const sink: ChatSink = (f) => {
+      received.push(f);
+      if ((f as { text: string }).text === "f0") emit(s, textFrame(99)); // re-entrant, mid-flush
+      if ((f as { text: string }).text === "f1") throw new Error("write failed");
+    };
+
+    rebindSessionSink(s, sink);
+
+    expect(received).toEqual([textFrame(0), textFrame(1)]);
+    // f1 (retained for retry) + f2 (never attempted) come first — the order the NEXT flush should
+    // deliver them in — followed by the re-entrantly emitted f99, which landed in the fresh
+    // s.buffer during THIS flush and must not be clobbered by the retained-tail write.
+    expect(s.buffer).toEqual([textFrame(1), textFrame(2), textFrame(99)]);
+  });
+
+  test("emit() after a failed flush appends after both the retained tail AND any re-entrant frames, in order", () => {
+    const buffered: ChatFrame[] = [textFrame(0), textFrame(1), textFrame(2)];
+    const s = makeSession({ detached: true, buffer: [...buffered], turnActive: true });
+    const sink: ChatSink = (f) => {
+      if ((f as { text: string }).text === "f0") emit(s, textFrame(50)); // re-entrant, mid-flush
+      if ((f as { text: string }).text === "f1") throw new Error("write failed");
+    };
+
+    rebindSessionSink(s, sink);
+    expect(s.buffer).toEqual([textFrame(1), textFrame(2), textFrame(50)]);
+
+    // A real socket drop AFTER this rebind (the WS close handler's detachSink, not a failed write,
+    // is what actually re-detaches a session) — a frame emitted while genuinely detached must land
+    // after everything already queued, not reorder ahead of it.
+    s.detached = true;
+    emit(s, textFrame(99));
+
+    expect(s.buffer).toEqual([textFrame(1), textFrame(2), textFrame(50), textFrame(99)]);
+  });
+
+  test("end-to-end: rebind, throw, rebind again, succeed — delivers the retained tail in order and clears detached", () => {
+    const buffered: ChatFrame[] = [textFrame(0), textFrame(1), textFrame(2)];
+    const s = makeSession({ detached: true, buffer: [...buffered], turnActive: true });
+
+    const firstAttempt: ChatFrame[] = [];
+    const dyingSink: ChatSink = (f) => {
+      firstAttempt.push(f);
+      if ((f as { text: string }).text === "f1") throw new Error("dead socket");
+    };
+    rebindSessionSink(s, dyingSink);
+    expect(firstAttempt).toEqual([textFrame(0), textFrame(1)]);
+    expect(s.buffer).toEqual([textFrame(1), textFrame(2)]);
+
+    // A genuine reconnect against a healthy sink.
+    const secondAttempt: ChatFrame[] = [];
+    rebindSessionSink(s, (f) => secondAttempt.push(f));
+
+    expect(secondAttempt).toEqual([textFrame(1), textFrame(2)]);
+    expect(s.buffer).toEqual([]);
+    expect(s.detached).toBe(false);
   });
 });
 
@@ -159,6 +251,23 @@ describe("rebindSessionSink — synthetic done rule", () => {
     rebindSessionSink(s, (f) => received.push(f));
 
     expect(received).toEqual([...buffered, { type: "done" }]);
+  });
+
+  test("a between-turns rebind still attempts the synthetic done even when an earlier frame in the same flush failed", () => {
+    const buffered: ChatFrame[] = [textFrame(0), textFrame(1)];
+    const s = makeSession({ detached: true, buffer: [...buffered], turnActive: false });
+    const received: ChatFrame[] = [];
+    const sink: ChatSink = (f) => {
+      received.push(f);
+      if ((f as { text: string }).text === "f0") throw new Error("write failed");
+    };
+
+    rebindSessionSink(s, sink);
+
+    // f0 attempted (and threw), f1 retained for retry — but the synthetic done must STILL have
+    // been attempted: the f0 failure proved nothing about whether this later, unrelated write (a
+    // fresh { type: "done" } object) would also fail.
+    expect(received).toEqual([textFrame(0), { type: "done" }]);
   });
 
   test("a sink that throws only on the synthetic done still delivers the buffered frames first", () => {
@@ -196,6 +305,49 @@ describe("rebindSessionSink — re-entrancy during flush", () => {
 
     expect(received).toEqual([textFrame(0), textFrame(1)]);
     expect(s.buffer).toEqual([textFrame(99)]);
+  });
+});
+
+describe("reattachSessionSink", () => {
+  test("re-points the sink, flushes the buffered tail, and clears detached — WITHOUT a synthetic done", () => {
+    const buffered: ChatFrame[] = [textFrame(0), textFrame(1)];
+    const s = makeSession({ detached: true, buffer: [...buffered], turnActive: false });
+    const received: ChatFrame[] = [];
+
+    reattachSessionSink(s, (f) => received.push(f));
+
+    // This is the exact gap the four sendMessage reopen paths used to leave open: they did
+    // `sink = sink; detached = false` inline with NO flush at all, stranding the buffered tail if
+    // the user typed a new message instead of the socket reconnecting first.
+    expect(received).toEqual(buffered);
+    expect(s.buffer).toEqual([]);
+    expect(s.detached).toBe(false);
+  });
+
+  test("does NOT append a synthetic done even between turns (unlike rebindSessionSink)", () => {
+    const s = makeSession({ detached: true, buffer: [], turnActive: false });
+    const received: ChatFrame[] = [];
+
+    reattachSessionSink(s, (f) => received.push(f));
+
+    // Same turnActive:false condition that makes rebindSessionSink push a done — reattach must NOT,
+    // since a new turn starts right after this call and would supersede it.
+    expect(received).toEqual([]);
+  });
+
+  test("cancels a pending close timer, same as rebindSessionSink", async () => {
+    let closed = false;
+    const s = makeSession({ turnActive: true });
+    scheduleSessionClose(s, 15, () => {
+      closed = true;
+    });
+    expect(s.closeTimer).toBeDefined();
+
+    reattachSessionSink(s, () => {});
+
+    expect(s.closeTimer).toBeUndefined();
+    await sleep(50);
+    expect(closed).toBe(false);
   });
 });
 

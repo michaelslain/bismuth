@@ -57,7 +57,7 @@
 // sequential — irrelevant once a server is already up and warm).
 import type { ChatFrame, ChatImage, ChatSink } from "../chat";
 import { recallMemory } from "@bismuth/memory";
-import { emit, rebindSessionSink, scheduleSessionClose } from "./sessionSink";
+import { emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "./sessionSink";
 import { claudeLookupPath, claudeSpawnEnv } from "../claudeWhich";
 import { ensureOpencodeServer, registerOpencodeServerListener, type OpencodeServerHandle } from "./opencodeServer";
 import { buildDenyPaths, type DenyEntry } from "../visibility";
@@ -678,12 +678,7 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
     })();
     return;
   }
-  if (existing.closeTimer) {
-    clearTimeout(existing.closeTimer);
-    existing.closeTimer = undefined;
-  }
-  existing.sink = sink;
-  existing.detached = false;
+  reattachSessionSink(existing, sink);
   existing.cwd = cwd;
   dispatchTurn(existing, text, images);
 }

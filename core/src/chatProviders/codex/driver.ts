@@ -52,7 +52,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { FileSink } from "bun";
 import type { ChatFrame, ChatImage, ChatManifest, ChatSink } from "../../chat";
-import { emit, rebindSessionSink, scheduleSessionClose } from "../sessionSink";
+import { emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "../sessionSink";
 import { claudeSpawnEnv, whichBinary } from "../../claudeWhich";
 import type { ChatBackend, ChatTurnContext } from "../backends";
 import { readCodexOptIns } from "../../settings";
@@ -406,12 +406,7 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
     if (!created) return; // no-binary already pushed
     s = created;
   } else {
-    if (s.closeTimer) {
-      clearTimeout(s.closeTimer);
-      s.closeTimer = undefined;
-    }
-    s.sink = sink;
-    s.detached = false;
+    reattachSessionSink(s, sink);
     s.cwd = cwd;
   }
   runOrQueue(s, text, images);
