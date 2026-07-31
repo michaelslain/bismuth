@@ -34,31 +34,56 @@ test("accumulate boundary semantics: 0 is in, exactly 1 is out, NaN is out, weig
   expect(sum(accumulate([{ x: 0.5, y: 0.5, weight: 0 }], 4, 4))).toBe(0);
 });
 
+// blur() now runs BOX_PASSES (3) successive box applications, so a radius-1 kernel's true reach is
+// 3 cells, not 1 — the tests below use a 15x15 grid (7 cells from centre to any edge) so an
+// interior spike's mass-conservation and axis symmetry are exercised with ZERO boundary clipping,
+// same as the old 5x5 grid did for a single pass. The dedicated edge-policy test below still uses a
+// small grid — clipping IS the thing it tests.
+const idx = (w: number, cx: number, cy: number, dx: number, dy: number) => (cy + dy) * w + (cx + dx);
+
 test("blur spreads a single spike to its neighbours and conserves total mass", () => {
-  const f = new Float32Array(25);
-  f[12] = 1; // centre of a 5x5
-  const b = blur(f, 5, 5, 1);
-  expect(b[12]).toBeLessThan(1);
-  expect(b[11]).toBeGreaterThan(0);
-  expect(b[13]).toBeGreaterThan(0);
+  const w = 15, h = 15, cx = 7, cy = 7;
+  const f = new Float32Array(w * h);
+  f[idx(w, cx, cy, 0, 0)] = 1; // centre, 7 cells from every edge — 3 passes at radius 1 reach only 3
+  const b = blur(f, w, h, 1);
+  expect(b[idx(w, cx, cy, 0, 0)]).toBeLessThan(1);
+  expect(b[idx(w, cx, cy, -1, 0)]).toBeGreaterThan(0);
+  expect(b[idx(w, cx, cy, 1, 0)]).toBeGreaterThan(0);
   const before = f.reduce((s, v) => s + v, 0);
   const after = b.reduce((s, v) => s + v, 0);
   expect(after).toBeCloseTo(before, 4);
 });
 
 test("blur is separable in BOTH axes — the spike spreads vertically too, isotropically", () => {
-  const f = new Float32Array(25); f[12] = 1;
-  const b = blur(f, 5, 5, 1);
-  expect(b[7]).toBeGreaterThan(0);   // row above
-  expect(b[17]).toBeGreaterThan(0);  // row below
-  expect(b[7]).toBeCloseTo(b[11], 6); // a box kernel is symmetric in x and y
-  expect(b[6]).toBeCloseTo(b[12], 6); // diagonal too
+  const w = 15, h = 15, cx = 7, cy = 7;
+  const f = new Float32Array(w * h); f[idx(w, cx, cy, 0, 0)] = 1;
+  const b = blur(f, w, h, 1);
+  const at = (dx: number, dy: number) => b[idx(w, cx, cy, dx, dy)];
+  expect(at(0, -1)).toBeGreaterThan(0);   // row above
+  expect(at(0, 1)).toBeGreaterThan(0);    // row below
+  // A box kernel (any pass count) stays symmetric under swapping x and y for a field that is
+  // itself symmetric under that swap — up/down/left/right must all agree.
+  expect(at(0, -1)).toBeCloseTo(at(-1, 0), 6);
+  expect(at(0, -1)).toBeCloseTo(at(0, 1), 6);
+  expect(at(0, -1)).toBeCloseTo(at(1, 0), 6);
+  // NOTE: a single-pass box kernel also makes the DIAGONAL neighbour exactly equal to the centre
+  // (the whole support is one flat square) — that flatness is the boxy-halo bug itself, so after
+  // the fix it must NOT hold. See "corner energy is less than edge energy" below for the assertion
+  // that replaces it.
+  expect(at(-1, -1)).toBeLessThan(at(0, 0));
 });
 
 test("blur edge policy: the window SHRINKS at the border, it does not replicate", () => {
   const g = new Float32Array(25); g[0] = 1;
-  // corner windows are 2x2/2x3/3x2/3x3 -> mass 1/4+1/6+1/6+1/9 = 25/36. Edge replication would keep ~1.
-  expect(sum(blur(g, 5, 5, 1))).toBeCloseTo(25 / 36, 5);
+  // A single-pass box average at radius 1 would keep 25/36 ≈ 0.694 of the mass at a corner (still
+  // less than 1, since count-based clipping never replicates/pads). Three successive passes clip
+  // repeatedly, so more is lost — the exact fraction is a coupled recurrence not worth hardcoding
+  // (it would just re-encode "whatever this call currently computes"), but the DIRECTION is exactly
+  // what this test is for: strictly below 1 (shrinks — edge replication would hold it near 1) and
+  // still substantial (not collapsed to noise — the average never zeroes out a nonzero neighbourhood).
+  const mass = sum(blur(g, 5, 5, 1));
+  expect(mass).toBeLessThan(0.9);
+  expect(mass).toBeGreaterThan(0.3);
 });
 
 test("blur with radius <= 0 is the identity", () => {
@@ -108,12 +133,52 @@ test("buildBloom on an empty point set is all zero, not NaN", () => {
 
 test("buildBloom really blurs, at the right resolution and orientation", () => {
   const f = buildBloom([{ x: 0.5, y: 0.5 }], 2);
-  expect(f.filter((v) => v > 0).length).toBe(25); // (2*2+1)^2, not 1
+  // A box kernel's support grows by exactly `radius` per pass, independently in x and y (each pass
+  // is a full h+v box application) — so 3 passes at radius 2 reach 3*2 = 6 cells, giving a
+  // (2*6+1)^2 = 169-cell footprint, not the single-pass (2*2+1)^2 = 25.
+  expect(f.filter((v) => v > 0).length).toBe(169);
   const cx = Math.floor(0.5 * FIELD_W), cy = Math.floor(0.5 * FIELD_H);
-  expect(f[cy * FIELD_W + cx + 2]).toBeGreaterThan(0);
-  expect(f[cy * FIELD_W + cx + 3]).toBe(0);
-  expect(f[(cy + 2) * FIELD_W + cx]).toBeGreaterThan(0);
-  expect(f[(cy + 3) * FIELD_W + cx]).toBe(0);
+  expect(f[cy * FIELD_W + cx + 6]).toBeGreaterThan(0);
+  expect(f[cy * FIELD_W + cx + 7]).toBe(0);
+  expect(f[(cy + 6) * FIELD_W + cx]).toBeGreaterThan(0);
+  expect(f[(cy + 7) * FIELD_W + cx]).toBe(0);
+});
+
+test("three-pass blur reads as Gaussian, not a box — corner energy is less than edge energy at fixed radius", () => {
+  // The defect this task fixes: a single-pass box kernel is a flat square, so a cell on the
+  // DIAGONAL (Euclidean distance √2·R from the peak) gets exactly the same value as a cell the
+  // same Chebyshev distance R away along an AXIS — that flat-topped equality is what reads on
+  // screen as a rectangle. A kernel that has converged toward Gaussian falls off with (Euclidean)
+  // distance, so the corner must be strictly dimmer than the edge at the same R, and increasingly
+  // so as R grows (the tail thins faster diagonally). This is false for any single box pass, at
+  // every radius — it isn't a threshold this could accidentally clear by tuning the radius instead.
+  const w = 15, h = 15, cx = 7, cy = 7;
+  const f = new Float32Array(w * h); f[idx(w, cx, cy, 0, 0)] = 1;
+  const b = blur(f, w, h, 1);
+  const at = (dx: number, dy: number) => b[idx(w, cx, cy, dx, dy)];
+  const ratio1 = at(-1, -1) / at(0, -1);
+  const ratio2 = at(-2, -2) / at(0, -2);
+  expect(ratio1).toBeLessThan(0.95);
+  expect(ratio2).toBeLessThan(0.95);
+  // A box kernel's ratio would be pinned at exactly 1 (flat); a Gaussian-like one gets WORSE
+  // (further from 1) as R grows, because more of the tail has been shaped by repeated averaging.
+  expect(ratio2).toBeLessThan(ratio1);
+});
+
+test("three-pass blur falls off monotonically from the peak, along both an axis and a diagonal", () => {
+  // A single box pass is flat-then-a-cliff (constant inside the support, exactly 0 outside) — NOT
+  // monotonically decreasing, since neighbouring interior cells tie rather than shrink. Repeated
+  // passes should produce genuine, strict monotonic falloff — the "soft light" shape — all the way
+  // to the (still hard, box kernels never grow unbounded tails) edge of the support.
+  const w = 25, h = 25, cx = 12, cy = 12;
+  const f = new Float32Array(w * h); f[idx(w, cx, cy, 0, 0)] = 1;
+  const b = blur(f, w, h, 2);
+  const at = (dx: number, dy: number) => b[idx(w, cx, cy, dx, dy)];
+  const axisRay = Array.from({ length: 7 }, (_, i) => at(i, 0));
+  const diagRay = Array.from({ length: 7 }, (_, i) => at(i, i));
+  for (const ray of [axisRay, diagRay]) {
+    for (let i = 1; i < ray.length; i++) expect(ray[i]).toBeLessThan(ray[i - 1]);
+  }
 });
 
 // --- pushCloud: emitting one SUMMARY as the cloud it stands for ---------------------------------

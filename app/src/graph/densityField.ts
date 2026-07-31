@@ -30,8 +30,20 @@ export function accumulate(points: BloomPoint[], w: number, h: number): Float32A
   return f;
 }
 
-/** Separable box blur, `radius` cells each way. Mass-conserving apart from edge clamping.
- *  `w`/`h` are REQUIRED — a Float32Array's length cannot tell you its grid shape. */
+/** Successive box blurs converge to a Gaussian (CLT) — a single box pass is a flat-topped square
+ *  with hard edges at exactly `radius`, which is precisely the boxy-halo defect this exists to
+ *  avoid: two passes still has straight sides (the CORNER of the square support gets exactly the
+ *  same value as an EDGE midpoint at the same pass count, because a box kernel is separable and
+ *  therefore literally a flat square, not a disc). Three passes is the standard approximation used
+ *  everywhere from Photoshop to Skia's `BlurMaskFilter` and is visually indistinguishable from a
+ *  true Gaussian. See densityField.test.ts's "corner energy is less than edge energy" test for the
+ *  property this actually buys — a box kernel gets that ratio wrong by construction, at ANY pass
+ *  count below this, so it is not tunable away by nudging the radius instead. */
+const BOX_PASSES = 3;
+
+/** Separable box blur, `radius` cells each way, applied `BOX_PASSES` times. Mass-conserving apart
+ *  from edge clamping. `w`/`h` are REQUIRED — a Float32Array's length cannot tell you its grid
+ *  shape. */
 export function blur(field: Float32Array, w: number, h: number, radius: number): Float32Array {
   if (field.length !== w * h) {
     throw new Error(`blur: field.length (${field.length}) does not match w*h (${w * h})`);
@@ -58,7 +70,9 @@ export function blur(field: Float32Array, w: number, h: number, radius: number):
     }
     return out;
   };
-  return pass(pass(field, true), false);
+  let out = field;
+  for (let i = 0; i < BOX_PASSES; i++) out = pass(pass(out, true), false);
+  return out;
 }
 
 /** Scale so the peak cell is exactly 1. An empty field stays empty — never NaN. */
