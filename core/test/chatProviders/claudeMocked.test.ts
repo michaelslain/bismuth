@@ -31,7 +31,7 @@ import { readdirSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeChat, newChatId, sendMessage } from "../../src/chat";
+import { closeChat, detachSink, newChatId, sendMessage } from "../../src/chat";
 import { whichClaude } from "../../src/claudeWhich";
 import { backendMockEnv } from "../support/backendEnv";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
@@ -83,6 +83,12 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
   let mock: MockLlmHandle | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
+  // Separate from tempDirs (cleaned per-test in afterEach): setup() is now idempotent (see its own
+  // comment) and only actually runs its body once, for the FIRST test — CLAUDE_CONFIG_DIR is set
+  // ONCE and reused (unchanged) by every later test in this file. Deleting it after the FIRST test's
+  // afterEach would point every SUBSEQUENT test's `claude` invocation at a directory that no longer
+  // exists. Cleaned up only in afterAll, once nothing in this file can still be depending on it.
+  const setupDirs: string[] = [];
   // Captured so the test body can assert this dir was ACTUALLY used (see setup()'s CLAUDE_CONFIG_DIR
   // comment and the test's own runtime-signal assertion below) — a code-review finding: the isolation
   // previously had zero runtime signal in the shipped test itself, only a one-time manual observation
@@ -97,7 +103,34 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
     return dir;
   }
 
-  async function setup(): Promise<void> {
+  /** Like newTempDir, but tracked in setupDirs (survives every afterEach, cleaned only in afterAll)
+   *  — see setupDirs' own comment for why a dir created inside the now-idempotent setup() must
+   *  outlive the single test that happened to trigger it. */
+  async function newSetupTempDir(prefix: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), prefix));
+    setupDirs.push(dir);
+    return dir;
+  }
+
+  // IDEMPOTENT AND ALL-OR-NOTHING — this file now has more than one test, and each calls setup() at
+  // its own start. `setupOnce ??= doSetup()` latches on the PROMISE, not on a side effect of the
+  // first statement: a `let ran = false; if (ran) return; ran = true;`-style guard (or checking
+  // `if (mock) return` before `mock` is actually assigned) would let a LATER test proceed into a
+  // half-initialized environment if some await after the first one throws — for this file
+  // specifically, that means running the real `claude` CLI against the developer's own `~/.claude`
+  // instead of the mock. `??=` guarantees every caller gets the exact same outcome (success or
+  // rejection) as whichever call actually ran doSetup(), and never re-runs it. Without the guard at
+  // all, a second call reassigns `mock` (a single `let`), orphaning the FIRST mock LLM server:
+  // afterAll's `mock?.stop()` only ever stops the LATEST one, and mockLlm.ts's own
+  // `process.on("exit")` net does NOT save it either (see that file's header on why it's not a
+  // safety net for a crash/leak inside `bun test` itself). Reproduced live: two tests without any
+  // guard left one orphaned `aimock` process (PPID 1) after every run.
+  let setupOnce: Promise<void> | undefined;
+  function setup(): Promise<void> {
+    return (setupOnce ??= doSetup());
+  }
+
+  async function doSetup(): Promise<void> {
     mock = await startMockLlm(); // default fixture dir: core/test/fixtures/llm (basic-turn.json)
     // Never a real Bedrock/Vertex escape hatch for this test (see ENV_KEYS comment above) — clear
     // any that a developer's own shell might already have exported, so this test can't accidentally
@@ -135,7 +168,7 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
     // the deletes above. Confirmed no such file exists on this machine (not live risk here), but a
     // machine under real MDM/enterprise policy management is exactly where this test's Bedrock/
     // Vertex guard could still be silently defeated, and CLAUDE_CONFIG_DIR does nothing about it.
-    claudeConfigDir = await newTempDir("bismuth-claude-config-");
+    claudeConfigDir = await newSetupTempDir("bismuth-claude-config-");
     process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
   }
 
@@ -145,6 +178,9 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
       else process.env[k] = savedEnv[k];
     }
     await mock?.stop();
+    for (const dir of setupDirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
   });
 
   afterEach(async () => {
@@ -202,6 +238,67 @@ describeOrSkip("the real claude CLI, driven through chat.ts's sendMessage, again
       // the env var was set on this test process.
       expect(claudeConfigDir).toBeDefined();
       if (claudeConfigDir) expect(readdirSync(claudeConfigDir).length).toBeGreaterThan(0);
+    },
+    60_000,
+  );
+
+  test(
+    "sendMessage()'s reopen branch (reattachSessionSink) flushes a buffered turn to the NEW sink without an extra synthetic done",
+    async () => {
+      // Regression coverage for core/src/chat.ts's sendMessage() "existing session" branch, which
+      // must call sessionSink.ts's reattachSessionSink (flush, no synthetic `done`) rather than
+      // rebindSessionSink (flush, THEN push a synthetic `done` whenever no turn is active — which it
+      // always is right here, since turn 1 below finishes before turn 2 is sent). Swapping the two
+      // is a one-word change that no prior test in this file catches: same signature, same import.
+      await setup();
+
+      const cwd = await newTempDir();
+      const chatId = newChatId();
+      chatIds.push(chatId);
+      const { sink: sink1, frames: frames1 } = makeChatFrameCollector(60_000);
+
+      // Queue turn 1, then detach the sink IMMEDIATELY (synchronously, same tick) — the drain loop's
+      // own model call is asynchronous (at least one microtask + real subprocess I/O away), so this
+      // reliably wins the race: nothing has been emitted to sink1 yet at the moment of detach.
+      await sendMessage(chatId, "hello", cwd, sink1);
+      expect(detachSink(chatId, sink1)).toBe(true);
+
+      // Give the whole first turn (assistant-text, result, done) time to complete while detached —
+      // generous relative to this mock's typical <200ms local turn time (see other tests in this
+      // file) — so everything it produces lands in the buffer, none of it on sink1.
+      await new Promise((r) => setTimeout(r, 2000));
+      expect(frames1.some((f) => f.type === "assistant-text")).toBe(false);
+      expect(frames1.some((f) => f.type === "done")).toBe(false);
+
+      // Reopen with a FRESH sink — this is sendMessage()'s "existing session" branch (chat.ts:783-onward).
+      const { sink: sink2, frames: frames2, waitFor: waitFor2 } = makeChatFrameCollector(60_000);
+      await sendMessage(chatId, "hello", cwd, sink2);
+
+      // Wait for the FULL picture to settle — 2 done frames total (turn 1's buffered done, then
+      // turn 2's own done) — BEFORE checking anything about order. Checking order right after the
+      // first assistant-text (before turn 1's own result/done have necessarily landed yet) is a race;
+      // waiting for both dones first makes every ordering check below run against a stable array.
+      await waitFor2((_f) => frames2.filter((x) => x.type === "done").length >= 2, 60_000);
+
+      // Turn 1's buffered tail must have arrived on sink2 (the flush) — assistant-text then done, in
+      // order — as the FIRST content, ahead of turn 2's own.
+      const firstAssistantIdx = frames2.findIndex((f) => f.type === "assistant-text");
+      expect(firstAssistantIdx).toBeGreaterThanOrEqual(0);
+      const firstAssistant = frames2[firstAssistantIdx];
+      if (firstAssistant.type === "assistant-text") expect(firstAssistant.text).toBe("Hello!");
+      const firstDoneIdx = frames2.findIndex((f) => f.type === "done");
+      expect(firstDoneIdx).toBeGreaterThan(firstAssistantIdx);
+
+      // THE discriminating assertion. Under the reattach→rebind sabotage, rebindSessionSink's
+      // synthetic `done` fires SYNCHRONOUSLY inside THIS sendMessage call (turnActive is false at
+      // the exact moment the reopen branch runs — turn 1 already finished), so frames2 already
+      // holds 2 done frames (turn 1's real one + the spurious synthetic one) before turn 2's OWN
+      // text has even been requested — done.length === 2 PASSES even under the sabotage, since the
+      // wait above resolves off that already-collected count without ever waiting for turn 2 to
+      // run. It's assistant-text.length that actually catches it: turn 2 never gets the chance to
+      // produce its own text before this synchronous check runs.
+      expect(frames2.filter((f) => f.type === "done").length).toBe(2);
+      expect(frames2.filter((f) => f.type === "assistant-text").length).toBe(2);
     },
     60_000,
   );

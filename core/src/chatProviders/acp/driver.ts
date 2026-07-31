@@ -41,7 +41,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ChatFrame, ChatImage, ChatSink } from "../../chat";
-import { emit, rebindSessionSink, scheduleSessionClose } from "../sessionSink";
+import { detachSessionSink, emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "../sessionSink";
 import { claudeSpawnEnv, whichBinary } from "../../claudeWhich";
 import type { ChatBackend, ChatTurnContext } from "../backends";
 import type { BackendId } from "../../agentBackends/catalog";
@@ -618,6 +618,13 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
     sendMessage: (ctx: ChatTurnContext & { text: string }) => {
       const existing = sessions.get(ctx.chatId);
       if (!existing) {
+        // PRE-EXISTING GAP, out of scope here: createSession is async, so the session isn't
+        // registered in `sessions` until this await resolves. A WS close landing in that window
+        // finds no session yet (detachSink no-ops) and, once creation DOES complete, the now-dead
+        // sink is never detached and no grace-close timer is ever armed for it — an attached session
+        // with nowhere to send frames and no teardown scheduled. Not reachable via the identity-guard
+        // work in this file (that guards an EXISTING session's re-detach, not a session that doesn't
+        // exist yet); would need its own fix (e.g. a placeholder session registered before the await).
         void (async () => {
           const created = await createSession(ctx.chatId, ctx.cwd, ctx.sink, ctx.memoryDir);
           if (!created) return;
@@ -625,12 +632,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
         })();
         return;
       }
-      if (existing.closeTimer) {
-        clearTimeout(existing.closeTimer);
-        existing.closeTimer = undefined;
-      }
-      existing.sink = ctx.sink;
-      existing.detached = false;
+      reattachSessionSink(existing, ctx.sink);
       existing.cwd = ctx.cwd;
       runOrQueue(existing, ctx.text, ctx.images);
     },
@@ -708,10 +710,10 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
       return true;
     },
 
-    detachSink: (chatId: string) => {
+    detachSink: (chatId: string, sink: ChatSink) => {
       const s = sessions.get(chatId);
-      if (!s) return;
-      s.detached = true;
+      if (!s) return false;
+      return detachSessionSink(s, sink);
     },
 
     respondPermission: (chatId: string, id: string, behavior: "allow" | "deny", always?: boolean) => {
