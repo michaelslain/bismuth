@@ -50,6 +50,9 @@ import {
   AGG_EDGE_ALPHA_MIN, AGG_EDGE_DOUBLE_W, LOD_ALPHA_EPS, buildLodIndex, lodMix, massCellAlpha,
   massCellCode, massRadii, type LodLevel,
 } from "./lod";
+import {
+  EDGE_WEIGHT_BUCKETS, buildLevelEdges, computeEdgeLevelWeights, edgeWeightBucketRange,
+} from "./backbone";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
 import { buildBloom, type DensityField } from "./densityField";
 import { dollyForT, zoomT } from "./cameraModel";
@@ -67,16 +70,19 @@ export interface AsciiGraphStats {
   labelOverlaps: number;   // count of label PAIRS on the same row whose [col, col+widthCells] spans intersect
   maxLabelChars: number;   // longest label's text.length this frame
   notesOnScreen: number;   // leaf (real) nodes rasterized this frame
-  edgesDrawn: number;      // real edges STROKED (vector) + aggregate connectors traced (grid) this frame
+  edgesDrawn: number;      // every LINE queued this frame: real member edges + aggregate connectors + backbone
+  backbonePairsDropped: number; // connected community pairs the MAX_LEVEL_PAIRS cap threw away, summed over
+                           // levels (build-time, not per frame). Silent truncation is ambiguous with "that
+                           // many pairs exist" — buildLevelEdges returns it precisely so a QA hook can say so.
   inkCoverage: number;     // bounding-box area of non-empty cells / (cols*rows) — glyph/label ink only;
-                           // edges no longer occupy cells, so this reads lower than before the vector-edge pass
+                           // NO edge of any kind occupies a cell any more, so this is pure glyph/label ink
 }
 import {
   CELL_H, CELL_W, FONT_PX,
-  LAYER_EDGE, LAYER_NODE, LAYER_NOISE, PAD_X, PAD_Y, ZOOM_STEP_PCT,
-  clipSegmentToGrid, depthAlpha, fitPxPerWorld, gridMetrics, maxResFor, mergeEdgeCode, nearestCellNode,
+  LAYER_NODE, LAYER_NOISE, PAD_X, PAD_Y, ZOOM_STEP_PCT,
+  depthAlpha, fitPxPerWorld, gridMetrics, maxResFor, nearestCellNode,
   nodeGlyph, pxToCell, quantizePan, resFromPercent, resFromT, resolutionPercent, resolutionT,
-  snapZoomPercent, traceEdge,
+  snapZoomPercent,
   type GridMetrics,
 } from "./asciiGrid";
 
@@ -120,9 +126,30 @@ const DEPTH_BANDS = 3;           // "." far / "o" mid / "@" near — the ramp sh
 export const DIM_ALPHA = 0.28;   // NODE non-focus dimming on hover / cluster highlight — glyphs read fine
                                   // much dimmer than lines do, so this is deliberately NOT shared with
                                   // edges (see EDGE_DIM_ALPHA below — reusing this one for edges was bug).
-const EDGE_ALPHA_2D = 0.7;
-const EDGE_BUDGET = 2600;        // dense-graph edge thinning (stable per-edge rank, like the old renderer)
-const EDGE_FLOOR = 0.12;
+// Dense-graph edge thinning (stable per-edge rank, like the old renderer). Adopted VERBATIM from
+// CanvasGraphRenderer.ts:179-180 — ASCII shipped a single 2600/0.12 pair for both dimensions, less
+// than half the budget, so a dense vault (the reference one has 4566 edges) drew a visibly thinner
+// graph here than the renderer this one replaces. The 3D FLOOR is deliberately much higher than the
+// 2D one: in 3D the depth-band falloff already thins the far half of the cloud optically, so
+// dropping the same fraction structurally on top of it reads as holes.
+const EDGE_BUDGET_2D = 6000, EDGE_FLOOR_2D = 0.06;
+const EDGE_BUDGET_3D = 6000, EDGE_FLOOR_3D = 0.45;
+// Colour-tinted INTRA-CLUSTER MESH alpha (CanvasGraphRenderer.ts:131). A cluster's BODY is its
+// internal edges — without them a cluster on the glyph bands reads as a dot cloud, not a woven mass.
+const INTRA_EDGE_ALPHA = 0.22;
+const MESH_W_BASE = 0.3, MESH_W_MIN = 0.12, MESH_W_MAX = 1.1;  // CanvasGraphRenderer.ts:1298
+// GROUP LINES — the far band's aggregate connectors and the mid band's hub-to-hub backbone, both
+// vector-stroked through the same batched path (see queueGroupLine/strokeGroupLines). Widths ported
+// from CanvasGraphRenderer.ts:1259/1265; `GROUP_W_BASE + wb * GROUP_W_STEP` is its per-weight-bucket
+// ramp, and the clamp is its own [0.25, 2.4].
+const GROUP_W_BASE = 0.35, GROUP_W_STEP = 0.55, GROUP_W_MIN = 0.25, GROUP_W_MAX = 2.4;
+/** Lightest weight bucket's share of a group line's alpha (CanvasGraphRenderer.ts:1260's `0.55 +
+ *  0.45 * ((wb + 0.5) / WB)`) — heavier group links read heavier, but the lightest still reads. */
+const GROUP_EDGE_ALPHA_MIN = 0.55;
+/** Group-line batching granularity: alphas are quantized to 1/GROUP_ALPHA_STEPS and batched with the
+ *  line width, so a level's lines cost a handful of `stroke()` calls rather than one per line —
+ *  the same "one path per alpha tier" discipline strokeEdges() uses for member edges. */
+const GROUP_ALPHA_STEPS = 24;
 const HIT_RADIUS_CELLS = 2;      // cells searched outward from the cursor for a node
 const CLUSTER_LABEL_TRACKING_EM = 0.14; // tokens/typography.css --ls-eyebrow, applied via ctx.letterSpacing
 
@@ -447,7 +474,19 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private cellEntity = new Int32Array(1);  // cell → entityFlat index (-1 none), rebuilt per raster
   // Per-frame LOD state (written at the top of rasterize, read by the label + hit-test paths).
   private lodOn = false;
-  private leafAlpha = 1;
+  // THE THREE-BAND LADDER (backbone.ts `bandsForT`, via lod.ts `lodMix`) — deliberately TWO fields,
+  // not the one `leafAlpha` this used to be. In the mid band they take different values (glyphs on,
+  // real member edges off, the backbone standing in for them), so a single shared number cannot
+  // serve both: keyed off the glyph gate, `strokeEdges()` draws the full member hairball across the
+  // whole mid band; keyed off the member alpha, the leaf raster pass never runs and there are no
+  // glyphs at all. See backbone.ts's wiring recipe.
+  /** The leaf/glyph RASTER gate (`1 - massAlpha`): whether individual note glyphs rasterize at all
+   *  this frame, and at what alpha. Consumed by rasterize()'s leaf pass and layoutLabels()'s
+   *  file-name gate. NOT an edge alpha. */
+  private glyphAlpha = 1;
+  /** The REAL MEMBER EDGE alpha (`bandsForT`'s near band). Consumed by strokeEdges()'s member
+   *  passes only. NOT the glyph gate. */
+  private memberEdgeAlpha = 1;
   private hoverEntityIdx = -1;
 
   // Per-frame QA/debug counters (see computeStats/window.__asciiGraphStats) — reset + incremented in
@@ -464,6 +503,22 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private edgeDim: EdgeView[] = [];                                      // dimmed by an active focus/highlight set
   private edgeMain: EdgeView[] = [];                                     // 2D, no depth fade
   private edgeBands: EdgeView[][] = Array.from({ length: EDGE_DEPTH_BANDS }, () => []); // 3D, far→near
+  // The colour-tinted INTRA-CLUSTER MESH (CanvasGraphRenderer.ts:1271-1306): community colour SLOT →
+  // this frame's intra-community edges, so the pass is one batched stroke per colour rather than one
+  // per edge. The Map is kept across frames (the slot set is stable per build) and its arrays are
+  // emptied, not reallocated — the same reuse discipline as the buckets above.
+  private intraBuckets = new Map<number, EdgeView[]>();
+  private intraOn = false;
+  // GROUP LINES for this frame (far-band aggregate connectors + mid-band hub-to-hub backbone),
+  // batched by (quantized alpha, width) — see queueGroupLine()/strokeGroupLines(). `pts` is a flat
+  // [x0,y0,x1,y1,…] segment list; the Map persists across frames and the arrays are emptied.
+  private groupBatches = new Map<number, { alpha: number; width: number; pts: number[] }>();
+  // Per-level hub-to-hub backbone pairs (backbone.ts buildLevelEdges), resolved to NodeViews ONCE
+  // per structural build — hubs are highest-degree members and communities don't move, so this is
+  // build-time work, not per-frame. `levelPairsDropped[L]` is how many connected pairs level L's
+  // `MAX_LEVEL_PAIRS` cap threw away (surfaced through computeStats, per buildLevelEdges' contract).
+  private levelPairs: { a: NodeView; b: NodeView; count: number }[][] = [];
+  private levelPairsDropped: number[] = [];
 
   // camera — rx/ry orbit (3D), res = THE zoom (resolution), pan in px (2D)
   private rx = -0.5; private ry = 0;
@@ -741,6 +796,36 @@ export class AsciiGraphRenderer implements GraphRenderer {
     for (const e of g.edges) {
       const a = this.byId.get(e.from), b = this.byId.get(e.to);
       if (a && b) this.edges.push({ a, b, kr: (hashKey(e.from + "\0" + e.to) % 1000) / 1000 });
+    }
+
+    // The mid band's HUB-TO-HUB BACKBONE (backbone.ts buildLevelEdges): per hierarchy level, one
+    // line per CONNECTED PAIR of that level's communities, drawn hub to hub with the number of real
+    // edges behind it as its weight. Static (hubs are highest-degree members; communities don't
+    // move), so it is resolved to NodeViews here, once per structural build, and the per-frame path
+    // only picks weights and strokes.
+    //
+    // NOT a filtered subset of the member edges: drawing the real node-to-node edges that happen to
+    // cross a community boundary still fans hundreds of lines into the middle of every blob, so it
+    // reads as "some edges are missing" rather than as a graph OF the clusters. See buildLevelEdges'
+    // own doc comment — that was the first attempt, and it is why the intended behaviour looked
+    // absent.
+    this.levelPairs = [];
+    this.levelPairsDropped = [];
+    if (this.levelCount > 0) {
+      const built = buildLevelEdges(
+        this.nodes.map((nv) => ({ id: nv.node.id, path: pathOf(nv.node), deg: nv.deg })),
+        g.edges.map((e) => ({ a: e.from, b: e.to })),
+        this.levelCount,
+      );
+      this.levelPairsDropped = built.truncated;
+      this.levelPairs = built.levelPairs.map((pairs) => {
+        const out: { a: NodeView; b: NodeView; count: number }[] = [];
+        for (const p of pairs) {
+          const a = this.byId.get(p.a.id), b = this.byId.get(p.b.id);
+          if (a && b) out.push({ a, b, count: p.count });
+        }
+        return out;
+      });
     }
 
     // Recentre 2D on the bounding-BOX centre (not the centroid computed above) so a lopsided cloud
@@ -1217,25 +1302,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   // ---- rasterization -------------------------------------------------------
 
-  // Scratch read by putEdge — the alternative was a closure per edge per frame. Real (leaf) edges no
-  // longer go through putEdge (see strokeEdges() — they're vector-stroked straight onto the canvas);
-  // this is now exercised only by the opt-in LOD AGGREGATE connectors (drawAggregateEdges), which
-  // still trace onto the character grid like every other aggregate-mode primitive.
-  private edgeColor = C_MUTED;
-  private edgeAlpha = 255;
-  private putEdge = (x: number, y: number, ch: string) => {
-    const m = this.m;
-    if (x < 0 || x >= m.cols || y < 0 || y >= m.rows) return;
-    const i = y * m.cols + x;
-    if (this.layerBuf[i] > LAYER_EDGE) return;                      // a node owns this cell
-    const wasEdge = this.layerBuf[i] === LAYER_EDGE;
-    // Code-level merge: `ch` is one of traceEdge's five interned literals, so charCodeAt costs
-    // nothing, and no string is materialised for the ~600k cells a dense frame touches.
-    this.charBuf[i] = mergeEdgeCode(this.charBuf[i], ch.charCodeAt(0), wasEdge);
-    this.layerBuf[i] = LAYER_EDGE;                                  // clears the noise underneath
-    this.colorBuf[i] = this.edgeColor;
-    if (!wasEdge || this.alphaBuf[i] < this.edgeAlpha) this.alphaBuf[i] = this.edgeAlpha;
-  };
+  // NO EDGE EVER OCCUPIES A GRID CELL any more. Real member edges have been vector strokes since the
+  // redesign; the LOD aggregate connectors were the last grid-traced primitive (a `putEdge` sink fed
+  // by `traceEdge`'s Bresenham walk, writing one of `-|/\+` per cell) and this task strokes them as
+  // vectors too — see the GROUP LINES block below for why. `layerBuf`'s `LAYER_EDGE` tier is
+  // therefore no longer written by anything; the cell layers are noise < node < label.
 
   /** Project every ACTIVE primitive onto the grid, then draw the layers into the cell buffers.
    *
@@ -1260,10 +1331,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.notesOnScreenFrame = 0;
     this.edgesDrawnFrame = 0;
     // Clear the vector-edge stroke buckets (see the field decls + strokeEdges()) UNCONDITIONALLY —
-    // not just inside the `leafA > LOD_ALPHA_EPS` gate below — so a frame where an opt-in coarse LOD
-    // stop's masses own the field instead doesn't leave last frame's edges stroked over it.
+    // not just inside the glyph gate below — so a frame where an opt-in coarse LOD stop's masses own
+    // the field instead doesn't leave last frame's edges stroked over it. Same for the intra-cluster
+    // mesh and the group-line batches, which are populated under their own independent gates.
     this.edgeAccent.length = 0; this.edgeDim.length = 0; this.edgeMain.length = 0;
     for (const band of this.edgeBands) band.length = 0;
+    for (const list of this.intraBuckets.values()) list.length = 0;
+    this.intraOn = false;
+    for (const b of this.groupBatches.values()) b.pts.length = 0;
     // WORLD-anchored pan (the jitter fix): split into a whole-cell part (fed into the projection
     // below, so the world→cell rounding phase never shifts) and a sub-cell residual (applied as a
     // paint-time canvas translate — see paint()). Recomputed once per rasterize(), not per node.
@@ -1300,9 +1375,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // block below) + the cluster-name labels, never an aggregate mass.
     const lodOn = this.cfg.showLodMasses === true && is2d && this.levelCount > 0 && this.entityLevels.length > 0;
     this.lodOn = lodOn;
+    // THE THREE-BAND LADDER (backbone.ts §5.4, via lodMix): far = territory masses + aggregate
+    // connectors; mid = individual glyphs + the hub-to-hub backbone; near = individual glyphs + real
+    // member edges. With LOD off (3D, "local" mode, community-less graphs) there is no mass band to
+    // hand over FROM and no communities to connect hub-to-hub, so glyphs and real edges own every
+    // stop — exactly the pre-band behaviour, and exactly what `bandsForT(t, 0)` returns.
     const mix = lodOn ? lodMix(t, this.levelCount) : null;
-    const leafA = mix ? mix.leafAlpha : 1;
-    this.leafAlpha = leafA;
+    const glyphA = mix ? mix.glyphAlpha : 1;
+    this.glyphAlpha = glyphA;
+    this.memberEdgeAlpha = mix ? mix.memberAlpha : 1;
 
     // ---- LEVEL-DRIVEN COLOR: which (at most two, adjacent) hierarchy levels are "active" this ----
     // ---- frame, and the crossfade weight between them — off the SAME clusterLevelAlphas the -------
@@ -1324,18 +1405,36 @@ export class AsciiGraphRenderer implements GraphRenderer {
       if (colorW1 > LOD_ALPHA_EPS) { this.blendColors.length = 0; this.blendIndex.clear(); }
     }
 
-    // ---- LEAF passes (real notes + real edges) — DEFAULT: always on (see showLodMasses above); ---
-    // ---- skipped only while an OPT-IN coarse LOD stop's masses own the field instead. ------------
-    if (leafA > LOD_ALPHA_EPS) {
+    // ---- LEAF passes (individual note GLYPHS + real member edges) — DEFAULT: always on. ----------
+    // Gated on `glyphAlpha` (= 1 - massAlpha), NOT on the member-edge alpha: glyphs rasterize across
+    // BOTH the mid and the near band. In the mid band this pass runs at full strength while the real
+    // member edges it classifies below are held at ~0 by `memberEdgeAlpha` in strokeEdges() — the
+    // backbone tells the between-group story there instead.
+    if (glyphA > LOD_ALPHA_EPS) {
       this.projectNodes(is2d);
 
       const focus = this.focusSet();
+      // INTRA-CLUSTER MESH gate (CanvasGraphRenderer.ts:1271-1306): a cluster's BODY is its internal
+      // edges, stroked in the cluster's own colour so density reads as mass rather than grey noise.
+      // Drawn at every zoom the GLYPHS are on (mid + near) — in the far band the cluster is a solid
+      // mass, not a dot cloud, so a mesh under it would be exactly the field-crossing noise this
+      // whole pass exists to avoid. Suppressed while a hover or a highlight set owns the colouring,
+      // as in the source: the mesh's tint would fight the dim/accent story.
+      //
+      // Scoped to `lodOn` — i.e. to the band ladder itself (2D, a real hierarchy, masses enabled),
+      // which is the app's default 2D view. 3D keeps its untouched full-detail path (its edges carry
+      // depth-band alpha the flat mesh alpha would fight), and "local" mode stays the deliberately
+      // flat, uncoloured neighbourhood view it already is.
+      this.intraOn = lodOn && this.hoveredId == null && !focus;
+      // Adopted from CanvasGraphRenderer.ts:1225 — per-dimension budget/floor (see the constants).
+      const budget = is2d ? EDGE_BUDGET_2D : EDGE_BUDGET_3D;
+      const floor = is2d ? EDGE_FLOOR_2D : EDGE_FLOOR_3D;
       // Layer 2 — edges. No longer grid characters: each surviving edge is bucketed by the alpha
       // it will be STROKED at (paint()'s strokeEdges() issues the actual `beginPath/moveTo/lineTo/
       // stroke` calls, one batched `stroke()` per bucket, real anti-aliased vector lines beneath the
       // glyph/label passes below). This loop only classifies — see the field decls for the four
       // reused bucket arrays.
-      const keepFrac = this.edges.length > EDGE_BUDGET ? Math.max(EDGE_FLOOR, EDGE_BUDGET / this.edges.length) : 1;
+      const keepFrac = this.edges.length > budget ? Math.max(floor, budget / this.edges.length) : 1;
       for (const e of this.edges) {
         if (e.kr >= keepFrac) continue;
         const { a, b } = e;
@@ -1346,6 +1445,21 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // portion instead of being dropped whole — the "edges vanish at deep zoom" fix, ported.
         if (!a.projValid || !b.projValid) continue;
         this.edgesDrawnFrame++;
+        // The mesh's own bucketing, done in this same walk rather than a second pass over `edges`:
+        // an edge whose endpoints share a community AT THE DOMINANT COLOUR LEVEL is the cluster's
+        // own wiring. One that crosses groups is not — the group lines above tell that story.
+        // (CanvasGraphRenderer.ts:1285-1294.) An intra edge is bucketed here AND still classified
+        // below: in the near band it draws twice, tinted texture under the neutral member stroke,
+        // exactly as in the source.
+        if (this.intraOn) {
+          const ca = a.colorByLevel[Math.min(colorL0, a.colorByLevel.length - 1)];
+          const cb = b.colorByLevel[Math.min(colorL0, b.colorByLevel.length - 1)];
+          if (ca === cb) {
+            let arr = this.intraBuckets.get(ca);
+            if (!arr) { arr = []; this.intraBuckets.set(ca, arr); }
+            arr.push(e);
+          }
+        }
         const hov = this.hoveredId;
         if (hov != null) {
           // hover = ONE degree: only edges directly incident to the hovered node light up — strict
@@ -1378,7 +1492,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         if (focus && !focus.has(id)) alpha *= DIM_ALPHA;
         if (nv.dim) alpha *= 0.45;
         if (hot) alpha = 1;
-        alpha *= leafA;
+        alpha *= glyphA;
         const glyph = nv.node.kind === "self" ? "@" : nodeGlyph(nv.deg, nv.dr, !is2d, DEPTH_BANDS);
         this.charBuf[idx] = glyph.charCodeAt(0);
         this.layerBuf[idx] = LAYER_NODE;
@@ -1388,14 +1502,44 @@ export class AsciiGraphRenderer implements GraphRenderer {
       }
     }
 
-    // ---- AGGREGATE passes (entities + inter-cluster connectors), active levels only. -----------
+    // ---- FAR band: aggregate entities + their connectors, active levels only. -------------------
     if (mix) {
+      // The cluster-NAME ladder is not the mass ladder: names ride `clusterLevelAlphas ×
+      // clusterLabelAlpha` (layoutLabels) and keep going through the mid band, long after the masses
+      // themselves have handed over. `layoutEntityNames` anchors on the entity's PROJECTED position,
+      // so a level whose name is still being drawn must still be projected even when its mass alpha
+      // is 0 — otherwise the name is placed from a stale screen position several frames old. The
+      // projection is O(clusters) for at most two active levels, so this costs nothing; only
+      // `drawAggregateEdges`/`drawEntityMasses` are gated on the mass weight.
+      const nameLevels = clusterLevelAlphas(t, this.levelCount);
       for (let L = 0; L < this.entityLevels.length; L++) {
         const a = mix.levelAlphas[L] ?? 0;
-        if (a <= LOD_ALPHA_EPS) continue;
+        // The name gate is layoutLabels' own `levelAlphas[L] * clusterLabelAlpha(t) > 0.01`, and
+        // `clusterLabelAlpha <= 1`, so testing the raw level alpha against the same 0.01 is a strict
+        // superset of it — no name can be laid out from an unprojected level.
+        if (a <= LOD_ALPHA_EPS && (nameLevels[L] ?? 0) <= 0.01) continue;
         this.projectEntities(L);
+        if (a <= LOD_ALPHA_EPS) continue;
         this.drawAggregateEdges(L, a);
         this.drawEntityMasses(L, a);
+      }
+    }
+
+    // ---- MID band: the hub-to-hub BACKBONE. ----------------------------------------------------
+    // Gated on the same `glyphA` the leaf pass is, not on `backboneAlpha` alone: the backbone is
+    // anchored on real node views, so it can only be stroked on a frame where projectNodes() ran.
+    // (`backboneAlpha <= glyphAlpha` always — they are two terms of one partition — so this only
+    // ever excludes the sub-epsilon tail, never a visible backbone.)
+    if (mix && glyphA > LOD_ALPHA_EPS && mix.backboneAlpha > LOD_ALPHA_EPS && this.levelPairs.length) {
+      // FILE_LABEL_REVEAL_T, not computeEdgeLevelWeights' own ported default (0.62, Canvas's
+      // constant): ASCII keys node colour, cluster names and the level ladder off 0.75. Left at the
+      // default, the backbone would rewire to the finer grouping about one wheel notch BEFORE
+      // colours and names do — see that function's doc comment.
+      const w = computeEdgeLevelWeights(t, this.levelCount, FILE_LABEL_REVEAL_T);
+      for (let L = 0; L < this.levelPairs.length; L++) {
+        const lw = (w[L] ?? 0) * mix.backboneAlpha;
+        if (lw <= 0.01) continue;
+        this.queueBackbone(L, lw);
       }
     }
 
@@ -1491,32 +1635,95 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
   }
 
-  /** Aggregate edges for one level: ONE connector per community pair summarizing every real link
-   *  between the two member sets. Visual weight = link count → alpha ramp, and the heaviest
-   *  connectors draw DOUBLED (a parallel Bresenham trace one cell off, perpendicular to the
-   *  dominant axis) — char density, never a wider glyph. Counts precomputed at build. */
+  // ---- GROUP LINES: the far band's aggregate connectors + the mid band's hub-to-hub backbone ----
+  // Both are "the lines between the groups at this zoom", so both go through one batched VECTOR
+  // path. They were characters until this task: `traceEdge`'s Bresenham walk wrote one of `-|/\+`
+  // into every cell along the line, and a character is an order of magnitude more ink than a
+  // hairline — at the default 2D view the ~25 connectors between the reference vault's 15 masses
+  // read as a stair-stepped grey scribble crossing the entire field rather than as structure. Same
+  // connectors, same weights, same anchors; anti-aliased 1px strokes beneath the glyph layer, the
+  // same treatment the real member edges already get (see strokeEdges()).
+
+  /** Fetch (or start) the group-line batch for a given alpha/width, so lines sharing a tier cost one
+   *  `stroke()` between them. Alpha is quantized to `GROUP_ALPHA_STEPS`; the key packs both. */
+  private groupBatch(alpha: number, width: number): { alpha: number; width: number; pts: number[] } {
+    const aq = Math.max(1, Math.min(GROUP_ALPHA_STEPS, Math.round(alpha * GROUP_ALPHA_STEPS)));
+    const wq = Math.round(width * 8);
+    const key = aq * 4096 + wq;
+    let b = this.groupBatches.get(key);
+    if (!b) { b = { alpha: aq / GROUP_ALPHA_STEPS, width: wq / 8, pts: [] }; this.groupBatches.set(key, b); }
+    return b;
+  }
+
+  /** Cell-centre screen x/y of a grid column/row — group lines terminate on the CELL LATTICE (where
+   *  a mass's or a glyph's ink actually sits), the same rule strokeEdges() uses for member edges. */
+  private cellCX(col: number) { return this.m.padX + col * this.m.cellW + this.m.cellW / 2; }
+  private cellCY(row: number) { return this.m.padY + row * this.m.cellH + this.m.cellH / 2; }
+
+  /** `zoomScale` for LINE WIDTHS — 1 at fit, rising to `EDGE_W_MAX / EDGE_W_GAIN` (4) at the deepest
+   *  stop. `CanvasGraphRenderer` scaled every line width by its camera's magnification; this field
+   *  has no such scalar (zoom is RESOLUTION — THE LAW: a mark's on-screen size never changes with
+   *  zoom, and vector lines are its one stated exception), so the equivalent is the member-edge width
+   *  ramp `strokeEdges()` already uses, normalized by its own value at fit. Every ported width
+   *  constant (`0.4` member, `0.3` mesh, `0.35 + 0.55·wb` group) then multiplies this and keeps the
+   *  source's exact relative weights at both ends of the ladder. */
+  private lineWidthScale(): number {
+    const t = resolutionT(this.res, this.maxRes);
+    return (EDGE_W_GAIN + (EDGE_W_MAX - EDGE_W_GAIN) * t) / EDGE_W_GAIN;
+  }
+
+  /** Aggregate connectors for one level (FAR band): ONE line per community pair summarizing every
+   *  real link between the two member sets, anchored on the two masses. Visual weight = link count →
+   *  alpha ramp (`aggEdgeWeight`'s log scale, precomputed at build), and the heaviest connectors
+   *  stroke at DOUBLE width — the vector analogue of the parallel Bresenham trace this replaced,
+   *  same intent (density reads as thickness), no longer a second row of characters.
+   *
+   *  No grid clipping: a vector line needs none (the canvas clips at paint time), which is also why
+   *  a connector between two masses whose centres are both off-frame still draws the part crossing
+   *  the field. `clipSegmentToGrid` existed only because `traceEdge`'s guard cap could truncate a
+   *  long Bresenham walk before it reached the visible cells. */
   private drawAggregateEdges(level: number, levelAlpha: number) {
     const lv = this.lodLevels[level];
     const evs = this.entityLevels[level];
     if (!lv) return;
-    const m = this.m;
-    this.edgeColor = C_MUTED;
+    const base = this.edgeBaseAlpha * levelAlpha;
+    const wScale = this.lineWidthScale();
     for (const e of lv.edges) {
       const a = evs[e.a], b = evs[e.b];
-      // Same clip as the real-edge pass (see rasterize()'s edge loop) rather than an all-or-nothing
-      // "at least one endpoint on-grid" gate: a connector between two coarse masses can span a huge
-      // world distance, so tracing its RAW (unclipped) endpoints risked the Bresenham guard-cap
-      // truncating the line before it ever reached the visible field.
-      const clipped = clipSegmentToGrid(a.col, a.row, b.col, b.row, m);
-      if (!clipped) continue;
-      const alpha = EDGE_ALPHA_2D * (AGG_EDGE_ALPHA_MIN + (1 - AGG_EDGE_ALPHA_MIN) * e.w) * levelAlpha;
-      this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
-      traceEdge(clipped.x0, clipped.y0, clipped.x1, clipped.y1, this.putEdge);
+      if (!a || !b) continue;
+      const alpha = base * (AGG_EDGE_ALPHA_MIN + (1 - AGG_EDGE_ALPHA_MIN) * e.w);
+      if (alpha <= 0.004) continue;
+      const width = (e.w >= AGG_EDGE_DOUBLE_W ? GROUP_W_BASE * 2 : GROUP_W_BASE) * wScale;
+      const batch = this.groupBatch(alpha, width);
+      batch.pts.push(this.cellCX(a.col), this.cellCY(a.row), this.cellCX(b.col), this.cellCY(b.row));
       this.edgesDrawnFrame++;
-      if (e.w >= AGG_EDGE_DOUBLE_W) {
-        if (Math.abs(clipped.x1 - clipped.x0) >= Math.abs(clipped.y1 - clipped.y0))
-          traceEdge(clipped.x0, clipped.y0 + 1, clipped.x1, clipped.y1 + 1, this.putEdge);
-        else traceEdge(clipped.x0 + 1, clipped.y0, clipped.x1 + 1, clipped.y1, this.putEdge);
+    }
+  }
+
+  /** The MID band's hub-to-hub backbone for one hierarchy level: one line per connected pair of that
+   *  level's communities, drawn between the two communities' HUBS (highest-degree members — the same
+   *  anchor rule the cluster names use), with the number of real edges behind it as its weight.
+   *  Pairs come presorted heaviest-first from `buildLevelEdges`, so `pairs[0].count` is the level's
+   *  maximum and `edgeWeightBucketRange` slices the rest against it — heavier group links read
+   *  heavier, bucketed so a level stays a handful of batched strokes rather than one per pair. */
+  private queueBackbone(level: number, weight: number) {
+    const pairs = this.levelPairs[level];
+    if (!pairs || !pairs.length) return;
+    const maxCount = pairs[0].count;
+    const base = this.edgeBaseAlpha * weight;
+    const wScale = this.lineWidthScale();
+    for (let wb = 0; wb < EDGE_WEIGHT_BUCKETS; wb++) {
+      const alpha = base * (GROUP_EDGE_ALPHA_MIN
+        + (1 - GROUP_EDGE_ALPHA_MIN) * ((wb + 0.5) / EDGE_WEIGHT_BUCKETS));
+      if (alpha <= 0.004) continue;
+      const width = Math.max(GROUP_W_MIN, Math.min(GROUP_W_MAX, (GROUP_W_BASE + wb * GROUP_W_STEP) * wScale));
+      const { lo, hi } = edgeWeightBucketRange(wb, maxCount);
+      const batch = this.groupBatch(alpha, width);
+      for (const p of pairs) {
+        if (p.count < lo || p.count >= hi) continue;
+        if (!p.a.projValid || !p.b.projValid) continue;
+        batch.pts.push(this.cellCX(p.a.col), this.cellCY(p.a.row), this.cellCX(p.b.col), this.cellCY(p.b.row));
+        this.edgesDrawnFrame++;
       }
     }
   }
@@ -1733,10 +1940,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
       }
     }
 
-    // At coarse LOD stops the leaf raster passes did not run — there are no note glyphs on the
-    // field for a file label (forced or not) to point at, so the file-label pass is skipped
-    // entirely (which is also what keeps a coarse frame O(clusters), not O(nodes log nodes)).
-    if (this.lodOn && this.leafAlpha <= LOD_ALPHA_EPS) return;
+    // In the FAR band the leaf raster pass did not run — there are no note glyphs on the field for a
+    // file label (forced or not) to point at, so the file-label pass is skipped entirely (which is
+    // also what keeps a far-band frame O(clusters), not O(nodes log nodes)). The gate is the GLYPH
+    // alpha, the same one rasterize()'s leaf pass uses — not the member-edge alpha, which is still 0
+    // through the whole mid band where glyphs (and therefore label anchors) very much exist.
+    if (this.lodOn && this.glyphAlpha <= LOD_ALPHA_EPS) return;
 
     // Reused scratch array — layoutLabels runs every frame, so it must not allocate one per frame.
     // Candidate gate is `inViewport` (the actual box + 40px), not merely `onGrid`'s exact cell
@@ -1953,14 +2162,19 @@ export class AsciiGraphRenderer implements GraphRenderer {
     return this.colors[slot] ?? COLOR_FALLBACK[slot] ?? "#888";
   }
 
-  /** Vector-stroke every surviving edge BENEATH the glyph/label passes — real anti-aliased 1px
-   *  lines, the pre-redesign CanvasGraphRenderer's edge appearance (width/alpha falloff, colour
-   *  source, batching) ported onto this field's own camera/culling instead of rasterized as grid
-   *  characters. rasterize()'s edge loop already sorted survivors into the four bucket arrays below
-   *  (by the alpha they'll be stroked at); this only issues the batched `stroke()` calls — at most 9
-   *  a frame (dim + flat-2D + 6 depth bands + accent), each one `beginPath()` + its bucket's
-   *  `moveTo`/`lineTo` pairs + one `stroke()` — the same "one path per alpha tier" batching the old
-   *  renderer used to keep thousands of edges cheap.
+  /** Vector-stroke every LINE the field draws, BENEATH the glyph/label passes, in three tiers —
+   *  group lines (far-band aggregate connectors + mid-band backbone), then the colour-tinted
+   *  intra-cluster mesh, then the real member edges. Real anti-aliased 1px lines, the pre-redesign
+   *  CanvasGraphRenderer's edge appearance (width/alpha falloff, colour source, batching) ported onto
+   *  this field's own camera/culling instead of rasterized as grid characters. rasterize() already
+   *  sorted survivors into the bucket arrays below (by the alpha they'll be stroked at); this only
+   *  issues the batched `stroke()` calls — each one `beginPath()` + its bucket's `moveTo`/`lineTo`
+   *  pairs + one `stroke()` — the same "one path per alpha tier" batching the old renderer used to
+   *  keep thousands of edges cheap.
+   *
+   *  Each tier is independently gated, and the three gates are DIFFERENT numbers: group lines ride
+   *  their own per-level weights × `backboneAlpha`, the mesh rides the glyph gate, and the member
+   *  passes ride `memberEdgeAlpha`. See backbone.ts's wiring recipe for why they cannot be one.
    *
    *  Endpoints snap to the node's CELL CENTRE, not the raw sub-pixel projection (`nv.sx`/`nv.sy`):
    *  glyphs are drawn at the cell lattice (see the row loop below), so the cell centre is exactly
@@ -1970,11 +2184,52 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private strokeEdges() {
     const ctx = this.ctx;
     if (!ctx) return;
-    const base = this.edgeBaseAlpha * this.leafAlpha;
-    if (base <= 0.004) return;
     const m = this.m;
     const cx = (nv: NodeView) => m.padX + nv.col * m.cellW + m.cellW / 2;
     const cy = (nv: NodeView) => m.padY + nv.row * m.cellH + m.cellH / 2;
+    const edgeHexBase = this.colors[C_EDGE] ?? COLOR_FALLBACK[C_EDGE];
+    // 1. GROUP LINES — the far band's aggregate connectors and the mid band's hub-to-hub backbone,
+    //    already batched by (alpha, width) in rasterize(). Beneath everything else: they are the
+    //    coarse story, and a member edge or a glyph on top of one should win.
+    ctx.strokeStyle = edgeHexBase;
+    for (const b of this.groupBatches.values()) {
+      if (!b.pts.length) continue;
+      ctx.globalAlpha = Math.min(1, b.alpha);
+      ctx.lineWidth = b.width;
+      ctx.beginPath();
+      for (let i = 0; i + 3 < b.pts.length; i += 4) {
+        ctx.moveTo(b.pts[i], b.pts[i + 1]);
+        ctx.lineTo(b.pts[i + 2], b.pts[i + 3]);
+      }
+      ctx.stroke();
+    }
+    // 2. INTRA-CLUSTER MESH — every intra-community edge in the CLUSTER'S OWN colour, one batched
+    //    stroke per colour. This is the cluster's body: without it a group of glyphs is a dot cloud,
+    //    with it the weave itself reads as mass. Not gated on the band — it draws wherever glyphs do
+    //    (see rasterize()'s `intraOn`), unlike the member edges below.
+    if (this.intraOn) {
+      // CanvasGraphRenderer.ts:1298 — `max(0.12, min(1.1, 0.3 * zoomScale))`: deliberately THINNER
+      // than a member edge (0.4) with a lower ceiling, so the weave reads as texture under the graph
+      // rather than competing with it.
+      const meshW = Math.max(MESH_W_MIN, Math.min(MESH_W_MAX, MESH_W_BASE * this.lineWidthScale()));
+      for (const [slot, list] of this.intraBuckets) {
+        if (!list.length) continue;
+        ctx.strokeStyle = this.resolveFillColor(slot);
+        ctx.globalAlpha = INTRA_EDGE_ALPHA * this.edgeBaseAlpha;
+        ctx.lineWidth = meshW;
+        ctx.beginPath();
+        for (const e of list) {
+          const [ax, ay, bx, by] = trimSegmentForClearance(cx(e.a), cy(e.a), cx(e.b), cy(e.b), 0.55 * m.cellW);
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
+        }
+        ctx.stroke();
+      }
+    }
+    // 3. REAL MEMBER EDGES — `memberEdgeAlpha` (the NEAR band), never the glyph gate: across the mid
+    //    band glyphs are fully on while these are fully off, the backbone standing in for them.
+    const base = this.edgeBaseAlpha * this.memberEdgeAlpha;
+    if (base <= 0.004) { ctx.globalAlpha = 1; return; }
     // Width follows the RESOLUTION stop (0=fit .. 1=deepest), not `this.res` raw — `res` ranges
     // 1..maxRes and real vaults run maxRes into the teens/twenties, so gating on it directly saturated
     // the 1.6 ceiling almost immediately (a past bug: `EDGE_W_GAIN * this.res` clamped to 1.6 at
@@ -1985,7 +2240,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // (t=0), EDGE_W_MAX (1.6) at the deepest stop (t=1) — see AsciiGraphRenderer.test.ts "edge width".
     const t = resolutionT(this.res, this.maxRes);
     ctx.lineWidth = Math.max(EDGE_W_MIN, Math.min(EDGE_W_MAX, EDGE_W_GAIN + (EDGE_W_MAX - EDGE_W_GAIN) * t));
-    const edgeHex = this.colors[C_EDGE] ?? COLOR_FALLBACK[C_EDGE];
+    const edgeHex = edgeHexBase;
     // Hovered-incident edges stroke in --accent, not the original's neutral-at-2.2x-alpha
     // (CanvasGraphRenderer.ts:848) — an INTENTIONAL, user-chosen deviation (the user was asked and
     // chose to keep the accent tint for hover). Do not "restore fidelity" here.
@@ -2017,8 +2272,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const fade = EDGE_DEPTH_MIN + (1 - EDGE_DEPTH_MIN) * Math.pow((bi + 0.5) / EDGE_DEPTH_BANDS, EDGE_DEPTH_CURVE);
       pass(this.edgeBands[bi], base * fade, edgeHex);
     }
-    // `base`, not the bare `leafAlpha` — see EDGE_BASE_ALPHA_FALLBACK's comment: base already folds in
-    // the per-theme edgeBaseAlpha, so every pass (including this one) stays keyed to the one knob.
+    // `base`, not the bare `memberEdgeAlpha` — see EDGE_BASE_ALPHA_FALLBACK's comment: base already
+    // folds in the per-theme edgeBaseAlpha, so every pass (including this one) stays on the one knob.
     pass(this.edgeAccent, base, accentHex);
     ctx.globalAlpha = 1; // leave clean for the row loop + label pass right after
   }
@@ -2463,6 +2718,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       maxLabelChars,
       notesOnScreen: this.notesOnScreenFrame,
       edgesDrawn: this.edgesDrawnFrame,
+      backbonePairsDropped: this.levelPairsDropped.reduce((a, b) => a + b, 0),
       inkCoverage,
     };
   }
