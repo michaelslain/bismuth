@@ -2960,12 +2960,17 @@ describe("the near band draws only the neighbourhood on screen (Task 19)", () =>
   }
   const names = (pairs: string[][]) => pairs.map(([a, b]) => `${a}-${b}`).sort();
 
-  /** Zoom onto HOME+NEXT and repaint once at the settled camera. `frameSubset` on a 26-unit-wide
-   *  subset of a 1200-unit-wide graph saturates the resolution ladder, so this lands at the deep end
-   *  of the near band — the stop the user was looking at. */
+  /** Centre on `ids`, park at a DEEP near-band stop, repaint once. `memberAlpha` is pinned at 1 from
+   *  t ≈ 0.75 all the way to 1, so 0.85 and "maximum zoom" are the same band as far as this gate is
+   *  concerned — 0.85 is used because it still leaves room on the field for two clusters at once,
+   *  which several cases below need. `frameSubset` alone would land at t ≈ 0.62, still short of the
+   *  band, so the resolution is set explicitly (the same private poke `parkAtT` uses above). */
   const DEEP_T = 0.85;
-  function zoomToNeighbourhood(r: AsciiGraphRenderer) {
-    r.frameSubset(["h0", "h1", "h2", "h3", "h4", "h5", "x0", "x1", "x2", "x3", "x4"]);
+  const HOME_IDS = ["h0", "h1", "h2", "h3", "h4", "h5"];
+  const NEXT_IDS = ["x0", "x1", "x2", "x3", "x4"];
+  const FAR_IDS = ["f0", "f1", "f2", "f3", "f4", "f5"];
+  function parkDeepOn(r: AsciiGraphRenderer, ids: string[]) {
+    r.frameSubset(ids);
     settle(400);
     const cam = r as unknown as { res: number; goalRes: number; maxRes: number; dirty: boolean };
     cam.res = cam.goalRes = resFromT(DEEP_T, cam.maxRes);
@@ -2974,6 +2979,7 @@ describe("the near band draws only the neighbourhood on screen (Task 19)", () =>
     ctx.strokes.length = 0;
     frame(99999);
   }
+  const zoomToNeighbourhood = (r: AsciiGraphRenderer) => parkDeepOn(r, [...HOME_IDS, ...NEXT_IDS]);
 
   it("drops the lines transiting from clusters that are off screen, and keeps everything local", () => {
     const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
@@ -3052,6 +3058,53 @@ describe("the near band draws only the neighbourhood on screen (Task 19)", () =>
     const drawn = strokedEdgeNames(priv);
     expect(drawn).not.toContain("h1-f0");
     for (const n of names(OFFSCREEN_SPOKES.filter(([a]) => a[0] === "f"))) expect(drawn).not.toContain(n);
+    r.destroy();
+  });
+
+  it("rebuilds the roster every frame — a cluster you have panned away from stops counting", () => {
+    // `inViewClusters` is ADDED to, never reassigned (the same reuse discipline as the stroke
+    // buckets), so without the unconditional clear at the top of rasterize() it accumulates: every
+    // cluster the camera ever passed over stays "in view" for the rest of the session, and the gate
+    // quietly stops gating. Fly from HOME to FAR at the same depth — the roster must SWAP.
+    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
+    const priv = gatePriv(r);
+    zoomToNeighbourhood(r);
+    expect(strokedEdgeNames(priv)).toContain("h0-h1");
+    expect(strokedEdgeNames(priv)).not.toContain("f0-f1");
+
+    parkDeepOn(r, FAR_IDS);
+    expect(priv.inViewClusters.size).toBe(1);            // FAR alone, not FAR ∪ everything before it
+    expect(strokedEdgeNames(priv)).toContain("f0-f1");   // ...FAR's own structure is what draws now
+    expect(strokedEdgeNames(priv)).not.toContain("h0-h1");
+    expect(strokedEdgeNames(priv)).not.toContain("h0-x0");
+    r.destroy();
+  });
+
+  it("counts a cluster whose only member on screen sits in the label pad — the padded viewport, not the grid's own bounds", () => {
+    // The roster is built with `inViewport(…, VIEWPORT_LABEL_PAD)` — deliberately the SAME predicate
+    // `layoutClusterNames` aggregates `clusterAgg` with, so "on screen" means one thing in this
+    // renderer rather than two. `NodeView.onGrid` is the nearby alternative and is strictly tighter
+    // (exact cell bounds, no pad); swapped in, a cluster hanging off the edge stops counting a little
+    // sooner and its own internal structure vanishes while its glyphs are still being drawn.
+    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
+    const priv = gatePriv(r);
+    zoomToNeighbourhood(r);
+    const home = () => priv.nodes.filter((n) => n.node.id[0] === "h");
+    // Slide HOME off the left edge until its RIGHTMOST member is barely inside the pad. Every HOME
+    // glyph is then off the grid, so the cluster's presence rests on the pad alone. Poking `panX` is
+    // exactly what a drag writes, and lets the offset be computed from the measured frame rather than
+    // guessed at through pointer coordinates.
+    const cam = r as unknown as { panX: number; dirty: boolean };
+    cam.panX -= Math.max(...home().map((n) => n.sx)) + 20;
+    cam.dirty = true;
+    ctx.strokes.length = 0;
+    frame(99999);
+
+    expect(home().every((n) => !n.onGrid)).toBe(true);                    // nothing on the grid...
+    const inPad = home().filter((n) => n.sx >= -40 && n.sx <= priv.W + 40);
+    expect(inPad.length).toBeGreaterThan(0);                              // ...but something in the pad
+    // ...so HOME still counts, and its own wiring still draws. On `onGrid` this list is empty.
+    expect(strokedEdgeNames(priv).filter((n) => n.startsWith("h0-h")).sort()).toEqual(names(HOME_SPOKES));
     r.destroy();
   });
 
