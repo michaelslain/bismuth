@@ -125,7 +125,7 @@ the silent-drop risk.
 
 | Capability | Reachable today | Location / rough size | Lost if dropped |
 |---|---|---|---|
-| **Dolly zoom** — `zoom` px along z, `zc = z2 + zoom`, `goalZoom` glide, `zoomT()` log-normalised bridge to `labelSelection`'s curves via `CANVAS_REVEAL_T = 0.62` | ✅ `renderer: "standard"`, intro, embedded blocks | `CanvasGraphRenderer.ts:819-825, 1016-1021, 1770-1777` (~40 lines) | Perspective **approach**: parallax, the cloud opening up as you move into it. The thing that reads as "magnificent". See §6. |
+| **Dolly zoom** — ⚠️ **NOT Canvas-only, see §6 CORRECTION.** Canvas's is *explicit* (`zc = z2 + zoom`); ASCII has an *implicit* one of exactly `P(1 − 1/res)` | ✅ both renderers, always | `CanvasGraphRenderer.ts:819-825, 1016-1021, 1770-1777` (~40 lines) | Perspective **approach**: parallax, the cloud opening up as you move into it. The thing that reads as "magnificent". See §6. |
 | **2D↔3D morph** — `morph` 0..1, `easeInOutCubic`, `MODE_MORPH_MS` 500, per-node p3→p2 lerp, orbit unwind | ✅ | `:335, 1141-1146, 1162-1169, 1010-1012` (~30 lines) | The flatten/expand animation. Ascii hard-resets the camera instead. Users hit this control constantly. |
 | **Node dots sized by degree** — `nodeFrac`/`computeBaseDiameters`/`nodeDiameter`, density-derived spacing, `MIN_DOT_PX`/`MAX_DOT_PX`, hollow rings for self + idle-daemon, hover rings on the node + its neighbours | ✅ | `:695-698, 1079-1094, 1352-1392` (~60 lines) | **Deliberately out of scope** — the spec replaces dots with glyphs. But the *hover/neighbour rings* are a real interaction affordance Ascii has no equivalent for (it dims instead). |
 | **Group-level hub edges** — `crossLevel`, `buildLevelEdges`, `levelPairs`, `levelHubs`, `computeEdgeLevelWeights`, weight-bucketed strokes, `MAX_LEVEL_PAIRS` 700 | ✅ | `:859-924, 1247-1270` (~110 lines) | **This is Canvas's answer to LOD and it is edges-only.** One line per connected pair of communities, hub-to-hub, crossfading level to level. It *is* the spec's "mid = backbone edges". Its doc comment records that the naive alternative (filtering member edges) "reads as *some edges are missing* rather than as a graph OF the clusters". |
@@ -421,6 +421,49 @@ the near plane and they vanish. `f` must be clamped against `MAX_ZOOM_FRAC` on t
 **Open question for the controller, not for me:** whether 2D keeps a dolly of exactly zero forever, or
 whether the eventual "brains as places" camera-slide work (Part 2c) wants 2D to acquire one too. Worth
 deciding before step 7 rather than after.
+
+
+### 6.1 ⚠️ CORRECTION (2026-07-31): §6 above is WRONG — ASCII always had a dolly
+
+Everything in §6 that says ASCII pins its camera is **false**, and the claim was load-bearing for the
+plan's highest-risk task. Established by Task 11 and independently re-derived by its reviewer:
+
+**ASCII's `s = pxPerWorld * res` with `zc = z2` IS a camera dolly of exactly `P(1 − 1/res)`.**
+Cross-multiplying `k·X·P/(P − k·Z) = X·P/(P − Z − D)` gives `kP − kD = P`, so `D = P(1 − 1/k)` — the
+**unique** solution, and independent of `X` and `Z`. It therefore holds **pointwise for every node**,
+not merely at the target plane, and `pxPerWorld` cancels entirely (it multiplies both `X` and `Z`).
+Magnification is `P/(P − D) = k` exactly. Verified numerically against `projectNodes`' real arithmetic:
+worst relative error **2.5e-12** over 6 perspectives × 10 res values × 3000 points.
+
+So, concretely, these §6 sentences are wrong: *"`zc = z2`. The dolly is pinned at zero"*, *"in 3D this
+means orbiting works but approaching does not"*, and *"perspective is computed and then handed a
+constant camera distance, so it produces almost no parallax"*.
+
+**Three consequences:**
+
+1. Any wiring that *preserves target-plane magnification* is a **no-op by construction**. Task 11 built
+   one first and measured literally zero change before discarding it. The algebra requires that.
+2. The hazard the plan warned about — dolly and `z2` growing together, exhausting `projValid` headroom,
+   blanking the field — has the **wrong mechanism**. The naive `zc = z2 + dollyForT` fails by applying
+   the approach *twice*; it over-magnifies and degrades the deep end, it does not blank. (A first draft
+   did report a blank field; that was traced to a harness cascade — a renderer left alive by an earlier
+   failing assertion pumping into the shared recording ctx — and retracted.)
+3. What ASCII actually lacked was the dolly's **ceiling**. `res → maxRes` puts the implicit dolly at
+   0.95–0.99·P, standing on the near plane Canvas's clamp existed to avoid. Task 11 shipped
+   `dolly = min(dollyForT(t,P), P(1 − 1/res))`, which can only ever be *more* conservative than the old
+   implicit dolly (0 violations over 6 perspectives × 5 ladders × 41 stops).
+
+Rebasing the near plane onto `P − dolly` makes `projValid` **exactly** equivalent, not approximately:
+`Z + P(1−1/k) < P − 0.015(P/k)` ⟺ `k·Z < 0.985·P`, the old term. 0 mismatches over 42,035 samples.
+
+**The design consequence, which matters beyond this task:** at full-window size `maxRes` sits under the
+ceiling, so the camera is already doing everything the resolution semantic permits. **Nothing that
+preserves "zoom = resolution" can change how 3D feels at full-window size, because magnification is the
+only free parameter in the projection.** If 3D is to feel more striking there, it must come from the
+render layer — depth cueing, the atmosphere/bloom, edge depth banding, orbit parallax — not the camera.
+That is what the spec meant by "the layout stays honest; the render layer does the beauty."
+
+**Count correction:** §6 step 3 says "the 7 `THE LAW` tests". There are **7** (8 after Task 11).
 
 ---
 
