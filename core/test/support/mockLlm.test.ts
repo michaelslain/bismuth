@@ -149,18 +149,16 @@ describe("backendMockEnv", () => {
           expect(Object.values(env).some((v) => v.includes(MOCK_URL))).toBe(true);
           break;
         }
-        // File-based mappings (see backendEnv.ts's own case comments): require a workDir (throw
+        // File-based mapping (see backendEnv.ts's own case comments): requires a workDir (throws
         // without one), and the mock URL lands in a FILE this call writes into that dir — never in
-        // the returned env object's own values (those are just paths/keys). cline joined this group
-        // in a later task (see backendEnv.ts's `cline` case): its providers.json is written one
-        // directory DEEPER than codex/openclaw's own config files (`<workDir>/data/settings/
-        // providers.json`, not `<workDir>/*`), so its own case below reads that ONE known path
-        // directly (`join(dir,"data","settings","providers.json")`) rather than reusing the flat
-        // `readdirSync(dir)` codex/openclaw get away with — a hardcoded single-file read, not a
-        // recursive tree walk (corrected here after a code-review finding on an earlier draft of
-        // this comment overstated it).
-        case "codex":
-        case "openclaw": {
+        // the returned env object's own values (those are just paths/keys). codex is ALONE in this
+        // shape now: openclaw and cline each got their OWN dedicated case below once their own config
+        // layouts stopped fitting a flat `readdirSync(dir)` scan (openclaw's workDir grew `state`/
+        // `workspace` SUBDIRECTORIES a flat readdirSync+readFileSync would throw EISDIR on; cline's
+        // providers.json lives one directory DEEPER, `<workDir>/data/settings/providers.json`, not
+        // `<workDir>/*`) — corrected here after a code-review finding on an earlier draft of this
+        // comment overstated the grouping.
+        case "codex": {
           expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
           const dir = mkdtempSync(join(tmpdir(), `backendenv-driftguard-${id}-`));
           const env = backendMockEnv(id, MOCK_URL, dir);
@@ -171,6 +169,23 @@ describe("backendMockEnv", () => {
           expect(written).toContain(MOCK_URL);
           break;
         }
+        // File-based AND a required 4th `openclawGatewayPort` argument (its Gateway process and the
+        // ACP bridge must agree on a port via the SAME written config — see backendEnv.ts's own
+        // case comment and openclawGateway.ts). Reads the one config file directly rather than
+        // globbing the workDir (which also now contains `state`/`workspace` SUBDIRECTORIES this
+        // call mkdirSync's — readdirSync+readFileSync over those would throw EISDIR).
+        case "openclaw": {
+          expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
+          const dir = mkdtempSync(join(tmpdir(), `backendenv-driftguard-${id}-`));
+          expect(() => backendMockEnv(id, MOCK_URL, dir)).toThrow(/openclawGatewayPort/);
+          const env = backendMockEnv(id, MOCK_URL, dir, 47600);
+          expect(Object.keys(env).length).toBeGreaterThan(0);
+          expect(readFileSync(join(dir, "openclaw.json5"), "utf8")).toContain(MOCK_URL);
+          break;
+        }
+        // File-based, one directory DEEPER than codex/openclaw's own config files
+        // (`<workDir>/data/settings/providers.json`, not `<workDir>/*`) — reads that ONE known path
+        // directly rather than reusing the flat `readdirSync(dir)` codex gets away with.
         case "cline": {
           expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
           const dir = mkdtempSync(join(tmpdir(), `backendenv-driftguard-${id}-`));
@@ -249,14 +264,27 @@ describe("backendMockEnv", () => {
     expect(env.GOOSE_PROVIDER).toBe("anthropic");
   });
 
-  test("openclaw requires a workDir (a config.json5 file, not a bare env var); config-path redirection verified live, full turn routing was not (see the case comment)", () => {
+  test("openclaw requires a workDir + a gateway port (a config.json5 file, not a bare env var); config redirection AND full-turn model routing both verified live (see the case comment)", () => {
     expect(() => backendMockEnv("openclaw", MOCK_URL)).toThrow(/workDir/);
 
     const dir = mkdtempSync(join(tmpdir(), "backendenv-openclaw-test-"));
-    const env = backendMockEnv("openclaw", MOCK_URL, dir);
+    expect(() => backendMockEnv("openclaw", MOCK_URL, dir)).toThrow(/openclawGatewayPort/);
+
+    const env = backendMockEnv("openclaw", MOCK_URL, dir, 47601);
     expect(env.OPENCLAW_CONFIG_PATH).toBe(join(dir, "openclaw.json5"));
+    expect(env.OPENCLAW_STATE_DIR).toBe(join(dir, "state"));
     const config = JSON.parse(readFileSync(env.OPENCLAW_CONFIG_PATH, "utf8"));
     expect(config.models.providers.mock.baseUrl).toBe(`${MOCK_URL}/v1`);
+    expect(config.gateway.port).toBe(47601);
+    expect(config.gateway.mode).toBe("local");
+    // The other required-but-non-obvious config this file's case comment documents as load-bearing
+    // (not cosmetic) — see backendEnv.ts's openclaw case for why each of these is needed for a turn
+    // to complete at all, not just test hygiene.
+    expect(config.agents.defaults.workspace).toBe(join(dir, "workspace"));
+    expect(config.agents.defaults.skipBootstrap).toBe(true);
+    expect(config.canvasHost.enabled).toBe(false);
+    expect(config.browser.enabled).toBe(false);
+    expect(config.update.checkOnStart).toBe(false);
   });
 
   test("an unrecognized backend id throws rather than silently returning an empty (no-op) mapping", () => {
