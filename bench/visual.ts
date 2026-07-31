@@ -25,9 +25,30 @@ const OUT = arg("out", "shots");
 const ONLY = arg("shot", "");
 const W = Number(arg("width", "1600")), H = Number(arg("height", "1000"));
 
-/** The fixed shot list. Same vault, same camera, same settings, every run — so drift is visible. */
+/** `n` wheel notches into the 2D field, anchored at its centre — one notch is ZOOM_STEP_PCT (10%),
+ *  so `wheelIn(3)` lands on the 70% stop, `wheelIn(4)` on 60%, and so on. Real WheelEvents on the
+ *  viewport, not a private camera poke, so this exercises the same path a user does. */
+const wheelIn = (n: number) => `(() => {
+  const el = document.querySelector('.asc-graph-viewport') || document.querySelector('canvas');
+  if (!el) return 'no viewport';
+  const r = el.getBoundingClientRect();
+  for (let i = 0; i < ${n}; i++) el.dispatchEvent(new WheelEvent('wheel', {
+    deltaY: -120, cancelable: true, bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+  }));
+  return 'ok';
+})()`;
+
+/** The fixed shot list. Same vault, same camera, same settings, every run — so drift is visible.
+ *
+ *  The zoom stops are not decoration: the field runs a THREE-BAND ladder (backbone.ts `bandsForT`),
+ *  and 100% / 70% / 60% / 50% sample it either side of both handovers — masses only, masses with the
+ *  glyphs beginning to emerge, mid-crossfade, and the glyph+backbone plateau. A render change that
+ *  only breaks one band is invisible in a single fit shot. */
 const SHOTS: { name: string; path: string; setup?: string }[] = [
   { name: "graph-2d", path: "/" },
+  { name: "graph-2d-70", path: "/", setup: wheelIn(3) },   // t = 0.30 — far band, masses own the field
+  { name: "graph-2d-60", path: "/", setup: wheelIn(4) },   // t = 0.40 — inside the mass→glyph crossfade
+  { name: "graph-2d-50", path: "/", setup: wheelIn(5) },   // t = 0.50 — mid band plateau: glyphs + backbone
   { name: "graph-3d", path: "/", setup: `document.querySelectorAll('button,[role=button]').forEach(b => { if (b.textContent?.trim() === '3D') b.click(); })` },
 ];
 
