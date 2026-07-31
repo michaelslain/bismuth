@@ -106,10 +106,29 @@ const INK_PROBE = `(() => {
   const W = Math.max(...cs.map(c => c.width)), H = Math.max(...cs.map(c => c.height));
   const off = document.createElement('canvas'); off.width = W; off.height = H;
   const octx = off.getContext('2d');
+  // The opaque black base is REQUIRED for 'screen' to be identity — but it also makes every pixel
+  // alpha 255, so the composite's own inkPct is meaningless (it always reads 100). Take luminance
+  // from the blend and coverage from the SOURCES: a pixel is inked if any canvas paints it.
   octx.fillStyle = '#000'; octx.fillRect(0, 0, W, H);
   octx.globalCompositeOperation = 'screen';
   for (const c of cs) { try { octx.drawImage(c, 0, 0, W, H); } catch {} }
-  const comp = stats(octx.getImageData(0, 0, W, H).data);
+  const blended = stats(octx.getImageData(0, 0, W, H).data);
+  // Union coverage across sources, sampled on the same stride as stats().
+  let inked = 0, samples = 0;
+  const datas = cs.map((c) => {
+    try {
+      const s = document.createElement('canvas'); s.width = W; s.height = H;
+      const sc = s.getContext('2d'); sc.drawImage(c, 0, 0, W, H);
+      return sc.getImageData(0, 0, W, H).data;
+    } catch { return null; }
+  }).filter(Boolean);
+  if (datas.length) {
+    for (let i = 0; i < datas[0].length; i += 4*37) {
+      samples++;
+      for (const d of datas) { if (d[i+3] / 255 > 0.02) { inked++; break; } }
+    }
+  }
+  const comp = { ...blended, inkPct: samples ? +(100*inked/samples).toFixed(3) : 0 };
   return { composite: comp, canvases: per, ...comp };
 })()`;
 
