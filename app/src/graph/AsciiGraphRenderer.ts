@@ -80,7 +80,12 @@ export interface AsciiGraphStats {
   labelOverlaps: number;   // count of label PAIRS on the same row whose [col, col+widthCells] spans intersect
   maxLabelChars: number;   // longest label's text.length this frame
   notesOnScreen: number;   // leaf (real) nodes rasterized this frame
-  edgesDrawn: number;      // every LINE queued this frame: real member edges + aggregate connectors + backbone
+  edgesClassified: number; // real member edges that survived the budget rank + projection cull and were
+                           // sorted into a stroke bucket. NOT a count of lines drawn — in the mid band the
+                           // member tier is bucketed and then held at zero alpha, so on the reference vault
+                           // this reads ~4566 while ~18 lines are stroked. Use `edgesStroked` for that.
+  edgesStroked: number;    // line segments actually issued to the canvas this paint, all three tiers
+                           // (group lines + intra-cluster mesh + member edges)
   backbonePairsDropped: number; // connected community pairs the MAX_LEVEL_PAIRS cap threw away, summed over
                            // levels (build-time, not per frame). Silent truncation is ambiguous with "that
                            // many pairs exist" — buildLevelEdges returns it precisely so a QA hook can say so.
@@ -148,6 +153,9 @@ const EDGE_BUDGET_3D = 6000, EDGE_FLOOR_3D = 0.45;
 // internal edges — without them a cluster on the glyph bands reads as a dot cloud, not a woven mass.
 const INTRA_EDGE_ALPHA = 0.22;
 const MESH_W_BASE = 0.3, MESH_W_MIN = 0.12, MESH_W_MAX = 1.1;  // CanvasGraphRenderer.ts:1298
+/** Endpoint pull-back for every vector line, in CELL WIDTHS — see strokeEdges()' CLEARANCE comment
+ *  for the derivation. One constant so the member tier and the group tiers can't drift apart. */
+const CLEARANCE_CELLS = 0.55;
 // GROUP LINES — the far band's aggregate connectors and the mid band's hub-to-hub backbone, both
 // vector-stroked through the same batched path (see queueGroupLine/strokeGroupLines). Widths ported
 // from CanvasGraphRenderer.ts:1259/1265; `GROUP_W_BASE + wb * GROUP_W_STEP` is its per-weight-bucket
@@ -503,7 +511,18 @@ export class AsciiGraphRenderer implements GraphRenderer {
   // rasterize()'s existing passes, never a separate loop.
   private entitiesDrawnFrame = 0;
   private notesOnScreenFrame = 0;
-  private edgesDrawnFrame = 0;
+  /** Real member edges that SURVIVED rasterize()'s classification loop (budget rank + projValid) and
+   *  were sorted into a stroke bucket. NOT how many lines the frame drew: in the mid band every one
+   *  of these is bucketed and then the whole member tier is held at zero alpha by `memberEdgeAlpha`,
+   *  so this reads ~4566 on the reference vault while ~18 lines are actually stroked. See
+   *  `edgesStrokedFrame` for that number — the two are far apart by design, and conflating them is
+   *  how a QA metric ends up overclaiming. */
+  private edgesClassifiedFrame = 0;
+  /** Line segments actually issued to the canvas this paint, across all three tiers (group lines,
+   *  intra-cluster mesh, member edges). Counted where the `moveTo`/`lineTo` pair is emitted, so a
+   *  tier that early-returns on alpha contributes nothing. Reset by strokeEdges(), not rasterize():
+   *  it counts paint work, and paint() runs after rasterize(). */
+  private edgesStrokedFrame = 0;
 
   // Per-frame edge STROKE BUCKETS — rasterize() sorts surviving edges into these (by the alpha
   // they'll be stroked at), and paint()'s strokeEdges() issues one batched `stroke()` call per
@@ -522,7 +541,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
   // GROUP LINES for this frame (far-band aggregate connectors + mid-band hub-to-hub backbone),
   // batched by (quantized alpha, width) — see queueGroupLine()/strokeGroupLines(). `pts` is a flat
   // [x0,y0,x1,y1,…] segment list; the Map persists across frames and the arrays are emptied.
-  private groupBatches = new Map<number, { alpha: number; width: number; pts: number[] }>();
+  private groupBatches = new Map<string, { alpha: number; width: number; pts: number[] }>();
   // Per-level hub-to-hub backbone pairs (backbone.ts buildLevelEdges), resolved to NodeViews ONCE
   // per structural build — hubs are highest-degree members and communities don't move, so this is
   // build-time work, not per-frame. `levelPairsDropped[L]` is how many connected pairs level L's
@@ -1339,7 +1358,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // the hot loop pays for nothing extra beyond a few integer increments.
     this.entitiesDrawnFrame = 0;
     this.notesOnScreenFrame = 0;
-    this.edgesDrawnFrame = 0;
+    this.edgesClassifiedFrame = 0;
+    this.edgesStrokedFrame = 0;
     // Clear the vector-edge stroke buckets (see the field decls + strokeEdges()) UNCONDITIONALLY —
     // not just inside the glyph gate below — so a frame where an opt-in coarse LOD stop's masses own
     // the field instead doesn't leave last frame's edges stroked over it. Same for the intra-cluster
@@ -1454,7 +1474,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // `onScreen`), so an edge whose far endpoint sits off the field still strokes its on-screen
         // portion instead of being dropped whole — the "edges vanish at deep zoom" fix, ported.
         if (!a.projValid || !b.projValid) continue;
-        this.edgesDrawnFrame++;
+        this.edgesClassifiedFrame++;
         // The mesh's own bucketing, done in this same walk rather than a second pass over `edges`:
         // an edge whose endpoints share a community AT THE DOMINANT COLOUR LEVEL is the cluster's
         // own wiring. One that crosses groups is not — the group lines above tell that story.
@@ -1657,11 +1677,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
   /** Fetch (or start) the group-line batch for a given alpha/width, so lines sharing a tier cost one
    *  `stroke()` between them. Alpha is quantized to `GROUP_ALPHA_STEPS`; the key packs both. */
   private groupBatch(alpha: number, width: number): { alpha: number; width: number; pts: number[] } {
+    // ALPHA is quantized (a continuous per-connector ramp would otherwise be one stroke per line);
+    // WIDTH is not. Width already comes from a tiny discrete set — three backbone weight buckets and
+    // the aggregate connectors' light/heavy pair — so rounding it buys no batching at all and only
+    // costs fidelity: at the mid plateau the buckets' 0.854 / 2.196 / 2.4 were landing on 0.875 /
+    // 2.25 / 2.375, i.e. the ported ramp arriving visibly wrong at every stop.
     const aq = Math.max(1, Math.min(GROUP_ALPHA_STEPS, Math.round(alpha * GROUP_ALPHA_STEPS)));
-    const wq = Math.round(width * 8);
-    const key = aq * 4096 + wq;
+    const key = `${aq}|${width}`;
     let b = this.groupBatches.get(key);
-    if (!b) { b = { alpha: aq / GROUP_ALPHA_STEPS, width: wq / 8, pts: [] }; this.groupBatches.set(key, b); }
+    if (!b) { b = { alpha: aq / GROUP_ALPHA_STEPS, width, pts: [] }; this.groupBatches.set(key, b); }
     return b;
   }
 
@@ -1669,6 +1693,18 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *  a mass's or a glyph's ink actually sits), the same rule strokeEdges() uses for member edges. */
   private cellCX(col: number) { return this.m.padX + col * this.m.cellW + this.m.cellW / 2; }
   private cellCY(row: number) { return this.m.padY + row * this.m.cellH + this.m.cellH / 2; }
+
+  /** Queue one group-line segment between two CELLS, pulled back from both cell centres by the same
+   *  clearance `strokeEdges()` applies to member edges. Group lines end on ink exactly like member
+   *  edges do — a hub's `@` glyph, a mass's `@` core — and a thin fillText glyph covers almost none
+   *  of its cell, so an untrimmed line runs straight through the endpoint's interior and muddies it.
+   *  That the group tiers were skipping this was an oversight, not a decision. */
+  private pushGroupSeg(batch: { pts: number[] }, aCol: number, aRow: number, bCol: number, bRow: number) {
+    const [ax, ay, bx, by] = trimSegmentForClearance(
+      this.cellCX(aCol), this.cellCY(aRow), this.cellCX(bCol), this.cellCY(bRow), CLEARANCE_CELLS * this.m.cellW,
+    );
+    batch.pts.push(ax, ay, bx, by);
+  }
 
   /** `zoomScale` for LINE WIDTHS — 1 at fit, rising to `EDGE_W_MAX / EDGE_W_GAIN` (4) at the deepest
    *  stop. `CanvasGraphRenderer` scaled every line width by its camera's magnification; this field
@@ -1711,9 +1747,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const alpha = base * (AGG_EDGE_ALPHA_MIN + (1 - AGG_EDGE_ALPHA_MIN) * e.w);
       if (alpha <= 0.004) continue;
       const width = (e.w >= AGG_EDGE_DOUBLE_W ? GROUP_W_BASE * 2 : GROUP_W_BASE) * wScale;
-      const batch = this.groupBatch(alpha, width);
-      batch.pts.push(this.cellCX(a.col), this.cellCY(a.row), this.cellCX(b.col), this.cellCY(b.row));
-      this.edgesDrawnFrame++;
+      this.pushGroupSeg(this.groupBatch(alpha, width), a.col, a.row, b.col, b.row);
     }
   }
 
@@ -1747,8 +1781,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // reference vault at 50%, dropping this rule drew ~620 lines fanning off every edge of the
         // field, which is the field-crossing noise this whole band exists to remove.
         if (!p.a.onGrid || !p.b.onGrid) continue;
-        batch.pts.push(this.cellCX(p.a.col), this.cellCY(p.a.row), this.cellCX(p.b.col), this.cellCY(p.b.row));
-        this.edgesDrawnFrame++;
+        this.pushGroupSeg(batch, p.a.col, p.a.row, p.b.col, p.b.row);
       }
     }
   }
@@ -2247,14 +2280,23 @@ export class AsciiGraphRenderer implements GraphRenderer {
       for (let i = 0; i + 3 < b.pts.length; i += 4) {
         ctx.moveTo(b.pts[i], b.pts[i + 1]);
         ctx.lineTo(b.pts[i + 2], b.pts[i + 3]);
+        this.edgesStrokedFrame++;
       }
       ctx.stroke();
     }
     // 2. INTRA-CLUSTER MESH — every intra-community edge in the CLUSTER'S OWN colour, one batched
     //    stroke per colour. This is the cluster's body: without it a group of glyphs is a dot cloud,
-    //    with it the weave itself reads as mass. Not gated on the band — it draws wherever glyphs do
-    //    (see rasterize()'s `intraOn`), unlike the member edges below.
-    if (this.intraOn) {
+    //    with it the weave itself reads as mass. It draws wherever glyphs do — across BOTH the mid
+    //    and near bands, unlike the member edges below — and it FADES IN WITH THEM.
+    //
+    //    That `× glyphAlpha` is load-bearing, not polish. `intraOn` only asks whether the leaf pass
+    //    ran at all, and its threshold (LOD_ALPHA_EPS) is crossed at t ≈ 0.330, where massAlpha is
+    //    still 0.985. Stroked at a flat INTRA_EDGE_ALPHA from that instant, the mesh is a
+    //    full-strength colour-tinted web laid over near-solid territory masses with no visible
+    //    glyphs anywhere — a cobweb across the field, which is precisely the noise the far band
+    //    exists NOT to have, and it persists the whole way across [0.33, 0.46].
+    const meshA = INTRA_EDGE_ALPHA * this.edgeBaseAlpha * this.glyphAlpha;
+    if (this.intraOn && meshA > 0.004) {
       // CanvasGraphRenderer.ts:1298 — `max(0.12, min(1.1, 0.3 * zoomScale))`: deliberately THINNER
       // than a member edge (0.4) with a lower ceiling, so the weave reads as texture under the graph
       // rather than competing with it.
@@ -2262,13 +2304,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
       for (const [slot, list] of this.intraBuckets) {
         if (!list.length) continue;
         ctx.strokeStyle = this.resolveFillColor(slot);
-        ctx.globalAlpha = INTRA_EDGE_ALPHA * this.edgeBaseAlpha;
+        ctx.globalAlpha = meshA;
         ctx.lineWidth = meshW;
         ctx.beginPath();
         for (const e of list) {
-          const [ax, ay, bx, by] = trimSegmentForClearance(cx(e.a), cy(e.a), cx(e.b), cy(e.b), 0.55 * m.cellW);
+          const [ax, ay, bx, by] = trimSegmentForClearance(cx(e.a), cy(e.a), cx(e.b), cy(e.b), CLEARANCE_CELLS * m.cellW);
           ctx.moveTo(ax, ay);
           ctx.lineTo(bx, by);
+          this.edgesStrokedFrame++;
         }
         ctx.stroke();
       }
@@ -2298,7 +2341,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // untrimmed line would muddy the glyph's interior/counters. Pull each endpoint back along the
     // segment instead. Segments shorter than twice the clearance are drawn UNTRIMMED rather than
     // inverted — trimming a near-coincident pair would flip the direction and draw backwards.
-    const CLEARANCE = 0.55 * m.cellW;
+    const CLEARANCE = CLEARANCE_CELLS * m.cellW;
     const pass = (list: EdgeView[], alpha: number, color: string) => {
       if (!list.length || alpha <= 0.004) return;
       ctx.strokeStyle = color;
@@ -2308,6 +2351,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         const [ax, ay, bx, by] = trimSegmentForClearance(cx(e.a), cy(e.a), cx(e.b), cy(e.b), CLEARANCE);
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
+        this.edgesStrokedFrame++;
       }
       ctx.stroke();
     };
@@ -2764,7 +2808,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
       labelOverlaps,
       maxLabelChars,
       notesOnScreen: this.notesOnScreenFrame,
-      edgesDrawn: this.edgesDrawnFrame,
+      edgesClassified: this.edgesClassifiedFrame,
+      edgesStroked: this.edgesStrokedFrame,
       backbonePairsDropped: this.levelPairsDropped.reduce((a, b) => a + b, 0),
       inkCoverage,
     };

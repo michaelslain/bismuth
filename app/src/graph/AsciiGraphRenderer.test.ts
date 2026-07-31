@@ -18,7 +18,7 @@ import {
 } from "./AsciiGraphRenderer";
 import { CELL_W, LAYER_EDGE, resFromT } from "./asciiGrid";
 import { CLUSTER_LABEL_MAX_CHARS, clusterLevelAlphas } from "./labelSelection";
-import { DEFAULT_LEVEL_REVEAL_T } from "./backbone";
+import { DEFAULT_LEVEL_REVEAL_T, EDGE_WEIGHT_BUCKETS, bandsForT, edgeWeightBucketRange } from "./backbone";
 import { buildColorSlots } from "./clusterVisual";
 import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
 import { THEMES } from "../../../core/src/theme/tokens";
@@ -1979,17 +1979,25 @@ describe("LEVEL OF DETAIL (opt-in, GraphConfig.showLodMasses) — coarse stops r
     // ...and lodGraph's two TOP communities are joined by 6 real links, i.e. exactly ONE connector.
     const segs = strokeSegs();
     expect(segs.length).toBe(1);
-    // It runs between the two masses' own cell centres — where their ink actually sits.
+    // It runs between the two masses' own cell centres — where their ink actually sits — pulled back
+    // from both by the shared endpoint clearance, exactly as a member edge is: a group line ends on
+    // a mass's `@` core glyph, and running through its interior muddies it. The expectation composes
+    // the real `trimSegmentForClearance` (unit-tested separately) rather than re-deriving it.
     const flats = new Set<number>();
     for (const v of p.cellEntity) if (v >= 0) flats.add(v);
     const ents = [...flats].map((f) => p.entityFlat[f]);
     expect(ents.length).toBe(2);
     const key = (x: number, y: number) => `${x.toFixed(2)},${y.toFixed(2)}`;
-    const want = ents
-      .map((e) => key(p.m.padX + e.col * p.m.cellW + p.m.cellW / 2, p.m.padY + e.row * p.m.cellH + p.m.cellH / 2))
-      .sort();
-    const got = [key(segs[0][0], segs[0][1]), key(segs[0][2], segs[0][3])].sort();
-    expect(got).toEqual(want);
+    const cxOf = (e: { col: number }) => p.m.padX + e.col * p.m.cellW + p.m.cellW / 2;
+    const cyOf = (e: { row: number }) => p.m.padY + e.row * p.m.cellH + p.m.cellH / 2;
+    const [ax, ay, bx, by] = trimSegmentForClearance(
+      cxOf(ents[0]), cyOf(ents[0]), cxOf(ents[1]), cyOf(ents[1]), 0.55 * p.m.cellW,
+    );
+    expect([key(segs[0][0], segs[0][1]), key(segs[0][2], segs[0][3])].sort())
+      .toEqual([key(ax, ay), key(bx, by)].sort());
+    // ...and the trim really moved both ends: an untrimmed line would land ON the cell centres.
+    expect([key(segs[0][0], segs[0][1]), key(segs[0][2], segs[0][3])].sort())
+      .not.toEqual([key(cxOf(ents[0]), cyOf(ents[0])), key(cxOf(ents[1]), cyOf(ents[1]))].sort());
     // And NO edge of any kind occupies a cell any more — the edge layer is never written.
     expect([...p.layerBuf].every((v) => v !== LAYER_EDGE)).toBe(true);
     r.destroy();
@@ -2160,13 +2168,20 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
    *  each cluster's own colour, and counting it here would blur exactly the distinction under test. */
   const edgeColorSegs = (priv: BandPriv) =>
     ctx.strokes.filter((s) => s.color === priv.colors[9]).flatMap((s) => s.segs);
-  const cellCentre = (priv: BandPriv, col: number, row: number) =>
-    `${(priv.m.padX + col * priv.m.cellW + priv.m.cellW / 2).toFixed(2)},${(priv.m.padY + row * priv.m.cellH + priv.m.cellH / 2).toFixed(2)}`;
+  /** The exact segment a group line between two CELLS should produce: the two cell centres, pulled
+   *  back by the shared endpoint clearance. Composed from the real, separately-unit-tested
+   *  `trimSegmentForClearance` rather than re-deriving the arithmetic. */
+  const groupSegKey = (priv: BandPriv, aCol: number, aRow: number, bCol: number, bRow: number) => {
+    const cx = (c: number) => priv.m.padX + c * priv.m.cellW + priv.m.cellW / 2;
+    const cy = (rw: number) => priv.m.padY + rw * priv.m.cellH + priv.m.cellH / 2;
+    const [ax, ay, bx, by] = trimSegmentForClearance(cx(aCol), cy(aRow), cx(bCol), cy(bRow), 0.55 * priv.m.cellW);
+    return [`${ax.toFixed(2)},${ay.toFixed(2)}`, `${bx.toFixed(2)},${by.toFixed(2)}`].sort().join(" -> ");
+  };
   /** The hub-to-hub segments level `L`'s backbone SHOULD have drawn this frame: one per connected
-   *  community pair whose two hubs are both on the grid, keyed by their two cell centres. */
+   *  community pair whose two hubs are both on the grid. */
   const expectedBackbone = (priv: BandPriv, L: number) => priv.levelPairs[L]
     .filter((p) => p.a.onGrid && p.b.onGrid)
-    .map((p) => [cellCentre(priv, p.a.col, p.a.row), cellCentre(priv, p.b.col, p.b.row)].sort().join(" -> "))
+    .map((p) => groupSegKey(priv, p.a.col, p.a.row, p.b.col, p.b.row))
     .sort();
   /** ...and the ones it actually did. Edge-colour strokes only — the intra-cluster mesh strokes in
    *  each cluster's own colour, and folding it in here would blur the distinction under test. */
@@ -2385,7 +2400,7 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     const { r } = mountRenderer("2d", denseEdgeGraph(600, 4000));
     // 4000 < EDGE_BUDGET_2D (6000) → keepFrac is 1 and nothing is thinned. Under the old pair
     // (2600 / 0.12) keepFrac would be max(0.12, 2600/4000) = 0.65, i.e. ~1400 edges silently gone.
-    const drawn = r.computeStats().edgesDrawn;
+    const drawn = r.computeStats().edgesClassified;
     expect(drawn).toBe(4000);
     r.destroy();
   });
@@ -2393,10 +2408,10 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
   it("...and thins 3D LESS than 2D past the budget — one shared floor could not express that", () => {
     const g = denseEdgeGraph(600, 30000);
     const a = mountRenderer("2d", g);
-    const in2d = a.r.computeStats().edgesDrawn;
+    const in2d = a.r.computeStats().edgesClassified;
     a.r.destroy();
     const b = mountRenderer("3d", g);
-    const in3d = b.r.computeStats().edgesDrawn;
+    const in3d = b.r.computeStats().edgesClassified;
     b.r.destroy();
     // 3D's depth-band falloff already thins the far half of the cloud optically, so dropping the
     // same fraction structurally on top of it reads as holes — hence the higher floor.
@@ -2412,6 +2427,140 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     // Restore ONE shared floor (either value) and this inequality is the assertion that goes red:
     // both dimensions would then thin the same graph identically.
     expect(in3d).toBeGreaterThan(in2d * 2);
+  });
+
+  it("the intra-cluster MESH fades in WITH the glyphs — it does not pop on at full strength over near-solid masses", () => {
+    // `intraOn` only asks whether the leaf pass ran at all, and its threshold (LOD_ALPHA_EPS) is
+    // crossed at t ≈ 0.330 — where massAlpha is still 0.985. Stroked at a flat INTRA_EDGE_ALPHA from
+    // that instant, the mesh is a full-strength colour-tinted web over near-solid territory masses
+    // with no visible glyphs anywhere: a cobweb across the field, exactly the noise the far band
+    // exists NOT to have, persisting the whole way across [0.33, 0.46].
+    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    const meshAlpha = () => {
+      const m = ctx.strokes.filter((st) => st.color !== priv.colors[9] && st.segs.length > 0);
+      return m.length ? m[0].alpha : 0;
+    };
+    // EARLY_T is deep in the far side of the mass→glyph crossfade — the masses still own ~88% of the
+    // field there, which is the whole point of the sample. Asserted, not assumed.
+    const EARLY_T = 0.35;
+    expect(bandsForT(EARLY_T, 4).massAlpha).toBeGreaterThan(0.8);
+
+    parkAtT(r, EARLY_T);
+    const early = meshAlpha();
+    parkAtT(r, MID_T);
+    const plateau = meshAlpha();
+
+    // Both exact, against `bandsForT` — the band authority — not against anything the renderer says.
+    expect(plateau).toBeCloseTo(0.22 * priv.edgeBaseAlpha, 6);
+    expect(early).toBeCloseTo(0.22 * priv.edgeBaseAlpha * (1 - bandsForT(EARLY_T, 4).massAlpha), 6);
+    // The killer: with no band term these are the SAME number. The mesh is still drawn (it is fading
+    // in, not gated off), just far too faint to read as a web over the masses.
+    expect(early).toBeGreaterThan(0);
+    expect(early).toBeLessThan(plateau * 0.25);
+    r.destroy();
+  });
+
+  it("computeStats separates edges CLASSIFIED from edges STROKED — in the mid band they are nowhere near each other", () => {
+    // The classification loop runs before anything reaches strokeEdges(), and the member tier then
+    // returns early on `base <= 0.004`. Reporting one number for both is how a QA hook ends up
+    // claiming ~4566 lines on a frame that drew ~18.
+    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    parkAtT(r, MID_T);
+    const stats = r.computeStats();
+    // All 59 real edges survive the budget rank (59 << 6000) and every 2D node is projValid.
+    expect(stats.edgesClassified).toBe(59);
+    // ...but not one of them is stroked here: 8 backbone lines + the 49 intra-community mesh lines.
+    expect(stats.edgesStroked).toBe(8 + 49);
+    expect(edgeColorSegs(priv).length).toBe(8);
+    // And in the NEAR band the member tier is back, so the two converge on the same order.
+    parkAtT(r, 0.99);
+    const deep = r.computeStats();
+    expect(deep.edgesClassified).toBe(59);
+    expect(deep.edgesStroked).toBeGreaterThan(59);   // members + mesh, both drawn
+    r.destroy();
+  });
+
+  it("group-line and mesh WIDTHS ride the resolution stop, and the mesh honours its ceiling", () => {
+    // `lineWidthScale()` is 1 at fit by construction and rises to EDGE_W_MAX / EDGE_W_GAIN at the
+    // deepest stop; every ported width constant multiplies it, which is how Canvas's relative
+    // weights survive a renderer whose zoom is RESOLUTION and has no magnification scalar at all.
+    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    const meshWidth = () => ctx.strokes.filter((st) => st.color !== priv.colors[9] && st.segs.length > 0)[0]?.width;
+    const scaleAt = (t: number) => (EDGE_W_GAIN + (EDGE_W_MAX - EDGE_W_GAIN) * t) / EDGE_W_GAIN;
+
+    parkAtT(r, MID_T);
+    expect(meshWidth()).toBeCloseTo(0.3 * scaleAt(MID_T), 6);   // 0.3 = CanvasGraphRenderer.ts:1298
+    const midMesh = meshWidth();
+    // Deeper: strictly thicker, and then pinned at the 1.1 ceiling rather than running away.
+    parkAtT(r, 0.99);
+    expect(meshWidth()).toBeGreaterThan(midMesh);
+    expect(meshWidth()).toBe(1.1);
+    expect(0.3 * scaleAt(0.99)).toBeGreaterThan(1.1);            // the clamp really is what is binding
+
+    // Backbone buckets: `(0.35 + 0.55·wb) × scale`, clamped to [0.25, 2.4], one batch per bucket that
+    // actually has a pair in it. Which buckets those are is derived from the real (unit-tested)
+    // `edgeWeightBucketRange` against the level's own counts, not assumed.
+    parkAtT(r, MID_T);
+    const groupWidths = ctx.strokes
+      .filter((st) => st.color === priv.colors[9] && st.segs.length > 0)
+      .map((st) => st.width).sort((x, y) => x - y);
+    const visiblePairs = priv.levelPairs[2].filter((p) => p.a.onGrid && p.b.onGrid);
+    const maxCount = priv.levelPairs[2][0].count;
+    const wantWidths: number[] = [];
+    for (let wb = 0; wb < EDGE_WEIGHT_BUCKETS; wb++) {
+      const { lo, hi } = edgeWeightBucketRange(wb, maxCount);
+      if (!visiblePairs.some((p) => p.count >= lo && p.count < hi)) continue;
+      wantWidths.push(Math.max(0.25, Math.min(2.4, (0.35 + wb * 0.55) * scaleAt(MID_T))));
+    }
+    expect(wantWidths.length).toBeGreaterThan(1);                // more than one bucket drew
+    expect(groupWidths.length).toBe(wantWidths.length);
+    groupWidths.forEach((w, i) => expect(w).toBeCloseTo(wantWidths.sort((x, y) => x - y)[i], 6));
+    r.destroy();
+  });
+
+  /** Three fat communities at fit, wired so ONE connector is heavy (`aggEdgeWeight` ≥
+   *  AGG_EDGE_DOUBLE_W) and one is light — the two-tier width the doubled Bresenham trace became. */
+  function heavyAndLightConnectorGraph() {
+    const nodes = [];
+    const edges = [];
+    for (let c = 0; c < 3; c++) {
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        nodes.push({
+          id: `c${c}n${k}`, label: `note ${c}-${k}`, kind: "note" as const,
+          position: [(c - 1) * 90 + Math.cos(a) * 12, Math.sin(a) * 12, 0] as [number, number, number],
+          position2d: [(c - 1) * 90 + Math.cos(a) * 12, Math.sin(a) * 12] as [number, number],
+          community: c, communityLabel: `Group ${c}`,
+        });
+      }
+    }
+    // 20 links c0–c1 (the level's maximum, so w = 1), 1 link c1–c2 (w = log1p(1)/log1p(20) ≈ 0.23).
+    for (let k = 0; k < 20; k++) edges.push({ from: `c0n${k % 8}`, to: `c1n${(k * 3) % 8}`, kind: "link" as const });
+    edges.push({ from: `c1n0`, to: `c2n0`, kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  it("the heaviest aggregate connector strokes at DOUBLE width — the vector form of the old parallel trace", () => {
+    const { r } = mountRenderer("2d", heavyAndLightConnectorGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    // At fit, `lineWidthScale()` is exactly 1, so the widths are the raw constants.
+    const batches = ctx.strokes.filter((st) => st.color === priv.colors[9] && st.segs.length > 0);
+    expect(batches.length).toBe(2);                              // one heavy connector, one light
+    const widths = batches.map((b) => b.width).sort((x, y) => x - y);
+    expect(widths).toEqual([0.35, 0.7]);                         // GROUP_W_BASE, and its double
+    // The doubling follows the WEIGHT, not the draw order: the wide line is the heavier connector,
+    // so it also carries the higher alpha off `AGG_EDGE_ALPHA_MIN`'s ramp.
+    const heavy = batches.find((b) => b.width === 0.7)!;
+    const light = batches.find((b) => b.width === 0.35)!;
+    expect(heavy.alpha).toBeGreaterThan(light.alpha);
+    // w = 1 → the ramp's full value. Within one batching step: group-line ALPHAS are deliberately
+    // quantized to GROUP_ALPHA_STEPS so a continuous per-connector ramp stays a handful of strokes.
+    expect(Math.abs(heavy.alpha - priv.edgeBaseAlpha)).toBeLessThanOrEqual(1 / 24);
+    expect(light.alpha).toBeCloseTo(priv.edgeBaseAlpha * (0.35 + 0.65 * (Math.log1p(1) / Math.log1p(20))), 1);
+    r.destroy();
   });
 
   it("the far band is unchanged: masses own the field at fit, and no glyph or member edge is drawn", () => {
@@ -2748,7 +2897,7 @@ describe("edge clipping — an edge with an off-field endpoint still strokes (a 
     // "reach 0%" pattern other tests in this file use. n0 is the 24-spoke hub; every one of its 23
     // neighbours has a real edge to it, and at this resolution almost all of them project well off
     // the field. The OLD rule ("skip an edge unless BOTH endpoints are on-grid") dropped every one
-    // of those — QA measured edgesDrawn:2 at 0%. Edges are vector strokes now, gated on `projValid`
+    // of those — QA measured 2 surviving edges at 0%. Edges are vector strokes now, gated on `projValid`
     // alone (exactly the pre-redesign renderer's `onScreen`) — the canvas's own paint-time clip
     // handles the off-field portion, so n0's own local edges should still be numerous.
     r.frameSubset(["n0"]);
@@ -2757,7 +2906,7 @@ describe("edge clipping — an edge with an off-field endpoint still strokes (a 
     const stats = r.computeStats();
     expect(stats.zoomPct).toBe(0);
     expect(stats.notesOnScreen).toBeGreaterThanOrEqual(1); // at least the hub itself is on the field
-    expect(stats.edgesDrawn).toBeGreaterThan(5);
+    expect(stats.edgesClassified).toBeGreaterThan(5);
     expect(strokeSegs().length).toBeGreaterThan(5);
     r.destroy();
   });
