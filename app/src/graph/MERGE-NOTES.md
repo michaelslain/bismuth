@@ -281,6 +281,32 @@ still literally true:
 Two §4.3 gaps are also closed: `buildLevelEdges`/`levelPairs` and the intra-cluster mesh both have
 end-to-end coverage in `AsciiGraphRenderer.test.ts`'s "THE THREE-BAND LADDER" block.
 
+### 4.5 ⚠️ CORRECTION (2026-07-31, Task 15): the 3D "file label soup" was never file labels
+
+The Part-2b baseline shot `shots/baseline/graph-3d.png` was read as "~60 file labels at fit", and the
+task brief was written against that reading. Measured against the real vault, at fit in 3D:
+
+| | eyebrow (cluster) labels | file labels |
+|---|---|---|
+| 2D, before | 15 | 0 |
+| 3D, before | **56** | **0** |
+| 3D, after | 15 | 0 |
+
+`fileLabelBudget(0, n)` is 0 at fit for any `revealT`, so no file label can be drawn there at all —
+and the names on the shot are uppercase, tracked and truncated on a word at 20 chars, which is
+`clusterLabelText`, not `labelText` (which would print `[[Laggy eye following]]`). They were CLUSTER
+names, for communities of one to three notes, whose exemplar name is a note's own title.
+
+So the ladder was not "not being consulted": level (`clusterLevelAlphas`) and handover
+(`clusterLabelAlpha`/`fileLabelAlpha`) were already shared by both name passes off one `resolutionT`.
+What was branch-local was the **roster** — `layoutEntityNames` can only name what `buildLodIndex`
+built (`LOD_MIN_CLUSTER`: 15 of the reference vault's 171 coarsest communities), `layoutClusterNames`
+named every community with a member on screen. `namableByLevel` now derives one roster from
+`lodLevels` for both. It was worst around the 80%/60% stops (109 names), not at fit.
+
+Also: §4's baseline numbers are stale. `cd app && bun test src/graph/` was **456 pass / 17 files**
+before this task, 460 after.
+
 ---
 
 ## 5. Merge order
