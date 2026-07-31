@@ -71,6 +71,39 @@
 // only by driving the REAL binary (clineMocked.test.ts's "real E2E" block), and this
 // always-running, binary-independent fake structurally never will unless a future task teaches it
 // cline's real configOptions shape too.
+//
+// HELD-PROMPT MODE (added for the "cover the permission request→response round-trip" task — see
+// acpPermissionFakeAgent.test.ts): opt-in via FAKE_ACP_PROMPT_HOLD, the same shape as the two modes
+// above, and likewise fully decoupled — with the var unset, every line below behaves byte-for-byte
+// as it did before (verified by replaying an identical stdin script through the pre-change and
+// post-change files and diffing stdout; see that test file's header).
+//
+// The capability it adds is deliberately GENERIC, not permission-specific, because four separate
+// coverage gaps all need the same one thing and none of them can be built without it: a
+// `session/prompt` that does NOT settle synchronously. Before this, `handleSessionPrompt` streamed
+// one update and immediately responded, so the prompt's request/response window was ~0ms wide —
+// there was no interval during which a test could observe a turn in flight, queue behind it, cancel
+// it, or answer a question inside it. Three pieces make that window openable:
+//   1. `callClient()` — the fake can now make JSON-RPC REQUESTS of its own into the client and await
+//      the reply. Previously this file was reply-only (it answered the driver's requests and pushed
+//      notifications; it never spoke first), so the entire agent→client request direction of ACP —
+//      session/request_permission, fs/*, terminal/*, elicitation/* — was unreachable from here.
+//   2. Inbound RESPONSE routing in `handleLine` — the counterpart to (1). The old parser dropped any
+//      line without a `method` field on the floor, which is exactly what a JSON-RPC response is.
+//   3. `heldPrompts` + `settlePrompt()` — a registry of prompts whose `session/prompt` response has
+//      been withheld, settled exactly once, by whatever event a given mode says settles it.
+// A future turn-queue / abort / resume / never-terminating-turn test needs only a new `promptHold`
+// value plus its own async runner; none of them should have to touch (1)-(3) again.
+//
+// The one mode implemented here, FAKE_ACP_PROMPT_HOLD=permission, models the real ACP permission
+// handshake (agent-client-protocol's `session/request_permission`, whose response type is
+// `RequestPermissionResponse { outcome: {outcome:"cancelled"} | {outcome:"selected", optionId} }` —
+// note the field is NESTED under its own name, which is what driver.ts's respondPermission builds):
+//   tool_call update → session/request_permission → (WAIT) → agent_message_chunk naming the received
+//   outcome → settle session/prompt.
+// Nothing settles that prompt except a real, parseable reply landing on this process's stdin, which
+// is the property that makes the test non-vacuous: a wrong rpc id, a malformed outcome, or no reply
+// at all all produce the same observable result — no `done`, and a test timeout.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -92,6 +125,40 @@ function echo(method: string, params: unknown): void {
   if (!path) return;
   try {
     appendFileSync(path, JSON.stringify({ method, params }) + "\n");
+  } catch {
+    /* best-effort observability only */
+  }
+}
+
+/**
+ * The two echo-file line kinds added by held-prompt mode, for the OTHER two directions the echo file
+ * could not previously see: a request THIS fake sent to the client, and the client's response to it.
+ *
+ * Why they carry a `dir` discriminator while the original inbound-request line does NOT: the
+ * original line shape (`{method, params}`, no extra keys) is what acpFakeAgent.test.ts's setModel
+ * test already reads, and this task's own contract is that with FAKE_ACP_PROMPT_HOLD unset the fake
+ * is byte-identical — so the pre-existing shape is left exactly alone and the new kinds are additive.
+ * Both are unreachable unless a mode calls callClient(), which only held-prompt mode does.
+ *
+ * A response is echoed VERBATIM (whole `result`/`error`, not a summary) because the assertion this
+ * exists for is precisely "what bytes did Bismuth write back" — summarizing here would move the
+ * interpretation into the fake, where a test could no longer catch it being wrong.
+ */
+function echoOutRequest(id: number, method: string, params: unknown): void {
+  const path = process.env.FAKE_ACP_ECHO_FILE;
+  if (!path) return;
+  try {
+    appendFileSync(path, JSON.stringify({ dir: "out-request", id, method, params }) + "\n");
+  } catch {
+    /* best-effort observability only */
+  }
+}
+
+function echoInResponse(msg: JsonRpcMsg): void {
+  const path = process.env.FAKE_ACP_ECHO_FILE;
+  if (!path) return;
+  try {
+    appendFileSync(path, JSON.stringify({ dir: "in-response", id: msg.id, result: msg.result, error: msg.error }) + "\n");
   } catch {
     /* best-effort observability only */
   }
@@ -145,6 +212,138 @@ const CLINE_AUTH_METHODS = [
   { id: "cline", name: "Sign in with Cline" },
   { id: "openai-codex", name: "Sign in with ChatGPT Subscription" },
 ];
+
+// ── Held-prompt mode (see this file's header, "HELD-PROMPT MODE") ────────────────────────────────
+
+/** "none" (unset — the default every pre-existing test gets, byte-identical to this file's original
+ *  behavior) or "permission". A future turn-queue/abort/resume/never-settling test adds its own
+ *  value here and its own runner below; nothing else in this file needs to change for it. */
+const promptHold = process.env.FAKE_ACP_PROMPT_HOLD === "permission" ? "permission" : "none";
+
+/** Which option list this fake offers on `session/request_permission`. "full" (the default) offers
+ *  all four real PermissionOptionKind values. "none" offers an EMPTY array — not an arbitrary edge
+ *  case but the ONLY input for which the driver's choosePermissionOption (acp/protocol.ts) returns
+ *  null, and therefore the only way to reach its `{outcome:"cancelled"}` reply branch at all. */
+const permissionOptionSet = process.env.FAKE_ACP_PERMISSION_OPTIONS === "none" ? "none" : "full";
+
+/** The tool this fake asks permission for. Deliberately carries `title` + `kind` and NO `name`,
+ *  which is the real ACP `ToolCall` shape (agent-client-protocol's ToolCall has no `name` field at
+ *  all — see acp/protocol.ts's own `toolCallInput(u: {title, kind})`, which encodes that same
+ *  understanding). Keeping the fake honest here is what lets acpPermissionFakeAgent.test.ts observe
+ *  the driver's real naming behavior rather than a shape no agent would ever send. */
+const PERM_TOOL_CALL_ID = "fake-tool-call-1";
+const PERM_TOOL_TITLE = "Write fake-permission-probe.txt";
+const PERM_TOOL_KIND = "edit";
+
+/** Verbatim the four `PermissionOptionKind` values from the ACP schema. The optionIds are
+ *  deliberately NOT equal to their kinds, so a test asserting an optionId came back cannot be
+ *  satisfied by the driver having echoed the kind (or any other field) by accident. */
+const PERM_OPTIONS = [
+  { optionId: "fake-opt-allow-once", name: "Allow once", kind: "allow_once" },
+  { optionId: "fake-opt-allow-always", name: "Always allow", kind: "allow_always" },
+  { optionId: "fake-opt-reject-once", name: "Reject", kind: "reject_once" },
+  { optionId: "fake-opt-reject-always", name: "Always reject", kind: "reject_always" },
+];
+
+/** Prefix of the agent_message_chunk this fake emits AFTER a permission reply lands, carrying the
+ *  outcome it actually parsed out of that reply. Distinct from FAKE_TURN_TEXT so a test can never
+ *  mistake one for the other, and emitted only post-reply so its mere presence is itself ordering
+ *  evidence. */
+const FAKE_PERMISSION_REPLY_PREFIX = "fake-acp permission reply: ";
+
+/** Outbound request ids for calls THIS fake makes into the client. JSON-RPC gives each direction
+ *  its own id space (the driver's own minter starts at 0 — see protocol.ts's createIdMinter), so
+ *  starting at 1000 is not required for correctness; it just makes an echo-file transcript
+ *  unambiguous to read at a glance. */
+let nextOutboundId = 1000;
+
+/** Resolvers for in-flight outbound calls, keyed by the id we sent. */
+const pendingClientCalls = new Map<number, (msg: JsonRpcMsg) => void>();
+
+/**
+ * Send a JSON-RPC REQUEST to the client and resolve with its RAW response envelope (never rejects —
+ * a fake agent that throws mid-turn would surface as an unexplained flake rather than a useful
+ * failure). Resolves with the whole message, not just `result`, so a caller can distinguish a
+ * result from an error reply, and so the echo file and the caller see exactly the same bytes.
+ *
+ * If the client never replies, this promise simply never settles — which is the intended failure
+ * mode: whatever prompt is held behind it stays held, no `done` frame is ever produced, and the
+ * test times out. That is the property that makes the round-trip assertion non-vacuous.
+ */
+function callClient(method: string, params: unknown): Promise<JsonRpcMsg> {
+  const id = nextOutboundId++;
+  return new Promise<JsonRpcMsg>((resolve) => {
+    pendingClientCalls.set(id, resolve);
+    echoOutRequest(id, method, params);
+    writeLine({ jsonrpc: "2.0", id, method, params });
+  });
+}
+
+/** `session/prompt` requests whose response has been deliberately withheld, keyed by their JSON-RPC
+ *  id. The registry is what makes "a turn is in flight right now" an observable, controllable state
+ *  instead of a ~0ms window. */
+const heldPrompts = new Map<number | string, { sessionId: string }>();
+
+/** Settle a held prompt exactly once. Idempotent by construction (the map delete IS the guard), so
+ *  two racing settle paths — e.g. a permission reply landing at the same moment as a session/cancel
+ *  — can never produce two JSON-RPC responses for one request id, which would desync the driver's
+ *  pendingCalls map for the rest of the session. */
+function settlePrompt(id: number | string, stopReason: string): void {
+  if (!heldPrompts.delete(id)) return;
+  respond(id, { stopReason });
+}
+
+/**
+ * The permission round-trip, start to finish. Emits a tool_call update first (a real agent announces
+ * the tool before asking to run it), then asks, then WAITS — the awaited reply is the only thing
+ * that can advance this function — then reports back what it received and settles the turn.
+ *
+ * The post-reply agent_message_chunk names the outcome the fake actually parsed, so a test gets a
+ * second, independent proof of the round-trip through a completely different channel than the echo
+ * file: the driver's own ChatFrame stream.
+ */
+async function runHeldPermissionPrompt(promptId: number | string, sessionId: string): Promise<void> {
+  heldPrompts.set(promptId, { sessionId });
+  notify("session/update", {
+    sessionId,
+    update: {
+      sessionUpdate: "tool_call",
+      toolCallId: PERM_TOOL_CALL_ID,
+      title: PERM_TOOL_TITLE,
+      kind: PERM_TOOL_KIND,
+      status: "pending",
+    },
+  });
+
+  const reply = await callClient("session/request_permission", {
+    sessionId,
+    toolCall: { toolCallId: PERM_TOOL_CALL_ID, title: PERM_TOOL_TITLE, kind: PERM_TOOL_KIND },
+    options: permissionOptionSet === "none" ? [] : PERM_OPTIONS,
+  });
+
+  // Read the real ACP RequestPermissionResponse shape: the tagged union lives NESTED under its own
+  // `outcome` key (`{outcome:{outcome:"selected", optionId}}`), which is exactly what driver.ts's
+  // respondPermission writes. Read tolerantly — a malformed reply must show up as "the fake reported
+  // an unrecognized outcome", never as a crash that looks like a flake.
+  const result = reply.result && typeof reply.result === "object" ? (reply.result as Record<string, unknown>) : {};
+  const outer = result.outcome && typeof result.outcome === "object" ? (result.outcome as Record<string, unknown>) : {};
+  const outcome = typeof outer.outcome === "string" ? outer.outcome : "unrecognized";
+  const optionId = typeof outer.optionId === "string" ? outer.optionId : "";
+
+  notify("session/update", {
+    sessionId,
+    update: {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: `${FAKE_PERMISSION_REPLY_PREFIX}${JSON.stringify({ outcome, optionId })}` },
+    },
+  });
+
+  // A "selected" outcome means the user answered (allow OR deny — both are a selection); the turn
+  // then ends normally. "cancelled" means no option could be selected at all, which a real agent
+  // reports as a cancelled turn — and which exercises driver.ts's own stopReason:"cancelled" branch
+  // (that branch treats it as a clean, non-error turn end).
+  settlePrompt(promptId, outcome === "selected" ? "end_turn" : "cancelled");
+}
 
 let sessionCounter = 0;
 
@@ -214,7 +413,20 @@ function handleSessionNew(id: number | string): void {
 }
 
 function handleSessionPrompt(id: number | string, params: unknown): void {
-  const sessionId = (params && typeof params === "object" && "sessionId" in params && typeof (params as { sessionId: unknown }).sessionId === "string" && (params as { sessionId: string }).sessionId) || "unknown";
+  const rawSessionId = (params && typeof params === "object" && "sessionId" in params && typeof (params as { sessionId: unknown }).sessionId === "string" && (params as { sessionId: string }).sessionId) || "unknown";
+  // Every branch of the expression above yields a string at runtime (a failed guard short-circuits
+  // to `false`, which the `|| "unknown"` then replaces), but TS widens the leading `params &&` to
+  // `{}` because `params` is `unknown` — so its STATIC type is `string | {}`. The original code never
+  // noticed: it only passed the value to `notify(…: unknown)`. Narrow once here, explicitly, rather
+  // than casting at the one new call site that does want a string.
+  const sessionId: string = typeof rawSessionId === "string" ? rawSessionId : "unknown";
+  if (promptHold === "permission") {
+    // Hand off to the async runner and return — the JSON-RPC response for THIS request is withheld
+    // until something settles it. The `void` is deliberate: handleLine is a sync readline callback,
+    // and the runner already cannot reject (callClient never rejects).
+    void runHeldPermissionPrompt(id, sessionId);
+    return;
+  }
   notify("session/update", {
     sessionId,
     update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: FAKE_TURN_TEXT } },
@@ -243,7 +455,22 @@ function handleLine(raw: string): void {
   } catch {
     return; // non-JSON noise — never crash the fake over a stray line
   }
-  if (!msg || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") return; // a response/notification we sent isn't looped back, but stay defensive
+  if (!msg || msg.jsonrpc !== "2.0") return;
+  // A RESPONSE to a request THIS fake sent (no `method`, has an `id` and a result/error). The
+  // original parser dropped these at the `typeof msg.method !== "string"` guard below, which was
+  // correct while the fake never spoke first — see this file's header, piece (2). Unreachable unless
+  // a mode called callClient(), so with FAKE_ACP_PROMPT_HOLD unset this branch never runs and the
+  // echo file's contents are unchanged.
+  if (msg.method === undefined && msg.id !== undefined && ("result" in msg || "error" in msg)) {
+    echoInResponse(msg);
+    const waiter = pendingClientCalls.get(Number(msg.id));
+    if (waiter) {
+      pendingClientCalls.delete(Number(msg.id));
+      waiter(msg);
+    }
+    return;
+  }
+  if (typeof msg.method !== "string") return; // neither a request nor a notification — stay defensive
   const { method, params, id } = msg;
   echo(method, params);
 
@@ -264,7 +491,25 @@ function handleLine(raw: string): void {
       if (id !== undefined) handleSetModelOld(id);
       return;
     case "session/cancel":
-      return; // notification — nothing to reply to; a real cancel-then-settle isn't this fake's job
+      // A notification — there is nothing to reply to for the cancel itself. But any prompt this
+      // fake is HOLDING open must now settle, or the driver's abortTurn would wait forever on a
+      // session/prompt response that nothing else can produce (a real agent settles the in-flight
+      // prompt with stopReason:"cancelled"; driver.ts's runTurn reads exactly that). No held
+      // prompts (every pre-held-prompt-mode caller) makes this an empty loop, so the byte-for-byte
+      // behavior with FAKE_ACP_PROMPT_HOLD unset is unchanged. Not exercised by
+      // acpPermissionFakeAgent.test.ts — it is the abort gap's half of the shared mechanism, kept
+      // here because a held prompt that cannot be cancelled is not a reusable primitive.
+      //
+      // FOR WHOEVER WRITES THE ABORT TEST: settling here does NOT unwind the runner that was holding
+      // the prompt. runHeldPermissionPrompt is still parked on `await callClient(...)`, and its
+      // resolver stays in pendingClientCalls indefinitely — so a permission reply arriving AFTER a
+      // cancel resumes that runner and emits a stray agent_message_chunk on an already-cancelled
+      // turn. (No double response: the second settlePrompt is a no-op by construction.) Benign in a
+      // short-lived subprocess, but an abort test will want this arm to drain pendingClientCalls
+      // too — resolving each waiter with a synthetic "cancelled" envelope, so the runners unwind
+      // instead of leaking.
+      for (const heldId of Array.from(heldPrompts.keys())) settlePrompt(heldId, "cancelled");
+      return;
     default:
       // Unknown/unimplemented verb the real driver might still call (session/load, session/resume,
       // …): reply with an empty result rather than a method-not-found error so a test exercising
