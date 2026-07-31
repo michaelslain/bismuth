@@ -1,10 +1,10 @@
 // app/src/graph/clusterVisual.ts
 //
-// Pure cluster-visual intelligence ported from CanvasGraphRenderer.ts ahead of its deletion (see
-// MERGE-NOTES.md §2.3, §5.3, §Task-5). No renderer state, no canvas context: every function here
-// takes and returns plain data so a grid-based renderer can consume it, quantising an anchor's
-// exact pixel down to a cell itself (MERGE-NOTES §5.3: "the grid quantises label positions to cell
-// rows... the anchor is a hub's cell rather than a hub's exact pixel. Acceptable.").
+// Pure cluster-visual intelligence ported out of the deleted Canvas renderer (see
+// graphRenderer.ts's EPITAPH for what that renderer was). No renderer state, no canvas context:
+// every function here takes and returns plain data so a grid-based renderer can consume it,
+// quantising an anchor's exact pixel down to a cell itself. That quantisation is the one accepted
+// cost of the character grid: a cluster name lands on a hub's CELL rather than a hub's exact pixel.
 //
 // This module exists to fix two failures Canvas's own comments record as MEASURED, on the reference
 // vault, against the exact approach ASCII still ships today:
@@ -195,7 +195,7 @@ export function buildColorSlots(
  * lands in empty space — the names then read as free-floating text captioning nothing. The hub is
  * both where the mass visibly converges AND the node the exemplar name was taken from."
  *
- * Returns only the member id, never a position — MERGE-NOTES §5.3: the grid quantises a hub's CELL,
+ * Returns only the member id, never a position — the grid quantises a hub's CELL,
  * not its exact pixel, so the caller looks the id back up (to get its screen position, then its
  * cell) rather than receiving a pixel from here.
  *
@@ -322,7 +322,7 @@ const DANGLING_WORDS = new Set([
  * The actual source function takes neither parameter — it only ever drops trailing stopwords, and
  * the character-count clip that must run BEFORE it already lives in `clusterLabelText`
  * (labelSelection.ts). Ported the real signature per this plan's own instruction to trust the
- * source over plan-authored specifics (MERGE-NOTES §Task-5 preamble: "plan-authored code has been
+ * source over plan-authored specifics (the merge plan's own rule: "plan-authored code has been
  * wrong repeatedly").
  */
 export function trimDanglingWord(text: string): string {

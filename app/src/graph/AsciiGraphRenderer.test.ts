@@ -1555,7 +1555,7 @@ describe("Task 11 — the 3D camera dolly is derived from the resolution ladder"
     // disappearing. What actually separates the two is the ~17x over-magnification, and the test that
     // catches it is "caps the approach at the camera ceiling" below (which fails under both the naive
     // form and every partial version of it). Kept because a blank deep end is still the failure worth
-    // a named gate, and because a bare paint count is what MERGE-NOTES §6 asked this step to prove.
+    // a named gate, and because a bare paint count is what the camera step was asked to prove.
     withBall({ width: 320, height: 220 }, ({ viewport, painted, p }) => {
       assertDeepLadder(p);
       ctx.fills.length = 0;

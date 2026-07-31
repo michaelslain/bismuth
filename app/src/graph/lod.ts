@@ -29,7 +29,7 @@
 // (glyphs + real member edges), and `lodMix` reads its `massAlpha` for the mass band's share. Masses
 // therefore hand off to individual glyphs around t≈0.32–0.46, well BEFORE file names appear at
 // `FILE_LABEL_REVEAL_T` — the mid band is glyphs with a backbone and no file names. See
-// MERGE-NOTES.md §5.4 and backbone.ts's wiring recipe.
+// backbone.ts's header and its wiring recipe.
 //
 // Everything here is DOM-free and unit-tested (lod.test.ts); AsciiGraphRenderer owns the buffers,
 // projection and the rAF loop, and calls into this for structure (once per graph build) and the
@@ -253,7 +253,7 @@ export interface LodMix {
  * masses owned the field outright until t = FILE_LABEL_REVEAL_T (0.75) — which, once the renderer
  * gates its leaf raster pass on the same number, means t = 0.60 renders a hub-to-hub backbone
  * painted over solid territory masses with ZERO individual glyphs: neither the mid band nor the far
- * band. `bandsForT` is the single owner of that handover now (MERGE-NOTES.md §5.4); this function
+ * band. `bandsForT` (backbone.ts) is the single owner of that handover now; this function
  * only distributes the mass band's share over the hierarchy levels, which is unchanged.
  */
 export function lodMix(t: number, levelCount: number): LodMix {

@@ -1,7 +1,8 @@
 // app/src/graph/cameraModel.ts
 //
-// The resolution of MERGE-NOTES.md §6 — the merge's central design tension. Read that section in
-// full before touching this file.
+// THE MERGE'S CENTRAL DESIGN TENSION, resolved: zoom-as-RESOLUTION vs zoom-as-DOLLY. The two
+// renderers merged in Part 2b disagreed about what a wheel notch means, and this file is where that
+// disagreement was settled. Read the whole header before touching anything below.
 //
 // `res`/`zoomPct` (asciiGrid.ts `resolutionT`/`resFromT`) stays the ONE durable, user-facing zoom
 // state: 10% steps, a 0-100% HUD readout, cursor-anchored in 2D. Everything SEMANTIC — LOD level,

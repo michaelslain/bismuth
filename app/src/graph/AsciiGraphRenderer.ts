@@ -34,7 +34,7 @@
 // magnitude more ink than a hairline, and at the default 2D view they read as a stair-stepped grey
 // scribble across the field rather than as structure. EVERY line the field draws is a vector stroke.
 //
-// THE ZOOM LADDER runs in three bands (backbone.ts `bandsForT`, MERGE-NOTES.md §5.4):
+// THE ZOOM LADDER runs in three bands (backbone.ts `bandsForT`, and its header):
 //   far  — territory masses + cluster names, joined by aggregate connectors (lod.ts)
 //   mid  — individual glyphs, joined by a hub-to-hub BACKBONE over the active hierarchy level
 //   near — individual glyphs, joined by their real member edges
@@ -691,7 +691,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   // ---- lifecycle -----------------------------------------------------------
 
-  mount(el: HTMLElement, onNodeClick: (id: string) => void, onHover?: (n: HoverNode | null) => void, _labelOverlay?: HTMLElement) {
+  mount(el: HTMLElement, onNodeClick: (id: string) => void, onHover?: (n: HoverNode | null) => void) {
     this.host = el;
     this.onNodeClick = onNodeClick;
     if (onHover) this.onHover = onHover;
@@ -805,7 +805,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // translation (harmless numerically once the cloud is already centered, but two transforms doing
     // one job is one too many to reason about, and the second would silently mask a bug in the first).
     // No "self" filter: the old centroid excluded the injected "you" hub so it wouldn't bias the mean,
-    // but that hub no longer exists (a6687c0 removed its only injector — see MERGE-NOTES.md §2.4), and
+    // but that hub no longer exists (a6687c0 removed the agents graph mode, and with it agentLayout.ts,
+    // the self node's only injector), and
     // respace.ts is deliberately kind-agnostic (it never sees `node.kind` at all — see its header).
     // Raw (unflipped, uncentered) positions, index-aligned with g.nodes/this.nodes so the respaced
     // arrays below can be indexed straight back onto each node with no id bookkeeping.
@@ -2030,7 +2031,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   /**
    * The 3D camera dolly for the CURRENT resolution stop, in the same px units as `this.P`
-   * (`cameraModel.ts` `dollyForT`, MERGE-NOTES §6). 0 in 2D — a flat view has nothing to approach.
+   * (`cameraModel.ts` `dollyForT`, and its header). 0 in 2D — a flat view has nothing to approach.
    *
    * ── THE THING THAT IS NOT OBVIOUS, AND THAT EVERYTHING ELSE HERE FOLLOWS FROM ────────────────
    *
@@ -2041,7 +2042,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *
    * (cross-multiply: k(P − Z − D) = P − kZ ⟹ kP − kD = P). So `s = pxPerWorld · res` with `zc = z2`
    * — the code that was here — has ALWAYS been a camera dolly of `P·(1 − 1/res)`, producing exactly
-   * the parallax, near/far separation and cloud-opening that MERGE-NOTES §6 describes as missing.
+   * the parallax, near/far separation and cloud-opening a pinned camera cannot produce.
    * §6's "ASCII pins the camera distance, so it produces almost no parallax" is a reading of the
    * source, not of the algebra, and it is wrong. Verified against this renderer's own projection:
    * screen positions agree to the last bit at res 1, 2, 8 and 68.
@@ -2952,7 +2953,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
    * and the hub-to-hub backbone, all of which switch to the child level at exactly this `t`. What
    * this comment must not do is keep claiming the click "reveals its child hierarchy level" as
    * masses unconditionally, because for levels 2+ it does not. Re-stretching the bands to make it
-   * true was considered and rejected — see MERGE-NOTES.md §5.4 and `backbone.ts`'s constants.
+   * true was considered and rejected — see `backbone.ts`'s header and its constants.
    *
    * The LEAF pseudo-level is a separate exception: the file-label alpha — and the leaf raster pass,
    * gated the same way — is exactly 0 AT `FILE_LABEL_REVEAL_T` and only rises past it, so landing

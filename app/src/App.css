@@ -864,9 +864,9 @@ html.view-dragging .graph-floater { pointer-events: none; }
    resize can't flash a scrollbar on the pane-body (which would reflow the box every frame
    and make the resize jitter). */
 .graph-root { container-type: inline-size; overflow: hidden; display: flex; flex-direction: column; width: 100%; height: 100%; }
-/* .graph-bloom + .graph-vignette live in graph/graphAtmosphere.css — mounted by <GraphAtmosphere>
-   for BOTH the STANDARD and ASCII graph (each renderer pushes its own per-frame node-density field
-   via setBloomCallback; see CanvasGraphRenderer.emitBloom / AsciiGraphRenderer.emitBloom). */
+/* .graph-bloom + .graph-vignette live in graph/graphAtmosphere.css — mounted by <GraphAtmosphere>;
+   the renderer pushes a per-frame node-density field via setBloomCallback (AsciiGraphRenderer's
+   emitBloom). */
 /* The graph toolbar is a PLAIN .viewbar — same height, gap, padding and hairline as the base rule, so
    it reads as the same control strip as every other view's (notes, bases, calendar, chat). It used to
    override all four (gap 8, padding 0 12px, a translucent --pop-bg fill and an 8px backdrop blur),
@@ -876,31 +876,16 @@ html.view-dragging .graph-floater { pointer-events: none; }
    rules below. */
 .graph-vb-right { display: inline-flex; align-items: center; gap: 8px; }
 .graph-area { container-type: inline-size; position: relative; width: 100%; }
-/* The WebGL canvas host fills the graph area; the renderer mounts its <canvas> here. */
+/* Fills the graph area; the renderer mounts its <canvas> here. */
 .graph-canvas-host { width: 100%; height: 100%; }
 /* Shared pill recipe for the hover / fps HUD readouts (theme-aware). The dynamic text
    color (hover = --fg, fps = traffic-light) stays inline in GraphView. */
 .graph-hud-pill { background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 5px; font-family: inherit; }
 /* Bottom HUD row: the 2D/3D toggle cluster + hover/fps pills, pinned along the canvas floor. */
 .graph-bottom-bar { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 4; display: flex; align-items: center; gap: 8px; pointer-events: none; }
-/* Native-text label overlay. Pills match the graph chrome (hover HUD / legend) exactly: inherits
-   the app UI font (Monaspace Xenon), theme-token colors, real browser font hinting → crisp, native.
-   The renderer sets each label's transform (position) + opacity every frame. */
-.graph-labels { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
-.graph-label {
-  position: absolute; top: 0; left: 0;
-  /* Constant horizontal centering lives here so reposition() only writes the dynamic CSS
-     `translate` property (the per-frame node position), never `transform`. */
-  transform: translate(-50%, 0);
-  font-family: inherit; font-size: 11px; font-weight: 500; line-height: 1.1; white-space: nowrap;
-  /* LabelLayer.setColors() pushes per-theme --label-text/--label-bg onto the .graph-labels overlay
-     (light = dark text on a translucent-white halo); fall back to the theme tokens when unset. */
-  color: var(--label-text, var(--fg)); background: var(--label-bg, var(--pop-bg)); border: 1px solid var(--border-soft);
-  border-radius: 5px; padding: 2px 6px;
-  pointer-events: none; will-change: translate, opacity; -webkit-font-smoothing: antialiased;
-}
-/* The "you" hub label: bigger + bold — the central anchor, not an ambient annotation. */
-.graph-label--self { font-size: 14px; font-weight: 700; padding: 3px 8px; }
+/* No DOM label overlay: the renderer draws its labels as cells on its own canvas. The
+   `.graph-labels`/`.graph-label` rules that used to live here belonged to LabelLayer.ts, deleted
+   with the second renderer — nothing has written those classes since. */
 .graph-legend-card { position: absolute; left: 18px; top: 18px; z-index: 4; max-width: 230px; background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 11px; padding: 12px 14px; backdrop-filter: blur(8px); }
 .graph-legend-card.daemon-legend { max-width: 290px; }
 /* Daemon-mode services list (DaemonList.tsx): cron/process rows with live status. The

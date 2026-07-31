@@ -1,6 +1,6 @@
 // app/src/graph/cameraModel.test.ts
 //
-// Pins the camera-dolly derivation from MERGE-NOTES.md §6: `dollyForT` must be the exact algebraic
+// Pins the camera-dolly derivation documented in cameraModel.ts's header: `dollyForT` must be the exact algebraic
 // inverse of Canvas's original `zoomT()`, monotonic, zero at the resting overview, and never reach
 // the perspective plane — at ANY perspective distance a real host box can produce, not just an
 // "ordinary" one (see cameraModel.ts's module comment for why that distinction matters). The

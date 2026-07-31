@@ -3,7 +3,7 @@
 // Pure backbone math: the hub-to-hub group-edge structure (buildLevelEdges/crossLevelOf/
 // computeEdgeLevelWeights, ported from CanvasGraphRenderer.ts) and — most load-bearing — the
 // three-band handover (bandsForT) that decides how much of the field masses, backbone and real
-// member edges each own at a given zoom. See MERGE-NOTES.md §5.4.
+// member edges each own at a given zoom. See backbone.ts's header.
 import { describe, expect, it } from "bun:test";
 import {
   BACKBONE_FADE_SPAN,

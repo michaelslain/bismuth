@@ -88,7 +88,7 @@ const TABS_STORAGE_KEY = tabsStorageKey(resolveWindowId());
 const SIDEBAR_STORAGE_KEY = "bismuth-sidebar-visible-v1";
 // Bump this whenever core/src/layout-cache.ts's CACHE_VERSION changes in a way that moves
 // positions: this cache seeds the graph() signal directly from localStorage on boot (below),
-// and CanvasGraphRenderer/AsciiGraphRenderer early-return on unchanged structural signature
+// and AsciiGraphRenderer early-returns on an unchanged structural signature
 // (graphStability.ts, which deliberately excludes positions) — so a stale-but-structurally-
 // identical cached layout silently survives a server-side CACHE_VERSION bump until the NEXT
 // launch. Bumping this key forces one cold boot (no instant-paint) that repaints with the

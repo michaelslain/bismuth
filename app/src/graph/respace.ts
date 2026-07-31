@@ -15,7 +15,7 @@
 // THIS MODULE decouples from the backend's packing model rather than mirroring its constants the
 // way CanvasGraphRenderer did (its version hard-coded `BACKEND_SMALL_BOOST`/`LINK_SPREAD`, a copy of
 // core/src/layout.ts's own tuning that only stays correct as long as the two files' magic numbers
-// don't drift — see MERGE-NOTES.md §5, line 138). `scaleToSpacing` instead MEASURES the input
+// don't drift). `scaleToSpacing` instead MEASURES the input
 // cloud's own current typical spacing (median nearest-neighbour distance) and solves for the single
 // uniform scale that makes it hit `targetSpacing` exactly, regardless of node count or which layout
 // algorithm produced the input. This is legitimate because it is a RESCALE and nothing else: THE LAW

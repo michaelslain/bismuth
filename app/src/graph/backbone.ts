@@ -4,9 +4,10 @@
 // CanvasGraphRenderer.ts:859-924, 1247-1270 (`crossLevel`/`buildLevelEdges`/`levelPairs`/
 // `levelHubs`/`computeEdgeLevelWeights`, `MAX_LEVEL_PAIRS` 700), plus the THREE-BAND HANDOVER
 // (`bandsForT`) that decides how much of the field each of Ascii's LOD masses and this backbone
-// gets to own at a given zoom. See MERGE-NOTES.md §5.4 for the conflict this resolves: Ascii's
-// masses and Canvas's backbone each assumed they owned the WHOLE zoom range on their own. They
-// don't anymore — they hand over, in bands.
+// gets to own at a given zoom. The conflict this resolves: the masses and the backbone each
+// assumed they owned the WHOLE zoom range on their own (one is a far-view territory summary, the
+// other a mid-view graph OF the clusters; the spec wants both). They don't anymore — they hand
+// over, in bands. See `bandsForT` below.
 //
 // Pure (no DOM, no canvas, no ctx) so it is unit-testable directly, matching lod.ts/labelSelection.ts.
 
@@ -230,7 +231,7 @@ export function edgeWeightBucketRange(
 }
 
 // ---------------------------------------------------------------------------------------------
-// The three-band handover (new — MERGE-NOTES.md §5.4).
+// The three-band handover (new with the renderer merge — see this file's header).
 //
 // Ascii's LOD masses (lod.ts) and Canvas's hub-to-hub backbone (above) are two implementations
 // of "the coarse view" that each assumed they owned the whole zoom range below the file-label
@@ -311,7 +312,7 @@ export interface Bands {
 
 /** `t` at which the mass→backbone handover CENTRES (the crossfade spans
  *  `[BACKBONE_START_T, BACKBONE_START_T + BACKBONE_FADE_SPAN]`). Chosen, not measured — see
- *  MERGE-NOTES.md §5.4: this is a design choice a later task may retune against a real vault.
+ *  A design choice, not a derived constant — a later task may retune it against a real vault.
  *  Reasoning: the far band should own a genuine first third of the ladder (masses are the whole
  *  point of the coarse view, they shouldn't feel rushed), so the handover starts just past t=1/3. */
 export const BACKBONE_START_T = 0.32;
@@ -373,7 +374,7 @@ if (import.meta.env?.DEV && MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_S
   throw new Error(
     "backbone.ts: the mid band's plateau (MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN) = " +
     `${(MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN)).toFixed(3)}) must exceed ` +
-    `MIN_BACKBONE_PLATEAU_T (${MIN_BACKBONE_PLATEAU_T}) — see MERGE-NOTES.md §5.4 and this constant's doc comment.`,
+    `MIN_BACKBONE_PLATEAU_T (${MIN_BACKBONE_PLATEAU_T}) — see this file's header and that constant's doc comment.`,
   );
 }
 
@@ -386,7 +387,7 @@ if (import.meta.env?.DEV && MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_S
  *
  * `levelCount <= 0` means the graph has NO community hierarchy at all (`buildLodIndex` needs
  * `levelCount >= 1` to produce even a single LOD level — see `lod.ts`; `VaultIntro`'s and
- * `EmbeddedGraph`'s graphs are exactly this case, per MERGE-NOTES.md §3). With nothing to
+ * `EmbeddedGraph`'s graphs are exactly this case). With nothing to
  * aggregate into a mass and no communities to connect hub-to-hub, real member edges are the only
  * story at every zoom — exactly the pre-merge behaviour for a community-less graph, and the same
  * degenerate call `computeEdgeLevelWeights` makes for its own `n <= 1` case.

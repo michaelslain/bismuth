@@ -1,9 +1,8 @@
 // app/src/GraphView.tsx
-import { For, onCleanup, onMount, createEffect, createMemo, createSignal, untrack, Show } from "solid-js";
+import { For, onCleanup, onMount, createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import type { GraphConfig, GraphRenderer, HoverNode } from "./graph/graphRenderer";
 import { AsciiGraphRenderer } from "./graph/AsciiGraphRenderer";
-import { CanvasGraphRenderer } from "./graph/CanvasGraphRenderer";
 import { GraphAtmosphere, type BloomSink } from "./graph/GraphAtmosphere";
 import { computeLayout } from "../../core/src/layout";
 import { localLayoutInput } from "./graph/localLayoutInput";
@@ -61,30 +60,6 @@ const setViewModePersisted = (m: "2d" | "3d") => {
   setGraphViewMode(m);
   writeCache(VIEW_MODE_KEY, m);
 };
-
-/**
- * WHICH RENDERER draws the graph. Two finished looks, both shipping:
- *
- *   "ascii"    — the character-grid field (AsciiGraphRenderer): clusters render as aggregate ASCII
- *                MASSES sized by member count, joined by summarized inter-cluster links; zoom is
- *                RESOLUTION rather than scale; the hierarchy reads through zoom-driven colour and a
- *                cluster-name ladder. The redesign's own look, and the default — the rest of the app
- *                is mono-only with glyph icons and terminal themes, so a dot-and-line graph would be
- *                the one surface that doesn't belong.
- *   "standard" — the Canvas-2D graph (CanvasGraphRenderer): filled dots sized by degree, vector
- *                edges, perspective dolly zoom, orbitable in 3D, atmosphere glow. The conventional
- *                knowledge-graph look, for when you want to READ the graph rather than look at it.
- *
- * Both satisfy the `GraphRenderer` seam (graph/graphRenderer.ts) and both consume the SAME
- * backend-precomputed layout, so this is a genuine swap, not two code paths to keep in sync.
- *
- * A SETTING (`graph.renderer`), not a toolbar control: it is a durable choice about what the graph IS,
- * not a per-glance view toggle like 2D/3D. It also is NOT the old R1-R4 harness — that was four
- * cryptically-named dev arms A/B-ing renderers mid-build, and was deliberately removed.
- */
-const makeRenderer = (k: GraphRenderKind): GraphRenderer =>
-  k === "standard" ? new CanvasGraphRenderer() : new AsciiGraphRenderer();
-export type GraphRenderKind = "ascii" | "standard";
 
 // Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
 // full-pane graph): text-only, uppercase, no glyph prefix — same string in both so the little
@@ -156,21 +131,15 @@ export function GraphView(props: {
   communitySource?: GraphData;
 }) {
   let host!: HTMLDivElement;
-  // The ASCII field draws its labels ON the character grid (they're cells like everything else),
-  // so there is no DOM label overlay — the vestigial `labelOverlay` argument on the renderer seam
-  // (graphRenderer.ts) goes unpassed.
-  // `let`, not `const`: the ASCII/STANDARD toggle swaps the instance in place (see the swap effect
-  // below). Every effect in this component reads `renderer.` at call time, so they follow the swap.
-  const graphRenderKind = (): GraphRenderKind =>
-    settings.graph.renderer === "standard" ? "standard" : "ascii";
-  let renderer: GraphRenderer = makeRenderer(graphRenderKind());
-  let mountedKind: GraphRenderKind = graphRenderKind();
+  // The ASCII field draws its labels ON the character grid (they're cells like everything else), so
+  // there is no DOM label overlay.
+  const renderer: GraphRenderer = new AsciiGraphRenderer();
   // The bloom's paint target, decoupled from `renderer`'s identity entirely — see
-  // GraphAtmosphere.tsx's file-level comment for why a `renderer` prop on <GraphAtmosphere> is a
-  // bug magnet (a stale capture across the ASCII<->STANDARD swap effect, not fixable with a keyed
-  // remount). This object's identity never changes; mountRenderer() below wires every renderer
-  // instance's setBloomCallback to forward through it, and <GraphAtmosphere> registers into it
-  // once, on its own mount, independent of how many times `renderer` gets swapped.
+  // GraphAtmosphere.tsx's file-level comment for why a `renderer` prop on <GraphAtmosphere> is a bug
+  // magnet (Solid compiles a bare-identifier prop to a static value, so it captures whatever
+  // instance existed at JSX-evaluation time). The indirection outlives the renderer swap it was
+  // written for: VaultIntro's IntroGraph uses the same shape for its two cross-faded instances, and
+  // it keeps <GraphAtmosphere> independent of when, or how often, `renderer` is (re)assigned.
   const bloomSink: BloomSink = {};
   let mounted = false;
   let lastGraph: GraphData | null = null;
@@ -324,14 +293,13 @@ export function GraphView(props: {
       // This was built, unit-tested (lod.ts / lod.test.ts / AsciiGraphRenderer.test.ts's LEVEL OF
       // DETAIL block) and then left unreachable — GraphView never set the flag, so the shipped field
       // drew every node at every zoom and the hierarchy read only through colour + labels. That is
-      // the version the user found unreadable; the masses are what made it legible. ASCII only: the
-      // STANDARD renderer accepts the field but has no aggregate-mass path (2D-only there too).
+      // the version the user found unreadable; the masses are what made it legible.
       // ...but NEVER in "local" mode. A local neighbourhood carries no community hierarchy by design
       // (localSubgraph strips it), and the LOD path suppresses the individual-note raster at coarse
       // zoom on the assumption that aggregate MASSES are covering the field. With no communities there
       // are no masses, so both passes stay off and the field renders completely empty. Local mode wants
       // the real notes at every zoom, which is exactly the non-LOD path.
-      showLodMasses: graphRenderKind() === "ascii" && props.mode !== "local",
+      showLodMasses: props.mode !== "local",
       // On light themes the neutral grey, alpha-blended over the pale canvas, reads as harsh dark
       // lines. Lift the edge color toward the background and drop its opacity so links stay faint.
       edgeColor: ap.isLight
@@ -371,9 +339,7 @@ export function GraphView(props: {
     renderer.setFpsCallback(setFps);
     renderer.setZoomCallback?.(setZoomPct);
     // Forward through the stable sink, not straight to a signal/effect — see bloomSink's own
-    // comment. This closure captures THIS renderer instance, but every renderer ever mounted here
-    // forwards into the same `bloomSink`, so <GraphAtmosphere> (mounted once, independent of this
-    // function) always sees whichever one is current without needing to know a swap happened.
+    // comment and GraphAtmosphere.tsx's file-level one.
     renderer.setBloomCallback?.((field) => bloomSink.current?.(field));
     if (props.onPaint) renderer.setPaintCallback(props.onPaint);
     renderer.setConfig(buildConfig());
@@ -382,26 +348,6 @@ export function GraphView(props: {
     if (switcherHadMatch && props.searchMatchIds?.length) renderer.setSearchMatches(new Set(props.searchMatchIds));
     renderer.setVisible(props.visible !== false && !docHidden());
   };
-
-  // ASCII <-> STANDARD swap. Tears the old renderer down (destroy() removes its own canvas/viewport,
-  // and the host is cleared defensively in case a renderer ever leaves a stray child), then mounts a
-  // fresh one through the SAME mountRenderer path as first load, so the new renderer receives config,
-  // graph, active file, search matches and visibility exactly as it would have on boot.
-  //
-  // Only `graphRenderKind` is tracked: mountRenderer reads a dozen other signals, and tracking those
-  // would re-mount the renderer on every unrelated change (that is what made the old A/B harness
-  // thrash). Hence the untrack around the body.
-  createEffect(() => {
-    const kind = graphRenderKind();
-    untrack(() => {
-      if (!mounted || kind === mountedKind) return;
-      mountedKind = kind;
-      renderer.destroy();
-      if (host) host.replaceChildren();
-      renderer = makeRenderer(kind);
-      mountRenderer();
-    });
-  });
 
   // The one graph instance moves between a full pane and the cramped backdrop/sidebar slot, but it
   // draws on the SAME cell in both (the app's unified --row-h rhythm, asciiGraph.css --cell-h) —
@@ -521,26 +467,17 @@ export function GraphView(props: {
         style={{ ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}
       >
         <div class="graph-canvas-host" ref={host} />
-        {/* Atmosphere (phosphor bloom emitted by the node field + depth vignette) — both renderers
-            now push a per-frame density field, so this mounts unconditionally, ONCE, for the
-            component's whole lifetime, and does NOT key/remount on graphRenderKind(). The old rule
-            ("the ASCII field's ground is deliberately flat, no glow or vignette") is deliberately
-            reversed here: the redesign's phosphor bloom IS the atmosphere for the unified renderer,
-            and Part 2b merges STANDARD/ASCII into one renderer anyway, at which point the
-            distinction this used to gate on disappears entirely.
+        {/* Atmosphere (phosphor bloom emitted by the node field + depth vignette). Mounts
+            unconditionally, ONCE, for the component's whole lifetime. The old rule ("the ASCII
+            field's ground is deliberately flat, no glow or vignette") is deliberately reversed: the
+            redesign's phosphor bloom IS the atmosphere.
             No `renderer` prop, on purpose — see GraphAtmosphere.tsx's file-level comment and
-            bloomSink above. A keyed remount was tried first and does NOT work: Solid's `Show`
-            re-evaluates children in the pure/Updates phase, strictly before the swap effect
-            (Effects phase) reassigns `renderer`, so even a fresh mount recaptures the
-            about-to-be-destroyed instance — reproducible, not a one-off race. Routing through the
-            stable `bloomSink` object sidesteps the whole prop-capture/effect-ordering question:
-            GraphAtmosphere registers into it once here and never needs to react to a swap at all.
-            No DOM label overlay in either renderer: both draw their own labels on their own
+            bloomSink above. No DOM label overlay: the renderer draws its labels on its own
             canvas. */}
         <GraphAtmosphere sink={bloomSink} mode={props.mode} />
-        {/* No floating cluster-legend card any more — cluster names are drawn IN the field itself
+        {/* No floating cluster-legend card — cluster names are drawn IN the field itself
             (zoomed-out labels; see AsciiGraphRenderer's layoutClusterNames), crossfading to file
-            names as the camera zooms in. ClusterLegend.tsx stays in-tree, just unused here. */}
+            names as the camera zooms in. */}
         {/* Daemon-mode list: crons and processes with live status. */}
         <Show when={props.mode === "daemon"}>
           <div class="graph-legend-card daemon-legend asc-popover">
@@ -557,12 +494,8 @@ export function GraphView(props: {
         {/* Floating stats footer. */}
         <div class="graph-stats">
           <span>{nodeCount()} nodes · {edgeCount()} edges · {modeLabel()}</span>
-          {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. The STANDARD renderer
-              has no resolution ladder (it is a continuous perspective dolly), so it reports no
-              percentage and the readout is hidden rather than left showing a stale one. */}
-          <Show when={graphRenderKind() === "ascii"}>
-            <span class="graph-zoom-pct">{zoomPct()}%</span>
-          </Show>
+          {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
+          <span class="graph-zoom-pct">{zoomPct()}%</span>
           <Show when={settings.graph.showFps && fps() !== null}><span style={{ color: fpsColor(fps()!) }}>{fps()} fps</span></Show>
         </div>
         {/* Find panel: search only. Clusters live in the floating legend card; there's no
