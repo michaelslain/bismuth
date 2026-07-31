@@ -149,9 +149,15 @@ describe("backendMockEnv", () => {
           expect(Object.values(env).some((v) => v.includes(MOCK_URL))).toBe(true);
           break;
         }
-        // File-based mappings (see backendEnv.ts's own case comments): require a workDir (throw
+        // File-based mapping (see backendEnv.ts's own case comments): requires a workDir (throws
         // without one), and the mock URL lands in a FILE this call writes into that dir — never in
-        // the returned env object's own values (those are just paths/keys).
+        // the returned env object's own values (those are just paths/keys). codex is ALONE in this
+        // shape now: openclaw and cline each got their OWN dedicated case below once their own config
+        // layouts stopped fitting a flat `readdirSync(dir)` scan (openclaw's workDir grew `state`/
+        // `workspace` SUBDIRECTORIES a flat readdirSync+readFileSync would throw EISDIR on; cline's
+        // providers.json lives one directory DEEPER, `<workDir>/data/settings/providers.json`, not
+        // `<workDir>/*`) — corrected here after a code-review finding on an earlier draft of this
+        // comment overstated the grouping.
         case "codex": {
           expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
           const dir = mkdtempSync(join(tmpdir(), `backendenv-driftguard-${id}-`));
@@ -177,11 +183,18 @@ describe("backendMockEnv", () => {
           expect(readFileSync(join(dir, "openclaw.json5"), "utf8")).toContain(MOCK_URL);
           break;
         }
-        // No env-var mapping is possible at all (see backendEnv.ts's own case comment for why) —
-        // must throw, never silently return an empty/unusable mapping a caller could trust.
-        case "cline":
-          expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/authenticate|OAuth/);
+        // File-based, one directory DEEPER than codex/openclaw's own config files
+        // (`<workDir>/data/settings/providers.json`, not `<workDir>/*`) — reads that ONE known path
+        // directly rather than reusing the flat `readdirSync(dir)` codex gets away with.
+        case "cline": {
+          expect(() => backendMockEnv(id, MOCK_URL)).toThrow(/workDir/);
+          const dir = mkdtempSync(join(tmpdir(), `backendenv-driftguard-${id}-`));
+          const env = backendMockEnv(id, MOCK_URL, dir);
+          expect(Object.keys(env).length).toBeGreaterThan(0);
+          const written = readFileSync(join(dir, "data", "settings", "providers.json"), "utf8");
+          expect(written).toContain(`${MOCK_URL}/v1`);
           break;
+        }
         // Hidden ACP-ADAPTER entries (catalog.ts's `hidden` doc comment): each bridges a CLI that
         // already has its own native row above (claude, codex) — deliberately never given a
         // SEPARATE row of their own, so this function throws (an unknown id in the switch) rather
@@ -225,15 +238,24 @@ describe("backendMockEnv", () => {
     expect(config.provider.mock.options.baseURL).toBe(`${MOCK_URL}/v1`);
   });
 
-  test("gemini maps GOOGLE_GEMINI_BASE_URL/GEMINI_API_KEY — env routing + old-shape handshake verified live; full turn completion not (see the case comment)", () => {
+  test("gemini maps GOOGLE_GEMINI_BASE_URL/GEMINI_API_KEY — env routing, old-shape handshake, AND full turn completion all verified live (see the case comment)", () => {
     expect(backendMockEnv("gemini", MOCK_URL)).toEqual({
       GOOGLE_GEMINI_BASE_URL: MOCK_URL,
       GEMINI_API_KEY: "mock",
     });
   });
 
-  test('cline throws — its only real mock mechanism (the `auth` subcommand) cannot reach the ACP mode Bismuth actually drives, which demands real OAuth (verified live this task)', () => {
-    expect(() => backendMockEnv("cline", MOCK_URL)).toThrow(/authenticate|OAuth/);
+  test("cline requires a workDir (its real mechanism is a $CLINE_DIR/data/settings/providers.json file — a LATER task found a live-verified CLINE_API_KEY bypass; see backendEnv.ts's case comment for the full, source-cited finding, correcting this row's earlier 'no bypass exists' conclusion)", () => {
+    expect(() => backendMockEnv("cline", MOCK_URL)).toThrow(/workDir/);
+
+    const dir = mkdtempSync(join(tmpdir(), "backendenv-cline-test-"));
+    const env = backendMockEnv("cline", MOCK_URL, dir);
+    expect(env.CLINE_DIR).toBe(dir);
+    expect(env.CLINE_PROVIDER).toBe("openai-compatible");
+    expect(env.CLINE_API_KEY).toBeTruthy();
+    const providers = readFileSync(join(dir, "data", "settings", "providers.json"), "utf8");
+    expect(providers).toContain(`${MOCK_URL}/v1`);
+    expect(providers).toContain('"openai-compatible"');
   });
 
   test("goose maps ANTHROPIC_HOST + GOOSE_PROVIDER=anthropic — verified live end-to-end this task (upgraded from GUESSED)", () => {
