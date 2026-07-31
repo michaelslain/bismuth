@@ -2253,6 +2253,59 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     r.destroy();
   });
 
+  it("mass NAMES keep tracking the field through the mid band, where their masses no longer draw", () => {
+    // The cluster-name ladder and the mass band are no longer the same ladder: names ride
+    // `clusterLevelAlphas × clusterLabelAlpha` and run until the file-name reveal at 0.75, while the
+    // masses themselves are gone by 0.46. `layoutEntityNames` anchors on the ENTITY's projected
+    // position, so a level still being NAMED has to still be PROJECTED even though nothing about it
+    // is drawn — otherwise the name is placed from a screen position frames or seconds old and sits
+    // frozen while the field pans under it.
+    const { r, viewport } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv & {
+      labels: { text: string; col: number; eyebrow?: boolean }[];
+      nodes: { node: { id: string }; col: number }[];
+    };
+    // Centre on ONE level-2 community first: the mid band's magnification (~2.7x on this fixture's
+    // ladder) shows about a third of the graph, and this fixture's level-2 centroids all sit outside
+    // that window from the fit camera — with no entity on the grid there is no name to track.
+    r.frameSubset(["g4n0", "g5n0"]);
+    settle(300);
+    parkAtT(r, MID_T);
+    const name = () => priv.labels.find((l) => l.eyebrow && l.text.startsWith("LTWO "))!;
+    const ref = () => priv.nodes.find((n) => n.node.id === "g5n0")!.col;
+    expect(name()).toBeDefined();           // a level-2 name really is on the field at this stop...
+    expect([...priv.cellEntity].every((v) => v < 0)).toBe(true); // ...with no mass under it
+    const label0 = name().col, node0 = ref();
+
+    // One continuous pan (prime past DRAG_THRESHOLD, then move) — the whole-cell part of which every
+    // projection in the frame shares, so the name and the note glyphs must shift by the same amount.
+    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 420, clientY: 300 }));
+    frame(10016);
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 470, clientY: 300 }));
+    frame(10032);
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 470, clientY: 300 }));
+
+    expect(ref() - node0).toBeGreaterThan(0);              // the field really moved
+    expect(name().col - label0).toBe(ref() - node0);       // ...and the name moved exactly with it
+    r.destroy();
+  });
+
+  it("a FORCED file label still draws in the mid band — the file-name pass is gated on glyphs, not on member edges", () => {
+    // `layoutLabels`' early return exists because a far-band frame has no note glyphs for a label to
+    // point at. Key it off the member-edge alpha instead and the whole file-label pass — including
+    // the forced active/hovered/search labels, which draw at alpha 1 regardless of the crossfade —
+    // disappears across the entire mid band, where the glyphs it names are plainly on screen.
+    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    r.setActiveFile("g5n0");
+    parkAtT(r, MID_T);
+    // The unforced crossfade has not started here (fileLabelAlpha(0.48) === 0), so this label is on
+    // the field only because it is forced — which is exactly the path the gate would have killed.
+    expect(ctx.fills.some((f) => f.text === "[[note 5-0]]")).toBe(true);
+    expect(ctx.fills.filter((f) => f.text.startsWith("[[note ")).length).toBe(1);
+    r.destroy();
+  });
+
   /** `n` notes with no community at all (so the band ladder degenerates to "member edges own every
    *  stop") and `m` deterministically-chosen edges between them — the dense-graph thinning fixture. */
   function denseEdgeGraph(n: number, m: number) {
