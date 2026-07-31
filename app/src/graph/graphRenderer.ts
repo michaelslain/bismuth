@@ -18,6 +18,14 @@
 // every property the target design names (glyph marks, constant mark size across zoom, zoom as
 // DENSITY rather than scale) while the Canvas renderer held features, not a visual language.
 //
+// Those modules cite the deleted file by line number (`CanvasGraphRenderer.ts:762-794` and the
+// like). Those citations are still resolvable — the file's last revision is
+//
+//     git show 817bad5:app/src/graph/CanvasGraphRenderer.ts
+//
+// (817bad5 is the commit immediately before the deletion). Every line number in the tree refers to
+// that revision.
+//
 // The Canvas renderer's *intelligence* was ported out first, into pure modules that carry their own
 // provenance comments — read those, not this list, for the reasoning:
 //
