@@ -4,8 +4,10 @@ import { api, apiBase, summarizeSync } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { FileTree } from "./FileTree";
 import { Icon } from "./icons/Icon";
-// Lazy: GraphView pulls in three.js + d3-force-3d (their own chunk), so defer it off the
-// entry bundle even though the graph is the home tab. <Suspense> keeps boot smooth.
+// Lazy: GraphView pulls in the renderer and, through core/src/layout.ts, d3-force-3d (its own
+// chunk), so defer it off the entry bundle even though the graph is the home tab. <Suspense> keeps
+// boot smooth. (It no longer pulls three.js — nothing under app/src has imported `three` since the
+// pre-Canvas2D renderer; the package and vite.config.ts's chunk rule for it are both leftovers.)
 const GraphView = lazy(() => import("./GraphView").then((m) => ({ default: m.GraphView })));
 import { CommandPalette } from "./palette/CommandPalette";
 import { SwitcherBar } from "./palette/SwitcherBar";

@@ -326,7 +326,7 @@ const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App
 | Slide | What it shows |
 |---|---|
 | `welcome` | "Notes that think." — wikilinks pitch, centered crystal mark |
-| `theme` | "Pick your palette." — a `Select` dropdown over all themes; choosing one **live-recolors a real 3D knowledge graph** (the app's own `WebGLRenderer` drawing a baked-layout dummy point-cloud, `SMALL_GRAPH`) and re-themes the whole takeover |
+| `theme` | "Pick your palette." — a `Select` dropdown over all themes; choosing one **live-recolors a real 3D knowledge graph** (the app's own `AsciiGraphRenderer` drawing a baked-layout dummy point-cloud, `SMALL_GRAPH`) and re-themes the whole takeover |
 | `graph` | "Three brains, one mind." — the same 3D graph carries over, cross-fading to a bigger condensed cloud (`BIG_GRAPH`) |
 | `daemon` | "An agent that never sleeps." — the background Bismuth daemon |
 | `claude` | "Let Claude tend it." — MCP / Claude Code |

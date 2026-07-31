@@ -3,7 +3,9 @@
 > Code: `core/src/graphBlock.ts` (pure parser / serializer / mutations, unit-tested in
 > `core/test/graphBlock.test.ts`), `app/src/editor/graphBlock.ts` (the CodeMirror
 > extension, mirroring the ` ```query ` block), `app/src/graph/EmbeddedGraph.tsx` (the
-> rendered widget — reuses `CanvasGraphRenderer` + `core/src/layout.ts`).
+> rendered widget — reuses `core/src/layout.ts` for layout and mounts `AsciiGraphRenderer`,
+> the same renderer the knowledge graph uses, through the `GraphRenderer` seam
+> (`app/src/graph/graphRenderer.ts`) rather than a second renderer implementation).
 
 A ` ```graph ` fenced block in a note body renders **inline as an interactive graph**
 (the same canvas renderer as the knowledge graph). It is a lossless **markdown ⇄ graph

@@ -360,19 +360,14 @@ This test **fails immediately** when a new setting is added to `settingsSchema.t
 
 ### `app/src/graph/labelSelection.test.ts`
 
-Tests the pure `computeAlwaysOnSet` (top-N nodes by edge degree) and `selectVisibleLabels` (grid-capped visible label set):
+Tests the pure label-ladder math the ASCII knowledge-graph renderer (`AsciiGraphRenderer.ts`) draws on:
 
-- Empty graph → empty set
-- Active file is always included if present in the node list
-- Degree ties broken lexicographically by `id`
-- `hubCount` clamped to total node count
-- Supports d3-resolved edge objects (where `source`/`target` become node objects after d3 ticks)
-- Labels below the pixel threshold are dropped unless `forced: true`
-- Grid-cap keeps the highest `renderedPx` in a contested cell; forced labels bypass this
+- `computeAlwaysOnSet` (top-N nodes by undirected edge degree, union'd with the active file): empty graph → empty set, active file always included if present, degree ties broken lexicographically by `id`, `hubCount` clamped to total node count, edge endpoints as either bare ids or `{ id }` objects
+- `fileLabelBudget`/`fileLabelAlpha`/`clusterLabelAlpha`: zero at/below the zoom-ladder reveal threshold, monotonically growing past it, file/cluster alpha sum to exactly 1 (a true crossfade)
+- `clusterLabelText`: upper-casing, word-boundary truncation at a character cap (never mid-word, never an ellipsis), determinism
+- `eyebrowWidthCells`, `levelBoundaries`, and the rest of the N-level cluster-name ladder math
 
-### `app/src/graph/collide.test.ts`
-
-Tests `drawnNodeRadius` and `nodeCollideRadius`. Verifies the Three.js `sizeAttenuation` formula (`diameter = size * tan(fov/2)`) and the floor-vs-drawn-radius clamping logic.
+(`graph/collide.ts` and its test were deleted along with the old `CanvasGraphRenderer.ts` — the per-node collision-radius helpers they covered had no equivalent need in the character-grid renderer.)
 
 ### `app/src/bases/flashcardsQueue.test.ts`
 
@@ -472,7 +467,7 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 
 ## What is not tested with Bun
 
-- **WebGL / Three.js rendering** (`graph/WebGLRenderer.ts`, `graph/LabelLayer.ts`): requires a GPU context; not tested
+- **Knowledge graph rendering** (`graph/AsciiGraphRenderer.ts`) IS tested despite drawing to a `<canvas>`: `AsciiGraphRenderer.test.ts` runs it headlessly under happy-dom (which has no real canvas) by installing a RECORDING 2D context that captures every `fillText`/`stroke`/font assignment for assertions — 119 tests covering rasterization, hit-testing, drag-to-orbit vs. click, and the zoom-is-resolution law. The renderer this replaced, a WebGL/Three.js-based one (`graph/WebGLRenderer.ts`) and, later, a dot-and-line Canvas2D one (`graph/CanvasGraphRenderer.ts`), are both deleted — neither exists to test
 - **CodeMirror editor view interactions**: some extensions are tested for their pure logic (parsers, completers), but live editor state mutations require a real DOM
 - **Tauri APIs** (`@tauri-apps/api`, `@tauri-apps/plugin-*`): mocked out or skipped in tests; only native-app builds exercise them
 - **Spellchecker WASM** (`harper.js`): the store and offset helpers are tested, but the WASM binary is not loaded in Bun
@@ -480,4 +475,4 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/collide.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`
