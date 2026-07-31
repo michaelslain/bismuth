@@ -51,6 +51,28 @@ describe("buildLodIndex — aggregate entities", () => {
     expect(sub2.wy).toBeCloseTo(10, 10);
   });
 
+  it("records each entity's member SPREAD, not just its centroid — how big the summarized thing is", () => {
+    // The phosphor bloom emits an aggregate as a cloud of this size (densityField.ts pushCloud);
+    // emitted at the centroid alone it out-peaks the leaves it stands for and blacks out the field.
+    const levels = buildLodIndex(nodes(), edges, 1);
+    // TOP 0 = 4 members at x=-100 and 2 at x=-60. mean = -86.6…; population variance is computed
+    // here from the fixture rather than copied off the implementation.
+    const xs = [-100, -100, -100, -100, -60, -60];
+    const ys = [0, 10, 20, 30, 0, 10];
+    const pop = (v: number[]) => {
+      const m = v.reduce((a, b) => a + b, 0) / v.length;
+      return Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / v.length);
+    };
+    const top0 = levels[0].clusters.find((c) => c.community === 0)!;
+    expect(top0.sdx).toBeCloseTo(pop(xs), 8);
+    expect(top0.sdy).toBeCloseTo(pop(ys), 8);
+    expect(top0.sdx).toBeGreaterThan(0);
+    // A cluster whose members share an axis has ZERO spread on it — not a NaN, and not a fudge.
+    const sub2 = levels[1].clusters.find((c) => c.community === 2)!; // all three at x = 100
+    expect(sub2.sdx).toBe(0);
+    expect(sub2.sdy).toBeCloseTo(pop([0, 10, 20]), 8);
+  });
+
   it("aggregates inter-cluster links per level with real counts (intra-cluster links never count)", () => {
     const levels = buildLodIndex(nodes(), edges, 1);
     // Level 0: ONE connector — the 3 a–c links; the a–b and a–a links live inside TOP 0.

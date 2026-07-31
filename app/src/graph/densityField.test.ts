@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { accumulate, blur, normalise, buildBloom, FIELD_W, FIELD_H } from "./densityField";
+import {
+  accumulate, blur, normalise, buildBloom, pushCloud, CLOUD_SAMPLES, FIELD_W, FIELD_H,
+  type BloomPoint,
+} from "./densityField";
 
 const sum = (f: Float32Array) => f.reduce((s, v) => s + v, 0);
 
@@ -111,6 +114,88 @@ test("buildBloom really blurs, at the right resolution and orientation", () => {
   expect(f[cy * FIELD_W + cx + 3]).toBe(0);
   expect(f[(cy + 2) * FIELD_W + cx]).toBeGreaterThan(0);
   expect(f[(cy + 3) * FIELD_W + cx]).toBe(0);
+});
+
+// --- pushCloud: emitting one SUMMARY as the cloud it stands for ---------------------------------
+
+/** Weighted mean + per-axis weighted population standard deviation of a point list. */
+function moments(pts: BloomPoint[]) {
+  let w = 0, sx = 0, sy = 0, sxx = 0, syy = 0;
+  for (const p of pts) {
+    const pw = p.weight ?? 1;
+    w += pw; sx += pw * p.x; sy += pw * p.y; sxx += pw * p.x * p.x; syy += pw * p.y * p.y;
+  }
+  const mx = sx / w, my = sy / w;
+  return { w, mx, my, sdx: Math.sqrt(Math.max(0, sxx / w - mx * mx)), sdy: Math.sqrt(Math.max(0, syy / w - my * my)) };
+}
+
+test("pushCloud spends CLOUD_SAMPLES points and preserves the total weight exactly", () => {
+  const out: BloomPoint[] = [];
+  pushCloud(out, 0.5, 0.5, 0.1, 0.05, 300);
+  expect(out.length).toBe(CLOUD_SAMPLES);
+  expect(moments(out).w).toBeCloseTo(300, 6);
+  // ...and appends, so several aggregates can share one list.
+  pushCloud(out, 0.2, 0.2, 0.01, 0.01, 40);
+  expect(out.length).toBe(2 * CLOUD_SAMPLES);
+  expect(moments(out).w).toBeCloseTo(340, 6);
+});
+
+test("pushCloud reproduces the requested centre and per-axis spread — the property emitBloom relies on", () => {
+  // The whole point: an aggregate must contribute light with the SAME second moment as the members
+  // it summarizes, or the summary out-peaks them and normalise() crushes the rest of the field to
+  // black. A uniform disc has per-axis sd R/2; dropping pushCloud's 2x scale (or emitting the
+  // aggregate as a bare point) shows up here as a spread that is half (or zero) what was asked for.
+  const out: BloomPoint[] = [];
+  pushCloud(out, 0.4, 0.6, 0.12, 0.03, 100);
+  const m = moments(out);
+  expect(m.mx).toBeCloseTo(0.4, 9);
+  expect(m.my).toBeCloseTo(0.6, 9);
+  expect(m.sdx).toBeCloseTo(0.12, 9);
+  expect(m.sdy).toBeCloseTo(0.03, 9);
+  // Anisotropy is honoured, not averaged into one radius.
+  expect(m.sdx / m.sdy).toBeCloseTo(4, 9);
+});
+
+test("pushCloud with zero spread collapses onto the centre — a point-like aggregate stays point-like", () => {
+  const out: BloomPoint[] = [];
+  pushCloud(out, 0.3, 0.7, 0, 0, 9);
+  expect(out.every((p) => p.x === 0.3 && p.y === 0.7)).toBe(true);
+  expect(moments(out).w).toBeCloseTo(9, 6);
+});
+
+test("a spread cloud does NOT out-peak the individual points it stands for", () => {
+  // The regression this exists for, at field resolution. 60 leaves spread across a wide region vs
+  // ONE aggregate of the same total weight standing in for them. Emitted as a bare point the
+  // aggregate blurs to a spike far brighter than the leaves' own field; emitted as a cloud it does
+  // not. The comparison is against the LEAVES' peak, not against a constant, so it stays true if
+  // the blur radius or the field resolution changes.
+  // Spread WIDER than the blur kernel (0.63 x 0.55 of the field vs the kernel's ~0.39 x 0.62): that
+  // is the magnified-camera regime where a point and the cloud it stands for genuinely diverge, and
+  // the regime the 60% stop is in.
+  const leaves: BloomPoint[] = [];
+  for (let i = 0; i < 60; i++) {
+    leaves.push({ x: 0.5 + ((i % 10) - 4.5) * 0.07, y: 0.5 + (Math.floor(i / 10) - 2.5) * 0.11, weight: 1 });
+  }
+  const lm = moments(leaves);
+  const asPoint: BloomPoint[] = [{ x: lm.mx, y: lm.my, weight: 60 }];
+  const asCloud: BloomPoint[] = [];
+  pushCloud(asCloud, lm.mx, lm.my, lm.sdx, lm.sdy, 60);
+
+  // Normalise hides absolute peaks (it pins every field's max to 1), so the peak comparison is on
+  // the PRE-normalisation blurred fields. One shared bracket, so the two assertions really are
+  // opposite sides of the same line: measured 6.7x for the point, 1.5x for the cloud.
+  const peak = (pts: BloomPoint[]) => Math.max(...blur(accumulate(pts, FIELD_W, FIELD_H), FIELD_W, FIELD_H, 6));
+  const leafPeak = peak(leaves);
+  expect(peak(asPoint)).toBeGreaterThan(leafPeak * 2);            // the bug: a spike
+  expect(peak(asCloud)).toBeLessThan(leafPeak * 2);               // the fix: not a spike
+  expect(peak(asCloud)).toBeGreaterThan(leafPeak * 0.5);          // ...and not a whisper either
+
+  // And what that costs on screen, post-normalisation: how much of the field survives the
+  // atmosphere's own v^4 alpha curve (GraphAtmosphere.tsx) at all, i.e. v > 0.02^(1/4).
+  const lit = (pts: BloomPoint[]) => buildBloom(pts).filter((v) => v > 0.376).length;
+  const leafLit = lit(leaves);
+  expect(lit(asPoint)).toBeLessThan(leafLit * 0.25);              // the bug: the field goes dark
+  expect(lit(asCloud)).toBeGreaterThan(leafLit * 0.5);            // the fix: it does not
 });
 
 test("denser regions are brighter — the whole point of the effect", () => {
