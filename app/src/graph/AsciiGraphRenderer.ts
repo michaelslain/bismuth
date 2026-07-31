@@ -630,10 +630,24 @@ export class AsciiGraphRenderer implements GraphRenderer {
       raw3.push(p);
       raw2.push(finiteVec3(node.position2d, [p[0], p[1], 0]));
     }
+    // respace.ts's own header names a SECOND caller-side contract besides the self-pin (that one's
+    // moot — see above): "don't call scaleToSpacing at all for a graph that arrived pre-laid-out"
+    // (agents/daemon/cron/process — CanvasGraphRenderer.ts's hasIntentionalLayoutKind, `:667-668`).
+    // Honoured here by feeding a non-positive targetSpacing for those graphs instead of skipping the
+    // call outright: scaleToSpacing's own degenerate-target fallback ("falls back to scale=1 (recenter
+    // only)") already does exactly what Canvas's build() does unconditionally for EVERY graph, kind or
+    // not — center on the cloud's own centroid, no rescale — so this reuses one call site + one cache
+    // instead of forking a second code path. A rescale would still be LAW-safe (a uniform scale can't
+    // reorder anything — see respace.ts's header), but these graphs' absolute spacing is deliberately
+    // chosen by their own layout (a hub-and-spoke cron/process tree, sized to read at a specific
+    // zoom), not the backend's PivotMDS packing scaleToSpacing's target was calibrated against.
+    const intentionalLayout = g.nodes.some((n) =>
+      n.kind === "agent" || n.kind === "daemon" || n.kind === "cron" || n.kind === "process");
+    const targetSpacing = intentionalLayout ? 0 : RESPACE_TARGET_SPACING;
     // Memoized per structural signature (`this.sig`, set by render() just before calling build()) —
     // O(n²) measure runs at most once per distinct graph shape, not once per mode toggle.
-    const spaced3 = this.p3SpacingCache.getOrCompute(this.sig, () => scaleToSpacing(raw3, RESPACE_TARGET_SPACING));
-    const spaced2 = this.p2SpacingCache.getOrCompute(this.sig, () => scaleToSpacing(raw2, RESPACE_TARGET_SPACING));
+    const spaced3 = this.p3SpacingCache.getOrCompute(this.sig, () => scaleToSpacing(raw3, targetSpacing));
+    const spaced2 = this.p2SpacingCache.getOrCompute(this.sig, () => scaleToSpacing(raw2, targetSpacing));
 
     this.hoveredId = null; this.highlightSet = null;
     this.nodes = g.nodes.map((node, i) => {

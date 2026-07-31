@@ -1275,7 +1275,17 @@ describe("respace wiring (Task 10) — node-count-independent resting spacing on
    *  scaled by `unit`. Two calls whose `unit`s differ by a factor model two vaults whose BACKEND
    *  absolute coordinate scale differs by that same factor — exactly what respace.ts's targetSpacing
    *  exists to normalise away (see respace.ts's own header: "regardless of node count or which layout
-   *  algorithm produced the input"). */
+   *  algorithm produced the input").
+   *
+   *  `position` (3D) carries a real per-node Z (a checkerboard stagger + its own jitter, both scaled
+   *  by `unit`) that `position2d` (always flat, z omitted) does NOT share — so the 3D cloud's own
+   *  median nearest-neighbour distance is genuinely LARGER than the 2D cloud's, not just the same XY
+   *  shape with a trailing zero. Without this, `raw3` and `raw2` are numerically identical (z=0 for
+   *  every node either way), which makes AsciiGraphRenderer.ts's two independent spacing caches
+   *  (`p3SpacingCache`/`p2SpacingCache`) indistinguishable from one shared cache — a copy-paste bug
+   *  routing the 2D line through `p3SpacingCache` would silently return the (numerically identical)
+   *  right answer. With a real Z, that bug instead hands 2D the 3D cloud's positions verbatim
+   *  (col 2 code review, task-10 round 2, finding F2). */
   function jitterGrid(size: number, unit: number): ReturnType<typeof sampleGraph> {
     const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
     const edges: ReturnType<typeof sampleGraph>["edges"] = [];
@@ -1288,11 +1298,18 @@ describe("respace wiring (Task 10) — node-count-independent resting spacing on
       for (let col = 0; col < size; col++) {
         const jx = (pseudo(col, row) - 0.5) * 0.3 * unit;
         const jy = (pseudo(row, col + 1000) - 0.5) * 0.3 * unit;
+        const jz = (pseudo(col + 2000, row + 2000) - 0.5) * 0.3 * unit;
+        const zStagger = ((row + col) % 2) * 0.5 * unit; // checkerboard — 3D's nearest neighbour is
+                                                           // still the same grid-adjacent pair as 2D's
+                                                           // (diagonal neighbours stay farther even
+                                                           // with this added), just at a genuinely
+                                                           // larger 3D distance than the flat 2D one.
         const x = (col - half) * unit + jx;
         const y = (row - half) * unit + jy;
+        const z = zStagger + jz;
         nodes.push({
           id: `g${row}_${col}`, label: `note ${row} ${col}`, kind: "note" as const,
-          position: [x, y, 0] as [number, number, number],
+          position: [x, y, z] as [number, number, number],
           position2d: [x, y] as [number, number],
           community: 0, communityLabel: "grid",
         });
@@ -1318,7 +1335,25 @@ describe("respace wiring (Task 10) — node-count-independent resting spacing on
     return { count: onGrid.length, median: s.length ? (s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2) : NaN };
   }
 
-  it("rescales the resting spacing to the 14.0-world-unit calibration target, regardless of the backend's raw density", () => {
+  /** Same idea as `measuredSpacing3` but over the XY plane only (`p2` always carries z=0) — a
+   *  SEPARATE measurement function (not `measuredSpacing3` fed z-zeroed input) for the same
+   *  independent-reimplementation reason. */
+  function measuredSpacing2(points: readonly [number, number][]): number {
+    const nn = points.map((p, i) => {
+      let best = Infinity;
+      points.forEach((q, j) => {
+        if (j === i) return;
+        const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+        if (d < best) best = d;
+      });
+      return best;
+    });
+    const s = [...nn].sort((a, b) => a - b);
+    const mid = s.length >> 1;
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  }
+
+  it("rescales the resting spacing to the 14.0-world-unit calibration target, regardless of the backend's raw density — independently for BOTH p3 and p2", () => {
     // Pins the ABSOLUTE calibration value, not just "consistent across fixtures" — a wrong constant
     // (e.g. targetSpacing 1 instead of 14) would still make two differently-scaled fixtures agree WITH
     // EACH OTHER (any uniform target cancels a uniform input scale identically — see respace.ts's own
@@ -1326,11 +1361,22 @@ describe("respace wiring (Task 10) — node-count-independent resting spacing on
     // number. This measures the OUTPUT's own median nearest-neighbour distance directly against the
     // literal 14.0 the brief requires (asciiGrid.ts DEEPEST_WORLD_PER_CELL's calibration input),
     // independent of anything imported from respace.ts or AsciiGraphRenderer.ts.
+    //
+    // Checks p2 as well as p3 (not just p3) for the same reason jitterGrid() now carries a real Z: a
+    // bug that routes the 2D line through `p3SpacingCache` (task-10 round 2 finding F2) is invisible
+    // to a test that only compares two SAME-BUG-affected fixtures to each other (the bug is applied
+    // uniformly to both, so they still agree — see the fixture-agreement test's own doc for why that
+    // one structurally can't catch this either). p3's own median NN is 14 BY CONSTRUCTION regardless
+    // of the bug (scaleToSpacing always hits its target on whatever it's actually given); what the bug
+    // corrupts is p2, which would inherit p3's positions (including its z-driven spread) and so measure
+    // BELOW 14 on its own XY-only distance once z is dropped — a real, cheap discriminator.
     const graph = jitterGrid(12, 37); // an arbitrary raw scale far from 14 — a no-op wiring bug shows up loudly
-    const { r } = mountRenderer("3d", graph); // p3 (3D) has no SECOND recentring pass, unlike p2 (2D) — cleanest signal
-    const priv = r as unknown as { nodes: { p3: [number, number, number] }[] };
-    const spacing = measuredSpacing3(priv.nodes.map((nv) => nv.p3));
-    expect(spacing).toBeCloseTo(14, 0);
+    const { r } = mountRenderer("3d", graph); // build() computes BOTH p3 and p2 regardless of viewMode
+    const priv = r as unknown as { nodes: { p3: [number, number, number]; p2: [number, number, number] }[] };
+    const spacing3 = measuredSpacing3(priv.nodes.map((nv) => nv.p3));
+    const spacing2 = measuredSpacing2(priv.nodes.map((nv) => [nv.p2[0], nv.p2[1]]));
+    expect(spacing3).toBeCloseTo(14, 0);
+    expect(spacing2).toBeCloseTo(14, 0);
     r.destroy();
   });
 
@@ -1381,6 +1427,164 @@ describe("respace wiring (Task 10) — node-count-independent resting spacing on
     const second = priv.p3SpacingCache.getOrCompute(sig, () => { throw new Error("must be a cache hit"); });
     expect(second).toEqual([[1, 2, 3]]); // untouched by the mutation above
     r.destroy();
+  });
+
+  it("build() actually ROUTES THROUGH the spacing cache — revisiting a structural signature is a cache hit, not a recompute", () => {
+    // The previous test proves the CACHE OBJECT clones correctly in isolation (calling getOrCompute
+    // directly with a synthetic signature) — it does NOT prove build() itself ever calls getOrCompute
+    // at all. A wiring regression that constructs the caches but calls scaleToSpacing directly
+    // (bypassing them entirely) produces the exact same final positions every time, so it passes every
+    // other test in this file — the brief's own words: "wire it behind the existing structural
+    // signature ... do not call it uncached in a per-frame path" (task-10-brief.md). This counts real
+    // scaleToSpacing invocations by wrapping the ACTUAL cache instances' getOrCompute, then revisits a
+    // structural signature (A -> B -> A) across three render()s: only the FIRST two should ever reach
+    // a genuine compute — the third, revisiting A, must be a hit.
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = new AsciiGraphRenderer();
+    r.mount(host, () => {});
+    r.setConfig({ ...CONFIG, viewMode: "3d" });
+
+    const priv = r as unknown as {
+      p3SpacingCache: { getOrCompute(sig: string, compute: () => unknown): unknown };
+      p2SpacingCache: { getOrCompute(sig: string, compute: () => unknown): unknown };
+    };
+    let p3Computes = 0, p2Computes = 0;
+    const countCompute = (
+      cache: { getOrCompute(sig: string, compute: () => unknown): unknown },
+      onCompute: () => void,
+    ) => {
+      const orig = cache.getOrCompute.bind(cache);
+      cache.getOrCompute = (sig, compute) => orig(sig, () => { onCompute(); return compute(); });
+    };
+    countCompute(priv.p3SpacingCache, () => { p3Computes++; });
+    countCompute(priv.p2SpacingCache, () => { p2Computes++; });
+
+    const graphA = sampleGraph();
+    const graphB = lodGraph(); // a genuinely different structural signature
+    r.render(graphA);
+    r.render(graphB);
+    r.render(graphA); // revisits A's signature — must be a Map lookup, not an O(n²) remeasure
+    expect(p3Computes).toBe(2); // A (miss) + B (miss) — NOT a third for revisiting A
+    expect(p2Computes).toBe(2);
+    r.destroy();
+  });
+
+  /** A single horizontal chain (evenly-spaced along X, Y and Z both flat) scaled by `unit`. Every
+   *  interior node's nearest neighbour is unambiguous and lies purely along the COLUMN axis, so the
+   *  grid Δcol between neighbours at the deepest zoom stop is a clean, directly-computable number —
+   *  the exact join between respace.ts's RESPACE_TARGET_SPACING and asciiGrid.ts's
+   *  DEEPEST_WORLD_PER_CELL (see the test below). */
+  function chainGraph(n: number, unit: number): ReturnType<typeof sampleGraph> {
+    const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
+    const edges: ReturnType<typeof sampleGraph>["edges"] = [];
+    const half = (n - 1) / 2;
+    for (let i = 0; i < n; i++) {
+      const x = (i - half) * unit;
+      nodes.push({
+        id: `c${i}`, label: `note ${i}`, kind: "note" as const,
+        position: [x, 0, 0] as [number, number, number],
+        position2d: [x, 0] as [number, number],
+        community: 0, communityLabel: "chain",
+      });
+      if (i > 0) edges.push({ from: `c${i - 1}`, to: `c${i}`, kind: "link" as const });
+    }
+    return { nodes, edges };
+  }
+
+  it("pins the calibration JOIN between RESPACE_TARGET_SPACING and asciiGrid.ts's DEEPEST_WORLD_PER_CELL: median neighbour Δcol at the deepest stop is 35", () => {
+    // task-10 round 2, finding F3: the previous two tests each pin ONE end of the calibration link
+    // (the fixture-agreement test compares two fixtures only to each other; the absolute-14 test
+    // measures p3/p2 WORLD coordinates with no reference to asciiGrid.ts at all) — neither references
+    // the deep-zoom ladder itself, so the actual JOIN (RESPACE_TARGET_SPACING=14.0 divided by
+    // asciiGrid.ts's DEEPEST_WORLD_PER_CELL=0.4, the whole reason 14.0 was chosen) was untested.
+    // Mutating DEEPEST_WORLD_PER_CELL (0.4 -> 0.8, halving deep-zoom detail — the exact regression its
+    // own comment warns about) previously left every existing test green.
+    //
+    // 35 is a LITERAL, independently-hardcoded expectation (14.0 / 0.4 computed by hand, NOT by
+    // importing and dividing the live source constants) — deliberately not derived from
+    // DEEPEST_WORLD_PER_CELL at test time, because computing "expected" from the very constant a
+    // mutation changes would make expected drift together with actual and the test could never fail
+    // (the exact self-referential trap this whole test exists to avoid). If either constant
+    // intentionally moves, this literal must be updated by hand in lockstep — same discipline
+    // asciiGrid.ts:293's own comment already demands of MIN_ZOOM_SPAN and the RING_SCALE test const.
+    const CHAIN_N = 100; // long enough that maxRes is derived from the ABSOLUTE target, not floored
+                          // at MIN_ZOOM_SPAN (verified empirically — see the maxRes sanity check below)
+    const graph = chainGraph(CHAIN_N, 37); // raw unit is arbitrary; respace normalises it away
+    const { r, viewport } = mountRenderer("2d", graph);
+    // try/finally: this test's whole POINT is to fail under a live mutation (see the mutation-testing
+    // note in task-10-report.md). A renderer whose `destroy()` never runs (because an assertion above
+    // it threw first) leaves its window-level listeners AND its self-re-arming rAF tick alive for the
+    // rest of the file's test run — a real cross-test pollution hazard verified while writing this
+    // test (a mutated DEEPEST_WORLD_PER_CELL made an unrelated LATER "vector-edge fidelity" hover test
+    // see 4 batched strokes instead of 2, from this test's own never-destroyed renderer still reacting
+    // to a later window pointermove and repainting into the shared fake canvas context). Every other
+    // `it()` in this file destroys at the very end with no such guarantee — harmless there only because
+    // none of them are EXPECTED to fail under a deliberate mutation the way this one specifically is.
+    try {
+      const cam = r as unknown as { maxRes: number };
+      expect(cam.maxRes).toBeGreaterThan(8); // sanity: NOT floored at MIN_ZOOM_SPAN (asciiGrid.ts's floor)
+
+      wheelIn(viewport, 12); settle(300); // saturate at the 0% (deepest) floor
+      expect((r as unknown as { zoomPct: number }).zoomPct).toBe(0);
+
+      const p = lodPriv(r);
+      const onGridCols = p.nodes.filter((nv) => nv.onGrid).map((nv) => nv.col).sort((a, b) => a - b);
+      expect(onGridCols.length).toBeGreaterThan(2); // enough neighbours for a real median
+      const deltas = onGridCols.slice(1).map((c, i) => c - onGridCols[i]);
+      const sorted = [...deltas].sort((a, b) => a - b);
+      const mid = sorted.length >> 1;
+      const medianDeltaCol = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      expect(medianDeltaCol).toBeCloseTo(35, 0);
+    } finally {
+      r.destroy();
+    }
+  });
+
+  it("honours respace.ts's OTHER caller-side contract: daemon/cron/process graphs are recentred but NOT rescaled", () => {
+    // respace.ts's header names two caller-side contracts. The self-pin is moot (dead code — see the
+    // comment above raw3/raw2's construction in AsciiGraphRenderer.ts). The SECOND one — "don't call
+    // scaleToSpacing at all for a graph that arrived pre-laid-out" — was initially skipped without
+    // comment (task-10 round 2 review). CanvasGraphRenderer.ts's hasIntentionalLayoutKind() (`:667-668`)
+    // skips its OWN rescale for agent/daemon/cron/process graphs: their absolute spacing is chosen by
+    // their own layout (a hub-and-spoke daemon tree sized to read at a specific zoom), not the
+    // backend's PivotMDS packing scaleToSpacing's 14.0 target was calibrated against. Honoured here by
+    // feeding scaleToSpacing a non-positive targetSpacing for those graphs — its own documented
+    // "recenter only, scale=1" fallback — rather than skipping the call outright (one call site, one
+    // cache, instead of forking a second code path).
+    const RAW_UNIT = 5; // deliberately far from RESPACE_TARGET_SPACING (14) — a rescale bug is loud
+    const cronGraph = {
+      nodes: [
+        { id: "d0", label: "daemon", kind: "cron", position: [0, 0, 0], position2d: [0, 0] },
+        { id: "d1", label: "cron a", kind: "cron", position: [RAW_UNIT, 0, 0], position2d: [RAW_UNIT, 0] },
+        { id: "d2", label: "cron b", kind: "cron", position: [0, RAW_UNIT, 0], position2d: [0, RAW_UNIT] },
+        { id: "d3", label: "cron c", kind: "cron", position: [-RAW_UNIT, 0, 0], position2d: [-RAW_UNIT, 0] },
+      ],
+      edges: [
+        { from: "d0", to: "d1", kind: "supervises" },
+        { from: "d0", to: "d2", kind: "supervises" },
+        { from: "d0", to: "d3", kind: "supervises" },
+      ],
+    };
+    const { r } = mountRenderer("3d", cronGraph as unknown as ReturnType<typeof sampleGraph>);
+    try {
+      const priv = r as unknown as { nodes: { p3: [number, number, number] }[] };
+      const spacing = measuredSpacing3(priv.nodes.map((nv) => nv.p3));
+      // NOT rescaled to 14 — stays at (close to) the RAW unit, since these nodes arrived pre-laid-out.
+      expect(spacing).toBeCloseTo(RAW_UNIT, 0);
+      expect(spacing).not.toBeCloseTo(14, 0);
+      // Still RECENTRED, though — the hub (originally at the origin) should sit near the cloud's own
+      // centroid-relative origin, same as any other graph (respace's degenerate-target fallback still
+      // subtracts the mean, it just skips the scale).
+      let cx = 0, cy = 0, cz = 0;
+      for (const nv of priv.nodes) { cx += nv.p3[0]; cy += nv.p3[1]; cz += nv.p3[2]; }
+      cx /= priv.nodes.length; cy /= priv.nodes.length; cz /= priv.nodes.length;
+      expect(cx).toBeCloseTo(0, 6);
+      expect(cy).toBeCloseTo(0, 6);
+      expect(cz).toBeCloseTo(0, 6);
+    } finally {
+      r.destroy();
+    }
   });
 });
 
