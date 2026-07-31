@@ -2408,8 +2408,15 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
 
   it("the NEAR band gives the field back to the real member edges, and the backbone stands down", () => {
     const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    parkAtT(r, 0.99);
+    const priv = r as unknown as BandPriv & { edgesTransitingDroppedFrame: number };
+    // t = 0.85, not 0.99. `memberAlpha` is pinned at 1 from t ≈ 0.75 onward, so both stops are equally
+    // "the near band" as far as the handover under test is concerned — but the near band also runs the
+    // LOCALITY GATE (see the "Task 19" block below), and by 0.99 this fixture's magnification has
+    // pushed some of its 16 leaf communities off the field, so the gate legitimately drops the edges
+    // reaching them. Measuring the HANDOVER at a stop where the gate is also active would conflate the
+    // two; 0.85 still shows every community, which is asserted rather than assumed.
+    parkAtT(r, 0.85);
+    expect(r.computeStats().edgesTransitingDropped).toBe(0);
     // 59 real edges, every one of them stroked (the budget is 6000 — nothing is thinned here).
     expect(edgeColorSegs(priv).length).toBe(59);
     r.destroy();
@@ -2616,11 +2623,15 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     // ...but not one of them is stroked here: 8 backbone lines + the 49 intra-community mesh lines.
     expect(stats.edgesStroked).toBe(8 + 49);
     expect(edgeColorSegs(priv).length).toBe(8);
-    // And in the NEAR band the member tier is back, so the two converge on the same order.
+    // And in the NEAR band the member tier is back, so the two converge on the same order. At 0.99
+    // this fixture's magnification has taken some leaf communities off the field, so the LOCALITY GATE
+    // (the "Task 19" block below) drops the edges reaching them — `edgesClassified` counts what
+    // survived the gate, so the total is asserted as the PARTITION it now is rather than as 59.
     parkAtT(r, 0.99);
     const deep = r.computeStats();
-    expect(deep.edgesClassified).toBe(59);
-    expect(deep.edgesStroked).toBeGreaterThan(59);   // members + mesh, both drawn
+    expect(deep.edgesClassified + deep.edgesTransitingDropped).toBe(59);
+    expect(deep.edgesTransitingDropped).toBeGreaterThan(0);        // the gate really is engaged here
+    expect(deep.edgesStroked).toBeGreaterThan(deep.edgesClassified); // members + mesh, both drawn
     r.destroy();
   });
 
@@ -2806,6 +2817,309 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     expect(level0.some((e) => !e.onGrid)).toBe(true);   // one really did leave...
     expect(level0.some((e) => e.onGrid)).toBe(true);    // ...and one really is still there
     expect(edgeColorSegs(priv).length).toBe(0);         // ...so the connector between them is gone
+    r.destroy();
+  });
+});
+
+/**
+ * THE NEAR BAND'S LOCALITY GATE (Task 19).
+ *
+ * Straight from the user, at maximum zoom: *"the amount of edges from other clusters crossing over is
+ * just too much. maybe we can make it so max zoom only shows edges between clusters and individual
+ * node edges of the clusters we are zoomed in on?"* Every real edge that survived the budget used to
+ * be stroked, so a neighbourhood's own structure sat buried under long lines merely PASSING THROUGH
+ * from communities off both sides of the frame.
+ *
+ * The rule: a member edge draws only when BOTH its endpoints' clusters have something on screen
+ * (`inViewClusters`). Its load-bearing consequence — that an edge with both endpoints visible can
+ * never be dropped, because a visible endpoint is itself a visible member of its own cluster — is
+ * asserted below rather than assumed, since it is the whole reason the predicate is a member count of
+ * ONE rather than a share.
+ */
+describe("the near band draws only the neighbourhood on screen (Task 19)", () => {
+  /**
+   * FOUR tight blobs strung out along the x axis, in a 2-level hierarchy, with a named edge for every
+   * case the gate has to separate:
+   *
+   *   FAR (x=-600)            HOME (x=0)  NEXT (x=+22)              OTHER (x=+600)
+   *
+   *   - HOME's own spokes and NEXT's own spokes: intra-cluster, both clusters on screen → keep.
+   *   - `h0–x0`: CROSS-cluster with both endpoints on screen → keep (the may-not-lie case).
+   *   - `h1–f0`, `h2–f1`: one endpoint on screen, the other in a cluster with nothing on screen → drop.
+   *   - `f2–o0`, `f3–o1`: NEITHER endpoint on screen, and the segment runs straight through x=0, i.e.
+   *     across the middle of the viewport → drop. This is the user's actual complaint, and it is the
+   *     case a fixture of well-separated blobs would MISS if the off-screen clusters sat off the same
+   *     side: the lines have to genuinely cross the frame for their removal to mean anything.
+   *   - FAR's and OTHER's own spokes: entirely off screen → drop.
+   *
+   * The blobs are ellipses, not circles: at the deepest stop the field is ~48 world units wide but
+   * only ~12 tall (a 800x600 box of 6.3x18 cells), so a circular blob big enough to be interesting in
+   * x would run off the top and bottom and the "both endpoints visible" cases would stop being visible.
+   */
+  const HOME_X = 0, NEXT_X = 9, FAR_X = -600, OTHER_X = 600;
+  function localityGraph() {
+    const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
+    const edges: ReturnType<typeof sampleGraph>["edges"] = [];
+    // [prefix, centre x, member count, top-level community]
+    const blobs: [string, number, number, number][] = [
+      ["h", HOME_X, 6, 0], ["x", NEXT_X, 5, 0], ["f", FAR_X, 6, 1], ["o", OTHER_X, 6, 1],
+    ];
+    blobs.forEach(([prefix, cx, n, top], b) => {
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2;
+        const x = cx + Math.cos(a) * 4, y = Math.sin(a) * 2;
+        nodes.push({
+          id: `${prefix}${k}`, label: `note ${prefix}${k}`, kind: "note" as const,
+          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+          community: b, communityLabel: `Blob ${prefix}`,
+          communityPath: [top, b], communityPathLabels: [`Top ${top}`, `Blob ${prefix}`],
+        });
+      }
+      for (let k = 1; k < n; k++) edges.push({ from: `${prefix}0`, to: `${prefix}${k}`, kind: "link" as const });
+    });
+    edges.push({ from: "h0", to: "x0", kind: "link" as const });   // cross-cluster, both ends visible
+    edges.push({ from: "h1", to: "f0", kind: "link" as const });   // one end visible, other cluster gone
+    edges.push({ from: "h2", to: "f1", kind: "link" as const });
+    edges.push({ from: "f2", to: "o0", kind: "link" as const });   // pure transit across the viewport
+    edges.push({ from: "f3", to: "o1", kind: "link" as const });
+    return { nodes, edges };
+  }
+  /** The edges `localityGraph` builds, by name, so every assertion below names the case it means. */
+  const HOME_SPOKES = [["h0", "h1"], ["h0", "h2"], ["h0", "h3"], ["h0", "h4"], ["h0", "h5"]];
+  const NEXT_SPOKES = [["x0", "x1"], ["x0", "x2"], ["x0", "x3"], ["x0", "x4"]];
+  const BRIDGE = [["h0", "x0"]];
+  const REACHING_OFF = [["h1", "f0"], ["h2", "f1"]];
+  const TRANSITING = [["f2", "o0"], ["f3", "o1"]];
+  const OFFSCREEN_SPOKES = [
+    ["f0", "f1"], ["f0", "f2"], ["f0", "f3"], ["f0", "f4"], ["f0", "f5"],
+    ["o0", "o1"], ["o0", "o2"], ["o0", "o3"], ["o0", "o4"], ["o0", "o5"],
+  ];
+  const ALL_EDGES = [...HOME_SPOKES, ...NEXT_SPOKES, ...BRIDGE, ...REACHING_OFF, ...TRANSITING, ...OFFSCREEN_SPOKES];
+
+  // colorBuf's fixed role slots (AsciiGraphRenderer.ts) — the member tier strokes C_EDGE, the
+  // hovered-incident tier C_ACCENT.
+  const C_ACCENT_SLOT = 8, C_EDGE_SLOT = 9;
+  interface GatePriv {
+    m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
+    nodes: { node: { id: string }; col: number; row: number; sx: number; sy: number; projValid: boolean }[];
+    colors: string[]; memberEdgeAlpha: number; inViewClusters: Set<number>;
+    W: number; H: number;
+  }
+  const gatePriv = (r: AsciiGraphRenderer) => r as unknown as GatePriv;
+
+  /** Which member edges, BY NAME, the field actually stroked this paint. Segments are matched back to
+   *  node pairs through the very geometry strokeEdges() draws them with (both endpoints' cell centres,
+   *  pulled back by the shared clearance via the separately-unit-tested `trimSegmentForClearance`), so
+   *  this reads the picture rather than any renderer bookkeeping — a gate that miscounted its own
+   *  stats while drawing the wrong lines could not pass. */
+  function strokedEdgeNames(priv: GatePriv, colors: string[] = [priv.colors[C_EDGE_SLOT]]): string[] {
+    const cx = (c: number) => priv.m.padX + c * priv.m.cellW + priv.m.cellW / 2;
+    const cy = (rw: number) => priv.m.padY + rw * priv.m.cellH + priv.m.cellH / 2;
+    const key = (ax: number, ay: number, bx: number, by: number) =>
+      [`${ax.toFixed(2)},${ay.toFixed(2)}`, `${bx.toFixed(2)},${by.toFixed(2)}`].sort().join(" -> ");
+    const wanted = new Map<string, string>();
+    for (const [a, b] of ALL_EDGES) {
+      const na = priv.nodes.find((n) => n.node.id === a)!, nb = priv.nodes.find((n) => n.node.id === b)!;
+      const [ax, ay, bx, by] = trimSegmentForClearance(cx(na.col), cy(na.row), cx(nb.col), cy(nb.row), 0.55 * priv.m.cellW);
+      wanted.set(key(ax, ay, bx, by), `${a}-${b}`);
+    }
+    const out = new Set<string>();
+    // The member tier strokes in --graph-edge; the intra-cluster MESH strokes the same lines again in
+    // each cluster's own colour, and is deliberately NOT gated (it is a mid-AND-near band tier). Only
+    // the edge-coloured strokes answer "what did the member pass draw" — EXCEPT under a hover, where
+    // the incident tier strokes in --accent (an intentional deviation from the ported renderer, see
+    // strokeEdges()), which is why the colour list is a parameter rather than a constant: reading only
+    // --graph-edge would report a hovered node's own edges as missing.
+    for (const s of ctx.strokes.filter((st) => colors.includes(st.color))) {
+      for (const [ax, ay, bx, by] of s.segs) {
+        const name = wanted.get(key(ax, ay, bx, by));
+        if (name) out.add(name);
+      }
+    }
+    return [...out].sort();
+  }
+  const names = (pairs: string[][]) => pairs.map(([a, b]) => `${a}-${b}`).sort();
+
+  /** Zoom onto HOME+NEXT and repaint once at the settled camera. `frameSubset` on a 26-unit-wide
+   *  subset of a 1200-unit-wide graph saturates the resolution ladder, so this lands at the deep end
+   *  of the near band — the stop the user was looking at. */
+  const DEEP_T = 0.85;
+  function zoomToNeighbourhood(r: AsciiGraphRenderer) {
+    r.frameSubset(["h0", "h1", "h2", "h3", "h4", "h5", "x0", "x1", "x2", "x3", "x4"]);
+    settle(400);
+    const cam = r as unknown as { res: number; goalRes: number; maxRes: number; dirty: boolean };
+    cam.res = cam.goalRes = resFromT(DEEP_T, cam.maxRes);
+    cam.dirty = true;
+    ctx.fills.length = 0;
+    ctx.strokes.length = 0;
+    frame(99999);
+  }
+
+  it("drops the lines transiting from clusters that are off screen, and keeps everything local", () => {
+    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
+    const priv = gatePriv(r);
+    // Before: at fit the far band owns the field and no member edge is drawn at all, so "the gate
+    // removed them" has to be measured at the deep stop, not here.
+    zoomToNeighbourhood(r);
+    // This really is the near band (member edges own the field) — asserted, not assumed, so a future
+    // retune of the band constants makes this test fail loudly rather than silently measure nothing.
+    expect(priv.memberEdgeAlpha).toBeGreaterThan(0.99);
+
+    // HOME and NEXT are what is on screen; FAR and OTHER are not. Read off the renderer's own
+    // per-frame roster, so the fixture's geometry claim is checked rather than trusted.
+    const onScreen = new Set(priv.nodes
+      .filter((n) => n.projValid && n.sx >= -40 && n.sx <= priv.W + 40 && n.sy >= -40 && n.sy <= priv.H + 40)
+      .map((n) => n.node.id));
+    expect([...onScreen].every((id) => id[0] === "h" || id[0] === "x")).toBe(true);
+    expect(onScreen.has("h0")).toBe(true);
+    expect(onScreen.has("x0")).toBe(true);
+    expect(priv.inViewClusters.size).toBe(2);            // exactly HOME and NEXT
+
+    // THE PICTURE: HOME's spokes, NEXT's spokes, and the one cross-cluster bridge between two
+    // visible glyphs. Nothing reaching off to FAR, and neither transiting FAR–OTHER line.
+    expect(strokedEdgeNames(priv)).toEqual([...HOME_SPOKES, ...NEXT_SPOKES, ...BRIDGE].map(([a, b]) => `${a}-${b}`).sort());
+    // Spelled out per case, so a failure says WHICH rule broke rather than "the set differs".
+    for (const n of names(REACHING_OFF)) expect(strokedEdgeNames(priv)).not.toContain(n);
+    for (const n of names(TRANSITING)) expect(strokedEdgeNames(priv)).not.toContain(n);
+    for (const n of names(OFFSCREEN_SPOKES)) expect(strokedEdgeNames(priv)).not.toContain(n);
+
+    // ...and the transiting lines really did cross the frame before the gate removed them, rather
+    // than having been off-screen anyway (which the projection alone would have handled and this
+    // whole task would be pointless). A segment crosses the field if its endpoints straddle it in x
+    // while the crossing point sits inside the vertical span.
+    const f2 = priv.nodes.find((n) => n.node.id === "f2")!, o0 = priv.nodes.find((n) => n.node.id === "o0")!;
+    expect(f2.sx).toBeLessThan(0);
+    expect(o0.sx).toBeGreaterThan(priv.W);
+    const yAtMid = f2.sy + ((o0.sy - f2.sy) * (priv.W / 2 - f2.sx)) / (o0.sx - f2.sx);
+    expect(yAtMid).toBeGreaterThan(0);
+    expect(yAtMid).toBeLessThan(priv.H);
+    r.destroy();
+  });
+
+  it("counts what it dropped: the three-way split is a partition of the edges that reached the gate", () => {
+    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
+    zoomToNeighbourhood(r);
+    const s = r.computeStats();
+    // Nothing is thinned (24 edges << the 6000 budget) and every 2D node is projValid, so every edge
+    // in the fixture reached the gate — which is what makes the partition below total.
+    expect(s.edgesClassified + s.edgesTransitingDropped).toBe(ALL_EDGES.length);
+    expect(s.edgesIntraVisible + s.edgesCrossVisible).toBe(s.edgesClassified);
+    // HOME's 5 + NEXT's 4 spokes are intra; the h0–x0 bridge is the only cross-cluster survivor.
+    expect(s.edgesIntraVisible).toBe(HOME_SPOKES.length + NEXT_SPOKES.length);
+    expect(s.edgesCrossVisible).toBe(BRIDGE.length);
+    expect(s.edgesTransitingDropped).toBe(REACHING_OFF.length + TRANSITING.length + OFFSCREEN_SPOKES.length);
+    r.destroy();
+  });
+
+  it("never hides a relationship whose two ends are both on screen — the graph may not lie", () => {
+    // The h0–x0 bridge crosses a cluster boundary, and its endpoints are in two DIFFERENT communities.
+    // It survives for one reason only: both of them are on screen, so both communities are in view.
+    // This is the property the "≥1 visible member" predicate makes structural — under a share-based
+    // bar (clusterLabelThreshold's max(6, 1.5% of visible), say) HOME's 6 and NEXT's 5 members would
+    // both fail and this edge, between two glyphs the user is looking straight at, would vanish.
+    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
+    const priv = gatePriv(r);
+    zoomToNeighbourhood(r);
+    const h0 = priv.nodes.find((n) => n.node.id === "h0")!, x0 = priv.nodes.find((n) => n.node.id === "x0")!;
+    const visible = (n: typeof h0) => n.projValid && n.sx > 0 && n.sx < priv.W && n.sy > 0 && n.sy < priv.H;
+    expect(visible(h0)).toBe(true);
+    expect(visible(x0)).toBe(true);
+    expect(strokedEdgeNames(priv)).toContain("h0-x0");
+    // Stronger than "the bridge survived": EVERY edge of the fixture with two visible endpoints is
+    // drawn, so the property is asserted over the whole graph rather than one hand-picked pair.
+    for (const [a, b] of ALL_EDGES) {
+      const na = priv.nodes.find((n) => n.node.id === a)!, nb = priv.nodes.find((n) => n.node.id === b)!;
+      if (visible(na) && visible(nb)) expect(strokedEdgeNames(priv)).toContain(`${a}-${b}`);
+    }
+    r.destroy();
+  });
+
+  it("hovering a node still shows every edge it has, including the ones the gate would drop", () => {
+    // Hover is the user asking this exact node what it connects to. `h1–f0` reaches a cluster with
+    // nothing on screen and is dropped on an idle frame (asserted in the first test); with h1 hovered
+    // it must come back, or hover answers the question wrongly.
+    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
+    const priv = gatePriv(r);
+    zoomToNeighbourhood(r);
+    expect(strokedEdgeNames(priv, [priv.colors[C_EDGE_SLOT], priv.colors[C_ACCENT_SLOT]])).not.toContain("h1-f0");
+
+    const h1 = priv.nodes.find((n) => n.node.id === "h1")!;
+    ctx.strokes.length = 0;
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      clientX: priv.m.padX + h1.col * priv.m.cellW + 1,
+      clientY: priv.m.padY + h1.row * priv.m.cellH + priv.m.cellH / 2,
+    }));
+    frame(99999);
+    // The hover landed on h1 (a mis-aimed pointer would make the rest of this vacuous)...
+    expect((r as unknown as { hoveredId: string | null }).hoveredId).toBe("h1");
+    // ...and BOTH of h1's edges are on the field: its local spoke and the one reaching off screen.
+    // Hovered-incident edges stroke in --accent, not --graph-edge, so both tiers are read here.
+    const drawn = strokedEdgeNames(priv, [priv.colors[C_EDGE_SLOT], priv.colors[C_ACCENT_SLOT]]);
+    expect(drawn).toContain("h1-f0");
+    expect(drawn).toContain("h0-h1");
+    r.destroy();
+  });
+
+  it("keeps every edge where no backbone could stand in for the ones it would drop", () => {
+    // The gate's whole justification is that a between-cluster connection it removes is still told by
+    // the hub-to-hub backbone. Turn the band ladder off — "local" mode, a community-less graph, 3D —
+    // and there is no backbone at all, so nothing may be dropped. Same fixture, same camera, so the
+    // ONLY difference is the ladder.
+    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: false });
+    const priv = gatePriv(r);
+    zoomToNeighbourhood(r);
+    expect(priv.inViewClusters.size).toBe(0);            // the roster is never even built
+    const s = r.computeStats();
+    expect(s.edgesTransitingDropped).toBe(0);
+    expect(s.edgesClassified).toBe(ALL_EDGES.length);
+    expect(strokedEdgeNames(priv)).toEqual(ALL_EDGES.map(([a, b]) => `${a}-${b}`).sort());
+    r.destroy();
+  });
+
+  it("changes nothing the FAR or MID band DRAWS — this is a near-band change only", () => {
+    // The between-cluster story at mid zoom is settled design (backbone.ts's three-band header): the
+    // backbone owns it. So nothing with INK on the field above the near band may move.
+    //
+    // Note the shape of the claim. The gate is not band-scoped (see rasterize()) — at mid zoom it
+    // does classify fewer edges, because on this deliberately 1200-unit-wide fixture even mid zoom
+    // leaves FAR and OTHER off screen. That is invisible: `memberEdgeAlpha` is 0 there, so not one of
+    // those edges was going to be stroked either way. What WOULD have been visible is the
+    // intra-cluster MESH, a mid-AND-near tier which is bucketed BEFORE the gate for exactly this
+    // reason — so the assertion is that the mesh still carries every intra-cluster edge in the graph,
+    // including all ten belonging to the two clusters the gate considers off screen.
+    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
+    const priv = gatePriv(r) as unknown as GatePriv & { cellEntity: Int32Array };
+    // FAR band (fit): masses own the field, and no member edge is classified at all because the leaf
+    // pass does not even run — so there is nothing for the gate to have touched.
+    expect([...priv.cellEntity].some((v) => v >= 0)).toBe(true);
+    expect(r.computeStats().edgesTransitingDropped).toBe(0);
+    expect(r.computeStats().edgesClassified).toBe(0);
+
+    // MID band. (`parkAtT` lives in the band block above; re-derived here off the same public ladder
+    // so this block stands on its own.)
+    const cam = r as unknown as { res: number; goalRes: number; maxRes: number; dirty: boolean };
+    cam.res = cam.goalRes = resFromT(0.5, cam.maxRes);
+    cam.dirty = true;
+    ctx.strokes.length = 0;
+    frame(99999);
+    expect(priv.memberEdgeAlpha).toBe(0);                // genuinely the mid band...
+    expect(priv.inViewClusters.size).toBe(2);            // ...and the gate IS live here, dropping...
+    expect(r.computeStats().edgesTransitingDropped).toBeGreaterThan(0);   // ...edges nothing would draw.
+    // Not one member line on the field, gate or no gate — `memberEdgeAlpha === 0` makes strokeEdges()
+    // return before its member passes (`base <= 0.004`), so every edge-coloured stroke here is a GROUP
+    // line. One of them is unavoidably ambiguous to a geometric matcher: HOME's and NEXT's hubs ARE h0
+    // and x0, so their hub-to-hub backbone line lands on exactly the two cells the h0–x0 member edge
+    // would. Every other member edge — every spoke, everything reaching off, everything transiting —
+    // is absent, which is the part that can be told apart.
+    expect(strokedEdgeNames(priv)).toEqual(["h0-x0"]);
+    for (const n of names([...HOME_SPOKES, ...NEXT_SPOKES, ...REACHING_OFF, ...TRANSITING, ...OFFSCREEN_SPOKES])) {
+      expect(strokedEdgeNames(priv)).not.toContain(n);
+    }
+    // And the mesh is whole: all 19 intra-cluster spokes, INCLUDING FAR's and OTHER's ten, whose
+    // clusters the gate has already ruled off screen. Move the mesh bucketing below the gate and this
+    // drops to 9 — the mid band silently losing two clusters' worth of body.
+    const meshSegs = ctx.strokes.filter((s) => s.color !== priv.colors[C_EDGE_SLOT]).flatMap((s) => s.segs);
+    expect(meshSegs.length).toBe(HOME_SPOKES.length + NEXT_SPOKES.length + OFFSCREEN_SPOKES.length);
     r.destroy();
   });
 });

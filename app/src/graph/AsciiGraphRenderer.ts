@@ -80,10 +80,19 @@ export interface AsciiGraphStats {
   labelOverlaps: number;   // count of label PAIRS on the same row whose [col, col+widthCells] spans intersect
   maxLabelChars: number;   // longest label's text.length this frame
   notesOnScreen: number;   // leaf (real) nodes rasterized this frame
-  edgesClassified: number; // real member edges that survived the budget rank + projection cull and were
-                           // sorted into a stroke bucket. NOT a count of lines drawn — in the mid band the
-                           // member tier is bucketed and then held at zero alpha, so on the reference vault
-                           // this reads ~4566 while ~18 lines are stroked. Use `edgesStroked` for that.
+  edgesClassified: number; // real member edges that survived the budget rank + projection cull AND the
+                           // locality gate, and were sorted into a stroke bucket. NOT a count of lines
+                           // drawn — in the mid band the member tier is bucketed and then held at zero
+                           // alpha, so on the reference vault this reads in the thousands while ~18 lines
+                           // are stroked. Use `edgesStroked` for that. Equals
+                           // `edgesIntraVisible + edgesCrossVisible` exactly (the three-way split below).
+  edgesIntraVisible: number; // ...of which BOTH endpoints sit in the SAME in-view cluster: the structure
+                           // of the neighbourhood on screen.
+  edgesCrossVisible: number; // ...of which the endpoints sit in two DIFFERENT in-view clusters (or one of
+                           // them has no community at all, so no backbone line could stand in for it).
+  edgesTransitingDropped: number; // real member edges the locality gate dropped: at least one endpoint's
+                           // cluster has nothing on screen, so the line merely transits the viewport on its
+                           // way between two places the user cannot see. See `inViewClusters`.
   edgesStroked: number;    // line segments actually issued to the canvas this paint, all three tiers
                            // (group lines + intra-cluster mesh + member edges)
   backbonePairsDropped: number; // connected community pairs the MAX_LEVEL_PAIRS cap threw away, summed over
@@ -476,6 +485,33 @@ export class AsciiGraphRenderer implements GraphRenderer {
   // this frame (see clusterExtent()'s call-site contract — deliberately NOT the whole-graph
   // membership `clusterHubByLevel` below uses).
   private clusterAgg = new Map<number, NodeView[]>();
+  /** THE LOCALITY GATE's per-frame answer to "which clusters am I actually looking at" — the set of
+   *  cluster COLOUR SLOTS (`NodeView.colorByLevel` at the frame's dominant level, which is a globally
+   *  unique key per (level, community) — see rebuildCommunityColors()) that have at least ONE member
+   *  inside the padded viewport. Rebuilt every frame the leaf pass runs, from exactly the predicate
+   *  `layoutClusterNames` already aggregates `clusterAgg` with (`projValid && inViewport(…,
+   *  VIEWPORT_LABEL_PAD)`), so "on screen" means one thing in this renderer, not two.
+   *
+   *  **Why a member count of ONE and not a share.** The user's report was that at deep zoom their own
+   *  neighbourhood's structure was buried under long lines transiting from clusters they could not
+   *  see. The fix has to drop those without ever hiding a relationship whose two ends are both on
+   *  screen — this project's first rule is that the graph may not lie. With "has ≥1 visible member"
+   *  that second property is not a special case bolted on, it is a THEOREM: if both endpoints are in
+   *  the viewport then each one is itself a visible member of its own cluster, so both clusters are in
+   *  this set and the edge is kept. Any share-based bar (`clusterLabelThreshold`'s
+   *  `max(6, 1.5% of visible)`, say) breaks that — it would silently drop edges between two visible
+   *  glyphs whenever their communities are small, and a 4-note community can never clear an absolute
+   *  floor of 6 at all. `clusterLabelThreshold` is the bar for earning a NAME (a scarce, overlapping,
+   *  screen-space resource); "am I looking at this cluster" is a different question and takes a
+   *  different, weaker answer.
+   *
+   *  Keyed on the COLOUR slot rather than a raw community id so the gate and the intra-cluster mesh
+   *  read the one key: the mesh's `ca === cb` test at the same dominant level is the same "same
+   *  cluster right now" question, and computing it twice from two different derivations is how the
+   *  two silently drift apart. Slots below `BLEND_BASE` are the no-community fallbacks (self, daemon,
+   *  cron/process, community-less data) and never enter this set — see the gate itself for why such
+   *  an edge is exempt rather than dropped. */
+  private inViewClusters = new Set<number>();
   // Per-level community → its display name, resolved once per build() (communityPathLabels is
   // static graph data, not a per-frame thing) so layoutClusterNames() never has to search for a
   // representative member. Index = hierarchy level (0 = coarsest); length = levelCount.
@@ -562,13 +598,21 @@ export class AsciiGraphRenderer implements GraphRenderer {
   // rasterize()'s existing passes, never a separate loop.
   private entitiesDrawnFrame = 0;
   private notesOnScreenFrame = 0;
-  /** Real member edges that SURVIVED rasterize()'s classification loop (budget rank + projValid) and
-   *  were sorted into a stroke bucket. NOT how many lines the frame drew: in the mid band every one
-   *  of these is bucketed and then the whole member tier is held at zero alpha by `memberEdgeAlpha`,
-   *  so this reads ~4566 on the reference vault while ~18 lines are actually stroked. See
-   *  `edgesStrokedFrame` for that number — the two are far apart by design, and conflating them is
-   *  how a QA metric ends up overclaiming. */
+  /** Real member edges that SURVIVED rasterize()'s classification loop (budget rank + projValid + the
+   *  LOCALITY GATE) and were sorted into a stroke bucket. NOT how many lines the frame drew: in the
+   *  mid band every one of these is bucketed and then the whole member tier is held at zero alpha by
+   *  `memberEdgeAlpha`, so this reads in the thousands on the reference vault while ~18 lines are
+   *  actually stroked. See `edgesStrokedFrame` for that number — the two are far apart by design, and
+   *  conflating them is how a QA metric ends up overclaiming. */
   private edgesClassifiedFrame = 0;
+  /** The three-way split of what the LOCALITY GATE (see `inViewClusters`) did to the member edges
+   *  this frame: kept because both endpoints are in ONE in-view cluster, kept because they are in TWO
+   *  in-view clusters (or an endpoint has no community, which no backbone line could represent), and
+   *  DROPPED as merely transiting. `intra + cross === edgesClassifiedFrame` by construction — the
+   *  split is a partition of what was bucketed, not a second tally that could drift from it. */
+  private edgesIntraVisibleFrame = 0;
+  private edgesCrossVisibleFrame = 0;
+  private edgesTransitingDroppedFrame = 0;
   /** Line segments actually issued to the canvas this paint, across all three tiers (group lines,
    *  intra-cluster mesh, member edges). Counted where the `moveTo`/`lineTo` pair is emitted, so a
    *  tier that early-returns on alpha contributes nothing. Reset by strokeEdges(), not rasterize():
@@ -1562,7 +1606,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.entitiesDrawnFrame = 0;
     this.notesOnScreenFrame = 0;
     this.edgesClassifiedFrame = 0;
+    this.edgesIntraVisibleFrame = 0;
+    this.edgesCrossVisibleFrame = 0;
+    this.edgesTransitingDroppedFrame = 0;
     this.edgesStrokedFrame = 0;
+    // THE LOCALITY GATE's roster (see `inViewClusters`) — cleared UNCONDITIONALLY, like the stroke
+    // buckets below, so a frame that returns early out of the leaf pass can never leave a previous
+    // frame's answer to "which clusters am I looking at" standing.
+    this.inViewClusters.clear();
     // Clear the vector-edge stroke buckets (see the field decls + strokeEdges()) UNCONDITIONALLY —
     // not just inside the glyph gate below — so a frame where an opt-in coarse LOD stop's masses own
     // the field instead doesn't leave last frame's edges stroked over it. Same for the intra-cluster
@@ -1650,6 +1701,26 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (glyphA > LOD_ALPHA_EPS) {
       this.projectNodes(is2d);
 
+      // ---- THE LOCALITY GATE, part 1: which clusters am I actually looking at? ------------------
+      // Scoped to `lodOn`, i.e. to the band ladder itself, and that scope is the whole justification
+      // for dropping anything: with masses and a real hierarchy in play a between-cluster connection
+      // the gate removes is the story the hub-to-hub BACKBONE tells instead. 3D, "local" mode and
+      // community-less graphs have no backbone to hand the story to, so they keep every edge —
+      // exactly the pre-gate behaviour, and the same scope `intraOn` below already uses.
+      //
+      // Deliberately NOT additionally gated on the near band. It does not need to be: the gate only
+      // ever removes REAL MEMBER EDGES, and `memberEdgeAlpha` holds those at ~0 across the whole mid
+      // band anyway, so the gate is invisible until the near band opens and is already fully applied
+      // on the first frame a member edge is visible. A band condition would buy nothing but a second
+      // threshold to keep in sync — and a pop at whatever `t` it fired.
+      if (lodOn) {
+        for (const nv of this.nodes) {
+          if (!nv.projValid || !inViewport(nv.sx, nv.sy, this.W, this.H, VIEWPORT_LABEL_PAD)) continue;
+          const slot = nv.colorByLevel[Math.min(colorL0, nv.colorByLevel.length - 1)];
+          if (slot >= BLEND_BASE) this.inViewClusters.add(slot);
+        }
+      }
+
       const focus = this.focusSet();
       // INTRA-CLUSTER MESH gate (CanvasGraphRenderer.ts:1271-1306): a cluster's BODY is its internal
       // edges, stroked in the cluster's own colour so density reads as mass rather than grey noise.
@@ -1681,36 +1752,68 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // `onScreen`), so an edge whose far endpoint sits off the field still strokes its on-screen
         // portion instead of being dropped whole — the "edges vanish at deep zoom" fix, ported.
         if (!a.projValid || !b.projValid) continue;
-        this.edgesClassifiedFrame++;
+        // The cluster key at THE DOMINANT COLOUR LEVEL, computed once and read by both the mesh and
+        // the locality gate below — one derivation, so the two cannot drift apart on what "the same
+        // cluster right now" means.
+        const ca = a.colorByLevel[Math.min(colorL0, a.colorByLevel.length - 1)];
+        const cb = b.colorByLevel[Math.min(colorL0, b.colorByLevel.length - 1)];
         // The mesh's own bucketing, done in this same walk rather than a second pass over `edges`:
         // an edge whose endpoints share a community AT THE DOMINANT COLOUR LEVEL is the cluster's
         // own wiring. One that crosses groups is not — the group lines above tell that story.
         // (CanvasGraphRenderer.ts:1285-1294.) An intra edge is bucketed here AND still classified
         // below: in the near band it draws twice, tinted texture under the neutral member stroke,
-        // exactly as in the source.
-        if (this.intraOn) {
-          const ca = a.colorByLevel[Math.min(colorL0, a.colorByLevel.length - 1)];
-          const cb = b.colorByLevel[Math.min(colorL0, b.colorByLevel.length - 1)];
-          if (ca === cb) {
-            let arr = this.intraBuckets.get(ca);
-            if (!arr) { arr = []; this.intraBuckets.set(ca, arr); }
-            arr.push(e);
-          }
+        // exactly as in the source. Bucketed BEFORE the gate on purpose: the mesh is a mid-AND-near
+        // band tier riding `glyphAlpha`, and the mid band is settled design this task must not touch.
+        if (this.intraOn && ca === cb) {
+          let arr = this.intraBuckets.get(ca);
+          if (!arr) { arr = []; this.intraBuckets.set(ca, arr); }
+          arr.push(e);
         }
         const hov = this.hoveredId;
-        if (hov != null) {
-          // hover = ONE degree: only edges directly incident to the hovered node light up — strict
-          // INCIDENCE, not `focus` (focusSet() also carries the hovered node's NEIGHBOURS, needed
-          // below for the node dimming/ring pass — using that broader set here spared every edge
-          // between two of the hovered node's neighbours from dimming, a past bug).
-          // CanvasGraphRenderer.ts:847-848.
-          if (a.node.id === hov || b.node.id === hov) { this.edgeAccent.push(e); continue; }
-          this.edgeDim.push(e); continue;
+        // hover = ONE degree: only edges directly incident to the hovered node light up — strict
+        // INCIDENCE, not `focus` (focusSet() also carries the hovered node's NEIGHBOURS, needed
+        // below for the node dimming/ring pass — using that broader set here spared every edge
+        // between two of the hovered node's neighbours from dimming, a past bug).
+        // CanvasGraphRenderer.ts:847-848.
+        const incident = hov != null && (a.node.id === hov || b.node.id === hov);
+        const focused = focus != null && (focus.has(a.node.id) || focus.has(b.node.id));
+
+        // ---- THE LOCALITY GATE, part 2: does this edge belong to what is on screen? --------------
+        // The user, at maximum zoom: "the amount of edges from other clusters crossing over is just
+        // too much". Every real edge that survived the budget used to be stroked, so a neighbourhood's
+        // own structure sat under long lines merely PASSING THROUGH from communities off both sides of
+        // the frame. Those lines say nothing a viewer can act on — neither of their ends is visible —
+        // and at this band the hierarchy is fully resolved, so the connection they stand for is the
+        // backbone's story, not theirs.
+        //
+        // An edge draws when BOTH its endpoints' clusters are in view (`inViewClusters`). For an
+        // intra-cluster edge that is one test applied twice, i.e. exactly "its cluster is in view";
+        // for a cross-cluster edge it is the stronger "both of them are". Note what this does NOT
+        // need: a special case for "both endpoints are visible, so never hide it". A visible endpoint
+        // IS a visible member of its own cluster, so that case is already inside the set — see
+        // `inViewClusters` for why that theorem is the reason the predicate is a member COUNT of one
+        // rather than a share.
+        //
+        // Three exemptions, each because nothing else would represent the edge:
+        //  - an endpoint with NO community (`slot < BLEND_BASE`: self, daemon, cron/process). The
+        //    backbone is built from community pairs (buildLevelEdges skips a null path outright), so a
+        //    dropped edge here vanishes with no stand-in anywhere on the field.
+        //  - a hovered-incident edge: hover is the user asking this exact node what it connects to.
+        //  - a focus-set edge (search matches / daemon-list highlight): the same question, held open.
+        if (lodOn && ca >= BLEND_BASE && cb >= BLEND_BASE && !incident && !focused
+          && !(this.inViewClusters.has(ca) && this.inViewClusters.has(cb))) {
+          this.edgesTransitingDroppedFrame++;
+          continue;
         }
+        this.edgesClassifiedFrame++;
+        if (ca === cb) this.edgesIntraVisibleFrame++; else this.edgesCrossVisibleFrame++;
+
+        if (incident) { this.edgeAccent.push(e); continue; }
+        if (hov != null) { this.edgeDim.push(e); continue; }
         if (focus) {
           // persistent cluster highlight (search matches / daemon-list focus, no hover in play): dim
           // only when NEITHER endpoint is in the highlighted set. CanvasGraphRenderer.ts:851.
-          if (!(focus.has(a.node.id) || focus.has(b.node.id))) { this.edgeDim.push(e); continue; }
+          if (!focused) { this.edgeDim.push(e); continue; }
         }
         if (is2d) { this.edgeMain.push(e); continue; }
         this.edgeBands[safeDepthBand((a.dr + b.dr) / 2, EDGE_DEPTH_BANDS)].push(e);
@@ -3080,6 +3183,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
       maxLabelChars,
       notesOnScreen: this.notesOnScreenFrame,
       edgesClassified: this.edgesClassifiedFrame,
+      edgesIntraVisible: this.edgesIntraVisibleFrame,
+      edgesCrossVisible: this.edgesCrossVisibleFrame,
+      edgesTransitingDropped: this.edgesTransitingDroppedFrame,
       edgesStroked: this.edgesStrokedFrame,
       backbonePairsDropped: this.levelPairsDropped.reduce((a, b) => a + b, 0),
       inkCoverage,
