@@ -147,6 +147,38 @@ function frame(t = 16) {
 /** Advance many frames so a camera glide (resolution / target) settles. */
 function settle(n = 120) { for (let i = 0; i < n; i++) frame(16 * (i + 2)); }
 
+// ---------------------------------------------------------------------------
+// FILE-WIDE TEARDOWN — the cascade guard.
+//
+// Every renderer in this file shares ONE recording `ctx` and ONE `rafQueue`. A test body that ends
+// in `r.destroy()` only tears down on the HAPPY PATH: a failing `expect` throws first, the trailing
+// destroy never runs, and the abandoned renderer stays subscribed to the shared rAF pump. Its ticks
+// then paint into the shared `ctx` during a LATER test, so one honest failure cascades into a
+// cluster of confusing ones — and worse, can manufacture a *wrong measurement* in a neighbour
+// (this happened on the unified-graph plan: an abandoned renderer pumping into the shared ctx
+// produced a "blank field" result that was reported and then retracted).
+//
+// So teardown is a file-level `afterEach`, not a trailing call: `newRenderer()` registers every
+// instance and this hook destroys them all and drains any rAF callbacks they left queued,
+// regardless of how the test body exited. `destroy()` is idempotent, so the existing trailing
+// `r.destroy()` calls (and the Task-17 block's own `mounted` afterEach) remain harmless.
+//
+// Construct renderers with `newRenderer()`, never `newRenderer()` — an unregistered
+// instance re-opens exactly this hole.
+const liveRenderers = new Set<AsciiGraphRenderer>();
+function newRenderer(): AsciiGraphRenderer {
+  const r = new AsciiGraphRenderer();
+  liveRenderers.add(r);
+  return r;
+}
+afterEach(() => {
+  for (const r of liveRenderers) r.destroy();
+  liveRenderers.clear();
+  // Drain whatever the just-destroyed renderers (or a mid-glide `settle()`) left queued, so the
+  // next test's first `frame()` runs only ITS OWN callbacks.
+  rafQueue = [];
+});
+
 // The fixture's world coordinates are scaled up from the "natural" ring geometry below (still only 24
 // notes on a small ring) so the graph's bounding radius is big enough, relative to the fixed absolute
 // DEEPEST_WORLD_PER_CELL target (asciiGrid.ts), to actually have zoom range to test against — fit()
@@ -204,7 +236,7 @@ function mountRenderer(
 ): Mounted {
   const host = document.createElement("div");
   document.body.appendChild(host);
-  const r = new AsciiGraphRenderer();
+  const r = newRenderer();
   const clicks: string[] = [];
   const hovers: (string | null)[] = [];
   const zooms: number[] = [];
@@ -350,7 +382,7 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
   it("reports the node count it painted (the boot splash correlates these)", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     const painted: number[] = [];
     r.mount(host, () => {});
     r.setPaintCallback((n) => painted.push(n));
@@ -364,7 +396,7 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
   it("emits a per-frame density field for the phosphor bloom (buildBloom always normalises its peak cell to exactly 1)", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     const fields: Float32Array[] = [];
     r.mount(host, () => {});
     r.setBloomCallback((f) => fields.push(f));
@@ -379,7 +411,7 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
   it("detaches its bloom callback on destroy — a torn-down renderer must not hold a stale sink", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     r.mount(host, () => {});
     r.setBloomCallback(() => {});
     expect((r as unknown as { onBloom?: unknown }).onBloom).toBeDefined();
@@ -408,7 +440,7 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
   it("writes a tag label exactly once (vault.ts already puts the # on the label)", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     r.mount(host, () => {});
     r.setConfig({ ...CONFIG, viewMode: "2d" });
     // Positions scaled by RING_SCALE for the same reason as sampleGraph() above — a big enough
@@ -451,7 +483,7 @@ describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
     try {
       const host = document.createElement("div");
       document.body.appendChild(host);
-      const r = new AsciiGraphRenderer();
+      const r = newRenderer();
       const painted: number[] = [];
       r.mount(host, () => {});
       r.setPaintCallback((n) => painted.push(n));
@@ -670,7 +702,7 @@ describe("N-level semantic labels — the zoom ladder walks communityPath, coars
   function mountTwoLevel(): Mounted {
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     const zooms: number[] = [];
     r.mount(host, () => {});
     r.setZoomCallback((p) => zooms.push(p));
@@ -1305,7 +1337,7 @@ describe("THE LAW — zoom is resolution, never scale", () => {
   it("keeps a live ladder on a graph whose own fit already meets the absolute 0% target", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     const zooms: number[] = [];
     r.mount(host, () => {});
     r.setZoomCallback((p) => zooms.push(p));
@@ -1490,7 +1522,7 @@ describe("Task 11 — the 3D camera dolly is derived from the resolution ladder"
     if (box) Object.assign(BOX, box);
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     try {
       const painted: number[] = [];
       r.mount(host, () => {}, () => {});
@@ -1891,7 +1923,7 @@ describe("respace wiring (Task 10) — node-count-independent resting spacing on
     // a genuine compute — the third, revisiting A, must be a hit.
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     r.mount(host, () => {});
     r.setConfig({ ...CONFIG, viewMode: "3d" });
 
@@ -2849,7 +2881,7 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
   function mountBloom(graph: ReturnType<typeof spreadClusterGraph>, lod: boolean) {
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     mounted.push(r);
     let last: Float32Array | null = null;
     r.mount(host, () => {});
@@ -3068,7 +3100,7 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     // `this.nodes`, exactly as before. Pinned against the plain node count.
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     mounted.push(r);                                // teardown is afterEach's job — see `mounted`
     r.mount(host, () => {});
     r.setBloomCallback(() => {});
@@ -3349,7 +3381,7 @@ describe("UI data accessors", () => {
 
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const r = new AsciiGraphRenderer();
+    const r = newRenderer();
     const painted: number[] = [];
     r.mount(host, () => {});
     r.setPaintCallback((n) => painted.push(n));
