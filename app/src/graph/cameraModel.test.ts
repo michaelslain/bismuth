@@ -77,6 +77,46 @@ describe("dollyForT — the derived camera dolly", () => {
   });
 });
 
+describe("the degenerate-perspective domain guard (maxZsFor's Math.max(1, perspective))", () => {
+  // These became reachable when AsciiGraphRenderer started calling this module: the renderer holds
+  // `P = 1` from construction until its first measure(), and nothing in these signatures forbids a
+  // caller from handing over worse. See maxZsFor's doc for why a NaN here is the worst shape available.
+  it("returns a FINITE, non-positive dolly at a non-positive perspective instead of NaN", () => {
+    for (const P of [0, -1, -15.59, -3741]) {
+      for (let i = 0; i <= 20; i++) {
+        const d = dollyForT(i / 20, P);
+        expect(Number.isNaN(d)).toBe(false);
+        expect(Number.isFinite(d)).toBe(true);
+        // A camera with no depth in front of it must not be moved FORWARD by a fractional t — which
+        // is what the un-floored formula did before it reached the NaN: maxZsFor(-5) came out as -5,
+        // and Math.pow(-5, -0.5) is NaN while Math.pow(-5, -1) is a finite -0.2.
+        expect(d).toBeLessThanOrEqual(0);
+      }
+    }
+  });
+
+  it("is identically 0 at P <= 1 — a flat segment, exactly as dollyForT's docstring now scopes it", () => {
+    // The renderer's pre-measure() state. Asserted rather than left implicit because the behaviour is
+    // deliberate (no measured depth, no camera movement) and an earlier docstring claimed the
+    // opposite ("strictly monotonic for any perspective >= 1").
+    for (const P of [1, 0.5]) {
+      for (let i = 0; i <= 20; i++) expect(dollyForT(i / 20, P)).toBe(0);
+    }
+  });
+
+  it("changes NOTHING at any perspective a measured host box produces — the floor is a guard, not a knob", () => {
+    // Guards against the floor being "tidied" upward (e.g. Math.max(20, …)), which would silently
+    // flatten the dolly across the whole small-viewport end of PERSPECTIVES while every other test
+    // here still passed. Comparandum computed WITHOUT the floor, from MAX_ZOOM_FRAC directly.
+    for (const P of PERSPECTIVES) {
+      const unflooredMaxZs = P / Math.max(1, P - MAX_ZOOM_FRAC * P);
+      for (const t of [0.25, 0.5, 0.75, 1]) {
+        expect(dollyForT(t, P)).toBe(P * (1 - Math.pow(unflooredMaxZs, -t)));
+      }
+    }
+  });
+});
+
 describe("zoomT — Canvas's dolly-to-progress mapping, ported and parameterized", () => {
   it("zoomT(0, P) === 0 — the fit distance has no progress", () => {
     for (const P of PERSPECTIVES) expect(zoomT(0, P)).toBe(0);

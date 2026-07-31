@@ -19,6 +19,7 @@ import {
 import { CELL_W, LAYER_EDGE } from "./asciiGrid";
 import { CLUSTER_LABEL_MAX_CHARS } from "./labelSelection";
 import { buildColorSlots } from "./clusterVisual";
+import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
 import { THEMES } from "../../../core/src/theme/tokens";
 
 const DOM_GLOBALS = [
@@ -1248,6 +1249,307 @@ describe("THE LAW — zoom is resolution, never scale", () => {
     expect(zooms.at(-1)!).toBeLessThan(100);
     expect(ctx.font).toBe(fontBefore);
     r.destroy();
+  });
+});
+
+/**
+ * Task 11 — the 3D camera dolly, DERIVED from the resolution ladder (AsciiGraphRenderer.cameraDolly
+ * / cameraModel.dollyForT).
+ *
+ * The claim under test, in one line: in 3D the magnification is `min(res, maxZsFor(P)^t)`, delivered
+ * by a real camera dolly (`zc = z2 + dolly`) over a world held at its FIT scale — which is the SAME
+ * projection ASCII always had wherever the resolution ladder stays under the camera ceiling, and a
+ * ceiling-clamped one where it does not.
+ *
+ * Two fixtures, one graph, differing only in host box, because the whole behaviour hinges on which
+ * side of `MAX_MAGNIFICATION` the graph's `maxRes` lands (see `assertShallowLadder`/`assertDeepLadder`
+ * — every test asserts its own precondition, so a fixture that drifts across that line fails loudly
+ * instead of quietly testing the other branch).
+ */
+describe("Task 11 — the 3D camera dolly is derived from the resolution ladder", () => {
+  /** A filled 3D ball of notes. Unlike sampleGraph's ring — whose interior is EMPTY, so a camera that
+   *  moves toward the centre sees nothing regardless of whether it works — every direction from the
+   *  target here has neighbours, which is what makes "what does the field show at maximum zoom" a
+   *  question about the camera rather than about the fixture. Deterministic LCG, no Math.random. */
+  function ballGraph(n = 300) {
+    const nodes = [];
+    const edges = [];
+    let seed = 12345;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    for (let i = 0; i < n; i++) {
+      const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2, rr = Math.cbrt(rnd()) * 300;
+      const sp = Math.sqrt(1 - u * u);
+      const x = rr * sp * Math.cos(th), y = rr * sp * Math.sin(th), z = rr * u;
+      nodes.push({
+        id: `n${i}`, label: `note ${i}`, kind: "note" as const,
+        position: [x, y, z] as [number, number, number], position2d: [x, y] as [number, number],
+        community: i % 5, communityLabel: `Cluster ${i % 5}`,
+      });
+    }
+    for (let i = 1; i < n; i++) edges.push({ from: `n${i - 1}`, to: `n${i}`, kind: "link" as const });
+    return { nodes, edges };
+  }
+  // Same admission-list construction as SAMPLE_GRAPH_COMMUNITY_COLORS above, for the ball's five
+  // equal-sized communities (300 nodes, i % 5 → a five-way size tie → ranks 0..4, no hue rotation).
+  const BALL_COMMUNITY_COLORS = new Set(
+    buildColorSlots(new Map([[0, 60], [1, 60], [2, 60], [3, 60], [4, 60]]), RAMP_FALLBACK).values(),
+  );
+  const ballNodeRuns = () => ctx.fills.filter((f) => BALL_COMMUNITY_COLORS.has(f.color) && /^[.o@ ]+$/.test(f.text));
+
+  /** The camera state the assertions below read. Cast-only — the public surface stays GraphRenderer. */
+  interface CamPriv {
+    nodes: {
+      p3: [number, number, number]; sx: number; sy: number; depth: number;
+      projValid: boolean; onGrid: boolean; node: { id: string };
+    }[];
+    m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
+    pxPerWorld: number; res: number; maxRes: number; P: number;
+    rx: number; ry: number; panXQ: number; panYQ: number; target: [number, number, number];
+  }
+  const camPriv = (r: AsciiGraphRenderer) => r as unknown as CamPriv;
+
+  /**
+   * The camera-space depth `z2` a node would have with the world at its FIT scale — i.e. with the
+   * resolution factored OUT. Independent of the renderer's own projection loop (it re-derives the
+   * yaw/pitch from `rx`/`ry` rather than reading anything the loop wrote), which is what lets the
+   * tests below recover the dolly the renderer actually applied: `dolly = nv.depth - fitFrameZ(nv)`.
+   */
+  function fitFrameZ(p: CamPriv, i: number): number {
+    const nv = p.nodes[i];
+    const S = p.pxPerWorld;
+    const x = (nv.p3[0] - p.target[0]) * S, y = (nv.p3[1] - p.target[1]) * S, z = (nv.p3[2] - p.target[2]) * S;
+    const z1 = -x * Math.sin(p.ry) + z * Math.cos(p.ry);
+    return y * Math.sin(p.rx) + z1 * Math.cos(p.rx);
+  }
+
+  /** Every node's recovered dolly. A dolly is a property of the CAMERA, so these must all agree — the
+   *  spread is asserted, not assumed, in the tests that use the mean. */
+  const recoveredDollies = (p: CamPriv) => p.nodes.map((nv, i) => nv.depth - fitFrameZ(p, i));
+
+  /**
+   * The projection AS IT WAS before the camera became explicit: world scaled by `pxPerWorld * res`,
+   * camera pinned at `zc = z2`, clip planes at the literal `persp > 0.05` / `zc < P * 0.985`. Lifted
+   * from the pre-Task-11 `projectNodes` and kept here as an INDEPENDENT oracle, because the whole
+   * no-regression claim is that wherever the camera ceiling does not bind, the explicit dolly
+   * reproduces this term for term — positions AND cull.
+   */
+  function preDollyProjection(p: CamPriv) {
+    const S = p.pxPerWorld * p.res;
+    const cyr = Math.cos(p.ry), syr = Math.sin(p.ry), cxr = Math.cos(p.rx), sxr = Math.sin(p.rx);
+    const ox = p.m.padX + (p.m.cols / 2) * p.m.cellW + p.panXQ;
+    const oy = p.m.padY + (p.m.rows / 2) * p.m.cellH + p.panYQ;
+    return p.nodes.map((nv) => {
+      const x = (nv.p3[0] - p.target[0]) * S, y = (nv.p3[1] - p.target[1]) * S, z = (nv.p3[2] - p.target[2]) * S;
+      const x1 = x * cyr + z * syr, z1 = -x * syr + z * cyr;
+      const y2 = y * cxr - z1 * sxr, z2 = y * sxr + z1 * cxr;
+      const persp = p.P / Math.max(1, p.P - z2);
+      return {
+        sx: ox + x1 * persp, sy: oy + y2 * persp,
+        projValid: persp > 0.05 && z2 < p.P * 0.985,
+      };
+    });
+  }
+
+  /** The dolly ceiling `cameraModel` imposes at this perspective — Canvas's MAX_ZOOM_FRAC clamp. */
+  const ceilingMag = (P: number) => P / Math.max(1, P - MAX_ZOOM_FRAC * P);
+
+  /** Preconditions. A fixture that drifts across the ceiling silently tests the OTHER branch — these
+   *  make that a failure with a readable message rather than a vacuous pass. */
+  function assertDeepLadder(p: CamPriv) {
+    expect(p.maxRes).toBeGreaterThan(ceilingMag(p.P));   // measured 19.7 vs 16.67 — the ceiling binds
+  }
+  function assertShallowLadder(p: CamPriv) {
+    expect(p.maxRes).toBeLessThanOrEqual(ceilingMag(p.P)); // measured 8.0 (the MIN_ZOOM_SPAN floor)
+  }
+
+  /** Mount the ball in 3D, optionally in a smaller host box (which is what pushes `maxRes` past the
+   *  camera ceiling: maxRes ∝ 1/pxPerWorld ∝ 1/boxPx). Restores BOX like the resize test above. */
+  /**
+   * `body` runs with the ball mounted; the renderer is destroyed and BOX restored in a `finally`
+   * WHATEVER happens. Both matter: a renderer left alive by a failing assertion keeps its rAF loop
+   * pumping into this file's SHARED recording context, so one broken test in here silently corrupts
+   * the stroke/fill counts of unrelated tests later in the file (observed exactly that, once).
+   */
+  function withBall(
+    box: { width: number; height: number } | null,
+    body: (m: { r: AsciiGraphRenderer; viewport: HTMLElement; painted: number[]; p: CamPriv }) => void,
+    n = 300,
+  ) {
+    const restoreBox = { ...BOX };
+    if (box) Object.assign(BOX, box);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = new AsciiGraphRenderer();
+    try {
+      const painted: number[] = [];
+      r.mount(host, () => {}, () => {});
+      r.setPaintCallback((c) => painted.push(c));
+      r.setConfig({ ...CONFIG, viewMode: "3d" });
+      r.render(ballGraph(n));
+      ctx.fills.length = 0; ctx.strokes.length = 0;
+      frame();
+      settle();
+      body({ r, viewport: host.firstElementChild as HTMLElement, painted, p: camPriv(r) });
+    } finally {
+      r.destroy();
+      host.remove();
+      Object.assign(BOX, restoreBox);
+    }
+  }
+  /** The zoom-in stop: 10 wheel notches is 100% → 0% (ZOOM_STEP_PCT is 10). */
+  function toDeepestStop(viewport: HTMLElement) {
+    wheelIn(viewport, 10, { x: BOX.width / 2, y: BOX.height / 2 });
+    settle(200);
+  }
+
+  it("still paints real note glyphs at MAXIMUM zoom in 3D — the blank field this wiring exists to avoid", () => {
+    // THE required regression gate. A naive `zc = z2 + dollyForT(t, P)` — the dolly stacked on top of
+    // the res-scaled world, which is ALREADY a dolly of P(1 - 1/res) — magnifies twice and pushes
+    // essentially everything in front of the target through the near plane.
+    withBall({ width: 320, height: 220 }, ({ viewport, painted, p }) => {
+      assertDeepLadder(p);
+      ctx.fills.length = 0;
+      toDeepestStop(viewport);
+      expect(p.res).toBeCloseTo(p.maxRes, 6);            // we really are at the 0% stop
+      const onGrid = p.nodes.filter((nv) => nv.onGrid).length;
+      expect(onGrid).toBeGreaterThan(20);                // measured 43 of 300
+      expect(painted.at(-1)!).toBeGreaterThan(20);       // measured 40 node CELLS
+      expect(ballNodeRuns().length).toBeGreaterThan(0);  // ...and they are real note glyphs, in a community colour
+    });
+  });
+
+  it("caps the approach at the camera ceiling on a deep ladder — the ladder alone would stand on the near plane", () => {
+    // maxRes 19.7 asks for 19.7x at the deepest stop, which is a dolly of P*(1 - 1/19.7) = 0.949*P —
+    // past the 0.94*P Canvas's own wheel clamp stopped at, and heading for the P*0.985 singularity.
+    // dollyForT is that clamp: the achieved magnification is MAX_MAGNIFICATION, not maxRes.
+    withBall({ width: 320, height: 220 }, ({ viewport, p }) => {
+      assertDeepLadder(p);
+      toDeepestStop(viewport);
+      const dollies = recoveredDollies(p);
+      const spread = Math.max(...dollies) - Math.min(...dollies);
+      expect(spread).toBeLessThan(1e-6);                 // one camera, not a per-node fudge
+      const mag = p.P / (p.P - dollies[0]);
+      expect(mag).toBeCloseTo(ceilingMag(p.P), 6);       // 16.667x — Canvas's stop
+      expect(mag).toBeCloseTo(MAX_MAGNIFICATION, 6);     // ...which at this P is the asymptotic value
+      expect(mag).toBeLessThan(p.maxRes);                // ...strictly short of what the ladder asked for
+      expect(dollies[0]).toBeLessThan(p.P * MAX_ZOOM_FRAC + 1e-9);
+    });
+  });
+
+  it("takes the LADDER's magnification, not the ceiling's, wherever the ladder asks for less", () => {
+    // The same graph in a full-size box: maxRes falls to the MIN_ZOOM_SPAN floor of 8, well under the
+    // 16.667x ceiling, so the camera must deliver exactly 8x at the deepest stop — NOT 16.667x, which
+    // would zoom a small graph past its own 0% resolution law for no reason.
+    withBall(null, ({ viewport, p }) => {
+      assertShallowLadder(p);
+      toDeepestStop(viewport);
+      const mag = p.P / (p.P - recoveredDollies(p)[0]);
+      expect(mag).toBeCloseTo(p.res, 6);
+      expect(mag).toBeLessThan(ceilingMag(p.P));
+    });
+  });
+
+  it("reproduces the pre-camera projection EXACTLY on a shallow ladder — every drawn position and every cull", () => {
+    // The no-regression claim, against an independent re-implementation of the projection as it was
+    // (see preDollyProjection). Scaling the world by k about the target IS a dolly of P*(1 - 1/k), so
+    // where the ceiling does not bind the two must agree to the last few bits — including projValid,
+    // which is the half a near plane pinned to P (instead of to the camera's working distance) would
+    // silently tighten as the camera comes in.
+    //
+    // POSITIONS are compared only for nodes the renderer considers drawable. Past the near plane both
+    // projections saturate on `Math.max(1, P - zc)`, a clamp that is NOT scale-equivariant, so the two
+    // legitimately diverge there — on coordinates no glyph, edge or label ever reads. `projValid`
+    // itself is compared over EVERY node, so "drawable" cannot quietly shrink to nothing.
+    withBall(null, ({ viewport, p }) => {
+      assertShallowLadder(p);
+      let comparedTotal = 0;
+      for (let step = 0; step <= 10; step++) {
+        if (step > 0) { wheelIn(viewport, 1, { x: BOX.width / 2, y: BOX.height / 2 }); settle(200); }
+        const want = preDollyProjection(p);
+        let maxDelta = 0, cullMismatches = 0, compared = 0;
+        for (let i = 0; i < p.nodes.length; i++) {
+          if (p.nodes[i].projValid !== want[i].projValid) cullMismatches++;
+          if (!want[i].projValid) continue;
+          compared++;
+          // Off-screen-but-valid nodes carry large coordinates, so compare RELATIVE to their own size.
+          const scale = Math.max(1, Math.abs(want[i].sx), Math.abs(want[i].sy));
+          maxDelta = Math.max(maxDelta, Math.abs(p.nodes[i].sx - want[i].sx) / scale,
+            Math.abs(p.nodes[i].sy - want[i].sy) / scale);
+        }
+        expect(cullMismatches).toBe(0);
+        expect(maxDelta).toBeLessThan(1e-9);
+        expect(compared).toBeGreaterThan(150);           // measured 207-300 of 300 across the ladder
+        comparedTotal += compared;
+      }
+      expect(comparedTotal).toBeGreaterThan(2000);
+    });
+  });
+
+  it("THE LAW through the approach: the camera moves a long way in, the type does not move at all", () => {
+    // A dolly moves POSITIONS. The THE LAW tests above pin type size across a wheel zoom in 2D, where
+    // there is no camera at all; this pins it across the 3D approach, and pins in the same breath that
+    // the camera really did travel (otherwise "the type didn't change" is satisfied by a camera that
+    // never moved, which is the state this task started from).
+    withBall({ width: 320, height: 220 }, ({ viewport, p }) => {
+      expect(recoveredDollies(p)[0]).toBeCloseTo(0, 6);   // fit: no dolly, by construction
+      const fontAtFit = ctx.font;
+      const spacingAtFit = ctx.letterSpacing;
+      const fontsBefore = ctx.fonts.length;
+      toDeepestStop(viewport);
+      expect(recoveredDollies(p)[0]).toBeGreaterThan(p.P * 0.9); // the camera crossed 90% of the way in
+      expect(ctx.font).toBe(fontAtFit);
+      expect(ctx.letterSpacing).toBe(spacingAtFit);
+      // ...and no DIFFERENT size was ever set mid-glide, only the same one re-asserted.
+      expect(new Set(ctx.fonts.slice(fontsBefore))).toEqual(new Set([fontAtFit]));
+    });
+  });
+
+  it("frameSubset asks for a MAGNIFICATION and gets it in 3D, not merely the matching resolution stop", () => {
+    // Canvas's frameSubset set a dolly; ASCII's set a resolution. Unified, the request is a
+    // magnification and each mode converts. On a deep ladder the two conversions differ: the
+    // resolution stop that NUMERICALLY equals the wanted magnification delivers LESS than it, because
+    // the camera ceiling caps `maxRes^t` at `maxZs^t`. Routing through zoomT (cameraModel's exact
+    // inverse of dollyForT) is what closes that gap.
+    withBall({ width: 320, height: 220 }, ({ r, p }) => {
+      assertDeepLadder(p);
+      // A SPATIALLY TIGHT subset — the 6 notes nearest n0, on a DENSER ball (700, see the trailing arg) — so the framing request is a real
+      // magnification. (A subset sampled across the whole ball has the ball's own radius, i.e. asks
+      // to zoom OUT, which would make this test pass on any implementation at all.)
+      const anchor = p.nodes[0].p3;
+      const subset = [...p.nodes]
+        .sort((a, b) => Math.hypot(a.p3[0] - anchor[0], a.p3[1] - anchor[1], a.p3[2] - anchor[2])
+          - Math.hypot(b.p3[0] - anchor[0], b.p3[1] - anchor[1], b.p3[2] - anchor[2]))
+        .slice(0, 6);
+      const pts = subset.map((nv) => nv.p3);
+      const c = [0, 1, 2].map((k) => pts.reduce((a, q) => a + q[k], 0) / pts.length);
+      let rad = 1e-6;
+      for (const q of pts) rad = Math.max(rad, Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]));
+      // `whole` mirrors graphFit's boundingRadius (max |p3|) — the same quantity frameSubset divides by.
+      const whole = Math.max(...p.nodes.map((nv) => Math.hypot(nv.p3[0], nv.p3[1], nv.p3[2])));
+      const wantMag = (whole / rad) * 0.55;
+      // Measured 3.36x on this fixture (700 notes, maxRes 26.4) — a real zoom-IN request.
+      expect(wantMag).toBeGreaterThan(2);                 // a real zoom-IN request
+      expect(wantMag).toBeLessThan(ceilingMag(p.P));      // ...and reachable, so a shortfall is a bug, not a clamp
+
+      r.frameSubset(subset.map((nv) => nv.node.id));
+      settle(300);
+      const mag = p.P / (p.P - recoveredDollies(p)[0]);
+      // The only slack is the resolution glide's own settle epsilon; a systematic shortfall (the
+      // resolution-only conversion) is ~20% here, an order of magnitude outside this band.
+      expect(mag / wantMag).toBeGreaterThan(0.98);
+      expect(mag / wantMag).toBeLessThan(1.02);
+    }, 700);
+  });
+
+  it("resetView returns the camera to the fit distance — the dolly has no state of its own to strand", () => {
+    withBall({ width: 320, height: 220 }, ({ r, viewport, p }) => {
+      toDeepestStop(viewport);
+      expect(recoveredDollies(p)[0]).toBeGreaterThan(p.P * 0.9);
+      r.resetView();
+      settle(300);
+      expect(recoveredDollies(p)[0]).toBeCloseTo(0, 6);
+      expect(p.res).toBeCloseTo(1, 6);
+    });
   });
 });
 
