@@ -1799,8 +1799,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
         //    backbone is built from community pairs (buildLevelEdges skips a null path outright), so a
         //    dropped edge here vanishes with no stand-in anywhere on the field.
         //  - a hovered-incident edge: hover is the user asking this exact node what it connects to.
-        //  - a focus-set edge (search matches / daemon-list highlight): the same question, held open.
-        if (lodOn && ca >= BLEND_BASE && cb >= BLEND_BASE && !incident && !focused
+        //    STRICT incidence, not `focused` — `focusSet()` also carries the hovered node's
+        //    NEIGHBOURS, and exempting on that would spare every edge between two of them, which is
+        //    the same over-broad set this loop's dim/accent split already documents as a past bug.
+        //  - an edge touching a persistent HIGHLIGHT set with no hover in play (a search match, a
+        //    daemon-list selection): a deliberate selection the user is holding open, not an
+        //    expansion. `focus` IS `highlightSet` exactly when `hov == null` (see focusSet()).
+        if (lodOn && ca >= BLEND_BASE && cb >= BLEND_BASE && !incident && !(hov == null && focused)
           && !(this.inViewClusters.has(ca) && this.inViewClusters.has(cb))) {
           this.edgesTransitingDroppedFrame++;
           continue;
