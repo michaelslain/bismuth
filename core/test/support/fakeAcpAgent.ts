@@ -499,6 +499,15 @@ function handleLine(raw: string): void {
       // behavior with FAKE_ACP_PROMPT_HOLD unset is unchanged. Not exercised by
       // acpPermissionFakeAgent.test.ts — it is the abort gap's half of the shared mechanism, kept
       // here because a held prompt that cannot be cancelled is not a reusable primitive.
+      //
+      // FOR WHOEVER WRITES THE ABORT TEST: settling here does NOT unwind the runner that was holding
+      // the prompt. runHeldPermissionPrompt is still parked on `await callClient(...)`, and its
+      // resolver stays in pendingClientCalls indefinitely — so a permission reply arriving AFTER a
+      // cancel resumes that runner and emits a stray agent_message_chunk on an already-cancelled
+      // turn. (No double response: the second settlePrompt is a no-op by construction.) Benign in a
+      // short-lived subprocess, but an abort test will want this arm to drain pendingClientCalls
+      // too — resolving each waiter with a synthetic "cancelled" envelope, so the runners unwind
+      // instead of leaking.
       for (const heldId of Array.from(heldPrompts.keys())) settlePrompt(heldId, "cancelled");
       return;
     default:

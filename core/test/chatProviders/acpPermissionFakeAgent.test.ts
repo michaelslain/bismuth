@@ -48,14 +48,30 @@ import { makeChatFrameCollector } from "../support/chatFrameCollector";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 
-// All five must match ../support/fakeAcpAgent.ts's own constants — same convention acpFakeAgent.test.ts
+// All six must match ../support/fakeAcpAgent.ts's own constants — same convention acpFakeAgent.test.ts
 // already uses for FAKE_TURN_TEXT. Duplicated rather than imported because the fake is a standalone
 // script executed as a subprocess, not a module this test links against.
+const PERM_TOOL_CALL_ID = "fake-tool-call-1";
 const PERM_TOOL_TITLE = "Write fake-permission-probe.txt";
 const PERM_TOOL_KIND = "edit";
 const PERM_ALLOW_ONCE_ID = "fake-opt-allow-once";
 const PERM_REJECT_ONCE_ID = "fake-opt-reject-once";
 const FAKE_PERMISSION_REPLY_PREFIX = "fake-acp permission reply: ";
+
+/**
+ * Narrow a collected frame to a specific kind, FAILING if it is anything else.
+ *
+ * Why this exists rather than the obvious `if (f.type === "x") expect(...)`: that shape skips the
+ * assertions instead of failing when the guard is false, which is this project's exact
+ * signal-that-claims-more-than-it-knows defect wearing a type guard's clothes. Every such guard in
+ * this file was provably true when written, so nothing was vacuous — but a later refactor that
+ * changes which frame lands at a given index would silently turn four real assertions into no-ops,
+ * with a green run and no failure anywhere. Failing here makes that refactor loud.
+ */
+function expectFrame<K extends ChatFrame["type"]>(f: ChatFrame | undefined, kind: K): Extract<ChatFrame, { type: K }> {
+  expect(f?.type).toBe(kind);
+  return f as Extract<ChatFrame, { type: K }>;
+}
 
 /** How long to sit still after the permission frame arrives, before asserting the turn has NOT
  *  settled. Without this the "the turn is genuinely parked" assertion would be indistinguishable
@@ -114,8 +130,13 @@ async function waitForCondition(check: () => boolean, timeoutMs: number, descrip
 }
 
 describe("the ACP driver's permission round-trip against a fake agent that holds the turn open (zero network, zero CLI dependency)", () => {
-  let stubDir: string;
-  let echoDir: string;
+  // `| undefined` with an explicit reset each beforeEach, matching acpFakeAgent.test.ts:87's own
+  // shape: if makeStubBinDir()/mkdtempSync throws in the FIRST beforeEach, these stay undefined and
+  // afterEach's rmSync would be handed `undefined` — which throws ERR_INVALID_ARG_TYPE and MASKS the
+  // original failure (`force:true` swallows ENOENT, not an invalid argument type). This exact bug has
+  // shipped in this harness before.
+  let stubDir: string | undefined;
+  let echoDir: string | undefined;
   let echoFile: string;
   const savedEnv: Record<string, string | undefined> = {};
   const ENV_KEYS = [
@@ -143,6 +164,10 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
     // shared `bun test` process for every later test that spawns a subprocess.
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
 
+    // Reset before the throwing calls below, so a failure partway through can never leave afterEach
+    // pointed at the PREVIOUS test's already-removed directory.
+    stubDir = undefined;
+    echoDir = undefined;
     stubDir = makeStubBinDir();
     echoDir = mkdtempSync(join(tmpdir(), "bismuth-acp-perm-echo-"));
     echoFile = join(echoDir, "echo.jsonl");
@@ -166,8 +191,8 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
     // later test in this file (or a later file in this same process) pointed at a stub PATH.
     restoreEnv();
     for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
-    rmSync(stubDir, { recursive: true, force: true });
-    rmSync(echoDir, { recursive: true, force: true });
+    if (stubDir) rmSync(stubDir, { recursive: true, force: true });
+    if (echoDir) rmSync(echoDir, { recursive: true, force: true });
   });
 
   afterAll(() => {
@@ -197,8 +222,7 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
 
     CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
 
-    const permission = await waitFor((f) => f.type === "permission");
-    if (permission.type !== "permission") throw new Error("unreachable: waitFor matched on type");
+    const permission = expectFrame(await waitFor((f) => f.type === "permission"), "permission");
 
     // Exactly one, not "at least one": this turn contains exactly one tool call, so a second
     // permission frame would mean the driver re-emitted a parked request (double-prompting the user
@@ -247,11 +271,9 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
       // `kind`, no `name` — so this pins what the driver actually does with it. (See this file's
       // trailing "TOOL-NAMING INCONSISTENCY" note: the same tool is named differently one frame
       // apart, which is a real finding this test surfaces but deliberately does not fix.)
-      const permission = frames[permissionIdx];
-      if (permission.type === "permission") {
-        expect(permission.toolName).toBe(PERM_TOOL_TITLE);
-        expect(permission.input).toEqual({ description: PERM_TOOL_TITLE, kind: PERM_TOOL_KIND });
-      }
+      const permission = expectFrame(frames[permissionIdx], "permission");
+      expect(permission.toolName).toBe(PERM_TOOL_TITLE);
+      expect(permission.input).toEqual({ description: PERM_TOOL_TITLE, kind: PERM_TOOL_KIND });
 
       const respond = CHAT_BACKENDS.cline.respondPermission;
       expect(typeof respond).toBe("function");
@@ -266,8 +288,8 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
       // Independent second proof, through a completely different channel (the driver's own frame
       // stream rather than the echo file): the fake parses the reply it received and reports the
       // outcome back as assistant text. This frame cannot exist unless the reply landed AND parsed.
-      const replyText = await waitFor((f) => f.type === "assistant-text" && f.text.startsWith(FAKE_PERMISSION_REPLY_PREFIX));
-      if (replyText.type === "assistant-text") expect(replyText.text).toContain(PERM_ALLOW_ONCE_ID);
+      const replyText = expectFrame(await waitFor((f) => f.type === "assistant-text" && f.text.startsWith(FAKE_PERMISSION_REPLY_PREFIX)), "assistant-text");
+      expect(replyText.text).toContain(PERM_ALLOW_ONCE_ID);
       expect(frames.indexOf(replyText)).toBeGreaterThan(permissionIdx);
 
       await waitFor((f) => f.type === "done");
@@ -277,8 +299,7 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
       // when it arrived — asserted in driveToParkedPermission), and result must precede done.
       expect(resultIdx).toBeGreaterThan(permissionIdx);
       expect(doneIdx).toBeGreaterThan(resultIdx);
-      const resultFrame = frames[resultIdx];
-      if (resultFrame.type === "result") expect(resultFrame.isError).toBe(false);
+      expect(expectFrame(frames[resultIdx], "result").isError).toBe(false);
       expect(frames.some((f) => f.type === "error")).toBe(false);
 
       // Answering the same id twice must not put a second response on the wire. driver.ts deletes the
@@ -306,8 +327,8 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
       // this cannot pass on the driver having echoed "reject_once" from anywhere else.
       expect(await awaitReplyResult(permissionId)).toEqual({ outcome: { outcome: "selected", optionId: PERM_REJECT_ONCE_ID } });
 
-      const replyText = await waitFor((f) => f.type === "assistant-text" && f.text.startsWith(FAKE_PERMISSION_REPLY_PREFIX));
-      if (replyText.type === "assistant-text") expect(replyText.text).toContain(PERM_REJECT_ONCE_ID);
+      const replyText = expectFrame(await waitFor((f) => f.type === "assistant-text" && f.text.startsWith(FAKE_PERMISSION_REPLY_PREFIX)), "assistant-text");
+      expect(replyText.text).toContain(PERM_REJECT_ONCE_ID);
       expect(frames.indexOf(replyText)).toBeGreaterThan(permissionIdx);
 
       await waitFor((f) => f.type === "done");
@@ -316,8 +337,7 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
       expect(resultIdx).toBeGreaterThan(permissionIdx);
       expect(doneIdx).toBeGreaterThan(resultIdx);
       // A denied tool is not a failed TURN — driver.ts flags isError only for stopReason "refusal".
-      const resultFrame = frames[resultIdx];
-      if (resultFrame.type === "result") expect(resultFrame.isError).toBe(false);
+      expect(expectFrame(frames[resultIdx], "result").isError).toBe(false);
     },
     20_000,
   );
@@ -343,11 +363,9 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
       // protocol violation an agent could misread as a selection.
       expect(result).toEqual({ outcome: { outcome: "cancelled" } });
 
-      const replyText = await waitFor((f) => f.type === "assistant-text" && f.text.startsWith(FAKE_PERMISSION_REPLY_PREFIX));
-      if (replyText.type === "assistant-text") {
-        expect(replyText.text).toContain("cancelled");
-        expect(replyText.text).not.toContain(PERM_ALLOW_ONCE_ID);
-      }
+      const replyText = expectFrame(await waitFor((f) => f.type === "assistant-text" && f.text.startsWith(FAKE_PERMISSION_REPLY_PREFIX)), "assistant-text");
+      expect(replyText.text).toContain("cancelled");
+      expect(replyText.text).not.toContain(PERM_ALLOW_ONCE_ID);
       expect(frames.indexOf(replyText)).toBeGreaterThan(permissionIdx);
 
       // The turn must still END. A cancelled permission is the case most likely to wedge a chat
@@ -358,8 +376,7 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
       const doneIdx = frames.findIndex((f) => f.type === "done");
       expect(resultIdx).toBeGreaterThan(permissionIdx);
       expect(doneIdx).toBeGreaterThan(resultIdx);
-      const resultFrame = frames[resultIdx];
-      if (resultFrame.type === "result") expect(resultFrame.isError).toBe(false);
+      expect(expectFrame(frames[resultIdx], "result").isError).toBe(false);
     },
     20_000,
   );
@@ -381,14 +398,21 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
       const chatId = "acp-perm-naming-" + Date.now();
       const { permissionId, permissionIdx, frames } = await driveToParkedPermission(chatId);
 
-      const permission = frames[permissionIdx];
-      const toolUse = frames.find((f) => f.type === "tool-use");
-      expect(toolUse).toBeDefined();
+      const permission = expectFrame(frames[permissionIdx], "permission");
+
+      // Correlated on the tool call's OWN id, not "the first tool-use frame in the transcript".
+      // Matching by presence is exactly what this file's header disavows: it is not vacuous today
+      // (this turn emits one tool_call), but it would silently latch onto the wrong frame the moment
+      // a held-prompt mode streams a second one — which the turn-queue and abort modes this
+      // mechanism was built for plausibly will. Exactly one, for the same reason as line 206.
+      const toolUses = frames.filter((f) => f.type === "tool-use" && f.id === PERM_TOOL_CALL_ID);
+      expect(toolUses.length).toBe(1);
+      const toolUse = expectFrame(toolUses[0], "tool-use");
 
       // Same wire event, same tool, two names — asserted side by side so the inconsistency is
       // impossible to read as two unrelated facts.
-      if (permission.type === "permission") expect(permission.toolName).toBe(PERM_TOOL_TITLE); // driver.ts:310-314 reaches `title`
-      if (toolUse && toolUse.type === "tool-use") expect(toolUse.name).toBe(PERM_TOOL_KIND); // protocol.ts:389 skips `title`, lands on `kind`
+      expect(permission.toolName).toBe(PERM_TOOL_TITLE); // driver.ts:310-314 reaches `title`
+      expect(toolUse.name).toBe(PERM_TOOL_KIND); // protocol.ts:389 skips `title`, lands on `kind`
       expect(PERM_TOOL_TITLE).not.toBe(PERM_TOOL_KIND); // the two assertions above are only meaningful because these differ
 
       // Settle the turn rather than leaving the fake blocked on a reply through teardown.
