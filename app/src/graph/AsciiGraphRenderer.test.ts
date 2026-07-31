@@ -16,8 +16,9 @@ import {
   AsciiGraphRenderer, DIM_ALPHA, EDGE_DIM_ALPHA, EDGE_W_GAIN, EDGE_W_MAX,
   deriveEdgeBaseAlpha, safeDepthBand, trimSegmentForClearance,
 } from "./AsciiGraphRenderer";
-import { CELL_W, LAYER_EDGE } from "./asciiGrid";
-import { CLUSTER_LABEL_MAX_CHARS } from "./labelSelection";
+import { CELL_W, LAYER_EDGE, resFromT } from "./asciiGrid";
+import { CLUSTER_LABEL_MAX_CHARS, clusterLevelAlphas } from "./labelSelection";
+import { DEFAULT_LEVEL_REVEAL_T } from "./backbone";
 import { buildColorSlots } from "./clusterVisual";
 import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
 import { THEMES } from "../../../core/src/theme/tokens";
@@ -2082,6 +2083,239 @@ describe("LEVEL OF DETAIL (opt-in, GraphConfig.showLodMasses) — coarse stops r
     settle(200);
     expect([...p.cellEntity].every((v) => v < 0)).toBe(true);
     expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
+    r.destroy();
+  });
+});
+
+describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub backbone, near = glyphs + member edges", () => {
+  /**
+   * A strictly NESTED 4-level hierarchy: 16 leaf groups of 4 notes, whose paths are the group index
+   * shifted (`[g>>3, g>>2, g>>1, g]`), giving 2 / 4 / 8 / 16 communities down the ladder. Four levels
+   * specifically, because the level BOUNDARIES are `k · revealT / levelCount`: at 4 levels the
+   * level-2/3 boundary sits at 0.5625 under `FILE_LABEL_REVEAL_T` (0.75) but at 0.465 under
+   * `computeEdgeLevelWeights`' ported Canvas default (0.62), and the whole gap between them lands
+   * inside the mid band's plateau — which is what makes "did the caller pass the right revealT?"
+   * observable at all. At 2 levels the same disagreement window (0.31 … 0.375) sits under the mass
+   * band, where the backbone is barely drawn.
+   *
+   * The cross-group links are chosen so the connected-PAIR count differs level to level (1 / 3 / 8 /
+   * 11) — a backbone drawn at the wrong level then has a different segment count, which is what the
+   * revealT test reads. The test asserts that difference rather than trusting it.
+   */
+  function fourLevelGraph() {
+    const nodes = [];
+    const edges = [];
+    for (let g = 0; g < 16; g++) {
+      const path = [g >> 3, g >> 2, g >> 1, g];
+      const labels = [`Lzero ${path[0]}`, `Lone ${path[1]}`, `Ltwo ${path[2]}`, `Lthree ${path[3]}`];
+      for (let k = 0; k < 4; k++) {
+        const x = (g % 4) * 60 + (k % 2) * 10 - 95;
+        const y = Math.floor(g / 4) * 60 + Math.floor(k / 2) * 10 - 95;
+        nodes.push({
+          id: `g${g}n${k}`, label: `note ${g}-${k}`, kind: "note" as const,
+          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+          community: g, communityLabel: `Leaf ${g}`, communityPath: path, communityPathLabels: labels,
+        });
+      }
+      for (let k = 1; k < 4; k++) edges.push({ from: `g${g}n0`, to: `g${g}n${k}`, kind: "link" as const });
+    }
+    const cross: [number, number][] = [[0, 1], [0, 2], [0, 4], [0, 8], [1, 3], [2, 6], [4, 12], [5, 13], [3, 11], [7, 15], [9, 10]];
+    for (const [a, b] of cross) edges.push({ from: `g${a}n0`, to: `g${b}n1`, kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  interface BandPriv {
+    res: number; goalRes: number; maxRes: number;
+    cellNode: Int32Array; cellEntity: Int32Array;
+    colors: string[]; edgeBaseAlpha: number;
+    levelPairs: { a: { node: { id: string }; col: number; row: number }; b: { node: { id: string }; col: number; row: number }; count: number }[][];
+    m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
+  }
+
+  /** Park the camera at an EXACT resolution progress `t` and repaint once. The band boundaries are
+   *  constants in `t`, while a wheel notch is a 10% ZOOM STOP — the two do not line up, so wheeling
+   *  to "about the mid band" would make every assertion below depend on where the nearest stop
+   *  happens to fall. Sets `res` and `goalRes` together so tick()'s glide has nothing left to do. */
+  function parkAtT(r: AsciiGraphRenderer, t: number) {
+    const cam = r as unknown as { res: number; goalRes: number; maxRes: number; dirty: boolean };
+    cam.res = cam.goalRes = resFromT(t, cam.maxRes);
+    cam.dirty = true;
+    ctx.fills.length = 0;
+    ctx.strokes.length = 0;
+    frame(9999);
+  }
+
+  /** Segments stroked in the --graph-edge colour: the GROUP LINES (aggregate connectors + backbone)
+   *  and the real member edges. Deliberately not `strokeSegs()` — the intra-cluster mesh strokes in
+   *  each cluster's own colour, and counting it here would blur exactly the distinction under test. */
+  const edgeColorSegs = (priv: BandPriv) =>
+    ctx.strokes.filter((s) => s.color === priv.colors[9]).flatMap((s) => s.segs);
+  const cellCentre = (priv: BandPriv, col: number, row: number) =>
+    `${(priv.m.padX + col * priv.m.cellW + priv.m.cellW / 2).toFixed(2)},${(priv.m.padY + row * priv.m.cellH + priv.m.cellH / 2).toFixed(2)}`;
+
+  // t = 0.48 sits inside the mid band's PLATEAU (bandsForT → {mass: 0, backbone: 1, member: 0}),
+  // and inside the revealT disagreement window described on the fixture above.
+  const MID_T = 0.48;
+
+  it("REQUIRED — the mid band rasterizes individual GLYPHS, with no masses left on the field", () => {
+    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    // At fit the far band owns everything: masses, no glyphs. (Establishes that the fixture really
+    // does take the LOD path, so the mid-band assertion below is a CHANGE, not the status quo.)
+    expect([...priv.cellEntity].some((v) => v >= 0)).toBe(true);
+    expect([...priv.cellNode].every((v) => v < 0)).toBe(true);
+
+    parkAtT(r, MID_T);
+    // A GLYPH count, not a paint count: `cellNode` is written only by rasterize()'s leaf node pass,
+    // one entry per individual note actually on the grid. Masses paint `. o @` too — an ink or fill
+    // count would be satisfied by the far band and prove nothing.
+    const glyphCells = [...priv.cellNode].filter((v) => v >= 0).length;
+    expect(glyphCells).toBeGreaterThan(0);
+    // ...and the masses really are gone, which is the other half of "this is the mid band".
+    expect([...priv.cellEntity].every((v) => v < 0)).toBe(true);
+    r.destroy();
+  });
+
+  it("the mid band draws the hub-to-hub BACKBONE instead of the member hairball", () => {
+    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    parkAtT(r, MID_T);
+
+    const segs = edgeColorSegs(priv);
+    // Level 2 owns the field at this t (asserted independently in the revealT test below): its 8
+    // connected community pairs, one line each, hub to hub.
+    const pairs = priv.levelPairs[2];
+    expect(pairs.length).toBe(8);
+    expect(segs.length).toBe(pairs.length);
+    // Every line runs between two HUBS — not between arbitrary members, and not the filtered
+    // member-crossing edges the first attempt at this drew (see buildLevelEdges' doc comment).
+    const drawn = segs.map((s) => [`${s[0].toFixed(2)},${s[1].toFixed(2)}`, `${s[2].toFixed(2)},${s[3].toFixed(2)}`].sort().join(" -> ")).sort();
+    const want = pairs.map((p) => [cellCentre(priv, p.a.col, p.a.row), cellCentre(priv, p.b.col, p.b.row)].sort().join(" -> ")).sort();
+    expect(drawn).toEqual(want);
+    // The graph has 48 intra-group spokes + 11 cross links = 59 real edges. If the member pass had
+    // leaked into this band there would be an order of magnitude more lines here than 8 — that
+    // hairball is precisely what the backbone stands in for.
+    expect(segs.length).toBeLessThan(20);
+    r.destroy();
+  });
+
+  it("the NEAR band gives the field back to the real member edges, and the backbone stands down", () => {
+    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    parkAtT(r, 0.99);
+    // 59 real edges, every one of them stroked (the budget is 6000 — nothing is thinned here).
+    expect(edgeColorSegs(priv).length).toBe(59);
+    r.destroy();
+  });
+
+  it("the backbone rewires to the finer grouping on the SAME frame node colour and cluster names do — computeEdgeLevelWeights must be passed FILE_LABEL_REVEAL_T, not its ported default", () => {
+    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    parkAtT(r, MID_T);
+
+    // Which level the COLOUR + NAME ladder says owns the field here, from the very function the
+    // renderer's colour block and label pass call — not a hardcoded number.
+    const alphas = clusterLevelAlphas(MID_T, 4);
+    const colourLevel = alphas.indexOf(Math.max(...alphas));
+    // The ported Canvas default puts a DIFFERENT level in charge at this t. Without this, the test
+    // would pass for either constant and prove nothing — it is what makes MID_T a discriminating
+    // sample rather than an arbitrary one.
+    const ported = clusterLevelAlphas(MID_T, 4, DEFAULT_LEVEL_REVEAL_T);
+    expect(ported.indexOf(Math.max(...ported))).not.toBe(colourLevel);
+    // ...and those two levels have different pair counts, so the segment count can tell them apart.
+    expect(priv.levelPairs[colourLevel].length).not.toBe(priv.levelPairs[ported.indexOf(Math.max(...ported))].length);
+
+    // The backbone drew the COLOUR ladder's level, on this frame.
+    expect(edgeColorSegs(priv).length).toBe(priv.levelPairs[colourLevel].length);
+    r.destroy();
+  });
+
+  it("the INTRA-CLUSTER MESH strokes each cluster's own colour at INTRA_EDGE_ALPHA, one batch per colour", () => {
+    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    parkAtT(r, MID_T);
+
+    const mesh = ctx.strokes.filter((s) => s.color !== priv.colors[9] && s.segs.length > 0);
+    expect(mesh.length).toBeGreaterThan(1);              // batched BY COLOUR, not one bucket for all
+    // Exactly one batch per distinct colour — the batching claim, which "some strokes exist" misses.
+    expect(new Set(mesh.map((s) => s.color)).size).toBe(mesh.length);
+    for (const s of mesh) expect(s.alpha).toBeCloseTo(0.22 * priv.edgeBaseAlpha, 6);
+    // Every mesh line is INTRA-community at the level being shown: its endpoints share a colour, and
+    // that colour is the batch's own. (A mesh that also drew cross-group edges would be the between-
+    // group story told twice, which the group lines above already own.)
+    // 49 = the 16 leaf groups' 3 spokes each (48), PLUS exactly one of the 11 cross-group links:
+    // g0–g1, the only one whose endpoints fall in the same community AT LEVEL 2 (`g >> 1`, so
+    // groups 0 and 1 are both community 0 there). That single edge is what makes the count pin the
+    // mesh's LEVEL-sensitivity rather than just its existence — keyed off the leaf level it would be
+    // 48, and off no level at all (every edge) it would be 59.
+    const meshSegs = mesh.flatMap((s) => s.segs);
+    expect(meshSegs.length).toBe(49);
+    r.destroy();
+  });
+
+  /** `n` notes with no community at all (so the band ladder degenerates to "member edges own every
+   *  stop") and `m` deterministically-chosen edges between them — the dense-graph thinning fixture. */
+  function denseEdgeGraph(n: number, m: number) {
+    const nodes = [];
+    const edges = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      nodes.push({
+        id: `n${i}`, label: `note ${i}`, kind: "note" as const,
+        position: [Math.cos(a) * 400, Math.sin(a) * 400, 0] as [number, number, number],
+        position2d: [Math.cos(a) * 400, Math.sin(a) * 400] as [number, number],
+      });
+    }
+    // A fixed stride walk, so the edge SET is identical between the 2D and 3D mounts below (the
+    // per-edge keep rank is a hash of the endpoint ids — the comparison is only meaningful if both
+    // renderers are ranking the same edges).
+    for (let e = 0; e < m; e++) edges.push({ from: `n${e % n}`, to: `n${(e * 7 + 1 + Math.floor(e / n)) % n}`, kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  it("adopts the 6000-edge budget: a 4000-edge vault draws every edge, where the old 2600 budget thinned it to ~65%", () => {
+    const { r } = mountRenderer("2d", denseEdgeGraph(600, 4000));
+    // 4000 < EDGE_BUDGET_2D (6000) → keepFrac is 1 and nothing is thinned. Under the old pair
+    // (2600 / 0.12) keepFrac would be max(0.12, 2600/4000) = 0.65, i.e. ~1400 edges silently gone.
+    const drawn = r.computeStats().edgesDrawn;
+    expect(drawn).toBe(4000);
+    r.destroy();
+  });
+
+  it("...and thins 3D LESS than 2D past the budget — one shared floor could not express that", () => {
+    const g = denseEdgeGraph(600, 30000);
+    const a = mountRenderer("2d", g);
+    const in2d = a.r.computeStats().edgesDrawn;
+    a.r.destroy();
+    const b = mountRenderer("3d", g);
+    const in3d = b.r.computeStats().edgesDrawn;
+    b.r.destroy();
+    // 3D's depth-band falloff already thins the far half of the cloud optically, so dropping the
+    // same fraction structurally on top of it reads as holes — hence the higher floor.
+    // 30000 edges puts 2D on its BUDGET (6000/30000 = 0.2, above EDGE_FLOOR_2D = 0.06) and 3D on its
+    // FLOOR (0.45), a 2.25x split. Deliberately not a size where the two land close together: the
+    // keep rank is a 1000-bucket hash, so a small gap would be swamped by its ~2% sampling bias, and
+    // the test would be asserting noise. Windows are ±8% relative, comfortably wider than that bias
+    // and far narrower than the gap between the two constants.
+    expect(in2d / 30000).toBeGreaterThan(0.2 * 0.92);
+    expect(in2d / 30000).toBeLessThan(0.2 * 1.08);
+    expect(in3d / 30000).toBeGreaterThan(0.45 * 0.92);
+    expect(in3d / 30000).toBeLessThan(0.45 * 1.08);
+    // Restore ONE shared floor (either value) and this inequality is the assertion that goes red:
+    // both dimensions would then thin the same graph identically.
+    expect(in3d).toBeGreaterThan(in2d * 2);
+  });
+
+  it("the far band is unchanged: masses own the field at fit, and no glyph or member edge is drawn", () => {
+    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv;
+    expect([...priv.cellEntity].some((v) => v >= 0)).toBe(true);
+    expect([...priv.cellNode].every((v) => v < 0)).toBe(true);
+    // The only lines at fit are the level-0 aggregate connectors — one per connected pair of the
+    // coarsest level's communities, which for this fixture is exactly one.
+    expect(edgeColorSegs(priv).length).toBe(1);
+    // ...and no mesh, because there are no glyph clouds to give substance to yet.
+    expect(ctx.strokes.filter((s) => s.color !== priv.colors[9] && s.segs.length > 0)).toEqual([]);
     r.destroy();
   });
 });
