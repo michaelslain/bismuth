@@ -2426,6 +2426,33 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     expect(ctx.strokes.filter((s) => s.color !== priv.colors[9] && s.segs.length > 0)).toEqual([]);
     r.destroy();
   });
+
+  it("an aggregate connector to a mass that is no longer on the field is dropped, not left trailing off the edge", () => {
+    // Same rule as the backbone's, and the same reason: a connector to a mass with no ink on the
+    // grid can only read as a stray diagonal leaving the frame. This is the FAR band, i.e. the app's
+    // default 2D view once it is panned at all.
+    const { r, viewport } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
+    const priv = r as unknown as BandPriv & { entityFlat: { level: number; onGrid: boolean }[] };
+    expect(edgeColorSegs(priv).length).toBe(1);
+    expect(priv.entityFlat.filter((e) => e.level === 0).every((e) => e.onGrid)).toBe(true);
+
+    // Pan DOWNWARD until one of the two coarsest masses has left the field entirely. Vertically,
+    // because this fixture's two level-0 centroids are separated almost purely in y — a horizontal
+    // pan takes them off together and there is nothing left to compare against.
+    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 400, clientY: 320 }));
+    frame(10016);
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 400, clientY: 520 }));
+    ctx.strokes.length = 0;
+    frame(10032);
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 400, clientY: 520 }));
+
+    const level0 = priv.entityFlat.filter((e) => e.level === 0);
+    expect(level0.some((e) => !e.onGrid)).toBe(true);   // one really did leave...
+    expect(level0.some((e) => e.onGrid)).toBe(true);    // ...and one really is still there
+    expect(edgeColorSegs(priv).length).toBe(0);         // ...so the connector between them is gone
+    r.destroy();
+  });
 });
 
 describe("LOD mass names — the CONDITIONAL edge clamp (the parked-label defect on the DEFAULT 2D path)", () => {

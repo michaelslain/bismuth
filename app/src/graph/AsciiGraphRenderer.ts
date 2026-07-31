@@ -1691,6 +1691,13 @@ export class AsciiGraphRenderer implements GraphRenderer {
     for (const e of lv.edges) {
       const a = evs[e.a], b = evs[e.b];
       if (!a || !b) continue;
+      // BOTH masses must have ink on the field — the same rule the backbone uses (see queueBackbone,
+      // and `CanvasGraphRenderer.ts:1266` for the group-line convention it comes from) and the same
+      // rule `drawEntityMasses`/`layoutEntityNames` already apply to the mass and its name. A
+      // connector to a mass that isn't drawn is a line to nowhere: it can only read as a stray
+      // diagonal leaving the frame. At fit — the app's default view — every mass is on the grid and
+      // this changes nothing; it matters once the field is panned or stepped in.
+      if (!a.onGrid || !b.onGrid) continue;
       const alpha = base * (AGG_EDGE_ALPHA_MIN + (1 - AGG_EDGE_ALPHA_MIN) * e.w);
       if (alpha <= 0.004) continue;
       const width = (e.w >= AGG_EDGE_DOUBLE_W ? GROUP_W_BASE * 2 : GROUP_W_BASE) * wScale;
