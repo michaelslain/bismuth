@@ -2086,6 +2086,130 @@ describe("LEVEL OF DETAIL (opt-in, GraphConfig.showLodMasses) — coarse stops r
   });
 });
 
+describe("LOD mass names — the CONDITIONAL edge clamp (the parked-label defect on the DEFAULT 2D path)", () => {
+  /**
+   * Two fat, spatially separated communities. Sizes are chosen deliberately: `massRadii(200, …)`
+   * gives `rowR = 3` and `colR = round(3 × CELL_H/CELL_W) = 9`, so `projectEntities`' `onGrid` test
+   * (`col >= -drawnColR && col < cols + drawnColR`) admits a mass whose CENTRE is up to NINE columns
+   * off the grid. That nine-column band is the entire bug surface: it is where an unconditional
+   * clamp parks the name at the edge column while the field keeps sliding under it. A small fixture
+   * (`lodGraph`'s 6-note blobs → `colR = 2`) leaves a two-column band, too narrow to sample.
+   */
+  function fatClusterGraph(mirrored = false) {
+    const nodes = [];
+    const edges = [];
+    const NAMES = ["Region A", "Region B"];
+    for (let c = 0; c < 2; c++) {
+      for (let k = 0; k < 200; k++) {
+        const x = ((c === 0 ? -300 : 300) + (k % 20) * 4) * (mirrored ? -1 : 1);
+        const y = Math.floor(k / 20) * 4;
+        nodes.push({
+          id: `c${c}n${k}`, label: `note ${c}-${k}`, kind: "note" as const,
+          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+          community: c, communityLabel: NAMES[c],
+        });
+      }
+      // A hub-and-spoke wiring so the community has real degree structure (and so the aggregate
+      // connector between the two has something to summarize).
+      for (let k = 1; k < 200; k++) edges.push({ from: `c${c}n0`, to: `c${c}n${k}`, kind: "link" as const });
+    }
+    for (let k = 0; k < 5; k++) edges.push({ from: `c0n${k}`, to: `c1n${k}`, kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  interface NamePriv {
+    entityFlat: { level: number; community: number; col: number; row: number; drawnColR: number }[];
+    labels: { text: string; col: number; widthCells: number; eyebrow?: boolean }[];
+    m: { cols: number };
+  }
+
+  /**
+   * One continuous 2D pan gesture in FINE steps (the same technique the hub-anchored path's boundary
+   * tests use, and for the same reason: `onPointerMove` only starts panning past DRAG_THRESHOLD, and
+   * the field edge is the ONLY place the placement rule can be discontinuous, so a coarse gesture
+   * steps clean over it without ever sampling there). Samples the named mass's anchor column and its
+   * label's column every frame.
+   */
+  function massPanSweep(dxPerStep: number, steps: number, community: number, text: string) {
+    const { r, viewport } = mountRenderer("2d", fatClusterGraph(dxPerStep < 0), { showLodMasses: true });
+    const priv = r as unknown as NamePriv;
+    let px = 400, t = 100;
+    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: px, clientY: 300 }));
+    px += 20 * Math.sign(dxPerStep); // prime past DRAG_THRESHOLD
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: px, clientY: 300 }));
+    frame((t += 16));
+
+    const samples: { anchorCol: number; labelCol: number | null; w: number | null }[] = [];
+    for (let i = 0; i <= steps; i++) {
+      if (i > 0) {
+        px += dxPerStep;
+        window.dispatchEvent(new PointerEvent("pointermove", { clientX: px, clientY: 300 }));
+        frame((t += 16));
+      }
+      const ev = priv.entityFlat.find((e) => e.community === community)!;
+      const label = priv.labels.find((l) => l.eyebrow && l.text === text);
+      samples.push({ anchorCol: ev.col, labelCol: label ? label.col : null, w: label ? label.widthCells : null });
+    }
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: px, clientY: 300 }));
+    const cols = priv.m.cols;
+    const drawnColR = priv.entityFlat.find((e) => e.community === community)!.drawnColR;
+    r.destroy();
+    return { samples, cols, drawnColR };
+  }
+
+  function assertMassNameClampIsConditional(dxPerStep: number, steps: number, community: number, text: string) {
+    const { samples, cols, drawnColR } = massPanSweep(dxPerStep, steps, community, text);
+
+    // SANITY FIRST — every invariant below is vacuous if the sweep never reached the band. The
+    // fixture is sized so `drawnColR` is wide enough for the band to be sampled at all; assert the
+    // size the reasoning depends on rather than trusting massRadii not to be retuned underneath it.
+    expect(drawnColR).toBeGreaterThanOrEqual(6);
+    expect(samples.some((s) => s.anchorCol >= 0 && s.anchorCol < cols)).toBe(true);   // anchor was on-grid...
+    expect(samples.some((s) => s.anchorCol < 0 || s.anchorCol >= cols)).toBe(true);   // ...and later was not
+    expect(samples.filter((s) => s.labelCol != null).length).toBeGreaterThan(5);
+    const offGridDrawn = samples.filter((s) => s.labelCol != null && (s.anchorCol < 0 || s.anchorCol >= cols));
+    expect(offGridDrawn.length).toBeGreaterThan(0); // the far side of the boundary really was sampled
+
+    // (A) OFF-GRID ANCHORS ARE NOT CLAMPED. Past the edge the name keeps its raw centred column and
+    // clips — exactly `anchorCol - floor(w/2)`, no nudging. This is the assertion the unconditional
+    // clamp fails: it pins the name to 0 (or cols - w) and holds it there while the anchor slides on.
+    for (const s of offGridDrawn) {
+      expect(`at anchor ${s.anchorCol}: label ${s.labelCol}`)
+        .toBe(`at anchor ${s.anchorCol}: label ${s.anchorCol - Math.floor(s.w! / 2)}`);
+    }
+
+    // (B) ON-GRID ANCHORS ARE STILL CLAMPED — the clamp's legitimate job, which (A) must not have
+    // deleted. Every drawn name whose anchor is on the grid lies fully inside it.
+    const onGridDrawn = samples.filter((s) => s.labelCol != null && s.anchorCol >= 0 && s.anchorCol < cols);
+    expect(onGridDrawn.length).toBeGreaterThan(5);
+    for (const s of onGridDrawn) {
+      expect(s.labelCol!).toBeGreaterThanOrEqual(0);
+      expect(s.labelCol! + s.w!).toBeLessThanOrEqual(cols);
+    }
+
+    // (C) CONTINUITY. Frame to frame the name may not move further than its anchor did, except for
+    // the clamp switching on or off — at most `ceil(w/2)`. The no-teleport bound.
+    let worst = { v: 0, at: "" };
+    for (let i = 1; i < samples.length; i++) {
+      const a = samples[i - 1], b = samples[i];
+      if (a.labelCol == null || b.labelCol == null) continue;
+      const excess = Math.abs((b.labelCol - a.labelCol) - (b.anchorCol - a.anchorCol)) - Math.ceil(b.w! / 2);
+      if (excess > worst.v) worst = { v: excess, at: `frame ${i}: label ${a.labelCol}->${b.labelCol}, anchor ${a.anchorCol}->${b.anchorCol}` };
+    }
+    expect(`step ${worst.v} ${worst.at}`).toBe("step 0 ");
+  }
+
+  it("BOUNDARY CONTINUITY (right edge) — a mass name is never parked at the edge column while its mass keeps panning", () => {
+    assertMassNameClampIsConditional(2, 90, 1, "REGION B");
+  });
+
+  it("BOUNDARY CONTINUITY (left edge) — same, in the other direction (the left clamp is a separate branch)", () => {
+    // MIRRORED fixture, exactly as the hub-anchored pair does it: negating x makes community 1 the
+    // one that leads off the LEFT edge, so the `col < 0` branch is the one under test.
+    assertMassNameClampIsConditional(-2, 90, 1, "REGION B");
+  });
+});
+
 describe("interaction", () => {
   /** Screen px of a node glyph the renderer actually drew (identified by its cluster colour). */
   function nodeHit(): { x: number; y: number } {

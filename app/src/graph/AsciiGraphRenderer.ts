@@ -2114,16 +2114,28 @@ export class AsciiGraphRenderer implements GraphRenderer {
   /** LOD variant of the cluster-name pass: one eyebrow label per ON-GRID entity of `level`,
    *  centred under its mass (falling back to above it at the bottom edge). Entities come presorted
    *  largest-first from buildLodIndex, so contested cells go to the biggest community — the same
-   *  greedy-by-worth rule as everywhere else. O(clusters), not O(nodes). */
+   *  greedy-by-worth rule as everywhere else. O(clusters), not O(nodes).
+   *
+   *  **The edge clamp is CONDITIONAL here for exactly the reason it is in `layoutClusterNames` —
+   *  and this is the path that matters most, because it is the one the app's DEFAULT 2D view uses.**
+   *  `ev.onGrid` (projectEntities) admits a mass whose CENTRE is up to `drawnColR` columns OFF the
+   *  grid, since a big mass can still overlap the field from out there. Clamped unconditionally, a
+   *  name anchored in that band parks at the edge column and sits there while the user keeps panning
+   *  — a stationary caption over whatever drifts under it, the same defect the hub-anchored path was
+   *  fixed for, just bounded by `drawnColR` instead of unbounded. So the clamp fires only while the
+   *  ANCHOR's own column is on the grid; past that the name keeps its raw centred column and clips,
+   *  and once its cells are entirely outside the grid it simply isn't drawn — which is how `row` a
+   *  few lines up has always behaved. */
   private layoutEntityNames(level: number, alpha: number) {
     const m = this.m;
     const evs = this.entityLevels[level];
     if (!evs) return;
     for (const ev of evs) {
       if (!ev.onGrid) continue;
-      // Same treatment as the non-LOD cluster-name pass above: Canvas applies trimDanglingWord at
-      // its ONE name site, so applying it at only one of ASCII's two left LOD mass names — the ones
-      // the app's DEFAULT 2D view actually shows — keeping a trailing "and"/"of"/"the".
+      // Same treatment as the non-LOD cluster-name pass above. Canvas applies trimDanglingWord at
+      // its ONE name site; ASCII has TWO (that pass and this one), so applying it at only one of
+      // them would leave the LOD mass names — the ones the app's DEFAULT 2D view actually shows —
+      // keeping a trailing "and"/"of"/"the".
       const text = trimDanglingWord(clusterLabelText(ev.name));
       const len = text.length;
       let row = ev.row + ev.drawnRowR + 1;
@@ -2133,8 +2145,18 @@ export class AsciiGraphRenderer implements GraphRenderer {
       // layoutClusterNames' comment. Reservation and the free-space check share identical bounds.
       const wCells = eyebrowWidthCells(len, CLUSTER_LABEL_TRACKING_EM, this.fontPx, this.cellW);
       let col = ev.col - Math.floor(wCells / 2); // centre by DRAWN width, not raw char count
-      if (col < 0) col = 0;
-      if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
+      // ON-GRID anchors only — see this method's doc. `ev.col` is the test, in column space, for the
+      // same reason `layoutClusterNames` tests `col0` rather than a pixel-space predicate: gating
+      // column-space arithmetic on anything else leaves a band where the guard reads "on screen"
+      // while the clamp is already parking the label.
+      if (ev.col >= 0 && ev.col < m.cols) {
+        if (col < 0) col = 0;
+        if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
+      }
+      // Entirely outside the grid — don't draw it, and don't run the occupancy loops over a range
+      // with no on-grid cells. A partially-overlapping name still draws, clipped, so it slides off
+      // the edge continuously instead of vanishing the instant it touches it.
+      if (col + wCells <= 0 || col >= m.cols) continue;
       let free = true;
       for (let c = col - 1; c <= col + wCells && free; c++) {
         if (c < 0 || c >= m.cols) continue;
