@@ -21,6 +21,7 @@ import { CLUSTER_LABEL_MAX_CHARS, clusterLevelAlphas } from "./labelSelection";
 import { DEFAULT_LEVEL_REVEAL_T, EDGE_WEIGHT_BUCKETS, bandsForT, edgeWeightBucketRange } from "./backbone";
 import { buildColorSlots } from "./clusterVisual";
 import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
+import { FIELD_H, FIELD_W } from "./densityField";
 import { THEMES } from "../../../core/src/theme/tokens";
 
 const DOM_GLOBALS = [
@@ -2664,6 +2665,253 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
     expect(level0.some((e) => !e.onGrid)).toBe(true);   // one really did leave...
     expect(level0.some((e) => e.onGrid)).toBe(true);    // ...and one really is still there
     expect(edgeColorSegs(priv).length).toBe(0);         // ...so the connector between them is gone
+    r.destroy();
+  });
+});
+
+/**
+ * THE PHOSPHOR BLOOM ACROSS THE BAND LADDER.
+ *
+ * The regression these exist for: the leaf projection lives inside rasterize()'s `glyphAlpha >
+ * LOD_ALPHA_EPS` gate, so in the FAR band — the app's default 2D view — no node is projected. An
+ * `emitBloom` that reads only `this.nodes` therefore handed `buildBloom` an empty point list and the
+ * atmosphere went black at fit. Every test in the suite stayed green and three reviews found
+ * nothing, because the bloom is a different subsystem from the ladder that broke it; a screenshot
+ * found it.
+ *
+ * The pre-existing bloom test ("emits a per-frame density field … peak exactly 1", §4.1) could not
+ * have caught it and still cannot: it mounts the DEFAULT 3D config with no `showLodMasses`, so it
+ * never takes the LOD path at all, and its one assertion (`max === 1`) is what `normalise` pins for
+ * ANY non-empty field. Everything below is on a LOD fixture, in 2D, with masses on.
+ */
+describe("the phosphor bloom is emitted by whichever pass owns the field (Task 17)", () => {
+  /**
+   * ONE community of 275 notes on a deterministic 25x11 lattice, deliberately ANISOTROPIC (x spread
+   * ~3x y spread) and deliberately WIDE — a cluster whose members cover much more of the field than
+   * the bloom's own blur kernel can smooth over is exactly the regime where emitting a summary as a
+   * point and emitting it as the cloud it stands for diverge. The anisotropy means an x/y swap
+   * anywhere in the spread wiring is visible rather than symmetric.
+   *
+   * One community, not four, on purpose: with `showLodMasses` on at fit this graph is exactly ONE
+   * aggregate mass, and with it off it is exactly the 275 leaves that mass summarizes — the
+   * cleanest possible A/B of "does the summary carry the same light, in the same place, at the same
+   * size".
+   *
+   * DENSE and ODD-sized on purpose too, both to keep the A/B's un-summarized side a usable
+   * REFERENCE rather than noise. A sparse lattice's glyph field lurches as individual notes cross
+   * the frame edge on the deep half of the ladder (measured: a 40-note version swung 488 -> 1768
+   * lit cells between two adjacent stops, entirely a fixture artifact), and an even-sized one has
+   * no member at the origin, so the deepest stop — which frames a few world units around (0, 0) —
+   * can come back empty on BOTH sides and prove nothing.
+   */
+  function spreadClusterGraph() {
+    const nodes = [];
+    const edges = [];
+    const COLS = 25, ROWS = 11;
+    for (let i = 0; i < COLS * ROWS; i++) {
+      const x = ((i % COLS) - (COLS - 1) / 2) * 36 * RING_SCALE;
+      const y = (Math.floor(i / COLS) - (ROWS - 1) / 2) * 27 * RING_SCALE;
+      nodes.push({
+        id: `s${i}`, label: `note ${i}`, kind: "note" as const,
+        position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+        community: 0, communityLabel: "Spread", communityPath: [0], communityPathLabels: ["Spread"],
+      });
+    }
+    for (let i = 1; i < COLS * ROWS; i++) edges.push({ from: "s0", to: `s${i}`, kind: "link" as const });
+    return { nodes, edges };
+  }
+  const SPREAD_COUNT = 275;
+
+  interface BloomPriv {
+    res: number; goalRes: number; maxRes: number; dirty: boolean;
+    levelCount: number; cellNode: Int32Array; glyphAlpha: number;
+  }
+
+  /** Mount with a bloom sink attached, returning the LAST field emitted. Not `mountRenderer` — that
+   *  helper has no way to wire `setBloomCallback` before the first frame. */
+  function mountBloom(graph: ReturnType<typeof spreadClusterGraph>, lod: boolean) {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = new AsciiGraphRenderer();
+    let last: Float32Array | null = null;
+    r.mount(host, () => {});
+    r.setBloomCallback((f) => { last = f; });
+    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: lod });
+    r.render(graph);
+    frame();
+    return { r, priv: r as unknown as BloomPriv, field: () => last as Float32Array | null };
+  }
+
+  /** Park a bloom-sinked renderer at an exact resolution progress `t` and repaint once (the band
+   *  boundaries are constants in `t`; a wheel notch is a 10% zoom stop and the two do not line up). */
+  function park(priv: BloomPriv, t: number) {
+    priv.res = priv.goalRes = resFromT(t, priv.maxRes);
+    priv.dirty = true;
+    frame(9999);
+  }
+
+  /** Cells bright enough to survive the atmosphere's own v^4 alpha curve (GraphAtmosphere.tsx) at
+   *  all: `255·v^4 > 5` ⇔ `v > (5/255)^(1/4)`. This is "is anything visible", NOT "is the array
+   *  non-zero" — `normalise` pins every non-empty field's peak to exactly 1, so a field built from a
+   *  single point is just as "bright" by that measure as one built from the whole vault. */
+  const VISIBLE_V = Math.pow(5 / 255, 0.25);
+  const litCells = (f: Float32Array | null) => (f ? f.filter((v) => v > VISIBLE_V).length : 0);
+
+  /** Ink-weighted centroid and per-axis spread of a field, in FIELD CELLS. Scale-invariant, so the
+   *  `normalise` step cannot affect it. */
+  function fieldMoments(f: Float32Array) {
+    let w = 0, sx = 0, sy = 0, sxx = 0, syy = 0;
+    for (let row = 0; row < FIELD_H; row++) {
+      for (let col = 0; col < FIELD_W; col++) {
+        const v = f[row * FIELD_W + col];
+        if (v <= 0) continue;
+        w += v; sx += v * col; sy += v * row; sxx += v * col * col; syy += v * row * row;
+      }
+    }
+    const mx = sx / w, my = sy / w;
+    return {
+      mx, my,
+      sdx: Math.sqrt(Math.max(0, sxx / w - mx * mx)),
+      sdy: Math.sqrt(Math.max(0, syy / w - my * my)),
+    };
+  }
+
+  it("REQUIRED — the atmosphere is LIT at fit, where NOTHING is projected and the masses own the field", () => {
+    const { r, priv, field } = mountBloom(spreadClusterGraph(), true);
+
+    // First: establish that this really is the broken configuration. The far band owns fit
+    // outright, so rasterize() skips the whole leaf pass — no node is projected, and every
+    // `nv.projValid` the OLD emitBloom read is false.
+    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1);
+    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);              // LOD_ALPHA_EPS
+    expect([...priv.cellNode].every((v) => v < 0)).toBe(true);       // no glyph rasterized at all
+
+    // ...and the atmosphere is lit anyway, because the MASSES are emitting it.
+    const f = field();
+    expect(f).not.toBeNull();
+    expect(litCells(f)).toBeGreaterThan(0);
+
+    // The input side, which is where the honest measure lives: buildBloom normalises its peak to
+    // exactly 1, so `max === 1` is true of a field built from one stray point. `bloomWeight` is
+    // the pre-normalisation total, and at fit it is the summarized member count — all 40 notes.
+    const stats = r.computeStats();
+    expect(stats.bloomPoints).toBeGreaterThan(0);
+    expect(stats.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6);
+    r.destroy();
+  });
+
+  it("REQUIRED — the far band's atmosphere sits where the members are, at their size (not a spike at the centroid)", () => {
+    // The A/B: the SAME camera, the same 40 notes, summarized (masses own the field) vs not
+    // (glyphs own it). The summary must land in the same place with the same spread — a mass
+    // emitted as a bare point at its centroid has the right place and a collapsed spread, which is
+    // what blacked out the mid-crossfade the first time this was fixed.
+    const g = spreadClusterGraph();
+    const masses = mountBloom(g, true);
+    const leaves = mountBloom(g, false);
+    expect(masses.priv.glyphAlpha).toBeLessThanOrEqual(0.02);   // masses own it
+    expect(leaves.priv.glyphAlpha).toBe(1);                     // glyphs own it
+    expect([...leaves.priv.cellNode].some((v) => v >= 0)).toBe(true);
+
+    const mm = fieldMoments(masses.field()!);
+    const lm = fieldMoments(leaves.field()!);
+    // Same place, to within a field cell.
+    expect(mm.mx).toBeCloseTo(lm.mx, 0);
+    expect(mm.my).toBeCloseTo(lm.my, 0);
+    // Same size, to within 15% per axis — and the fixture is 3:1 anisotropic, so this pins the two
+    // axes independently rather than one radius twice.
+    expect(mm.sdx / lm.sdx).toBeGreaterThan(0.85);
+    expect(mm.sdx / lm.sdx).toBeLessThan(1.15);
+    expect(mm.sdy / lm.sdy).toBeGreaterThan(0.85);
+    expect(mm.sdy / lm.sdy).toBeLessThan(1.15);
+    expect(lm.sdx / lm.sdy).toBeGreaterThan(1.5);               // the fixture really is anisotropic
+    masses.r.destroy(); leaves.r.destroy();
+  });
+
+  it("REQUIRED — no dark window and no pop anywhere on the ladder: the summarized field tracks the un-summarized one", () => {
+    // Swept against a REFERENCE rather than against a constant: at each stop, the same graph with
+    // masses on vs masses off, same camera. Below the handover one is masses and the other is
+    // glyphs; above it they are the same pass and agree exactly. Either failure mode shows up as
+    // the ratio falling — the original bug takes it to 0 at fit, and emitting a mass as a point
+    // takes it down mid-crossfade (normalise crushes the field around the spike).
+    const g = spreadClusterGraph();
+    const masses = mountBloom(g, true);
+    const leaves = mountBloom(g, false);
+
+    const ratios: { t: number; lod: number; plain: number; ratio: number }[] = [];
+    for (let i = 0; i <= 40; i++) {
+      const t = i / 40;
+      park(masses.priv, t);
+      park(leaves.priv, t);
+      const lod = litCells(masses.field()), plain = litCells(leaves.field());
+      expect(plain).toBeGreaterThan(0);                          // the reference itself is alive
+      ratios.push({ t, lod, plain, ratio: lod / plain });
+    }
+    for (const s of ratios) {
+      expect(s.lod).toBeGreaterThan(0);                          // NO dark window, at any stop
+      expect(s.ratio).toBeGreaterThan(0.5);                      // ...and no collapse either
+      expect(s.ratio).toBeLessThan(2);                           // ...nor a blowout
+    }
+    // Deliberately NOT also a stop-to-stop jump bound on the raw counts: past the handover the two
+    // sides ARE the same pass, so the biggest jump on the ladder is the reference's own (a lattice
+    // row crossing the frame edge), and any bound loose enough to admit that is satisfied by
+    // construction. What "no pop" actually needs — that the handover is a genuine blend of the two
+    // contributions rather than a switch — is pinned mechanically in the next test.
+    // Measured range on this fixture: 0.69 .. 1.47.
+    masses.r.destroy(); leaves.r.destroy();
+  });
+
+  it("the handover is a BLEND: both contributions are in the point list mid-crossfade, neither is outside it", () => {
+    // The mechanism behind "no pop", pinned where it can be read exactly rather than inferred from
+    // ink. Three stops, one per band, checked against `bandsForT` — the band authority — not
+    // against numbers copied out of the renderer.
+    const { r, priv } = mountBloom(spreadClusterGraph(), true);
+    const bands = (t: number) => bandsForT(t, priv.levelCount);
+
+    // FAR: masses only. No node is projected at all, yet points are emitted.
+    park(priv, 0.2);
+    expect(bands(0.2).massAlpha).toBe(1);
+    expect([...priv.cellNode].every((v) => v < 0)).toBe(true);
+    const far = r.computeStats();
+    expect(far.bloomPoints).toBeGreaterThan(0);
+    expect(far.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6);
+
+    // CROSSFADE: both. The point list is the glyphs PLUS at least one aggregate's cloud, and the
+    // total weight is still the whole membership — that conservation is what makes the handover
+    // continuous instead of a step.
+    const MIX_T = 0.39;
+    expect(bands(MIX_T).massAlpha).toBeGreaterThan(0.2);
+    expect(bands(MIX_T).massAlpha).toBeLessThan(0.8);
+    park(priv, MIX_T);
+    const mid = r.computeStats();
+    expect([...priv.cellNode].some((v) => v >= 0)).toBe(true);    // glyphs really are rasterizing
+    expect(mid.bloomPoints).toBeGreaterThan(SPREAD_COUNT);        // ...and the mass cloud is ALSO in
+    expect(mid.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6);
+
+    // MID: glyphs only. The mass contribution is gone — one point per node, nothing else.
+    park(priv, 0.55);
+    expect(bands(0.55).massAlpha).toBe(0);
+    const near = r.computeStats();
+    expect(near.bloomPoints).toBe(SPREAD_COUNT);
+    expect(near.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6);
+    r.destroy();
+  });
+
+  it("with no mass band in play the emitter is byte-for-byte the original glyph-only pass", () => {
+    // 3D (and "local" mode, and community-less graphs) must be untouched by any of this: no mass
+    // level is active, so the far-band loop contributes nothing and every point comes from
+    // `this.nodes`, exactly as before. Pinned against the plain node count.
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = new AsciiGraphRenderer();
+    r.mount(host, () => {});
+    r.setBloomCallback(() => {});
+    r.setConfig({ ...CONFIG, viewMode: "3d", showLodMasses: true });
+    r.render(spreadClusterGraph());
+    frame();
+    const stats = r.computeStats();
+    expect(stats.bloomPoints).toBe(SPREAD_COUNT);   // one point per node, no clouds
+    expect(stats.bloomWeight).toBeGreaterThan(0);
+    expect(stats.bloomWeight).toBeLessThanOrEqual(SPREAD_COUNT); // depthAlpha <= 1 per node
     r.destroy();
   });
 });

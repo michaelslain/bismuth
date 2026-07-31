@@ -88,56 +88,79 @@ export function buildBloom(points: BloomPoint[], radius = 6): Float32Array {
 // vs 24.3% for the leaves they replace — i.e. the summary made the atmosphere DARKER than the pass
 // it stood in for. Hence `pushCloud`.
 
-/** Rings × samples-per-ring in the unit-disc pattern below.
- *
- *  Sized against the BLUR, not by taste: the samples must sit closer together than the blur kernel
- *  can smooth over, or the cloud reads as its own little constellation of spikes — the same failure
- *  as emitting the aggregate as one point, just subdivided. A radius-6 double box blur spans ~25
- *  cells per axis on a 64×40 field, and a magnified cluster's cloud can reach ~20 cells in radius,
- *  which wants radial spacing R/M ≲ 25 (any M ≥ 1) and outer-ring arc spacing 2πR/K ≲ 25 (K ≳ 6).
- *  4 × 8 = 32 clears both with margin and still costs ~30× a handful of aggregates — nothing
- *  against the thousands of leaf points they replace. */
-const CLOUD_RINGS = 4, CLOUD_PER_RING = 8;
-export const CLOUD_SAMPLES = CLOUD_RINGS * CLOUD_PER_RING;
-
 /**
- * The unit-disc sample pattern: `CLOUD_RINGS` equal-area rings (`r = √((j + ½)/M)` — a linear radius
- * would bunch samples toward the centre and re-create the very peak this exists to avoid), each of
- * `CLOUD_PER_RING` evenly spaced points, successive rings rotated so the pattern reads as a disc
- * rather than as spokes.
- *
- * Rings, not a golden-angle spiral, because this shape's moments are EXACT rather than approximate.
- * For any ring of K ≥ 3 evenly spaced points at any rotation, Σcos = Σsin = 0 and Σcos² = Σsin² =
- * K/2 identically; averaging over equal-area radii then gives mean (0, 0), zero anisotropy, and
- * E[x²] = E[y²] = ¼ — i.e. per-axis standard deviation exactly ½, whatever the rotations are. That
- * is what lets `pushCloud` hit a requested spread to the last decimal with only 12 samples (a
- * 12-point spiral is ~6% off, and the error moves whenever the sample count is retuned).
+ * Target gap between neighbouring samples, in FIELD CELLS. Sized against the BLUR, not by taste:
+ * samples must sit closer together than the kernel can smooth over, or the cloud reads as its own
+ * little constellation of spikes — the same failure as emitting the aggregate as one point, just
+ * subdivided. A radius-6 double box blur reaches 12 cells either way, so 5 leaves better than 2×
+ * margin. Measured on a 275-note single-cluster fixture swept across the whole zoom ladder: a fixed
+ * 32-sample cloud (spacing up to ~20 cells once magnified) fell to 0.32× the light of the leaves it
+ * summarized at the worst stop; sampling to this spacing holds ≥ 0.69× everywhere.
  */
-const CLOUD_OFFSETS: [number, number][] = [];
-for (let j = 0; j < CLOUD_RINGS; j++) {
-  const r = Math.sqrt((j + 0.5) / CLOUD_RINGS);
-  // Rotate each ring by a fraction of its own angular step (an irrational-ish fraction of 2π/K, so
-  // no two rings line up) — cosmetic only: the moments above hold at any rotation.
-  const phase = (j * Math.PI * 2) / (CLOUD_PER_RING * CLOUD_RINGS);
-  for (let k = 0; k < CLOUD_PER_RING; k++) {
-    const th = phase + (k * Math.PI * 2) / CLOUD_PER_RING;
-    CLOUD_OFFSETS.push([r * Math.cos(th), r * Math.sin(th)]);
-  }
+const CLOUD_SPACING_CELLS = 5;
+/** Sample-count bounds. The floor keeps a tiny aggregate from degenerating into a cross (and `K ≥ 3`
+ *  is what the exact-moment identity below needs); the ceiling keeps a hugely magnified one from
+ *  costing more than the leaves it replaced — past that point most of the cloud is off-field anyway
+ *  and `accumulate` discards it. */
+const CLOUD_MIN_RINGS = 2, CLOUD_MAX_RINGS = 8;
+const CLOUD_MIN_PER_RING = 6, CLOUD_MAX_PER_RING = 16;
+
+const clampInt = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)));
+
+/** Rings × samples-per-ring `pushCloud` will spend on a cloud of this spread (0..1 fractions) —
+ *  exported so tests and QA can predict the cost without re-deriving it. */
+export function cloudGrid(sdx: number, sdy: number): { rings: number; perRing: number } {
+  // Outer radius in cells, worst axis. The field is not square, so a fraction means a different
+  // number of cells in x than in y.
+  const rCells = Math.max(2 * sdx * FIELD_W, 2 * sdy * FIELD_H);
+  return {
+    rings: clampInt(rCells / CLOUD_SPACING_CELLS, CLOUD_MIN_RINGS, CLOUD_MAX_RINGS),
+    perRing: clampInt((2 * Math.PI * rCells) / CLOUD_SPACING_CELLS, CLOUD_MIN_PER_RING, CLOUD_MAX_PER_RING),
+  };
 }
+
+/** Total samples `pushCloud` spends on a cloud of this spread. */
+export const cloudSampleCount = (sdx: number, sdy: number): number => {
+  const g = cloudGrid(sdx, sdy);
+  return g.rings * g.perRing;
+};
 
 /**
  * Append `weight` of light spread over an axis-aligned elliptical cloud centred at (`x`, `y`) whose
- * per-axis STANDARD DEVIATION is (`sdx`, `sdy`) — every argument in 0..1 screen fractions. Total
- * weight is preserved exactly (each sample carries `weight / CLOUD_SAMPLES`), and the emitted cloud
- * reproduces the requested second moment, so a summary contributes the same light — in the same
- * place, with the same spread — as the individual points it stands for. `sd = 0` collapses every
- * sample onto the centre, i.e. degrades to exactly the single-point behaviour.
+ * per-axis STANDARD DEVIATION is (`sdx`, `sdy`) — every argument in 0..1 screen fractions.
+ *
+ * THE PATTERN: `rings` equal-area rings (`r = √((j + ½)/M)` — a linear radius would bunch samples
+ * toward the centre and re-create the very peak this exists to avoid), each of `perRing` evenly
+ * spaced points, successive rings rotated so the whole reads as a disc rather than as spokes.
+ *
+ * Rings, not a golden-angle spiral, because this shape's moments are EXACT rather than approximate,
+ * at every one of the sample counts `cloudGrid` can pick. For any ring of K ≥ 3 evenly spaced points
+ * at any rotation, Σcos = Σsin = 0 and Σcos² = Σsin² = K/2 identically; averaging over equal-area
+ * radii then gives mean (0, 0), zero anisotropy, and E[x²] = E[y²] = ¼ for ANY M — i.e. per-axis
+ * standard deviation exactly ½. (A 12-point spiral is ~6% off, and its error moves whenever the
+ * sample count is retuned, which here it does per call.) A uniform disc of radius R has per-axis sd
+ * R/2, which is why the offsets are scaled by 2·sd.
+ *
+ * So: total weight is preserved exactly, and the emitted cloud reproduces the requested second
+ * moment — a summary contributes the same light, in the same place, at the same spread, as the
+ * individual points it stands for. `sd = 0` collapses every sample onto the centre, i.e. degrades to
+ * exactly the single-point behaviour.
  */
 export function pushCloud(
   out: BloomPoint[], x: number, y: number, sdx: number, sdy: number, weight: number,
 ): void {
-  // A uniform disc of radius R has sd R/2 per axis; scale by 2·sd to match the input's spread.
+  const { rings, perRing } = cloudGrid(sdx, sdy);
   const rx = 2 * sdx, ry = 2 * sdy;
-  const w = weight / CLOUD_SAMPLES;
-  for (const [ox, oy] of CLOUD_OFFSETS) out.push({ x: x + ox * rx, y: y + oy * ry, weight: w });
+  const w = weight / (rings * perRing);
+  const step = (Math.PI * 2) / perRing;
+  for (let j = 0; j < rings; j++) {
+    const r = Math.sqrt((j + 0.5) / rings);
+    // Rotate each ring by a fraction of its own angular step so no two rings line up — cosmetic
+    // only: the moment identities above hold at any rotation.
+    const phase = (j * step) / rings;
+    for (let k = 0; k < perRing; k++) {
+      const th = phase + k * step;
+      out.push({ x: x + Math.cos(th) * r * rx, y: y + Math.sin(th) * r * ry, weight: w });
+    }
+  }
 }

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  accumulate, blur, normalise, buildBloom, pushCloud, CLOUD_SAMPLES, FIELD_W, FIELD_H,
+  accumulate, blur, normalise, buildBloom, pushCloud, cloudGrid, cloudSampleCount, FIELD_W, FIELD_H,
   type BloomPoint,
 } from "./densityField";
 
@@ -129,15 +129,53 @@ function moments(pts: BloomPoint[]) {
   return { w, mx, my, sdx: Math.sqrt(Math.max(0, sxx / w - mx * mx)), sdy: Math.sqrt(Math.max(0, syy / w - my * my)) };
 }
 
-test("pushCloud spends CLOUD_SAMPLES points and preserves the total weight exactly", () => {
+test("pushCloud spends cloudSampleCount points and preserves the total weight exactly", () => {
   const out: BloomPoint[] = [];
   pushCloud(out, 0.5, 0.5, 0.1, 0.05, 300);
-  expect(out.length).toBe(CLOUD_SAMPLES);
+  expect(out.length).toBe(cloudSampleCount(0.1, 0.05));
   expect(moments(out).w).toBeCloseTo(300, 6);
   // ...and appends, so several aggregates can share one list.
+  const before = out.length;
   pushCloud(out, 0.2, 0.2, 0.01, 0.01, 40);
-  expect(out.length).toBe(2 * CLOUD_SAMPLES);
+  expect(out.length).toBe(before + cloudSampleCount(0.01, 0.01));
   expect(moments(out).w).toBeCloseTo(340, 6);
+});
+
+test("cloudGrid samples DENSER as the cloud grows — the spacing, not the count, is what is fixed", () => {
+  // A fixed sample count is a spacing that degrades with magnification: the samples spread apart
+  // until each is its own spike again. Small clouds stay at the floor (cheap — the common case is
+  // dozens of aggregates at fit), big ones climb to the cap.
+  expect(cloudGrid(0.002, 0.002)).toEqual({ rings: 2, perRing: 6 });   // the floor
+  expect(cloudGrid(2, 2)).toEqual({ rings: 8, perRing: 16 });          // the cap
+  // Monotone non-decreasing in spread, and genuinely climbing between the two ends.
+  const ladder = [0.002, 0.01, 0.03, 0.06, 0.1, 0.2, 0.5, 2].map((sd) => cloudSampleCount(sd, sd));
+  for (let i = 1; i < ladder.length; i++) expect(ladder[i]).toBeGreaterThanOrEqual(ladder[i - 1]);
+  expect(ladder.at(-1)! / ladder[0]).toBeGreaterThan(5);
+  // ...and what that buys: the gap between neighbouring samples on the outer ring stays well inside
+  // the blur's 12-cell reach as the cloud grows, instead of scaling with it.
+  const arcGap = (sd: number) => (2 * Math.PI * 2 * sd * FIELD_W) / cloudGrid(sd, 0).perRing;
+  const radGap = (sd: number) => (2 * sd * FIELD_W) / cloudGrid(sd, 0).rings;
+  for (const sd of [0.005, 0.02, 0.05, 0.08]) {
+    expect(arcGap(sd)).toBeLessThan(6);
+    expect(radGap(sd)).toBeLessThan(6);
+  }
+  // The exact-moment identity needs at least 3 evenly spaced points per ring at EVERY size.
+  for (const sd of [0, 0.001, 0.01, 0.1, 1]) expect(cloudGrid(sd, sd).perRing).toBeGreaterThanOrEqual(3);
+});
+
+test("pushCloud's exact moments survive every sample count cloudGrid can pick", () => {
+  // The identity is per-ring, so it must hold at the floor, at the cap, and in between — otherwise
+  // the spread an aggregate emits would drift with how magnified it happens to be.
+  for (const sd of [0.001, 0.01, 0.05, 0.12, 0.5, 3]) {
+    const out: BloomPoint[] = [];
+    pushCloud(out, 0.5, 0.5, sd, sd / 2, 100);
+    const m = moments(out);
+    expect(m.mx).toBeCloseTo(0.5, 9);
+    expect(m.my).toBeCloseTo(0.5, 9);
+    expect(m.sdx).toBeCloseTo(sd, 9);
+    expect(m.sdy).toBeCloseTo(sd / 2, 9);
+    expect(m.w).toBeCloseTo(100, 6);
+  }
 });
 
 test("pushCloud reproduces the requested centre and per-axis spread — the property emitBloom relies on", () => {
