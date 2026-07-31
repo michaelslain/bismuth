@@ -52,6 +52,7 @@ import {
 } from "./lod";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
 import { buildBloom, type DensityField } from "./densityField";
+import { dollyForT, zoomT } from "./cameraModel";
 import {
   scaleToSpacing, createSpacingCache, cloneVec3Array, type SpacingCache, type Vec3 as RespaceVec3,
 } from "./respace";
@@ -80,6 +81,13 @@ import {
 } from "./asciiGrid";
 
 const FOV_DEG = 60;              // same camera as the old renderer, so framing carries over
+// The projection's two clip planes, as fractions of the camera's distance to the TARGET (`P - dolly`
+// — see projectNodes; with no dolly that distance is `P` and these reduce to the old renderer's
+// literal `persp > 0.05 && zc < P * 0.985`, which is where both numbers come from, unchanged).
+// NEAR_PLANE_SLACK is what keeps `persp` off the projection's singularity — a node is culled once it
+// is within this fraction of the camera plane, capping `persp` at 1/NEAR_PLANE_SLACK ≈ 67×.
+const NEAR_PLANE_SLACK = 0.015;
+const MIN_PERSP = 0.05;          // far cull: a node 20× the camera distance behind the target is gone
 const ORBIT_SPEED = 0.005;       // rad per px of drag (copied)
 const DRAG_THRESHOLD = 5;        // px before a press becomes an orbit/pan rather than a click
 // TIME-based (not frame-rate dependent) exponential ease-out toward the camera goal (resolution +
@@ -1549,16 +1557,91 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
   }
 
+  /**
+   * The 3D camera dolly for the CURRENT resolution stop, in the same px units as `this.P`
+   * (`cameraModel.ts` `dollyForT`, MERGE-NOTES §6). 0 in 2D — a flat view has nothing to approach.
+   *
+   * ── THE THING THAT IS NOT OBVIOUS, AND THAT EVERYTHING ELSE HERE FOLLOWS FROM ────────────────
+   *
+   * Scaling the world by `k` ABOUT THE TARGET, with the camera held at focal distance `P`, is not
+   * merely "like" a dolly — it IS one, exactly, for every point:
+   *
+   *     k·X · P/(P − k·Z)  ≡  X · P/(P − Z − D)   for all X, Z   ⟺   D = P·(1 − 1/k)
+   *
+   * (cross-multiply: k(P − Z − D) = P − kZ ⟹ kP − kD = P). So `s = pxPerWorld · res` with `zc = z2`
+   * — the code that was here — has ALWAYS been a camera dolly of `P·(1 − 1/res)`, producing exactly
+   * the parallax, near/far separation and cloud-opening that MERGE-NOTES §6 describes as missing.
+   * §6's "ASCII pins the camera distance, so it produces almost no parallax" is a reading of the
+   * source, not of the algebra, and it is wrong. Verified against this renderer's own projection:
+   * screen positions agree to the last bit at res 1, 2, 8 and 68.
+   *
+   * Two consequences, and they are the whole design:
+   *
+   *   1. `zc = z2 + dollyForT(t, P)` written NAIVELY on top of the existing world scale does not ADD
+   *      an approach — it applies the approach TWICE, `res × maxZs^t`. At t = 1 that is a ~17×
+   *      overshoot: `z2`'s extent (±3.4·P on the 800×600 fixture) is already many times the 0.985·P
+   *      of near-plane headroom, so the doubled camera pushes essentially everything in front of the
+   *      target through the near plane and the field goes blank. That is the hazard, and its cause
+   *      is double-counting, not an unbudgeted constant.
+   *   2. What ASCII actually lacks is not the dolly but its CEILING. `res` runs to `maxRes`, which is
+   *      graph- and box-derived and routinely exceeds `1/(1 − MAX_ZOOM_FRAC) ≈ 16.7` on a real vault
+   *      — at `res = 68` the implicit dolly is `0.985·P`, i.e. sitting ON the near plane Canvas's
+   *      `onWheel` clamp existed to stay off. That is the regime where the 3D field thins to a
+   *      handful of violently-magnified glyphs. `dollyForT` IS that clamp, carried over.
+   *
+   * ── SO: the dolly is made EXPLICIT and CAPPED ────────────────────────────────────────────────
+   *
+   * `projectNodes` drops `res` from the 3D world scale (`s = pxPerWorld`) and puts the camera back
+   * where the camera belongs: `zc = z2 + dolly`. The magnification the ladder gets is then
+   *
+   *     mag(t) = P/(P − dolly) = min( res , maxZsFor(P)^t )
+   *
+   * — `res` wherever the resolution ladder asks for less than the camera ceiling (in which case this
+   * is the SAME projection as before, term for term, by the identity above), and Canvas's
+   * `MAX_ZOOM_FRAC`-clamped ceiling wherever it asks for more. `P·(1 − 1/res)` below is literally
+   * "the dolly `res` alone would imply": budgeting `zc` against `res` is taking the smaller of the
+   * two, which is why a deep ladder now stops at ~16.7× instead of running onto the singularity.
+   *
+   * THE LAW is untouched — a dolly moves POSITIONS, never a glyph's size — and so is the semantic:
+   * LOD level, label ladder and colour level all key off `resolutionT(res, maxRes)`, which nothing
+   * here touches. The one accepted cost is that on a graph whose ladder is deeper than the camera
+   * ceiling, 3D's 0% stop no longer reaches `DEEPEST_WORLD_PER_CELL` (2D still does): a perspective
+   * camera cannot magnify 68× without standing on its own near plane, and a readable field that
+   * always renders beats an unreadable one that sometimes does not.
+   */
+  private cameraDolly(is2d: boolean): number {
+    if (is2d) return 0;
+    const P = this.P;
+    const ceiling = dollyForT(resolutionT(this.res, this.maxRes), P);
+    const wanted = P * (1 - 1 / Math.max(1, this.res));
+    return Math.max(0, Math.min(ceiling, wanted));
+  }
+
   /** The copied camera math (CanvasGraphRenderer.project/projectPositions), evaluated inline with
    *  the per-frame constants hoisted. 2D is the same pipeline with rx = ry = 0 over the flat
    *  layout, so perspective resolves to 1. No allocation. */
   private projectNodes(is2d: boolean) {
     const m = this.m;
-    const s = this.pxPerWorld * this.res;
+    const P = this.P;
+    // The camera. In 3D the magnification lives in the DOLLY, so the world sits at its fit scale and
+    // `res` does not multiply into `z2` a second time (cameraDolly() has the derivation). In 2D there
+    // is no camera to move, so `res` scales the world exactly as it always has.
+    const dolly = this.cameraDolly(is2d);
+    const s = is2d ? this.pxPerWorld * this.res : this.pxPerWorld;
+    // Distance from the camera to the TARGET plane. The near/far cull below is a fixed fraction of
+    // THIS, not of the focal length `P`: `persp` is uniformly `dollyMag`× larger once the camera has
+    // dollied in, so a threshold pinned to `P` would tighten by that factor and start culling nodes
+    // whose screen positions are perfectly finite — silently thinning the field as you approach,
+    // which is the same blank-at-high-zoom failure by a slower route. Rebased this way the two
+    // planes sit at the same WORLD distance from the target at every dolly, and reduce to the
+    // original `persp > 0.05 && zc < P * 0.985` exactly when `dolly` is 0 (2D, and 3D at fit).
+    const camDist = Math.max(1, P - dolly);
+    const dollyMag = P / camDist;
+    const nearPlane = P - camDist * NEAR_PLANE_SLACK;
+    const minPersp = MIN_PERSP * dollyMag;
     const tx = this.target[0], ty = this.target[1], tz = this.target[2];
     const rx = is2d ? 0 : this.rx, ry = is2d ? 0 : this.ry;
     const cyr = Math.cos(ry), syr = Math.sin(ry), cxr = Math.cos(rx), sxr = Math.sin(rx);
-    const P = this.P;
     // The QUANTIZED pan (see rasterize()/asciiGrid.ts quantizePan) — the pan-jitter fix: `panXQ`/
     // `panYQ` are always a whole multiple of the cell size, so the world→cell rounding PHASE below
     // never shifts mid-drag. The leftover sub-cell remainder (`panXFrac`/`panYFrac`) is applied only
@@ -1571,7 +1654,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const x = (p[0] - tx) * s, y = (p[1] - ty) * s, z = (p[2] - tz) * s;
       const x1 = x * cyr + z * syr, z1 = -x * syr + z * cyr;
       const y2 = y * cxr - z1 * sxr, z2 = y * sxr + z1 * cxr;
-      const zc = z2;                                   // the perspective dolly is 0: zoom is resolution
+      const zc = z2 + dolly;                           // the derived camera approach — see cameraDolly()
       const persp = P / Math.max(1, P - zc);
       nv.sx = ox + x1 * persp;
       nv.sy = oy + y2 * persp;
@@ -1583,8 +1666,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
       nv.col = col; nv.row = row;
       // `projValid`: the projection is meaningful at all (in front of the camera / past the near
       // clip) — independent of grid bounds, so edges can gate on it alone and then CLIP to the grid
-      // (see rasterize()'s edge loop) instead of requiring both endpoints already on-screen.
-      const projValid = persp > 0.05 && zc < P * 0.985;
+      // (see rasterize()'s edge loop) instead of requiring both endpoints already on-screen. Both
+      // planes are dolly-relative (see `camDist` above), so they mean the same WORLD distance from
+      // the target at every stop rather than tightening as the camera comes in.
+      const projValid = persp > minPersp && zc < nearPlane;
       nv.projValid = projValid;
       nv.onGrid = projValid && col >= 0 && col < m.cols && row >= 0 && row < m.rows;
       if (zc < minZ) minZ = zc;
@@ -2189,8 +2274,25 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.frameSubset([id, ...(this.adjacency.get(id) ?? [])]);
   }
 
-  /** Frame a subset by RAISING THE RESOLUTION until it fills the grid (and re-centring on it) —
-   *  the ASCII equivalent of a dolly-in; no glyph is scaled. */
+  /**
+   * Frame a subset by RAISING THE RESOLUTION until it fills the grid (and re-centring on it) — the
+   * ASCII equivalent of a dolly-in; no glyph is scaled.
+   *
+   * `frameSubset` asks for a MAGNIFICATION ("make this subset fill ~55% of the field"), and the two
+   * view modes reach a magnification by different roads: 2D scales the world by `res`, 3D dollies
+   * the camera (see cameraDolly()). Both are still expressed as ONE durable state — the resolution
+   * stop — so this converts the wanted magnification into the stop that DELIVERS it, per mode, and
+   * every camera command (`focusNode` → here, `clickEntity`, `resetView`, the wheel) writes only
+   * `zoomPct`/`goalRes`. There is no second zoom axis to fall out of sync, which is exactly what the
+   * pre-merge pair had (Canvas's `goalZoom` in px vs ASCII's `goalRes`).
+   *
+   * The 3D conversion is `cameraModel.zoomT` — `dollyForT`'s exact inverse — taken against the dolly
+   * that WOULD produce the wanted magnification. Because the 3D camera's magnification is
+   * `min(res, maxZsFor(P)^t)`, reaching a magnification needs BOTH factors to be there, so the two
+   * progressions are combined with `max` rather than either one alone: use only the resolution
+   * ladder and a deep-ladder graph under-frames (the camera ceiling caps it short of the request);
+   * use only `zoomT` and a shallow-ladder graph under-frames instead (`res` runs out first).
+   */
   frameSubset(ids: string[]) {
     const views = ids.map((i) => this.byId.get(i)).filter(Boolean) as NodeView[];
     if (!views.length) return;
@@ -2200,8 +2302,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
     let r = 1e-6;
     for (const p of pts) r = Math.max(r, Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]));
     const whole = Math.max(1e-6, is2d ? this.radius2 : this.radius3);
+    const wantMag = (whole / r) * 0.55;
+    // resFromT(resolutionT(m, maxRes), maxRes) is m clamped to [1, maxRes] — the 2D road, unchanged.
+    let t = resolutionT(wantMag, this.maxRes);
+    if (!is2d) t = Math.max(t, zoomT(this.P * (1 - 1 / Math.max(1, wantMag)), this.P));
     this.goalTarget = c;
-    this.goalRes = Math.max(1, Math.min(this.maxRes, (whole / r) * 0.55));
+    this.goalRes = resFromT(t, this.maxRes);
     // Framing isn't a zoom STEP — it's a continuous camera command — but resync the durable percent
     // state to wherever it landed, so the next wheel notch / +- press steps from there.
     this.zoomPct = resolutionPercent(this.goalRes, this.maxRes);
@@ -2243,6 +2349,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.dirty = true;
   }
 
+  /** Back to the whole-graph overview. Nothing here mentions the camera dolly because there is
+   *  nothing to reset: `goalRes = 1` is `t = 0`, and `cameraDolly()` is 0 there by construction
+   *  (`dollyForT(0, P) === 0`), so the 3D camera returns to the fit distance on the same glide as the
+   *  resolution — one state, one command. */
   resetView() {
     this.clearHighlight();
     this.zoomPct = 100;

@@ -84,17 +84,38 @@ export const MAX_MAGNIFICATION = 1 / (1 - MAX_ZOOM_FRAC);
  *  `dollyForT` from ever reaching `perspective`. Converges to `MAX_MAGNIFICATION` as `perspective`
  *  grows; below the floor (a degenerate — but real, see the module comment — small viewport) it is
  *  smaller than that limit, which is correct: the ceiling magnification a genuinely tiny viewport can
- *  reach is genuinely smaller. */
+ *  reach is genuinely smaller.
+ *
+ *  `Math.max(1, perspective)` on the way IN is a domain guard, not a tuning constant, and it landed
+ *  here once this module got a live call site (`AsciiGraphRenderer.projectNodes`) that can reach it
+ *  with a degenerate `perspective`: the renderer initialises `private P = 1` and only computes the
+ *  real focal length in `measure()`, so every frame between construction and the first usable host
+ *  box calls in at exactly `P = 1`. Nothing in the app produces a `perspective <= 0` today (the
+ *  renderer floors its own height), but nothing in the SIGNATURE forbids one either — and without the
+ *  floor a negative `perspective` makes this return a NEGATIVE ratio, whereupon
+ *  `Math.pow(negative, -t)` is `NaN` for fractional `t`. A NaN dolly does not throw: it silently
+ *  poisons `zc`, `persp`, `sx` and `sy` for EVERY node, i.e. blanks the field with no error anywhere
+ *  — the worst failure shape available at this call site. The floor makes that unreachable by
+ *  construction rather than by every caller remembering. */
 function maxZsFor(perspective: number): number {
-  return perspective / Math.max(1, perspective - MAX_ZOOM_FRAC * perspective);
+  const p = Math.max(1, perspective);
+  return p / Math.max(1, p - MAX_ZOOM_FRAC * p);
 }
 
 /**
  * Derive the 3D camera dolly (a camera-forward z-offset, in the same px units as `perspective`)
  * from the resolution ladder's `[0,1]` progress `t` (`asciiGrid.ts` `resolutionT(res, maxRes)`).
  *
- * Monotonic (strictly increasing) in `t` for any `perspective >= 1` — i.e. any perspective distance a
- * real host box produces, degenerate ones included (see the module comment). `dollyForT(0, P) === 0`:
+ * Monotonic (strictly increasing) in `t` for any `perspective > 1` — i.e. any perspective distance a
+ * real host box produces, degenerate ones included (see the module comment). At `perspective <= 1` it
+ * is identically 0 for every `t`, NOT strictly increasing: `maxZsFor` bottoms out at exactly 1 there,
+ * and `1^-t` is 1. That is not a rounding artefact and it is not unreachable — `AsciiGraphRenderer`
+ * holds `P = 1` from construction until its first `measure()`, so every frame before the host box is
+ * usable takes this branch. The behaviour is the right one (a camera with no measured depth to move
+ * through does not move), but it is a FLAT segment, so the "strictly increasing" claim is scoped
+ * above rather than stated unconditionally — an earlier draft of this docstring said
+ * "any perspective >= 1" and was false at exactly the value the renderer boots with.
+ * `dollyForT(0, P) === 0`:
  * the resting overview (fit, `res = 1`) has no dolly — the camera sits at the fit distance, matching
  * ASCII's `zc = z2` today. At ordinary viewport scale, `dollyForT(1, P) === MAX_ZOOM_FRAC * P`: the
  * deepest resolution stop dollies exactly as far in as Canvas's old wheel clamp allowed (see
