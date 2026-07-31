@@ -3485,3 +3485,210 @@ describe("vector-edge fidelity — edge width follows the resolution STOP, not r
   });
 });
 
+
+// ---------------------------------------------------------------------------------------------
+// INTRO FRAMING + THE TWO NON-KNOWLEDGE-GRAPH CONSUMERS
+//
+// `setFitMargin`, `setFrameOffsetY` and `GraphConfig.transparent` exist for exactly one caller (the
+// first-run Vault Intro), and `labelEveryNode` for exactly one other (the ` ```graph ` note block).
+// Ported here from CanvasGraphRenderer as part of moving both sites onto this renderer. Each test
+// below pairs the feature ON against the SAME mount with it OFF — a smoke assertion on the ON case
+// alone would pass against a renderer that ignores the knob entirely, which is precisely how the
+// old `graphLabelHubCount: 9999` shipped as a no-op for a year.
+// ---------------------------------------------------------------------------------------------
+
+/** Half the screen-space extent of the PROJECTED nodes, in px — how big the cloud reads. Measured
+ *  over every node rather than the on-grid subset: the whole point of a fit margin is to change how
+ *  much of the cloud fits, so clipping to the grid first would measure the grid, not the framing
+ *  (and at margin 0.2 nothing is on the grid at all). Measured in 2D, where the projection is
+ *  exactly linear in the fit scale — 3D's perspective divide is not, so a ratio assertion there
+ *  would be approximate for reasons that have nothing to do with fitMargin. */
+function screenHalfExtent(r: AsciiGraphRenderer): number {
+  const p = lodPriv(r) as unknown as { nodes: { sx: number; sy: number }[] };
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const nv of p.nodes) {
+    minX = Math.min(minX, nv.sx); maxX = Math.max(maxX, nv.sx);
+    minY = Math.min(minY, nv.sy); maxY = Math.max(maxY, nv.sy);
+  }
+  return Math.max(maxX - minX, maxY - minY) / 2;
+}
+
+describe("intro framing — setFitMargin / setFrameOffsetY (ported from CanvasGraphRenderer)", () => {
+  it("setFitMargin divides the fit scale, so the cloud reads that much smaller", () => {
+    const plain = mountRenderer("2d");
+    const wide = mountRenderer("2d");
+    wide.r.setFitMargin(1.55);
+    frame(); frame();
+    const before = screenHalfExtent(plain.r);
+    const after = screenHalfExtent(wide.r);
+    expect(before).toBeGreaterThan(0);
+    // The whole point: 1.55 is a zoom-OUT of exactly that factor, not "a bit smaller".
+    expect(before / after).toBeCloseTo(1.55, 2);
+    plain.r.destroy(); wide.r.destroy();
+  });
+
+  it("clamps a degenerate margin instead of dividing the fit scale away", () => {
+    const { r } = mountRenderer("2d");
+    const base = screenHalfExtent(r);
+    r.setFitMargin(0);          // would be a divide-by-zero -> Infinity/NaN screen coords
+    frame(); frame();
+    const clamped = screenHalfExtent(r);
+    expect(Number.isFinite(clamped)).toBe(true);
+    expect(base / clamped).toBeCloseTo(0.2, 2); // Canvas's own Math.max(0.2, m) floor
+    r.setFitMargin(Number.NaN);
+    frame(); frame();
+    expect(screenHalfExtent(r)).toBeCloseTo(base, 4); // non-finite -> back to the plain fit
+    r.destroy();
+  });
+
+  it("setFrameOffsetY slides the projected graph down by that fraction of the host height", () => {
+    // Per-NODE displacement, not a mean over the on-grid set: the shift pushes nodes off the grid,
+    // so a mean over "what's still on the grid" measures the clipping, not the offset (it reads
+    // ~7px of the real 72). Every node must move by exactly the same amount — that IS the property.
+    const { r } = mountRenderer("2d");
+    const p = lodPriv(r) as unknown as { nodes: { sx: number; sy: number; node: { id: string } }[] };
+    const before = new Map(p.nodes.map((n) => [n.node.id, { sx: n.sx, sy: n.sy }]));
+    r.setFrameOffsetY(0.12);
+    frame(); frame();
+    expect(p.nodes.length).toBeGreaterThan(0);
+    for (const nv of p.nodes) {
+      const was = before.get(nv.node.id)!;
+      // 0.12 of the 600px box — an exact px displacement, not merely "lower".
+      expect(nv.sy - was.sy).toBeCloseTo(0.12 * BOX.height, 6);
+      expect(nv.sx).toBeCloseTo(was.sx, 6); // horizontally untouched
+    }
+    r.destroy();
+  });
+
+  it("shifts the LOD masses by the SAME offset the nodes get", () => {
+    // There are two projection origins (projectNodes and projectEntities) and NEITHER caller this
+    // knob exists for exercises the second one (the intro is 3D, the graph block has no
+    // communities). Applying the offset to one and not the other would leave every mass floating
+    // off the notes it summarizes, with nothing in either caller to show it. Asserted at fit, which
+    // is the far band: the leaf projection deliberately doesn't run there, so this is the entity
+    // half alone, against the same 0.12 * H the test above pins for the node half.
+    const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true } as never);
+    const p = lodPriv(r) as unknown as { entityFlat: { sy: number }[] };
+    const before = p.entityFlat.map((e) => e.sy);
+    expect(before.filter((y) => Number.isFinite(y) && y !== 0).length).toBeGreaterThan(0);
+    r.setFrameOffsetY(0.12);
+    frame(); frame();
+    let checked = 0;
+    for (let i = 0; i < p.entityFlat.length; i++) {
+      if (!Number.isFinite(before[i]) || before[i] === 0) continue; // never-projected level
+      expect(p.entityFlat[i].sy - before[i]).toBeCloseTo(0.12 * BOX.height, 6);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+    r.destroy();
+  });
+});
+
+describe("GraphConfig.transparent — the intro's see-through ground", () => {
+  it("suppresses the field's opaque --graph-bg only when asked", () => {
+    const opaque = mountRenderer("3d");
+    expect(opaque.viewport.style.background).toBe("");
+    const clear = mountRenderer("3d", sampleGraph(), { transparent: true } as never);
+    expect(clear.viewport.style.background).toBe("transparent");
+    // ...and it follows a live setConfig, which is how a theme switch reaches the renderer.
+    clear.r.setConfig({ ...CONFIG, viewMode: "3d" });
+    expect(clear.viewport.style.background).toBe("");
+    opaque.r.destroy(); clear.r.destroy();
+  });
+});
+
+describe("GraphConfig.labelEveryNode — the graph block's all-labels mode", () => {
+  /** Every file label (i.e. non-eyebrow) drawn this frame. */
+  const fileLabels = (r: AsciiGraphRenderer) =>
+    (r as unknown as { labels: { text: string; eyebrow?: boolean; alpha: number }[] })
+      .labels.filter((l) => !l.eyebrow);
+
+  it("names every node at FIT, where the zoom-driven ladder names none", () => {
+    // The ladder's two gates (fileLabelBudget, fileLabelAlpha) are BOTH zero at/below
+    // FILE_LABEL_REVEAL_T, and fit is t = 0 — so this is the state a ```graph block opens in.
+    const ladder = mountRenderer("2d");
+    expect(fileLabels(ladder.r).length).toBe(0);
+
+    const all = mountRenderer("2d", sampleGraph(), { labelEveryNode: true } as never);
+    const labels = fileLabels(all.r);
+    const onGrid = lodPriv(all.r).nodes.filter((n) => n.onGrid).length;
+    expect(onGrid).toBeGreaterThan(0);
+    expect(labels.length).toBe(onGrid);
+    // Drawn at full strength, not at the ladder's alpha (0 here) — a label the paint pass skips.
+    expect(labels.every((l) => l.alpha === 1)).toBe(true);
+    // And they are the real note names, not placeholders.
+    expect(labels.some((l) => l.text === "[[note 0]]")).toBe(true);
+    ladder.r.destroy(); all.r.destroy();
+  });
+
+  it("reaches the canvas — the names are actually painted, not just laid out", () => {
+    const { r } = mountRenderer("2d", sampleGraph(), { labelEveryNode: true } as never);
+    frame(9999);
+    expect(ctx.fills.some((f) => f.text === "[[note 7]]")).toBe(true);
+    r.destroy();
+  });
+
+  it("flips a blocked label to the node's other side rather than overprinting", () => {
+    // Two long-named nodes on the SAME grid row, close enough that the second one's default
+    // placement (2 cells to its right) runs into the first one's reserved span. `anchorL`/`anchorR`
+    // are inert corner nodes that pin the 2D bounding box, so the two contested nodes' columns don't
+    // move when the fixture is edited. Degrees put "aaa…" first in the placement order.
+    const long = (ch: string) => ch.repeat(13);
+    const at = (id: string, x: number, y: number) => ({
+      id, label: id, kind: "note" as const,
+      position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+    });
+    const g = {
+      nodes: [
+        at("anchorL", -300, -300), at("anchorR", 300, 300),
+        at(long("a"), 200, 0), at(long("b"), 100, 0), at(long("d"), 130, 0),
+        at("c", 200, 150),
+      ],
+      edges: [
+        { from: long("a"), to: long("b"), kind: "link" as const },
+        { from: "c", to: long("a"), kind: "link" as const },
+      ],
+    };
+    const { r } = mountRenderer("2d", g as never, { labelEveryNode: true } as never);
+    const p = lodPriv(r) as unknown as {
+      nodes: { col: number; row: number; node: { id: string } }[];
+      labels: { text: string; col: number; row: number; widthCells: number }[];
+    };
+    const nodeOf = (id: string) => p.nodes.find((n) => n.node.id === id)!;
+    const labelOf = (id: string) => p.labels.find((l) => l.text === `[[${id}]]`)!;
+    const a = nodeOf(long("a")), b = nodeOf(long("b"));
+    expect(a.row).toBe(b.row);                 // the fixture really does contest one row
+    expect(b.col).toBeLessThan(a.col);
+    const la = labelOf(long("a")), lb = labelOf(long("b"));
+    expect(la.col).toBe(a.col + 2);            // first placed: the default right-hand span
+    // ...and the second is pushed to the LEFT of its node, not stacked on top of the first.
+    expect(lb.col).toBe(b.col - 2 - lb.widthCells);
+    expect(lb.col + lb.widthCells).toBeLessThan(la.col);
+    // "d" sits between them with BOTH sides contested (right runs into a's span, left into b's
+    // flipped one). It stays on its own default side rather than flipping into b's label — a name
+    // that has to overprint should at least overprint next to the node it names.
+    const d = nodeOf(long("d")), ld = labelOf(long("d"));
+    expect(d.row).toBe(a.row);
+    expect(d.col).toBeGreaterThan(b.col);
+    expect(d.col).toBeLessThan(a.col);
+    expect(ld.col).toBe(d.col + 2);
+    r.destroy();
+  });
+
+  it("still curates when the flag is off — the knowledge graph's ladder is untouched", () => {
+    // One notch past the file-label reveal point with the flag OFF: the ladder has started naming
+    // files, and it names them at a FADING alpha out of a growing budget — not all of them at 1.
+    // (frameSubset+wheel is the file's own deterministic way to reach a deep stop on this fixture.)
+    const { r, viewport } = mountRenderer("2d");
+    r.frameSubset(["n0"]);
+    wheelIn(viewport, 30);
+    settle(300);
+    frame(9999);
+    const named = fileLabels(r);
+    expect(named.length).toBeGreaterThan(0);
+    // The ladder alpha is what labelEveryNode overrides; with the flag off, non-forced labels
+    // still carry it. (n0 itself may be forced by hover/active — assert on the population.)
+    expect(named.length).toBeLessThan(lodPriv(r).nodes.length);
+    r.destroy();
+  });
+});

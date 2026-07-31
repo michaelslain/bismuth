@@ -134,8 +134,11 @@ function makeCloud(n: number, radius: number, seed: number): GraphData {
 
 // Theme slide: a small starter cloud (just enough to show the palette). Three-brains slide:
 // a whole vault's worth of notes (~the size of a real Bismuth vault) — the explosion.
-const SMALL_GRAPH = makeCloud(54, 300, 1234567);
-const BIG_GRAPH = makeCloud(1874, 760, 987654321);
+// Exported so the headless smoke test drives the renderer with the REAL first-run fixtures rather
+// than a stand-in (they differ in the ways that matter: node count either side of the 350-node idle
+// spin cut-off, and a baked layout with no settle).
+export const SMALL_GRAPH = makeCloud(54, 300, 1234567);
+export const BIG_GRAPH = makeCloud(1874, 760, 987654321);
 
 // (A localStorage settled-position cache used to be wiped here on enter+exit. Neither renderer has
 // persisted layout to localStorage for some time — `bismuth-graphpos:v5:*` had no reader and no
