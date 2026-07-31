@@ -1636,12 +1636,21 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // plane sits at the same WORLD distance in front of the target at every dolly, and reduces to the
     // original `zc < P * 0.985` exactly when `dolly` is 0 (all of 2D, and 3D at fit).
     //
-    // MIN_PERSP — the FAR cull — is deliberately NOT rebased. It is a guard, not a behaviour: it
-    // fires only for a node more than 20× the camera distance BEHIND the target, and a fitted graph's
-    // own depth extent is at most `0.42 * boxPx / 0.866 ≈ 0.49 * P` from the centre (fitPxPerWorld's
-    // fraction over the FOV's own half-angle), i.e. under 1·P even with the target moved onto the
-    // rim by frameSubset. Un-rebased it needs 20·P and rebased it needs 20·camDist ≥ 1.2·P — both out
-    // of reach, so rebasing it would be an untestable change to unreachable code. Left literal.
+    // MIN_PERSP — the FAR cull — is deliberately NOT rebased. Against the code AS IT NOW STANDS it is
+    // a guard rather than a behaviour: it fires only for a node more than 20× the camera distance
+    // BEHIND the target, and a fitted graph's own depth extent is at most `0.42 * boxPx / 0.866 ≈
+    // 0.49 * P` from the centre (fitPxPerWorld's fraction over the FOV's own half-angle), i.e. under
+    // 1·P even with the target moved onto the rim by frameSubset. Un-rebased it needs 20·P and
+    // rebased it needs 20·camDist ≥ 1.2·P — both out of reach now, so rebasing it would be an
+    // untestable change to unreachable code. Left literal.
+    //
+    // BUT it is NOT a no-op against the code as it stood BEFORE the camera change, and the honest
+    // statement is that this is an accepted, unasserted behavioural delta rather than nothing at all.
+    // The old form scaled world Z by `res`, so the cull fired at `Z ≤ −19·P/res` — which is INSIDE a
+    // fitted cloud's ±0.49·P extent once `res > 39`, and this file cites `res = 68` as a realistic
+    // vault value. So on a deep ladder the new form KEEPS far-behind nodes the old form culled. The
+    // direction is more content rather than less, which is why it is accepted; the equivalence test
+    // is scoped to a shallow ladder and structurally cannot show it.
     const camDist = Math.max(1, P - dolly);
     const nearPlane = P - camDist * NEAR_PLANE_SLACK;
     const tx = this.target[0], ty = this.target[1], tz = this.target[2];
