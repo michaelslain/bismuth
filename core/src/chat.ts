@@ -69,8 +69,13 @@ export type ChatFrame =
   | { type: "assistant-text"; text: string }
   /** A delta of extended-thinking text. Streamed live from `content_block_delta` thinking deltas. */
   | { type: "thinking"; text: string }
-  /** Claude invoked a tool (an assistant `tool_use` content block). */
-  | { type: "tool-use"; id: string; name: string; input: unknown }
+  /** Claude invoked a tool (an assistant `tool_use` content block).
+   *  `name` is what the UI LABELS the chip with. `kind` is an optional stable machine token for the
+   *  same call, carried only by backends that have one (ACP's `ToolCall.kind`: "read"/"edit"/
+   *  "search"/"execute"/…): a title reads well but is free-form prose, so the frontend picks the
+   *  chip's ICON off `kind` when it's there and falls back to `name` when it isn't
+   *  (app/src/chatToolIcon.ts). Optional, so the Claude/opencode/codex producers stay valid. */
+  | { type: "tool-use"; id: string; name: string; kind?: string; input: unknown }
   /** That tool finished (a user `tool_result` content block). */
   | { type: "tool-result"; id: string; content: string; isError: boolean }
   /** canUseTool is asking the USER to approve/deny a not-pre-allowed tool. */

@@ -437,14 +437,39 @@ export function toolCallContentText(content: unknown): string {
 }
 
 /** Synthesize a `tool-use` frame's `input` from a ToolCall, which (unlike opencode/Claude tool
- *  calls) carries no structured parameters — only a human-readable `title` and an optional
- *  `kind`. `description` is one of summarizeInput's (app/src/ChatView.tsx) recognized keys, so
- *  the chip's one-line label shows the title text directly instead of a raw `{"title":"…"}` blob. */
+ *  calls) carries no structured parameters — only a human-readable `title` and an optional `kind`.
+ *  `description` is one of summarizeInput's (app/src/ChatView.tsx) recognized keys, so the expanded
+ *  chip and any other input consumer see readable text instead of a raw `{"title":"…"}` blob.
+ *
+ *  NOTE: this used to be justified as supplying the chip's one-line SUMMARY, which was true when
+ *  the chip was named after `kind` ("edit — Write foo.txt"). Since the chip is now labelled by
+ *  `title` too (see toolCallName), that summary would just echo the label, and chipSummary()
+ *  suppresses it. The synthesized input still earns its keep for the expanded view — it is the only
+ *  place an ACP call's title survives as data rather than as a heading. */
 export function toolCallInput(u: { title?: unknown; kind?: unknown }): unknown {
   const out: Record<string, unknown> = {};
   if (typeof u.title === "string" && u.title) out.description = u.title;
   if (typeof u.kind === "string" && u.kind) out.kind = u.kind;
   return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * THE display name for an ACP ToolCall, for every surface that shows one.
+ *
+ * It exists as a shared function rather than two inline expressions because it previously WAS two
+ * inline expressions and they disagreed: the tool chip (this file) resolved `name || kind` and the
+ * permission modal (driver.ts) resolved `name || title || kind`. A real ToolCall has no `name` —
+ * `title` is required and `kind` optional — so on live traffic the first landed on `kind` ("edit")
+ * and the second on `title` ("Write foo.txt"), naming the SAME call two ways one frame apart.
+ *
+ * `title` first: it is the field the schema guarantees and the only one written for a human. `name`
+ * is checked ahead of it purely as tolerance for a non-conforming agent that invents one — keeping
+ * that clause in ONE place is the point, since it is the clause the two call sites disagreed about.
+ * `kind` is a last resort, not a label: it is a fixed machine token ("read"/"edit"/"execute"/…),
+ * which is why it is carried separately on the frame for icon selection instead of being shown.
+ */
+export function toolCallName(u: { name?: unknown; title?: unknown; kind?: unknown }): string {
+  return str(u.name) || str(u.title) || str(u.kind) || "tool";
 }
 
 // ── session/update → ChatFrame[] ─────────────────────────────────────────────────────────────
@@ -512,9 +537,13 @@ export function translateSessionUpdate(raw: unknown, state: AcpTranslateState): 
     case "tool_call": {
       const id = str(u.toolCallId);
       if (!id) return [];
-      const name = str(u.name) || str(u.kind) || "tool";
+      // Shared with driver.ts's permission modal — see toolCallName's own doc for why that sharing
+      // is the fix and not merely tidiness. `kind` rides along on the frame (never as the label) so
+      // the chip's icon keys off the stable machine token rather than the title's free-form prose.
+      const kind = str(u.kind);
+      const name = toolCallName(u);
       state.toolCalls.set(id, { name });
-      const frames: ChatFrame[] = [{ type: "tool-use", id, name, input: toolCallInput(u) }];
+      const frames: ChatFrame[] = [{ type: "tool-use", id, name, kind: kind || undefined, input: toolCallInput(u) }];
       const status = str(u.status);
       // Defensive: an agent that resolves a tool call INSTANTLY (no separate tool_call_update)
       // still gets its result frame from the initial event, same guard as tool_call_update below.
