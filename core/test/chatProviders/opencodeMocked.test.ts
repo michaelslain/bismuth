@@ -28,40 +28,52 @@
 //    repeated live runs. This is a mock-server pacing fix, NOT a driver change — no production files
 //    were touched for this task.
 //
-// KNOWN LOAD-SENSITIVE FLAKE (task-15, diagnosed not fixed — same class as the project's own
-// documented core/test/layout.test.ts flakiness, NOT a new bug this task introduced): finding #2's
-// 40ms margin is a FIXED constant, not a deterministic wait for the SSE subscription's own
-// attachment — under real CPU contention that margin can still be blown through, exactly
-// reproducing finding #2's own failure signature (a turn's blocking `session.prompt()` HTTP call
-// still resolves normally — `result`+`done`+`title` all fire — but zero `assistant-text` frames
-// ever arrive, because `runTurnServer`'s per-session listener, registered via
-// `registerOpencodeServerListener` just before that same call, hadn't caught the model's deltas in
-// time). Root-caused precisely this task by DIRECT experiment, not guessed:
-//   - Clean slate (zero other `opencode serve` processes running, confirmed by pid check): 15/15
-//     solo runs passed, and 4/4 runs launched IN PARALLEL (real CPU contention, 11-17s wall time
-//     each vs ~7-10s solo) still passed.
-//   - Deliberately reintroducing exactly the contamination this file's OWN afterAll leak (fixed
-//     this same task — see killAndConfirmDead below) used to leave behind — two extra, otherwise-
-//     idle `opencode serve` processes seeded by hand, simulating what an unfixed repeated-run
-//     history accumulates — reproduced this file's FIRST test failing with the EXACT signature
-//     above at 6/18 runs (33%), closely matching both a sibling task's independent measurement at
-//     the untouched base commit (2/5, 40%) and this task's own earlier measurement on this branch
-//     (1/4, 25%).
-//   - The same signature also reproduced on a nominally clean pid slate purely from OTHER
-//     concurrent processes' machine-level CPU load (unrelated sibling agents on this shared dev
-//     box) — so leaked `opencode serve` processes are A cause, not the ONLY cause; any sufficiently
-//     heavy contention can defeat the fixed 40ms margin.
-// CONCLUSION: this file's own Step-3b leak fix (afterAll now confirms every process it kills is
-// actually dead — see killAndConfirmDead's doc comment) measurably REDUCES this flake's frequency
-// in normal use, because it stops repeated test runs from compounding their own contention over
-// time — but it does NOT make this test fully deterministic, since ordinary machine load from
-// anything else running concurrently can still trigger the identical race. A true fix needs
-// production driver code (core/src/chatProviders/opencode.ts's `runTurnServer`) to positively
-// confirm its per-session SSE registration is live before issuing `session.prompt()`, replacing the
-// fixed-margin mock workaround with a real synchronization point — out of scope for this task (a
-// shared driver code path, not a test-only change) and not attempted here. Documented rather than
-// silently accepted, per this task's own standard: a known-flaky test that's honestly labelled is
-// survivable; an unlabelled one poisons every future run's signal.
+// KNOWN FLAKE, NOT LOAD-GATED (task-15, diagnosed not fixed — corrected after an earlier version of
+// this note wrongly claimed it was rare on a clean slate and reduced by this file's own Step-3b leak
+// fix; neither claim survived a second measurement round and both are retracted below). Affects the
+// FIRST test above ("a turn sent through CHAT_BACKENDS.opencode returns the fixture's exact text"),
+// NOT the reopen-branch test further down.
+//
+// MEASURED (task-15, two rounds): on a genuinely clean slate — zero `opencode serve` processes
+// running before, during, or after, confirmed by pid check each time — 12 solo runs of this file
+// produced 4 failures (33%), at 1-minute load averages ranging from 2.50 to 6.89 with NO visible
+// threshold: failures occurred at both the lowest (2.73) and a middling (6.71) load sampled, while
+// FIVE STRAIGHT PASSES landed at the highest loads sampled (6.50-6.89). This is not the load-gated
+// story an earlier version of this note claimed (which reported 0/15 clean-slate failures — that
+// was wrong, superseded by this larger, repeated sample) — treat this as failing roughly 1 run in 3
+// regardless of ordinary machine load, not as something a quiet machine avoids.
+//
+// ROOT CAUSE, confirmed by direct frame-level instrumentation (not guessed): a fresh session's open
+// sequence always emits TWO `manifest` frames — `manifest`, `session`, `manifest`, `models`, `auth` —
+// and this is NORMAL, not a symptom: `emitOpenFrames` emits one immediately, then a second once
+// `ensureOpenInfo` populates the module-level `commandsCache` for the first time in this process (see
+// `opencode.ts`'s `emitOpenFrames`). Confirmed identical, frame-for-frame, in both passing AND
+// failing runs — instrumented four solo trials with per-frame timestamps; the one that failed showed
+// the EXACT SAME manifest/session/manifest/models/auth sequence as the three that passed, entirely
+// BEFORE `sendMessage()` was ever called. The duplicate manifest is opening boilerplate, unrelated to
+// the failure; an earlier version of this note that treated it as a possible sign of a mid-turn
+// re-announce was chasing a red herring.
+//
+// The actual failure, also confirmed by that same instrumentation: after the identical open sequence,
+// `runTurnServer`'s blocking `session.prompt()` HTTP call still resolves NORMALLY — `result`, `done`,
+// and `title` all fire, in the failing trial exactly as in the passing ones — but zero
+// `assistant-text` frames ever arrive. This is precisely finding #2's own mechanism above (the
+// per-session SSE listener, registered via `registerOpencodeServerListener` just before that same
+// call, not having caught the model's streamed deltas before the exchange completed) — just
+// occurring at a much higher baseline rate in this environment/opencode version than the "40ms
+// reliably produced one clean frame" the original finding reported.
+//
+// NOT FIXED HERE: a real fix needs `core/src/chatProviders/opencode.ts`'s `runTurnServer` to
+// positively confirm its per-session SSE registration is live before issuing `session.prompt()`,
+// replacing the fixed-margin mock-side workaround with a real synchronization point — a production
+// driver change to a shared code path, out of this task's scope. This file's OWN Step-3b leak fix
+// (afterAll now confirms every process it kills is actually dead — see killAndConfirmDead's doc
+// comment) is UNRELATED to this flake and does not reduce it — that connection, drawn in an earlier
+// version of this note, does not hold up: this failure reproduces at the same ~33% rate on a slate
+// with zero leaked processes of any kind. Documented here rather than silently accepted: a
+// known-flaky test that's honestly labelled to the RIGHT test and the RIGHT mechanism is survivable;
+// one pointing at the wrong test, or claiming a fix that doesn't apply, sends the next person
+// investigating a red run looking in the wrong place entirely.
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
