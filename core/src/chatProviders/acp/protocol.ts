@@ -150,13 +150,37 @@ export interface AcpToolCallContentEntry {
   [k: string]: unknown;
 }
 
+/**
+ * One entry in a select config option's `options` array. Per `SessionConfigSelectOptions`, that
+ * array is `Array<SessionConfigSelectOption> | Array<SessionConfigSelectGroup>` — a flat list of
+ * choices OR a list of groups, each wrapping its own choices. This type is the union of both.
+ *
+ * `value` is the option's identity. **`id` is NOT a field any shipping ACP agent emits on a select
+ * OPTION** — it was checked against @agentclientprotocol/sdk 0.20.0/0.24.0/0.29.0/1.3.0 and is
+ * `{value, name, description?}` in every one, and confirmed live off cline 3.0.48, goose and
+ * openclaw (all three emit `{value, name}`). It is declared, and read as a fallback below, purely
+ * so a hypothetical non-conforming emitter degrades instead of going blank. The only legitimate
+ * `id` nearby is `AcpSessionConfigOption.id` — the SELECTOR's id, which is what
+ * `session/set_config_option` addresses.
+ */
+export interface AcpSessionConfigSelectOption {
+  value?: string;
+  /** Back-compat fallback only — see the note above. */
+  id?: string;
+  name?: string;
+  description?: string | null;
+  /** Group form (`SessionConfigSelectGroup`): a group header plus its own nested choices. */
+  group?: string;
+  options?: AcpSessionConfigSelectOption[];
+}
+
 export interface AcpSessionConfigOption {
   id?: string;
   name?: string;
   description?: string | null;
   category?: string | null;
   type?: "select" | "boolean";
-  options?: { id?: string; name?: string }[];
+  options?: AcpSessionConfigSelectOption[];
   currentValue?: unknown;
 }
 
@@ -208,24 +232,126 @@ export interface AcpModelShapeInfo {
  * absent thought_level option correctly yields [] on every entry, hiding the header's Effort
  * picker exactly like a model with no reasoning-effort support).
  */
+/** Splice `SessionConfigSelectGroup` children into one flat option list. An element with its own
+ *  `options` array is a GROUP header, not a choice, so it contributes its children and not itself;
+ *  a flat list passes through unchanged. Without this a grouped selector yields ZERO models. */
+function flattenSelectOptions(options: unknown): AcpSessionConfigSelectOption[] {
+  if (!Array.isArray(options)) return [];
+  const out: AcpSessionConfigSelectOption[] = [];
+  for (const raw of options) {
+    if (!raw || typeof raw !== "object") continue;
+    const o = raw as AcpSessionConfigSelectOption;
+    if (Array.isArray(o.options)) out.push(...flattenSelectOptions(o.options));
+    else out.push(o);
+  }
+  return out;
+}
+
+/** A select option's identity: the spec's `value`, with `id` as a back-compat fallback (see
+ *  AcpSessionConfigSelectOption — no real agent emits `id` here). "" means unusable. */
+function selectOptionValue(o: AcpSessionConfigSelectOption | undefined): string {
+  if (typeof o?.value === "string" && o.value) return o.value;
+  if (typeof o?.id === "string" && o.id) return o.id;
+  return "";
+}
+
+/** Display text for a select option: its `name`, falling back to its identity. */
+function selectOptionLabel(o: AcpSessionConfigSelectOption): string {
+  return typeof o.name === "string" && o.name ? o.name : selectOptionValue(o);
+}
+
+/**
+ * Choose THE model selector from the (possibly several) `category:"model"` config options.
+ *
+ * This exists because `category` does not uniquely identify the model list. Captured live from
+ * cline 3.0.48: it emits an `id:"provider"` selector (options `{value:"cline"}`,
+ * `{value:"openai-codex"}` — OAuth providers) FIRST, then the real `id:"model"` selector (options
+ * `{value:"gpt-4o"}`), both `category:"model"`, and the two are indistinguishable by option shape
+ * (both `{value, name}`). So "first `category:"model"` wins" is DISPROVEN, not merely unproven: it
+ * lists two providers as if they were models and sets `modelConfigId:"provider"`, which makes
+ * driver.ts's setModel write a model id into cline's provider option. Populated-but-wrong is worse
+ * than empty, because empty is at least visible.
+ *
+ * Ranked rules, most to least evidence. Which rule fires for which real agent:
+ *   1. `id === "model"` AND it yields at least one option — fires for **cline** (3.0.48) and
+ *      **goose**, the only two agents observed with a `category:"model"` selector. Not
+ *      spec-mandated (`SessionConfigId` is a free string), but it is what both real agents do, and
+ *      it is the selector's OWN id, not a display string. The non-empty qualifier keeps a
+ *      name-matched but EMPTY selector from beating a populated sibling.
+ *   2. Option values intersect `models.availableModels[].modelId` — for a DUAL-shape agent (cline
+ *      sends both shapes; "gpt-4o" appears in each) the old shape names the real models, so the
+ *      selector containing them is the model selector. Principled, but only available when the
+ *      agent also sends the old shape.
+ *   3. First candidate that yields a non-empty list — last resort, reached only when neither
+ *      stronger signal is present.
+ *   4. Otherwise the id-matched candidate, else the first, so `shape:"new"` and the config ids
+ *      survive even when every option list is empty (see detectModelShape's no-fall-through note).
+ *
+ * DELIBERATELY NOT A RULE: `name === "Model"`. The first investigation ranked it above rule 3, and
+ * it does match both observed agents — but `name` is the selector's human-readable DISPLAY string,
+ * so it is i18n-fragile in a way `id` is not: any agent that localizes its config UI (or merely
+ * renames the label to "Model / Provider", "LLM", etc.) would silently stop matching, and the
+ * failure mode is picking the provider again. Dropped on purpose, not overlooked.
+ *
+ * Also not a rule, but relevant: ACP >=1.0 adds a `"model_config"` category for exactly this
+ * "model-adjacent selector that is not the model list" case. Nothing observed emits it yet — and
+ * nothing needs to be done for it here, since candidates are filtered on `category === "model"`,
+ * so a future `model_config` entry is already excluded rather than competing.
+ */
+function pickModelOption(candidates: AcpSessionConfigOption[], r: AcpNewSessionResult): AcpSessionConfigOption {
+  const yieldsModels = (o: AcpSessionConfigOption) => flattenSelectOptions(o.options).some((x) => selectOptionValue(x).length > 0);
+
+  // Rule 1 requires the id-matched entry to actually yield something. Without that guard, a payload
+  // like [{id:"llm", 2 models}, {id:"model", options:[]}] picks the EMPTY one on a name match and
+  // discards a populated sibling — the id is a strong signal, but not strong enough to outrank
+  // having any models at all. No observed agent does this; the guard costs one predicate.
+  const byId = candidates.find((o) => o.id === "model" && yieldsModels(o));
+  if (byId) return byId;
+
+  const availIds = new Set(
+    (Array.isArray(r.models?.availableModels) ? r.models.availableModels : [])
+      .map((m) => (typeof m?.modelId === "string" ? m.modelId : ""))
+      .filter(Boolean),
+  );
+  if (availIds.size) {
+    const byIntersection = candidates.find((o) => flattenSelectOptions(o.options).some((x) => availIds.has(selectOptionValue(x))));
+    if (byIntersection) return byIntersection;
+  }
+
+  const byNonEmpty = candidates.find(yieldsModels);
+  if (byNonEmpty) return byNonEmpty;
+
+  // Everything is empty. Prefer the id-matched entry anyway, so an agent whose model list is
+  // momentarily empty still reports the RIGHT modelConfigId for setModel to address later.
+  return candidates.find((o) => o.id === "model") ?? candidates[0]!;
+}
+
 export function detectModelShape(newSessionResult: unknown): AcpModelShapeInfo {
   const r = (newSessionResult && typeof newSessionResult === "object" ? newSessionResult : {}) as AcpNewSessionResult;
 
   const configOptions = Array.isArray(r.configOptions) ? r.configOptions : null;
-  const modelOpt = configOptions?.find((o) => o && o.category === "model" && Array.isArray(o.options));
-  if (modelOpt) {
+  // EVERY category:"model" entry, not just the first — cline emits two (see pickModelOption).
+  const modelCandidates = (configOptions ?? []).filter((o) => o && o.category === "model" && Array.isArray(o.options));
+  if (modelCandidates.length) {
+    const modelOpt = pickModelOption(modelCandidates, r);
     const thoughtOpt = configOptions?.find((o) => o && o.category === "thought_level" && Array.isArray(o.options));
-    const effortLevels = (thoughtOpt?.options ?? [])
-      .map((o) => (typeof o?.name === "string" && o.name ? o.name : typeof o?.id === "string" ? o.id : ""))
-      .filter(Boolean);
-    const models: AcpModelEntry[] = (modelOpt.options ?? [])
-      .filter((o): o is { id: string; name?: string } => typeof o?.id === "string" && o.id.length > 0)
+    const effortLevels = flattenSelectOptions(thoughtOpt?.options).map(selectOptionLabel).filter(Boolean);
+    const models: AcpModelEntry[] = flattenSelectOptions(modelOpt.options)
+      .map((o) => ({ id: selectOptionValue(o), name: o.name }))
+      .filter((o) => o.id.length > 0)
       .map((o) => ({
         value: o.id,
         label: typeof o.name === "string" && o.name ? o.name : o.id,
         description: "",
         effortLevels,
       }));
+    // NOTE the absence of a fall-through here. Returning "new" is unconditional once ANY
+    // category:"model" entry exists, even when it yields zero models. Falling through to the old
+    // shape on an empty list would null modelConfigId/effortConfigId — and goose sends
+    // `configOptions` with NO `models` field at all (captured top-level keys:
+    // ["sessionId","modes","configOptions","_meta"]), so for goose those two ids are the only
+    // model/effort handles that exist, and driver.ts's setModel/setEffort would both become
+    // permanent no-ops. Losing information is never the right response to an empty list.
     return {
       shape: "new",
       models,

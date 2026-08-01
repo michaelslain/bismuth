@@ -62,15 +62,17 @@
 // SCOPE LIMIT of this mode (a code-review finding on this task, recorded explicitly so nobody
 // mistakes this for broader coverage than it is): this mode reproduces cline's AUTH surface only.
 // Once the gate is open, `handleSessionNew` below falls through to the SAME generic
-// old/new-model-shape logic FAKE_ACP_MODEL_SHAPE already drives (this file's own hand-built
-// `{id, name}`-shaped configOptions) — NOT cline's real, quirkier `provider`-then-`model`
-// `configOptions` ordering (see backendEnv.ts's `cline` case, "TWO HONEST LIMITS" #2, for that
-// separate, already-cited bug: a real cline session emits a "provider" selector ahead of the true
-// "model" selector under the same category, which poisons both the `models` ChatFrame and
-// `modelConfigId`). This mode's own gate-OPEN test therefore CANNOT catch that bug — it was found
-// only by driving the REAL binary (clineMocked.test.ts's "real E2E" block), and this
-// always-running, binary-independent fake structurally never will unless a future task teaches it
-// cline's real configOptions shape too.
+// old/new-model-shape logic FAKE_ACP_MODEL_SHAPE already drives (this file's own hand-built,
+// single-selector configOptions) — NOT cline's real, quirkier `provider`-then-`model`
+// `configOptions` ordering, in which a "provider" selector precedes the true "model" selector under
+// the SAME `category:"model"`. That ordering bug was fixed on 2026-08-01 (protocol.ts's
+// `pickModelOption`) and is now covered directly, from the captured cline payload, by
+// acpProtocol.test.ts — so this fake still does not reproduce it, and still does not need to.
+// (Historical note, because it is the reason this file was wrong for so long: the earlier version
+// of this comment asserted cline's provider options were `{value, name}` while its MODEL options
+// were `{id, name}`, and this fake's own fixtures were built to match. Driving the real binaries
+// showed BOTH are `{value, name}` — no ACP agent has ever emitted `id` on a select option — so the
+// fixtures below were green against a shape that does not exist. They now use `{value, name}`.)
 //
 // HELD-PROMPT MODE (added for the "cover the permission request→response round-trip" task — see
 // acpPermissionFakeAgent.test.ts): opt-in via FAKE_ACP_PROMPT_HOLD, the same shape as the two modes
@@ -397,6 +399,14 @@ function handleSessionNew(id: number | string): void {
   } else {
     respond(id, {
       sessionId,
+      // Select OPTIONS are `{value, name}` — the spec's `SessionConfigSelectOption`, and what every
+      // real agent driven against a local mock emits (cline 3.0.48, goose, openclaw; see
+      // .superpowers/sdd/2026-08-01-agent-integration-completion/task-1-report.md). These were
+      // `{id, name}` until 2026-08-01: a shape NO shipping ACP agent has ever emitted, which made
+      // this fake certify a fiction — detectModelShape's `configOptions` branch filtered on `.id`,
+      // so it passed here while returning an empty model list for every real binary. `id` on the
+      // enclosing SELECTOR is correct and unchanged (that is what session/set_config_option
+      // addresses); only the option elements were wrong.
       configOptions: [
         {
           id: "model-config",
@@ -404,8 +414,8 @@ function handleSessionNew(id: number | string): void {
           category: "model",
           type: "select",
           options: [
-            { id: "fake-model-x", name: "Fake Model X" },
-            { id: "fake-model-y", name: "Fake Model Y" },
+            { value: "fake-model-x", name: "Fake Model X" },
+            { value: "fake-model-y", name: "Fake Model Y" },
           ],
           currentValue: "fake-model-x",
         },
@@ -415,8 +425,8 @@ function handleSessionNew(id: number | string): void {
           category: "thought_level",
           type: "select",
           options: [
-            { id: "low", name: "Low" },
-            { id: "high", name: "High" },
+            { value: "low", name: "Low" },
+            { value: "high", name: "High" },
           ],
           currentValue: "low",
         },
