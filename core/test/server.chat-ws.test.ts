@@ -354,7 +354,14 @@ describe("the /chat websocket handler (fake ACP agent — no CLI, no model, no n
       expect(code2).toBe(4002);
       await sleep(200); // comfortably inside the 1s grace
       expect(CHAT_BACKENDS.cline.hasSession(chatId)).toBe(true);
-      await sleep(2000); // now past it
+      // Poll for the teardown rather than sleeping a fixed margin past it — same shape as the
+      // abnormal-close test below, and it removes this file's only wait whose correctness depended
+      // on a margin rather than on the event itself.
+      await waitForCondition(
+        () => CHAT_BACKENDS.cline.hasSession(chatId) === false,
+        5_000,
+        "the grace teardown to fire after the LAST socket's abnormal close",
+      );
       expect(CHAT_BACKENDS.cline.hasSession(chatId)).toBe(false);
     },
     45_000,
@@ -366,17 +373,19 @@ describe("the /chat websocket handler (fake ACP agent — no CLI, no model, no n
       // A long grace on purpose: if the clean-close arm ever fell through to scheduleChatClose, the
       // session would still be alive at the check below, and this test would fail. With the
       // `code === 1000` arm intact, closeChat runs synchronously in the close handler.
-      process.env.BISMUTH_CHAT_GRACE_MS = "10000";
+      const graceMs = 10_000;
+      process.env.BISMUTH_CHAT_GRACE_MS = String(graceMs);
       const { wsBase } = await boot();
       const chatId = `chat-ws-clean-${Date.now()}`;
 
       const ws = await openLiveChat(wsBase, chatId);
+      const t0 = Date.now();
       const code = await ws.close(1000, "tab closed");
       expect(code).toBe(1000);
 
       // No sleeping past anything: closeChat is synchronous inside the close handler, so the
-      // registry is already empty once the handshake completes. The short settle covers only the
-      // gap between the server processing the frame and the client observing the handshake.
+      // registry is already empty once the handshake completes. The 2s budget covers only the gap
+      // between the server processing the frame and the client observing the handshake.
       await waitForCondition(
         () => CHAT_BACKENDS.cline.hasSession(chatId) === false,
         2_000,
@@ -384,9 +393,16 @@ describe("the /chat websocket handler (fake ACP agent — no CLI, no model, no n
       );
       // Restated as a hard assertion so a future edit to waitForCondition cannot soften this.
       expect(CHAT_BACKENDS.cline.hasSession(chatId)).toBe(false);
-      // And prove the 10s grace really had not elapsed — i.e. the teardown above was the clean-close
-      // arm, not a grace timer that happened to fire.
-      expect(Number(process.env.BISMUTH_CHAT_GRACE_MS)).toBe(10_000);
+      // What actually distinguishes the clean-close arm from a grace timer that happened to fire is
+      // that the teardown was observed in FAR less time than the grace — so measure that, rather
+      // than re-reading the env var this test set itself twenty lines up (which production only ever
+      // reads, and which would therefore pass even if the code did nothing at all — a review finding
+      // on this file's first version, and a defect that a flip-the-expected-literal sabotage
+      // structurally cannot detect, because flipping a self-referential expectation always fails).
+      // This couples the two numbers: raise the observation budget above `graceMs` and this fails,
+      // which is exactly the edit that would quietly let a grace timer satisfy the test.
+      const elapsedMs = Date.now() - t0;
+      expect(elapsedMs).toBeLessThan(graceMs);
     },
     30_000,
   );
@@ -470,8 +486,10 @@ describe("the /chat websocket handler (fake ACP agent — no CLI, no model, no n
       const calls = readEchoLines(echoFile).filter((l) => l.method === "session/set_model");
       expect(calls.length).toBe(1);
       expect((calls[0].params as { modelId?: string }).modelId).toBe("fake-model-b");
-      // The OLD shape's target, NOT the new shape's — proves the frame reached the driver's own
-      // shape branch rather than some generic passthrough.
+      // A belt on top of the two assertions above, which already prove the OLD shape's dispatch
+      // target was reached with the right payload: the NEW shape's target must not ALSO have fired.
+      // Kept because it costs nothing, but it is corroboration — the discriminating evidence for the
+      // shape branch is the positive `session/set_model` assertion, not this absence.
       expect(readEchoLines(echoFile).some((l) => l.method === "session/set_config_option")).toBe(false);
 
       // And the `user` verb still round-trips after it.
