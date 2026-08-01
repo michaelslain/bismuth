@@ -38,6 +38,7 @@ import { chatTitle, publishChatTitle, resolveChatHeaderTitle } from "./chatTitle
 import { rememberChatSession, recallChatSession, forgetChatSession } from "./chatSessionStore";
 import { chatOrigin, publishChatOrigin, chatOriginIcon } from "./chatOrigin";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
+import { pickToolIcon } from "./chatToolIcon";
 import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, computeChromeToggle, computeChromeCommand } from "./chatSlashCommands";
 import { chatComputerUse, setChatComputerUse } from "./chatComputerUse";
 import { resolveInitialModel, reconcileManifestModel, modelOptionFor, modelLabelFor } from "./chatModelResolution";
@@ -192,11 +193,14 @@ function readImageFile(file: File): Promise<Attachment | null> {
 interface TextPart { kind: "text"; text: string }
 /** A run of streamed extended-thinking text, accumulated across `thinking` deltas. */
 interface ThinkingPart { kind: "thinking"; text: string }
-/** A tool invocation chip; `result`/`isError` fill in when the matching tool-result arrives. */
+/** A tool invocation chip; `result`/`isError` fill in when the matching tool-result arrives.
+ *  `toolKind` (NOT `kind` — that name is already the part discriminant) is the frame's optional
+ *  machine token for the call, used only to pick the icon; see chatToolIcon.ts. */
 interface ToolPart {
   kind: "tool";
   id: string;
   name: string;
+  toolKind?: string;
   input: unknown;
   result: string | null;
   isError: boolean;
@@ -272,21 +276,6 @@ function summarizeInput(input: unknown): string {
   } catch {
     return "";
   }
-}
-
-/** A Lucide icon name for a tool, by best-effort match on its name (falls back to a wrench).
- *  Never an exhaustive list — it's purely decorative; unknown tools just get the generic icon. */
-function toolIcon(name: string): string {
-  const n = name.toLowerCase();
-  if (n.includes("bash") || n.includes("terminal")) return "SquareTerminal";
-  if (n.includes("read")) return "FileText";
-  if (n.includes("write") || n.includes("edit") || n.includes("notebook")) return "Pencil";
-  if (n.includes("grep") || n.includes("glob") || n.includes("search") || n.includes("find")) return "Search";
-  if (n.includes("web") || n.includes("fetch")) return "Globe";
-  if (n.includes("task") || n.includes("agent")) return "Bot";
-  if (n.includes("todo")) return "LayoutList";
-  if (n.startsWith("mcp__")) return "Server";
-  return "Wrench";
 }
 
 /** Truncate long tool output / JSON so a chip body stays readable (expand still shows it all
@@ -770,6 +759,7 @@ export function ChatView(props: {
             kind: "tool",
             id: frame.id,
             name: frame.name,
+            toolKind: frame.kind,
             input: frame.input,
             result: null,
             isError: false,
@@ -2488,7 +2478,7 @@ export function ChatView(props: {
     return (
       <div class="chat-tool" classList={{ open: open(), error: p.part.isError }}>
         <button class="chat-tool-head" onClick={() => setOpen(!open())}>
-          <Icon value={toolIcon(p.part.name)} size={14} class="chat-tool-icon" />
+          <Icon value={pickToolIcon(p.part.toolKind, p.part.name)} size={14} class="chat-tool-icon" />
           <span class="chat-tool-name">{p.part.name}</span>
           <Show when={summary()}>
             <span class="chat-tool-summary">{summary()}</span>

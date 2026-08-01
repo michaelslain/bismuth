@@ -447,6 +447,25 @@ export function toolCallInput(u: { title?: unknown; kind?: unknown }): unknown {
   return Object.keys(out).length ? out : undefined;
 }
 
+/**
+ * THE display name for an ACP ToolCall, for every surface that shows one.
+ *
+ * It exists as a shared function rather than two inline expressions because it previously WAS two
+ * inline expressions and they disagreed: the tool chip (this file) resolved `name || kind` and the
+ * permission modal (driver.ts) resolved `name || title || kind`. A real ToolCall has no `name` —
+ * `title` is required and `kind` optional — so on live traffic the first landed on `kind` ("edit")
+ * and the second on `title` ("Write foo.txt"), naming the SAME call two ways one frame apart.
+ *
+ * `title` first: it is the field the schema guarantees and the only one written for a human. `name`
+ * is checked ahead of it purely as tolerance for a non-conforming agent that invents one — keeping
+ * that clause in ONE place is the point, since it is the clause the two call sites disagreed about.
+ * `kind` is a last resort, not a label: it is a fixed machine token ("read"/"edit"/"execute"/…),
+ * which is why it is carried separately on the frame for icon selection instead of being shown.
+ */
+export function toolCallName(u: { name?: unknown; title?: unknown; kind?: unknown }): string {
+  return str(u.name) || str(u.title) || str(u.kind) || "tool";
+}
+
 // ── session/update → ChatFrame[] ─────────────────────────────────────────────────────────────
 
 /** The manifest fields translateSessionUpdate can't derive on its own (model/permissionMode/tools/
@@ -512,9 +531,13 @@ export function translateSessionUpdate(raw: unknown, state: AcpTranslateState): 
     case "tool_call": {
       const id = str(u.toolCallId);
       if (!id) return [];
-      const name = str(u.name) || str(u.kind) || "tool";
+      // Shared with driver.ts's permission modal — see toolCallName's own doc for why that sharing
+      // is the fix and not merely tidiness. `kind` rides along on the frame (never as the label) so
+      // the chip's icon keys off the stable machine token rather than the title's free-form prose.
+      const kind = str(u.kind);
+      const name = toolCallName(u);
       state.toolCalls.set(id, { name });
-      const frames: ChatFrame[] = [{ type: "tool-use", id, name, input: toolCallInput(u) }];
+      const frames: ChatFrame[] = [{ type: "tool-use", id, name, kind: kind || undefined, input: toolCallInput(u) }];
       const status = str(u.status);
       // Defensive: an agent that resolves a tool call INSTANTLY (no separate tool_call_update)
       // still gets its result frame from the initial event, same guard as tool_call_update below.

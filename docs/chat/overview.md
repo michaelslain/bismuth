@@ -145,7 +145,7 @@ The `ChatFrame` union (server → client):
 - `{type:"user-message", text, images?}` — a past user turn, emitted **only** during history replay (live user messages come from the client, not the wire). `images` carries persisted attachments as `data:` URLs so image(-only) turns survive replay.
 - `{type:"assistant-text", text}` — a delta of assistant prose, streamed from `content_block_delta` text deltas.
 - `{type:"thinking", text}` — a delta of extended-thinking text.
-- `{type:"tool-use", id, name, input}` — an assistant `tool_use` block.
+- `{type:"tool-use", id, name, kind?, input}` — an assistant `tool_use` block. `name` is what the chip is **labelled** with; `kind` is an optional stable machine token for the same call, emitted only by backends that have one (ACP's `ToolCall.kind`: `read`/`edit`/`search`/`execute`/…). The frontend picks the chip's **icon** from `kind` when present and falls back to `name` when it isn't or when `kind` matches no rule — see `app/src/chatToolIcon.ts`. ACP labels by `ToolCall.title`, the same field its permission prompt uses, so one tool is never named two ways in one turn.
 - `{type:"tool-result", id, content, isError}` — the matching user `tool_result` block.
 - `{type:"permission", id, toolName, input}` — `canUseTool` asking the user to approve/deny.
 - `{type:"question", id, questions}` — Claude called **AskUserQuestion**: 1–4 multiple-choice questions the user must answer for the turn to continue (see [Interactive questions](#interactive-questions-askuserquestion)).

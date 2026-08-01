@@ -64,6 +64,7 @@ import {
   newAcpTranslateState,
   parseJsonRpcLine,
   toolCallInput,
+  toolCallName,
   translateSessionUpdate,
   type AcpManifestBaseline,
   type AcpMcpServerStdio,
@@ -330,11 +331,10 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
       const options = Array.isArray(params.options) ? (params.options as AcpPermissionOption[]) : [];
       const id = String(req.id);
       s.pendingPermissions.set(id, { rpcId: req.id, options });
-      const toolName =
-        (typeof toolCall.name === "string" && toolCall.name) ||
-        (typeof toolCall.title === "string" && toolCall.title) ||
-        (typeof toolCall.kind === "string" && toolCall.kind) ||
-        "tool";
+      // Shared with the tool-chip name in protocol.ts — these two were separate inline expressions
+      // that disagreed, so the modal and the chip named the same ToolCall two different ways within
+      // one turn. One function, one answer.
+      const toolName = toolCallName(toolCall);
       emit(s, { type: "permission", id, toolName, input: toolCallInput(toolCall) ?? {} });
       return;
     }
