@@ -4344,6 +4344,7 @@ describe("the phosphor bloom carries each cluster's own territory colour (Task 2
     W: number; H: number; res: number; goalRes: number; maxRes: number; dirty: boolean;
     glyphAlpha: number; levelCount: number;
     entityLevels: { sx: number; sy: number; community: number }[][];
+    nodes: { sx: number; sy: number; projValid: boolean; node: { id: string } }[];
   }
 
   const mounted: AsciiGraphRenderer[] = [];
@@ -4442,6 +4443,81 @@ describe("the phosphor bloom carries each cluster's own territory colour (Task 2
       for (let ch = 0; ch < 3; ch++) expect(m[ch]).toBeCloseTo(l[ch], -1);
       expect(c).toBeGreaterThanOrEqual(0);
     }
+  });
+
+
+  /**
+   * A 2-level hierarchy in which a blob's rank at the COARSE level disagrees with its rank at the
+   * FINE one, which is the only shape that can tell the two apart. Blob 0 is TINY (2 notes) inside a
+   * top cluster that is joint-largest: at level 0 it inherits top 0's rank-0 slot; at level 1 it is
+   * the smallest of four and takes rank 3. So the light its members emit has to change colour
+   * completely — measured pink `#f261a5` -> cyan `#22d9ed` — as the zoom ladder hands the field from
+   * one colour level to the next.
+   *
+   * Blob 0 sits at the graph's CENTRE so it stays on the field while the ladder magnifies; the other
+   * three run off it, which is what leaves the deep stop showing blob 0's colour and nothing else.
+   */
+  function skewedHierarchyGraph() {
+    const nodes = [];
+    const edges = [];
+    const SPEC = [
+      { b: 0, top: 0, n: 2, cx: 0, cy: 0 }, { b: 1, top: 0, n: 10, cx: -400, cy: 0 },
+      { b: 2, top: 1, n: 6, cx: 400, cy: -250 }, { b: 3, top: 1, n: 6, cx: 400, cy: 250 },
+    ];
+    for (const { b, top, n, cx, cy } of SPEC) {
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2;
+        const x = (cx + Math.cos(a) * 25) * RING_SCALE, y = (cy + Math.sin(a) * 25) * RING_SCALE;
+        nodes.push({
+          id: `b${b}k${k}`, label: `note ${b}${k}`, kind: "note" as const,
+          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+          community: b, communityLabel: `Blob ${b}`,
+          communityPath: [top, b], communityPathLabels: [`Top ${top}`, `Blob ${b}`],
+        });
+      }
+      for (let k = 1; k < n; k++) edges.push({ from: `b${b}k0`, to: `b${b}k${k}`, kind: "link" as const });
+    }
+    edges.push({ from: "b0k0", to: "b2k0", kind: "link" as const }, { from: "b1k0", to: "b3k0", kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  it("REQUIRED — a glyph's light is its community colour at the level OWNING the frame, not a fixed one", () => {
+    // The near band's hue has to track the same hierarchy level the glyphs themselves are recoloured
+    // by as the camera descends (rasterize()'s LEVEL-DRIVEN COLOR block) — otherwise the atmosphere
+    // and the notes sitting on it disagree about which grouping the picture is currently about, and
+    // the far band's masses hand over to a near band of a different colour. Glyphs own the field at
+    // every stop here (`showLodMasses: false`), so this isolates the LEVEL choice from the band mix.
+    const m = mountBloom(skewedHierarchyGraph(), false);
+    const priv = m.priv;
+    expect(priv.levelCount).toBe(2);
+    expect(priv.glyphAlpha).toBe(1);
+
+    const coarse = expectedSlots([[0, 12], [1, 12]]);          // level 0: the two TOPS, joint-largest
+    const fine = expectedSlots([[0, 2], [1, 10], [2, 6], [3, 6]]); // level 1: the four BLOBS
+    // The fixture is only worth anything if these two disagree for blob 0 — its whole job.
+    expect(fine.get(0)).not.toEqual(coarse.get(0));
+
+    const hueOverBlob0 = (t: number) => {
+      priv.res = priv.goalRes = resFromT(t, priv.maxRes);
+      priv.dirty = true;
+      ctx.fills.length = 0;
+      ctx.strokes.length = 0;
+      frame(9999);
+      const nv = priv.nodes.find((n) => n.node.id === "b0k0")!;
+      expect(nv.projValid).toBe(true);
+      return hueAt(m.field()!, nv.sx / priv.W, nv.sy / priv.H);
+    };
+
+    // Fit: level 0 owns the colour, so blob 0's light is TOP 0's slot (which it shares with blob 1).
+    expect(clusterLevelAlphas(0, 2)[0]).toBe(1);
+    const atFit = hueOverBlob0(0);
+    for (let ch = 0; ch < 3; ch++) expect(atFit[ch]).toBeCloseTo(coarse.get(0)![ch], -1);
+
+    // Past the level boundary: level 1 owns it, and blob 0's light becomes BLOB 0's own slot — the
+    // rank-3 one it earns as the smallest of the four, nothing like the rank-0 colour above.
+    expect(clusterLevelAlphas(0.4, 2)[1]).toBe(1);
+    const atDepth = hueOverBlob0(0.4);
+    for (let ch = 0; ch < 3; ch++) expect(atDepth[ch]).toBeCloseTo(fine.get(0)![ch], -1);
   });
 
   it("REQUIRED — a graph with NO communities still glows, in the plain base hue", () => {
