@@ -321,6 +321,19 @@ async function runHeldPermissionPrompt(promptId: number | string, sessionId: str
     options: permissionOptionSet === "none" ? [] : PERM_OPTIONS,
   });
 
+  // THE ABORT-GAP FIX (see session/cancel's own comment below for the other half): if this promptId
+  // is no longer in heldPrompts, it was already force-settled elsewhere WHILE this function was
+  // parked on the await above — the only such path today is session/cancel's own
+  // `settlePrompt(heldId, "cancelled")` loop. That means the turn already ended (its `result`+`done`
+  // are already emitted) and there is nothing left to report: emitting the agent_message_chunk below
+  // would be exactly the stray chunk on an already-cancelled turn this fix exists to prevent, whether
+  // `reply` came from session/cancel's own synthetic drain (immediate) or a genuinely late real
+  // reply landing after the cancel (delayed) — both resolve THIS SAME await, and both must be
+  // treated identically: silently unwind, nothing more. `heldPrompts` (not a separate "settled"
+  // flag) is the single source of truth here because settlePrompt's own delete already IS that
+  // truth — see its idempotency comment.
+  if (!heldPrompts.has(promptId)) return;
+
   // Read the real ACP RequestPermissionResponse shape: the tagged union lives NESTED under its own
   // `outcome` key (`{outcome:{outcome:"selected", optionId}}`), which is exactly what driver.ts's
   // respondPermission writes. Read tolerantly — a malformed reply must show up as "the fake reported
@@ -496,19 +509,27 @@ function handleLine(raw: string): void {
       // session/prompt response that nothing else can produce (a real agent settles the in-flight
       // prompt with stopReason:"cancelled"; driver.ts's runTurn reads exactly that). No held
       // prompts (every pre-held-prompt-mode caller) makes this an empty loop, so the byte-for-byte
-      // behavior with FAKE_ACP_PROMPT_HOLD unset is unchanged. Not exercised by
-      // acpPermissionFakeAgent.test.ts — it is the abort gap's half of the shared mechanism, kept
-      // here because a held prompt that cannot be cancelled is not a reusable primitive.
-      //
-      // FOR WHOEVER WRITES THE ABORT TEST: settling here does NOT unwind the runner that was holding
-      // the prompt. runHeldPermissionPrompt is still parked on `await callClient(...)`, and its
-      // resolver stays in pendingClientCalls indefinitely — so a permission reply arriving AFTER a
-      // cancel resumes that runner and emits a stray agent_message_chunk on an already-cancelled
-      // turn. (No double response: the second settlePrompt is a no-op by construction.) Benign in a
-      // short-lived subprocess, but an abort test will want this arm to drain pendingClientCalls
-      // too — resolving each waiter with a synthetic "cancelled" envelope, so the runners unwind
-      // instead of leaking.
+      // behavior with FAKE_ACP_PROMPT_HOLD unset is unchanged.
       for (const heldId of Array.from(heldPrompts.keys())) settlePrompt(heldId, "cancelled");
+      // THE ABORT-GAP FIX (see acpAbortFakeAgent.test.ts): settling the held session/prompt above
+      // does NOT unwind whatever runner was still parked on its OWN outbound call into the client
+      // (e.g. runHeldPermissionPrompt's `await callClient("session/request_permission", ...)`) — that
+      // resolver just sits in pendingClientCalls, and previously a LATE reply landing on it (a stale
+      // UI still answering after abort) would resume the runner and emit a stray agent_message_chunk
+      // on a turn that already ended. Draining every outstanding outbound call here, with a synthetic
+      // cancelled envelope, makes every such runner resume PROMPTLY instead of depending on whether a
+      // real reply ever shows up — and runHeldPermissionPrompt's own
+      // `if (!heldPrompts.has(promptId)) return;` guard (added alongside this) is what makes that
+      // resumption silent: by the time it runs, the settlePrompt loop above has already deleted this
+      // promptId from heldPrompts, so the runner unwinds without emitting anything, whether it woke
+      // up from THIS synthetic drain or from a genuinely late real reply arriving afterward (the
+      // guard covers both; the drain just makes the common case deterministic rather than a leak).
+      // No pendingClientCalls entries (every pre-held-prompt-mode caller, and permission mode outside
+      // an active cancel) makes this an empty loop too — byte-for-byte unchanged otherwise.
+      for (const [outboundId, waiter] of Array.from(pendingClientCalls.entries())) {
+        pendingClientCalls.delete(outboundId);
+        waiter({ jsonrpc: "2.0", id: outboundId, result: { outcome: { outcome: "cancelled" } } });
+      }
       return;
     default:
       // Unknown/unimplemented verb the real driver might still call (session/load, session/resume,
