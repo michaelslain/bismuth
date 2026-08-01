@@ -21,7 +21,8 @@ import { CLUSTER_LABEL_MAX_CHARS, clusterLevelAlphas } from "./labelSelection";
 import { DEFAULT_LEVEL_REVEAL_T, EDGE_WEIGHT_BUCKETS, bandsForT, edgeWeightBucketRange } from "./backbone";
 import { buildColorSlots } from "./clusterVisual";
 import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
-import { FIELD_H, FIELD_W } from "./densityField";
+import { FIELD_H, FIELD_W, type DensityField } from "./densityField";
+import { parseHexColor } from "./bloomColor";
 import { THEMES } from "../../../core/src/theme/tokens";
 
 const DOM_GLOBALS = [
@@ -4279,5 +4280,217 @@ describe("GraphConfig.labelEveryNode — the graph block's all-labels mode", () 
     // still carry it. (n0 itself may be forced by hover/active — assert on the population.)
     expect(named.length).toBeLessThan(lodPriv(r).nodes.length);
     r.destroy();
+  });
+});
+
+/**
+ * THE ATMOSPHERE'S TERRITORY COLOUR.
+ *
+ * The bloom was single-hue; it now carries each cluster's own size-ranked community colour, so the
+ * ground reads as a soft map of territories. The pure halves of that (the coloured field,
+ * densityField.test.ts; the per-cell tint, bloomColor.test.ts) are pinned where they live. What is
+ * only checkable HERE is the WIRING: that the colour the renderer stamps on its emitted light is
+ * the same `clusterVisual.buildColorSlots` slot the masses and glyphs are already drawn in, at the
+ * same hierarchy level, and that it survives the band handover.
+ *
+ * The regression to keep out is not "the bloom is broken" — it is "the bloom still works, is still
+ * a correct density map, and every cluster in it is the same colour", which is the picture this
+ * change exists to replace and which nothing else in the suite would notice.
+ */
+describe("the phosphor bloom carries each cluster's own territory colour (Task 20)", () => {
+  /**
+   * TWO single-level communities, far apart on x, DELIBERATELY UNEQUAL IN SIZE and with the size
+   * order disagreeing with the community-id order: the LEFT blob is community 0 with 8 members, the
+   * RIGHT is community 1 with 20. `buildColorSlots` ranks by member count, so the right blob takes
+   * palette slot 0 and the left slot 1 — the opposite of what indexing by community id would give.
+   * A bloom that invented its own palette, or keyed off the id, paints them the other way round.
+   *
+   * Single-level on purpose: with one level there is exactly one active colour level, so the hue
+   * over a cluster is one slot rather than a crossfade of two, and can be checked against an exact
+   * hex instead of a range.
+   */
+  function twoTerritoryGraph() {
+    const nodes = [];
+    const edges = [];
+    const SPEC = [{ c: 0, n: 8, cx: -600 }, { c: 1, n: 20, cx: 600 }];
+    for (const { c, n, cx } of SPEC) {
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2;
+        nodes.push({
+          id: `c${c}k${k}`, label: `note ${c}${k}`, kind: "note" as const,
+          position: [(cx + Math.cos(a) * 40) * RING_SCALE, Math.sin(a) * 40 * RING_SCALE, 0] as [number, number, number],
+          position2d: [(cx + Math.cos(a) * 40) * RING_SCALE, Math.sin(a) * 40 * RING_SCALE] as [number, number],
+          community: c, communityLabel: `Territory ${c}`,
+          communityPath: [c], communityPathLabels: [`Territory ${c}`],
+        });
+      }
+      for (let k = 1; k < n; k++) edges.push({ from: `c${c}k0`, to: `c${c}k${k}`, kind: "link" as const });
+    }
+    edges.push({ from: "c0k0", to: "c1k0", kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  /** The same fixture with every trace of community stripped — what an embedded graph block
+   *  (EmbeddedGraph.tsx) and the intro's cloud actually hand the renderer. */
+  function communitylessGraph() {
+    const g = twoTerritoryGraph();
+    return {
+      nodes: g.nodes.map(({ community, communityLabel, communityPath, communityPathLabels, ...n }) => n),
+      edges: g.edges,
+    };
+  }
+
+  interface ColorPriv {
+    W: number; H: number; res: number; goalRes: number; maxRes: number; dirty: boolean;
+    glyphAlpha: number; levelCount: number;
+    entityLevels: { sx: number; sy: number; community: number }[][];
+  }
+
+  const mounted: AsciiGraphRenderer[] = [];
+  afterEach(() => { for (const r of mounted.splice(0)) r.destroy(); });
+
+  function mountBloom(graph: { nodes: unknown[]; edges: unknown[] }, lod: boolean) {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = newRenderer();
+    mounted.push(r);
+    let last: DensityField | null = null;
+    r.mount(host, () => {});
+    r.setBloomCallback((f) => { last = f; });
+    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: lod });
+    r.render(graph as Parameters<AsciiGraphRenderer["render"]>[0]);
+    ctx.fills.length = 0;
+    ctx.strokes.length = 0;
+    frame();
+    return { r, priv: r as unknown as ColorPriv, field: () => last as DensityField | null };
+  }
+
+  /** The field's mean emitter colour at a screen fraction. */
+  function hueAt(f: DensityField, fx: number, fy: number): [number, number, number] {
+    const i = Math.min(FIELD_H - 1, Math.floor(fy * FIELD_H)) * FIELD_W
+      + Math.min(FIELD_W - 1, Math.floor(fx * FIELD_W));
+    return [f.rgb!.r[i], f.rgb!.g[i], f.rgb!.b[i]];
+  }
+
+  /** Where each community's light is actually being emitted from this frame, in screen fractions —
+   *  read off the projected entities rather than assumed from the fixture's world coordinates, so
+   *  the sample follows the camera instead of pinning a layout constant. */
+  function centresByCommunity(priv: ColorPriv): Map<number, [number, number]> {
+    const out = new Map<number, [number, number]>();
+    for (const ev of priv.entityLevels[0] ?? []) out.set(ev.community, [ev.sx / priv.W, ev.sy / priv.H]);
+    return out;
+  }
+
+  /** The exact hex `buildColorSlots` assigns each community for this fixture — computed with the
+   *  real function against the real fallback palette, never hand-copied. */
+  function expectedSlots(sizes: [number, number][]): Map<number, [number, number, number]> {
+    const hexes = buildColorSlots(new Map(sizes), RAMP_FALLBACK);
+    const out = new Map<number, [number, number, number]>();
+    for (const [c, hex] of hexes) out.set(c, parseHexColor(hex)!);
+    return out;
+  }
+
+  it("REQUIRED — two clusters emit two DIFFERENT hues, and each is its own size-ranked slot", () => {
+    const { priv, field } = mountBloom(twoTerritoryGraph(), true);
+    expect(priv.levelCount).toBe(1);
+    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1);   // the MASSES own the field at fit
+    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);
+
+    const f = field()!;
+    expect(f.rgb).toBeDefined();                                // ...and it came back coloured
+
+    const centres = centresByCommunity(priv);
+    expect(centres.size).toBe(2);
+    const [lx, ly] = centres.get(0)!, [rx, ry] = centres.get(1)!;
+    expect(Math.abs(lx - rx)).toBeGreaterThan(0.3);             // the two really are far apart
+
+    const left = hueAt(f, lx, ly), right = hueAt(f, rx, ry);
+    // ONE shared hue for both territories is the regression this whole task undoes.
+    expect(left).not.toEqual(right);
+
+    // ...and not merely different: each is its community's own slot, to within the blur's bleed.
+    const want = expectedSlots([[0, 8], [1, 20]]);
+    for (const [c, [sx, sy]] of [[0, [lx, ly]], [1, [rx, ry]]] as [number, [number, number]][]) {
+      const got = hueAt(f, sx, sy), exp = want.get(c)!;
+      for (let ch = 0; ch < 3; ch++) expect(got[ch]).toBeCloseTo(exp[ch], -1);
+    }
+    // ...and the SIZE ranking is what picked them, not the community id: swap which community is
+    // the bigger one and the two hues above swap with it. (The slots are saturation/lightness
+    // boosted derivatives of the palette, not the palette entries themselves — see
+    // clusterVisual.buildColorSlots — so this is checked by the swap, not against a raw token.)
+    const swapped = expectedSlots([[0, 20], [1, 8]]);
+    expect(swapped.get(0)).toEqual(want.get(1)!);
+    expect(swapped.get(1)).toEqual(want.get(0)!);
+    expect(want.get(0)).not.toEqual(want.get(1));
+  });
+
+  it("REQUIRED — the mass -> glyph handover changes the SHAPE of the light, never its hue", () => {
+    // The same camera and the same notes, summarized (masses own the field) vs not (the glyphs
+    // that replace them do). If the two bands read different colour sources — a mass its entity
+    // slot, a glyph something else — the atmosphere flashes a hue change as the band crosses over,
+    // which no density or geometry assertion in this file would see.
+    const g = twoTerritoryGraph();
+    const masses = mountBloom(g, true);
+    const leaves = mountBloom(g, false);
+    expect(masses.priv.glyphAlpha).toBeLessThanOrEqual(0.02);   // masses own it
+    expect(leaves.priv.glyphAlpha).toBe(1);                     // glyphs own it
+
+    const centres = centresByCommunity(masses.priv);
+    for (const [c, [fx, fy]] of centres) {
+      const m = hueAt(masses.field()!, fx, fy);
+      const l = hueAt(leaves.field()!, fx, fy);
+      for (let ch = 0; ch < 3; ch++) expect(m[ch]).toBeCloseTo(l[ch], -1);
+      expect(c).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("REQUIRED — a graph with NO communities still glows, in the plain base hue", () => {
+    // Embedded graph blocks (EmbeddedGraph.tsx) strip communities entirely and the intro's cloud
+    // can too. There is no territory to colour there, and the atmosphere must not go dark over it.
+    for (const lod of [true, false]) {
+      const { field } = mountBloom(communitylessGraph(), lod);
+      const f = field()!;
+      expect(f.rgb).toBeUndefined();                            // nothing to colour...
+      expect(Math.max(...f)).toBeCloseTo(1, 6);                 // ...and it is lit anyway
+      expect(f.filter((v) => v > Math.pow(5 / 255, 0.25)).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("REQUIRED — 3D emits a coloured field too, and its geometry is untouched by carrying colour", () => {
+    // 3D has no mass band, so this is the leaf pass alone. There is no separate 3D code path for
+    // colour and there must not be one: the check is that the orbit view still emits a lit,
+    // normalised field with its territories on it.
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = newRenderer();
+    mounted.push(r);
+    let last: DensityField | null = null;
+    r.mount(host, () => {});
+    r.setBloomCallback((f) => { last = f; });
+    r.setConfig({ ...CONFIG, viewMode: "3d", showLodMasses: true });
+    r.render(twoTerritoryGraph());
+    frame();
+
+    const priv = r as unknown as ColorPriv;
+    expect(priv.glyphAlpha).toBe(1);                            // no mass band in 3D
+    const f = last as unknown as DensityField;
+    expect(f).not.toBeNull();
+    expect(Math.max(...f)).toBeCloseTo(1, 6);
+    expect(f.rgb).toBeDefined();
+    // Both territories are present in it — 3D is not a single-hue special case.
+    // BOTH territories are present in it — 3D is not a single-hue special case. Measured on this
+    // fixture: 6 distinct mean colours over the 485 cells above v = 0.3, resolving to the two
+    // community slots plus their blur boundary. (Only the DOMINANT one survives above v = 0.5,
+    // which is the shape of the finding that 3D barely changes: one core fills the halo.)
+    const want = expectedSlots([[0, 8], [1, 20]]);
+    const seen = [0, 1].map((c) => {
+      const exp = want.get(c)!;
+      for (let i = 0; i < FIELD_W * FIELD_H; i++) {
+        if (f[i] > 0.3 && [0, 1, 2].every((ch) =>
+          Math.abs([f.rgb!.r, f.rgb!.g, f.rgb!.b][ch][i] - exp[ch]) < 6)) return true;
+      }
+      return false;
+    });
+    expect(seen).toEqual([true, true]);
   });
 });
