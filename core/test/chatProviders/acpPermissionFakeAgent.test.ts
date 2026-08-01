@@ -36,8 +36,10 @@
 // stub, then drive the REAL, unmodified chatProviders/acp/driver.ts via CHAT_BACKENDS.cline exactly
 // as production does. Zero network of any kind, zero CLI dependency, zero account contact.
 //
-// No production files were changed for this task — only the test-support fake agent gained a new
-// opt-in mode, verified inert with the mode's env var unset (see that file's header).
+// The three round-trip tests were written without touching any production file — only the
+// test-support fake agent gained a new opt-in mode, verified inert with the mode's env var unset
+// (see that file's header). The fourth test (TOOL NAMING, at the bottom) is the regression guard
+// for a later change to acp/{driver,protocol}.ts; the fake was NOT touched for it.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -269,8 +271,7 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
 
       // The frame the user's UI would render. The fake sends the REAL ACP ToolCall shape — `title` +
       // `kind`, no `name` — so this pins what the driver actually does with it. (See this file's
-      // trailing "TOOL-NAMING INCONSISTENCY" note: the same tool is named differently one frame
-      // apart, which is a real finding this test surfaces but deliberately does not fix.)
+      // trailing "TOOL NAMING" test: the tool chip one frame earlier now carries the SAME name.)
       const permission = expectFrame(frames[permissionIdx], "permission");
       expect(permission.toolName).toBe(PERM_TOOL_TITLE);
       expect(permission.input).toEqual({ description: PERM_TOOL_TITLE, kind: PERM_TOOL_KIND });
@@ -381,19 +382,20 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
     20_000,
   );
 
-  // ── TOOL-NAMING INCONSISTENCY (surfaced here, deliberately NOT fixed — a separate task owns
-  //    tool-use) ────────────────────────────────────────────────────────────────────────────────
-  // Three functions hold three different opinions about how to name the same ACP ToolCall:
-  //   driver.ts:310-314        name || title || kind || "tool"
-  //   protocol.ts:389          name || kind || "tool"      (never title)
-  //   protocol.ts:317          reads {title, kind}          (no name at all — matches the real schema)
-  // A real ACP ToolCall has NO `name` field, so on real traffic the first two disagree on every tool
-  // that has a title: the permission prompt names it by title, the tool chip names it by kind. This
-  // test pins BOTH observed behaviors from ONE wire event so the divergence is a fact on the record
-  // rather than a code-reading claim, and so whoever unifies them gets a failing test naming the
-  // exact two call sites instead of a silent behavior change.
+  // ── TOOL NAMING: one ToolCall, ONE name ──────────────────────────────────────────────────────
+  // This started life as a CHARACTERIZATION test pinning a divergence: three functions held three
+  // different opinions about how to name the same ACP ToolCall —
+  //   driver.ts    name || title || kind || "tool"   → resolved to `title` on real traffic
+  //   protocol.ts  name || kind || "tool"            → resolved to `kind`  on real traffic
+  //   toolCallInput()  reads {title, kind}, no `name` at all — matching the real schema
+  // A real ACP ToolCall has NO `name` field, so the first two disagreed on every tool that has a
+  // title: within ONE turn the permission modal said "Write foo.txt" and the tool chip said "edit".
+  // Both call sites now resolve `title` first, and the tool-use frame carries `kind` alongside so
+  // the icon can key off the stable machine token instead of free-form prose. The test below is the
+  // regression guard for that unification; it is deliberately driven from a SINGLE wire event, so
+  // "the two surfaces agree" is a fact about one tool call rather than a coincidence of two.
   test(
-    "characterization (not an endorsement): one ToolCall, two names — the permission frame uses `title` while the tool-use frame uses `kind`",
+    "one ToolCall, ONE name: the tool chip and the permission prompt agree on `title`, and `kind` rides along for the icon",
     async () => {
       const chatId = "acp-perm-naming-" + Date.now();
       const { permissionId, permissionIdx, frames } = await driveToParkedPermission(chatId);
@@ -409,11 +411,20 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
       expect(toolUses.length).toBe(1);
       const toolUse = expectFrame(toolUses[0], "tool-use");
 
-      // Same wire event, same tool, two names — asserted side by side so the inconsistency is
-      // impossible to read as two unrelated facts.
-      expect(permission.toolName).toBe(PERM_TOOL_TITLE); // driver.ts:310-314 reaches `title`
-      expect(toolUse.name).toBe(PERM_TOOL_KIND); // protocol.ts:389 skips `title`, lands on `kind`
-      expect(PERM_TOOL_TITLE).not.toBe(PERM_TOOL_KIND); // the two assertions above are only meaningful because these differ
+      // Same wire event, same tool, ONE name — the ACP `title`, the only human-readable field a real
+      // ToolCall carries. Asserted against the literal on both surfaces AND against each other, so
+      // neither a regression to `kind` on one side nor a drift to some third string on the other can
+      // slip through.
+      expect(toolUse.name).toBe(PERM_TOOL_TITLE);
+      expect(permission.toolName).toBe(PERM_TOOL_TITLE);
+      expect(toolUse.name).toBe(permission.toolName);
+      // The three assertions above are only meaningful because these two differ: were the fake's
+      // title equal to its kind, a driver that still resolved `kind` would satisfy all of them.
+      expect(PERM_TOOL_TITLE).not.toBe(PERM_TOOL_KIND);
+
+      // ...and `kind` is not discarded in the process — it rides along on the frame so ChatView's
+      // icon can key off the stable machine token rather than the prose (app/src/chatToolIcon.ts).
+      expect(toolUse.kind).toBe(PERM_TOOL_KIND);
 
       // Settle the turn rather than leaving the fake blocked on a reply through teardown.
       CHAT_BACKENDS.cline.respondPermission!(chatId, permissionId, "allow");

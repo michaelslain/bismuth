@@ -23,6 +23,7 @@ import {
   parseJsonRpcLine,
   toolCallContentText,
   toolCallInput,
+  toolCallName,
   translateSessionUpdate,
   type AcpManifestBaseline,
 } from "../../src/chatProviders/acp/protocol";
@@ -441,6 +442,33 @@ describe("toolCallInput", () => {
   });
 });
 
+describe("toolCallName", () => {
+  // The one function BOTH surfaces that name a ToolCall now call — the tool chip (translateSessionUpdate,
+  // below) and the permission modal (driver.ts). They used to be two inline expressions with two
+  // different field orders, so on real traffic (`title` present, `name` absent from the schema
+  // entirely) the chip said "edit" while the modal said "Write foo.txt" for the same call.
+  // core/test/chatProviders/acpPermissionFakeAgent.test.ts proves they now agree end-to-end; these
+  // pin the ordering itself.
+  test("prefers `title` — the only human-readable field a real ToolCall carries — over `kind`", () => {
+    expect(toolCallName({ title: "Write foo.txt", kind: "edit" })).toBe("Write foo.txt");
+  });
+  test("falls back to `kind` only when there is no title", () => {
+    expect(toolCallName({ kind: "edit" })).toBe("edit");
+    expect(toolCallName({ title: "", kind: "edit" })).toBe("edit");
+  });
+  test("`name` is honored ahead of both, as tolerance for a non-conforming agent that invents one", () => {
+    // No shipping agent sends this — ACP's ToolCall has no `name` field. The clause exists so such an
+    // agent degrades predictably, and lives here (rather than in one call site) so the two surfaces
+    // cannot disagree about it again.
+    expect(toolCallName({ name: "Bash", title: "Run the tests", kind: "execute" })).toBe("Bash");
+  });
+  test("nothing usable → the generic label, never an empty chip", () => {
+    expect(toolCallName({})).toBe("tool");
+    expect(toolCallName({ title: "", kind: "", name: "" })).toBe("tool");
+    expect(toolCallName({ title: 42, kind: null })).toBe("tool"); // non-strings are not labels
+  });
+});
+
 // ── session/update → ChatFrame[] ─────────────────────────────────────────────────────────────
 
 describe("translateSessionUpdate", () => {
@@ -457,9 +485,13 @@ describe("translateSessionUpdate", () => {
 
   test("tool_call (pending) emits only the chip; a LATER tool_call_update resolves it once", () => {
     const state = newAcpTranslateState(blankManifest());
+    // Named by `title`, matching what driver.ts's permission modal calls the same ToolCall (see
+    // toolCallName above); `kind` is carried alongside for the icon, never as the label.
     expect(
       translateSessionUpdate({ sessionUpdate: "tool_call", toolCallId: "tc_1", title: "Reading src/index.ts", kind: "read", status: "in_progress" }, state),
-    ).toEqual([{ type: "tool-use", id: "tc_1", name: "read", input: { description: "Reading src/index.ts", kind: "read" } }]);
+    ).toEqual([
+      { type: "tool-use", id: "tc_1", name: "Reading src/index.ts", kind: "read", input: { description: "Reading src/index.ts", kind: "read" } },
+    ]);
     expect(
       translateSessionUpdate(
         { sessionUpdate: "tool_call_update", toolCallId: "tc_1", status: "completed", content: [{ type: "content", content: { type: "text", text: "<file contents>" } }] },
@@ -479,8 +511,20 @@ describe("translateSessionUpdate", () => {
       state,
     );
     expect(frames).toEqual([
-      { type: "tool-use", id: "tc_2", name: "search", input: { description: "Search", kind: "search" } },
+      { type: "tool-use", id: "tc_2", name: "Search", kind: "search", input: { description: "Search", kind: "search" } },
       { type: "tool-result", id: "tc_2", content: "3 matches", isError: false },
+    ]);
+  });
+
+  test("a tool_call with NO kind omits the field entirely rather than carrying an empty string", () => {
+    // This pins the `kind || undefined` in translateSessionUpdate. Precisely: toEqual ignores keys
+    // whose value is `undefined` (so `kind: undefined` and an absent `kind` both satisfy the
+    // expectation — that part is NOT what this asserts) but does compare a `kind: ""`, which fails.
+    // So the assertion catches exactly the regression worth catching: an empty-string kind reaching
+    // the frontend, where it would be present-but-meaningless to anything reading the frame.
+    const state = newAcpTranslateState(blankManifest());
+    expect(translateSessionUpdate({ sessionUpdate: "tool_call", toolCallId: "tc_4", title: "Run tests", status: "in_progress" }, state)).toEqual([
+      { type: "tool-use", id: "tc_4", name: "Run tests", input: { description: "Run tests" } },
     ]);
   });
 
