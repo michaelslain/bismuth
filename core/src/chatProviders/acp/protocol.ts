@@ -273,25 +273,39 @@ function selectOptionLabel(o: AcpSessionConfigSelectOption): string {
  * than empty, because empty is at least visible.
  *
  * Ranked rules, most to least evidence. Which rule fires for which real agent:
- *   1. `id === "model"` — fires for **cline** (3.0.48) and **goose**, the only two agents observed
- *      with a `category:"model"` selector. Not spec-mandated (`SessionConfigId` is a free string),
- *      but it is what both real agents do, and it is the selector's OWN id, not a display string.
+ *   1. `id === "model"` AND it yields at least one option — fires for **cline** (3.0.48) and
+ *      **goose**, the only two agents observed with a `category:"model"` selector. Not
+ *      spec-mandated (`SessionConfigId` is a free string), but it is what both real agents do, and
+ *      it is the selector's OWN id, not a display string. The non-empty qualifier keeps a
+ *      name-matched but EMPTY selector from beating a populated sibling.
  *   2. Option values intersect `models.availableModels[].modelId` — for a DUAL-shape agent (cline
  *      sends both shapes; "gpt-4o" appears in each) the old shape names the real models, so the
  *      selector containing them is the model selector. Principled, but only available when the
  *      agent also sends the old shape.
  *   3. First candidate that yields a non-empty list — last resort, reached only when neither
  *      stronger signal is present.
- *   4. Otherwise the first candidate, so `shape:"new"` and the config ids survive even when every
- *      candidate's option list is empty (see detectModelShape's no-fall-through note).
+ *   4. Otherwise the id-matched candidate, else the first, so `shape:"new"` and the config ids
+ *      survive even when every option list is empty (see detectModelShape's no-fall-through note).
  *
- * Not a rule, but relevant: ACP >=1.0 adds a `"model_config"` category for exactly this
+ * DELIBERATELY NOT A RULE: `name === "Model"`. The first investigation ranked it above rule 3, and
+ * it does match both observed agents — but `name` is the selector's human-readable DISPLAY string,
+ * so it is i18n-fragile in a way `id` is not: any agent that localizes its config UI (or merely
+ * renames the label to "Model / Provider", "LLM", etc.) would silently stop matching, and the
+ * failure mode is picking the provider again. Dropped on purpose, not overlooked.
+ *
+ * Also not a rule, but relevant: ACP >=1.0 adds a `"model_config"` category for exactly this
  * "model-adjacent selector that is not the model list" case. Nothing observed emits it yet — and
  * nothing needs to be done for it here, since candidates are filtered on `category === "model"`,
  * so a future `model_config` entry is already excluded rather than competing.
  */
 function pickModelOption(candidates: AcpSessionConfigOption[], r: AcpNewSessionResult): AcpSessionConfigOption {
-  const byId = candidates.find((o) => o.id === "model");
+  const yieldsModels = (o: AcpSessionConfigOption) => flattenSelectOptions(o.options).some((x) => selectOptionValue(x).length > 0);
+
+  // Rule 1 requires the id-matched entry to actually yield something. Without that guard, a payload
+  // like [{id:"llm", 2 models}, {id:"model", options:[]}] picks the EMPTY one on a name match and
+  // discards a populated sibling — the id is a strong signal, but not strong enough to outrank
+  // having any models at all. No observed agent does this; the guard costs one predicate.
+  const byId = candidates.find((o) => o.id === "model" && yieldsModels(o));
   if (byId) return byId;
 
   const availIds = new Set(
@@ -304,8 +318,12 @@ function pickModelOption(candidates: AcpSessionConfigOption[], r: AcpNewSessionR
     if (byIntersection) return byIntersection;
   }
 
-  const byNonEmpty = candidates.find((o) => flattenSelectOptions(o.options).some((x) => selectOptionValue(x).length > 0));
-  return byNonEmpty ?? candidates[0]!;
+  const byNonEmpty = candidates.find(yieldsModels);
+  if (byNonEmpty) return byNonEmpty;
+
+  // Everything is empty. Prefer the id-matched entry anyway, so an agent whose model list is
+  // momentarily empty still reports the RIGHT modelConfigId for setModel to address later.
+  return candidates.find((o) => o.id === "model") ?? candidates[0]!;
 }
 
 export function detectModelShape(newSessionResult: unknown): AcpModelShapeInfo {

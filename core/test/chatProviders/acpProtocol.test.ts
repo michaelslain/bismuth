@@ -133,9 +133,14 @@ describe("isMethodNotFoundError", () => {
 // ── Version-skew model-shape detection ───────────────────────────────────────────────────────
 
 // PROVENANCE OF THE NEW-SHAPE FIXTURES BELOW. Every `configOptions` fixture in this block is
-// written from `session/new` results captured verbatim off REAL agent binaries driven against a
-// local mock — see the capture log at
-// .superpowers/sdd/2026-08-01-agent-integration-completion/task-1-report.md. This matters because
+// written from, or explicitly derived from, `session/new` results captured off REAL agent binaries
+// driven against a local mock — see the capture log at
+// .superpowers/sdd/2026-08-01-agent-integration-completion/task-1-report.md. Each fixture says
+// which it is, in its own comment: **captured** ones transcribe the payload; **derived** ones
+// (abbreviated option lists, degenerate edge cases, filled-in ids) start from a captured structure
+// and say exactly what was changed. Read the per-test note before treating any of them as wire
+// truth — a blanket "all verbatim" claim here would be the same overclaim this block exists to
+// remove. This provenance discipline matters because
 // the fixtures these replaced used `{id, name}` select options, **a shape no shipping ACP agent
 // has ever emitted** (`SessionConfigSelectOption` is `{value, name, description?}` in every
 // @agentclientprotocol/sdk generation checked: 0.20.0, 0.24.0, 0.29.0, 1.3.0). Those fixtures were
@@ -195,6 +200,22 @@ describe("detectModelShape", () => {
     expect(info.modelConfigId).toBe("llm"); // NOT "auth_provider"
   });
 
+  test("an EMPTY selector named 'model' does not beat a populated sibling", () => {
+    // DERIVED, not captured: no observed agent emits this. Rule 1 (`id === "model"`) is a strong
+    // signal but not strong enough to outrank having any models at all — without the non-empty
+    // qualifier this returns the empty `id:"model"` entry and discards two real models, producing
+    // an empty picker whose modelConfigId points at a selector with nothing in it.
+    const info = detectModelShape({
+      configOptions: [
+        { type: "select", id: "llm", name: "Model", category: "model", currentValue: "a",
+          options: [{ value: "a", name: "A" }, { value: "b", name: "B" }] },
+        { type: "select", id: "model", name: "Model", category: "model", options: [] },
+      ],
+    });
+    expect(info.models.map((m) => m.value)).toEqual(["a", "b"]);
+    expect(info.modelConfigId).toBe("llm");
+  });
+
   test("flattens grouped options", () => {
     // `SessionConfigSelectOptions` is `Array<SessionConfigSelectOption> | Array<SessionConfigSelectGroup>`,
     // a group being `{group, name, options: [...]}`. No agent observed here emits groups yet, but
@@ -209,35 +230,27 @@ describe("detectModelShape", () => {
     expect(info.models.map((m) => m.value)).toEqual(["a", "b"]);
   });
 
-  test("goose keeps its config ids even though it sends no models field", () => {
-    // Regression guard. goose's captured `session/new` has top-level keys
-    // ["sessionId","modes","configOptions","_meta"] — **no `models` field at all**, so it is a
-    // new-shape-ONLY agent with nothing to fall back to. An earlier proposed fix fell through to
-    // the old shape whenever the new one yielded no models, which nulled goose's
-    // modelConfigId/effortConfigId — both currently CORRECT, and both consumed by driver.ts's
+  test("goose keeps its config ids on an EMPTY model list — new-shape-only agents never fall through", () => {
+    // THE no-fall-through regression guard. goose's captured `session/new` has top-level keys
+    // ["sessionId","modes","configOptions","_meta"] — **no `models` field at all** — so it is a
+    // new-shape-ONLY agent with nothing to fall back to. An earlier proposed fix fell through to the
+    // old shape whenever the new one yielded no models, which nulled goose's
+    // modelConfigId/effortConfigId — both CORRECT, and both consumed by driver.ts's
     // setModel/setEffort, which would have become permanent no-ops.
-    const info = detectModelShape({
-      configOptions: [
-        { type: "select", id: "model", category: "model", options: [{ value: "g1", name: "G1" }] },
-        { type: "select", id: "thinking_effort", category: "thought_level", options: [{ value: "high", name: "High" }] },
-      ],
-    });
-    expect(info.shape).toBe("new");
-    expect(info.modelConfigId).toBe("model");
-    expect(info.effortConfigId).toBe("thinking_effort");
-  });
-
-  test("an EMPTY new-shape model list still keeps shape 'new' and its config ids — never falls through", () => {
-    // This is the test that actually MEASURES the no-fall-through rule; the goose guard above does
-    // not. With `value` read correctly, goose's model list is non-empty, so the "chosen entry
-    // yielded zero models" gate is never even reached there — re-adding the over-eager fall-through
-    // leaves every other assertion in this file green. Found by sabotage, not by reading.
     //
-    // Payload: goose's captured structure (new-shape-only, NO `models` field to fall back to) with
-    // the model selector's option list emptied — a DERIVED degenerate case, not a verbatim capture,
-    // and the exact boundary the rule governs. Falling through here would yield shape "none" with
-    // BOTH config ids null, and driver.ts's setModel/setEffort would become permanent no-ops for an
-    // agent whose ids were perfectly good. An empty list is not a reason to discard working handles.
+    // The option list is EMPTY on purpose, and that is the whole point. This replaces an earlier
+    // version of this guard that used a populated list (`[{value:"g1"}]`): once `value` is read
+    // correctly goose's list is non-empty, so the "chosen entry yielded zero models" gate was never
+    // reached and re-adding the over-eager fall-through left it — and every other assertion in this
+    // file — green. It asserted three things that were already true before the fix and stayed true
+    // under the sabotage, and its payload was a strict subset of this one, so no behavioural
+    // sabotage could fire it without firing this first. Found by sabotaging, not by reading; the
+    // two were folded into this one test. Do not "restore" the populated variant.
+    //
+    // Payload: goose's captured structure with the model selector's option list emptied — a DERIVED
+    // degenerate case, not a verbatim capture, and the exact boundary the rule governs. Falling
+    // through here yields shape "none" with BOTH config ids null, for an agent whose ids were
+    // perfectly good. An empty list is not a reason to discard working handles.
     const info = detectModelShape({
       configOptions: [
         { type: "select", id: "model", category: "model", currentValue: "claude-haiku-4-5", options: [] },
@@ -335,9 +348,12 @@ describe("detectModelShape", () => {
   });
 
   test("NONE: an agent with configOptions but no category 'model' entry and no models field (openclaw)", () => {
-    // Captured live from `openclaw acp` (task-1-report.md §1c): a populated `configOptions` array
-    // whose categories are thought_level / fast_mode / verbose_level / reasoning_level /
-    // response_usage / elevated_level — NO category:"model" entry, and no `models` field either.
+    // DERIVED from the `openclaw acp` capture (task-1-report.md §1c). What is captured: a populated
+    // `configOptions` array whose categories are thought_level / fast_mode / verbose_level /
+    // reasoning_level / response_usage / elevated_level, with NO category:"model" entry and no
+    // `models` field. The report records only those category NAMES, so the selector ids and option
+    // values below are filled in — the facts this asserts on (no model category, no models field,
+    // therefore "none") are real; the specific strings are not transcribed.
     // The complement of the goose rule: falling through IS correct here, because there is no
     // category:"model" entry AT ALL. Also pins that a non-model select is never mistaken for the
     // model list just because it is a populated select — the category check is load-bearing.
