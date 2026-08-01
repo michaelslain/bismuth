@@ -162,17 +162,24 @@ const ABORT_GRACE_MS = 8000;
  *  matching the npx wrapper, never the same pid — so `npx` does not exec-replace itself), and
  *  `proc.kill(9)` against ONLY the wrapper pid leaves that real child alive and running 3+ seconds
  *  later, every time. This is a real, currently-UNFIXED gap in `killWithEscalation` as written: it
- *  only ever signals the single `proc` handle it's given, never a process group or a tracked
- *  grandchild, so BOTH closeChat() and abortTurn()'s grace-timeout fallback leak the real
- *  claude-code-acp/codex-acp process today, exactly the same shape as the openclaw SIGTERM finding
- *  above but one level deeper in the process tree and NOT fixed by this escalation as it currently
- *  exists. Not fixed here (task-15 is a verification task, not a driver rewrite) — a real follow-up
- *  would need this driver to either spawn adapter agents into their own process group (e.g. via a
- *  `setsid`/negative-pid kill) and signal the GROUP, or track+kill the resolved grandchild pid
- *  directly; either is a real behavior change to spawnAcpProcess/killWithEscalation worth its own
- *  task, not a comment update. Only cline/gemini/goose/openclaw (the four NATIVE, non-adapter agents,
- *  each a DIRECT child with no wrapper in between) are actually confirmed fully covered by this
- *  escalation as written. */
+ *  only ever signals the single `proc` handle it's given, never a process group, so BOTH closeChat()
+ *  and abortTurn()'s grace-timeout fallback leak the real claude-code-acp/codex-acp process today,
+ *  exactly the same shape as the openclaw SIGTERM finding above but deeper in the process tree and
+ *  NOT fixed by this escalation as it currently exists. `codex-acp` specifically is FOUR processes
+ *  deep, not two, confirmed by walking its own `pgrep -P` chain: `npx` → `node .../codex-acp` →
+ *  `node @openai/codex/bin/codex.js app-server` → the real native `codex` binary (`app-server`) —
+ *  three levels of descendant below the wrapper this driver's `proc` handle names, and that chain is
+ *  itself an implementation detail of a package this driver doesn't control, not a fixed depth to
+ *  hardcode. That rules out "track+kill the resolved grandchild pid" as a complete fix on its own —
+ *  a single extra hop still orphans whatever is one level further down, and a future adapter version
+ *  could add or remove a hop without this driver knowing. The ONLY remediation that is actually
+ *  complete regardless of how deep a given adapter's own wrapper chain goes is spawning adapter
+ *  agents into their own process group (e.g. `setsid`, then a negative-pid kill to signal the whole
+ *  group at once) — a real behavior change to spawnAcpProcess/killWithEscalation worth its own task,
+ *  not a comment update, and not attempted here (task-15 is a verification task, not a driver
+ *  rewrite). Only cline/gemini/goose/openclaw (the four NATIVE, non-adapter agents, each a DIRECT
+ *  child with no wrapper in between) are actually confirmed fully covered by this escalation as
+ *  written. */
 const KILL_ESCALATION_GRACE_MS = 3000;
 
 /** Send SIGTERM (`proc.kill()`), then SIGKILL after `graceMs` if `proc.exited` hasn't resolved by
