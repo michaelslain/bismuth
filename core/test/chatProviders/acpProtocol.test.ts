@@ -517,9 +517,11 @@ describe("translateSessionUpdate", () => {
   });
 
   test("a tool_call with NO kind omits the field entirely rather than carrying an empty string", () => {
-    // toEqual is exact about extra keys, so this pins the `kind || undefined` in translateSessionUpdate:
-    // an empty-string kind reaching the frontend would make pickToolIcon look up "" — harmless today,
-    // but it would also make `kind` present-but-meaningless for anything else that reads the frame.
+    // This pins the `kind || undefined` in translateSessionUpdate. Precisely: toEqual ignores keys
+    // whose value is `undefined` (so `kind: undefined` and an absent `kind` both satisfy the
+    // expectation — that part is NOT what this asserts) but does compare a `kind: ""`, which fails.
+    // So the assertion catches exactly the regression worth catching: an empty-string kind reaching
+    // the frontend, where it would be present-but-meaningless to anything reading the frame.
     const state = newAcpTranslateState(blankManifest());
     expect(translateSessionUpdate({ sessionUpdate: "tool_call", toolCallId: "tc_4", title: "Run tests", status: "in_progress" }, state)).toEqual([
       { type: "tool-use", id: "tc_4", name: "Run tests", input: { description: "Run tests" } },

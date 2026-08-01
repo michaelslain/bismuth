@@ -437,9 +437,15 @@ export function toolCallContentText(content: unknown): string {
 }
 
 /** Synthesize a `tool-use` frame's `input` from a ToolCall, which (unlike opencode/Claude tool
- *  calls) carries no structured parameters — only a human-readable `title` and an optional
- *  `kind`. `description` is one of summarizeInput's (app/src/ChatView.tsx) recognized keys, so
- *  the chip's one-line label shows the title text directly instead of a raw `{"title":"…"}` blob. */
+ *  calls) carries no structured parameters — only a human-readable `title` and an optional `kind`.
+ *  `description` is one of summarizeInput's (app/src/ChatView.tsx) recognized keys, so the expanded
+ *  chip and any other input consumer see readable text instead of a raw `{"title":"…"}` blob.
+ *
+ *  NOTE: this used to be justified as supplying the chip's one-line SUMMARY, which was true when
+ *  the chip was named after `kind` ("edit — Write foo.txt"). Since the chip is now labelled by
+ *  `title` too (see toolCallName), that summary would just echo the label, and chipSummary()
+ *  suppresses it. The synthesized input still earns its keep for the expanded view — it is the only
+ *  place an ACP call's title survives as data rather than as a heading. */
 export function toolCallInput(u: { title?: unknown; kind?: unknown }): unknown {
   const out: Record<string, unknown> = {};
   if (typeof u.title === "string" && u.title) out.description = u.title;

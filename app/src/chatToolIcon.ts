@@ -1,10 +1,11 @@
 // app/src/chatToolIcon.ts
-// Which Lucide icon a chat tool chip shows.
+// The pure presentation rules for a chat tool chip: which icon it shows, and what its one-line
+// summary says.
 //
-// Pure, and split out of ChatView.tsx (where `toolIcon` used to live inline) for one concrete
-// reason: the choice stopped being a one-line lookup the moment `tool-use` frames started carrying
-// TWO names for the same call, and a rule that picks between them is worth asserting on directly
-// rather than only through a rendered component. Same split as chatColors.ts / chatOrigin.ts.
+// Split out of ChatView.tsx (where all of this lived inline) for one concrete reason: both rules
+// stopped being one-line lookups the moment `tool-use` frames started carrying TWO names for the
+// same call, and a rule with a real decision in it is worth asserting on directly rather than only
+// through a component nothing in this repo can mount. Same split as chatColors.ts / chatOrigin.ts.
 
 /** What a tool we have no rule for gets — and, in `pickToolIcon`, the signal that a `kind` told us
  *  nothing so the free-form name is worth a look after all. */
@@ -48,4 +49,30 @@ export function toolIcon(name: string): string {
 export function pickToolIcon(kind: string | undefined, name: string): string {
   const byKind = kind ? toolIcon(kind) : GENERIC_TOOL_ICON;
   return byKind === GENERIC_TOOL_ICON ? toolIcon(name) : byKind;
+}
+
+/** Truncate long tool output / JSON so a chip body stays readable (expanding a chip still shows it
+ *  all, up to a generous cap). */
+export function clamp(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
+
+/**
+ * The chip's one-line summary — empty when it would merely repeat the chip's own label.
+ *
+ * WHY. An ACP ToolCall carries no structured parameters, so `toolCallInput()` synthesizes an input
+ * of `{description: title}` and `summarizeInput()` ranks `description` among its keys — for an ACP
+ * call it is the ONLY key present, so it always wins. Now that the chip is also LABELLED by `title`
+ * (the fix this module was extracted for), label and summary are the same string, and the chip reads
+ * "Write foo.txt — Write foo.txt". Suppressing the echo is the whole rule.
+ *
+ * The subtle part, and the reason this is a function rather than an inline `!==`: the comparison
+ * must happen on the RAW text, BEFORE clamping. Clamp first and any label longer than `max` comes
+ * back truncated with an ellipsis, no longer equals the name, and the dedup silently stops working —
+ * precisely when the chip is most cluttered. Doing both steps here puts that ordering under test
+ * instead of leaving it to a call site nothing can test.
+ */
+export function chipSummary(raw: string, name: string, max: number): string {
+  if (raw.trim() === name.trim()) return "";
+  return clamp(raw, max);
 }

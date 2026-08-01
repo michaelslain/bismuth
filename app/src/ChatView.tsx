@@ -38,7 +38,7 @@ import { chatTitle, publishChatTitle, resolveChatHeaderTitle } from "./chatTitle
 import { rememberChatSession, recallChatSession, forgetChatSession } from "./chatSessionStore";
 import { chatOrigin, publishChatOrigin, chatOriginIcon } from "./chatOrigin";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
-import { pickToolIcon } from "./chatToolIcon";
+import { chipSummary, clamp, pickToolIcon } from "./chatToolIcon";
 import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, computeChromeToggle, computeChromeCommand } from "./chatSlashCommands";
 import { chatComputerUse, setChatComputerUse } from "./chatComputerUse";
 import { resolveInitialModel, reconcileManifestModel, modelOptionFor, modelLabelFor } from "./chatModelResolution";
@@ -276,12 +276,6 @@ function summarizeInput(input: unknown): string {
   } catch {
     return "";
   }
-}
-
-/** Truncate long tool output / JSON so a chip body stays readable (expand still shows it all
- *  up to a generous cap). */
-function clamp(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + "…" : s;
 }
 
 /** Pretty-print a tool's input for the expanded chip view. */
@@ -2474,7 +2468,9 @@ export function ChatView(props: {
 
   function ToolChip(p: { part: ToolPart }) {
     const [open, setOpen] = createSignal(false);
-    const summary = () => clamp(summarizeInput(p.part.input), 120);
+    // chipSummary, not clamp: an ACP tool's only input field IS its title, which is also this
+    // chip's label — see its doc for why the dedup has to precede the clamp.
+    const summary = () => chipSummary(summarizeInput(p.part.input), p.part.name, 120);
     return (
       <div class="chat-tool" classList={{ open: open(), error: p.part.isError }}>
         <button class="chat-tool-head" onClick={() => setOpen(!open())}>
@@ -2658,7 +2654,10 @@ export function ChatView(props: {
   }
 
   function PermissionCard(p: { part: PermissionPart }) {
-    const summary = () => clamp(summarizeInput(p.part.input), 160);
+    // Same echo as the tool chip, but PRE-EXISTING here rather than introduced by the naming fix:
+    // driver.ts already named the permission by `title`, so "Allow <b>Write foo.txt</b>?" has always
+    // been followed by a "Write foo.txt" summary. One rule, both surfaces.
+    const summary = () => chipSummary(summarizeInput(p.part.input), p.part.toolName, 160);
     return (
       <div class="chat-permission" classList={{ answered: !!p.part.answered || !!p.part.cancelled }}>
         <div class="chat-permission-head">

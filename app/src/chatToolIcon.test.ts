@@ -12,7 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { GENERIC_TOOL_ICON, pickToolIcon, toolIcon } from "./chatToolIcon";
+import { GENERIC_TOOL_ICON, chipSummary, clamp, pickToolIcon, toolIcon } from "./chatToolIcon";
 
 describe("toolIcon (single-string matcher)", () => {
   test("matches Claude Code tool names case-insensitively", () => {
@@ -78,6 +78,51 @@ describe("pickToolIcon (the ACP title-vs-kind rule)", () => {
   });
 });
 
+describe("chipSummary (the label-echo rule)", () => {
+  // THE REGRESSION THIS GUARDS. An ACP ToolCall has no structured input, so toolCallInput()
+  // synthesizes `{description: title}` and summarizeInput() picks `description` — for an ACP call
+  // the only key present. Once the chip is ALSO labelled by `title`, both halves are the same
+  // string and the chip reads "Write foo.txt — Write foo.txt".
+  const TITLE = "Write fake-permission-probe.txt";
+
+  test("suppresses a summary that merely repeats the chip's label", () => {
+    expect(chipSummary(TITLE, TITLE, 120)).toBe("");
+  });
+
+  test("keeps a summary that says something the label does not", () => {
+    // The Claude/opencode/codex case, and the ACP case where the agent sent a real parameter:
+    // suppression must be exact, not "anything that resembles the name".
+    expect(chipSummary("/etc/hosts", "Read", 120)).toBe("/etc/hosts");
+    expect(chipSummary("Write foo.txt", "Write bar.txt", 120)).toBe("Write foo.txt");
+    // The rule is EXACT equality, not containment, in both directions. These two cases are the
+    // reason: a summary that merely CONTAINS the label still carries the extra half, and a summary
+    // CONTAINED BY the label is a different (shorter) string the user has not otherwise seen.
+    // Written after a sabotage run: an earlier version of this test used strings that were not
+    // actually substrings of each other, so a containment-based rule passed it. It no longer does.
+    expect(chipSummary(`${TITLE} (dry run)`, TITLE, 120)).toBe(`${TITLE} (dry run)`);
+    expect(chipSummary("fake-permission-probe.txt", TITLE, 120)).toBe("fake-permission-probe.txt");
+  });
+
+  test("dedups on the RAW text, before clamping — the ordering the function exists to pin", () => {
+    // `max` well below the label's length: if the clamp ran first, the summary would come back as
+    // "Write fake…" — no longer equal to the name — and the echo would survive exactly when the
+    // chip is most cluttered. This is the one assertion that distinguishes the two orderings.
+    expect(chipSummary(TITLE, TITLE, 10)).toBe("");
+    // …and clamping still happens for text that ISN'T an echo, so the guard did not disable it.
+    expect(chipSummary(TITLE, "Read", 10)).toBe("Write fake…");
+  });
+
+  test("tolerates the whitespace summarizeInput would already have trimmed", () => {
+    expect(chipSummary(`  ${TITLE}  `, TITLE, 120)).toBe("");
+  });
+
+  test("clamp itself: under the cap is untouched, over it gains a single ellipsis", () => {
+    expect(clamp("short", 10)).toBe("short");
+    expect(clamp("0123456789", 10)).toBe("0123456789"); // exactly at the cap — no ellipsis
+    expect(clamp("0123456789x", 10)).toBe("0123456789…");
+  });
+});
+
 // ── The WIRING, and an honest note about how strong this is ─────────────────────────────────────
 // Everything above tests the rule in isolation. The rule is worthless if ChatView never feeds it
 // `kind`, and nothing in this repo mounts ChatView.tsx in a test — so without the two assertions
@@ -91,13 +136,32 @@ describe("pickToolIcon (the ACP title-vs-kind rule)", () => {
 describe("ChatView wiring (source-text guard — see the note above for what this does and does not prove)", () => {
   const chatView = readFileSync(join(import.meta.dir, "ChatView.tsx"), "utf8");
 
+  /** Every source line containing `needle`, joined — never the whole file. Asserting against
+   *  `chatView` directly works, but a FAILURE then dumps all ~143 KB of ChatView.tsx into the test
+   *  output and buries the actual diff. Narrowing to the matching lines keeps the guard and loses
+   *  the noise; an unmatched needle yields "", which fails just as loudly. */
+  const linesWith = (needle: string): string =>
+    chatView
+      .split("\n")
+      .filter((l) => l.includes(needle))
+      .join("\n");
+
   test("the chip's icon is chosen from the part's kind AND name, not the name alone", () => {
-    expect(chatView).toContain("pickToolIcon(p.part.toolKind, p.part.name)");
+    expect(linesWith("pickToolIcon(")).toContain("pickToolIcon(p.part.toolKind, p.part.name)");
   });
 
   test("the tool part carries the frame's `kind` through as `toolKind`", () => {
-    // Without this line pickToolIcon would always receive undefined and the rule above would be
+    // Without this line pickToolIcon would always receive undefined and the icon rule would be
     // permanently inert — the exact failure mode a rule-only test cannot see.
-    expect(chatView).toContain("toolKind: frame.kind");
+    expect(linesWith("toolKind:")).toContain("toolKind: frame.kind");
+  });
+
+  test("both summary surfaces dedup against their own label, with their own cap", () => {
+    // The tool chip (120) and the permission card (160). The second is a PRE-EXISTING echo rather
+    // than one this change introduced — driver.ts already named permissions by `title` — but it is
+    // the same rule, so it is pinned the same way.
+    const calls = linesWith("chipSummary(");
+    expect(calls).toContain("chipSummary(summarizeInput(p.part.input), p.part.name, 120)");
+    expect(calls).toContain("chipSummary(summarizeInput(p.part.input), p.part.toolName, 160)");
   });
 });
