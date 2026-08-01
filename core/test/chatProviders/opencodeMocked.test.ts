@@ -84,6 +84,65 @@ function isChildOfThisProcess(pid: string): boolean {
   }
 }
 
+/** True iff a process with this pid currently exists, checked by pid — NEVER by re-running
+ *  `pgrep -f` (see this file's OPENCODE_SERVE_PATTERN comment for why: a pattern-based check can't
+ *  distinguish this test's own leftover from an unrelated process, but a plain existence check on a
+ *  pid we already decided to kill has nothing to confuse it with). `kill(pid, 0)` sends no signal —
+ *  it only probes whether the pid exists and whether we have permission to signal it. `ESRCH` means
+ *  gone; `EPERM` means it exists but isn't ours to signal (treated as "still alive", never silently
+ *  assumed dead). */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException)?.code === "EPERM";
+  }
+}
+
+/** THE FIX for the leak this file used to have: SIGTERM, poll for exit on a bounded budget, then
+ *  escalate to SIGKILL — the same grace-then-escalate shape core/src/chatProviders/acp/driver.ts's
+ *  `killWithEscalation` already uses in production, adapted to a bare OS pid (this test only ever
+ *  discovers the shared `opencode serve` server's pid externally via `pgrep`, see
+ *  opencodeServePids() above, so there is no `Bun.spawn` handle / `proc.exited` promise to await —
+ *  polling pidAlive() is the pid-based equivalent).
+ *
+ *  The irony worth keeping: `isChildOfThisProcess` above was added by an earlier review specifically
+ *  to stop this test from SIGTERMing the user's OWN running Bismuth server (a real hazard — the
+ *  shared server's argv is not test-specific). That guard is correct and stays untouched. What was
+ *  missing was the OTHER half: once this test decides a pid is safe to kill, it never confirmed the
+ *  kill actually landed. The old code fired `process.kill(pid, "SIGTERM")` and returned immediately;
+ *  `bun test` then exited, the still-alive child reparented to launchd, and survived whenever it
+ *  hadn't finished handling the signal yet — measured live, before this fix: 0 `opencode serve`
+ *  processes before a run, 1 after, every time, accumulating across runs. A cleanup that checks WHO
+ *  it may kill but never WHETHER the kill worked is the same class of bug as an assertion that
+ *  reports success without observing anything — this function (and the assertion in afterAll below
+ *  that calls it) is the fix for both halves at once: wait for the kill, then prove it. */
+async function killAndConfirmDead(pid: number, graceMs = 3000, pollMs = 50): Promise<boolean> {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return true; // already gone before we even signaled it
+  }
+  const termDeadline = Date.now() + graceMs;
+  while (Date.now() < termDeadline) {
+    if (!pidAlive(pid)) return true;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  if (!pidAlive(pid)) return true;
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    return true; // exited between the last poll and this call
+  }
+  const killDeadline = Date.now() + 1000;
+  while (Date.now() < killDeadline) {
+    if (!pidAlive(pid)) return true;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return !pidAlive(pid);
+}
+
 describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts, against a mock LLM (zero account API calls)", () => {
   const ENV_KEYS = ["OPENCODE_CONFIG_CONTENT", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"] as const;
   // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — a code-review finding on this
@@ -201,6 +260,11 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       else process.env[k] = savedEnv[k];
     }
     await mock?.stop();
+    // Decide WHICH pids are this test's to kill using the exact same two guards as before
+    // (pre-existing check + isChildOfThisProcess) — that decision logic is untouched. What's new is
+    // AWAITING each kill and recording whether it actually died — see killAndConfirmDead's own doc
+    // comment for why the old fire-and-forget SIGTERM was the actual bug, not this guard.
+    const survivors: string[] = [];
     for (const pid of opencodeServePids()) {
       if (pidsBefore.has(pid)) continue; // pre-existing — not this test's to kill
       // Final-review minor: argv-matching alone could SIGTERM the user's OWN running Bismuth app if
@@ -208,17 +272,19 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       // actually be a child of THIS process before killing it (see isChildOfThisProcess's doc
       // comment).
       if (!isChildOfThisProcess(pid)) continue;
-      try {
-        process.kill(Number(pid), "SIGTERM");
-      } catch {
-        /* already gone */
-      }
+      const dead = await killAndConfirmDead(Number(pid));
+      if (!dead) survivors.push(pid);
     }
     // Cleaned up LAST, after the shared server (if this file's tests started it) has been signaled
     // to die above — see xdgDirs' own comment for why these can't be removed any earlier.
     for (const dir of xdgDirs.splice(0)) {
       await rm(dir, { recursive: true, force: true }).catch(() => {});
     }
+    // THE ASSERTION half of the fix, run last (after cleanup above, so a failure here never skips
+    // the temp-dir cleanup) — fail loudly if any pid this file decided to kill is still alive after
+    // SIGTERM+SIGKILL. Silence here would be exactly the bug this whole fix exists to close: a
+    // cleanup that decides what to kill but never confirms the kill worked.
+    expect(survivors).toEqual([]);
   });
 
   afterEach(async () => {
