@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mkdir, writeFile, rm, symlink } from "node:fs/promises";
+import { writeFile, rm, symlink } from "node:fs/promises";
 import { existsSync, mkdtempSync, symlinkSync, rmSync } from "node:fs";
 import {
   setFrontmatterKey,
@@ -96,8 +96,12 @@ Content`;
     let testDir: string;
 
     beforeEach(async () => {
-      testDir = join(tmpdir(), `test-cycle-${Date.now()}`);
-      await mkdir(testDir, { recursive: true });
+      // mkdtempSync (not a Date.now()-suffixed literal) guarantees a unique dir even when two
+      // suite processes race through this beforeEach in the same millisecond — see the identical
+      // reasoning in the symlinksSupported probe above. A fixed name here let one run's cleanup()
+      // rm -rf the OTHER run's still-in-use testDir mid-test (measured: reproduced 2/2 concurrent
+      // trials as "detects cycles through symlinks" failing).
+      testDir = mkdtempSync(join(tmpdir(), "test-cycle-"));
     });
 
     // Cleanup after tests
