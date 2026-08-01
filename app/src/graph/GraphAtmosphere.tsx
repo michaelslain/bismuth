@@ -40,6 +40,13 @@
 // yet loaded). See bloomColor.ts for the pure, unit-tested parsers — malformed input from either
 // property falls back rather than producing a NaN channel (which paints invisible black).
 //
+// That base hue is the GROUND, not the whole picture: where the emitted field carries per-cluster
+// territory colour (densityField.ts's `field.rgb`), each cell is mixed partway toward its own
+// community's hue, renormalised to the base's luma first so a territory can never change how BRIGHT
+// a region is — only what colour it is. See bloomColor.ts's `tintTerritory` for the mix and why it
+// is not 1. A field with no colour at all (a community-less graph) paints in the base hue exactly,
+// which is what this always did.
+//
 // Bismuth themes are switchable LIVE (App.tsx re-applies `settingsToCssVars` on every settings
 // change, via `documentElement.style.setProperty`), so the colour can't just be read once at
 // mount: a MutationObserver watches `document.documentElement`'s `style` attribute and re-resolves
@@ -47,7 +54,7 @@
 // business being on the rAF path.
 import { onCleanup, onMount, type JSX } from "solid-js";
 import { FIELD_W, FIELD_H, type DensityField } from "./densityField";
-import { parseHexColor, parseRgbTriple, type Rgb } from "./bloomColor";
+import { parseHexColor, parseRgbTriple, tintTerritory, type Rgb } from "./bloomColor";
 import "./graphAtmosphere.css";
 
 /** A stable indirection cell the caller creates once and passes down. `sink.current` is where
@@ -83,7 +90,7 @@ export function GraphAtmosphere(props: { sink?: BloomSink; mode?: string }): JSX
     canvas.width = FIELD_W;
     canvas.height = FIELD_H;
 
-    let [r, g, b] = resolveBloomRgb(canvas);
+    let base: Rgb = resolveBloomRgb(canvas);
     const img = ctx.createImageData(FIELD_W, FIELD_H);
 
     const schedule = () => { if (!raf) raf = requestAnimationFrame(paint); };
@@ -92,11 +99,22 @@ export function GraphAtmosphere(props: { sink?: BloomSink; mode?: string }): JSX
       raf = 0;
       const field = pending;
       if (!field) return;
+      // Hoisted out of the loop: a field either carries territory colour or it doesn't, and the
+      // per-cell branch below is on the same constant for all 2560 cells.
+      const rgb = field.rgb;
+      const [br, bg, bb] = base;
       for (let i = 0; i < FIELD_W * FIELD_H; i++) {
         const v = field[i];
-        img.data[i * 4] = r;
-        img.data[i * 4 + 1] = g;
-        img.data[i * 4 + 2] = b;
+        if (rgb) {
+          const packed = tintTerritory(base, rgb.r[i], rgb.g[i], rgb.b[i]);
+          img.data[i * 4] = packed >> 16;
+          img.data[i * 4 + 1] = (packed >> 8) & 255;
+          img.data[i * 4 + 2] = packed & 255;
+        } else {
+          img.data[i * 4] = br;
+          img.data[i * 4 + 1] = bg;
+          img.data[i * 4 + 2] = bb;
+        }
         // v⁴: crushes the mid-range so only genuinely dense regions light up (chosen over v²/v³
         // in an earlier sweep — v² read as fog over the whole graph; that sweep's absolute
         // numbers predate the alpha-weighted probe fix in bench/visual.ts and aren't comparable
@@ -126,8 +144,8 @@ export function GraphAtmosphere(props: { sink?: BloomSink; mode?: string }): JSX
 
     const mo = new MutationObserver(() => {
       const next = resolveBloomRgb(canvas!);
-      if (next[0] !== r || next[1] !== g || next[2] !== b) {
-        [r, g, b] = next;
+      if (next[0] !== base[0] || next[1] !== base[1] || next[2] !== base[2]) {
+        base = next;
         schedule(); // repaint the last field under the new colour even if none arrives this frame
       }
     });

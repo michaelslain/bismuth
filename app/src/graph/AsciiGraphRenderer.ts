@@ -592,6 +592,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *  loop skips a level only when its mass alpha is at-or-below that same epsilon AND its names are
    *  gone), so the screen positions the bloom reads off that level are never stale. */
   private massLevelAlphas: readonly number[] = NO_MASS_LEVELS;
+  /** The hierarchy level whose community colours the GLYPHS are drawn in this frame (rasterize()'s
+   *  LEVEL-DRIVEN COLOR block). Read by `nodeBloomRgb` only, so the near band's light carries the
+   *  same territory hue the glyphs emitting it are painted in. */
+  private frameColorL0 = 0;
   private hoverEntityIdx = -1;
 
   // Per-frame QA/debug counters (see computeStats/window.__asciiGraphStats) — reset + incremented in
@@ -1491,6 +1495,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
    * With no mass band in play (3D, "local" mode, community-less graphs) `massLevelAlphas` is empty
    * and `glyphAlpha` is 1, so this reduces EXACTLY to the original glyph-only pass.
    *
+   * EVERY point also carries the TERRITORY it belongs to — a mass its cluster's colour, a glyph its
+   * own community's at the frame's dominant level (`slotBloomRgb`/`nodeBloomRgb`) — so the field
+   * comes back with a per-cell mean colour and the ground reads as a map of territories rather than
+   * one flat haze. Same slots the mass glyphs and the note glyphs are already drawn in, which is
+   * what makes the band handover a change of shape and not of hue. Emitters with no community
+   * (self/daemon/cron/process, or a whole graph without communities) carry no colour and light the
+   * base phosphor hue, exactly as before.
+   *
    * `buildBloom` itself drops anything that lands outside the 0..1 field once converted to a screen
    * fraction, so neither loop needs its own viewport clip.
    */
@@ -1508,7 +1520,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         const x = ev.sx / this.W, y = ev.sy / this.H;
         if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
         const w = ev.count * a;
-        pushCloud(pts, x, y, (ev.sdx * s) / this.W, (ev.sdy * s) / this.H, w);
+        pushCloud(pts, x, y, (ev.sdx * s) / this.W, (ev.sdy * s) / this.H, w, this.slotBloomRgb(ev.color));
         weight += w;
       }
     }
@@ -1518,7 +1530,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         const x = nv.sx / this.W, y = nv.sy / this.H;
         if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
         const w = depthAlpha(nv.dr) * this.glyphAlpha;
-        pts.push({ x, y, weight: w });
+        pts.push({ x, y, weight: w, rgb: this.nodeBloomRgb(nv) });
         weight += w;
       }
     }
@@ -1542,6 +1554,42 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.bloomSdxFrame = 0; this.bloomSdyFrame = 0;
     }
     this.onBloom(buildBloom(pts));
+  }
+
+  /**
+   * The TERRITORY colour for a colorBuf slot, or `undefined` for "no community — paint this light
+   * in the base phosphor hue".
+   *
+   * Only the per-(level, community) range (`commColorsRGB`, i.e. `clusterVisual.buildColorSlots`'
+   * size-ranked output) carries one, which is deliberate on both ends: a node with no community at
+   * all (self/daemon/cron/process, or a mode that never stamps one) has no territory to belong to,
+   * and the per-frame BLEND range (`COMM_BLEND_BASE`..) is a string memo whose entries would have
+   * to be re-parsed per emitted point on the rAF path. Falling through to the base hue is not a
+   * degradation — it is the single-hue atmosphere this one is built on top of.
+   */
+  private slotBloomRgb(slot: number): readonly [number, number, number] | undefined {
+    if (slot < BLEND_BASE || slot >= COMM_BLEND_BASE) return undefined;
+    return this.commColorsRGB[slot - BLEND_BASE];
+  }
+
+  /**
+   * A GLYPH's territory colour: its community at the level that owns the frame (`frameColorL0`),
+   * clamped against the node's own path depth exactly as `nodeColorSlotForFrame` clamps it.
+   *
+   * That level choice is what makes the mass→glyph handover continuous. `lodMix`'s per-level mass
+   * alphas are `clusterLevelAlphas × massAlpha`, and `activeColorLevels` picks `L0` as the argmax
+   * of the same `clusterLevelAlphas` — so the mass emitting most of the far band's light and the
+   * glyphs replacing it are reading the SAME level's community colour, and the band swap changes
+   * how the light is shaped without changing what colour it is.
+   *
+   * Deliberately the dominant level rather than the two-level crossfade the glyph itself gets: the
+   * blend lives in a per-frame string memo (see `blendColorSlot`), and a half-crossfaded hue is not
+   * resolvable in a blurred field at v⁴ anyway.
+   */
+  private nodeBloomRgb(nv: NodeView): readonly [number, number, number] | undefined {
+    const cbl = nv.colorByLevel;
+    const slot = cbl.length > 1 ? cbl[Math.min(this.frameColorL0, cbl.length - 1)] : nv.color;
+    return this.slotBloomRgb(slot);
   }
 
   // ---- cursor-anchored zoom (2D) -------------------------------------------
@@ -1692,6 +1740,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
       // frame, not a full precomputed cross product (the community space is too big for that now).
       if (colorW1 > LOD_ALPHA_EPS) { this.blendColors.length = 0; this.blendIndex.clear(); }
     }
+    // Handed to emitBloom() so the near band's light carries the SAME hierarchy level's community
+    // colour the glyphs emitting it are drawn in. Assigned unconditionally (the `if` above only
+    // runs on a multi-level graph) so it can never be a stale level left over from a previous
+    // build — on a 0/1-level graph 0 is both the only level and what every consumer ignores.
+    this.frameColorL0 = colorL0;
 
     // ---- LEAF passes (individual note GLYPHS + real member edges) — DEFAULT: always on. ----------
     // Gated on `glyphAlpha` (= 1 - massAlpha), NOT on the member-edge alpha: glyphs rasterize across
