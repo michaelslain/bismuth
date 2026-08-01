@@ -114,16 +114,37 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
     // closing the leak while still avoiding the `acp:` prefix collision above (a chat id never
     // starts with `acp:` in this codebase).
     //
-    // KNOWN FOLLOW-UP, not fixed here — UNBOUNDED SESSION ACCUMULATION, the accepted cost of the
-    // per-chat fix above: openclaw persists each distinct session key as its own on-disk transcript
-    // (`<OPENCLAW_STATE_DIR>/agents/main/sessions/<uuid>.jsonl` + an entry in that dir's
-    // `sessions.json`) — confirmed live, two Bismuth chats produced two `.jsonl` files plus two
-    // `sessions.json` entries. driver.ts's closeChat() never removes these; openclaw itself has no
-    // observed auto-eviction. So a real user's `~/.openclaw` grows ONE new session file per Bismuth
-    // chat they ever open, forever — this is the correct trade against the content-leak alternative
-    // (a fixed key), not a free fix, and needs real follow-up (either Bismuth pruning old sessions on
-    // chat close, or an openclaw-side retention setting if one exists) rather than being silently
-    // carried as an unbounded-growth surprise.
+    // KNOWN FOLLOW-UP, ACCEPTED (measured, decided, not fixed here — see task-15's report for the
+    // full write-up) — UNBOUNDED SESSION ACCUMULATION, the cost of the per-chat fix above: openclaw
+    // persists each distinct session key as its own on-disk transcript
+    // (`<OPENCLAW_STATE_DIR>/agents/main/sessions/<uuid>.jsonl`) PLUS an entry in that dir's shared
+    // `sessions.json` index. MEASURED live (task-15, via the same isolation harness
+    // openclawMocked.test.ts uses, one trivial single-turn "hello" exchange per chat): the `.jsonl`
+    // transcript itself is small (~1.6KB, 6 lines) and scales with real conversation length as
+    // expected — but the `sessions.json` ENTRY is the dominant cost, ~20KB per session, NOT per
+    // turn, dominated by a ~15KB `skillsSnapshot` field (openclaw's own skills-prompt snapshot) plus
+    // a ~4.6KB `systemPromptReport`, both written once per session and otherwise static. So the real
+    // marginal cost of one more Bismuth chat a user ever opens against openclaw is ~21-22KB in
+    // `~/.openclaw`, forever (driver.ts's closeChat() never removes either file; openclaw itself has
+    // no observed auto-eviction) — for a heavy user (thousands of chats over years) that is tens of
+    // MB, not catastrophic, but genuinely unbounded.
+    //
+    // DECISION: document as accepted, do NOT prune on closeChat. Pruning at chat-close time was the
+    // other candidate and is actively CONTRAINDICATED, not merely cautious-by-default: agentBackends/
+    // catalog.ts declares `resume: true` for this whole ACP backend group (openclaw included, see its
+    // own catalog entry below), and core/src/server.ts's WS `resume` message dispatches to ANY
+    // backend via `resolveChatProvider` — so a real resumeSession call against a closed openclaw chat
+    // is a supported, reachable code path, not dead code, and it depends on openclaw's OWN on-disk
+    // session (the exact files this follow-up would delete) still existing. Bismuth has no reliable
+    // signal that a user is "done" with a chat merely because its tab closed — deleting the backing
+    // session at that moment would silently break a resume the catalog explicitly promises still
+    // works. An age/count-based janitor remains a real, safer option for a LATER task, but only once
+    // there's a product answer for how long a closed chat should stay resumable — not guessed into
+    // existence here — or an openclaw-side retention setting if one exists (not confirmed either
+    // way). Mirrors this same repo's own recent precedent on the daemon side (see the
+    // "never delete in-use data on a heuristic" fix in this repo's history): pruning another
+    // product's state directory on a guess, with no liveness/opt-in signal Bismuth can actually
+    // verify, is worse than the disk it saves.
     //
     // `supportsSessionMcpServers: false` — a SECOND real bug found alongside the session-key one
     // above, confirmed live: on any machine where Bismuth's own MCP tools are installed
