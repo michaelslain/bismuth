@@ -255,7 +255,10 @@ const promptHold = process.env.FAKE_ACP_PROMPT_HOLD === "permission" ? "permissi
  *  scheduling. Irrelevant (and never read) unless promptHold === "queue". */
 const QUEUE_HOLD_MS = (() => {
   const raw = Number(process.env.FAKE_ACP_QUEUE_HOLD_MS);
-  return Number.isFinite(raw) && raw > 0 ? raw : 500;
+  // 2000 matches acpQueueFakeAgent.test.ts's own pinned value (that test always sets the env var
+  // explicitly, so this fallback only matters if a future consumer forgets to) — kept in sync so the
+  // two numbers don't drift apart for no reason.
+  return Number.isFinite(raw) && raw > 0 ? raw : 2_000;
 })();
 
 /** Prefix of the `agent_message_chunk` "queue" mode emits when a held turn settles, carrying the

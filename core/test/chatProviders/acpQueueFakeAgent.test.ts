@@ -40,9 +40,15 @@
 //     with only ONE item ever queued (the first test, with only a second message, has nothing to
 //     reorder against), which is why this second test needs three messages, not two, despite this
 //     task's brief describing "two sendMessage calls" as the base scenario.
+//   - Every `session/prompt`'s own `sessionId` is compared against an INDEPENDENTLY-obtained value —
+//     the ACP session id read off the driver's own `"session"` ChatFrame (emitted once, at
+//     `openSession` time, before either test sends a single message) — never against each OTHER.
+//     `s.sessionId` (driver.ts) is assigned exactly once and never reassigned, so comparing the wire
+//     values only to each other is a tautology once `prompts.length` is already pinned: review found
+//     this and it is fixed here (see Mutation C in this task's report for the failing proof).
 //
 // SABOTAGE PERFORMED (verification only, applied to a local copy of driver.ts and reverted — never
-// committed; see this task's own report for exact results):
+// committed; see this task's own report for exact results, including Mutation C added in fix round 1):
 //   1. `runOrQueue` mutated to always call `runTurn` regardless of `s.turnActive` (the queue bypassed
 //      entirely) — the FIRST test's "exactly one `session/prompt` line while held" assertion failed
 //      as intended (it saw two).
@@ -50,23 +56,31 @@
 //      FIFO) — the SECOND test's submission-order assertion failed specifically (beta/gamma swapped
 //      to gamma/beta), while the first test and every count-based assertion in both tests still
 //      passed — proving that mutation's failure really is about ORDER and nothing else.
+//   3. `runTurn`'s `session/prompt` call mutated to send `s.id` (the chat id) instead of `s.sessionId`
+//      (the real ACP session id) — the sessionId assertion in BOTH tests failed specifically, while
+//      every other assertion (frame counts, prompt-text order, `assistant-text` order) still passed.
 //
 // STUB-BINARY PATTERN: identical to every other fakeAcpAgent.ts-driven test file — write an
 // executable stub named "cline" into a throwaway temp dir, prepend it onto PATH so
 // core/src/claudeWhich.ts's whichBinary("cline") resolves the stub, then drive the REAL, unmodified
 // chatProviders/acp/driver.ts via CHAT_BACKENDS.cline exactly as production does. Zero network of any
-// kind, zero CLI dependency, zero account contact.
+// kind, zero CLI dependency, zero account contact. Orphan-freedom is verified BY PID (never a
+// `pgrep -f` pattern match) via ../support/acpFakeAgentProcess.ts's shared helper — see that file's
+// own header for why this is a shared module rather than yet another inline copy.
 //
 // No production files were changed for this task — only the test-support fake agent gained the new
 // "queue" hold mode (additive, opt-in via FAKE_ACP_PROMPT_HOLD=queue; every pre-existing consumer of
-// that file leaves the var unset or set to "permission" and is byte-for-byte unaffected).
+// that file leaves the var unset or set to "permission" and is byte-for-byte unaffected) — plus the
+// pid-teardown helper extracted to ../support/acpFakeAgentProcess.ts, shared with (and retrofitted
+// onto) acpAbortFakeAgent.test.ts.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatFrame } from "../../src/chat";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
+import { makeAcpFakeAgentStubDir, pidAlive, waitForPidFile, waitProcessesGone } from "../support/acpFakeAgentProcess";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 
@@ -77,23 +91,23 @@ const FAKE_QUEUE_TURN_PREFIX = "fake-acp queued-turn echo: ";
 
 /** How long the fake holds each `session/prompt` open before auto-settling — see fakeAcpAgent.ts's
  *  own QUEUE_HOLD_MS doc comment. Pinned explicitly here (rather than relying on the fake's own
- *  default) so this file's timing assumptions never silently drift if that default ever changes. */
-const QUEUE_HOLD_MS = 400;
+ *  default) so this file's timing assumptions never silently drift if that default ever changes.
+ *  2000ms, not a smaller value: unlike the "permission" hold mode's tests (whose hold is UNBOUNDED —
+ *  nothing settles it without an explicit reply, so their own PARKED_OBSERVATION_MS margin really is
+ *  "however long we're willing to wait"), this hold is a FINITE timer that fires on its own. The
+ *  window below (`HELD_OBSERVATION_MS`) must stay comfortably LESS than this value, not merely more
+ *  than typical IPC latency — a smaller `QUEUE_HOLD_MS` (this file previously used 400ms) leaves too
+ *  little slack for a scheduler overrun under full-suite load to flip "still held" into "already
+ *  settled", which would fail `toBe(1)` for a reason that has nothing to do with the queue. */
+const QUEUE_HOLD_MS = 2_000;
 
 /** How long after sending the second (and third) message to wait before asserting the first turn is
- *  still held — comfortably less than QUEUE_HOLD_MS (so the check can't accidentally run after the
- *  first turn has already auto-settled) and comfortably more than a same-machine spawn→pipe→readline
- *  round trip (so "still held" is a real observation, not a coincidence of scheduling). Mirrors the
- *  ~2-orders-of-magnitude margin the permission-mode tests use for their own PARKED_OBSERVATION_MS. */
-const HELD_OBSERVATION_MS = 150;
-
-function makeStubBinDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "bismuth-acp-queue-stub-"));
-  const stubPath = join(dir, "cline");
-  writeFileSync(stubPath, `#!/bin/bash\nexec bun run ${JSON.stringify(FAKE_AGENT_SCRIPT)} "$@"\n`);
-  chmodSync(stubPath, 0o755);
-  return dir;
-}
+ *  still held. Comfortably less than QUEUE_HOLD_MS (leaves ~1700ms of slack — enough that a scheduler
+ *  overrun under full-suite load can't flip this check) and comfortably more than a same-machine
+ *  spawn→pipe→readline round trip (so "still held" is a real observation, not a coincidence of
+ *  scheduling). See QUEUE_HOLD_MS's own doc comment for why this is NOT the same margin shape as the
+ *  permission-mode tests' PARKED_OBSERVATION_MS. */
+const HELD_OBSERVATION_MS = 300;
 
 interface EchoLine {
   method?: string;
@@ -135,6 +149,13 @@ function promptText(params: unknown): string {
   return typeof first?.text === "string" ? first.text : "";
 }
 
+/** Pull `sessionId` out of a `session/prompt` request's own params — the value under test in every
+ *  sessionId assertion below. */
+function promptSessionId(params: unknown): string | undefined {
+  const p = params && typeof params === "object" ? (params as Record<string, unknown>) : {};
+  return typeof p.sessionId === "string" ? p.sessionId : undefined;
+}
+
 async function waitForCondition(check: () => boolean, timeoutMs: number, description: string): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -151,7 +172,9 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
   // ERR_INVALID_ARG_TYPE from a wrong argument type) — a bug this harness has shipped before.
   let stubDir: string | undefined;
   let echoDir: string | undefined;
+  let pidDir: string | undefined;
   let echoFile: string;
+  let pidFile: string;
   const savedEnv: Record<string, string | undefined> = {};
   const ENV_KEYS = [
     "PATH",
@@ -164,6 +187,10 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
     "FAKE_ACP_CLINE_AUTHED",
   ] as const;
   const chatIds: string[] = [];
+  // Pids this test itself caused to exist (captured via waitForPidFile once a session is confirmed
+  // open), verified gone in afterEach — see ../support/acpFakeAgentProcess.ts's header for why a
+  // synchronous afterEach that only calls closeChat() is not sufficient on its own.
+  const spawnedPids: number[] = [];
 
   function restoreEnv(): void {
     for (const k of ENV_KEYS) {
@@ -180,7 +207,10 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
 
     stubDir = undefined;
     echoDir = undefined;
-    stubDir = makeStubBinDir();
+    pidDir = undefined;
+    pidDir = mkdtempSync(join(tmpdir(), "bismuth-acp-queue-pid-"));
+    pidFile = join(pidDir, "agent.pid");
+    stubDir = makeAcpFakeAgentStubDir("bismuth-acp-queue-stub-", "cline", FAKE_AGENT_SCRIPT, pidFile);
     echoDir = mkdtempSync(join(tmpdir(), "bismuth-acp-queue-echo-"));
     echoFile = join(echoDir, "echo.jsonl");
 
@@ -198,14 +228,26 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
     delete process.env.FAKE_ACP_PERMISSION_OPTIONS;
   });
 
-  afterEach(() => {
-    // Env restore FIRST: a throw from the closeChat loop must never skip restoration and leave a
-    // later test (in this file or a later file in this same process) pointed at a stub PATH.
+  afterEach(async () => {
+    // Env restore FIRST: a throw below must never skip restoration and leave a later test (in this
+    // file or a later file in this same process) pointed at a stub PATH.
     restoreEnv();
     for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
+
+    // closeChat() only SENDS a signal (SIGTERM, escalating to SIGKILL after driver.ts's
+    // KILL_ESCALATION_GRACE_MS if ignored) — it does not wait for the process to exit. Poll by OWNED
+    // pid (never a `pgrep -f` pattern match) via the shared helper, do the temp-dir cleanup regardless
+    // of the outcome, THEN throw if anything survived — see acpFakeAgentProcess.ts's own header.
+    const stillAlive = await waitProcessesGone(spawnedPids.splice(0));
+
     if (stubDir) rmSync(stubDir, { recursive: true, force: true });
     if (echoDir) rmSync(echoDir, { recursive: true, force: true });
-  });
+    if (pidDir) rmSync(pidDir, { recursive: true, force: true });
+
+    if (stillAlive.length > 0) {
+      throw new Error(`acpQueueFakeAgent.test: fake-agent pid(s) ${stillAlive.join(", ")} still alive after closeChat — a real leak.`);
+    }
+  }, 15_000);
 
   afterAll(() => {
     // Belt-and-suspenders: a thrown assertion mid-test must never leave a LATER, unrelated test file
@@ -224,14 +266,26 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
    * open (turnActive: false, sessionId assigned) makes the FIRST `sendMessage` call below take the
    * "existing session" branch, whose own path to `runOrQueue` is fully synchronous up to and
    * including `session/prompt` hitting the wire — the property this file's assertions depend on.
+   *
+   * Also captures the fake agent's own pid (for teardown verification) and returns the ACP
+   * `sessionId` the driver reports — the INDEPENDENTLY-obtained expected value every sessionId
+   * assertion below compares against, rather than comparing wire values only to each other (a
+   * tautology given `s.sessionId` is assigned exactly once — see this file's header).
    */
   async function openReadySession(
     chatId: string,
     sink: (f: ChatFrame) => void,
     waitFor: (match: (f: ChatFrame) => boolean, timeoutMs?: number) => Promise<ChatFrame>,
-  ): Promise<void> {
+  ): Promise<string> {
     CHAT_BACKENDS.cline.openSession({ chatId, cwd: "/tmp", sink, computerUse: false });
-    await waitFor((f) => f.type === "session");
+    const sessionFrame = await waitFor((f) => f.type === "session");
+    if (sessionFrame.type !== "session") throw new Error(`expected a "session" frame, got ${sessionFrame.type}`);
+
+    const pid = await waitForPidFile(pidFile);
+    spawnedPids.push(pid);
+    expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
+
+    return sessionFrame.sessionId;
   }
 
   test(
@@ -239,9 +293,9 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
     async () => {
       const chatId = "acp-queue-two-" + Date.now();
       chatIds.push(chatId);
-      const { sink, frames, waitFor } = makeChatFrameCollector(15_000);
+      const { sink, frames, waitFor } = makeChatFrameCollector(20_000);
 
-      await openReadySession(chatId, sink, waitFor);
+      const expectedSessionId = await openReadySession(chatId, sink, waitFor);
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "first message" });
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "second message" });
@@ -263,9 +317,11 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
       expect(prompts.length).toBe(2);
       // Submission order, not mere presence — see this file's header.
       expect(prompts.map((p) => promptText(p.params))).toEqual(["first message", "second message"]);
-      const sessionIds = prompts.map((p) => (p.params as { sessionId?: string } | undefined)?.sessionId);
-      expect(sessionIds[0]).toBeTruthy();
-      expect(sessionIds[1]).toBe(sessionIds[0]);
+      // Compared against an INDEPENDENTLY obtained expected value (the driver's own "session" frame),
+      // not against each other — see this file's header on why sessionIds[1] === sessionIds[0] alone
+      // would be a tautology.
+      expect(promptSessionId(prompts[0].params)).toBe(expectedSessionId);
+      expect(promptSessionId(prompts[1].params)).toBe(expectedSessionId);
 
       // Independent second proof channel (the driver's own frame stream, not the echo file) — mirrors
       // acpPermissionFakeAgent.test.ts's identical dual-proof idiom.
@@ -278,7 +334,7 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
       expect(results.every((r) => r.isError === false)).toBe(true);
       expect(frames.some((f) => f.type === "error")).toBe(false);
     },
-    20_000,
+    25_000,
   );
 
   test(
@@ -286,18 +342,21 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
     async () => {
       const chatId = "acp-queue-three-" + Date.now();
       chatIds.push(chatId);
-      const { sink, frames, waitFor } = makeChatFrameCollector(20_000);
+      const { sink, frames, waitFor } = makeChatFrameCollector(25_000);
 
-      await openReadySession(chatId, sink, waitFor);
+      const expectedSessionId = await openReadySession(chatId, sink, waitFor);
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "alpha" });
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "beta" });
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "gamma" });
 
       // Both "beta" and "gamma" are queued behind "alpha" at this instant — the two-simultaneously-
-      // queued scenario a bare two-message test cannot exercise (see this file's header).
+      // queued scenario a bare two-message test cannot exercise (see this file's header). Same
+      // completeness checks as the two-message test above (0 done frames, exactly 1 wire request)
+      // while held, not dropped just because this test's own focus is ordering.
       await new Promise((r) => setTimeout(r, HELD_OBSERVATION_MS));
       expect(readEchoLines(echoFile).filter((l) => l.method === "session/prompt").length).toBe(1);
+      expect(frames.filter((f) => f.type === "done").length).toBe(0);
 
       await waitForCondition(
         () => frames.filter((f) => f.type === "done").length === 3,
@@ -311,10 +370,17 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
       // reordering) queue drain still produces 3 session/prompt calls and 3 done frames — passing
       // every count-based check in this file — while getting beta/gamma backwards here.
       expect(prompts.map((p) => promptText(p.params))).toEqual(["alpha", "beta", "gamma"]);
+      for (const p of prompts) expect(promptSessionId(p.params)).toBe(expectedSessionId);
 
       const queueTexts = frames.filter((f): f is Extract<ChatFrame, { type: "assistant-text" }> => f.type === "assistant-text").map((f) => f.text);
       expect(queueTexts).toEqual([`${FAKE_QUEUE_TURN_PREFIX}alpha`, `${FAKE_QUEUE_TURN_PREFIX}beta`, `${FAKE_QUEUE_TURN_PREFIX}gamma`]);
+
+      expect(frames.filter((f) => f.type === "done").length).toBe(3);
+      const results = frames.filter((f): f is Extract<ChatFrame, { type: "result" }> => f.type === "result");
+      expect(results.length).toBe(3);
+      expect(results.every((r) => r.isError === false)).toBe(true);
+      expect(frames.some((f) => f.type === "error")).toBe(false);
     },
-    25_000,
+    30_000,
   );
 });
