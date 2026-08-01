@@ -327,32 +327,41 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
     //      those still require a genuine interactive sign-in and remain closed, exactly as Task 4
     //      found. This mapping routes around the gate entirely via a THIRD provider id the gate
     //      never actually validates — a design gap in cline's OWN auth check, not a way through it.
-    //   2. cline's real `session/new` response carries BOTH the old `models.availableModels` shape
-    //      AND a `configOptions` array whose FIRST category:"model" entry is a "provider" selector
-    //      (options shaped `{value, name}`), not the actual per-model selector (options shaped
-    //      `{id, name}`, further down the array). This is WORSE than "the models list comes back
-    //      empty" — a code-review finding on this task expanded it, precisely, into two distinct
-    //      driver-side consequences (both confirmed live, neither fixed here — out of scope for a
-    //      coverage task, not a driver/protocol change):
-    //        a. `detectModelShape` (protocol.ts:214-236) takes the FIRST category:"model" match and
-    //           RETURNS inside that branch — so `r.models.availableModels` (protocol.ts:238, the very
-    //           OLD-shape field cline ALSO sends) is never even reached, let alone consulted. The
-    //           parser then filters cline's mis-picked "provider" option's entries on `.id`
-    //           (`{value, name}` shaped — no `.id` at all), yielding zero models — and
-    //           driver.ts:455 (`if (s.modelShape.models.length) emit(...)`) means NO `models`
-    //           ChatFrame is emitted at all in that case, not an empty one.
-    //        b. `modelConfigId` (protocol.ts:233) is set from that SAME mis-picked "provider"
-    //           selector's own `id` field — poisoned, not just the list. driver.ts:600-602's
-    //           `setModel` dispatches `session/set_config_option` using exactly this id, so a model
-    //           switch against a real cline session would silently write to cline's PROVIDER option
-    //           instead. Latent today only because (a) leaves the model picker nothing to select in
-    //           the first place.
-    //      A genuine quirk of cline's OWN ACP implementation (its "model" config option and its
-    //      "provider" config option share one category, and a shape-generic client can't tell them
-    //      apart) — NOT asserted on by clineMocked.test.ts's new block either way, to avoid the exact
-    //      "asserts something true only by accident" shape this harness warns against. A follow-up
-    //      fix (tightening detectModelShape's `.find` predicate, and falling through to the OLD shape
-    //      when the chosen option yields zero models) should be written against this precise account.
+    //   2. FIXED 2026-08-01 — kept here because the earlier text was WRONG about the mechanism, and
+    //      the correction is the whole reason the fix exists. cline's real `session/new` response
+    //      carries BOTH the old `models.availableModels` shape AND a `configOptions` array whose
+    //      FIRST category:"model" entry is a "provider" selector, with the actual per-model selector
+    //      further down under the SAME category.
+    //
+    //      What the earlier version of this comment claimed: the two were "distinguishable by whether
+    //      their options carry an `id`" — provider options `{value, name}`, model options `{id,
+    //      name}`. **That is false.** Driving real `cline` 3.0.48, `goose` and `openclaw` against a
+    //      local mock and capturing `session/new` verbatim showed BOTH cline selectors' options are
+    //      `{value, name}`, as is every select option from every agent — `SessionConfigSelectOption`
+    //      is `{value, name, description?}` in @agentclientprotocol/sdk 0.20.0/0.24.0/0.29.0/1.3.0
+    //      alike, and there is no generation in which a select OPTION carries `id`. Full capture:
+    //      .superpowers/sdd/2026-08-01-agent-integration-completion/task-1-report.md.
+    //
+    //      So the empty-picker bug was NEVER cline-specific. `detectModelShape` filtered options on
+    //      `o.id`, a field nothing emits, so its `configOptions` branch had never returned a model
+    //      from ANY real binary — goose (new-shape-only, no `models` field at all) was equally
+    //      affected, and would have stayed broken by a cline-targeted fix. Two consequences, both
+    //      confirmed live, both now fixed:
+    //        a. The model list came back empty for every new-shape agent — and driver.ts's
+    //           `if (s.modelShape.models.length) emit(...)` means NO `models` ChatFrame was emitted
+    //           at all in that case, not an empty one. Fixed by reading `value` (with `id` kept only
+    //           as a back-compat fallback). This is no longer true of any ACP backend.
+    //        b. `modelConfigId` was set from the mis-picked "provider" selector's own `id` —
+    //           poisoned, not just the list — so driver.ts's `setModel` would have written a model id
+    //           into cline's PROVIDER option. Fixed by protocol.ts's `pickModelOption`, which ranks
+    //           the several category:"model" candidates instead of taking the first; note that
+    //           "first non-empty wins" is DISPROVEN by this very payload (it selects the provider,
+    //           giving a populated-but-wrong picker, which is worse than the empty one).
+    //      Still a genuine quirk of cline's OWN ACP implementation (its model and provider config
+    //      options share one category, and `category` alone cannot separate them). Still NOT asserted
+    //      on by clineMocked.test.ts either way — that block's job is the auth-gate/turn path, and
+    //      the disambiguation is covered directly, from this captured payload, in
+    //      acpProtocol.test.ts's `detectModelShape` block.
     // --------------------------------------------------------------------------------------
     case "cline": {
       if (!workDir) {

@@ -132,49 +132,198 @@ describe("isMethodNotFoundError", () => {
 
 // ── Version-skew model-shape detection ───────────────────────────────────────────────────────
 
+// PROVENANCE OF THE NEW-SHAPE FIXTURES BELOW. Every `configOptions` fixture in this block is
+// written from, or explicitly derived from, `session/new` results captured off REAL agent binaries
+// driven against a local mock — see the capture log at
+// .superpowers/sdd/2026-08-01-agent-integration-completion/task-1-report.md. Each fixture says
+// which it is, in its own comment: **captured** ones transcribe the payload; **derived** ones
+// (abbreviated option lists, degenerate edge cases, filled-in ids) start from a captured structure
+// and say exactly what was changed. Read the per-test note before treating any of them as wire
+// truth — a blanket "all verbatim" claim here would be the same overclaim this block exists to
+// remove. This provenance discipline matters because
+// the fixtures these replaced used `{id, name}` select options, **a shape no shipping ACP agent
+// has ever emitted** (`SessionConfigSelectOption` is `{value, name, description?}` in every
+// @agentclientprotocol/sdk generation checked: 0.20.0, 0.24.0, 0.29.0, 1.3.0). Those fixtures were
+// green against a fiction: they were written from the same research report as the code, so they
+// agreed with each other and with nothing real, and they hid the fact that detectModelShape's
+// `configOptions` branch had never returned a model from any real binary, for any backend.
+// Do not "simplify" these back to `{id, …}`.
 describe("detectModelShape", () => {
+  test("reads option values (the spec shape), not ids", () => {
+    // Captured live from cline 3.0.48 — see task-1-report.md §1a for the verbatim `session/new`.
+    const info = detectModelShape({
+      configOptions: [
+        { type: "select", id: "model", name: "Model", category: "model", currentValue: "mock-model",
+          options: [{ value: "gpt-4o", name: "gpt-4o" }] },
+      ],
+    });
+    expect(info.shape).toBe("new");
+    expect(info.models.map((m) => m.value)).toEqual(["gpt-4o"]);
+    expect(info.modelConfigId).toBe("model");
+  });
+
+  test("picks the MODEL selector when a PROVIDER selector shares category 'model' and comes first", () => {
+    // Captured live from cline 3.0.48 — both selectors carry category:"model", provider FIRST, and
+    // BOTH option lists are `{value, name}`, so nothing about the options themselves separates
+    // them. "First category:'model' wins" would set modelConfigId:"provider" and list two OAuth
+    // providers as if they were models — populated-but-wrong, i.e. worse than an empty picker,
+    // because driver.ts's setModel would then write a model id into cline's provider option.
+    const info = detectModelShape({
+      configOptions: [
+        { type: "select", id: "provider", name: "Provider", category: "model", currentValue: "openai-compatible",
+          options: [{ value: "cline", name: "Cline Usage-Billing" }, { value: "openai-codex", name: "OpenAI ChatGPT Subscription" }] },
+        { type: "select", id: "model", name: "Model", category: "model", currentValue: "mock-model",
+          options: [{ value: "gpt-4o", name: "gpt-4o" }] },
+      ],
+    });
+    expect(info.models.map((m) => m.value)).toEqual(["gpt-4o"]);
+    expect(info.modelConfigId).toBe("model"); // NOT "provider"
+  });
+
+  test("disambiguates by intersecting with models.availableModels when neither selector is id 'model'", () => {
+    // Rule 2 of the ranked disambiguator. Same cline payload, but with the selector ids renamed so
+    // rule 1 (`id === "model"`) cannot fire — cline sends BOTH shapes, and the old shape's
+    // `availableModels` names the real model ("gpt-4o"), which appears in exactly one of the two
+    // category:"model" option lists. Guards the rule that would otherwise be untested because rule
+    // 1 happens to fire for every agent observed so far.
+    const info = detectModelShape({
+      models: { availableModels: [{ modelId: "gpt-4o", name: "gpt-4o" }], currentModelId: "mock-model" },
+      configOptions: [
+        { type: "select", id: "auth_provider", name: "Provider", category: "model", currentValue: "openai-compatible",
+          options: [{ value: "cline", name: "Cline Usage-Billing" }, { value: "openai-codex", name: "OpenAI ChatGPT Subscription" }] },
+        { type: "select", id: "llm", name: "Model", category: "model", currentValue: "mock-model",
+          options: [{ value: "gpt-4o", name: "gpt-4o" }] },
+      ],
+    });
+    expect(info.shape).toBe("new");
+    expect(info.models.map((m) => m.value)).toEqual(["gpt-4o"]);
+    expect(info.modelConfigId).toBe("llm"); // NOT "auth_provider"
+  });
+
+  test("an EMPTY selector named 'model' does not beat a populated sibling", () => {
+    // DERIVED, not captured: no observed agent emits this. Rule 1 (`id === "model"`) is a strong
+    // signal but not strong enough to outrank having any models at all — without the non-empty
+    // qualifier this returns the empty `id:"model"` entry and discards two real models, producing
+    // an empty picker whose modelConfigId points at a selector with nothing in it.
+    const info = detectModelShape({
+      configOptions: [
+        { type: "select", id: "llm", name: "Model", category: "model", currentValue: "a",
+          options: [{ value: "a", name: "A" }, { value: "b", name: "B" }] },
+        { type: "select", id: "model", name: "Model", category: "model", options: [] },
+      ],
+    });
+    expect(info.models.map((m) => m.value)).toEqual(["a", "b"]);
+    expect(info.modelConfigId).toBe("llm");
+  });
+
+  test("flattens grouped options", () => {
+    // `SessionConfigSelectOptions` is `Array<SessionConfigSelectOption> | Array<SessionConfigSelectGroup>`,
+    // a group being `{group, name, options: [...]}`. No agent observed here emits groups yet, but
+    // the union is in every SDK generation and an unflattened group yields ZERO models.
+    const info = detectModelShape({
+      configOptions: [
+        { type: "select", id: "model", category: "model",
+          options: [{ group: "fast", name: "Fast", options: [{ value: "a", name: "A" }] },
+                    { group: "slow", name: "Slow", options: [{ value: "b", name: "B" }] }] },
+      ],
+    });
+    expect(info.models.map((m) => m.value)).toEqual(["a", "b"]);
+  });
+
+  test("goose keeps its config ids on an EMPTY model list — new-shape-only agents never fall through", () => {
+    // THE no-fall-through regression guard. goose's captured `session/new` has top-level keys
+    // ["sessionId","modes","configOptions","_meta"] — **no `models` field at all** — so it is a
+    // new-shape-ONLY agent with nothing to fall back to. An earlier proposed fix fell through to the
+    // old shape whenever the new one yielded no models, which nulled goose's
+    // modelConfigId/effortConfigId — both CORRECT, and both consumed by driver.ts's
+    // setModel/setEffort, which would have become permanent no-ops.
+    //
+    // The option list is EMPTY on purpose, and that is the whole point. This replaces an earlier
+    // version of this guard that used a populated list (`[{value:"g1"}]`): once `value` is read
+    // correctly goose's list is non-empty, so the "chosen entry yielded zero models" gate was never
+    // reached and re-adding the over-eager fall-through left it — and every other assertion in this
+    // file — green. It asserted three things that were already true before the fix and stayed true
+    // under the sabotage, and its payload was a strict subset of this one, so no behavioural
+    // sabotage could fire it without firing this first. Found by sabotaging, not by reading; the
+    // two were folded into this one test. Do not "restore" the populated variant.
+    //
+    // Payload: goose's captured structure with the model selector's option list emptied — a DERIVED
+    // degenerate case, not a verbatim capture, and the exact boundary the rule governs. Falling
+    // through here yields shape "none" with BOTH config ids null, for an agent whose ids were
+    // perfectly good. An empty list is not a reason to discard working handles.
+    const info = detectModelShape({
+      configOptions: [
+        { type: "select", id: "model", category: "model", currentValue: "claude-haiku-4-5", options: [] },
+        { type: "select", id: "thinking_effort", category: "thought_level", options: [{ value: "high", name: "High" }] },
+      ],
+    });
+    expect(info.shape).toBe("new");
+    expect(info.models).toEqual([]);
+    expect(info.modelConfigId).toBe("model");
+    expect(info.effortConfigId).toBe("thinking_effort");
+    expect(info.currentModelId).toBe("claude-haiku-4-5");
+  });
+
   test("NEW shape: configOptions with category 'model', plus a sibling thought_level option", () => {
+    // Structure captured live from `goose acp` (task-1-report.md §1c): selector ids "model" and
+    // "thinking_effort", categories "model"/"thought_level", currentValue "claude-haiku-4-5"/"off",
+    // options `{value, name}`. The report elided goose's full option lists (6 models, 5 effort
+    // levels) for length, so the lists here are a faithful SUBSET of that shape, not a verbatim
+    // transcription of all 11 entries — the shape is what this asserts on.
     const result = {
       sessionId: "sess_1",
       configOptions: [
         {
-          id: "cfg-model",
+          id: "model",
           name: "Model",
           category: "model",
           type: "select",
-          currentValue: "sonnet",
+          currentValue: "claude-haiku-4-5",
           options: [
-            { id: "sonnet", name: "Claude Sonnet" },
-            { id: "opus", name: "Claude Opus" },
+            { value: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
+            { value: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
           ],
         },
         {
-          id: "cfg-effort",
-          name: "Thinking",
+          id: "thinking_effort",
+          name: "Thinking effort",
           category: "thought_level",
           type: "select",
-          options: [{ id: "low", name: "Low" }, { id: "high", name: "High" }],
+          currentValue: "off",
+          options: [{ value: "low", name: "Low" }, { value: "high", name: "High" }],
         },
       ],
     };
     const shape = detectModelShape(result);
     expect(shape.shape).toBe("new");
-    expect(shape.currentModelId).toBe("sonnet");
-    expect(shape.modelConfigId).toBe("cfg-model");
-    expect(shape.effortConfigId).toBe("cfg-effort");
+    expect(shape.currentModelId).toBe("claude-haiku-4-5");
+    expect(shape.modelConfigId).toBe("model");
+    expect(shape.effortConfigId).toBe("thinking_effort");
     expect(shape.models).toEqual([
-      { value: "sonnet", label: "Claude Sonnet", description: "", effortLevels: ["Low", "High"] },
-      { value: "opus", label: "Claude Opus", description: "", effortLevels: ["Low", "High"] },
+      { value: "claude-haiku-4-5", label: "Claude Haiku 4.5", description: "", effortLevels: ["Low", "High"] },
+      { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", description: "", effortLevels: ["Low", "High"] },
     ]);
   });
 
   test("NEW shape with no thought_level option → every model's effortLevels is [] (picker hides)", () => {
     const shape = detectModelShape({
-      configOptions: [{ id: "cfg-model", category: "model", options: [{ id: "m1", name: "Model One" }] }],
+      configOptions: [{ id: "cfg-model", category: "model", options: [{ value: "m1", name: "Model One" }] }],
     });
     expect(shape.shape).toBe("new");
     expect(shape.effortConfigId).toBeNull();
     expect(shape.models[0]?.effortLevels).toEqual([]);
+  });
+
+  test("BACK-COMPAT ONLY: an option carrying `id` instead of the spec's `value` is still read", () => {
+    // The ONE deliberately-unreal fixture in this block. No shipping ACP agent emits `{id, name}`
+    // select options (see this describe's provenance note); this covers detectModelShape's `id`
+    // FALLBACK, kept so a hypothetical non-conforming emitter degrades rather than going blank.
+    // If you are adding a new agent's fixture, copy one of the `{value, …}` cases above, not this.
+    const shape = detectModelShape({
+      configOptions: [{ id: "cfg-model", category: "model", options: [{ id: "legacy-m1", name: "Legacy Model One" }] }],
+    });
+    expect(shape.shape).toBe("new");
+    expect(shape.models).toEqual([{ value: "legacy-m1", label: "Legacy Model One", description: "", effortLevels: [] }]);
   });
 
   test("OLD shape: NewSessionResponse.models.{availableModels,currentModelId} (claude-code-acp / cline)", () => {
@@ -196,6 +345,30 @@ describe("detectModelShape", () => {
       { value: "claude-sonnet-4-5", label: "Sonnet 4.5", description: "Balanced", effortLevels: [] },
       { value: "claude-opus-4-1", label: "claude-opus-4-1", description: "", effortLevels: [] },
     ]);
+  });
+
+  test("NONE: an agent with configOptions but no category 'model' entry and no models field (openclaw)", () => {
+    // DERIVED from the `openclaw acp` capture (task-1-report.md §1c). What is captured: a populated
+    // `configOptions` array whose categories are thought_level / fast_mode / verbose_level /
+    // reasoning_level / response_usage / elevated_level, with NO category:"model" entry and no
+    // `models` field. The report records only those category NAMES, so the selector ids and option
+    // values below are filled in — the facts this asserts on (no model category, no models field,
+    // therefore "none") are real; the specific strings are not transcribed.
+    // The complement of the goose rule: falling through IS correct here, because there is no
+    // category:"model" entry AT ALL. Also pins that a non-model select is never mistaken for the
+    // model list just because it is a populated select — the category check is load-bearing.
+    const info = detectModelShape({
+      sessionId: "sess_openclaw",
+      configOptions: [
+        { type: "select", id: "thought_level", category: "thought_level", options: [{ value: "off", name: "Off" }, { value: "high", name: "High" }] },
+        { type: "select", id: "fast_mode", category: "fast_mode", options: [{ value: "on", name: "On" }] },
+        { type: "select", id: "verbose_level", category: "verbose_level", options: [{ value: "low", name: "Low" }] },
+      ],
+    });
+    expect(info.shape).toBe("none");
+    expect(info.models).toEqual([]);
+    expect(info.modelConfigId).toBeNull();
+    expect(info.effortConfigId).toBeNull();
   });
 
   test("NONE: neither shape present, or a malformed/absent result — never throws", () => {
