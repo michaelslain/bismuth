@@ -26,7 +26,13 @@ From the repo root:
 bun test core
 ```
 
-This discovers every `*.test.ts` file under `core/` **and** `app/src/` (Bun resolves both workspaces). Output (counts are illustrative and grow per commit — expect a green `0 fail`):
+This discovers nearly every `*.test.ts` file in the repo. Not because `core` names a "workspace" —
+Bun has no such concept for `bun test`'s own argument — but because `core` is a plain substring
+match against every file's relative path (see "Filter by filename pattern" below for the full
+mechanism), and it happens to match every file under `core/test/` (the path prefix) plus one
+`app/src/` file whose own name contains it (`app/src/icons/registry-core.test.ts`) — 139 files
+total, confirmed by exact count. Output (counts are illustrative and grow per commit — expect a
+green `0 fail`):
 
 ```
 bun test v1.3.9 (cf6cdbbb)
@@ -37,12 +43,20 @@ bun test v1.3.9 (cf6cdbbb)
 Ran 930 tests across 80+ files. [10.24s]
 ```
 
-### Run a single workspace or directory
+### `bun test core` vs `bun test app`
 
 ```bash
-bun test core         # everything under core/ + app/src/ via workspace resolution
-bun test app          # same (both commands discover all *.test.ts)
+bun test core   # matches nearly the whole suite — see the substring-match mechanism above
+bun test app    # the mirror image, from the other direction
 ```
+
+These are NOT identical sets, and neither is scoped to a "workspace": `bun test core` matches
+every file under `core/test/` plus one `app/src/` coincidental match (as above) — 139 files.
+`bun test app` matches every file under `app/src/` plus one `core/test/` file that matches "app" by
+coincidence (`core/test/agentBackends/sandboxWrapper.test.ts`, matching inside
+"sandboxWr**app**er") — 192 files. `bun test core` is the conventional way to run "the full suite"
+only because `core/` happens to hold vastly more test files today, not because it is scoped to
+anything.
 
 ### Run a single file directly
 
@@ -55,17 +69,26 @@ bun test app/src/panes.test.ts
 
 ### Filter by filename pattern
 
-The `--` separator passes a pattern to Bun which matches against the file path:
+**`bun test core -- <pattern>` does NOT filter — it silently runs the entire suite.** Bun's own
+positional arguments are OR'd substring matches against the relative file path (`bun test foo bar`
+runs every file matching `foo` OR `bar`), and `core` is itself one of those arguments here. Since
+every file under `core/test/` (plus the one `app/src/` coincidental match above) already has `core`
+as a substring of its own path, keeping `core` in the pattern list matches the same full set no
+matter what you append after it — confirmed live: `bun test core -- wikilinks` still ran all 139
+files. This has already cost one agent a full-suite run it believed was scoped to one file.
+
+To actually filter, drop the `core`/`app` argument and pass either an exact path or a bare pattern:
 
 ```bash
-bun test core -- vault         # matches core/test/vault.test.ts
-bun test core -- wikilinks     # matches core/test/wikilinks.test.ts
-bun test core -- daemonViz     # matches core/test/daemonViz.test.ts
-bun test core -- bases/query   # matches core/test/bases/query.test.ts
-bun test core -- flashcards    # matches all flashcard-related test files
+bun test core/test/vault.test.ts   # exact path — the only unambiguous way to run ONE file
+bun test vault                     # a pattern with NO "core"/"app" argument alongside it —
+                                    # matches core/test/vault.test.ts
+bun test daemonViz                 # matches core/test/daemonViz.test.ts
+bun test bases/query                # matches core/test/bases/query.test.ts
+bun test flashcards                 # matches every flashcard-related test file
 ```
 
-The pattern is a substring match against the relative file path (not the test name). Use the filename stem to isolate a single file, or a directory prefix to scope a subdirectory.
+The pattern is a substring match against the relative file path (not the test name). Use the filename stem to isolate a single file, or a directory prefix to scope a subdirectory — just never combine it with a bare `core`/`app` argument, which defeats the filter. Verified live: `bun test bases/query` alone runs 1 file; `bun test core -- bases/query` still runs all 139.
 
 ### Watch mode
 
@@ -191,7 +214,7 @@ per-case comments are the source of truth, and are updated every time a row is a
 | `codex` | **Verified**, full turn E2E | Needs a `$CODEX_HOME/config.toml` (a custom `model_providers.*` block, `wire_api = "responses"`) — plain `OPENAI_BASE_URL` does **not** work for this codex version, confirmed live (see `backendEnv.ts`). Known cosmetic quirk: codex logs a benign "Model metadata not found" item for any model under a non-built-in provider, which the driver's own translator (correctly, per its own contract) surfaces as `result.isError === true` even though the assistant's text arrives correctly — `codexMocked.test.ts` asserts on the text, not on `isError`, and documents this inline |
 | `gemini` | **Verified**, full turn E2E | `GOOGLE_GEMINI_BASE_URL`/`GEMINI_API_KEY`, driven via `gemini --experimental-acp`. A real turn makes TWO model calls, not one: this gemini-cli's default model resolves to a Gemini-3-family model via its `"auto"` alias, which routes it through `NumericalClassifierStrategy` (a "rate this request's complexity 1-100" call with a strict `{complexity_reasoning, complexity_score}` JSON schema) BEFORE the user-facing turn — against the single generic text fixture used elsewhere, that call's response never parsed as JSON, so it silently burned all 5 retry attempts (~65-90s of exponential backoff, confirmed live: 90440ms end to end) before falling through, which is what looked like a permanent stall (it was a real ~90s completion, past the 30s test timeout, not a true hang). `checkNextSpeaker` was a separate early suspect but is confirmed unreachable: gemini-cli forces `skipNextSpeakerCheck: true` whenever ACP mode is active, which is the only mode Bismuth's driver uses. Fixed with one extra JSON-shaped fixture in `core/test/fixtures/llm-gemini/basic-turn.json` (kept separate from the shared fixture dir so no other backend's test is affected) — turn now settles in ~53ms. See `backendEnv.ts`'s `gemini` case and `geminiMocked.test.ts`'s header for the full root-cause and fix |
 | `cline` | **Verified, full turn E2E** (via a discovered bypass — corrected from an earlier "not mockable" finding) | ACP mode (`cline --acp`) gates `session/new` behind `-32000 "Authentication required"` UNLESS `process.env.CLINE_API_KEY` is set — a real, unconditional escape hatch found by reading cline 3.0.47's own compiled source (never `authenticate`, never OAuth; see `backendEnv.ts`'s `cline` case for the exact source citation). Combined with `CLINE_PROVIDER=openai-compatible` (a non-OAuth provider id the auth check never validates) and a hand-written `$CLINE_DIR/data/settings/providers.json` pointing its `baseUrl` at the mock, a real cline binary completes a full turn — `clineMocked.test.ts`'s newer "real E2E" block. The ORIGINAL default-path (no bypass configured) safe-failure test is unchanged and still passes: it proves the OTHER, honest fact that with no bypass applied, `session/new` still fails safely. One honest limit remains: the real "cline"/"openai-codex" OAuth providers are still genuinely closed (this routes around the gate via a third provider id, not through OAuth). A SECOND limit listed here until 2026-08-01 — that cline's `configOptions` mis-orders a "provider" selector ahead of the true "model" selector under the same category, so `detectModelShape` picks the wrong one — **was real but is now FIXED**, and the mechanism this table used to publish for it was **wrong**. It claimed the two selectors were separable because the model selector's options carried an `.id` the provider's lacked; driving real `cline` 3.0.48, `goose` and `openclaw` against a local mock showed **both** are `{value, name}`, as is every ACP select option in every SDK generation (`SessionConfigSelectOption` is `{value, name, description?}` in 0.20.0/0.24.0/0.29.0/1.3.0 alike). So the empty model picker was never cline-specific: `detectModelShape` filtered options on a field nothing emits, and its `configOptions` branch had never returned a model from any real binary — goose was equally affected. Fixed in `protocol.ts` by reading `value` (`id` kept only as a back-compat fallback), flattening grouped options, and ranking the several `category:"model"` candidates (`pickModelOption`) rather than taking the first — note that "first non-empty wins" is *disproven* by cline's own payload, since it selects the provider and yields a populated-but-wrong picker. `models`/`modelConfigId`/`currentModelId` are all correct for cline now, and goose's `effortLevels` populate. Covered by `acpProtocol.test.ts`'s `detectModelShape` block, written from the captured payloads |
-| `openclaw` | **Verified**, full turn E2E | `openclaw acp` is a thin bridge to a separate Gateway process (own `models.providers.*` config) — `openclawMocked.test.ts` spawns a REAL `openclaw gateway run` (`openclawGateway.ts`) against the mock, isolated via `OPENCLAW_CONFIG_PATH`/`OPENCLAW_STATE_DIR`. THREE real, pre-existing Bismuth-side bugs were found and fixed to get here (see `chatProviders/acp/agents.ts`'s openclaw entry and `driver.ts`'s `killWithEscalation`/`KILL_ESCALATION_GRACE_MS`): (1) Bismuth's old default spawn args (`openclaw acp`, no `--session`) failed the FIRST turn on any fresh Gateway — the bridge's own default `acp:<uuid>` session name collides with an unrelated OpenClaw feature that reserves that prefix; fixed with a PER-CHAT `--session agent:main:bismuth-<chatId>` (`AcpAgentSpec.sessionKeyArgs`). A first version of this fix used a FIXED constant session key instead — review caught that as an active cross-chat content-leak (one chat's text arriving inside another's upstream request, confirmed via `openclawMocked.test.ts`'s session-isolation test), not a mere isolation nicety, so it must stay per-chat. Known follow-up, not fixed: each distinct session key is its own on-disk openclaw transcript that's never pruned, so a real user's `~/.openclaw` grows one session file per Bismuth chat they ever open — the accepted cost of closing the leak, not a free fix. (2) On a machine with Bismuth's MCP tools installed, `session/new`'s usual non-empty `mcpServers` array is REJECTED by openclaw's ACP bridge outright ("does not support per-session MCP servers"); fixed via a new `AcpAgentSpec.supportsSessionMcpServers: false` flag — consequence: openclaw chats get no Bismuth MCP tools (bismuth_cli/docs/memory). (3) A real `openclaw acp` process does not exit on SIGTERM alone (its own shutdown handler never calls `process.exit()`) — `driver.ts`'s `closeChat()` AND `abortTurn()`'s grace-timeout fallback both used to leave it running indefinitely; fixed at both call sites with a shared grace-then-SIGKILL escalation (`killWithEscalation`/`KILL_ESCALATION_GRACE_MS`), the same pattern `openclawGateway.ts`'s own process teardown already used (`mockLlm.ts`'s own teardown does NOT escalate — a bare kill+await). Open question, not verified either way: whether this escalation's SIGKILL actually reaches the real agent behind the two `npx`-spawned ACP adapters (`claude-code-acp`/`codex-acp`) or only kills the `npx` wrapper — neither was spawned during this task |
+| `openclaw` | **Verified**, full turn E2E | `openclaw acp` is a thin bridge to a separate Gateway process (own `models.providers.*` config) — `openclawMocked.test.ts` spawns a REAL `openclaw gateway run` (`openclawGateway.ts`) against the mock, isolated via `OPENCLAW_CONFIG_PATH`/`OPENCLAW_STATE_DIR`. THREE real, pre-existing Bismuth-side bugs were found and fixed to get here (see `chatProviders/acp/agents.ts`'s openclaw entry and `driver.ts`'s `killWithEscalation`/`KILL_ESCALATION_GRACE_MS`): (1) Bismuth's old default spawn args (`openclaw acp`, no `--session`) failed the FIRST turn on any fresh Gateway — the bridge's own default `acp:<uuid>` session name collides with an unrelated OpenClaw feature that reserves that prefix; fixed with a PER-CHAT `--session agent:main:bismuth-<chatId>` (`AcpAgentSpec.sessionKeyArgs`). A first version of this fix used a FIXED constant session key instead — review caught that as an active cross-chat content-leak (one chat's text arriving inside another's upstream request, confirmed via `openclawMocked.test.ts`'s session-isolation test), not a mere isolation nicety, so it must stay per-chat. Known follow-up, decided ACCEPTED not fixed (task-15): each distinct session key is its own on-disk openclaw transcript (~1.6KB, scales with conversation length) PLUS an entry in a shared `sessions.json` index (~20KB per session, NOT per turn — dominated by a static skills-prompt snapshot), neither ever pruned — measured live, ~21-22KB of `~/.openclaw` growth per Bismuth chat a user ever opens against openclaw, forever. Deliberately NOT pruned on `closeChat`: `agentBackends/catalog.ts` declares `resume: true` for this backend, and `server.ts`'s WS `resume` message can reach it, so deleting openclaw's own session state at chat-close would silently break a real, reachable resume path — see `agents.ts`'s openclaw entry for the full reasoning (mirrors this repo's own "never delete in-use data on a heuristic" precedent from the daemon side). (2) On a machine with Bismuth's MCP tools installed, `session/new`'s usual non-empty `mcpServers` array is REJECTED by openclaw's ACP bridge outright ("does not support per-session MCP servers"); fixed via a new `AcpAgentSpec.supportsSessionMcpServers: false` flag — consequence: openclaw chats get no Bismuth MCP tools (bismuth_cli/docs/memory). (3) A real `openclaw acp` process does not exit on SIGTERM alone (its own shutdown handler never calls `process.exit()`) — `driver.ts`'s `closeChat()` AND `abortTurn()`'s grace-timeout fallback both used to leave it running indefinitely; fixed at both call sites with a shared grace-then-SIGKILL escalation (`killWithEscalation`/`KILL_ESCALATION_GRACE_MS`), the same pattern `openclawGateway.ts`'s own process teardown already used (`mockLlm.ts`'s own teardown does NOT escalate — a bare kill+await). CONFIRMED GAP (task-15, resolving the prior "open question, not verified either way"): this escalation's SIGKILL does NOT reach the real agent behind the two `npx`-spawned ACP adapters (`claude-code-acp`/`codex-acp`) — verified directly against both real published packages, not a stub. `npx` forks a genuine child distinct from its own pid in both cases, and `proc.kill(9)` against only the wrapper leaves that real child alive, every time. Currently unfixed — see `driver.ts:153-175`'s `KILL_ESCALATION_GRACE_MS` comment for the full finding and the recommended follow-up |
 
 The **version-skew branch** in `core/src/chatProviders/acp/protocol.ts`'s `detectModelShape` (an ACP
 agent's `session/new` reporting the OLD `models.availableModels`/`currentModelId` shape vs the NEW
@@ -560,7 +583,7 @@ test("does the right thing", () => {
 });
 ```
 
-4. Run with `bun test core -- mymodule`
+4. Run with `bun test core/test/mymodule.test.ts` (or `bun test mymodule` — never `bun test core -- mymodule`, which does not filter)
 
 ### Frontend module test
 
@@ -578,7 +601,7 @@ test("returns the expected value", () => {
 });
 ```
 
-4. Run with `bun test core -- myutil`
+4. Run with `bun test app/src/myutil.test.ts` (or `bun test myutil` — never `bun test core -- myutil`, which does not filter)
 
 ### Server endpoint test
 

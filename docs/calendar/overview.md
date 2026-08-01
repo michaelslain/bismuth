@@ -623,7 +623,8 @@ Settings are **not** stored in `localStorage` — they persist in `.settings` vi
 Tests use Bun's native test runner:
 
 ```bash
-bun test core -- calendar   # run calendar tests
+bun test calendar   # run calendar tests — NOT `bun test core -- calendar`, which silently runs the
+                     # entire suite instead of filtering (see docs/contributing/testing.md)
 ```
 
 Key test files:
