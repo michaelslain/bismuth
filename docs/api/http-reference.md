@@ -470,7 +470,7 @@ Frames may arrive as text or binary (decoded UTF-8); a frame that doesn't parse 
 ### Lifecycle
 On `close`:
 - **Clean close** (code `1000`) — intentional tab-close → tear the session down now (`closeChat(chatId)`).
-- **Abnormal close** (reload `1001`, network drop `1006`, etc.) — keep the session alive for a **30000ms** grace window (`scheduleChatClose(chatId, 30_000)`) so a reconnect with the same `chatId` resumes the same `claude` conversation instead of spawning a fresh one. The next `sendMessage` cancels the pending close.
+- **Abnormal close** (reload `1001`, network drop `1006`, etc.) — keep the session alive for a grace window (`scheduleChatClose(chatId, chatGraceMs())`, default **30000ms**, overridable via `BISMUTH_CHAT_GRACE_MS` — the chat counterpart of `BISMUTH_TERMINAL_GRACE_MS` below) so a reconnect with the same `chatId` resumes the same `claude` conversation instead of spawning a fresh one. The next `sendMessage` cancels the pending close.
 
 ---
 
