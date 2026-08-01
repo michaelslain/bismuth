@@ -160,7 +160,10 @@ const COLOR_EPS = 1e-6;
  * The colourless case is not a leftover switch: a graph with no communities (an embedded graph
  * block, the daemon/agents modes' non-note nodes) genuinely has no territories to colour, must
  * still glow, and should not pay for three blurs it would divide back out to nothing. Blur is the
- * cost here — measured 0.42 ms per field, so 1.68 ms for four — and it is on the rAF path.
+ * whole cost here and it is on the rAF path — measured on the reference vault's 2125 points,
+ * 0.47 ms colourless against 1.81 ms coloured, i.e. +1.34 ms on a DIRTY frame (emitBloom does not
+ * run on a still one). Four blurs, not one, is the price of the effect; skipping three of them
+ * where there is nothing to colour is free.
  */
 export function buildBloom(points: BloomPoint[], radius = 6): DensityField {
   let colored = false;
