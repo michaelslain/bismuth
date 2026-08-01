@@ -49,12 +49,13 @@
 // with an empty heldPrompts/pendingClientCalls, so both new loops are no-ops there — byte-for-byte
 // unchanged).
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatFrame } from "../../src/chat";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
+import { makeAcpFakeAgentStubDir, pidAlive, waitForPidFile, waitProcessesGone } from "../support/acpFakeAgentProcess";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 
@@ -125,45 +126,12 @@ async function waitForCondition(check: () => boolean, timeoutMs: number, descrip
   throw new Error(`timeout waiting for: ${description}`);
 }
 
-/** True iff `pid` still names a live process — an OWNED, exact-pid point check (never a machine-wide
- *  `pgrep -f` pattern match, which cannot distinguish a process THIS test started from an unrelated
- *  one already running under the same name — this task's brief is explicit that the orphan check
- *  must be by pid). Mirrors openclawMocked.test.ts's identical `pidAlive`. */
-function pidAlive(pid: number): boolean {
-  return Bun.spawnSync(["ps", "-p", String(pid)]).exitCode === 0;
-}
-
-/** Poll `pidFile` (written by the stub script's `echo $$ > pidFile` BEFORE it `exec`s into the fake
- *  agent — `exec` replaces the process image but keeps the same pid, so the value captured here is
- *  exactly the pid Bun.spawn's own handle refers to inside driver.ts) until it holds a parseable
- *  positive integer. */
-async function waitForPidFile(pidFile: string): Promise<number> {
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    try {
-      const n = Number(readFileSync(pidFile, "utf8").trim());
-      if (Number.isFinite(n) && n > 0) return n;
-    } catch {
-      /* not written yet */
-    }
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  throw new Error(`timeout waiting for the fake agent's own pid file at ${pidFile}`);
-}
-
-/** Writes an executable "cline" stub that records its OWN (post-exec, stable) pid to `pidFile`
- *  before handing off to the fake agent script — see this file's header for why a concrete pid,
- *  rather than a name pattern, is required here. */
-function makeStubBinDir(pidFile: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "bismuth-acp-abort-stub-"));
-  const stubPath = join(dir, "cline");
-  writeFileSync(
-    stubPath,
-    `#!/bin/bash\necho $$ > ${JSON.stringify(pidFile)}\nexec bun run ${JSON.stringify(FAKE_AGENT_SCRIPT)} "$@"\n`,
-  );
-  chmodSync(stubPath, 0o755);
-  return dir;
-}
+// pidAlive/waitForPidFile/the stub-dir-with-pid-file writer all moved to
+// ../support/acpFakeAgentProcess.ts (task-10's review: this exact trio was written here first, then
+// found NOT to have propagated to a newer sibling fake-agent test file — extracted so every
+// fakeAcpAgent.ts-driven test file, including the three still to come in later waves, shares one copy
+// instead of re-deriving it). Byte-for-byte identical behavior: same `ps -p` check, same pid-file poll
+// shape/timeout, same stub script body.
 
 describe("abortTurn and a never-settling turn, driven through the ACP driver against a fake agent that holds the turn open (zero network, zero CLI dependency)", () => {
   // `| undefined` with explicit resets in beforeEach, matching the sibling fake-agent test files'
@@ -208,7 +176,7 @@ describe("abortTurn and a never-settling turn, driven through the ACP driver aga
     pidDir = undefined;
     pidDir = mkdtempSync(join(tmpdir(), "bismuth-acp-abort-pid-"));
     pidFile = join(pidDir, "agent.pid");
-    stubDir = makeStubBinDir(pidFile);
+    stubDir = makeAcpFakeAgentStubDir("bismuth-acp-abort-stub-", "cline", FAKE_AGENT_SCRIPT, pidFile);
     echoDir = mkdtempSync(join(tmpdir(), "bismuth-acp-abort-echo-"));
     echoFile = join(echoDir, "echo.jsonl");
 
@@ -234,17 +202,9 @@ describe("abortTurn and a never-settling turn, driven through the ACP driver aga
     // Per this task's global constraints: kill every process this test started, verify with `ps` by
     // an OWNED pid, never a `pgrep -f` pattern match. closeChat()'s own kill is
     // SIGTERM-then-SIGKILL-after-KILL_ESCALATION_GRACE_MS (3000ms, driver.ts) fire-and-forget, so a
-    // single immediate `ps` here would race that escalation — bounded poll instead.
-    const stillAlive: number[] = [];
-    for (const pid of spawnedPids.splice(0)) {
-      const deadline = Date.now() + 5_000;
-      let alive = pidAlive(pid);
-      while (alive && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 100));
-        alive = pidAlive(pid);
-      }
-      if (alive) stillAlive.push(pid);
-    }
+    // single immediate `ps` here would race that escalation — bounded poll instead (now the shared
+    // ../support/acpFakeAgentProcess.ts helper, same 5s default timeout this loop used inline before).
+    const stillAlive = await waitProcessesGone(spawnedPids.splice(0));
 
     if (stubDir) rmSync(stubDir, { recursive: true, force: true });
     if (echoDir) rmSync(echoDir, { recursive: true, force: true });

@@ -106,6 +106,31 @@
 // Nothing settles that prompt except a real, parseable reply landing on this process's stdin, which
 // is the property that makes the test non-vacuous: a wrong rpc id, a malformed outcome, or no reply
 // at all all produce the same observable result — no `done`, and a test timeout.
+//
+// QUEUE-HOLD MODE (added for the "second message while the first turn is in flight" turn-queue task
+// — see acpQueueFakeAgent.test.ts): opt-in via FAKE_ACP_PROMPT_HOLD=queue, decoupled from every mode
+// above the same way "permission" is decoupled from the base behavior — with the var unset (or set to
+// "permission"), nothing in this section ever runs.
+//
+// Deliberately NOT the permission round-trip reused as-is, even though that mode COULD technically
+// hold a turn open long enough for a queue test too (this file's own reasoning about `runOrQueue`
+// applies regardless of which mode holds a turn): a turn-queue test's whole point is the DRIVER's own
+// client-side queue (core/src/chatProviders/acp/driver.ts's `runOrQueue`/`s.queue`) — nothing about
+// tool calls, permission options, or an agent-initiated request into the client. Folding permission
+// semantics in here would (a) add unrelated `tool_call`/`session/request_permission` lines to the
+// echo file a queue test would just have to filter back out, and (b) require the TEST to answer a
+// permission prompt via `respondPermission` to release EVERY held turn, when the actual thing under
+// test is "does the driver even send a queued turn's `session/prompt` before the prior one settled",
+// not "can a user answer a permission prompt". So this mode settles itself, on a plain internal timer
+// (`QUEUE_HOLD_MS`) — no external signal is needed OR wanted: from this fake's own point of view there
+// is nothing to coordinate with the test beyond "don't reply immediately", because the interesting
+// behavior being proven is entirely on the CLIENT side (whether a second/third `sendMessage` gets
+// queued instead of dispatched while a turn is active, and whether the driver dispatches them
+// afterward IN THE ORDER THEY WERE SUBMITTED). A held turn embeds the ORIGINAL prompt text it
+// received into its own settling `agent_message_chunk` (`FAKE_QUEUE_TURN_PREFIX` below), giving a
+// turn-queue test a SECOND, independent proof channel beyond the echo file — mirrors permission mode's
+// own `FAKE_PERMISSION_REPLY_PREFIX` chunk, which exists for the identical reason (prove the round
+// trip through the driver's OWN frame stream, not only through file-based instrumentation).
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -218,9 +243,30 @@ const CLINE_AUTH_METHODS = [
 // ── Held-prompt mode (see this file's header, "HELD-PROMPT MODE") ────────────────────────────────
 
 /** "none" (unset — the default every pre-existing test gets, byte-identical to this file's original
- *  behavior) or "permission". A future turn-queue/abort/resume/never-settling test adds its own
- *  value here and its own runner below; nothing else in this file needs to change for it. */
-const promptHold = process.env.FAKE_ACP_PROMPT_HOLD === "permission" ? "permission" : "none";
+ *  behavior), "permission", or "queue" (see this file's header "QUEUE-HOLD MODE" section). A future
+ *  resume/never-settling-variant test adds its own value here and its own runner below; nothing else
+ *  in this file needs to change for it. */
+const promptHold = process.env.FAKE_ACP_PROMPT_HOLD === "permission" ? "permission" : process.env.FAKE_ACP_PROMPT_HOLD === "queue" ? "queue" : "none";
+
+/** How long "queue" mode holds each `session/prompt` open before auto-settling — see this file's
+ *  header. Configurable via `FAKE_ACP_QUEUE_HOLD_MS` purely so a consuming test can tune the window
+ *  without editing this file; falls back to a value comfortably larger than any local round trip
+ *  (spawn→write→readline→respond, all on one machine) so "still held" is never a coincidence of
+ *  scheduling. Irrelevant (and never read) unless promptHold === "queue". */
+const QUEUE_HOLD_MS = (() => {
+  const raw = Number(process.env.FAKE_ACP_QUEUE_HOLD_MS);
+  // 2000 matches acpQueueFakeAgent.test.ts's own pinned value (that test always sets the env var
+  // explicitly, so this fallback only matters if a future consumer forgets to) — kept in sync so the
+  // two numbers don't drift apart for no reason.
+  return Number.isFinite(raw) && raw > 0 ? raw : 2_000;
+})();
+
+/** Prefix of the `agent_message_chunk` "queue" mode emits when a held turn settles, carrying the
+ *  ORIGINAL prompt text it received — see this file's header for why (a second, independent proof
+ *  channel of ordering/content beyond the echo file). Distinct from every other mode's own marker
+ *  text (`FAKE_TURN_TEXT`, `FAKE_PERMISSION_REPLY_PREFIX`) so a test can never mistake one for
+ *  another. */
+const FAKE_QUEUE_TURN_PREFIX = "fake-acp queued-turn echo: ";
 
 /** Which option list this fake offers on `session/request_permission`. "full" (the default) offers
  *  all four real PermissionOptionKind values. "none" offers an EMPTY array — not an arbitrary edge
@@ -360,6 +406,41 @@ async function runHeldPermissionPrompt(promptId: number | string, sessionId: str
   settlePrompt(promptId, outcome === "selected" ? "end_turn" : "cancelled");
 }
 
+/** Pull the plain text out of a `session/prompt` request's own `params.prompt` content-block array —
+ *  the same shape driver.ts's `runTurn` builds (`[{type:"text", text}, ...]`, plus any images this
+ *  fake doesn't need to read). Used only by "queue" hold mode to echo back what it actually received.
+ *  Tolerant: an unrecognized shape yields `""` rather than throwing — a fake agent that crashes over
+ *  its OWN instrumentation would look like an unrelated flake, never a useful signal. */
+function extractPromptText(params: unknown): string {
+  const p = params && typeof params === "object" ? (params as Record<string, unknown>) : {};
+  const blocks = Array.isArray(p.prompt) ? p.prompt : [];
+  const firstText = blocks.find((b) => b && typeof b === "object" && (b as Record<string, unknown>).type === "text") as
+    | Record<string, unknown>
+    | undefined;
+  return typeof firstText?.text === "string" ? firstText.text : "";
+}
+
+/**
+ * "queue" hold mode's own async runner (see this file's header "QUEUE-HOLD MODE" section for why it
+ * is deliberately simpler than `runHeldPermissionPrompt`: no tool call, no client round trip, just a
+ * turn that doesn't settle immediately). `promptText` is captured in THIS call's own closure at
+ * request time, not re-read from any shared/mutable state later — the only way to guarantee a turn
+ * settling after its own delay reports back the text it was actually asked to handle, not whatever
+ * happens to be "current" by the time its timer fires.
+ */
+async function runHeldQueueTurn(promptId: number | string, sessionId: string, promptText: string): Promise<void> {
+  heldPrompts.set(promptId, { sessionId });
+  await new Promise((r) => setTimeout(r, QUEUE_HOLD_MS));
+  // Settled elsewhere while we waited (e.g. a session/cancel drained every held prompt) — nothing
+  // left to report, same guard shape as runHeldPermissionPrompt's own post-await check.
+  if (!heldPrompts.has(promptId)) return;
+  notify("session/update", {
+    sessionId,
+    update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `${FAKE_QUEUE_TURN_PREFIX}${promptText}` } },
+  });
+  settlePrompt(promptId, "end_turn");
+}
+
 let sessionCounter = 0;
 
 function handleInitialize(id: number | string): void {
@@ -448,6 +529,12 @@ function handleSessionPrompt(id: number | string, params: unknown): void {
     // until something settles it. The `void` is deliberate: handleLine is a sync readline callback,
     // and the runner already cannot reject (callClient never rejects).
     void runHeldPermissionPrompt(id, sessionId);
+    return;
+  }
+  if (promptHold === "queue") {
+    // Same deliberate `void` as the permission branch above — handleLine is a sync readline callback,
+    // and this runner's own timer-based settle path cannot reject.
+    void runHeldQueueTurn(id, sessionId, extractPromptText(params));
     return;
   }
   notify("session/update", {
