@@ -430,10 +430,13 @@ Tests use Bun's native test runner. No additional test setup is required.
 # Run all core tests
 bun test core
 
-# Filter by filename pattern
-bun test core -- wikilinks
-bun test core -- server
-bun test core -- vault
+# Filter to a single file — pass the path directly, or a bare pattern with NO "core" argument
+# alongside it. "bun test core -- <pattern>" looks like a filter but silently runs everything:
+# `core` is itself one of Bun's OR'd substring patterns, and every file under core/test/ already
+# contains "core" in its path, so it always matches the full suite regardless of what follows it.
+bun test core/test/wikilinks.test.ts
+bun test server
+bun test vault
 ```
 
 Test files live in `core/test/` (one `*.test.ts` per module). Frontend tests (`panes.test.ts`, `settings.parity.test.ts`, `graph/collide.test.ts`, etc.) live colocated with source in `app/src/`.

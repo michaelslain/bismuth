@@ -450,7 +450,7 @@ Each source module has a corresponding `*.test.ts`. Notable:
 - `core/test/drawing/` — one test per drawing module.
 - `core/test/schema/` — schema validation tests split by feature.
 - `core/test/server.test.ts` — integration tests against a live server instance.
-- Run: `bun test core` (all) or `bun test core -- <pattern>` (filter by filename).
+- Run: `bun test core` (all), `bun test core/test/<file>.test.ts` (one file), or `bun test <pattern>` (filter by filename — **not** `bun test core -- <pattern>`, which silently ignores the filter and runs the entire suite because `core` itself matches every path under `core/test/`; see `docs/contributing/testing.md`).
 
 ---
 

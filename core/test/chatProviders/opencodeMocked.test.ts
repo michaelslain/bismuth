@@ -27,6 +27,53 @@
 //    subscription time to attach first; 40ms reliably produced one clean assistant-text frame in
 //    repeated live runs. This is a mock-server pacing fix, NOT a driver change — no production files
 //    were touched for this task.
+//
+// KNOWN FLAKE, NOT LOAD-GATED (task-15, diagnosed not fixed — corrected after an earlier version of
+// this note wrongly claimed it was rare on a clean slate and reduced by this file's own Step-3b leak
+// fix; neither claim survived a second measurement round and both are retracted below). Affects the
+// FIRST test above ("a turn sent through CHAT_BACKENDS.opencode returns the fixture's exact text"),
+// NOT the reopen-branch test further down.
+//
+// MEASURED (task-15, two rounds): on a genuinely clean slate — zero `opencode serve` processes
+// running before, during, or after, confirmed by pid check each time — 12 solo runs of this file
+// produced 4 failures (33%), at 1-minute load averages ranging from 2.50 to 6.89 with NO visible
+// threshold: failures occurred at both the lowest (2.73) and a middling (6.71) load sampled, while
+// FIVE STRAIGHT PASSES landed at the highest loads sampled (6.50-6.89). This is not the load-gated
+// story an earlier version of this note claimed (which reported 0/15 clean-slate failures — that
+// was wrong, superseded by this larger, repeated sample) — treat this as failing roughly 1 run in 3
+// regardless of ordinary machine load, not as something a quiet machine avoids.
+//
+// ROOT CAUSE, confirmed by direct frame-level instrumentation (not guessed): a fresh session's open
+// sequence always emits TWO `manifest` frames — `manifest`, `session`, `manifest`, `models`, `auth` —
+// and this is NORMAL, not a symptom: `emitOpenFrames` emits one immediately, then a second once
+// `ensureOpenInfo` populates the module-level `commandsCache` for the first time in this process (see
+// `opencode.ts`'s `emitOpenFrames`). Confirmed identical, frame-for-frame, in both passing AND
+// failing runs — instrumented four solo trials with per-frame timestamps; the one that failed showed
+// the EXACT SAME manifest/session/manifest/models/auth sequence as the three that passed, entirely
+// BEFORE `sendMessage()` was ever called. The duplicate manifest is opening boilerplate, unrelated to
+// the failure; an earlier version of this note that treated it as a possible sign of a mid-turn
+// re-announce was chasing a red herring.
+//
+// The actual failure, also confirmed by that same instrumentation: after the identical open sequence,
+// `runTurnServer`'s blocking `session.prompt()` HTTP call still resolves NORMALLY — `result`, `done`,
+// and `title` all fire, in the failing trial exactly as in the passing ones — but zero
+// `assistant-text` frames ever arrive. This is precisely finding #2's own mechanism above (the
+// per-session SSE listener, registered via `registerOpencodeServerListener` just before that same
+// call, not having caught the model's streamed deltas before the exchange completed) — just
+// occurring at a much higher baseline rate in this environment/opencode version than the "40ms
+// reliably produced one clean frame" the original finding reported.
+//
+// NOT FIXED HERE: a real fix needs `core/src/chatProviders/opencode.ts`'s `runTurnServer` to
+// positively confirm its per-session SSE registration is live before issuing `session.prompt()`,
+// replacing the fixed-margin mock-side workaround with a real synchronization point — a production
+// driver change to a shared code path, out of this task's scope. This file's OWN Step-3b leak fix
+// (afterAll now confirms every process it kills is actually dead — see killAndConfirmDead's doc
+// comment) is UNRELATED to this flake and does not reduce it — that connection, drawn in an earlier
+// version of this note, does not hold up: this failure reproduces at the same ~33% rate on a slate
+// with zero leaked processes of any kind. Documented here rather than silently accepted: a
+// known-flaky test that's honestly labelled to the RIGHT test and the RIGHT mechanism is survivable;
+// one pointing at the wrong test, or claiming a fix that doesn't apply, sends the next person
+// investigating a red run looking in the wrong place entirely.
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -84,6 +131,76 @@ function isChildOfThisProcess(pid: string): boolean {
   }
 }
 
+/** True iff a process with this pid currently exists, checked by pid — NEVER by re-running
+ *  `pgrep -f` (see this file's OPENCODE_SERVE_PATTERN comment for why: a pattern-based check can't
+ *  distinguish this test's own leftover from an unrelated process, but a plain existence check on a
+ *  pid we already decided to kill has nothing to confuse it with). `kill(pid, 0)` sends no signal —
+ *  it only probes whether the pid exists and whether we have permission to signal it. `ESRCH` means
+ *  gone; `EPERM` means it exists but isn't ours to signal (treated as "still alive", never silently
+ *  assumed dead). */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException)?.code === "EPERM";
+  }
+}
+
+/** THE FIX for the leak this file used to have: SIGTERM, poll for exit on a bounded budget, then
+ *  escalate to SIGKILL — the same grace-then-escalate shape core/src/chatProviders/acp/driver.ts's
+ *  `killWithEscalation` already uses in production, adapted to a bare OS pid (this test only ever
+ *  discovers the shared `opencode serve` server's pid externally via `pgrep`, see
+ *  opencodeServePids() above, so there is no `Bun.spawn` handle / `proc.exited` promise to await —
+ *  polling pidAlive() is the pid-based equivalent).
+ *
+ *  The irony worth keeping: `isChildOfThisProcess` above was added by an earlier review specifically
+ *  to stop this test from SIGTERMing the user's OWN running Bismuth server (a real hazard — the
+ *  shared server's argv is not test-specific). That guard is correct and stays untouched. What was
+ *  missing was the OTHER half: once this test decides a pid is safe to kill, it never confirmed the
+ *  kill actually landed. The old code fired `process.kill(pid, "SIGTERM")` and returned immediately;
+ *  `bun test` then exited, the still-alive child reparented to launchd, and survived whenever it
+ *  hadn't finished handling the signal yet — measured live, before this fix: 0 `opencode serve`
+ *  processes before a run, 1 after, every time, accumulating across runs. A cleanup that checks WHO
+ *  it may kill but never WHETHER the kill worked is the same class of bug as an assertion that
+ *  reports success without observing anything — this function (and the assertion in afterAll below
+ *  that calls it) is the fix for both halves at once: wait for the kill, then prove it.
+ *
+ *  THEORETICAL PID-REUSE WINDOW, noted rather than fixed (code-review finding): this function holds
+ *  a bare OS pid across its own up-to-~4s poll (graceMs + the SIGKILL follow-up), and the OS is free
+ *  to recycle that exact pid to an unrelated process once the ORIGINAL one has actually exited —
+ *  `pidAlive(pid)` (and the final SIGKILL itself) cannot distinguish "still our target" from "a new,
+ *  unrelated process that happens to reuse the same number" in that window. Same exposure the
+ *  pre-fix code already had (it also addressed a pid, not a process handle, across its own — much
+ *  longer, unbounded — window before this fix existed), and no worse than `isChildOfThisProcess`'s
+ *  own already-accepted "best effort, not airtight" stance a few lines up. Not fixed here: closing it
+ *  for real would need a `pidfd`-style handle (not available from a bare `pgrep`-discovered pid on
+ *  this platform) rather than anything achievable with `process.kill`. */
+async function killAndConfirmDead(pid: number, graceMs = 3000, pollMs = 50): Promise<boolean> {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return true; // already gone before we even signaled it
+  }
+  const termDeadline = Date.now() + graceMs;
+  while (Date.now() < termDeadline) {
+    if (!pidAlive(pid)) return true;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  if (!pidAlive(pid)) return true;
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    return true; // exited between the last poll and this call
+  }
+  const killDeadline = Date.now() + 1000;
+  while (Date.now() < killDeadline) {
+    if (!pidAlive(pid)) return true;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return !pidAlive(pid);
+}
+
 describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts, against a mock LLM (zero account API calls)", () => {
   const ENV_KEYS = ["OPENCODE_CONFIG_CONTENT", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"] as const;
   // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — a code-review finding on this
@@ -94,6 +211,17 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   let mock: MockLlmHandle | undefined;
   const chatIds: string[] = [];
+  // Persists across the whole file (unlike chatIds, which afterEach splices empty every test) — set
+  // true the moment ANY test actually opens a real opencode chat. afterAll's assertion below uses
+  // this to catch the OTHER half of the leak class this file fixes: not just "a pid we decided to
+  // kill didn't die" (the `survivors` check), but "the kill-selection loop found NOTHING to kill at
+  // all" — which would leave `survivors` at `[]` and the test green even though a real leak exists,
+  // e.g. if `pidsBefore` wrongly contained this file's own server (reproduced historically — see
+  // `pidsBefore`'s own doc comment) or `isChildOfThisProcess` incorrectly returned false for a
+  // legitimate target. If a chat was opened, a shared `opencode serve` MUST exist by construction
+  // (chatProviders/opencodeServer.ts's `ensureOpencodeServer`), so finding zero pids to kill is
+  // itself a bug, not a benign no-op.
+  let anyChatOpened = false;
   const tempDirs: string[] = [];
   // Separate from tempDirs (cleaned per-test in afterEach): the shared, process-lifetime `opencode
   // serve` singleton (see the FINDING below) only reads XDG_*_HOME at the moment IT spawns — setup()
@@ -201,6 +329,19 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       else process.env[k] = savedEnv[k];
     }
     await mock?.stop();
+    // Decide WHICH pids are this test's to kill using the exact same two guards as before
+    // (pre-existing check + isChildOfThisProcess) — that decision logic is untouched. What's new is
+    // AWAITING each kill and recording whether it actually died — see killAndConfirmDead's own doc
+    // comment for why the old fire-and-forget SIGTERM was the actual bug, not this guard.
+    const survivors: string[] = [];
+    // Count of pids this loop actually SELECTED and confirmed dead — separate from `survivors`
+    // (which pids were selected but failed to die). A code-review finding: `expect(survivors).
+    // toEqual([])` alone only guards the half of the leak that was fixed (a selected pid not
+    // dying), not the half that recurred historically (the loop selecting NOTHING at all, e.g.
+    // `pidsBefore` wrongly containing this file's own server — see its own doc comment for exactly
+    // that bug) — in that failure mode `survivors` stays `[]` and looks like success while the real
+    // server leaks untouched. `killedCount` plus `anyChatOpened` below closes that gap.
+    let killedCount = 0;
     for (const pid of opencodeServePids()) {
       if (pidsBefore.has(pid)) continue; // pre-existing — not this test's to kill
       // Final-review minor: argv-matching alone could SIGTERM the user's OWN running Bismuth app if
@@ -208,17 +349,28 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       // actually be a child of THIS process before killing it (see isChildOfThisProcess's doc
       // comment).
       if (!isChildOfThisProcess(pid)) continue;
-      try {
-        process.kill(Number(pid), "SIGTERM");
-      } catch {
-        /* already gone */
-      }
+      const dead = await killAndConfirmDead(Number(pid));
+      if (dead) killedCount++;
+      else survivors.push(pid);
     }
     // Cleaned up LAST, after the shared server (if this file's tests started it) has been signaled
     // to die above — see xdgDirs' own comment for why these can't be removed any earlier.
     for (const dir of xdgDirs.splice(0)) {
       await rm(dir, { recursive: true, force: true }).catch(() => {});
     }
+    // THE ASSERTION half of the fix, run last (after cleanup above, so a failure here never skips
+    // the temp-dir cleanup) — fail loudly if any pid this file decided to kill is still alive after
+    // SIGTERM+SIGKILL. Silence here would be exactly the bug this whole fix exists to close: a
+    // cleanup that decides what to kill but never confirms the kill worked.
+    expect(survivors).toEqual([]);
+    // THE OTHER HALF of the fix (code-review finding): if any test in this file actually opened a
+    // real opencode chat, a shared `opencode serve` process MUST have come into existence by
+    // construction (chatProviders/opencodeServer.ts's `ensureOpencodeServer`) — so the
+    // kill-selection loop above finding NOTHING to kill (killedCount === 0) is itself a bug, not a
+    // benign no-op, whether caused by `pidsBefore` wrongly swallowing this file's own server or
+    // `isChildOfThisProcess` incorrectly rejecting a legitimate target. This assertion is what
+    // makes a loop that silently selects nothing fail loudly instead of reporting a false green.
+    if (anyChatOpened) expect(killedCount).toBeGreaterThanOrEqual(1);
   });
 
   afterEach(async () => {
@@ -236,6 +388,7 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       const cwd = await newTempDir();
       const chatId = "opencode-mocked-" + Date.now();
       chatIds.push(chatId);
+      anyChatOpened = true;
       const { sink, frames, waitFor } = makeChatFrameCollector();
 
       CHAT_BACKENDS.opencode.openSession({ chatId, cwd, sink, computerUse: false });
@@ -286,6 +439,7 @@ describeOrSkip("the real opencode CLI, driven through chatProviders/opencode.ts,
       const cwd = await newTempDir();
       const chatId = "opencode-mocked-reopen-" + Date.now();
       chatIds.push(chatId);
+      anyChatOpened = true;
       const { sink: sink1, frames: frames1, waitFor: waitFor1 } = makeChatFrameCollector();
 
       CHAT_BACKENDS.opencode.openSession({ chatId, cwd, sink: sink1, computerUse: false });

@@ -43,7 +43,7 @@ The system treats knowledge as a "three-brain" model: **You** (self node, the us
 
 ### Testing
 - `bun test core` — Run all tests in core workspace (uses Bun's test runner)
-- `bun test core -- wikilinks` — Run tests matching filename pattern
+- `bun test core/test/wikilinks.test.ts` (or `bun test wikilinks`) — Run a single test file. **`bun test core -- <pattern>` does NOT filter** — Bun's positional args are OR'd substring matches against the file path, and `core` is itself one of them here; since every file under `core/test/` already contains `core` in its own path, the pattern list still matches the full suite no matter what you append. Pass an exact path, or a bare pattern with no `core`/`app` argument alongside it — see `docs/contributing/testing.md`.
 - `bun run typecheck` (repo root) — `tsc --noEmit` per workspace (core/app/mcp/relay, own pinned TS each). The build/test gate does NOT type-check — run this to catch type regressions.
 - Tests are located in `core/test/`
 
@@ -296,7 +296,7 @@ Deep reference: `docs/daemon/`. Key points:
 
 ## Testing
 
-Bun's native runner (`bun test core`, `bun test core -- [pattern]`; see Key Commands). Each module has a colocated `*.test.ts`. Notable: `core/test/{vault,engine,server,sse,layout,tasks,tasks-query,daemon,daemonViz}.test.ts`, `core/test/{bases,srs,drawing}/`, frontend `app/src/{panes,settings}.test.ts`, `app/src/graph/*.test.ts`, `app/src/calendar/*.test.ts`, `app/src/editor/*.test.ts`.
+Bun's native runner (`bun test core` for the whole workspace, `bun test core/test/<file>.test.ts` to scope to one file — see Key Commands; `bun test core -- <pattern>` does NOT filter, it silently runs everything). Each module has a colocated `*.test.ts`. Notable: `core/test/{vault,engine,server,sse,layout,tasks,tasks-query,daemon,daemonViz}.test.ts`, `core/test/{bases,srs,drawing}/`, frontend `app/src/{panes,settings}.test.ts`, `app/src/graph/*.test.ts`, `app/src/calendar/*.test.ts`, `app/src/editor/*.test.ts`.
 
 ## Gotchas & Edge Cases
 
