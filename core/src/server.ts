@@ -103,6 +103,18 @@ const dec = new TextDecoder();
 const reattachGraceMs = (): number =>
   Number(process.env.BISMUTH_TERMINAL_GRACE_MS) || 30_000;
 
+// How long a CHAT session survives an ABNORMAL websocket close (reload, network drop) before being
+// torn down — the window in which a reconnecting client can rebind by chatId and keep its
+// conversation, mid-turn frames and all. Clean closes (code 1000) tear down immediately, so this
+// never delays teardown of a deliberately-closed chat tab.
+//
+// Overridable via BISMUTH_CHAT_GRACE_MS, exactly as reattachGraceMs() is for terminals above and
+// for the same reason: the close path's behaviour — "was a teardown armed, or correctly NOT armed?"
+// — is only observable by waiting it out, and 30s is not a wait any test can make. Read fresh on
+// every call (not captured at boot) so a test can set it around a single createServer().
+const chatGraceMs = (): number =>
+  Number(process.env.BISMUTH_CHAT_GRACE_MS) || 30_000;
+
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 
 /** Cap on a single uploaded attachment (POST /asset). Bounds memory + disk per request. */
@@ -2169,7 +2181,7 @@ export function createServer(cfg: CoreConfig) {
           if (code === 1000) {
             closeChat(ws.data.chatId);
           } else if (!sink || chatDetachSink(ws.data.chatId, sink)) {
-            scheduleChatClose(ws.data.chatId, 30_000);
+            scheduleChatClose(ws.data.chatId, chatGraceMs());
           }
           return;
         }
