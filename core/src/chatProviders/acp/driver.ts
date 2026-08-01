@@ -150,13 +150,29 @@ const ABORT_GRACE_MS = 8000;
  *  — this is that same escalation pattern landing in the two places it was still missing in
  *  PRODUCTION code: real chat-close and real turn-abort, not just a test's own teardown.
  *
- *  OPEN QUESTION, not verified either way: `npx`-spawned adapters (claude-code-acp, codex-acp,
+ *  CONFIRMED GAP (task-15, resolving the prior "open question, not verified either way" — see the
+ *  task's report for the full methodology): `npx`-spawned adapters (claude-code-acp, codex-acp,
  *  agents.ts's two `adapter: true` entries) put an `npx` WRAPPER process, not the real agent, as the
- *  direct child this module's `proc` handle names. Whether SIGKILL to that wrapper propagates to
- *  whatever real process npx itself spawned underneath (or leaves it orphaned) was never exercised —
- *  neither adapter was spawned during this task (no npx-resolvable install on the machine this was
- *  verified on). Flagged here rather than assumed either way; only cline/gemini/goose/openclaw (the
- *  four NATIVE, non-adapter agents) are actually confirmed covered by this escalation. */
+ *  direct child this module's `proc` handle names, and SIGKILL to that wrapper alone does NOT
+ *  propagate to the real agent process underneath — it survives, orphaned. Verified directly against
+ *  BOTH real published adapters (`npx -y @zed-industries/claude-code-acp` and
+ *  `npx -y @agentclientprotocol/codex-acp`, the exact binary+args agents.ts's own entries use, not a
+ *  stub): in both cases `npx` forks a genuine CHILD process (confirmed via `pgrep -P` against the
+ *  `Bun.spawn`-returned pid — a real `node .../claude-code-acp` / `node .../codex-acp` process, ppid
+ *  matching the npx wrapper, never the same pid — so `npx` does not exec-replace itself), and
+ *  `proc.kill(9)` against ONLY the wrapper pid leaves that real child alive and running 3+ seconds
+ *  later, every time. This is a real, currently-UNFIXED gap in `killWithEscalation` as written: it
+ *  only ever signals the single `proc` handle it's given, never a process group or a tracked
+ *  grandchild, so BOTH closeChat() and abortTurn()'s grace-timeout fallback leak the real
+ *  claude-code-acp/codex-acp process today, exactly the same shape as the openclaw SIGTERM finding
+ *  above but one level deeper in the process tree and NOT fixed by this escalation as it currently
+ *  exists. Not fixed here (task-15 is a verification task, not a driver rewrite) — a real follow-up
+ *  would need this driver to either spawn adapter agents into their own process group (e.g. via a
+ *  `setsid`/negative-pid kill) and signal the GROUP, or track+kill the resolved grandchild pid
+ *  directly; either is a real behavior change to spawnAcpProcess/killWithEscalation worth its own
+ *  task, not a comment update. Only cline/gemini/goose/openclaw (the four NATIVE, non-adapter agents,
+ *  each a DIRECT child with no wrapper in between) are actually confirmed fully covered by this
+ *  escalation as written. */
 const KILL_ESCALATION_GRACE_MS = 3000;
 
 /** Send SIGTERM (`proc.kill()`), then SIGKILL after `graceMs` if `proc.exited` hasn't resolved by
