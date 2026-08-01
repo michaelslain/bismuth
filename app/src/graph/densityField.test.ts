@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-  accumulate, blur, normalise, buildBloom, pushCloud, cloudGrid, cloudSampleCount, FIELD_W, FIELD_H,
+  accumulate, accumulateColor, blur, normalise, buildBloom, pushCloud, cloudGrid, cloudSampleCount,
+  FIELD_W, FIELD_H,
   type BloomPoint,
 } from "./densityField";
 
@@ -336,4 +337,137 @@ test("denser regions are brighter — the whole point of the effect", () => {
   const at = (fx: number, fy: number) =>
     f[Math.floor(fy * FIELD_H) * FIELD_W + Math.floor(fx * FIELD_W)];
   expect(at(0.25, 0.5)).toBeGreaterThan(at(0.75, 0.5));
+});
+
+// ---------------------------------------------------------------------------
+// TERRITORY COLOUR — the field carries WHOSE density each cell is, not just how much.
+//
+// The regression every test below is aimed at is one specific way this can rot back into what it
+// replaced: every cluster ends up contributing the SAME hue, the ground goes back to a single flat
+// haze, and nothing else about the picture changes — so the suite stays green, the field is still
+// normalised, the intensity is still right, and the one property the change exists for is gone.
+// ---------------------------------------------------------------------------
+
+const RED: [number, number, number] = [255, 0, 0];
+const BLUE: [number, number, number] = [0, 0, 255];
+
+/** The field's mean colour at a screen fraction, as a plain triple. */
+const hueAt = (f: ReturnType<typeof buildBloom>, fx: number, fy: number) => {
+  const i = Math.floor(fy * FIELD_H) * FIELD_W + Math.floor(fx * FIELD_W);
+  return [f.rgb!.r[i], f.rgb!.g[i], f.rgb!.b[i]] as [number, number, number];
+};
+
+test("TWO CLUSTERS WITH DIFFERENT SLOTS PRODUCE DIFFERENT HUES — the whole point of the change", () => {
+  // Two well-separated territories, each a little cloud of its own colour. If the emitted field
+  // gave every cluster one shared hue — the exact regression that would undo this — the two
+  // samples below would be equal, whatever that shared hue happened to be.
+  const pts: BloomPoint[] = [];
+  for (let i = 0; i < 20; i++) pts.push({ x: 0.2 + (i % 5) * 0.005, y: 0.5, weight: 1, rgb: RED });
+  for (let i = 0; i < 20; i++) pts.push({ x: 0.8 + (i % 5) * 0.005, y: 0.5, weight: 1, rgb: BLUE });
+  const f = buildBloom(pts);
+  expect(f.rgb).toBeDefined();
+
+  const left = hueAt(f, 0.2, 0.5), right = hueAt(f, 0.8, 0.5);
+  // Each territory is its OWN colour where it dominates — not the average of the two, and not one
+  // shared hue.
+  expect(left[0]).toBeGreaterThan(200);   // red over the left cluster
+  expect(left[2]).toBeLessThan(20);
+  expect(right[2]).toBeGreaterThan(200);  // blue over the right one
+  expect(right[0]).toBeLessThan(20);
+});
+
+test("a cell's colour is the WEIGHTED MEAN of what reached it, not the last emitter to touch it", () => {
+  // Two points in one cell, 2 units of red to 1 of blue -> (170, 0, 85). "Last writer wins" would
+  // give (0,0,255); an unweighted mean would give (127.5, 0, 127.5).
+  const acc = accumulateColor(
+    [{ x: 0.5, y: 0.5, weight: 2, rgb: RED }, { x: 0.5, y: 0.5, weight: 1, rgb: BLUE }], 2, 2,
+  );
+  const i = 1 * 2 + 1;
+  expect(acc.v[i]).toBe(3);
+  expect(acc.r[i] / acc.v[i]).toBeCloseTo(170, 4);
+  expect(acc.b[i] / acc.v[i]).toBeCloseTo(85, 4);
+});
+
+test("where two territories overlap their hues MIX, in proportion to the light each put there", () => {
+  // Three units of red and one of blue landing on the same spot. The mean has to land between the
+  // two and nearer the red — which is what carrying colour in the FIELD buys over picking a
+  // nearest-cluster hue at paint time (that would give a hard seam, i.e. one of the two exactly).
+  const f = buildBloom([
+    ...Array.from({ length: 3 }, () => ({ x: 0.5, y: 0.5, weight: 1, rgb: RED })),
+    { x: 0.5, y: 0.5, weight: 1, rgb: BLUE },
+  ]);
+  const [r, , b] = hueAt(f, 0.5, 0.5);
+  expect(r).toBeCloseTo(191.25, 3);
+  expect(b).toBeCloseTo(63.75, 3);
+});
+
+test("carrying colour cannot change how BRIGHT the atmosphere is", () => {
+  // The intensity channel must be bit-for-bit what the colourless build produces for the same
+  // points. Without this a variant could win a side-by-side comparison for the wrong reason, and
+  // more importantly the atmosphere would stop being a pure density map.
+  const geometry: BloomPoint[] = [
+    { x: 0.25, y: 0.5, weight: 2 }, { x: 0.75, y: 0.5, weight: 1 }, { x: 0.4, y: 0.2, weight: 3 },
+  ];
+  const mono = buildBloom(geometry);
+  const col = buildBloom(geometry.map((p, i) => ({ ...p, rgb: i === 0 ? RED : BLUE })));
+  expect(mono.rgb).toBeUndefined();
+  expect(col.rgb).toBeDefined();
+  expect(col.length).toBe(mono.length);
+  for (let i = 0; i < mono.length; i++) expect(col[i]).toBe(mono[i]);
+});
+
+test("an emitter with no community contributes light but no colour", () => {
+  // A community-less graph (embedded graph blocks strip communities entirely) must still glow.
+  const f = buildBloom([{ x: 0.5, y: 0.5, weight: 1 }]);
+  expect(f.rgb).toBeUndefined();                  // no colour channels built at all...
+  expect(Math.max(...f)).toBeCloseTo(1, 6);       // ...and the light is there
+  expect(f.filter((v) => v > 0).length).toBeGreaterThan(100);
+});
+
+test("a colourless emitter mixed in with coloured ones dilutes the hue rather than voting for one", () => {
+  // Half the light in this cell carries no territory. The mean colour must fall halfway to black
+  // (i.e. toward "no territory", which the painter renders as the base phosphor hue) — NOT be
+  // dropped, and NOT let the coloured half claim the whole cell.
+  const f = buildBloom([
+    { x: 0.5, y: 0.5, weight: 1, rgb: RED }, { x: 0.5, y: 0.5, weight: 1 },
+  ]);
+  expect(hueAt(f, 0.5, 0.5)[0]).toBeCloseTo(127.5, 3);
+});
+
+test("dark cells get NO colour rather than a hue manufactured from rounding noise", () => {
+  // Far outside the kernel's reach the blurred weight is 0, and dividing there would turn float
+  // noise into coloured speckle in the corners of an otherwise black ground.
+  const f = buildBloom([{ x: 0.5, y: 0.5, weight: 1, rgb: RED }], 2);
+  const corner = 0 * FIELD_W + 0;
+  expect(f[corner]).toBe(0);
+  expect(f.rgb!.r[corner]).toBe(0);
+  expect(f.rgb!.g[corner]).toBe(0);
+  expect(f.rgb!.b[corner]).toBe(0);
+});
+
+test("pushCloud stamps the cluster's colour on EVERY sample it emits", () => {
+  // A cloud stands for one community's members, so all of its light belongs to that community. A
+  // cloud that coloured only its first sample would read as a grey blob with one tinted cell.
+  const out: BloomPoint[] = [];
+  pushCloud(out, 0.5, 0.5, 0.05, 0.05, 10, RED);
+  expect(out.length).toBeGreaterThan(1);
+  expect(out.every((p) => p.rgb === RED)).toBe(true);
+
+  const plain: BloomPoint[] = [];
+  pushCloud(plain, 0.5, 0.5, 0.05, 0.05, 10);
+  expect(plain.every((p) => p.rgb === undefined)).toBe(true);
+});
+
+test("a coloured cloud lands in the same place, at the same spread, as an uncoloured one", () => {
+  // Colour is a hue channel bolted onto the emission, not a change to it: the geometry pushCloud
+  // produces must be identical with and without an rgb.
+  const withRgb: BloomPoint[] = [], without: BloomPoint[] = [];
+  pushCloud(withRgb, 0.3, 0.6, 0.04, 0.02, 7, BLUE);
+  pushCloud(without, 0.3, 0.6, 0.04, 0.02, 7);
+  expect(withRgb.length).toBe(without.length);
+  for (let i = 0; i < withRgb.length; i++) {
+    expect(withRgb[i].x).toBe(without[i].x);
+    expect(withRgb[i].y).toBe(without[i].y);
+    expect(withRgb[i].weight).toBe(without[i].weight);
+  }
 });
