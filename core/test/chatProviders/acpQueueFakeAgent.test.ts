@@ -25,7 +25,7 @@
 // frame stream reports, and in what sequence).
 //
 // NON-VACUOUSNESS, stated precisely (this project's recurring defect is a check that stays green even
-// when the thing it claims to prove never happened — see this task's own brief):
+// when the thing it claims to prove never happened):
 //   - The first test asserts, WHILE the first turn is still held (well within its hold window,
 //     checked against real elapsed time, not against ordering of ChatFrames alone), that the echo
 //     file holds EXACTLY ONE `session/prompt` line. A driver that bypassed `runOrQueue`'s
@@ -47,18 +47,18 @@
 //     values only to each other is a tautology once `prompts.length` is already pinned: review found
 //     this and it is fixed here (see Mutation C in this task's report for the failing proof).
 //
-// SABOTAGE PERFORMED (verification only, applied to a local copy of driver.ts and reverted — never
-// committed; see this task's own report for exact results, including Mutation C added in fix round 1):
-//   1. `runOrQueue` mutated to always call `runTurn` regardless of `s.turnActive` (the queue bypassed
-//      entirely) — the FIRST test's "exactly one `session/prompt` line while held" assertion failed
-//      as intended (it saw two).
-//   2. `runTurn`'s own queue drain mutated from `s.queue.shift()` to `s.queue.pop()` (LIFO instead of
-//      FIFO) — the SECOND test's submission-order assertion failed specifically (beta/gamma swapped
-//      to gamma/beta), while the first test and every count-based assertion in both tests still
-//      passed — proving that mutation's failure really is about ORDER and nothing else.
-//   3. `runTurn`'s `session/prompt` call mutated to send `s.id` (the chat id) instead of `s.sessionId`
-//      (the real ACP session id) — the sessionId assertion in BOTH tests failed specifically, while
-//      every other assertion (frame counts, prompt-text order, `assistant-text` order) still passed.
+// WHAT EACH ASSERTION PROTECTS, stated as a property rather than an audit trail (so this stays
+// accurate as driver.ts changes, instead of narrating a one-time verification run):
+//   1. The FIRST test's "exactly one `session/prompt` line while held" assertion protects
+//      `runOrQueue`'s `s.turnActive` gate — if a queued turn were dispatched immediately instead of
+//      waiting, this checkpoint would see two `session/prompt` lines instead of one.
+//   2. The SECOND test's submission-order assertion protects `runTurn`'s queue drain order (FIFO via
+//      `s.queue.shift()`) — if the drain became LIFO (or otherwise reordered), the three
+//      `session/prompt` requests' `prompt` text would land on the wire out of submission order
+//      (e.g. beta/gamma swapped), independent of frame counts, which stay correct either way.
+//   3. The `sessionId` assertion in BOTH tests protects `runTurn` sending the real ACP session id
+//      (`s.sessionId`) on every `session/prompt` call, not the chat id (`s.id`) — the two are never
+//      equal in this test's setup, so a swap is caught directly rather than passing by coincidence.
 //
 // STUB-BINARY PATTERN: identical to every other fakeAcpAgent.ts-driven test file — write an
 // executable stub named "cline" into a throwaway temp dir, prepend it onto PATH so

@@ -114,8 +114,8 @@ export const ACP_AGENTS: readonly AcpAgentSpec[] = [
     // closing the leak while still avoiding the `acp:` prefix collision above (a chat id never
     // starts with `acp:` in this codebase).
     //
-    // KNOWN FOLLOW-UP, ACCEPTED (measured, decided, not fixed here — see task-15's report for the
-    // full write-up) — UNBOUNDED SESSION ACCUMULATION, the cost of the per-chat fix above: openclaw
+    // KNOWN FOLLOW-UP, ACCEPTED (measured and decided, not fixed here — full measurement and
+    // decision below) — UNBOUNDED SESSION ACCUMULATION, the cost of the per-chat fix above: openclaw
     // persists each distinct session key as its own on-disk transcript
     // (`<OPENCLAW_STATE_DIR>/agents/main/sessions/<uuid>.jsonl`) PLUS an entry in that dir's shared
     // `sessions.json` index. MEASURED live (task-15, via the same isolation harness

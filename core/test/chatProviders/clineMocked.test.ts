@@ -8,9 +8,10 @@
 // with Cline" / "Sign in with ChatGPT Subscription" — no other methods are ever offered), which
 // hangs waiting for actual interactive login and cannot be satisfied by a mock. There is no env var,
 // CLI flag, or config file this task could find that lets cline's ACP mode skip this gate — unlike
-// cline's OTHER, non-ACP CLI mode (`cline "<prompt>"`), which this task separately verified CAN be
-// pointed at a mock via `cline auth -p openai-compatible ...` (see the report), but which is not the
-// mode Bismuth's production driver ever spawns.
+// cline's OTHER, non-ACP CLI mode (`cline "<prompt>"`), whose `cline auth -p openai-compatible ...`
+// subcommand this task verified live writes its config to disk with zero network access (see
+// backendEnv.ts's `cline` case comment) — but that CLI mode is not the one Bismuth's production
+// driver ever spawns.
 //
 // So the SAFE, HONEST, and actually valuable thing to verify is the failure path: with `CLINE_DIR`
 // pointed at a guaranteed-empty, never-authenticated temp directory (isolating this run from

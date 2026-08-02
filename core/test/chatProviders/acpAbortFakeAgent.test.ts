@@ -11,7 +11,7 @@
 // reimplemented, exactly as that file's own header anticipates ("a future turn-queue / abort /
 // resume / never-terminating-turn test needs only ... its own async runner").
 //
-// THE WRINKLE (why this isn't a trivial pair of tests — see this task's brief): fakeAcpAgent.ts's
+// THE WRINKLE (why this isn't a trivial pair of tests): fakeAcpAgent.ts's
 // session/cancel handler settles the held `session/prompt` directly (heldPrompts), but — BEFORE this
 // task — did nothing about `runHeldPermissionPrompt`'s own OUTBOUND call
 // (`await callClient("session/request_permission", ...)`), whose resolver sat in

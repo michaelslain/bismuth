@@ -339,8 +339,11 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
     //      local mock and capturing `session/new` verbatim showed BOTH cline selectors' options are
     //      `{value, name}`, as is every select option from every agent — `SessionConfigSelectOption`
     //      is `{value, name, description?}` in @agentclientprotocol/sdk 0.20.0/0.24.0/0.29.0/1.3.0
-    //      alike, and there is no generation in which a select OPTION carries `id`. Full capture:
-    //      .superpowers/sdd/2026-08-01-agent-integration-completion/task-1-report.md.
+    //      alike, and there is no generation in which a select OPTION carries `id`. Full capture
+    //      (cline 3.0.48 `session/new`, verbatim): the "provider" selector's
+    //      `options:[{value:"cline",name:"Cline Usage-Billing"},{value:"openai-codex",name:"OpenAI
+    //      ChatGPT Subscription"}]`; the "model" selector's `options:[{value:"gpt-4o",name:"gpt-4o"}]`
+    //      — both `{value, name}`, neither carries `id`.
     //
     //      So the empty-picker bug was NEVER cline-specific. `detectModelShape` filtered options on
     //      `o.id`, a field nothing emits, so its `configOptions` branch had never returned a model

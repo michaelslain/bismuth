@@ -2229,6 +2229,20 @@ export function createServer(cfg: CoreConfig) {
   // watcher (cache-invalidate + SSE) so the open calendar refreshes. Best-effort +
   // error-tolerant; the 60s ticker is unref'd so it never keeps the process alive, and is a
   // no-op until an account is connected (fresh test vaults never are). A run-guard prevents overlap.
+  //
+  // KNOWN GAP: this interval is created fresh by every `createServer()` call, and nothing ever
+  // clears it — `server.stop()` below returns Bun.serve()'s own return value, whose `.stop()` closes
+  // the HTTP listener only; it does not hold or clear this `setInterval` handle. A stopped server's
+  // ticker keeps firing for the remaining life of the process, not just while that server is "up".
+  // `.unref()` does not change this: it only lets the process exit once nothing else is pending — it
+  // does not stop the interval from firing while the process (e.g. a whole `bun test` run) stays
+  // alive for other reasons. Suspected cause of an intermittent ENOENT surfacing in an unrelated
+  // test file: `bun test core` runs every test file in one process, so a `createServer()` from an
+  // earlier file whose server was later stopped can still have this interval fire later, during a
+  // different file's tests, reading whatever `vault` that earlier call used — including a
+  // `vault: "/custom/vault"` fixture (`core/test/server.test.ts`) that was never created on disk, via
+  // `listGcalSyncTargets`, if a Google account happens to be connected (state read from a durable,
+  // machine-wide file outside any vault, independent of the fixture) at the time it fires.
   let gcalAutoSyncAt = 0;
   let gcalAutoSyncRunning = false;
   setInterval(() => {

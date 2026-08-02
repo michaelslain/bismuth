@@ -8,8 +8,11 @@
 // method-not-found error (protocol.ts's `isMethodNotFoundError`). The naive way to test this — a
 // fake that just accepts `session/load` — proves nothing: the driver is satisfied immediately and
 // `session/resume` is never called. See ../support/fakeAcpAgent.ts's "SESSION-RESUME MODE" for the
-// opt-in rejection this file depends on (inert when unset, and additive-only — verified against 7
-// sibling fake-agent test files; see this task's report for exact run results).
+// opt-in rejection this file depends on (inert when unset, and additive-only — verified by running
+// this file's own tests plus all 7 sibling fake-agent consumers (acpAbortFakeAgent.test.ts,
+// acpFakeAgent.test.ts, acpPermissionFakeAgent.test.ts, acpQueueFakeAgent.test.ts,
+// clineAuthFakeAgent.test.ts, openclawMocked.test.ts, ../server.chat-ws.test.ts) together: 20 pass,
+// 0 fail, 240 expect() calls).
 //
 // `isMethodNotFoundError` is an OR of a numeric JSON-RPC code check and a message regex. The fake's
 // rejection code/message are independently overridable (FAKE_ACP_REJECT_SESSION_LOAD_CODE/
@@ -20,10 +23,11 @@
 // test chooses independently (never derived from chatId/cwd or from either wire response) — never
 // against another wire value. Counts are exact throughout, never "at least one". The
 // session/load-before-session/resume ordering check is real (flips true->false on a reversed
-// sequence, verified) but its failure is SUBSUMED by the count assertions under every production
-// mutation found so far — see the report; it is not claimed as independently mutation-provable on
-// its own. Full mutation battery and exact results live in the report, not here, so this header
-// doesn't go stale the moment driver.ts changes.
+// sequence, verified manually) but its failure is subsumed by the count assertions under every
+// production mutation tried against driver.ts (e.g. deleting the fallback's try/catch entirely
+// fails `resumes.length` first, before ever reaching the ordering comparison) — no mutation was
+// found that reorders the two calls while preserving both counts at 1, so the ordering check is
+// not independently mutation-provable on its own; kept as defense-in-depth.
 //
 // STUB-BINARY PATTERN: identical to every sibling fakeAcpAgent.ts-driven test file — stub "cline" on
 // PATH, drive the real chatProviders/acp/driver.ts via CHAT_BACKENDS.cline. Zero network, zero CLI
