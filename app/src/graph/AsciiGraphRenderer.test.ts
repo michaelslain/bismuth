@@ -21,6 +21,7 @@ import { CLUSTER_LABEL_MAX_CHARS, clusterLevelAlphas } from "./labelSelection";
 import { DEFAULT_LEVEL_REVEAL_T, EDGE_WEIGHT_BUCKETS, bandsForT, edgeWeightBucketRange } from "./backbone";
 import { buildColorSlots } from "./clusterVisual";
 import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
+import { MODE_MORPH_MS } from "./modeMorph";
 import { FIELD_H, FIELD_W, type DensityField } from "./densityField";
 import { parseHexColor } from "./bloomColor";
 import { THEMES } from "../../../core/src/theme/tokens";
@@ -4795,5 +4796,116 @@ describe("the phosphor bloom carries each cluster's own territory colour (Task 2
       return false;
     });
     expect(seen).toEqual([true, true]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Task 22 — the animated 2D<->3D morph (modeMorph.ts), restoring EPITAPH item 1.
+//
+// Before this task a `viewMode` flip hard-reset the camera in setConfig() (rx/ry/pan zeroed,
+// resolution back to 100%) — a cut, not a transition. These tests pin that a flip now runs a
+// genuine multi-frame morph (modeMorph.ts's pure model, unit-tested on its own in
+// modeMorph.test.ts) and that the FINISHED transition still lands exactly where the old hard reset
+// used to — this is a transition, not a new camera.
+// ---------------------------------------------------------------------------------------------
+describe("the animated 2D<->3D morph (modeMorph.ts)", () => {
+  /** The private morph + camera state these tests read. Cast-only — the public surface stays
+   *  exactly GraphRenderer. */
+  interface MorphPriv {
+    nodes: { sx: number; sy: number; node: { id: string } }[];
+    rx: number; ry: number; panX: number; panY: number; res: number; goalRes: number; zoomPct: number;
+    target: [number, number, number];
+    modeMorph: { rx0: number; ry0: number; startT: number | null } | null;
+    morphFlatten: number;
+  }
+  const morphPriv = (r: AsciiGraphRenderer) => r as unknown as MorphPriv;
+
+  it("entering 2D: the first rendered frame continues the old 3D view exactly, the midpoint is genuinely partway, and the field keeps moving until it settles", () => {
+    const { r } = mountRenderer("3d");
+    settle(60); // fully settled in 3D — no glide left in flight
+    const priv = morphPriv(r);
+    const before = priv.nodes.map((n) => ({ id: n.node.id, sx: n.sx, sy: n.sy }));
+
+    r.setConfig({ ...CONFIG, viewMode: "2d" });
+    // The flip QUEUES a transition instead of cutting straight to the flat layout.
+    expect(priv.modeMorph).not.toBeNull();
+
+    // The very first frame actually rendered after the flip: this tick's own timestamp seeds
+    // modeMorph.startT, so elapsed is exactly 0 and flatten is exactly 0 — a continuation of the
+    // last 3D frame, not already the flattened 2D one.
+    frame(2000);
+    expect(priv.morphFlatten).toBe(0);
+    const justAfter = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
+    for (let i = 0; i < before.length; i++) {
+      expect(justAfter[i].sx).toBeCloseTo(before[i].sx, 6);
+      expect(justAfter[i].sy).toBeCloseTo(before[i].sy, 6);
+    }
+
+    // Halfway through MODE_MORPH_MS: easeInOutCubic(0.5) is exactly 0.5 (modeMorph.test.ts pins
+    // this identity independently), so flatten is exactly 0.5 here — genuinely partway, neither
+    // endpoint. Every node's screen position must have actually moved from the post-flip frame.
+    frame(2000 + MODE_MORPH_MS / 2);
+    expect(priv.morphFlatten).toBe(0.5);
+    const mid = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
+    for (let i = 0; i < before.length; i++) {
+      expect(mid[i].sx !== justAfter[i].sx || mid[i].sy !== justAfter[i].sy).toBe(true);
+    }
+
+    // Past the duration the transition finishes and stops tracking itself — and the field has kept
+    // moving since the midpoint (proving the animation runs all the way to its end, not just a
+    // single eased step at the start).
+    frame(2000 + MODE_MORPH_MS + 100);
+    expect(priv.modeMorph).toBeNull();
+    const settled = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
+    for (let i = 0; i < mid.length; i++) {
+      expect(settled[i].sx !== mid[i].sx || settled[i].sy !== mid[i].sy).toBe(true);
+    }
+  });
+
+  it("entering 2D: the finished transition lands EXACTLY where the old hard reset used to — a fresh 2D mount agrees on screen position and every camera field", () => {
+    const { r } = mountRenderer("3d");
+    settle(60);
+    r.setConfig({ ...CONFIG, viewMode: "2d" });
+    let t = 3000;
+    for (let i = 0; i < 40; i++) { frame(t); t += 16; } // well past MODE_MORPH_MS
+    const priv = morphPriv(r);
+    expect(priv.modeMorph).toBeNull(); // settled — no transition left in flight
+    const morphed = priv.nodes.map((n) => ({ id: n.node.id, sx: n.sx, sy: n.sy }));
+
+    // Comparandum: a SEPARATE renderer mounted directly in 2D — no transition ever ran.
+    const { r: fresh } = mountRenderer("2d");
+    settle(60);
+    const freshPriv = morphPriv(fresh);
+    const freshById = new Map(freshPriv.nodes.map((n) => [n.node.id, { sx: n.sx, sy: n.sy }]));
+
+    expect(morphed.length).toBeGreaterThan(0);
+    for (const m of morphed) {
+      const f = freshById.get(m.id)!;
+      expect(m.sx).toBeCloseTo(f.sx, 6);
+      expect(m.sy).toBeCloseTo(f.sy, 6);
+    }
+    // The camera bookkeeping itself matches the documented hard-reset values exactly.
+    expect(priv.rx).toBe(-0.5); expect(priv.ry).toBe(0);
+    expect(priv.panX).toBe(0); expect(priv.panY).toBe(0);
+    expect(priv.res).toBe(1); expect(priv.goalRes).toBe(1);
+    expect(priv.zoomPct).toBe(100);
+    expect(priv.target).toEqual([0, 0, 0]);
+  });
+
+  it("entering 3D (the reverse direction) also eases rather than cuts, and settles at the resting orbit", () => {
+    const { r } = mountRenderer("2d");
+    settle(60);
+    const priv = morphPriv(r);
+    r.setConfig({ ...CONFIG, viewMode: "3d" });
+    expect(priv.modeMorph).not.toBeNull();
+
+    frame(5000);
+    expect(priv.morphFlatten).toBe(1); // entering 3D: flatten STARTS at 1 (still fully flat) ...
+    frame(5000 + MODE_MORPH_MS / 2);
+    expect(priv.morphFlatten).toBe(0.5); // ... genuinely partway at the midpoint ...
+    frame(5000 + MODE_MORPH_MS + 100);
+    expect(priv.morphFlatten).toBe(0);   // ... and ENDS at 0 (full 3D), not a jump either direction.
+    expect(priv.modeMorph).toBeNull();
+    expect(priv.rx).toBe(-0.5); expect(priv.ry).toBe(0);
   });
 });

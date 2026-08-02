@@ -34,14 +34,21 @@
 //   backbone.ts      the hub-to-hub group-level edge backbone + the three-band zoom handover
 //   cameraModel.ts   the 3D dolly, derived from the resolution ladder rather than tracked separately
 //
-// FOUR things did NOT come across. They are recorded here rather than in a working document because
-// a deleted file's capabilities are exactly what a codebase forgets:
+// FOUR things did NOT come across, at the time this list was first written. They are recorded here
+// rather than in a working document because a deleted file's capabilities are exactly what a
+// codebase forgets:
 //
-//  1. THE ANIMATED 2D<->3D MORPH (`morph` 0..1, `easeInOutCubic`, `MODE_MORPH_MS` 500, a per-node
-//     p3->p2 lerp with an orbit unwind). This renderer HARD-RESETS the camera on a `viewMode` flip
-//     instead (`AsciiGraphRenderer.setConfig`): rx/ry/pan zeroed, resolution back to 100%. The flip
-//     is therefore a cut, not a transition. Never decided against — the merge plan listed it as an
-//     open choice and no task closed it.
+//  1. ~~THE ANIMATED 2D<->3D MORPH~~ — RESTORED, Task 22. Canvas's version (`morph` 0..1,
+//     `easeInOutCubic`, `MODE_MORPH_MS` 500, a per-node p3->p2 lerp with an orbit unwind) is now
+//     `modeMorph.ts`, wired into `AsciiGraphRenderer.setConfig`/`tick`/`projectNodes`. A `viewMode`
+//     flip eases across MODE_MORPH_MS instead of cutting — the finished transition still lands
+//     exactly where the old hard reset did (same rx/ry/pan/res/target, see setConfig), so the end
+//     state this list originally described is unchanged; only the path to it is no longer a single
+//     frame. One deliberate, documented divergence from the source: `modeMorph.ts`'s orbit unwind is
+//     a closed-form lerp, not Canvas's per-frame `rx *= 1 - e` recurrence — that recurrence is not a
+//     pure function of elapsed time (it depends on the actual sequence of frame timestamps a session
+//     rendered at), so a "no timers" pure model implements the curve it approximates instead of a
+//     shape it cannot literally replicate. See modeMorph.ts's header and `unwindOrbit`'s doc comment.
 //
 //  2. DEPTH-ORDERED CELL ARBITRATION IN 3D. Canvas drew nodes far->near into a `drawOrder` array, so
 //     a near node always painted over a far one and `BACK_INTERACT_CUTOFF` (0.18) additionally
@@ -59,9 +66,16 @@
 //     `EDGE_DIM_ALPHA`) and accenting the hovered glyph, which is a weaker affordance on a dense
 //     field than a positive mark would be.
 //
-//  4. LABEL PILLS (a rounded translucent background box behind a name). Replaced by a
-//     ground-coloured `fillRect` under each label's cells — same job (a name is never read through
-//     the field behind it), squarer corners.
+//  4. LABEL PILLS (a rounded translucent background box behind a name) — STALE as written below;
+//     corrected by Task 22 to describe the CURRENT mechanism, not the one this list originally
+//     recorded. It first read "replaced by a ground-coloured `fillRect` under each label's cells" —
+//     true when this list was written, but Task 21 replaced that opaque `fillRect` (which erased
+//     every edge running behind a label) with a per-glyph `strokeText` halo (`LABEL_HALO_EM`,
+//     `AsciiGraphRenderer.ts`'s paint()) PLUS glyph suppression at the source
+//     (`reserveLabelCells` blanks a label's cells before the field-glyph pass ever draws into them,
+//     rather than drawing them and covering them). Same job as the pill either way (a name is never
+//     read through the field behind it), but the field around a name is no longer plated over —
+//     only each letter's own outline gets a cleared ring.
 //
 // Two more of the deleted renderer's features were DEAD before the merge began and were deleted, not
 // dropped: `clearAroundSelf` (a screen-space clear zone around the "you" hub) and `drawWorkflowLanes`.
