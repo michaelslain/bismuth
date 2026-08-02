@@ -2279,7 +2279,7 @@ export function createServer(cfg: CoreConfig) {
 
   // Teardown rides the verbs a caller already uses to shut a server down — rather than a separate
   // disposer or an augmented return type, so the returned value stays exactly Bun's `Server` and
-  // none of this function's 121 call sites change. Anything else would leave the leak in place for
+  // every existing call site is unchanged. Anything else would leave the leak in place for
   // every caller that didn't adopt the new API, which is the whole problem. Idempotent
   // (clearInterval on a cleared handle is a no-op), and stop()'s argument + Promise result are
   // forwarded untouched, so `stop()` / `stop(true)` behave as before in every other respect.
