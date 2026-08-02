@@ -2,196 +2,24 @@
 // core/test/support/fakeAcpAgent.ts
 // A FAKE Agent Client Protocol agent: a standalone script speaking newline-delimited JSON-RPC 2.0
 // over its own stdio, exactly the wire shape core/src/chatProviders/acp/driver.ts drives every real
-// ACP CLI (cline/gemini/goose/openclaw/claude-code-acp/codex-acp) through. It is spawned as a stub
-// binary in core/test/chatProviders/acpFakeAgent.test.ts (writeFileSync + chmodSync 0o755, prepended
-// onto PATH under one of the real agent binary names — mirrors relay/test/wrap.test.ts's own
-// "write and chmod a stub binary" pattern, cited in this task's brief as the precedent to follow).
-//
-// WHY A FAKE AGENT AT ALL (not just another real-CLI mocked test): the driver's model-shape
-// version-skew branch (./protocol.ts's detectModelShape — SDKs ~0.20+ report `configOptions` with a
-// "model"-category entry; older/still-shipping adapters instead report the OLD
-// `models.availableModels`/`currentModelId` shape) can only be exercised by controlling BOTH shapes
-// from ONE place. No single real CLI ships both — a real agent is pinned to whichever SDK generation
-// it happens to bundle (this task found gemini 0.53.0 returns the OLD shape live; nothing installed
-// here returns the NEW one) — so a real-CLI test can only ever prove ONE branch. This script proves
-// both, selected per-process via the FAKE_ACP_MODEL_SHAPE env var, because the driver spawns a FRESH
-// child per chat session and reads process.env at spawn time (chatProviders/acp/driver.ts's
-// spawnAcpProcess -> claudeSpawnEnv(process.env, "chat") — a plain spread, verified in
-// claudeMocked.test.ts's own finding for the sibling Claude driver).
-//
-// SCOPE: covers exactly the driver verbs this task's brief calls out — initialize, session/new
-// (both model shapes), session/prompt (a streamed session/update + a settling response), plus enough
-// of session/set_config_option + session/set_model to prove setModel/setEffort dispatch to the RIGHT
-// wire method for each shape. Deliberately NOT a general-purpose ACP simulator: no tool calls, no
-// session/load|resume, no MCP — those aren't what this task needs proven, and every real-CLI test
-// alongside this one already exercises the driver against a genuine binary for what IS installed.
+// ACP CLI (cline/gemini/goose/openclaw/claude-code-acp/codex-acp) through. Spawned as a stub binary
+// (writeFileSync + chmodSync 0o755, prepended onto PATH under a real agent binary name — mirrors
+// relay/test/wrap.test.ts's own "write and chmod a stub binary" pattern) by every
+// fakeAcpAgent.ts-driven test file alongside this one.
 //
 // Tolerant by construction, like every other piece of this harness: a malformed/unrecognized method
 // gets a generic empty result rather than crashing the process — a fake agent that dies mid-test
 // would just look like a flaky test, not a useful failure signal.
 //
-// CLINE AUTH-GATE MODE (added for the "close the cline coverage gap" task — see
-// clineAuthFakeAgent.test.ts): opt-in via FAKE_ACP_AUTH_GATE=cline, decoupled from the model-shape
-// logic above so acpFakeAgent.test.ts's existing three tests (which never set this var) are
-// unaffected byte-for-byte. Reproduces cline 3.0.47's REAL ACP auth surface, read from its own
-// compiled binary (`npm install cline@3.0.47`, `strings`'d the bundled Bun executable at
-// bin/.cline — same technique agents.ts's own header already used for this binary):
-//   - `initialize`'s authMethods, verified verbatim from the minified source's own
-//     `var B=[{id:"cline",name:"Sign in with Cline"},{id:"openai-codex",name:"Sign in with ChatGPT
-//     Subscription"}]` (this array is BOTH the authMethods list AND the only valid `authenticate`
-//     methodId allowlist in the real binary).
-//   - `session/new`'s gate, verified verbatim from: `async newSession(z){if(!this.authResult&&
-//     !process.env.CLINE_API_KEY){if(this.authResult=this.tryRestoreAuth(),!this.authResult)throw
-//     $.authRequired(void 0,"Call authenticate before creating a session")}...}` — an ACP SDK
-//     `RequestError.authRequired(data, detail)` helper that renders as JSON-RPC code -32000, message
-//     `"Authentication required: Call authenticate before creating a session"` (confirmed from the
-//     SDK's own `static authRequired(X,Z){return new D(-32000,\`Authentication required${Z?
-//     `: ${Z}`:""}\`,X)}`).
-//   - The REAL bypass this task discovered and live-verified (a real cline 3.0.47 binary, driven
-//     through Bismuth's own unmodified production driver, completed a full ACP turn against a local
-//     mock LLM this way — see backendEnv.ts's `cline` case + clineMocked.test.ts's new "real E2E"
-//     block): `process.env.CLINE_API_KEY`, read at newSession() time, unconditionally skips the
-//     throw above. Bismuth's driver (chatProviders/acp/driver.ts) never calls the ACP `authenticate`
-//     method at all (grep confirms no `call(s, "authenticate", ...)` anywhere in that file) — so the
-//     only faithful way for THIS fake to model "the gate is satisfied" is the exact same shape the
-//     real binary itself offers: an env var read fresh at THIS process's own spawn time,
-//     FAKE_ACP_CLINE_AUTHED, standing in for CLINE_API_KEY. This is not invented — it mirrors a real,
-//     cited mechanism 1:1, chosen because it is the only bypass that exists at all (see the case
-//     comment above it for the full finding).
-//
-// SCOPE LIMIT of this mode (a code-review finding on this task, recorded explicitly so nobody
-// mistakes this for broader coverage than it is): this mode reproduces cline's AUTH surface only.
-// Once the gate is open, `handleSessionNew` below falls through to the SAME generic
-// old/new-model-shape logic FAKE_ACP_MODEL_SHAPE already drives (this file's own hand-built,
-// single-selector configOptions) — NOT cline's real, quirkier `provider`-then-`model`
-// `configOptions` ordering, in which a "provider" selector precedes the true "model" selector under
-// the SAME `category:"model"`. That ordering bug was fixed on 2026-08-01 (protocol.ts's
-// `pickModelOption`) and is now covered directly, from the captured cline payload, by
-// acpProtocol.test.ts — so this fake still does not reproduce it, and still does not need to.
-// (Historical note, because it is the reason this file was wrong for so long: the earlier version
-// of this comment asserted cline's provider options were `{value, name}` while its MODEL options
-// were `{id, name}`, and this fake's own fixtures were built to match. Driving the real binaries
-// showed BOTH are `{value, name}` — no ACP agent has ever emitted `id` on a select option — so the
-// fixtures below were green against a shape that does not exist. They now use `{value, name}`.)
-//
-// HELD-PROMPT MODE (added for the "cover the permission request→response round-trip" task — see
-// acpPermissionFakeAgent.test.ts): opt-in via FAKE_ACP_PROMPT_HOLD, the same shape as the two modes
-// above, and likewise fully decoupled — with the var unset, every line below behaves byte-for-byte
-// as it did before (verified by replaying an identical stdin script through the pre-change and
-// post-change files and diffing stdout; see that test file's header).
-//
-// The capability it adds is deliberately GENERIC, not permission-specific, because four separate
-// coverage gaps all need the same one thing and none of them can be built without it: a
-// `session/prompt` that does NOT settle synchronously. Before this, `handleSessionPrompt` streamed
-// one update and immediately responded, so the prompt's request/response window was ~0ms wide —
-// there was no interval during which a test could observe a turn in flight, queue behind it, cancel
-// it, or answer a question inside it. Three pieces make that window openable:
-//   1. `callClient()` — the fake can now make JSON-RPC REQUESTS of its own into the client and await
-//      the reply. Previously this file was reply-only (it answered the driver's requests and pushed
-//      notifications; it never spoke first), so the entire agent→client request direction of ACP —
-//      session/request_permission, fs/*, terminal/*, elicitation/* — was unreachable from here.
-//   2. Inbound RESPONSE routing in `handleLine` — the counterpart to (1). The old parser dropped any
-//      line without a `method` field on the floor, which is exactly what a JSON-RPC response is.
-//   3. `heldPrompts` + `settlePrompt()` — a registry of prompts whose `session/prompt` response has
-//      been withheld, settled exactly once, by whatever event a given mode says settles it.
-// A future turn-queue / abort / resume / never-terminating-turn test needs only a new `promptHold`
-// value plus its own async runner; none of them should have to touch (1)-(3) again.
-//
-// The one mode implemented here, FAKE_ACP_PROMPT_HOLD=permission, models the real ACP permission
-// handshake (agent-client-protocol's `session/request_permission`, whose response type is
-// `RequestPermissionResponse { outcome: {outcome:"cancelled"} | {outcome:"selected", optionId} }` —
-// note the field is NESTED under its own name, which is what driver.ts's respondPermission builds):
-//   tool_call update → session/request_permission → (WAIT) → agent_message_chunk naming the received
-//   outcome → settle session/prompt.
-// Nothing settles that prompt except a real, parseable reply landing on this process's stdin, which
-// is the property that makes the test non-vacuous: a wrong rpc id, a malformed outcome, or no reply
-// at all all produce the same observable result — no `done`, and a test timeout.
-//
-// QUEUE-HOLD MODE (added for the "second message while the first turn is in flight" turn-queue task
-// — see acpQueueFakeAgent.test.ts): opt-in via FAKE_ACP_PROMPT_HOLD=queue, decoupled from every mode
-// above the same way "permission" is decoupled from the base behavior — with the var unset (or set to
-// "permission"), nothing in this section ever runs.
-//
-// Deliberately NOT the permission round-trip reused as-is, even though that mode COULD technically
-// hold a turn open long enough for a queue test too (this file's own reasoning about `runOrQueue`
-// applies regardless of which mode holds a turn): a turn-queue test's whole point is the DRIVER's own
-// client-side queue (core/src/chatProviders/acp/driver.ts's `runOrQueue`/`s.queue`) — nothing about
-// tool calls, permission options, or an agent-initiated request into the client. Folding permission
-// semantics in here would (a) add unrelated `tool_call`/`session/request_permission` lines to the
-// echo file a queue test would just have to filter back out, and (b) require the TEST to answer a
-// permission prompt via `respondPermission` to release EVERY held turn, when the actual thing under
-// test is "does the driver even send a queued turn's `session/prompt` before the prior one settled",
-// not "can a user answer a permission prompt". So this mode settles itself, on a plain internal timer
-// (`QUEUE_HOLD_MS`) — no external signal is needed OR wanted: from this fake's own point of view there
-// is nothing to coordinate with the test beyond "don't reply immediately", because the interesting
-// behavior being proven is entirely on the CLIENT side (whether a second/third `sendMessage` gets
-// queued instead of dispatched while a turn is active, and whether the driver dispatches them
-// afterward IN THE ORDER THEY WERE SUBMITTED). A held turn embeds the ORIGINAL prompt text it
-// received into its own settling `agent_message_chunk` (`FAKE_QUEUE_TURN_PREFIX` below), giving a
-// turn-queue test a SECOND, independent proof channel beyond the echo file — mirrors permission mode's
-// own `FAKE_PERMISSION_REPLY_PREFIX` chunk, which exists for the identical reason (prove the round
-// trip through the driver's OWN frame stream, not only through file-based instrumentation).
-//
-// SESSION-RESUME MODE (see acpResumeFakeAgent.test.ts): opt-in via FAKE_ACP_REJECT_SESSION_LOAD
-// (any truthy value) — makes `session/load` reject instead of falling through to the `default:`
-// case's plain `respond(id, {})`, which is exactly what it still gets when this var is unset.
-// Forces driver.ts's `session/load` -> `session/resume` fallback (protocol.ts's
-// `isMethodNotFoundError`) to actually run.
-//
-// The rejection's JSON-RPC code and message are independently overridable
-// (FAKE_ACP_REJECT_SESSION_LOAD_CODE / _MESSAGE, default -32601 / "Method not found:
-// session/load"): `isMethodNotFoundError` is an OR of a numeric-code check and a message regex, so
-// a fixed pairing only proves "at least one arm fired". Varying each independently lets a test pin
-// the code arm (right code, non-matching message) and the message arm (wrong code, matching
-// message) separately.
-//
-// `session/resume` gets no dedicated handler: a rejected `session/load` falls through to the same
-// `default:` case it always did, and gets the same plain `{}` — all driver.ts needs from it (it
-// sets `s.sessionId` from the caller's own id either way, never from either response).
-//
-// TOOL-CALL MODE (task 12, "live tool-use, both halves" — see acpToolUseFakeAgent.test.ts): opt-in
-// via FAKE_ACP_TOOL_CALL (any truthy value), decoupled from every mode above the same way each of
-// those is decoupled from the others — with the var unset, `handleSessionPrompt`'s plain branch
-// (promptHold === "none") is completely unchanged, byte-for-byte.
-//
-// Reproduces the plain (non-permission, non-queue) shape of a real ACP tool call round trip: one
-// `tool_call` notification (status "in_progress"), then one `tool_call_update` (status
-// "completed", carrying a `{type:"content", content:{type:"text", text}}` entry — the same
-// AcpToolCallContentEntry shape ./protocol.ts's toolCallContentText already expects), THEN the
-// turn's own `agent_message_chunk` + `session/prompt` response — mirroring the real order a live
-// agent uses (announce the call, resolve it, THEN keep talking), confirmed against a real `goose`
-// acp session driven through an actual Bismuth MCP tool call in this task's own research (see the
-// task's report). Deliberately NOT reusing HELD-PROMPT MODE's `runHeldPermissionPrompt`/
-// `runHeldQueueTurn` machinery: this mode never withholds the `session/prompt` response and never
-// calls INTO the client (no session/request_permission, no callClient) — a plain, synchronous
-// two-notification-then-respond sequence is all Task 12's ordering assertions
-// (tool-use → tool-result, equal ids, tool-result strictly after tool-use, exactly one
-// tool-result per id, result after both) need, and folding in the held-prompt registry would only
-// add unrelated async machinery this mode doesn't use.
-//
-// CRASH / NOISE / CHUNK-SPLIT MODES (task 13, "crash mid-turn, malformed output, chunk-boundary
-// framing" — see acpFramingFakeAgent.test.ts): three independent opt-in modes sharing this file's
-// one stdout-writing seam. Each is inert exactly like every mode above — with none of their three
-// env vars set, `handleSessionPrompt`'s plain branch is byte-for-byte unchanged.
-//   - FAKE_ACP_CRASH_AFTER=prompt: emit ONE session/update, then process.exit(1) — never
-//     responding to this session/prompt at all. Proves driver.ts's watchExit reports the turn as a
-//     single result{isError:true}+done+error{code:"exit"}, and that runTurn's own identity guard
-//     (`sessions.get(s.id) !== s`) stops a second, duplicate result/done once its now-rejected
-//     session/prompt call settles after watchExit already tore the session down. Written via a raw
-//     fs.writeSync (not this file's usual process.stdout.write-based notify()) because
-//     process.exit() can truncate output still sitting in Node/Bun's own async stdout buffering on
-//     a piped fd — the write must be guaranteed to have reached the pipe before the process dies.
-//   - FAKE_ACP_NOISE: plain-text and near-JSON-RPC noise (valid JSON, but missing
-//     "jsonrpc":"2.0") interleaved with two real session/update notifications, all before this
-//     request's own response. Proves protocol.ts's parseJsonRpcLine tolerates both — a real CLI's
-//     own startup banner must never kill a turn — while the two real frames and the turn's own
-//     `done` still arrive.
-//   - FAKE_ACP_CHUNK_SPLIT: writes ONE large session/update's JSON-RPC line as raw bytes across
-//     several fs.writeSync() calls, paced with a real delay so the driver's read loop sees them as
-//     separate stream chunks, with one split point landing INSIDE the 4-byte UTF-8 encoding of an
-//     emoji — an ASCII-only split proves nothing here (any decoder survives that); a
-//     mid-multibyte split is what distinguishes driver.ts's own
-//     `TextDecoder(...).decode(chunk, {stream:true})` from a naive `decode(chunk)`.
+// MODES: this file grew one opt-in, env-var-gated mode per coverage gap that no single real,
+// installed ACP CLI could prove on its own, each fully decoupled from the others — with none of
+// their env vars set, every handler below (in particular handleSessionPrompt's plain branch)
+// behaves byte-for-byte as this file's ORIGINAL, mode-free version did. Each mode's own
+// rationale/citations/wire details live as a doc comment immediately above that mode's own
+// const(s)/section header further down, not here — search this file for its env var to find it:
+// FAKE_ACP_MODEL_SHAPE (default mode) / FAKE_ACP_AUTH_GATE / FAKE_ACP_PROMPT_HOLD /
+// FAKE_ACP_REJECT_SESSION_LOAD / FAKE_ACP_TOOL_CALL / FAKE_ACP_CRASH_AFTER / FAKE_ACP_NOISE /
+// FAKE_ACP_CHUNK_SPLIT.
 import { appendFileSync, writeSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -271,11 +99,32 @@ function notify(method: string, params: unknown): void {
   writeLine({ jsonrpc: "2.0", method, params });
 }
 
-/** "old" (models.availableModels/currentModelId — still-shipping 0.14.1-pinned adapters + cline's
- *  own bundled dispatch, and confirmed live against a real `gemini` 0.53.0 in this task) or "new"
- *  (configOptions with a "model"-category entry — SDKs ~0.20+). Defaults to "new" so a caller that
- *  forgets to set the env var still gets a valid, well-formed session/new rather than silently
- *  falling back to neither shape. */
+/**
+ * DEFAULT MODE (FAKE_ACP_MODEL_SHAPE): "old" (models.availableModels/currentModelId — still-shipping
+ * 0.14.1-pinned adapters + cline's own bundled dispatch, and confirmed live against a real `gemini`
+ * 0.53.0 in the task that built this) or "new" (configOptions with a "model"-category entry — SDKs
+ * ~0.20+). Defaults to "new" so a caller that forgets to set the env var still gets a valid,
+ * well-formed session/new rather than silently falling back to neither shape. Has no dedicated
+ * section header (unlike every mode below) since it's this file's ORIGINAL, always-on behavior —
+ * every mode below is layered on top of it, not an alternative to it.
+ *
+ * WHY A FAKE AGENT AT ALL (not just another real-CLI mocked test): the driver's model-shape
+ * version-skew branch (./protocol.ts's detectModelShape — SDKs ~0.20+ report `configOptions` with a
+ * "model"-category entry; older/still-shipping adapters instead report the OLD
+ * `models.availableModels`/`currentModelId` shape) can only be exercised by controlling BOTH shapes
+ * from ONE place. No single real CLI ships both — a real agent is pinned to whichever SDK generation
+ * it happens to bundle — so a real-CLI test can only ever prove ONE branch. This script proves both,
+ * selected per-process via this env var, because the driver spawns a FRESH child per chat session
+ * and reads process.env at spawn time (chatProviders/acp/driver.ts's spawnAcpProcess ->
+ * claudeSpawnEnv(process.env, "chat") — a plain spread, verified in claudeMocked.test.ts's own
+ * finding for the sibling Claude driver).
+ *
+ * SCOPE: the original version of this file covered exactly the driver verbs its own founding task's
+ * brief called out — initialize, session/new (both model shapes), session/prompt (a streamed
+ * session/update + a settling response), plus enough of session/set_config_option +
+ * session/set_model to prove setModel/setEffort dispatch to the RIGHT wire method for each shape.
+ * Every mode below is additive on top of that base.
+ */
 const modelShape = process.env.FAKE_ACP_MODEL_SHAPE === "old" ? "old" : "new";
 
 /** Text used to prove a real turn round-tripped through THIS fake, distinguishable from any real
@@ -283,46 +132,159 @@ const modelShape = process.env.FAKE_ACP_MODEL_SHAPE === "old" ? "old" : "new";
  *  it can never be fooled by a stray real mock server accidentally still running. */
 const FAKE_TURN_TEXT = "Hello from the fake ACP agent";
 
-/** See this file's header "CLINE AUTH-GATE MODE" section. Unset (the default, what
- *  acpFakeAgent.test.ts's three pre-existing tests get) reproduces this fake's ORIGINAL behavior
- *  byte-for-byte: no gate, empty authMethods. "cline" reproduces cline 3.0.47's real auth surface,
- *  cited above. */
+/**
+ * CLINE AUTH-GATE MODE (added for the "close the cline coverage gap" task — see
+ * clineAuthFakeAgent.test.ts): opt-in via FAKE_ACP_AUTH_GATE=cline, decoupled from the model-shape
+ * logic above so acpFakeAgent.test.ts's existing three tests (which never set this var) are
+ * unaffected byte-for-byte. Unset (the default, what those three pre-existing tests get) reproduces
+ * this fake's ORIGINAL behavior byte-for-byte: no gate, empty authMethods. "cline" reproduces cline
+ * 3.0.47's REAL ACP auth surface, read from its own compiled binary (`npm install cline@3.0.47`,
+ * `strings`'d the bundled Bun executable at bin/.cline — same technique agents.ts's own header
+ * already used for this binary):
+ *   - `initialize`'s authMethods, verified verbatim from the minified source's own
+ *     `var B=[{id:"cline",name:"Sign in with Cline"},{id:"openai-codex",name:"Sign in with ChatGPT
+ *     Subscription"}]` (this array is BOTH the authMethods list AND the only valid `authenticate`
+ *     methodId allowlist in the real binary).
+ *   - `session/new`'s gate, verified verbatim from: `async newSession(z){if(!this.authResult&&
+ *     !process.env.CLINE_API_KEY){if(this.authResult=this.tryRestoreAuth(),!this.authResult)throw
+ *     $.authRequired(void 0,"Call authenticate before creating a session")}...}` — an ACP SDK
+ *     `RequestError.authRequired(data, detail)` helper that renders as JSON-RPC code -32000, message
+ *     `"Authentication required: Call authenticate before creating a session"` (confirmed from the
+ *     SDK's own `static authRequired(X,Z){return new D(-32000,\`Authentication required${Z?
+ *     `: ${Z}`:""}\`,X)}`).
+ *   - The REAL bypass this task discovered and live-verified (a real cline 3.0.47 binary, driven
+ *     through Bismuth's own unmodified production driver, completed a full ACP turn against a local
+ *     mock LLM this way — see backendEnv.ts's `cline` case + clineMocked.test.ts's own "real E2E"
+ *     block): `process.env.CLINE_API_KEY`, read at newSession() time, unconditionally skips the
+ *     throw above. Bismuth's driver (chatProviders/acp/driver.ts) never calls the ACP `authenticate`
+ *     method at all (grep confirms no `call(s, "authenticate", ...)` anywhere in that file) — so the
+ *     only faithful way for THIS fake to model "the gate is satisfied" is the exact same shape the
+ *     real binary itself offers: an env var read fresh at THIS process's own spawn time,
+ *     FAKE_ACP_CLINE_AUTHED, standing in for CLINE_API_KEY. This is not invented — it mirrors a real,
+ *     cited mechanism 1:1, chosen because it is the only bypass that exists at all.
+ *
+ * SCOPE LIMIT of this mode (a code-review finding, recorded explicitly so nobody mistakes this for
+ * broader coverage than it is): this mode reproduces cline's AUTH surface only. Once the gate is
+ * open, `handleSessionNew` below falls through to the SAME generic old/new-model-shape logic
+ * FAKE_ACP_MODEL_SHAPE already drives (this file's own hand-built, single-selector configOptions) —
+ * NOT cline's real, quirkier `provider`-then-`model` `configOptions` ordering, in which a "provider"
+ * selector precedes the true "model" selector under the SAME `category:"model"`. That ordering bug
+ * was fixed on 2026-08-01 (protocol.ts's `pickModelOption`) and is now covered directly, from the
+ * captured cline payload, by acpProtocol.test.ts — so this fake still does not reproduce it, and
+ * still does not need to.
+ * (Historical note, because it is the reason this file was wrong for so long: the earlier version
+ * of this comment asserted cline's provider options were `{value, name}` while its MODEL options
+ * were `{id, name}`, and this fake's own fixtures were built to match. Driving the real binaries
+ * showed BOTH are `{value, name}` — no ACP agent has ever emitted `id` on a select option — so the
+ * fixtures below were green against a shape that does not exist. They now use `{value, name}`.)
+ */
 const authGate = process.env.FAKE_ACP_AUTH_GATE === "cline" ? "cline" : "none";
 
-/** Mirrors real cline's `process.env.CLINE_API_KEY` bypass — see this file's header. Only consulted
- *  when authGate is "cline"; irrelevant (and expected unset) otherwise. */
+/** Mirrors real cline's `process.env.CLINE_API_KEY` bypass — see authGate's own doc comment above.
+ *  Only consulted when authGate is "cline"; irrelevant (and expected unset) otherwise. */
 const clineAuthed = authGate === "cline" && !!process.env.FAKE_ACP_CLINE_AUTHED;
 
-/** Verbatim from cline 3.0.47's own `var B=[...]` — see this file's header citation. Real cline uses
- *  this SAME array as both `initialize`'s authMethods AND `authenticate`'s methodId allowlist; this
- *  fake only needs the authMethods half (the driver never calls `authenticate` — see the header). */
+/** Verbatim from cline 3.0.47's own `var B=[...]` — see authGate's own doc comment above for the
+ *  citation. Real cline uses this SAME array as both `initialize`'s authMethods AND
+ *  `authenticate`'s methodId allowlist; this fake only needs the authMethods half (the driver never
+ *  calls `authenticate` — see authGate's doc comment). */
 const CLINE_AUTH_METHODS = [
   { id: "cline", name: "Sign in with Cline" },
   { id: "openai-codex", name: "Sign in with ChatGPT Subscription" },
 ];
 
-// ── Held-prompt mode (see this file's header, "HELD-PROMPT MODE") ────────────────────────────────
+// ── Held-prompt mode ─────────────────────────────────────────────────────────────────────────────
 
-/** "none" (unset — the default every pre-existing test gets, byte-identical to this file's original
- *  behavior), "permission", or "queue" (see this file's header "QUEUE-HOLD MODE" section). A future
- *  resume/never-settling-variant test adds its own value here and its own runner below; nothing else
- *  in this file needs to change for it. */
+/**
+ * HELD-PROMPT MODE (added for the "cover the permission request→response round-trip" task — see
+ * acpPermissionFakeAgent.test.ts): opt-in via FAKE_ACP_PROMPT_HOLD, the same shape as the two modes
+ * above, and likewise fully decoupled — with the var unset, every line below behaves byte-for-byte
+ * as it did before (verified by replaying an identical stdin script through the pre-change and
+ * post-change files and diffing stdout).
+ *
+ * The capability it adds is deliberately GENERIC, not permission-specific, because four separate
+ * coverage gaps all need the same one thing and none of them can be built without it: a
+ * `session/prompt` that does NOT settle synchronously. Before this, `handleSessionPrompt` streamed
+ * one update and immediately responded, so the prompt's request/response window was ~0ms wide —
+ * there was no interval during which a test could observe a turn in flight, queue behind it, cancel
+ * it, or answer a question inside it. Three pieces make that window openable:
+ *   1. `callClient()` — the fake can now make JSON-RPC REQUESTS of its own into the client and await
+ *      the reply. Previously this file was reply-only (it answered the driver's requests and pushed
+ *      notifications; it never spoke first), so the entire agent→client request direction of ACP —
+ *      session/request_permission, fs/*, terminal/*, elicitation/* — was unreachable from here.
+ *   2. Inbound RESPONSE routing in `handleLine` — the counterpart to (1). The old parser dropped any
+ *      line without a `method` field on the floor, which is exactly what a JSON-RPC response is.
+ *   3. `heldPrompts` + `settlePrompt()` — a registry of prompts whose `session/prompt` response has
+ *      been withheld, settled exactly once, by whatever event a given mode says settles it.
+ * A future turn-queue / abort / resume / never-terminating-turn test needs only a new `promptHold`
+ * value plus its own async runner; none of them should have to touch (1)-(3) again.
+ *
+ * "none" (unset — the default every pre-existing test gets, byte-identical to this file's original
+ * behavior), "permission", or "queue" (see QUEUE_HOLD_MS's own doc comment below, "QUEUE-HOLD
+ * MODE"). A future resume/never-settling-variant test adds its own value here and its own runner
+ * below; nothing else in this file needs to change for it.
+ *
+ * The one mode implemented here, FAKE_ACP_PROMPT_HOLD=permission, models the real ACP permission
+ * handshake (agent-client-protocol's `session/request_permission`, whose response type is
+ * `RequestPermissionResponse { outcome: {outcome:"cancelled"} | {outcome:"selected", optionId} }` —
+ * note the field is NESTED under its own name, which is what driver.ts's respondPermission builds):
+ *   tool_call update → session/request_permission → (WAIT) → agent_message_chunk naming the received
+ *   outcome → settle session/prompt.
+ * Nothing settles that prompt except a real, parseable reply landing on this process's stdin, which
+ * is the property that makes the test non-vacuous: a wrong rpc id, a malformed outcome, or no reply
+ * at all all produce the same observable result — no `done`, and a test timeout.
+ */
 const promptHold = process.env.FAKE_ACP_PROMPT_HOLD === "permission" ? "permission" : process.env.FAKE_ACP_PROMPT_HOLD === "queue" ? "queue" : "none";
 
-/** See this file's header "SESSION-RESUME MODE". Unset (default): `session/load` is unhandled,
- *  falls to `default:`'s plain `respond(id, {})`. Truthy: rejects with `rejectSessionLoadCode`/
- *  `rejectSessionLoadMessage` below, each independently overridable so a test can pin either arm of
- *  `isMethodNotFoundError` on its own. */
+/**
+ * SESSION-RESUME MODE (see acpResumeFakeAgent.test.ts): opt-in via FAKE_ACP_REJECT_SESSION_LOAD
+ * (any truthy value) — makes `session/load` reject instead of falling through to the `default:`
+ * case's plain `respond(id, {})`, which is exactly what it still gets when this var is unset.
+ * Forces driver.ts's `session/load` -> `session/resume` fallback (protocol.ts's
+ * `isMethodNotFoundError`) to actually run.
+ *
+ * The rejection's JSON-RPC code and message are independently overridable
+ * (FAKE_ACP_REJECT_SESSION_LOAD_CODE / _MESSAGE, default -32601 / "Method not found:
+ * session/load"): `isMethodNotFoundError` is an OR of a numeric-code check and a message regex, so
+ * a fixed pairing only proves "at least one arm fired". Varying each independently lets a test pin
+ * the code arm (right code, non-matching message) and the message arm (wrong code, matching
+ * message) separately.
+ *
+ * `session/resume` gets no dedicated handler: a rejected `session/load` falls through to the same
+ * `default:` case it always did, and gets the same plain `{}` — all driver.ts needs from it (it
+ * sets `s.sessionId` from the caller's own id either way, never from either response).
+ *
+ * Unset (default): `session/load` is unhandled, falls to `default:`'s plain `respond(id, {})`.
+ * Truthy: rejects with `rejectSessionLoadCode`/`rejectSessionLoadMessage` below, each independently
+ * overridable so a test can pin either arm of `isMethodNotFoundError` on its own.
+ */
 const rejectSessionLoad = !!process.env.FAKE_ACP_REJECT_SESSION_LOAD;
 const rejectSessionLoadCode = process.env.FAKE_ACP_REJECT_SESSION_LOAD_CODE !== undefined ? Number(process.env.FAKE_ACP_REJECT_SESSION_LOAD_CODE) : -32601;
 const rejectSessionLoadMessage = process.env.FAKE_ACP_REJECT_SESSION_LOAD_MESSAGE ?? "Method not found: session/load";
 
-// ── Tool-call mode (see this file's header, "TOOL-CALL MODE") ───────────────────────────────────
+// ── Tool-call mode ───────────────────────────────────────────────────────────────────────────────
 
-/** Unset (default, every pre-existing test's own value): `handleSessionPrompt`'s plain branch is
- *  untouched. Truthy: that branch also emits a `tool_call` + `tool_call_update` pair before the
- *  turn's usual `agent_message_chunk` + response. Irrelevant (never read) when promptHold !==
- *  "none", since the permission/queue branches return before reaching the plain branch at all. */
+/**
+ * TOOL-CALL MODE (task 12, "live tool-use, both halves" — see acpToolUseFakeAgent.test.ts): opt-in
+ * via FAKE_ACP_TOOL_CALL (any truthy value), decoupled from every mode above the same way each of
+ * those is decoupled from the others — with the var unset, `handleSessionPrompt`'s plain branch
+ * (promptHold === "none") is completely unchanged, byte-for-byte.
+ *
+ * Reproduces the plain (non-permission, non-queue) shape of a real ACP tool call round trip: one
+ * `tool_call` notification (status "in_progress"), then one `tool_call_update` (status
+ * "completed", carrying a `{type:"content", content:{type:"text", text}}` entry — the same
+ * AcpToolCallContentEntry shape ./protocol.ts's toolCallContentText already expects), THEN the
+ * turn's own `agent_message_chunk` + `session/prompt` response — mirroring the real order a live
+ * agent uses (announce the call, resolve it, THEN keep talking), confirmed against a real `goose`
+ * acp session driven through an actual Bismuth MCP tool call in the task that built this mode (see
+ * that task's report). Deliberately NOT reusing HELD-PROMPT MODE's `runHeldPermissionPrompt`/
+ * `runHeldQueueTurn` machinery: this mode never withholds the `session/prompt` response and never
+ * calls INTO the client (no session/request_permission, no callClient) — a plain, synchronous
+ * two-notification-then-respond sequence is all Task 12's ordering assertions
+ * (tool-use → tool-result, equal ids, tool-result strictly after tool-use, exactly one
+ * tool-result per id, result after both) need, and folding in the held-prompt registry would only
+ * add unrelated async machinery this mode doesn't use.
+ */
 const toolCallMode = !!process.env.FAKE_ACP_TOOL_CALL;
 
 /** Fixed id/title/kind/result text for tool-call mode's one synthetic call. `title`+`kind`-only
@@ -336,11 +298,38 @@ const TOOLUSE_TOOL_TITLE = "Read fake-tool-use-probe.txt";
 const TOOLUSE_TOOL_KIND = "read";
 const TOOLUSE_RESULT_TEXT = "fake tool result: 3 lines read";
 
-/** How long "queue" mode holds each `session/prompt` open before auto-settling — see this file's
- *  header. Configurable via `FAKE_ACP_QUEUE_HOLD_MS` purely so a consuming test can tune the window
- *  without editing this file; falls back to a value comfortably larger than any local round trip
- *  (spawn→write→readline→respond, all on one machine) so "still held" is never a coincidence of
- *  scheduling. Irrelevant (and never read) unless promptHold === "queue". */
+/**
+ * QUEUE-HOLD MODE (added for the "second message while the first turn is in flight" turn-queue task
+ * — see acpQueueFakeAgent.test.ts): opt-in via FAKE_ACP_PROMPT_HOLD=queue, decoupled from every mode
+ * above the same way "permission" is decoupled from the base behavior — with the var unset (or set to
+ * "permission"), nothing in this section ever runs.
+ *
+ * Deliberately NOT the permission round-trip reused as-is, even though that mode COULD technically
+ * hold a turn open long enough for a queue test too (this file's own reasoning about `runOrQueue`
+ * applies regardless of which mode holds a turn): a turn-queue test's whole point is the DRIVER's own
+ * client-side queue (core/src/chatProviders/acp/driver.ts's `runOrQueue`/`s.queue`) — nothing about
+ * tool calls, permission options, or an agent-initiated request into the client. Folding permission
+ * semantics in here would (a) add unrelated `tool_call`/`session/request_permission` lines to the
+ * echo file a queue test would just have to filter back out, and (b) require the TEST to answer a
+ * permission prompt via `respondPermission` to release EVERY held turn, when the actual thing under
+ * test is "does the driver even send a queued turn's `session/prompt` before the prior one settled",
+ * not "can a user answer a permission prompt". So this mode settles itself, on a plain internal timer
+ * (`QUEUE_HOLD_MS`) — no external signal is needed OR wanted: from this fake's own point of view there
+ * is nothing to coordinate with the test beyond "don't reply immediately", because the interesting
+ * behavior being proven is entirely on the CLIENT side (whether a second/third `sendMessage` gets
+ * queued instead of dispatched while a turn is active, and whether the driver dispatches them
+ * afterward IN THE ORDER THEY WERE SUBMITTED). A held turn embeds the ORIGINAL prompt text it
+ * received into its own settling `agent_message_chunk` (`FAKE_QUEUE_TURN_PREFIX` below), giving a
+ * turn-queue test a SECOND, independent proof channel beyond the echo file — mirrors permission mode's
+ * own `FAKE_PERMISSION_REPLY_PREFIX` chunk, which exists for the identical reason (prove the round
+ * trip through the driver's OWN frame stream, not only through file-based instrumentation).
+ *
+ * How long "queue" mode holds each `session/prompt` open before auto-settling. Configurable via
+ * `FAKE_ACP_QUEUE_HOLD_MS` purely so a consuming test can tune the window without editing this
+ * file; falls back to a value comfortably larger than any local round trip (spawn→write→readline
+ * →respond, all on one machine) so "still held" is never a coincidence of scheduling. Irrelevant
+ * (and never read) unless promptHold === "queue".
+ */
 const QUEUE_HOLD_MS = (() => {
   const raw = Number(process.env.FAKE_ACP_QUEUE_HOLD_MS);
   // 2000 matches acpQueueFakeAgent.test.ts's own pinned value (that test always sets the env var
@@ -350,10 +339,10 @@ const QUEUE_HOLD_MS = (() => {
 })();
 
 /** Prefix of the `agent_message_chunk` "queue" mode emits when a held turn settles, carrying the
- *  ORIGINAL prompt text it received — see this file's header for why (a second, independent proof
- *  channel of ordering/content beyond the echo file). Distinct from every other mode's own marker
- *  text (`FAKE_TURN_TEXT`, `FAKE_PERMISSION_REPLY_PREFIX`) so a test can never mistake one for
- *  another. */
+ *  ORIGINAL prompt text it received — see QUEUE_HOLD_MS's own doc comment above for why (a second,
+ *  independent proof channel of ordering/content beyond the echo file). Distinct from every other
+ *  mode's own marker text (`FAKE_TURN_TEXT`, `FAKE_PERMISSION_REPLY_PREFIX`) so a test can never
+ *  mistake one for another. */
 const FAKE_QUEUE_TURN_PREFIX = "fake-acp queued-turn echo: ";
 
 /** Which option list this fake offers on `session/request_permission`. "full" (the default) offers
@@ -509,12 +498,12 @@ function extractPromptText(params: unknown): string {
 }
 
 /**
- * "queue" hold mode's own async runner (see this file's header "QUEUE-HOLD MODE" section for why it
- * is deliberately simpler than `runHeldPermissionPrompt`: no tool call, no client round trip, just a
- * turn that doesn't settle immediately). `promptText` is captured in THIS call's own closure at
- * request time, not re-read from any shared/mutable state later — the only way to guarantee a turn
- * settling after its own delay reports back the text it was actually asked to handle, not whatever
- * happens to be "current" by the time its timer fires.
+ * "queue" hold mode's own async runner (see QUEUE_HOLD_MS's own doc comment above, "QUEUE-HOLD
+ * MODE", for why it is deliberately simpler than `runHeldPermissionPrompt`: no tool call, no client
+ * round trip, just a turn that doesn't settle immediately). `promptText` is captured in THIS call's
+ * own closure at request time, not re-read from any shared/mutable state later — the only way to
+ * guarantee a turn settling after its own delay reports back the text it was actually asked to
+ * handle, not whatever happens to be "current" by the time its timer fires.
  */
 async function runHeldQueueTurn(promptId: number | string, sessionId: string, promptText: string): Promise<void> {
   heldPrompts.set(promptId, { sessionId });
@@ -529,10 +518,40 @@ async function runHeldQueueTurn(promptId: number | string, sessionId: string, pr
   settlePrompt(promptId, "end_turn");
 }
 
-// ── Crash / noise / chunk-split modes (see this file's header) ─────────────────────────────────
+// ── Crash / noise / chunk-split modes ───────────────────────────────────────────────────────────
+// Task 13, "crash mid-turn, malformed output, chunk-boundary framing" — see
+// acpFramingFakeAgent.test.ts. Three independent opt-in modes sharing this file's one
+// stdout-writing seam, each documented individually below (right above its own const) the same way
+// every mode above documents itself. Each is inert exactly like every mode above — with none of
+// their three env vars set, `handleSessionPrompt`'s plain branch is byte-for-byte unchanged.
 
+/**
+ * CRASH MODE: FAKE_ACP_CRASH_AFTER=prompt makes the fake emit ONE session/update, then
+ * process.exit(1) — never responding to that session/prompt request at all. Proves driver.ts's
+ * watchExit reports the turn as a single result{isError:true}+done+error{code:"exit"}, and that
+ * runTurn's own identity guard (`sessions.get(s.id) !== s`) stops a second, duplicate result/done
+ * once its now-rejected session/prompt call settles after watchExit already tore the session down.
+ */
 const crashAfter = process.env.FAKE_ACP_CRASH_AFTER === "prompt" ? "prompt" : "none";
+
+/**
+ * NOISE MODE: FAKE_ACP_NOISE interleaves plain-text and near-JSON-RPC noise (valid JSON, but
+ * missing "jsonrpc":"2.0") around two real session/update notifications, all before this request's
+ * own response. Proves protocol.ts's parseJsonRpcLine tolerates both — a real CLI's own startup
+ * banner must never kill a turn — while the two real frames and the turn's own `done` still arrive.
+ */
 const noiseMode = !!process.env.FAKE_ACP_NOISE;
+
+/**
+ * CHUNK-SPLIT MODE: FAKE_ACP_CHUNK_SPLIT writes ONE large session/update's JSON-RPC line as raw
+ * bytes across several fs.writeSync() calls (see runChunkSplitUpdate below), paced with a real
+ * delay so the driver's read loop sees them as separate stream chunks, with one split point landing
+ * INSIDE the 4-byte UTF-8 encoding of an emoji — an ASCII-only split proves nothing here (any
+ * decoder survives that). `{stream:true}` is required to carry a partial multibyte sequence across
+ * a chunk boundary; without it, each `decode()` call treats its own chunk as complete and the
+ * dangling/orphaned bytes each decode to their own replacement character — which is what a
+ * mid-multibyte split can catch and an ASCII-only split cannot.
+ */
 const chunkSplitMode = !!process.env.FAKE_ACP_CHUNK_SPLIT;
 
 /** Distinct from every other mode's own marker text (FAKE_TURN_TEXT, FAKE_QUEUE_TURN_PREFIX, …) so
@@ -572,9 +591,10 @@ function writeRawLine(text: string): void {
 }
 
 /**
- * CHUNK-SPLIT MODE's own runner (see this file's header). Builds the one session/update line this
- * mode ever emits, then writes it to fd 1 in byte fragments — one cut landing INSIDE the emoji's
- * own 4 bytes, the rest at arbitrary ASCII points either side — each fragment separated by a real
+ * CHUNK-SPLIT MODE's own runner (see chunkSplitMode's own doc comment above). Builds the one
+ * session/update line this mode ever emits, then writes it to fd 1 in byte fragments — two
+ * ASCII-range cuts (both of which land BEFORE the emoji for this payload — see the cuts comment
+ * below) plus one cut strictly INSIDE the emoji's own 4 bytes — each fragment separated by a real
  * delay so the reading side sees them as distinct stream chunks, not one write() call's worth of
  * data arriving all at once.
  */
@@ -593,9 +613,14 @@ async function runChunkSplitUpdate(id: number | string, sessionId: string): Prom
     // silently sending an unsplit line that would prove nothing.
     throw new Error("fakeAcpAgent: CHUNK_EMOJI bytes not found in CHUNK_PAYLOAD_TEXT's own encoding");
   }
-  // Cuts: an early ASCII point, INSIDE the emoji (after its first 2 of 4 bytes — the split this
-  // mode exists for), and a late ASCII point. De-duplicated + sorted so a pathological length
-  // can't collapse two cuts into a zero-length fragment.
+  // Cuts at 0.3 and 0.7 of the line's total byte length, plus emojiStart+2. For THIS payload both
+  // fractional cuts land BEFORE the emoji (it sits fairly late in the JSON envelope, after the
+  // method/params/sessionId scaffolding), so the actual split is: two ASCII cuts, then one cut
+  // strictly INSIDE the emoji's own 4 bytes (after its first 2 of 4) — the split this mode exists
+  // for. Nothing splits the tail AFTER the emoji separately; its last 2 bytes and the trailing
+  // "y"s/closing text ride in the one final remainder fragment along with everything else past
+  // that cut. De-duplicated + sorted so a pathological length can't collapse two cuts into a
+  // zero-length fragment.
   const cuts = Array.from(new Set([Math.floor(bytes.length * 0.3), emojiStart + 2, Math.floor(bytes.length * 0.7)])).sort((a, b) => a - b);
   let prev = 0;
   for (const cut of cuts) {
@@ -615,18 +640,19 @@ function handleInitialize(id: number | string): void {
     agentCapabilities: { loadSession: true, promptCapabilities: { image: false, audio: false, embeddedContext: false } },
     agentInfo: { name: "fake-acp-agent", version: "0.0.1" },
     // Empty by default: this fake's session/new never demands an authenticate() first UNLESS
-    // FAKE_ACP_AUTH_GATE=cline is set (see this file's header) — the driver itself never calls
-    // authenticate() either way (core/src/chatProviders/acp/driver.ts has no authenticate() call at
-    // all), so an empty array here is simply honest about what this fake offers by default, not a
-    // workaround for anything. In "cline" gate mode, this is cline's own real authMethods verbatim.
+    // FAKE_ACP_AUTH_GATE=cline is set (see authGate's own doc comment above) — the driver itself
+    // never calls authenticate() either way (core/src/chatProviders/acp/driver.ts has no
+    // authenticate() call at all), so an empty array here is simply honest about what this fake
+    // offers by default, not a workaround for anything. In "cline" gate mode, this is cline's own
+    // real authMethods verbatim.
     authMethods: authGate === "cline" ? CLINE_AUTH_METHODS : [],
   });
 }
 
 function handleSessionNew(id: number | string): void {
   if (authGate === "cline" && !clineAuthed) {
-    // Verbatim shape of cline 3.0.47's real refusal — see this file's header citation for both the
-    // triggering source line and the SDK helper that renders it as this exact {code, message}.
+    // Verbatim shape of cline 3.0.47's real refusal — see authGate's own doc comment above for both
+    // the triggering source line and the SDK helper that renders it as this exact {code, message}.
     respondError(id, -32000, "Authentication required: Call authenticate before creating a session");
     return;
   }
@@ -704,8 +730,8 @@ function handleSessionPrompt(id: number | string, params: unknown): void {
     return;
   }
   if (crashAfter === "prompt") {
-    // See this file's header "CRASH MODE". Emit exactly one update, then die — this session/prompt
-    // request never gets a response at all.
+    // See crashAfter's own doc comment above ("CRASH MODE"). Emit exactly one update, then die —
+    // this session/prompt request never gets a response at all.
     writeSyncLine({
       jsonrpc: "2.0",
       method: "session/update",
@@ -714,9 +740,10 @@ function handleSessionPrompt(id: number | string, params: unknown): void {
     process.exit(1);
   }
   if (noiseMode) {
-    // See this file's header "NOISE MODE". Plain-text noise (pins parseJsonRpcLine's JSON.parse
-    // tolerance), a real frame, near-JSON-RPC noise missing "jsonrpc":"2.0" (pins its shape guard),
-    // then the second real frame — all before this request's own response.
+    // See noiseMode's own doc comment above ("NOISE MODE"). Plain-text noise (pins
+    // parseJsonRpcLine's JSON.parse tolerance), a real frame, near-JSON-RPC noise missing
+    // "jsonrpc":"2.0" (pins its shape guard), then the second real frame — all before this
+    // request's own response.
     writeRawLine("Fake ACP CLI v0.9.3 starting up, connecting to upstream...");
     notify("session/update", { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: NOISE_TEXT_A } } });
     writeRawLine(
@@ -730,15 +757,17 @@ function handleSessionPrompt(id: number | string, params: unknown): void {
     return;
   }
   if (chunkSplitMode) {
-    // See this file's header "CHUNK-SPLIT MODE". Async (real delays between fragments) — the
-    // JSON-RPC response for THIS request is sent by the runner itself once every fragment is out.
+    // See chunkSplitMode's own doc comment above ("CHUNK-SPLIT MODE"). Async (real delays between
+    // fragments) — the JSON-RPC response for THIS request is sent by the runner itself once every
+    // fragment is out.
     void runChunkSplitUpdate(id, sessionId);
     return;
   }
   if (toolCallMode) {
-    // See this file's header "TOOL-CALL MODE". Synchronous — nothing is withheld, unlike
-    // held-prompt mode's runners: announce the call, resolve it, THEN keep talking, all before this
-    // request's own response — the same order confirmed live against a real goose ACP tool call.
+    // See toolCallMode's own doc comment above ("TOOL-CALL MODE"). Synchronous — nothing is
+    // withheld, unlike held-prompt mode's runners: announce the call, resolve it, THEN keep
+    // talking, all before this request's own response — the same order confirmed live against a
+    // real goose ACP tool call.
     notify("session/update", {
       sessionId,
       update: { sessionUpdate: "tool_call", toolCallId: TOOLUSE_TOOL_CALL_ID, title: TOOLUSE_TOOL_TITLE, kind: TOOLUSE_TOOL_KIND, status: "in_progress" },
@@ -784,9 +813,9 @@ function handleLine(raw: string): void {
   if (!msg || msg.jsonrpc !== "2.0") return;
   // A RESPONSE to a request THIS fake sent (no `method`, has an `id` and a result/error). The
   // original parser dropped these at the `typeof msg.method !== "string"` guard below, which was
-  // correct while the fake never spoke first — see this file's header, piece (2). Unreachable unless
-  // a mode called callClient(), so with FAKE_ACP_PROMPT_HOLD unset this branch never runs and the
-  // echo file's contents are unchanged.
+  // correct while the fake never spoke first — see promptHold's own doc comment above ("HELD-PROMPT
+  // MODE"), piece (2). Unreachable unless a mode called callClient(), so with FAKE_ACP_PROMPT_HOLD
+  // unset this branch never runs and the echo file's contents are unchanged.
   if (msg.method === undefined && msg.id !== undefined && ("result" in msg || "error" in msg)) {
     echoInResponse(msg);
     const waiter = pendingClientCalls.get(Number(msg.id));
@@ -845,8 +874,9 @@ function handleLine(raw: string): void {
       }
       return;
     case "session/load":
-      // See this file's header "SESSION-RESUME MODE" — inert unless FAKE_ACP_REJECT_SESSION_LOAD
-      // is set, in which case the code/message are independently overridable.
+      // See rejectSessionLoad's own doc comment above ("SESSION-RESUME MODE") — inert unless
+      // FAKE_ACP_REJECT_SESSION_LOAD is set, in which case the code/message are independently
+      // overridable.
       if (id !== undefined) {
         if (rejectSessionLoad) respondError(id, rejectSessionLoadCode, rejectSessionLoadMessage);
         else respond(id, {});

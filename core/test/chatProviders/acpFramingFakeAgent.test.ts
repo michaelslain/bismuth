@@ -15,11 +15,11 @@
 //      CLI's own startup banner must never kill a turn.
 //   3. CHUNK BOUNDARY (FAKE_ACP_CHUNK_SPLIT): one large session/update written as raw byte
 //      fragments, one of which splits INSIDE a 4-byte emoji's own UTF-8 encoding — the one boundary
-//      an ASCII-only split can never exercise, and the one that distinguishes driver.ts's own
-//      `TextDecoder(...).decode(chunk, {stream:true})` from a naive `decode(chunk)`. See this
-//      task's report for the mutation run that confirms removing `{stream:true}` actually corrupts
-//      the reassembled text (replacement characters where the emoji was) — the property that makes
-//      this assertion non-vacuous, not merely "an emoji is somewhere in the output".
+//      an ASCII-only split can never exercise. `{stream:true}` is required to carry a partial
+//      multibyte sequence across a chunk boundary; without it, each `decode()` call treats its own
+//      chunk as complete and the dangling/orphaned bytes each decode to their own replacement
+//      character — which is what makes this assertion non-vacuous, not merely "an emoji is
+//      somewhere in the output".
 //
 // STUB-BINARY PATTERN + PID-VERIFIED TEARDOWN: identical to every sibling fakeAcpAgent.ts-driven
 // test file — stub "cline" on PATH (the simplest ACP_AGENTS entry, args ["--acp"], no fallbackArgs
@@ -161,7 +161,13 @@ describe("crash mid-turn, malformed output, and chunk-boundary framing, driven t
       // the leak check vacuous for a test that fails before reaching that point.
       const pid = await waitForPidFile(pidFile!);
       spawnedPids.push(pid);
-      expect(pidAlive(pid)).toBe(true); // sanity: alive now (before the crash), so "gone after teardown" means something
+      // Deliberately NO "sanity: alive now" assertion here, unlike every sibling test in this file
+      // (and every sibling fake-agent test file): THIS mode's whole point is a process that exits
+      // on its own almost immediately after session/prompt, so by the time this line runs — after
+      // the init+session/new+session/prompt round trip has already had to complete — the process
+      // may legitimately already be gone. Asserting liveness here races the crash itself (observed
+      // failing intermittently under machine load) rather than proving anything; the pid is still
+      // captured for the real assertion, afterEach's leak check.
 
       // Wait for "error" specifically (the LAST of the three terminal frames watchExit emits, per
       // this file's header) so every count/order assertion below runs against a fully-settled frame
