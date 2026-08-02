@@ -108,23 +108,25 @@
 //     field's depth cue was already a deliberate departure from Canvas's (occlusion): item 3 below
 //     documents choosing DIMMING over a positive hover ring for the same reason — a weaker affordance
 //     that never fully suppresses. `depthAlpha`'s OWN floor (`min = 0.22` — asciiGrid.ts; note this is
-//     NOT Canvas's `DEPTH_MIN_OPACITY`, a name that exists in this file only as a comment on the
-//     unrelated `EDGE_DEPTH_MIN = 0.04`, the edge-fade floor) does mean `depthAlpha(nv.dr)` alone never
-//     reaches 0. But that is not the same claim as "no glyph this field draws is ever fully
-//     invisible" — the composed alpha layers `DIM_ALPHA` (0.28, hover/focus dimming), `nv.dim` (0.45,
-//     daemon-disabled), and `glyphA` (the LOD crossfade weight) ON TOP of `depthAlpha`, and `paint()`
-//     quantizes the result to 16 buckets (`this.alphaBuf[i] & 0xf0`) before drawing — so anything that
-//     composes under 16/255 renders at globalAlpha EXACTLY 0, not faint. Concretely: with a hover or
-//     cluster focus active, a non-focused 3D node below `dr ≈ 0.054` already paints at 0; add
-//     `nv.dim` and the cutoff widens to `dr ≈ 0.56`. So a user CAN click a node they cannot see — this
-//     is real, just not new: arbitration only changes which of two CONTESTING nodes claims a cell, and
-//     an UNCONTESTED faint-to-invisible node was equally clickable before this task (the old code
-//     wrote `cellNode` unconditionally too). The two arguments that actually carry the decision are
-//     the ones above: this fix already makes the contested case strictly depth-correct, which is more
-//     than the cutoff ever bought there, and excluding an uncontested drawn glyph from interaction
-//     would still be the odd one out among this renderer's legibility choices, invisible or not.
+//     NOT Canvas's `DEPTH_MIN_OPACITY`, a name that exists in `AsciiGraphRenderer.ts` only as a
+//     comment on the unrelated `EDGE_DEPTH_MIN = 0.04`, the edge-fade floor) does mean
+//     `depthAlpha(nv.dr)` alone never reaches 0. But that is not the same claim as "no glyph this
+//     field draws is ever fully invisible" — the composed alpha layers `DIM_ALPHA` (0.28, hover/focus
+//     dimming), `nv.dim` (0.45, daemon-disabled), and `glyphA` (the LOD crossfade weight) ON TOP of
+//     `depthAlpha`, and `paint()` quantizes the result to 16 buckets (`this.alphaBuf[i] & 0xf0`)
+//     before drawing — so anything that composes under 16/255 renders at globalAlpha EXACTLY 0, not
+//     faint. Concretely: with a hover or cluster focus active, a non-focused 3D node below
+//     `dr ≈ 0.054` already paints at 0; add `nv.dim` and the cutoff widens to `dr ≈ 0.56`. So a user
+//     CAN click a node they cannot see — this is real, just not new: arbitration only changes which
+//     of two CONTESTING nodes claims a cell, and an UNCONTESTED faint-to-invisible node was equally
+//     clickable before this task (the old code wrote `cellNode` unconditionally too). The two
+//     arguments that actually carry the decision are the ones above: this fix already makes the
+//     contested case strictly depth-correct, which is more than the cutoff ever bought there, and
+//     excluding an uncontested drawn glyph from interaction would still be the odd one out among this
+//     renderer's legibility choices, invisible or not.
 //
-//     TWO MINOR, ACCEPTED side effects of deciding ties by array order (not by node identity):
+//     TWO MINOR, ACCEPTED side effects of ordering contests by depth (not of the array-order tie-break
+//     — neither bullet below is a tie; both nodes have a strict `dr` winner):
 //      - A `hot` node (`activeFile` / a search match) farther than a nearer non-matching node on the
 //        same cell now DETERMINISTICALLY loses its accent glyph and click target every frame, rather
 //        than the old array-order coin flip — `hot` is computed after the depth skip, so a losing
