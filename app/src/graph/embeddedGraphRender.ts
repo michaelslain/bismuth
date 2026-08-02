@@ -97,17 +97,10 @@ export function embeddedGraphConfig(
     spin: false,
     spinSpeed: gs.spinSpeed,
     palette: paletteToInts(palette),
-    repulsion: gs.repulsion,
-    linkDistance: gs.linkDistance,
-    centering: gs.centering,
-    nodeSize: gs.nodeSize,
     viewMode: dim,
     showGraphLabels: true,
     labelEveryNode: true, // a diagram's labels ARE its content — see EmbeddedGraph.tsx's file header
     graphLabelHubCount: 0, // moot under labelEveryNode: nothing needs ranking when nothing is cut
-    nodeSizeMinMult: gs.nodeSizeMinMult,
-    nodeSizeDegreeGain: gs.nodeSizeDegreeGain,
-    nodeSizeMaxMult: gs.nodeSizeMaxMult,
     edgeColor: ap.isLight
       ? mixHex(hexToInt(ap.neutral, 0xaeb4c2), hexToInt(ap.background, 0xffffff), 0.45)
       : hexToInt(ap.neutral, 0xaeb4c2),

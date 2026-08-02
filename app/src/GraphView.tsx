@@ -272,16 +272,9 @@ export function GraphView(props: {
       spin: gs.spin,
       spinSpeed: gs.spinSpeed,
       palette: paletteToInts(palette),
-      repulsion: gs.repulsion,
-      linkDistance: gs.linkDistance,
-      centering: gs.centering,
-      nodeSize: gs.nodeSize,
       viewMode: graphViewMode(),
       showGraphLabels: gs.showGraphLabels,
       graphLabelHubCount: gs.graphLabelHubCount,
-      nodeSizeMinMult: gs.nodeSizeMinMult,
-      nodeSizeDegreeGain: gs.nodeSizeDegreeGain,
-      nodeSizeMaxMult: gs.nodeSizeMaxMult,
       // The faint ASCII noise texture under the field — off by default (settingsSchema.ts).
       backgroundNoise: gs.backgroundNoise,
       // LEVEL OF DETAIL — the ASCII field's aggregate CLUSTER MASSES (lod.ts). Zoomed out, each
