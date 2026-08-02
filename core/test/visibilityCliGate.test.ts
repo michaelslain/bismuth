@@ -387,6 +387,21 @@ describe("decideCliGate: path spellings", () => {
     }
   });
 
+  test("a token whose restricted segment is cancelled by `..` runs (a pinned loosening)", () => {
+    // Same behaviour change as isDeniedPath's, seen through the CLI gate: these refused before
+    // segment normalization, purely on the verbatim substring, and run now. They resolve to
+    // Private/other.md, other.md and Private/ respectively — never to the hidden note.
+    for (const spelling of [
+      "Private/secret.md/../other.md",
+      "Private/secret.md/../../other.md",
+      "Private/secret.md/..",
+    ]) {
+      expect(decideCliGate(["read", spelling], restricted).allowed).toBe(true);
+    }
+    // Control: a `..` that resolves back ONTO the restricted path must still refuse.
+    expect(decideCliGate(["read", "Private/sub/../secret.md"], restricted).allowed).toBe(false);
+  });
+
   test("a path-scoped command naming only VISIBLE files still runs", () => {
     // The widening must not swallow the whole tier: this is the case the gate exists to permit.
     expect(decideCliGate(["read", "public.md"], restricted).allowed).toBe(true);

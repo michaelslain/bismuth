@@ -551,18 +551,21 @@ test("buildDenyPaths: a file under a symlinked directory denies BOTH absolute sp
   expect(linked).toBeDefined();
   // One ENTRY per file (so a "N notes are restricted" message counts notes)...
   expect(entries.filter((e) => e.rel === "linkdir/secret.md")).toHaveLength(1);
-  // ...carrying every absolute path the file is readable at. Two independent aliasing axes
-  // multiply here: the link vs. the real directory, and (on a macOS tmpdir) the caller's `/var/…`
-  // root spelling vs. its `/private/var/…` canonical form.
-  const abs = absDenyPaths(entries);
-  for (const spelling of [
+  // ...carrying every absolute path the file is readable at, and NOTHING else. Two independent
+  // aliasing axes multiply here: the link vs. the real directory, and (on a macOS tmpdir) the
+  // caller's `/var/…` root spelling vs. its `/private/var/…` canonical form. Asserted
+  // exhaustively rather than by containment, so a spurious extra path fails the test too — this
+  // is the list that becomes the sandbox deny-read, and its size is part of what it claims.
+  // `realdir/secret.md` appears twice: once as its own entry's `abs`, once as the linked entry's
+  // resolved alias. Duplicates are harmless downstream (deny lists are sets in effect) and are
+  // pinned here rather than papered over, so a change in de-duplication is visible.
+  expect(absDenyPaths(entries).sort()).toEqual([
     join(canonical, "linkdir/secret.md"),
+    join(canonical, "realdir/secret.md"),
     join(canonical, "realdir/secret.md"),
     join(vault, "linkdir/secret.md"),
     join(vault, "realdir/secret.md"),
-  ]) {
-    expect(abs).toContain(spelling);
-  }
+  ].sort());
   // The sandbox deny-read list must carry the resolved spelling too — a tool that resolves the
   // link reports that one, and a deny keyed only on the link path would never match it.
   expect(sandboxDenyRead(entries, vault)).toContain(join(canonical, "realdir/secret.md"));
@@ -711,4 +714,38 @@ test("resolveDenyPlan: exceeding the walk's entry budget is undetermined, not a 
   const ok = await resolveDenyPlan(vault, "daemon");
   expect(ok).toMatchObject({ determined: true });
   expect(ok.determined === true && ok.entries.map((e) => e.rel)).toEqual(["a.md"]);
+});
+
+// --- Shapes that segment resolution DE-restricts (a behaviour change, pinned) ---
+
+test("isDeniedPath: a path whose restricted segment is cancelled by `..` is allowed, and reaches nothing hidden", async () => {
+  // These four DENIED before segment resolution and ALLOW now, because the restricted path only
+  // ever survived in them as a verbatim substring. That is a loosening of a deny path, so it is
+  // asserted against what the filesystem actually does rather than against a written expectation:
+  // `resolveInVault` resolves `..` lexically (path.resolve), so none of these ever traverses into
+  // secret.md — `X/secret.md/../y` simply names `X/y`.
+  const vault = makeVault({
+    "Private/secret.md": "---\nvisibility: hidden\n---\n# Secret\nnuclear codes\n",
+    "a/Private/secret.md": "---\nvisibility: hidden\n---\n# Secret\nnuclear codes\n",
+    "other.md": "# Other\nvisible\n",
+    "a/b.md": "# B\nvisible\n",
+  });
+  const entries = await buildDenyPaths(vault, "daemon");
+  for (const spelling of [
+    "Private/secret.md/../other.md", //    -> Private/other.md   (does not exist)
+    "Private/secret.md/../../other.md", // -> other.md           (a VISIBLE note)
+    "a/Private/secret.md/../b.md", //      -> a/Private/b.md     (does not exist)
+    "Private/secret.md/..", //             -> Private            (a directory)
+  ]) {
+    expect(isDeniedPath(entries, spelling)).toBe(false);
+    // ...and the allow is safe: whatever the filesystem gives back, it is never the hidden body.
+    // "" stands for "the read failed" (ENOENT/EISDIR) — either way, not the hidden body.
+    const got = await readNote(vault, spelling).catch(() => "");
+    expect(got).not.toContain("nuclear codes");
+  }
+
+  // The control that makes the four above meaningful: cancel a segment that is NOT the restricted
+  // one and the path resolves back onto the hidden note, which must still deny.
+  expect(isDeniedPath(entries, "Private/sub/../secret.md")).toBe(true);
+  expect(await readNote(vault, "Private/sub/../secret.md")).toContain("nuclear codes");
 });

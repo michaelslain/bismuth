@@ -630,11 +630,25 @@ export function denyPathSet(entries: DenyEntry[]): Set<string> {
  *  - CASE. macOS filesystems are case-insensitive by default, so `Private/SECRET.md` opens the same
  *    file as `Private/secret.md`.
  *
- * Each of the three is a widening, and each has the same shape of cost: a false POSITIVE on a
+ * CASE and UNICODE FORM are pure widenings, and both carry the same cost: a false POSITIVE on a
  * filesystem that would in fact distinguish the two spellings — a case-sensitive volume holding two
  * notes differing only in case, or an NFC and an NFD file of the same name side by side, one hidden
  * and one not. Those vaults are vanishingly rare against leaks that are trivial to trigger, so the
  * trade goes this way; it is a trade, and it is written down rather than left to be rediscovered.
+ *
+ * SEGMENT RESOLUTION IS NOT A WIDENING, and calling it one would be wrong in a way that matters.
+ * It re-points the comparison at a different question: not "does this string contain a restricted
+ * path?" but "does this path RESOLVE to one?" — the same question `resolveInVault` (core/src/files.ts)
+ * answers before it opens anything, by the same lexical `path.resolve` rules. That makes it deny
+ * more in most cases and LESS in a few, and the few are the point:
+ *
+ *   `Private/secret.md/../other.md` resolves to `Private/other.md`
+ *   `Private/secret.md/../../other.md` resolves to `other.md` — a VISIBLE note
+ *
+ * Both used to be denied, purely because the restricted path survived in them as a verbatim
+ * substring; neither can reach the hidden file, because `..` is resolved lexically and never
+ * traverses into `secret.md` at all. Denying them was the bug. Pinned by test, in both directions,
+ * against what the filesystem actually returns rather than against this paragraph.
  *
  * A leading `..` that cannot be resolved (the path reaches above its own base) is KEPT, so the key
  * stays distinct from the same path without it. isDeniedPath resolves those against the vault root

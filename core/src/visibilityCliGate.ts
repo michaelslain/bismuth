@@ -205,9 +205,15 @@ export interface GateDecision {
  *
  * Normalizing the whole token is safe because both sides of the scan get the identical treatment: a
  * path embedded in a longer string keeps its segment boundaries, so `exports/Private/./secret.md`
- * folds to `exports/private/secret.md` and still contains the folded needle. It is deliberately
- * over-inclusive in the same direction as the rest of this gate — a false refusal costs one tool
- * call, a false allow leaks a note.
+ * folds to `exports/private/secret.md` and still contains the folded needle.
+ *
+ * NOT purely over-inclusive, despite the rest of this gate being so. Resolving segments also
+ * dissolves a restricted path that only survived in a token as a verbatim substring:
+ * `read Private/secret.md/../other.md` used to refuse and now runs. It should run — that path
+ * resolves to `Private/other.md` and cannot reach the hidden note (see normalizeForCompare's note
+ * on why, and the tests pinning it). So this pass trades a handful of false refusals away rather
+ * than adding to them; the over-inclusiveness that remains is the substring test itself, which
+ * still refuses a token that merely CONTAINS a restricted path as a prefix.
  */
 function foldForScan(s: string): string {
   return normalizeForCompare(s);

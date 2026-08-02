@@ -321,11 +321,17 @@ test("resolveDenyPlan: exceeding the walk's entry budget is undetermined, not a 
     "c.md": "# C\n",
     "d.md": "# D\n",
   })
+  // Four entries against a bound of 3: the walk stops early, so the restricted set it found is
+  // necessarily incomplete and must not be reported as the answer.
   const plan = await resolveDenyPlan(vault, { maxEntries: 3 })
   expect(plan.determined).toBe(false)
+  expect(plan.determined === false && plan.reason).toContain("3")
   expect(plan).not.toMatchObject({ determined: true })
+  // The same vault under the real default is answerable, so the refusal is the BOUND talking and
+  // not something else about this vault.
   const ok = await resolveDenyPlan(vault)
   expect(ok).toMatchObject({ determined: true })
+  expect(ok.determined === true && ok.entries.map((e) => e.rel)).toEqual(["a.md"])
 })
 
 test("buildDenyPaths: the caller's own root spelling is an alias when it differs from the canonical one", async () => {
