@@ -44,7 +44,7 @@ The system treats knowledge as a "three-brain" model: **You** (self node, the us
 ### Testing
 - `bun test core` — Run all tests in core workspace (uses Bun's test runner)
 - `bun test core/test/wikilinks.test.ts` (or `bun test wikilinks`) — Run a single test file. **`bun test core -- <pattern>` does NOT filter** — Bun's positional args are OR'd substring matches against the file path, and `core` is itself one of them here; since every file under `core/test/` already contains `core` in its own path, the pattern list still matches the full suite no matter what you append. Pass an exact path, or a bare pattern with no `core`/`app` argument alongside it — see `docs/contributing/testing.md`.
-- `bun run typecheck` (repo root) — `tsc --noEmit` per workspace (core/app/mcp/relay, own pinned TS each). The build/test gate does NOT type-check — run this to catch type regressions.
+- `bun run typecheck` (repo root) — `tsc --noEmit` per workspace, each workspace pinning its own local `typescript` devDependency so the gate resolves offline instead of `bunx` hitting the registry: `core`/`cli`/`mcp`/`memory`/`daemon` pin `7.0.2`, `app`/`relay` pin `~5.6.2` (5.6.3) — a pre-existing version split (not introduced by the pin, previously an unpinned float), left unresolved on purpose; unifying it is its own task. The build/test gate does NOT type-check — run this to catch type regressions.
 - Tests are located in `core/test/`
 
 ### Building
