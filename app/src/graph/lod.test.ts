@@ -137,69 +137,106 @@ describe("buildLodIndex — per-cluster representative points (reps)", () => {
     return Math.sqrt(v);
   }
 
-  it("reproduces the members EXACTLY, as a set with unit weights, once k >= the member count", () => {
-    // The shipped default fixture's clusters are 2-6 members — every one is well under
-    // LOD_REP_POINTS_K, so this exercises k >= n with the PRODUCT default, not a special-cased k.
-    const levels = buildLodIndex(nodes(), edges, 1);
-    const raw = nodes();
-    for (const level of levels) {
-      for (const c of level.clusters) {
-        expect(c.count).toBeLessThan(LOD_REP_POINTS_K); // precondition: this really is the k >= n case
-        expect(c.reps.length).toBe(c.count);
-        expect(c.reps.every((r) => r.weight === 1)).toBe(true);
-        const repSet = new Set(c.reps.map((r) => `${r.x},${r.y}`));
-        const memberSet = new Set(c.memberIds.map((id) => {
-          const n = raw.find((x) => x.id === id)!;
-          return `${n.x},${n.y}`;
-        }));
-        expect(repSet).toEqual(memberSet);
-      }
+  // NOTE on constant-independence (Round-1 review, CRITICAL-2): every `k` used below is a LITERAL
+  // passed explicitly to `buildLodIndex`'s 4th argument, never the imported `LOD_REP_POINTS_K`.
+  // These tests pin the ALGORITHM's behaviour at a given k; whether 24 (or 8, or 64) is the right
+  // SHIPPED default is a separate, narrower claim pinned once, below, directly on the constant.
+
+  it("reproduces the members EXACTLY, as a set with unit weights, whenever k >= the member count " +
+    "(both comfortably above n and exactly at n === k)", () => {
+    const ns = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, path: [0], x: i * 3, y: -i * 5 }));
+    for (const k of [7, 24]) { // n === k, and k comfortably above n — both literals
+      const c = buildLodIndex(ns, [], 1, k)[0].clusters[0];
+      expect(c.count).toBe(7);
+      expect(c.reps.length).toBe(7);
+      expect(c.reps.every((r) => r.weight === 1)).toBe(true);
+      expect(new Set(c.reps.map((r) => `${r.x},${r.y}`))).toEqual(new Set(ns.map((n) => `${n.x},${n.y}`)));
     }
   });
 
-  it("still reproduces exactly at the exact boundary k === n, with an explicit small k", () => {
-    // Pin the boundary itself, not just "some k comfortably above n" — a fencepost error (k > n
-    // required instead of k >= n) would only show up exactly here.
-    const ns = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, path: [0], x: i * 3, y: -i * 5 }));
-    const levels = buildLodIndex(ns, [], 1, 7);
-    const c = levels[0].clusters[0];
-    expect(c.count).toBe(7);
-    expect(c.reps.length).toBe(7);
-    expect(c.reps.every((r) => r.weight === 1)).toBe(true);
-    expect(new Set(c.reps.map((r) => `${r.x},${r.y}`))).toEqual(new Set(ns.map((n) => `${n.x},${n.y}`)));
+  it("drops no member at n = k + 1 — the smallest case where reps stop being exact", () => {
+    // Round-1 review (IMPORTANT-2) found a first version silently dropped exactly one member here
+    // (always the last in encounter order). With k-means, n = k+1 puts one real member into some
+    // cluster alongside another, so weight conservation must still hold exactly even though
+    // point-level exactness has just ended (one rep is now a 2-member average).
+    const k = 24;
+    const ns = Array.from({ length: k + 1 }, (_, i) => ({ id: `m${i}`, path: [0], x: i * 7, y: i * i }));
+    const c = buildLodIndex(ns, [], 1, k)[0].clusters[0];
+    expect(c.count).toBe(k + 1);
+    expect(c.reps.length).toBeLessThanOrEqual(k);
+    const total = c.reps.reduce((a, r) => a + r.weight, 0);
+    expect(total).toBe(k + 1); // exact integer — see the dedicated exactness test below
+    for (const r of c.reps) expect(Number.isInteger(r.weight)).toBe(true);
   });
 
-  it("conserves total weight exactly (no members lost or double-counted) whether k is below, at, or above n", () => {
+  it("conserves total weight as an EXACT INTEGER — no members lost or double-counted — " +
+    "whether k is below, at, or above n", () => {
+    // v1's `n / k` weight landed off by up to 9.09e-13 in a broader sweep (Round-1 review,
+    // IMPORTANT-3); k-means weights are member COUNTS, so the sum must be bit-exact, not merely
+    // toBeCloseTo.
     const ns = Array.from({ length: 10 }, (_, i) => ({ id: `m${i}`, path: [0], x: i, y: i * i }));
     for (const k of [3, 7, 10, 24]) {
       const c = buildLodIndex(ns, [], 1, k)[0].clusters[0];
-      expect(c.reps.length).toBe(Math.min(10, k));
+      expect(c.reps.length).toBeLessThanOrEqual(Math.min(10, k));
       const totalWeight = c.reps.reduce((a, r) => a + r.weight, 0);
-      expect(totalWeight).toBeCloseTo(10, 8); // ABSOLUTE: ten members in, ten members' worth of weight out
-      // Every rep is a REAL member coordinate — nothing invented, unlike an ellipse sampled from
-      // sdx/sdy (which places mass at arbitrary points on a curve no member ever occupied).
-      const memberCoords = new Set(ns.map((n) => `${n.x},${n.y}`));
-      for (const r of c.reps) expect(memberCoords.has(`${r.x},${r.y}`)).toBe(true);
+      expect(totalWeight).toBe(10); // ABSOLUTE and bit-exact: ten members in, ten members' worth of weight out
+      for (const r of c.reps) expect(Number.isInteger(r.weight)).toBe(true);
     }
   });
 
-  it("on a deliberately clumped, anisotropic fixture (two tight blobs on a diagonal), reps stay in the " +
-    "blobs and split proportionally — a single centroid+sd ellipse cannot do either", () => {
-    // Blob A: 30 members tightly jittered around (-1000, -1000). Blob B: 10 members tightly
-    // jittered around (+1000, 1000) — far apart, on the diagonal, deliberately NOT axis-aligned so
-    // an isotropic or axis-aligned synthesis has nowhere to hide. Listed in blob order (A's 30
-    // first, B's 10 next): the cluster's OWN encounter order, unrelated to anything the fix reads.
+  it("a spatially separated 8-member sub-blob inside a 300-member cluster keeps its own " +
+    "representation — not zeroed by encounter order, not diluted away", () => {
+    // Round-1 review CRITICAL-1: a real vault's `core/src/files.ts` walk is folder-contiguous and
+    // unsorted, so a cluster's members arrive as contiguous per-folder runs, not a
+    // position-independent shuffle. This fixture reproduces that shape directly: 292 "background"
+    // members spread broadly (never near the sub-blob) plus an 8-member sub-blob planted as ONE
+    // CONTIGUOUS RUN in the middle of encounter order — the folder-run shape the review measured
+    // failing against a stride sample.
+    //
+    // WHY 8, NOT THE REVIEW'S OWN "20-member" EXAMPLE: checked directly against a fixed-stride
+    // sampler (this file's v1, reinstated temporarily to verify) — at n=300 and ANY k in the
+    // brief's 16-32 band, the widest possible gap between stride samples is under 20 (300/16 = 18.75
+    // members between samples, worst case), so by pigeonhole a CONTIGUOUS 20-member run can never
+    // fully avoid every sample; the review's own suggested numbers cannot force a full zero here.
+    // An 8-member run can (8 < the ~12-19-member gaps in that band) and was confirmed, by direct
+    // sweep, to hit an exact zero at a real offset (13, used below) under that stride sampler —
+    // i.e. this fixture is proven capable of failing before trusting that the fix passes it.
+    const background = Array.from({ length: 292 }, (_, i) => {
+      const angle = (i / 292) * 2 * Math.PI * 3.3;
+      const r = 200 + (i % 7) * 20;
+      return { id: `bg${i}`, path: [0], x: r * Math.cos(angle), y: r * Math.sin(angle) };
+    });
     const jitter = [-2, -1, 0, 1, 2];
-    const A = Array.from({ length: 30 }, (_, i) => ({
+    const subCx = 5000, subCy = 5000;
+    const subBlob = Array.from({ length: 8 }, (_, i) => ({
+      id: `sub${i}`, path: [0], x: subCx + jitter[i % 5], y: subCy + jitter[(i * 3) % 5],
+    }));
+    const ns = [...background.slice(0, 13), ...subBlob, ...background.slice(13)];
+    const c = buildLodIndex(ns, [], 1, 24)[0].clusters[0];
+    expect(c.count).toBe(300);
+
+    const nearSubBlob = c.reps.filter((r) => Math.hypot(r.x - subCx, r.y - subCy) < 50);
+    expect(nearSubBlob.length).toBeGreaterThanOrEqual(1); // LITERAL: at least 1 rep lies within the sub-blob
+    const subBlobWeight = nearSubBlob.reduce((a, r) => a + r.weight, 0);
+    expect(Math.abs(subBlobWeight - 8)).toBeLessThan(3); // LITERAL: represented weight within 3 of the true 8
+  });
+
+  it("on a deliberately clumped, anisotropic fixture (two tight blobs on a diagonal), reps stay in the " +
+    "blobs and split proportionally, EVEN ON AN UGLY SPLIT — a single centroid+sd ellipse cannot do either", () => {
+    // Blob A / Blob B sizes are 29/11 — deliberately NOT a multiple of 1/k (Round-1 review,
+    // IMPORTANT-4: a 30/10 split is an exact multiple of 1/24 and passed by arithmetic coincidence;
+    // 29/11 does not have that property, so a pass here is not a fixture accident.
+    const nA = 29, nB = 11;
+    const jitter = [-2, -1, 0, 1, 2];
+    const A = Array.from({ length: nA }, (_, i) => ({
       id: `A${i}`, path: [0], x: -1000 + jitter[i % 5], y: -1000 + jitter[(i * 3) % 5],
     }));
-    const B = Array.from({ length: 10 }, (_, i) => ({
+    const B = Array.from({ length: nB }, (_, i) => ({
       id: `B${i}`, path: [0], x: 1000 + jitter[i % 5], y: 1000 + jitter[(i * 3) % 5],
     }));
     const ns = [...A, ...B];
-    const levels = buildLodIndex(ns, [], 1, LOD_REP_POINTS_K);
-    const c = levels[0].clusters[0];
-    expect(c.count).toBe(40);
+    const c = buildLodIndex(ns, [], 1, 24)[0].clusters[0];
+    expect(c.count).toBe(nA + nB);
 
     // --- Prove the fixture actually exhibits the problem an ellipse has -------------------------
     // A single centroid+sd "ellipse" summary is centred at (wx, wy) with radii (sdx, sdy). If that
@@ -225,12 +262,12 @@ describe("buildLodIndex — per-cluster representative points (reps)", () => {
     const nearB = c.reps.filter((r) => Math.hypot(r.x - 1000, r.y - 1000) < 10);
     expect(nearA.length).toBeGreaterThan(0);
     expect(nearB.length).toBeGreaterThan(0);
-    // ...and split proportionally to the real 30/10 membership, not evenly split 50/50 as an
-    // ellipse's symmetric density would imply.
+    // ...and split EXACTLY along the real 29/11 membership (k-means assigns every point to exactly
+    // one real blob when the blobs are this well separated — no quantization to multiples of n/k).
     const wA = nearA.reduce((a, r) => a + r.weight, 0);
     const wB = nearB.reduce((a, r) => a + r.weight, 0);
-    expect(wA).toBeCloseTo(30, 0);
-    expect(wB).toBeCloseTo(10, 0);
+    expect(wA).toBe(nA);
+    expect(wB).toBe(nB);
 
     // --- reps' OWN spread matches the members' real spread far better than a single centroid ---
     // (a single centroid is a POINT — spread 0, i.e. 100% wrong on an axis whose real spread is
@@ -241,6 +278,15 @@ describe("buildLodIndex — per-cluster representative points (reps)", () => {
     expect(repSdy).toBeGreaterThan(c.sdy * 0.85);
     expect(repSdx).toBeLessThan(c.sdx * 1.15);
     expect(repSdy).toBeLessThan(c.sdy * 1.15);
+  });
+
+  it("LOD_REP_POINTS_K stays within the brief's cost ceiling — pinned from ABOVE, not just documented", () => {
+    // Round-1 review, CRITICAL-2: k=8,16,32,64,256,1000,10000 were ALL fully green against every
+    // other test in this file, because those tests followed whatever the constant was rather than
+    // pinning it. This is the one place the shipped VALUE is checked, against literal bounds that
+    // do not move if the constant does: raising it to 10000 (or dropping it to 1) must go red here.
+    expect(LOD_REP_POINTS_K).toBeGreaterThanOrEqual(16); // LITERAL lower bound, the brief's own band
+    expect(LOD_REP_POINTS_K).toBeLessThanOrEqual(32);    // LITERAL upper bound — the actual cost ceiling
   });
 });
 

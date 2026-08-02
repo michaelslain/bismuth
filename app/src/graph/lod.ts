@@ -57,18 +57,23 @@ export interface LodCluster {
   sdx: number;
   sdy: number;
   memberIds: string[];
-  /** `LOD_REP_POINTS_K` (or fewer, if the cluster has fewer members than that) world points
-   *  standing in for this cluster's members, each carrying `weight` = how many members it
-   *  represents. Weights across `reps` sum to `count` EXACTLY, at every k — see lod.test.ts's
-   *  "conserves total weight exactly" case. Computed by `representativePoints()` in the SAME
-   *  member pass that accumulates the centroid/SD above (one extra push per member into a
-   *  per-group point list, finalized alongside `sdx`/`sdy` — no second walk over `nodes`).
+  /** Up to `LOD_REP_POINTS_K` world points standing in for this cluster's members, each carrying
+   *  an INTEGER `weight` = how many members it represents. Weights across `reps` sum to `count`
+   *  EXACTLY (integer arithmetic, not floating-point-close — see lod.test.ts's "weight sum is an
+   *  exact integer" case). The member pass above accumulates the raw sums AND each member's own
+   *  coordinate (`pts`) in one walk over `nodes`; `representativePoints()` then runs its own
+   *  per-cluster 2D k-means on `pts` in the finalization step below, alongside `sdx`/`sdy`'s
+   *  `sqrt` — see that function's doc comment for the full algorithm and its history (two prior
+   *  versions each fixed a real, measured failure mode; read it before changing this again).
    *
-   *  THE CONVERGENCE PROPERTY THAT MAKES THIS RIGHT RATHER THAN MERELY BETTER: once a cluster has
-   *  `count <= LOD_REP_POINTS_K` members, `reps` IS the member set — every member becomes its own
-   *  representative point at weight 1, so the mass→glyph handover this feeds (Task 24b's phosphor
-   *  bloom) is EXACT at the boundary, not an approximation that happens to look close. See
-   *  lod.test.ts's "reproduces the members EXACTLY... once k >= the member count".
+   *  THE CONVERGENCE PROPERTY THAT MAKES THIS RIGHT RATHER THAN MERELY BETTER, PRECISELY SCOPED:
+   *  once `count <= LOD_REP_POINTS_K`, `reps` IS the member set — every member becomes its own
+   *  representative point at weight 1, unrounded, so the mass→glyph handover this feeds (Task
+   *  24b's phosphor bloom) is EXACT in that regime, not an approximation that happens to look
+   *  close. Above it (`count > LOD_REP_POINTS_K`), reps are block CENTROIDS — real but averaged —
+   *  and the property is weight conservation, not point-level exactness. See lod.test.ts's
+   *  "reproduces the members EXACTLY... once k >= the member count" and its `n = k+1` case for the
+   *  exact edge where exactness ends.
    *
    *  Consumed by AsciiGraphRenderer's `emitBloom()` → densityField.ts's `pushCloud` (Task 24b, not
    *  wired here): instead of synthesizing one Gaussian-ish cloud from `sdx`/`sdy` centred on
@@ -90,16 +95,35 @@ export interface LodRepPoint {
 
 /**
  * How many representative points (`LodCluster.reps`) a cluster gets, at most — the brief's own
- * 16-32 band; 24 is its midpoint. Reasoning for landing there rather than either edge: the
- * reference vault's coarsest-level masses run 40-300 members (`massRadii`'s doc comment) — at 16
- * points a 300-member mass gives each point ~19 members' worth of weight, coarse enough that a
- * small secondary blob (say, 20 of the 300) could be represented by a single surviving point or
- * none; at 24 that floor is ~13 members per point, comfortably resolving a blob an order of
- * magnitude smaller than its parent. Above 32 the per-cluster point budget starts costing more
- * than the leaf pass it is standing in for once each point becomes its own small `pushCloud`
- * splat (densityField.ts) — the same "cost no more than the notes it replaces" ceiling `massRadii`
- * and `CLOUD_MAX_RINGS`/`CLOUD_MAX_PER_RING` already hold to. 24 sits centred in the specified
- * band with headroom either side, not picked to make any one test pass.
+ * 16-32 band; 24 is its midpoint, honestly: this is NOT derived from a "members per point" budget
+ * the way `MASS_ROW_K` is tuned against a measured target. (Round-1 review, IMPORTANT-1: an
+ * earlier version of this comment claimed exactly that derivation — "16 points gives ~19
+ * members/point, coarse enough to lose a 20-member blob; 24 gives ~13, comfortably resolving it" —
+ * and it was checked against the shipped v1 algorithm and found FALSE: k=16 gave that 20-member
+ * blob ONE rep at weight 18.75 (-6% error) while k=24 gave it ONE rep at weight 12.50 (-38%
+ * error) — MORE wrong, not less, because "members per point" was never the governing statistic;
+ * a single blob either earns a rep or it doesn't, and how many members that rep is then off by is
+ * a different question entirely.)
+ *
+ * Since Round 1, `representativePoints()` moved from a fixed-stride sample to real 2D k-means, so
+ * the governing statistic for the LOWER bound is different again: whether `k` comfortably exceeds
+ * the number of genuinely distinct spatial sub-populations (folder-scale sub-communities, in
+ * practice) a single coarse-level mass can contain — k-means can dedicate one cluster to each
+ * REAL population as long as there are enough clusters to go around, regardless of any one
+ * population's size. Checked directly (not asserted): a synthetic 300-member cluster built from
+ * 15 folder-runs of wildly uneven size (6 to 40 members, arranged with no dominant axis so a 1D
+ * method has nowhere to hide) came back with every folder's true member count exactly at k = 16,
+ * 24, AND 32 — so the lower edge of the band already has headroom for that shape; there was no
+ * measurement pushing 24 specifically over 16 here.
+ *
+ * The UPPER bound is unchanged and still real: each `reps` point becomes its own small `pushCloud`
+ * splat (densityField.ts) once Task 24b wires this in, so the per-cluster point budget must stay
+ * "no more than the leaf pass it's standing in for" — the same ceiling `massRadii` and
+ * `CLOUD_MAX_RINGS`/`CLOUD_MAX_PER_RING` already hold to, and the reason this constant has a
+ * dedicated upper-bound test (lod.test.ts) rather than only a lower one.
+ *
+ * So: 24 is the brief's band midpoint, chosen for headroom on both sides, not a number this file
+ * derives from first principles — say so plainly rather than dress up a coincidence as a proof.
  */
 export const LOD_REP_POINTS_K = 24;
 
@@ -187,7 +211,7 @@ export function buildLodIndex(
           sdx: Math.sqrt(Math.max(0, g.sxx / n - mx * mx)),
           sdy: Math.sqrt(Math.max(0, g.syy / n - my * my)),
           memberIds: g.ids,
-          reps: representativePoints(g.pts, repK),
+          reps: representativePoints(g.pts, repK, mx, my),
         };
       })
       .sort((a, b) => b.count - a.count || a.community - b.community);
@@ -220,38 +244,147 @@ export function buildLodIndex(
   return out;
 }
 
+/** Lloyd's-algorithm iteration cap for `representativePoints`' k-means — not a tuning constant in
+ *  the "retune to fix a test" sense, a termination guarantee: at the per-cluster sizes this runs
+ *  on (tens to a few hundred members, `k` in the 16-32 band), k-means on 2D points converges in a
+ *  handful of iterations; this just bounds the pathological case. Cost is O(n·k) per iteration,
+ *  trivially cheap at build time (never per frame). */
+const KMEANS_MAX_ITERS = 20;
+
 /**
  * `LodCluster.reps`: up to `k` representative world points for a cluster whose members are `pts`,
- * each weighted by how many members it stands for (weights sum to `pts.length` exactly).
+ * each weighted by the INTEGER number of members it stands for (weights sum to `pts.length`
+ * exactly — real integer arithmetic, not a floating approximation; see the weight-conservation
+ * note below). `n <= k`: every member is its own representative at weight 1 (see the convergence
+ * note below). `n > k`: deterministic 2D k-means (Lloyd's algorithm) on the real member
+ * coordinates — `k` clusters, each rep is that cluster's own centroid, weighted by its own
+ * assigned member count.
  *
- * DETERMINISTIC SYSTEMATIC SAMPLE over `pts` in the order the single member pass built it (the
- * SAME order `memberIds` ends up in) — index `j` (0..k-1) picks member `floor(j * n / k)`. Two
- * properties fall out of that one formula with no extra cases:
+ * HISTORY, so the next reviewer doesn't reintroduce either fixed bug: v1 sampled `pts` by a fixed
+ * STRIDE over ENCOUNTER order (the order the member pass built it, i.e. `nodes`' own order — for a
+ * real vault that is `core/src/files.ts`'s unsorted, folder-contiguous `Bun.Glob` walk, and a
+ * folder of densely wikilinked notes is exactly what `communityForce`, layout.ts, pulls into one
+ * shared centroid). A cluster's `memberIds` is therefore a sequence of CONTIGUOUS,
+ * spatially-coherent runs, one per source folder — and a fixed-stride sample over that order can
+ * land every sample outside a run shorter than the stride, deterministically dropping that whole
+ * sub-population's weight onto its neighbours, every build, forever (measured: a 6-member sub-blob
+ * read zero representation while an 8-member one nearby read 3× its true weight). v2 fixed
+ * encounter-order dependence by sorting on projection onto the cluster's own PRINCIPAL AXIS
+ * (closed-form PCA) before a contiguous block partition — correct for any cluster with ONE
+ * dominant elongation direction, but a 1D projection has its own failure mode: sub-populations
+ * arranged with no single dominant axis (measured case: many folder-runs distributed roughly
+ * evenly AROUND a shared parent centroid, e.g. a hub with many similarly-sized branches) can
+ * project to overlapping ranges regardless of which axis is chosen, so several small runs still
+ * lose their representation to a larger neighbour they merely happen to share a projected value
+ * with. That is a real 2D arrangement problem; no 1D reduction fixes it in general. v3 (this
+ * version) drops the 1D reduction and clusters in the ACTUAL 2D space, which is one of the two
+ * techniques the plan's brief named for exactly this reason.
  *
- *  - `n <= k`: every member is its own representative at weight 1 — this IS the member set, not an
- *    approximation of it. That is the convergence property lod.test.ts pins directly: as k grows
- *    to cover a cluster, `reps` becomes the leaf pass exactly, so the mass→glyph handover this
- *    feeds is exact at the boundary rather than merely close.
- *  - `n > k`: `floor(j*n/k)` is strictly increasing in `j` (successive gaps are `floor(n/k)` or
- *    one more, both >= 1 since `n/k > 1`), so it can never sample the same member twice, and each
- *    of the `k` survivors carries weight `n/k` — `k * (n/k) = n`, so nothing is lost or
- *    double-counted at any `k` (lod.test.ts's weight-conservation case).
+ * DETERMINISM (`buildLodIndex` stays a pure function of its arguments — no RNG): initial centroid
+ * SEEDS are picked by deterministic FARTHEST-FIRST traversal (Gonzalez's greedy k-center
+ * algorithm — see the seeding block below), not v2's 1D projection, which is what actually fixes
+ * the isotropic-arrangement failure: farthest-first spreads seeds by real 2D distance, so it
+ * cannot waste two seeds on the same dense region while missing another one entirely, the way a
+ * 1D order can. Lloyd's iteration then reassigns every point by true 2D nearest-centroid distance
+ * each round. Iteration is bounded (`KMEANS_MAX_ITERS`), and both the seeding traversal and
+ * reassignment break ties on the lowest point/cluster index — everything here is deterministic, so
+ * two calls on the same graph return identical `reps`.
  *
- * No RNG, so `buildLodIndex` stays a pure function of its arguments (repeat calls on the same
- * graph return the same reps, which is what makes this testable without a seed). That is sound
- * PRECISELY because community membership order is driven by vault/graph build order, not by
- * spatial position — an evenly spaced pick over it lands across a cluster's real sub-populations
- * in roughly their real proportions (see lod.test.ts's two-blob fixture, where 30/10-split blobs
- * come back represented ~30/10, not 50/50), without needing true randomness to get there.
+ * EMPTY CLUSTERS (every point closer to some other centroid) are reseeded to the point currently
+ * FARTHEST from its own assigned centroid — a standard k-means repair — so a real sub-population
+ * is never silently discarded merely because the initial seed didn't land near it; the next
+ * iteration's reassignment pulls that region's real points onto the new seed if the geometry
+ * supports it.
+ *
+ * THE CONVERGENCE PROPERTY, PRECISELY SCOPED: at `n <= k`, `reps` IS the member set — each point is
+ * its own representative at weight exactly 1, unrounded — so the mass→glyph handover this feeds
+ * (Task 24b) is EXACT in that regime, not merely close. Above it (`n > k`), reps are k-means
+ * CENTROIDS (a mean of several real members) — real but approximate; see lod.test.ts's `n = k+1`
+ * case for the exact boundary where exactness ends.
+ *
+ * WEIGHT CONSERVATION IS EXACT INTEGER ARITHMETIC: every point is assigned to exactly one cluster
+ * (ties broken deterministically), so summed cluster sizes are `n` by construction — no
+ * `n / k`-style floating division ever touches a weight. See lod.test.ts's "weight sum is an exact
+ * integer" case.
  */
-function representativePoints(pts: { x: number; y: number }[], k: number): LodRepPoint[] {
+function representativePoints(pts: { x: number; y: number }[], k: number, mx: number, my: number): LodRepPoint[] {
   const n = pts.length;
+  if (n === 0) return [];
   if (n <= k) return pts.map((p) => ({ x: p.x, y: p.y, weight: 1 }));
-  const w = n / k;
-  const reps: LodRepPoint[] = new Array(k);
+
+  // Deterministic FARTHEST-FIRST seeding (Gonzalez's greedy k-center traversal): start from the
+  // member closest to the cluster's own centroid (a geometric, encounter-order-independent anchor
+  // — no `pts[0]` first-in-array pick), then repeatedly add whichever remaining point is farthest
+  // from every seed chosen so far. This is what makes k-means actually find EVERY distinct
+  // sub-population instead of wasting seeds on one dense area: an earlier version of this function
+  // seeded from a 1D principal-axis projection, which (measured) still left several real,
+  // well-separated sub-populations at zero represented weight when the cluster's sub-populations
+  // were arranged with no single dominant axis (e.g. many similarly-sized branches spread roughly
+  // evenly around a shared parent centroid) — the 1D order placed multiple seeds in the same
+  // region and never reached the rest within the iteration budget. Farthest-first seeding spreads
+  // seeds by real 2D distance, so it cannot make that mistake: each new seed is, by construction,
+  // as far as possible from every population already claimed by an earlier seed. Ties broken by
+  // lowest point index — deterministic, so two calls on the same graph return identical `reps`.
+  let anchor = 0, anchorD = Infinity;
+  for (let i = 0; i < n; i++) {
+    const dx = pts[i].x - mx, dy = pts[i].y - my;
+    const d = dx * dx + dy * dy;
+    if (d < anchorD) { anchorD = d; anchor = i; }
+  }
+  const cx: number[] = [pts[anchor].x], cy: number[] = [pts[anchor].y];
+  const nearestSeedD2 = new Array<number>(n);
+  for (let i = 0; i < n; i++) {
+    const dx = pts[i].x - cx[0], dy = pts[i].y - cy[0];
+    nearestSeedD2[i] = dx * dx + dy * dy;
+  }
+  for (let s = 1; s < k; s++) {
+    let farI = 0, farD = -1;
+    for (let i = 0; i < n; i++) if (nearestSeedD2[i] > farD) { farD = nearestSeedD2[i]; farI = i; }
+    cx.push(pts[farI].x); cy.push(pts[farI].y);
+    for (let i = 0; i < n; i++) {
+      const dx = pts[i].x - cx[s], dy = pts[i].y - cy[s];
+      const d = dx * dx + dy * dy;
+      if (d < nearestSeedD2[i]) nearestSeedD2[i] = d;
+    }
+  }
+
+  const assign = new Array<number>(n).fill(-1);
+  for (let iter = 0; iter < KMEANS_MAX_ITERS; iter++) {
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      let best = 0, bestD = Infinity;
+      for (let j = 0; j < k; j++) {
+        const dx = pts[i].x - cx[j], dy = pts[i].y - cy[j];
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = j; }
+      }
+      if (assign[i] !== best) { assign[i] = best; changed = true; }
+    }
+    if (!changed && iter > 0) break;
+    const sx = new Array(k).fill(0), sy = new Array(k).fill(0), cnt = new Array(k).fill(0);
+    for (let i = 0; i < n; i++) { const j = assign[i]; sx[j] += pts[i].x; sy[j] += pts[i].y; cnt[j]++; }
+    for (let j = 0; j < k; j++) {
+      if (cnt[j] > 0) { cx[j] = sx[j] / cnt[j]; cy[j] = sy[j] / cnt[j]; continue; }
+      // Empty cluster: reseed to the point currently farthest from ITS assigned centroid, so the
+      // next reassignment pass can pull a real, under-served region onto this centroid instead of
+      // leaving it a dead, zero-weight slot.
+      let farI = 0, farD = -1;
+      for (let i = 0; i < n; i++) {
+        const cj = assign[i];
+        const dx = pts[i].x - cx[cj], dy = pts[i].y - cy[cj];
+        const d = dx * dx + dy * dy;
+        if (d > farD) { farD = d; farI = i; }
+      }
+      cx[j] = pts[farI].x; cy[j] = pts[farI].y;
+    }
+  }
+
+  const sx = new Array(k).fill(0), sy = new Array(k).fill(0), cnt = new Array(k).fill(0);
+  for (let i = 0; i < n; i++) { const j = assign[i]; sx[j] += pts[i].x; sy[j] += pts[i].y; cnt[j]++; }
+  const reps: LodRepPoint[] = [];
   for (let j = 0; j < k; j++) {
-    const p = pts[Math.floor((j * n) / k)];
-    reps[j] = { x: p.x, y: p.y, weight: w };
+    if (cnt[j] === 0) continue; // only reachable with fewer than k distinct point locations in pts
+    reps.push({ x: sx[j] / cnt[j], y: sy[j] / cnt[j], weight: cnt[j] });
   }
   return reps;
 }
