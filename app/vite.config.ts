@@ -36,7 +36,7 @@ export default defineConfig(async () => ({
           // so keep it in its own lazy chunk off the boot path. The worker is a separate `?url`
           // asset, so it stays out of this chunk regardless.
           if (id.includes("pdfjs-dist")) return "pdfjs";
-          if (id.includes("/three/") || id.includes("d3-force-3d")) return "three";
+          if (id.includes("d3-force-3d")) return "d3-force-3d";
           if (id.includes("@xterm/")) return "xterm";
           if (id.includes("/katex/")) return "katex";
           if (id.includes("/marked/")) return "marked";
