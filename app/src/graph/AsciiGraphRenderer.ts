@@ -181,6 +181,14 @@ const MESH_W_BASE = 0.3, MESH_W_MIN = 0.12, MESH_W_MAX = 1.1;  // CanvasGraphRen
 /** Endpoint pull-back for every vector line, in CELL WIDTHS — see strokeEdges()' CLEARANCE comment
  *  for the derivation. One constant so the member tier and the group tiers can't drift apart. */
 const CLEARANCE_CELLS = 0.55;
+/** LABEL HALO — the ground-coloured `strokeText` drawn under every name, and the whole of Task 21's
+ *  fix. It replaces an opaque ground `fillRect` that erased every edge running behind a label (see
+ *  paint()'s label loop for the measurement). Expressed in EM so it tracks the font, with a floor so
+ *  it never falls under a hairline on a small cell: at the shipped 11.5px cell that is 2.3px, i.e.
+ *  ~1.15px of ground either side of each stroke of each letter — enough to separate a name from a
+ *  line crossing it, small enough that the line still reads as continuous past the glyph. */
+const LABEL_HALO_EM = 0.2;
+const LABEL_HALO_MIN_PX = 2;
 // GROUP LINES — the far band's aggregate connectors and the mid band's hub-to-hub backbone, both
 // vector-stroked through the same batched path (see queueGroupLine/strokeGroupLines). Widths ported
 // from CanvasGraphRenderer.ts:1259/1265; `GROUP_W_BASE + wb * GROUP_W_STEP` is its per-weight-bucket
@@ -2349,6 +2357,34 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *
    * Every tier crossfades (not switches) across its own span, via `alpha` on each LabelDraw.
    */
+  /**
+   * Claim `[col-1, col+span]` on `row` for a label — the ONE place a label takes screen cells.
+   *
+   * Two things happen here, and the second is Task 21's other half. `labelOccupied` keeps the next
+   * label off these cells (the "soup" rule). Blanking `charBuf` keeps the FIELD off them: the row
+   * loop in paint() draws only non-zero cells, so a name is never read through the glyphs behind it.
+   *
+   * That job used to be done at paint time, by filling an opaque ground rect over the label's band —
+   * which also erased every EDGE crossing that band, and is what the user saw as the field
+   * "splitting" (see paint()'s label loop). Suppressing the glyphs at the source instead means the
+   * plate is not needed for them at all, so the only thing left to separate a name from is the
+   * vector line work — and that is what the per-glyph halo does, without covering a band.
+   *
+   * Safe to do here because `layoutLabels` is the LAST pass in rasterize(): `charBuf` is final by the
+   * time a label claims anything, so a blanked cell can never be re-filled later in the same frame.
+   * The hit test reads `cellNode`, not `charBuf`, so a node under a name stays hoverable and
+   * clickable exactly as it was when the plate covered its glyph.
+   */
+  private reserveLabelCells(col: number, span: number, row: number) {
+    const m = this.m;
+    for (let c = col - 1; c <= col + span; c++) {
+      if (c < 0 || c >= m.cols) continue;
+      const i = row * m.cols + c;
+      this.labelOccupied[i] = 1;
+      this.charBuf[i] = 0;
+    }
+  }
+
   private layoutLabels(is2d: boolean) {
     this.labels.length = 0;
     if (this.cfg.showGraphLabels === false) return;
@@ -2435,9 +2471,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         if (alt >= 0 && alt + len <= m.cols && !taken(alt, len, row)) { col = alt; free = true; }
       }
       if (!free && !force && !everyNode) continue;
-      for (let c = col - 1; c <= col + len; c++) {
-        if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
-      }
+      this.reserveLabelCells(col, len, row);
       const accent = nv.node.id === this.activeFile || nv.node.id === this.hoveredId || this.searchMatches.has(nv.node.id);
       const colorSlot = accent ? C_ACCENT : is2d ? C_MUTED : nv.dr > 0.55 ? C_MUTED : C_FAINT;
       this.labels.push({
@@ -2564,9 +2598,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         if (this.labelOccupied[row * m.cols + c]) free = false;
       }
       if (!free) continue;
-      for (let c = col - 1; c <= col + wCells; c++) {
-        if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
-      }
+      this.reserveLabelCells(col, wCells, row);
       const color = this.communityColorsByLevel[level]?.get(community) ?? "#888";
       this.labels.push({ text, col, row, color, accent: false, alpha, eyebrow: true, widthCells: wCells });
     }
@@ -2624,9 +2656,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         if (this.labelOccupied[row * m.cols + c]) free = false;
       }
       if (!free) continue;
-      for (let c = col - 1; c <= col + wCells; c++) {
-        if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
-      }
+      this.reserveLabelCells(col, wCells, row);
       this.labels.push({
         text, col, row, color: this.resolveFillColor(ev.color), accent: false, alpha, eyebrow: true, widthCells: wCells,
       });
@@ -2834,25 +2864,61 @@ export class AsciiGraphRenderer implements GraphRenderer {
       flush();
     }
 
-    // Labels last, each on cleared ground (the design's opaque label plate) so a name is never
-    // read through the field behind it. Cluster (eyebrow) names borrow the pinned cell letterSpacing
-    // for real `--ls-eyebrow` tracking, then hand it back so the next frame's field glyphs (drawn at
-    // the top of THIS function, before labels) still land exactly on their cells.
+    // Labels last, each on a per-GLYPH ground halo — never an opaque plate. Cluster (eyebrow) names
+    // borrow the pinned cell letterSpacing for real `--ls-eyebrow` tracking, then hand it back so the
+    // next frame's field glyphs (drawn at the top of THIS function, before labels) still land exactly
+    // on their cells.
+    //
+    // WHY A HALO AND NOT A RECT ("it splits"). This used to be
+    //
+    //     ctx.fillStyle = this.groundColor;
+    //     ctx.fillRect(x - m.cellW * 0.5, y, (l.text.length + 1) * m.cellW, m.cellH);
+    //
+    // — an OPAQUE ground rect, painted after strokeEdges(), so every edge running behind a name was
+    // painted out. It is one cell TALL, which sounds harmless, and is why the defect went unread for
+    // so long; what matters is that it is as WIDE as the name. On the reference vault, zoomed onto a
+    // 69-degree hub, two labels sat on it — the hub's own file name (a 498x18 plate on the hub's own
+    // row) and the cluster eyebrow two rows up (82x18) — and between them they erased 44 of the 98
+    // hub-incident segments, ~2706px of line, across a 98-degree sector. At a convergence point every
+    // spoke is within a few pixels of every other, so an 18px band subtends a WIDE ANGLE close in:
+    // spokes vanished for their first 30-90px and the shallowest for 434px. The user read that as the
+    // field splitting, and they were right — the graph was lying about its own structure.
+    //
+    // The plate's job was legibility, so it is replaced rather than deleted, and the job is split in
+    // two along the two things that were behind a name:
+    //
+    //   FIELD GLYPHS are suppressed AT THE SOURCE — layoutLabels() blanks `charBuf` under a label's
+    //   reserved cells, so the row loop above never draws them (see reserveLabelCells). Same picture
+    //   the plate gave, minus the painting-over.
+    //
+    //   EDGES get this halo: `strokeText` in the ground colour under the fill, so the ground clears
+    //   only the letterforms' own outline (~1px each side) instead of their bounding band. A line
+    //   passing behind a name still reads as behind it, and still reads as a LINE — it is nicked at
+    //   each glyph, not severed for 500px.
+    //
+    // The halo carries the label's own alpha, so a crossfading name never leaves a dark ghost stroked
+    // at full strength over the field it is fading out of.
     ctx.globalAlpha = 1;
     const ctxLS = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
     const eyebrowLS = `${(this.fontPx * CLUSTER_LABEL_TRACKING_EM).toFixed(2)}px`;
+    const prevJoin = ctx.lineJoin, prevCap = ctx.lineCap, prevW = ctx.lineWidth;
+    // Round join+cap so the halo hugs the glyph instead of growing spikes off every corner.
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.lineWidth = Math.max(LABEL_HALO_MIN_PX, this.fontPx * LABEL_HALO_EM);
     for (const l of this.labels) {
-      if (l.alpha <= 0.01) continue; // fully crossfaded out — skip so its ground-clear box doesn't blank the field
+      if (l.alpha <= 0.01) continue; // fully crossfaded out — nothing to draw, and nothing to clear
       const x = m.padX + l.col * m.cellW;
       const y = m.padY + l.row * m.cellH;
-      ctx.fillStyle = this.groundColor;
-      ctx.fillRect(x - m.cellW * 0.5, y, (l.text.length + 1) * m.cellW, m.cellH);
-      ctx.fillStyle = l.color; // already a resolved CSS colour string — see LabelDraw's doc
       ctx.globalAlpha = (l.eyebrow ? 1 : l.accent ? 1 : 0.9) * l.alpha;
       if (this.letterSpacingSupported) ctxLS.letterSpacing = l.eyebrow ? eyebrowLS : this.pinnedLetterSpacing;
+      ctx.strokeStyle = this.groundColor;
+      ctx.strokeText(l.text, x, y + m.cellH / 2);
+      ctx.fillStyle = l.color; // already a resolved CSS colour string — see LabelDraw's doc
       ctx.fillText(l.text, x, y + m.cellH / 2);
       ctx.globalAlpha = 1;
     }
+    ctx.lineJoin = prevJoin; ctx.lineCap = prevCap; ctx.lineWidth = prevW;
     if (this.letterSpacingSupported) ctxLS.letterSpacing = this.pinnedLetterSpacing;
     this.onPaint?.(drawnNodes);
   }

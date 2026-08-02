@@ -43,6 +43,14 @@ interface FakeCtx {
    *  entry per `pass()` bucket, each carrying every `moveTo/lineTo` segment traced between its
    *  `beginPath()` and its `stroke()`. */
   strokes: { color: string; width: number; alpha: number; segs: [number, number, number, number][] }[];
+  /** Every `fillRect` this paint issued, with the paint state it was issued under. The label pass's
+   *  ground-clear is a fillRect, and an OPAQUE one painted after `strokeEdges()` erases whatever line
+   *  work runs behind it — see the "a label never erases the field behind it" test. `clearRect` (the
+   *  frame reset) is deliberately NOT recorded here: it is not a paint, and folding the two together
+   *  would make every frame look like it blanked the whole canvas. */
+  fillRects: { x: number; y: number; w: number; h: number; color: string; alpha: number }[];
+  /** Same for `strokeText` — the per-glyph ground halo the label pass draws under each name. */
+  strokeTexts: { text: string; x: number; y: number; color: string; width: number; alpha: number }[];
   fonts: string[];
   font: string;
   letterSpacing: string;
@@ -54,8 +62,9 @@ interface FakeCtx {
   textAlign: string;
   setTransform(): void;
   clearRect(): void;
-  fillRect(): void;
+  fillRect(x: number, y: number, w: number, h: number): void;
   fillText(t: string, x: number, y: number): void;
+  strokeText(t: string, x: number, y: number): void;
   measureText(s: string): { width: number };
   beginPath(): void;
   moveTo(x: number, y: number): void;
@@ -72,6 +81,8 @@ function makeCtx(): FakeCtx {
   const ctx = {
     fills: [] as { text: string; x: number; y: number; color: string }[],
     strokes: [] as { color: string; width: number; alpha: number; segs: [number, number, number, number][] }[],
+    fillRects: [] as { x: number; y: number; w: number; h: number; color: string; alpha: number }[],
+    strokeTexts: [] as { text: string; x: number; y: number; color: string; width: number; alpha: number }[],
     fonts: [] as string[],
     get font() { return font; },
     set font(v: string) { font = v; ctx.fonts.push(v); },
@@ -79,8 +90,13 @@ function makeCtx(): FakeCtx {
     fillStyle: "", strokeStyle: "", lineWidth: 1, globalAlpha: 1, textBaseline: "", textAlign: "",
     setTransform() {},
     clearRect() {},
-    fillRect() {},
+    fillRect(x: number, y: number, w: number, h: number) {
+      ctx.fillRects.push({ x, y, w, h, color: ctx.fillStyle, alpha: ctx.globalAlpha });
+    },
     fillText(t: string, x: number, y: number) { ctx.fills.push({ text: t, x, y, color: ctx.fillStyle }); },
+    strokeText(t: string, x: number, y: number) {
+      ctx.strokeTexts.push({ text: t, x, y, color: ctx.strokeStyle, width: ctx.lineWidth, alpha: ctx.globalAlpha });
+    },
     measureText(s: string) {
       const px = parseFloat((font.match(/^([\d.]+)px/) ?? ["", "11.5"])[1]);
       const ls = parseFloat(ctx.letterSpacing) || 0;
@@ -178,6 +194,10 @@ afterEach(() => {
   // Drain whatever the just-destroyed renderers (or a mid-glide `settle()`) left queued, so the
   // next test's first `frame()` runs only ITS OWN callbacks.
   rafQueue = [];
+  // The two newest recording buffers, drained for the same reason `ctx.fills`/`ctx.strokes` are
+  // drained per test: they accumulate across every frame of every test otherwise.
+  ctx.fillRects.length = 0;
+  ctx.strokeTexts.length = 0;
 });
 
 // The fixture's world coordinates are scaled up from the "natural" ring geometry below (still only 24
@@ -1564,7 +1584,14 @@ describe("Task 11 — the 3D camera dolly is derived from the resolution ladder"
       expect(p.res).toBeCloseTo(p.maxRes, 6);            // we really are at the 0% stop
       const onGrid = p.nodes.filter((nv) => nv.onGrid).length;
       expect(onGrid).toBeGreaterThan(20);                // measured 43 of 300
-      expect(painted.at(-1)!).toBeGreaterThan(20);       // measured 40 node CELLS
+      // Measured 19 node CELLS, and the number MOVED from 40 in Task 21 without the picture changing
+      // by a pixel. `painted` is what paint()'s row loop drew, and labels used to be given their
+      // ground by an opaque rect painted OVER that loop's output; they now take their cells before it
+      // runs (reserveLabelCells blanks charBuf) so the same glyphs are never drawn instead of being
+      // drawn and covered. On this deliberately tiny 320x220 field, 22 labels claim 21 of the 40 node
+      // cells — measured directly, both counts, on the old code and the new. So the two numbers are
+      // "rasterized" and "visible", and 19 is the honest one.
+      expect(painted.at(-1)!).toBeGreaterThan(15);
       expect(ballNodeRuns().length).toBeGreaterThan(0);  // ...and they are real note glyphs, in a community colour
     });
   });
@@ -3256,6 +3283,206 @@ describe("the near band draws only the neighbourhood on screen (Task 19)", () =>
     const meshSegs = ctx.strokes.filter((s) => s.color !== priv.colors[C_EDGE_SLOT]).flatMap((s) => s.segs);
     expect(meshSegs.length).toBe(HOME_SPOKES.length + NEXT_SPOKES.length + OFFSCREEN_SPOKES.length);
     r.destroy();
+  });
+});
+
+/**
+ * A LABEL MUST NOT ERASE THE FIELD BEHIND IT (Task 21).
+ *
+ * The user, zoomed onto a 69-degree hub: **"it splits"** — the spoke fan cut by a channel through
+ * the middle, the converging lines stopping flat either side of the name, and a wedge of them gone
+ * above the hub. The cause was one line in the label pass: an OPAQUE ground-coloured `fillRect`
+ * painted per label AFTER `strokeEdges()`, so every edge running behind a name was painted out.
+ *
+ * **Why a one-cell-tall rect produced a WEDGE, not a thin line.** The rect's height is one row, but
+ * its width is the whole name — on the reference vault the hub's own file label measured 498x18 px
+ * and the cluster eyebrow above it 82x18. At a convergence point every spoke is within a few pixels
+ * of every other, so a band that is only 18px tall subtends a wide ANGULAR SECTOR close in: the two
+ * rects together blanked spokes from -41° to +57° (measured), each for its first 30-90px and the
+ * shallowest for 434px. That reads as a wedge bitten out of the fan, which is exactly what was
+ * reported.
+ *
+ * There is exactly ONE `fillRect` call in the renderer (the label ground-clear), so "did a label
+ * paint over line work" is answerable without any ordering bookkeeping: if a recorded fillRect
+ * overlaps a recorded stroke segment at all, a label erased an edge.
+ *
+ * The fixture is a STAR because that is the shape the defect needs — a fan of spokes leaving one
+ * point at many angles, with a long forced label lying along the hub's own row.
+ */
+describe("a label never erases the field behind it (Task 21 — 'it splits')", () => {
+  /** One community; a hub with spokes at fixed angles, several of them SHALLOW so they run along
+   *  the hub's own label row for a long way (the flat cut), plus steeper ones just above it (the
+   *  wedge). Radius is uniform so the star is unambiguous, and the label is long by construction
+   *  (the hub's own name), which is what makes the plate wide. */
+  function starGraph() {
+    const DEGS = [0, 6, 12, 20, 32, 48, 70, 90, 118, 150, 180, 210, 250, 290, 320, 340, 348, 354];
+    type N = {
+      id: string; label: string; kind: "note"; position: [number, number, number];
+      position2d: [number, number]; community: number; communityLabel: string;
+    };
+    const at = (id: string, label: string, x: number, y: number): N => ({
+      id, label, kind: "note", position: [x, y, 0], position2d: [x, y], community: 0, communityLabel: "Star",
+    });
+    const nodes: N[] = [at("hub", "Violent Acts and Urban Space", 0, 0)];
+    const edges: { from: string; to: string; kind: "link" }[] = [];
+    DEGS.forEach((d, i) => {
+      const a = (d * Math.PI) / 180;
+      nodes.push(at(`s${i}`, `spoke ${i}`, Math.cos(a) * 90, Math.sin(a) * 90));
+      edges.push({ from: "hub", to: `s${i}`, kind: "link" });
+    });
+    // CLOSE-IN NEIGHBOURS along +x, i.e. along the row the hub's own label is placed on. At the near
+    // stop the outer ring is ~1600px out, so these land in the label's first ~200px — they are what
+    // puts FIELD GLYPHS under the name's cells, which is the other half of what the opaque plate used
+    // to cover and what the "still separates every name" A/B measures. Without them that test is
+    // vacuous (it passed with the glyph suppression deleted, which is how this was caught).
+    for (let k = 0; k < 14; k++) {
+      nodes.push(at(`c${k}`, `close ${k}`, 1.5 + k * 0.8, 0));
+      edges.push({ from: "hub", to: `c${k}`, kind: "link" });
+    }
+    return { nodes, edges, degs: DEGS };
+  }
+
+  interface StarPriv {
+    m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
+    labels: { text: string; col: number; row: number; alpha: number; widthCells: number }[];
+    memberEdgeAlpha: number;
+    res: number; goalRes: number; maxRes: number; dirty: boolean;
+  }
+  const starPriv = (r: AsciiGraphRenderer) => r as unknown as StarPriv;
+
+  /** Centre on the star and park in the NEAR band, where member edges own the field — the same
+   *  private poke `parkDeepOn` uses in the locality-gate block, and for the same reason
+   *  (`frameSubset` alone lands short of the band). Buffers are cleared so exactly ONE paint is
+   *  measured. */
+  const DEEP_T = 0.85;
+  function parkOnStar(r: AsciiGraphRenderer, ids: string[]) {
+    r.frameSubset(ids);
+    settle(400);
+    const p = starPriv(r);
+    p.res = p.goalRes = resFromT(DEEP_T, p.maxRes);
+    p.dirty = true;
+    ctx.fills.length = 0;
+    ctx.strokes.length = 0;
+    ctx.fillRects.length = 0;
+    ctx.strokeTexts.length = 0;
+    frame(99999);
+  }
+
+  /** Sampled length of `seg` that falls inside `rect`, in px. Sampling (rather than a clip solve)
+   *  because what is being measured is INK: how much of the drawn line the plate covered. */
+  function coveredPx(seg: [number, number, number, number], r: { x: number; y: number; w: number; h: number }) {
+    const [x1, y1, x2, y2] = seg;
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const n = Math.max(2, Math.ceil(len));
+    let inside = 0;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, px = x1 + (x2 - x1) * t, py = y1 + (y2 - y1) * t;
+      if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) inside++;
+    }
+    return (inside / (n + 1)) * len;
+  }
+
+  function mountStar(showGraphLabels = true) {
+    const g = starGraph();
+    const { r } = mountRenderer("2d", g as unknown as ReturnType<typeof sampleGraph>, { showLodMasses: true, showGraphLabels });
+    // The hub's label is FORCED (active file), so it draws at alpha 1 at any zoom — the label the
+    // user's screenshot has lying across the fan.
+    r.setActiveFile("hub");
+    // Centre on the HUB itself, not on the star's centroid: the fan is not angularly uniform, so
+    // its centroid sits off the hub, and at near-band resolution that offset is magnified into
+    // pushing the hub clean off the field. The user's view is centred on the hub.
+    parkOnStar(r, ["hub"]);
+    return { r, priv: starPriv(r), g };
+  }
+
+  /** Which grid cells a text run drawn at (x, y) by paint()'s row loop covers — the inverse of that
+   *  loop's own `padX + col * cellW` / `padY + row * cellH + cellH / 2` placement. Spaces are the
+   *  run's own gap filler (`if (run) run += " "`), not ink, so they are skipped. */
+  function cellsOfFill(f: { text: string; x: number; y: number }, m: StarPriv["m"]) {
+    const row = Math.round((f.y - m.cellH / 2 - m.padY) / m.cellH);
+    const col0 = Math.round((f.x - m.padX) / m.cellW);
+    const out: string[] = [];
+    for (let k = 0; k < f.text.length; k++) if (f.text[k] !== " ") out.push(`${col0 + k},${row}`);
+    return out;
+  }
+
+  it("the setup really does put a long label across a fan of stroked spokes", () => {
+    const { r, priv } = mountStar();
+    // Near band: member edges are actually being drawn, so there IS line work to erase. Asserted,
+    // not assumed — a retune of the band constants must fail loudly rather than quietly measure a
+    // frame with no edges in it.
+    expect(priv.memberEdgeAlpha).toBeGreaterThan(0.99);
+    const hubLabel = priv.labels.find((l) => l.text === "[[Violent Acts and Urban Space]]");
+    expect(hubLabel).toBeDefined();
+    expect(hubLabel!.alpha).toBe(1);
+    // The plate the OLD code would paint for that label, computed from the label's own placement.
+    const plate = {
+      x: priv.m.padX + hubLabel!.col * priv.m.cellW - priv.m.cellW * 0.5,
+      y: priv.m.padY + hubLabel!.row * priv.m.cellH,
+      w: (hubLabel!.text.length + 1) * priv.m.cellW,
+      h: priv.m.cellH,
+    };
+    expect(plate.w).toBeGreaterThan(150); // a long name — this is why the channel is long, not a nick
+    const segs = ctx.strokes.flatMap((s) => s.segs);
+    expect(segs.length).toBeGreaterThan(10);
+    const wouldCover = segs.reduce((a, s) => a + coveredPx(s, plate), 0);
+    // Several spokes really do run through where that label sits. Without this the headline
+    // assertion below could pass on a frame that simply had nothing behind the name.
+    expect(wouldCover).toBeGreaterThan(40);
+    r.destroy();
+  });
+
+  it("paints no opaque plate over any stroked edge — the fan is never cut", () => {
+    const { r } = mountStar();
+    const segs = ctx.strokes.flatMap((s) => s.segs);
+    let erased = 0;
+    for (const s of segs) for (const rect of ctx.fillRects) erased += coveredPx(s, rect);
+    expect(erased).toBe(0);
+    r.destroy();
+  });
+
+  it("gives every name a ground halo instead — the plate's legibility job, at glyph scale", () => {
+    const { r, priv } = mountStar();
+    expect(priv.labels.length).toBeGreaterThan(0);
+    expect(ctx.strokeTexts.length).toBe(priv.labels.length);
+    for (const l of priv.labels) {
+      const halo = ctx.strokeTexts.find((h) => h.text === l.text);
+      expect(halo).toBeDefined();
+      // Wide enough to actually separate a glyph from a line crossing it...
+      expect(halo!.width).toBeGreaterThan(1);
+      // ...and carrying the label's OWN alpha, so a crossfading name leaves no dark ghost stroked at
+      // full strength over the field it is fading out of.
+      expect(halo!.alpha).toBeLessThanOrEqual(l.alpha + 1e-9);
+    }
+    r.destroy();
+  });
+
+  it("suppresses the field glyphs under a name at the source, where the plate used to cover them", () => {
+    // A/B on the SAME camera: the plate's other job was hiding the field behind a name, so deleting
+    // it without replacement would leave `o`s painted inside the letters. Measured by rendering the
+    // identical frame with labels OFF and asking what the field draws in the very cells the labelled
+    // frame reserves.
+    const labelled = mountStar(true);
+    const cellsUnder = new Set<string>();
+    for (const l of labelled.priv.labels) {
+      for (let c = l.col - 1; c <= l.col + l.widthCells; c++) cellsUnder.add(`${c},${l.row}`);
+    }
+    const labelTexts = new Set(labelled.priv.labels.map((l) => l.text));
+    const withLabels = ctx.fills
+      .filter((f) => !labelTexts.has(f.text))
+      .flatMap((f) => cellsOfFill(f, labelled.priv.m))
+      .filter((k) => cellsUnder.has(k));
+    labelled.r.destroy();
+
+    const bare = mountStar(false);
+    expect(bare.priv.labels.length).toBe(0); // labels really are off
+    const withoutLabels = ctx.fills.flatMap((f) => cellsOfFill(f, bare.priv.m)).filter((k) => cellsUnder.has(k));
+    bare.r.destroy();
+
+    // The fixture's close-in neighbours really do put glyphs there — without this the assertion
+    // below is vacuous, which is exactly how deleting the suppression first slipped through.
+    expect(withoutLabels.length).toBeGreaterThan(0);
+    expect(withLabels).toEqual([]);
   });
 });
 

@@ -40,6 +40,8 @@ const BOX = { width: 640, height: 320 };
 
 interface FakeCtx {
   fills: { text: string; x: number; y: number }[];
+  /** Ground haloes stroked under the names (see `strokeText` below) — kept out of `fills`. */
+  haloes: { text: string; x: number; y: number }[];
   strokes: number;
   font: string;
   letterSpacing: string;
@@ -56,6 +58,13 @@ function makeCtx(): FakeCtx {
     fillStyle: "", strokeStyle: "", lineWidth: 1, globalAlpha: 1, textBaseline: "", textAlign: "",
     setTransform() {}, clearRect() {}, fillRect() {},
     fillText(t: string, x: number, y: number) { ctx.fills.push({ text: t, x, y }); },
+    // The label pass draws a ground HALO under every name (`strokeText`) instead of the opaque plate
+    // it used to fill — see AsciiGraphRenderer's label loop. A real 2D context always has this; this
+    // stub is the only reason it needs saying. Recorded, not swallowed, so a halo can never be
+    // mistaken for a field glyph by `fills`.
+    strokeText(t: string, x: number, y: number) { ctx.haloes.push({ text: t, x, y }); },
+    haloes: [] as { text: string; x: number; y: number }[],
+    lineJoin: "miter", lineCap: "butt",
     measureText(s: string) {
       const px = parseFloat((font.match(/^([\d.]+)px/) ?? ["", "11.5"])[1]);
       const ls = parseFloat(ctx.letterSpacing) || 0;
