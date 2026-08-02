@@ -132,31 +132,22 @@
 // own `FAKE_PERMISSION_REPLY_PREFIX` chunk, which exists for the identical reason (prove the round
 // trip through the driver's OWN frame stream, not only through file-based instrumentation).
 //
-// SESSION-RESUME MODE (added for the "session/load -> session/resume fallback" task — see
-// acpResumeFakeAgent.test.ts): opt-in via FAKE_ACP_REJECT_SESSION_LOAD (any truthy value), decoupled
-// from every mode above the same way each of THOSE is decoupled from the others — with the var
-// unset (every pre-existing test, which never sets it), `session/load` behaves byte-for-byte as it
-// always did: unhandled, it falls to the `default:` case below and gets a plain `respond(id, {})`.
+// SESSION-RESUME MODE (see acpResumeFakeAgent.test.ts): opt-in via FAKE_ACP_REJECT_SESSION_LOAD
+// (any truthy value) — makes `session/load` reject instead of falling through to the `default:`
+// case's plain `respond(id, {})`, which is exactly what it still gets when this var is unset.
+// Forces driver.ts's `session/load` -> `session/resume` fallback (protocol.ts's
+// `isMethodNotFoundError`) to actually run.
 //
-// THE TRAP THIS MODE EXISTS TO CLOSE (this task's brief names it explicitly): driver.ts's
-// createSession tries `session/load` first and only falls back to `session/resume` when that call
-// rejects with a JSON-RPC -32601 (method-not-found) — see protocol.ts's `isMethodNotFoundError`.
-// Before this mode, EVERY unknown verb (including `session/load`) got a cheerful `{}` success
-// reply, which means a resume test written against the unmodified fake would never see the
-// fallback branch run at all: `session/load` "succeeds", the driver is satisfied, and
-// `session/resume` never gets called — a test asserting only "resume works" would pass while
-// proving nothing about the fallback logic that is this task's entire subject. Setting this var
-// makes `session/load` reject the way a real still-shipping SDK generation that only implements
-// `session/resume` actually would, FORCING driver.ts's `isMethodNotFoundError` branch to run for
-// the test to pass at all.
+// The rejection's JSON-RPC code and message are independently overridable
+// (FAKE_ACP_REJECT_SESSION_LOAD_CODE / _MESSAGE, default -32601 / "Method not found:
+// session/load"): `isMethodNotFoundError` is an OR of a numeric-code check and a message regex, so
+// a fixed pairing only proves "at least one arm fired". Varying each independently lets a test pin
+// the code arm (right code, non-matching message) and the message arm (wrong code, matching
+// message) separately.
 //
-// `session/resume` itself gets no dedicated handler: once `session/load` is rejected, it falls to
-// the exact SAME `default:` case `session/load` itself fell to before this mode existed, and gets
-// the exact same plain `{}` back — which is all driver.ts needs from it (createSession sets
-// `s.sessionId = resumeId` from the CALLER's own id either way; it never reads a sessionId back out
-// of either response — see driver.ts's own comment there). So the only new behavior this mode adds,
-// anywhere, is REJECTING `session/load` specifically; everything downstream of that reuses
-// mechanism this file already had.
+// `session/resume` gets no dedicated handler: a rejected `session/load` falls through to the same
+// `default:` case it always did, and gets the same plain `{}` — all driver.ts needs from it (it
+// sets `s.sessionId` from the caller's own id either way, never from either response).
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -274,12 +265,13 @@ const CLINE_AUTH_METHODS = [
  *  in this file needs to change for it. */
 const promptHold = process.env.FAKE_ACP_PROMPT_HOLD === "permission" ? "permission" : process.env.FAKE_ACP_PROMPT_HOLD === "queue" ? "queue" : "none";
 
-/** See this file's header "SESSION-RESUME MODE". Unset (the default — every pre-existing test gets
- *  this) means `session/load` is left completely unhandled and falls to the `default:` case's
- *  plain `respond(id, {})`, byte-for-byte what it did before this mode existed. Any truthy value
- *  makes `session/load` reject with a real -32601 instead, forcing driver.ts's
- *  `isMethodNotFoundError` fallback branch to run. */
+/** See this file's header "SESSION-RESUME MODE". Unset (default): `session/load` is unhandled,
+ *  falls to `default:`'s plain `respond(id, {})`. Truthy: rejects with `rejectSessionLoadCode`/
+ *  `rejectSessionLoadMessage` below, each independently overridable so a test can pin either arm of
+ *  `isMethodNotFoundError` on its own. */
 const rejectSessionLoad = !!process.env.FAKE_ACP_REJECT_SESSION_LOAD;
+const rejectSessionLoadCode = process.env.FAKE_ACP_REJECT_SESSION_LOAD_CODE !== undefined ? Number(process.env.FAKE_ACP_REJECT_SESSION_LOAD_CODE) : -32601;
+const rejectSessionLoadMessage = process.env.FAKE_ACP_REJECT_SESSION_LOAD_MESSAGE ?? "Method not found: session/load";
 
 /** How long "queue" mode holds each `session/prompt` open before auto-settling — see this file's
  *  header. Configurable via `FAKE_ACP_QUEUE_HOLD_MS` purely so a consuming test can tune the window
@@ -662,12 +654,10 @@ function handleLine(raw: string): void {
       }
       return;
     case "session/load":
-      // See this file's header "SESSION-RESUME MODE". Unset: falls through to the exact same
-      // `respond(id, {})` the `default:` case below still gives every other unhandled verb
-      // (including `session/resume` itself) — so this case is byte-for-byte inert unless
-      // FAKE_ACP_REJECT_SESSION_LOAD is set.
+      // See this file's header "SESSION-RESUME MODE" — inert unless FAKE_ACP_REJECT_SESSION_LOAD
+      // is set, in which case the code/message are independently overridable.
       if (id !== undefined) {
-        if (rejectSessionLoad) respondError(id, -32601, "Method not found: session/load");
+        if (rejectSessionLoad) respondError(id, rejectSessionLoadCode, rejectSessionLoadMessage);
         else respond(id, {});
       }
       return;

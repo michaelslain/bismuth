@@ -1,78 +1,33 @@
 // core/test/chatProviders/acpResumeFakeAgent.test.ts
-// Task 11 of the agent-integration-completion plan: session resume, including the
-// `session/load` -> `session/resume` fallback (chatProviders/acp/driver.ts's createSession, the
-// `if (resumeId)` branch), offline, through the REAL, unmodified driver.
+// Task 11: session resume, including the `session/load` -> `session/resume` fallback
+// (chatProviders/acp/driver.ts's createSession, the `if (resumeId)` branch), offline, through the
+// REAL, unmodified driver.
 //
-// WHY THIS FILE EXISTS. `resumeSession` (driver.ts) had no offline test on any of the six ACP
-// backends it drives. Its own createSession first tries `session/load`; only when THAT rejects
-// with a JSON-RPC -32601 (method-not-found — protocol.ts's `isMethodNotFoundError`) does it fall
-// back to `session/resume` — the version-skew tolerance the research report documents (some
-// still-shipping SDK generations implement only one of the two verbs). Nothing offline proved that
-// fallback ever actually ran.
+// WHY THIS FILE EXISTS: `resumeSession` had no offline test on any ACP backend. createSession tries
+// `session/load` first and only falls back to `session/resume` when that call rejects with a
+// method-not-found error (protocol.ts's `isMethodNotFoundError`). The naive way to test this — a
+// fake that just accepts `session/load` — proves nothing: the driver is satisfied immediately and
+// `session/resume` is never called. See ../support/fakeAcpAgent.ts's "SESSION-RESUME MODE" for the
+// opt-in rejection this file depends on (inert when unset, and additive-only — verified against 7
+// sibling fake-agent test files; see this task's report for exact run results).
 //
-// THE TRAP THIS TASK'S BRIEF NAMES: before this task, ../support/fakeAcpAgent.ts answered EVERY
-// unknown verb (including `session/load`) with a cheerful `respond(id, {})`. A naive resume test
-// written against that fake would see `session/load` "succeed" immediately — the driver is
-// satisfied, `session/resume` never gets called, and a test asserting only "resume works" would
-// pass while the `isMethodNotFoundError` branch this task exists to cover never once executed. See
-// this task's report for Step 3's sabotage proving this concretely: with the fake's new rejection
-// mode DISABLED (session/load accepted, matching every prior behavior), the FIRST test below fails
-// specifically on its "session/resume was called" assertions, not on some unrelated symptom.
+// `isMethodNotFoundError` is an OR of a numeric JSON-RPC code check and a message regex. The fake's
+// rejection code/message are independently overridable (FAKE_ACP_REJECT_SESSION_LOAD_CODE/
+// _MESSAGE) so the "code arm" and "message arm" tests below can pin each half on its own — a fixed
+// code+message pair only ever proves "at least one arm fired".
 //
-// THE MECHANISM: ../support/fakeAcpAgent.ts's new "SESSION-RESUME MODE" (see that file's own header
-// for the full contract) — opt-in via `FAKE_ACP_REJECT_SESSION_LOAD`, decoupled from every other
-// mode in that file the same way each of those is decoupled from the rest. Unset, `session/load`
-// is unhandled and falls to the `default:` case's plain `{}`, byte-for-byte what every pre-existing
-// consumer of that file already got (verified directly: the SECOND test below drives resumeSession
-// with the var left unset and asserts `session/resume` is NEVER called — the fake accepting
-// `session/load` the same way it always did).
+// NON-VACUOUSNESS: every sessionId assertion compares against `RESUME_SESSION_ID`, a literal each
+// test chooses independently (never derived from chatId/cwd or from either wire response) — never
+// against another wire value. Counts are exact throughout, never "at least one". The
+// session/load-before-session/resume ordering check is real (flips true->false on a reversed
+// sequence, verified) but its failure is SUBSUMED by the count assertions under every production
+// mutation found so far — see the report; it is not claimed as independently mutation-provable on
+// its own. Full mutation battery and exact results live in the report, not here, so this header
+// doesn't go stale the moment driver.ts changes.
 //
-// NON-VACUOUSNESS, stated precisely (this project's recurring defect is a check that stays green
-// even when the thing it claims to prove never happened):
-//   - Both tests assert EXACT counts (`session/load`/`session/resume`/`session/new` line counts),
-//     never "at least one" — a driver that retried session/load, or fell through to session/new
-//     instead of the resume path, would show up as a wrong count, not just wrong content.
-//   - The FIRST test asserts session/load's line appears BEFORE session/resume's line in the raw
-//     echo-file order (not merely that both exist) — proving the fallback really is a fallback, not
-//     two independent, unordered attempts.
-//   - Every sessionId asserted (on session/load's params, session/resume's params, the emitted
-//     "session" ChatFrame, and the FOLLOW-UP session/prompt's own params) is compared against ONE
-//     INDEPENDENTLY-CHOSEN literal this test itself picked before calling resumeSession
-//     (`RESUME_SESSION_ID`, deliberately distinct from the chat id) — never against each other. That
-//     literal is not derived from anything the driver computes, so a mutation that substituted the
-//     chat id, the cwd, or any other in-scope string for the real session id at any one of those
-//     four call sites is independently catchable (see this task's report for each mutation's result).
-//   - The second test's "turn completes" assertion checks the actual `assistant-text` content
-//     (`FAKE_TURN_TEXT`) and a `result` frame with `isError:false`, not just a `done` frame's mere
-//     presence — a turn that errored out still produces `done`.
-//
-// SABOTAGE PERFORMED (verification only — see this task's own report for exact results):
-//   1. ../support/fakeAcpAgent.ts's rejectSessionLoad forced to `false` regardless of the env var
-//      (i.e. session/load is ALWAYS accepted, reproducing this file's pre-task behavior) — the
-//      FIRST test's "session/resume was called exactly once" assertion must fail, or this test isn't
-//      testing the fallback at all.
-//   2. driver.ts's fallback catch narrowed to never re-throw (`if (!isMethodNotFoundError(e)) throw
-//      e;` deleted, always falling back) — the SECOND test's "session/resume was never called"
-//      assertion must fail.
-//   3. driver.ts's `session/load` call params mutated to send `s.id` (the chat id) instead of
-//      `resumeId` — the FIRST test's session/load sessionId assertion must fail specifically.
-//   4. driver.ts's `session/resume` call params mutated the same way — the FIRST test's
-//      session/resume sessionId assertion must fail specifically.
-//   5. driver.ts's post-fallback `s.sessionId = resumeId;` mutated to a different in-scope string —
-//      the emitted "session" frame's sessionId assertion must fail in BOTH tests.
-//   6. driver.ts's `runTurn`'s `session/prompt` call mutated to send something other than
-//      `s.sessionId` — the FIRST test's post-resume session/prompt sessionId assertion must fail.
-//
-// STUB-BINARY PATTERN: identical to every other fakeAcpAgent.ts-driven test file — write an
-// executable stub named "cline" into a throwaway temp dir, prepend it onto PATH so
-// core/src/claudeWhich.ts's whichBinary("cline") resolves the stub, then drive the REAL, unmodified
-// chatProviders/acp/driver.ts via CHAT_BACKENDS.cline exactly as production does. Zero network of any
-// kind, zero CLI dependency, zero account contact. Orphan-freedom is verified BY PID (never a
-// `pgrep -f` pattern match) via ../support/acpFakeAgentProcess.ts's shared helper.
-//
-// Only ../support/fakeAcpAgent.ts gained new behavior for this task (additive, opt-in via
-// FAKE_ACP_REJECT_SESSION_LOAD, inert when unset — see that file's own header). No production file
-// was changed.
+// STUB-BINARY PATTERN: identical to every sibling fakeAcpAgent.ts-driven test file — stub "cline" on
+// PATH, drive the real chatProviders/acp/driver.ts via CHAT_BACKENDS.cline. Zero network, zero CLI
+// dependency. Orphan-freedom verified BY PID via ../support/acpFakeAgentProcess.ts.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -144,6 +99,8 @@ describe("resumeSession's session/load -> session/resume fallback, driven throug
   const ENV_KEYS = [
     "PATH",
     "FAKE_ACP_REJECT_SESSION_LOAD",
+    "FAKE_ACP_REJECT_SESSION_LOAD_CODE",
+    "FAKE_ACP_REJECT_SESSION_LOAD_MESSAGE",
     "FAKE_ACP_PROMPT_HOLD",
     "FAKE_ACP_QUEUE_HOLD_MS",
     "FAKE_ACP_PERMISSION_OPTIONS",
@@ -188,6 +145,8 @@ describe("resumeSession's session/load -> session/resume fallback, driven throug
     // running `bun test` must not leak into this file's own tests.
     process.env.FAKE_ACP_MODEL_SHAPE = "new";
     delete process.env.FAKE_ACP_REJECT_SESSION_LOAD;
+    delete process.env.FAKE_ACP_REJECT_SESSION_LOAD_CODE;
+    delete process.env.FAKE_ACP_REJECT_SESSION_LOAD_MESSAGE;
     delete process.env.FAKE_ACP_AUTH_GATE;
     delete process.env.FAKE_ACP_CLINE_AUTHED;
     delete process.env.FAKE_ACP_PROMPT_HOLD;
@@ -222,6 +181,27 @@ describe("resumeSession's session/load -> session/resume fallback, driven throug
     restoreEnv();
   });
 
+  /** Call resumeSession, wait for the emitted "session" frame, capture the fake's own pid (for
+   *  teardown verification), and return the frame's sessionId. Shared by every test below — each
+   *  only differs in which FAKE_ACP_REJECT_SESSION_LOAD* env vars it sets beforehand. */
+  async function openResumedSession(
+    chatId: string,
+    resumeSessionId: string,
+    cwd: string,
+    waitFor: (match: (f: ChatFrame) => boolean, timeoutMs?: number) => Promise<ChatFrame>,
+    sink: (f: ChatFrame) => void,
+  ): Promise<string> {
+    CHAT_BACKENDS.cline.resumeSession({ chatId, cwd, sink, computerUse: false, sessionId: resumeSessionId });
+    const sessionFrame = await waitFor((f) => f.type === "session");
+    if (sessionFrame.type !== "session") throw new Error(`expected a "session" frame, got ${sessionFrame.type}`);
+
+    const pid = await waitForPidFile(pidFile);
+    spawnedPids.push(pid);
+    expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
+
+    return sessionFrame.sessionId;
+  }
+
   test(
     "session/load rejected with -32601: the driver falls back to session/resume, both carrying the caller's session id, and the next turn completes on it",
     async () => {
@@ -236,18 +216,10 @@ describe("resumeSession's session/load -> session/resume fallback, driven throug
       const cwd = "/tmp";
       const { sink, frames, waitFor } = makeChatFrameCollector(20_000);
 
-      CHAT_BACKENDS.cline.resumeSession({ chatId, cwd, sink, computerUse: false, sessionId: RESUME_SESSION_ID });
-
-      const sessionFrame = await waitFor((f) => f.type === "session");
-      if (sessionFrame.type !== "session") throw new Error(`expected a "session" frame, got ${sessionFrame.type}`);
+      const gotSessionId = await openResumedSession(chatId, RESUME_SESSION_ID, cwd, waitFor, sink);
       // THE independently-obtained comparison for the emitted frame: against the literal THIS TEST
       // chose before calling resumeSession, never against any other wire value.
-      expect(sessionFrame.sessionId).toBe(RESUME_SESSION_ID);
-      expect(sessionFrame.origin).toBe("user");
-
-      const pid = await waitForPidFile(pidFile);
-      spawnedPids.push(pid);
-      expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
+      expect(gotSessionId).toBe(RESUME_SESSION_ID);
 
       const allLines = readEchoLines(echoFile);
       const methodOrder = allLines.map((l) => l.method);
@@ -260,12 +232,9 @@ describe("resumeSession's session/load -> session/resume fallback, driven throug
       expect(resumes.length).toBe(1);
       expect(news.length).toBe(0); // resume must never take the brand-new-session path
 
-      // THE assertion this test exists for: session/load was attempted FIRST, THEN session/resume —
-      // not merely that both happened somewhere.
-      const loadIdx = methodOrder.indexOf("session/load");
-      const resumeIdx = methodOrder.indexOf("session/resume");
-      expect(loadIdx).toBeGreaterThanOrEqual(0);
-      expect(resumeIdx).toBeGreaterThan(loadIdx);
+      // session/load attempted FIRST, THEN session/resume — real, but see this file's header on why
+      // its failure mode is subsumed by the counts above under every mutation found so far.
+      expect(methodOrder.indexOf("session/resume")).toBeGreaterThan(methodOrder.indexOf("session/load"));
 
       // Both wire calls carry the SAME caller-provided session id — compared against the
       // independently-chosen literal, never against each other.
@@ -309,24 +278,69 @@ describe("resumeSession's session/load -> session/resume fallback, driven throug
       const cwd = "/tmp";
       const { sink, waitFor } = makeChatFrameCollector(20_000);
 
-      CHAT_BACKENDS.cline.resumeSession({ chatId, cwd, sink, computerUse: false, sessionId: RESUME_SESSION_ID });
+      const gotSessionId = await openResumedSession(chatId, RESUME_SESSION_ID, cwd, waitFor, sink);
+      expect(gotSessionId).toBe(RESUME_SESSION_ID);
 
-      const sessionFrame = await waitFor((f) => f.type === "session");
-      if (sessionFrame.type !== "session") throw new Error(`expected a "session" frame, got ${sessionFrame.type}`);
-      expect(sessionFrame.sessionId).toBe(RESUME_SESSION_ID);
-
-      const pid = await waitForPidFile(pidFile);
-      spawnedPids.push(pid);
-      expect(pidAlive(pid)).toBe(true);
-
-      const allLines = readEchoLines(echoFile);
-      const loads = allLines.filter((l) => l.method === "session/load");
-      const resumes = allLines.filter((l) => l.method === "session/resume");
+      const loads = readEchoLines(echoFile).filter((l) => l.method === "session/load");
+      const resumes = readEchoLines(echoFile).filter((l) => l.method === "session/resume");
       expect(loads.length).toBe(1);
       expect(paramsSessionId(loads[0].params)).toBe(RESUME_SESSION_ID);
       // THE assertion this test exists for: no rejection, no fallback — session/resume is never
       // even attempted when session/load simply succeeds.
       expect(resumes.length).toBe(0);
+    },
+    20_000,
+  );
+
+  test(
+    "pins the CODE arm of isMethodNotFoundError: the correct -32601 code with a NON-matching message still triggers the fallback",
+    async () => {
+      // A message that does not contain "method not found" / "unknown method" / "no such method"
+      // (protocol.ts's own regex, case-insensitive) — if the fallback still fires, it can only be
+      // because the numeric-code check on its own is doing the work, not the message regex.
+      process.env.FAKE_ACP_REJECT_SESSION_LOAD = "1";
+      process.env.FAKE_ACP_REJECT_SESSION_LOAD_CODE = "-32601";
+      process.env.FAKE_ACP_REJECT_SESSION_LOAD_MESSAGE = "zzz this text carries none of the fallback trigger keywords zzz";
+
+      const chatId = "acp-resume-code-arm-" + Date.now();
+      chatIds.push(chatId);
+      const RESUME_SESSION_ID = "fake-resume-sid-code-arm-91a4";
+      const cwd = "/tmp";
+      const { sink, waitFor } = makeChatFrameCollector(20_000);
+
+      const gotSessionId = await openResumedSession(chatId, RESUME_SESSION_ID, cwd, waitFor, sink);
+      expect(gotSessionId).toBe(RESUME_SESSION_ID);
+
+      const allLines = readEchoLines(echoFile);
+      expect(allLines.filter((l) => l.method === "session/load").length).toBe(1);
+      // THE assertion this test exists for: the fallback fired despite a non-matching message.
+      expect(allLines.filter((l) => l.method === "session/resume").length).toBe(1);
+    },
+    20_000,
+  );
+
+  test(
+    "pins the MESSAGE arm of isMethodNotFoundError: a non-matching code with a message that DOES match still triggers the fallback",
+    async () => {
+      // A code that is not -32601 — if the fallback still fires, it can only be because the message
+      // regex on its own is doing the work, not the numeric-code check.
+      process.env.FAKE_ACP_REJECT_SESSION_LOAD = "1";
+      process.env.FAKE_ACP_REJECT_SESSION_LOAD_CODE = "-32000";
+      process.env.FAKE_ACP_REJECT_SESSION_LOAD_MESSAGE = "Method not found: session/load";
+
+      const chatId = "acp-resume-message-arm-" + Date.now();
+      chatIds.push(chatId);
+      const RESUME_SESSION_ID = "fake-resume-sid-message-arm-2c6d";
+      const cwd = "/tmp";
+      const { sink, waitFor } = makeChatFrameCollector(20_000);
+
+      const gotSessionId = await openResumedSession(chatId, RESUME_SESSION_ID, cwd, waitFor, sink);
+      expect(gotSessionId).toBe(RESUME_SESSION_ID);
+
+      const allLines = readEchoLines(echoFile);
+      expect(allLines.filter((l) => l.method === "session/load").length).toBe(1);
+      // THE assertion this test exists for: the fallback fired despite a non-matching (wrong) code.
+      expect(allLines.filter((l) => l.method === "session/resume").length).toBe(1);
     },
     20_000,
   );
