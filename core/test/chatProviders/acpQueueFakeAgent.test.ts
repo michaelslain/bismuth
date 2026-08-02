@@ -25,7 +25,7 @@
 // frame stream reports, and in what sequence).
 //
 // NON-VACUOUSNESS, stated precisely (this project's recurring defect is a check that stays green even
-// when the thing it claims to prove never happened — see this task's own brief):
+// when the thing it claims to prove never happened):
 //   - The first test asserts, WHILE the first turn is still held (well within its hold window,
 //     checked against real elapsed time, not against ordering of ChatFrames alone), that the echo
 //     file holds EXACTLY ONE `session/prompt` line. A driver that bypassed `runOrQueue`'s

@@ -9,7 +9,11 @@
 // shapes — never against a real `codex` process (none is installed here).
 //
 // Shape verified DIRECTLY from `@openai/codex-sdk@0.146.0`'s shipped `dist/index.d.ts` (read
-// verbatim, not from docs — see this task's research report) — the same wire protocol `codex exec`
+// verbatim, not from docs): the top-level ThreadEvent kinds this module dispatches on
+// (`thread.started`/`item.started`/`item.updated`/`item.completed`/`turn.failed`/`error` — see
+// translateThreadEvent's switch below) and the ThreadItem.type union nested inside them
+// (`agent_message`/`reasoning`/`error`/`command_execution`/`file_change`/`mcp_tool_call`/
+// `web_search` — see frameForItem's switch below). This is the same wire protocol `codex exec`
 // itself emits on stdout, which is what this translator actually consumes; the SDK was only the
 // evidence source for the shape, not a runtime dependency. Two things that .d.ts does NOT say, so
 // this translator is defensive about both rather than assuming the friendlier case:
