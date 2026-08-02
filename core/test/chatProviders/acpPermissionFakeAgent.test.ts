@@ -144,7 +144,9 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
   let echoDir: string | undefined;
   let echoFile: string;
   let pidDir: string | undefined;
-  let pidFile: string;
+  // `| undefined`, reset at the top of every beforeEach (review finding, Minor 1) — see
+  // acpFakeAgent.test.ts's identical comment on its own pidFile.
+  let pidFile: string | undefined;
   const savedEnv: Record<string, string | undefined> = {};
   const ENV_KEYS = [
     "PATH",
@@ -180,6 +182,7 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
     stubDir = undefined;
     echoDir = undefined;
     pidDir = undefined;
+    pidFile = undefined;
     pidDir = mkdtempSync(join(tmpdir(), "bismuth-acp-perm-pid-"));
     pidFile = join(pidDir, "agent.pid");
     stubDir = makeAcpFakeAgentStubDir("bismuth-acp-perm-stub-", "cline", FAKE_AGENT_SCRIPT, pidFile);
@@ -249,6 +252,16 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
 
     CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
 
+    // Captured as early as possible, right after the process is spawned (review Minor 2: a pid
+    // captured only after the permission frame arrives leaves the leak check vacuous for a test
+    // that fails before that frame ever shows up, even though the process was already spawned by
+    // sendMessage() above) — the stub writes its own pid before exec'ing, independent of ACP
+    // protocol progress, so this never races anything below. Captured once here (the one entry
+    // point every test in this file drives through) rather than per-test.
+    const pid = await waitForPidFile(pidFile!);
+    spawnedPids.push(pid);
+    expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
+
     const permission = expectFrame(await waitFor((f) => f.type === "permission"), "permission");
 
     // Exactly one, not "at least one": this turn contains exactly one tool call, so a second
@@ -269,12 +282,6 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
     const asks = readEchoLines(echoFile).filter((l) => l.dir === "out-request" && l.method === "session/request_permission");
     expect(asks.length).toBe(1);
     expect(String(asks[0].id)).toBe(permission.id);
-
-    // Captured once here (the one entry point every test in this file drives through) rather than
-    // per-test: the fake agent's own pid, verified gone in afterEach.
-    const pid = await waitForPidFile(pidFile);
-    spawnedPids.push(pid);
-    expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
 
     return { permissionId: permission.id, permissionIdx: frames.indexOf(permission), frames, waitFor };
   }

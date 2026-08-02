@@ -56,6 +56,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:net";
 import { whichBinary } from "../../src/claudeWhich";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { backendMockEnv } from "../support/backendEnv";
@@ -63,7 +64,7 @@ import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { startCaptureLlmServer, type CaptureLlmHandle } from "../support/captureLlmServer";
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
 import { getFreePort, startOpenclawGateway, type OpenclawGatewayHandle } from "../support/openclawGateway";
-import { waitProcessesGone } from "../support/acpFakeAgentProcess";
+import { pidAlive } from "../support/acpFakeAgentProcess";
 
 const HAS_OPENCLAW = whichBinary("openclaw") !== null;
 const describeOrSkip = HAS_OPENCLAW ? describe : describe.skip;
@@ -91,41 +92,49 @@ function chatCompletionsHitCount(metricsText: string): number {
   return total;
 }
 
-// `waitProcessesGone` (imported above from ../support/acpFakeAgentProcess.ts) is the SHARED bounded
-// poll over a KNOWN list of pids — used below for `gatewayPid`/`mockPid`, the two pids this file
-// DOES receive directly from their own start() calls. It wraps that same module's `pidAlive` (an
-// OWNED `ps -p` point check, never a machine-wide `pgrep -f` pattern match), which this file used to
-// duplicate inline (task-F: consolidating every fakeAcpAgent.ts-adjacent orphan check onto one
-// module) — `collectDescendantPids`/`describePid` below still need their OWN local implementation
-// (a `pgrep -P` tree walk + `ps -o comm=` lookup), since the shared module has no equivalent for an
-// UNKNOWN pid set.
+// `pidAlive` (imported above from ../support/acpFakeAgentProcess.ts) is the SHARED, OWNED `ps -p`
+// point check this file used to duplicate inline (task-F: consolidating every
+// fakeAcpAgent.ts-adjacent orphan check onto one module). It is used below as an IMMEDIATE,
+// non-polling check for `gatewayPid`/`mockPid` — deliberately NOT run through the shared module's
+// `waitProcessesGone` bounded poll, because both pids are only read AFTER `gateway.stop()`/
+// `mock.stop()` have already awaited `proc.exited` for them: a grace period here would let a
+// process that dies a beat too late (e.g. 1.5s after `stop()` resolved) pass silently, weakening a
+// check this task's own review round found had been softened exactly that way once already.
+// `waitProcessesGone`'s tolerance is legitimate ONLY where death is not already confirmed by an
+// awaited `proc.exited` — that is the ACP bridge case below, which needs a different mechanism
+// entirely (see TOPOLOGY NOTE).
 //
-// TOPOLOGY NOTE (per this task's brief: "if openclaw's process topology does not fit the helper's
-// shape... say so explicitly and handle it"): it does NOT fully fit. `waitProcessesGone` assumes a
-// known pid list, but this file has TWO process families it can never enumerate that way:
-//   1. The ACP bridge (`openclaw acp`, spawned by CHAT_BACKENDS.openclaw via
-//      chatProviders/acp/driver.ts): closeChat() calls proc.kill() internally and returns void,
-//      exposing neither the pid nor a completion signal — unlike the fakeAcpAgent.ts-stub-driven
-//      files, there is no stub binary here this test controls to write its own pid to a file.
-//   2. The Gateway's OWN hidden grandchild (openclawGateway.ts's own header: "`openclaw gateway run`
-//      is NOT a single process — it's a short-lived `openclaw` launcher... that itself spawns/execs
-//      a longer-lived `openclaw-gateway` process"). `gatewayPid` below is the LAUNCHER's pid only;
-//      the grandchild that actually holds the listening socket is never returned to this test at
-//      all. `gateway.stop()` awaiting the launcher's own `proc.exited` (and killWithEscalation
-//      confirming SIGTERM reaches the ACP bridge) is NOT the same claim as "the renamed grandchild
-//      is also gone" — openclawGateway.ts's own header only asserts that a plain SIGTERM to the
-//      launcher "reliably" brings the grandchild down too, confirmed live but never re-verified by
-//      an independent check inside THIS file until the scan below. This is exactly the gap the
-//      historical leak (an `openclaw`/`openclaw-gateway` pair still alive 14 hours after a run,
-//      reparented to launchd, the gateway holding a listening socket) matches: a launcher-only pid
-//      check would have reported clean while its own child kept the socket open.
-// Both families are covered by ONE mechanism instead: `collectDescendantPids(process.pid)` below
-// walks this ENTIRE test process's descendant tree (not merely "the ACP bridge's own children" as
-// an earlier version of this comment claimed) and filters by name — which catches the ACP bridge,
-// ANY child it may have, AND the Gateway's renamed grandchild alike, all without needing to know any
-// of their pids ahead of time. `gatewayPid`/`mockPid`'s own explicit waitProcessesGone check below
-// is not redundant with this scan: it fails fast and by name on the ONE pid this test does control
-// directly, before falling through to the broader (and slower) tree walk.
+// TOPOLOGY NOTE, precisely (per this task's brief: "if openclaw's process topology does not fit the
+// helper's shape... say so explicitly and handle it" — and per review: state exactly which shapes
+// are covered and which are not, rather than a comment that reads as covering more than it does).
+// This file has THREE distinct leak shapes, each requiring a DIFFERENT check:
+//   1. Gateway launcher / mock — KNOWN pid, already-confirmed-dead-by-await. Covered by the
+//      immediate `pidAlive()` checks below.
+//   2. The ACP bridge, BOTH-ALIVE shape (`openclaw` + `openclaw-acp`, still children of THIS test
+//      process because `closeChat()`'s kill is fire-and-forget and nothing has reaped them yet).
+//      Covered by `collectDescendantPids(process.pid)` below, which walks this whole test process's
+//      descendant tree and filters by name — CONFIRMED covering this shape live: raising
+//      `driver.ts`'s `KILL_ESCALATION_GRACE_MS` to 60s (reverted after) reproduced both tests
+//      failing here, reporting real surviving `openclaw`/`openclaw-acp` pids.
+//   3. The Gateway's own hidden grandchild in the LAUNCHER-ALREADY-EXITED shape (openclawGateway.ts's
+//      own header: "`openclaw gateway run` is NOT a single process — it's a short-lived `openclaw`
+//      launcher... that itself spawns/execs a longer-lived `openclaw-gateway` process"). This is
+//      NOT covered by `collectDescendantPids(process.pid)`: `await gateway?.stop()` runs BEFORE that
+//      scan and only resolves once the LAUNCHER's own `proc.exited` fires, so if the grandchild ever
+//      separates from an already-reaped launcher, it has ALREADY been reparented to PID 1 by the
+//      time the scan runs — `pgrep -P` rooted at `process.pid` structurally cannot find a process
+//      that is no longer its descendant. An earlier version of this comment claimed the scan
+//      covered this shape; a reviewer disproved that with an orphan probe (launcher exits →
+//      grandchild reparents to PID 1 → a `process.pid`-rooted walk returns nothing) and it was
+//      wrong. This shape is exactly what the historical leak (an `openclaw`/`openclaw-gateway` pair
+//      alive 14 hours later, the gateway holding a listening socket) could be, IF the launcher had
+//      already been reaped by then — indistinguishable from "both still alive" (shape 2, which IS
+//      covered) from the outside, but requiring a different check.
+// Shape 3 is now covered separately, NOT by a pid or process-tree mechanism at all (nothing rooted
+// at this test process can see an orphan): `waitPortFree` below re-binds the exact ephemeral port
+// this Gateway was configured to listen on (the same probe-by-binding technique `getFreePort()`
+// itself uses) — if ANYTHING is still bound there once `gateway.stop()` has resolved, that is
+// unambiguous evidence of a surviving listener, orphaned or not, pid known or not.
 function collectDescendantPids(rootPid: number): number[] {
   const out: number[] = [];
   const frontier = [rootPid];
@@ -154,6 +163,38 @@ function describePid(pid: number): string {
   return out || `${pid} (already gone)`;
 }
 
+/** True if `port` is still bound by ANYONE on 127.0.0.1 — checked by attempting to bind an ephemeral
+ *  listener there ourselves, the exact same probe-by-binding technique openclawGateway.ts's own
+ *  `getFreePort()` uses. Deliberately NOT pid- or process-tree-based: this is what actually covers
+ *  shape 3 in the TOPOLOGY NOTE above (a Gateway grandchild that outlives an already-reaped
+ *  launcher) — a reparented orphan is no longer a descendant of this test process at all, so no
+ *  pid/tree scan rooted here can ever see it, but it is still bound to THIS specific ephemeral port,
+ *  which nothing else on the machine has any legitimate reason to hold once this test's own Gateway
+ *  should have released it. */
+function isPortBound(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const srv = createServer();
+    srv.once("error", () => resolve(true)); // EADDRINUSE (or similar) — something still holds it
+    srv.listen(port, "127.0.0.1", () => {
+      srv.close(() => resolve(false)); // bound cleanly ourselves — nothing else was listening
+    });
+  });
+}
+
+/** Bounded poll (short — socket release can lag a beat behind process death at the OS level, unlike
+ *  pid death, which is why this gets its own small grace period rather than the gatewayPid/mockPid
+ *  checks' immediate style) for `port` to become free. Returns the pids/description-free "is it
+ *  STILL bound" outcome after `timeoutMs`, so the caller can throw with detail. */
+async function waitPortFree(port: number, timeoutMs = 2_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  let stillBound = await isPortBound(port);
+  while (stillBound && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 100));
+    stillBound = await isPortBound(port);
+  }
+  return stillBound;
+}
+
 describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a real Gateway against a mock LLM (zero account API calls)", () => {
   const ENV_KEYS = ["OPENCLAW_CONFIG_PATH", "OPENCLAW_STATE_DIR"] as const;
   // Snapshotted BEFORE anything that can fail/reject (startMockLlm/getFreePort/startOpenclawGateway)
@@ -167,6 +208,10 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
   let mock: MockLlmHandle | undefined;
   let capture: CaptureLlmHandle | undefined;
   let gateway: OpenclawGatewayHandle | undefined;
+  // The exact ephemeral port `setup()`/`setupCapture()` picked for THIS test's own Gateway — see
+  // `isPortBound`/`waitPortFree`'s doc comments for why afterEach re-checks it directly (the
+  // launcher-already-exited orphan shape a pid/process-tree scan cannot see).
+  let gatewayPort: number | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
 
@@ -183,6 +228,7 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     mock = await startMockLlm(undefined, ["--metrics"]);
     const workDir = await newTempDir("bismuth-openclaw-workdir-");
     const port = await getFreePort();
+    gatewayPort = port;
     const mockEnv = backendMockEnv("openclaw", mock.url, workDir, port);
     for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v;
     // The Gateway and the ACP bridge (spawned later by CHAT_BACKENDS.openclaw, via
@@ -205,6 +251,7 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     capture = startCaptureLlmServer(replyText);
     const workDir = await newTempDir("bismuth-openclaw-iso-workdir-");
     const port = await getFreePort();
+    gatewayPort = port;
     const mockEnv = backendMockEnv("openclaw", capture.url, workDir, port);
     for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v;
     gateway = await startOpenclawGateway(process.env, port);
@@ -224,7 +271,9 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     // path that no longer exists.
     await gateway?.stop();
     const gatewayPid = gateway?.pid;
+    const port = gatewayPort;
     gateway = undefined;
+    gatewayPort = undefined;
     await mock?.stop();
     const mockPid = mock?.pid;
     mock = undefined;
@@ -235,19 +284,32 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     }
     // Per this task's brief: "Kill every process you start... verify with ps that nothing
     // survives" — OWNED checks only, never a machine-wide `pgrep -f` (see pidAlive's/
-    // collectDescendantPids's own doc comments for why that matters, not just style).
+    // collectDescendantPids's own doc comments for why that matters, not just style). Every check
+    // below runs AFTER all cleanup above, so a failing check can never skip it.
     //
     // Gateway + mock: both already resolved via a stop() that AWAITS proc.exited internally
-    // (openclawGateway.ts's stopProcess / mockLlm.ts's stopProcess) — so this is a simple
-    // confirmation, not a race; the shared helper's bounded poll (2s, well under its own 5s default)
-    // is belt-and-suspenders, not a wait for anything actually still in flight.
-    const knownPids = [gatewayPid, mockPid].filter((p): p is number => p !== undefined);
-    const stillAliveKnown = await waitProcessesGone(knownPids, 2_000);
-    if (gatewayPid !== undefined && stillAliveKnown.includes(gatewayPid)) {
+    // (openclawGateway.ts's stopProcess / mockLlm.ts's stopProcess) — so an IMMEDIATE, non-polling
+    // check is correct here, not merely convenient: `stop()` having resolved IS the claim that the
+    // process already exited, so any grace period here would let a process that dies a beat late
+    // pass silently (review round 1 found exactly this: a prior version of this diff had softened
+    // this to a 2s-tolerant poll without saying so — reverted; see this file's TOPOLOGY NOTE above
+    // for where a poll's tolerance actually is legitimate).
+    if (gatewayPid !== undefined && pidAlive(gatewayPid)) {
       throw new Error(`openclawMocked.test: gateway pid ${gatewayPid} still alive after gateway.stop() resolved — a real leak.`);
     }
-    if (mockPid !== undefined && stillAliveKnown.includes(mockPid)) {
+    if (mockPid !== undefined && pidAlive(mockPid)) {
       throw new Error(`openclawMocked.test: mock pid ${mockPid} still alive after mock.stop() resolved — a real leak.`);
+    }
+    // Gateway grandchild, LAUNCHER-ALREADY-EXITED orphan shape (TOPOLOGY NOTE shape 3): the launcher
+    // pid check above only proves the LAUNCHER is gone — it says nothing about a grandchild that
+    // separated and outlived it, already reparented to PID 1 by now. Re-bind the Gateway's own
+    // ephemeral port directly instead of walking any process tree.
+    if (port !== undefined && (await waitPortFree(port))) {
+      throw new Error(
+        `openclawMocked.test: port ${port} (this test's own Gateway port) is still bound after gateway.stop() ` +
+          `resolved — an orphaned listener (possibly the Gateway's own hidden grandchild, reparented and ` +
+          `therefore invisible to any pid/process-tree scan rooted at this test process) is still holding it.`,
+      );
     }
     // ACP bridge: CHAT_BACKENDS.openclaw.closeChat() (chatProviders/acp/driver.ts) returns
     // synchronously — its own SIGTERM-then-SIGKILL escalation (killWithEscalation,
@@ -255,14 +317,16 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     // above, an immediate single-shot check here would race that escalation actually landing. Bounded
     // poll (5s — comfortably past KILL_ESCALATION_GRACE_MS's own 3s) of this test PROCESS's own
     // descendant tree, scoped so it can never match an unrelated developer-started openclaw process
-    // (see collectDescendantPids's doc comment).
+    // (see collectDescendantPids's doc comment). This is the BOTH-ALIVE shape (TOPOLOGY NOTE shape
+    // 2) — the ACP bridge is still a live child of this test process the whole time it's alive, so a
+    // process-tree walk rooted here genuinely covers it (confirmed live — see the TOPOLOGY NOTE).
     //
     // Filters on "openclaw" only, deliberately NOT "aimock" too (an earlier version of this filter
     // said `/openclaw|aimock/i`, implying it covered the mock as defense-in-depth — it never did:
     // `mockLlm.ts` spawns aimock via `Bun.spawn(["node", bin, ...])`, so its `comm` is the plain
     // string "node", which that pattern can never match). The mock IS still fully covered — by the
-    // exact `waitProcessesGone`/`mockPid` check above, not this scan — so nothing is actually left
-    // unguarded; only the CLAIM in the old error message overstated what this specific check covers.
+    // exact `pidAlive(mockPid)` check above, not this scan — so nothing is actually left unguarded;
+    // only the CLAIM in the old error message overstated what this specific check covers.
     const deadline = Date.now() + 5000;
     let remaining: number[] = [];
     while (Date.now() < deadline) {

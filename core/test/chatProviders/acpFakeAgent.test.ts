@@ -82,7 +82,12 @@ async function waitForCondition(check: () => boolean, timeoutMs: number, descrip
 describe("the ACP driver against a fake agent (zero network access, zero CLI dependency)", () => {
   let stubDir: string | undefined;
   let pidDir: string | undefined;
-  let pidFile: string;
+  // `| undefined`, reset at the top of every beforeEach (review finding, Minor 1): without this, a
+  // beforeEach that throws AFTER a previous test's own pidFile was assigned (e.g. mkdtempSync for
+  // pidDir failing on a LATER test) would leave pidFile pointing at the PREVIOUS test's already-
+  // removed path — stale state surviving a throw, the same class of bug stubDir/pidDir already
+  // guard against.
+  let pidFile: string | undefined;
   let savedPath: string | undefined;
   let savedShape: string | undefined;
   let savedEchoFile: string | undefined;
@@ -109,6 +114,7 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
     echoDir = undefined;
     stubDir = undefined;
     pidDir = undefined;
+    pidFile = undefined;
     pidDir = mkdtempSync(join(tmpdir(), "bismuth-acp-fake-pid-"));
     pidFile = join(pidDir, "agent.pid");
     stubDir = makeAcpFakeAgentStubDir("bismuth-acp-fake-stub-", "cline", FAKE_AGENT_SCRIPT, pidFile);
@@ -165,6 +171,14 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
 
+      // Captured as early as possible (review Minor 2: a pid captured only after later frame waits
+      // leaves the leak check vacuous for this test if it fails BEFORE reaching that point, even
+      // though the process was already spawned) — the stub writes its own pid before exec'ing into
+      // the fake agent, independent of ACP protocol progress, so this never races the frames below.
+      const pid = await waitForPidFile(pidFile!);
+      spawnedPids.push(pid);
+      expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
+
       const modelsFrame = await waitFor((f) => f.type === "models");
       expect(modelsFrame.type).toBe("models");
       if (modelsFrame.type === "models") {
@@ -180,10 +194,6 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       const sessionFrame = await waitFor((f) => f.type === "session");
       expect(sessionFrame.type).toBe("session");
       if (sessionFrame.type === "session") expect(sessionFrame.sessionId).toStartWith("fake-session-old-");
-
-      const pid = await waitForPidFile(pidFile);
-      spawnedPids.push(pid);
-      expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
 
       const assistantText = await waitFor((f) => f.type === "assistant-text");
       if (assistantText.type === "assistant-text") expect(assistantText.text).toBe(FAKE_TURN_TEXT);
@@ -209,6 +219,11 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
 
+      // Captured as early as possible — see the OLD-shape test's identical comment (review Minor 2).
+      const pid = await waitForPidFile(pidFile!);
+      spawnedPids.push(pid);
+      expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
+
       const modelsFrame = await waitFor((f) => f.type === "models");
       expect(modelsFrame.type).toBe("models");
       if (modelsFrame.type === "models") {
@@ -227,10 +242,6 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
 
       const sessionFrame = await waitFor((f) => f.type === "session");
       if (sessionFrame.type === "session") expect(sessionFrame.sessionId).toStartWith("fake-session-new-");
-
-      const pid = await waitForPidFile(pidFile);
-      spawnedPids.push(pid);
-      expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
 
       const assistantText = await waitFor((f) => f.type === "assistant-text");
       if (assistantText.type === "assistant-text") expect(assistantText.text).toBe(FAKE_TURN_TEXT);
@@ -260,12 +271,13 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       const { sink, frames, waitFor } = makeChatFrameCollector(15_000);
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
-      await waitFor((f) => f.type === "models");
 
-      const pid = await waitForPidFile(pidFile);
+      // Captured as early as possible — see the OLD-shape test's identical comment (review Minor 2).
+      const pid = await waitForPidFile(pidFile!);
       spawnedPids.push(pid);
       expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
 
+      await waitFor((f) => f.type === "models");
       await waitFor((f) => f.type === "done"); // first turn settled
 
       const doneCountBeforeSecondTurn = frames.filter((f) => f.type === "done").length;
@@ -317,11 +329,17 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       // spawn+register the session ASYNCHRONOUSLY — detaching before the "session" frame arrives
       // would find no session yet and silently no-op).
       CHAT_BACKENDS.cline.openSession({ chatId, cwd: "/tmp", sink: sink1, computerUse: false });
-      await waitFor1((f) => f.type === "session");
 
-      const pid = await waitForPidFile(pidFile);
+      // Captured as early as possible, before even the "session" frame wait below (review Minor 2:
+      // a pid captured only after a later frame arrives leaves the leak check vacuous for a test
+      // that fails before reaching that point, even though the process was already spawned by
+      // openSession() above) — the stub writes its own pid before exec'ing, independent of protocol
+      // progress.
+      const pid = await waitForPidFile(pidFile!);
       spawnedPids.push(pid);
       expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
+
+      await waitFor1((f) => f.type === "session");
 
       // Queue turn 1 (kicks off session/prompt), then detach IMMEDIATELY (synchronously, same tick)
       // — runOrQueue's own turn work is asynchronous past its first await, so this reliably wins the
