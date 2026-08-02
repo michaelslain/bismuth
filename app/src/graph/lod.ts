@@ -49,11 +49,14 @@ export interface LodCluster {
   wy: number;
   /** Per-axis population STANDARD DEVIATION of the members about that centroid, same world space.
    *  This is how big the thing the mass summarizes actually IS — the mass GLYPH's own radii
-   *  (`massRadii`) are a compact ~√count summary and deliberately are not. Consumed by the phosphor
-   *  bloom (AsciiGraphRenderer's `emitBloom` → `densityField.ts`'s `pushCloud`), which has to emit
-   *  an aggregate as the cloud it stands for rather than as a point: see `pushCloud`'s comment for
-   *  what emitting it as a point does to the atmosphere. Costs one extra sum-of-squares in the
-   *  same single pass that already accumulates the centroid. */
+   *  (`massRadii`) are a compact ~√count summary and deliberately are not. Task 24b: NO LONGER the
+   *  phosphor bloom's primary input — `emitBloom()` (AsciiGraphRenderer.ts) emits `reps` (below) as
+   *  real weighted points instead of a synthesized `sdx`/`sdy` ellipse, which is what stops an
+   *  aggregate's light landing in an empty gap between real sub-populations (see `reps`' own doc
+   *  comment). `sdx`/`sdy` survive as `emitBloom`'s fallback shape for the one case `reps` cannot
+   *  cover — a cluster somehow left with an empty `reps` array — so that path still emits a cloud
+   *  (via `densityField.ts`'s `pushCloud`) rather than degenerating to a point. Costs one extra
+   *  sum-of-squares in the same single pass that already accumulates the centroid. */
   sdx: number;
   sdy: number;
   memberIds: string[];
@@ -75,13 +78,16 @@ export interface LodCluster {
    *  "reproduces the members EXACTLY... once k >= the member count" and its `n = k+1` case for the
    *  exact edge where exactness ends.
    *
-   *  Consumed by AsciiGraphRenderer's `emitBloom()` → densityField.ts's `pushCloud` (Task 24b, not
-   *  wired here): instead of synthesizing one Gaussian-ish cloud from `sdx`/`sdy` centred on
-   *  (`wx`,`wy`) — which places density at the CENTROID even when no member lives anywhere near
-   *  it (two well-separated blobs summarized by one ellipse invents mass in the empty gap between
-   *  them, exactly the failure `pushCloud`'s header measures) — the bloom can emit real weighted
-   *  points, so a cluster's real clumpiness and diagonal elongation survive the summary instead of
-   *  being smoothed into one ellipse.
+   *  Consumed by AsciiGraphRenderer's `emitBloom()` (Task 24b, wired there — NOT through
+   *  `densityField.ts`'s `pushCloud` any more): each rep becomes its own weighted `BloomPoint`,
+   *  pushed directly at its own projected screen position — instead of synthesizing one Gaussian-ish
+   *  cloud from `sdx`/`sdy` centred on (`wx`,`wy`), which places density at the CENTROID even when no
+   *  member lives anywhere near it (two well-separated blobs summarized by one ellipse invents mass
+   *  in the empty gap between them, exactly the failure `pushCloud`'s header measures) — so a
+   *  cluster's real clumpiness and diagonal elongation survive the summary instead of being smoothed
+   *  into one ellipse. (`pushCloud` still exists and is still exported — `emitBloom` falls back to it,
+   *  sized off `sdx`/`sdy`, only for the pathological empty-`reps` case; see that field's own doc
+   *  comment.)
    *
    *  MASS-BLIND BY DESIGN — worth knowing before consuming this for "real clumpiness" (Task 24b's
    *  stated goal): farthest-first seeding spreads `reps` to COVER distinct spatial regions, not to
@@ -130,11 +136,15 @@ export interface LodRepPoint {
  * 24, AND 32 — so the lower edge of the band already has headroom for that shape; there was no
  * measurement pushing 24 specifically over 16 here.
  *
- * The UPPER bound is unchanged and still real: each `reps` point becomes its own small `pushCloud`
- * splat (densityField.ts) once Task 24b wires this in, so the per-cluster point budget must stay
- * "no more than the leaf pass it's standing in for" — the same ceiling `massRadii` and
- * `CLOUD_MAX_RINGS`/`CLOUD_MAX_PER_RING` already hold to, and the reason this constant has a
- * dedicated upper-bound test (lod.test.ts) rather than only a lower one.
+ * The UPPER bound is unchanged and still real, though Task 24b's actual wiring turned out simpler
+ * than this comment originally predicted: each `reps` point becomes its own single `BloomPoint` push
+ * in `emitBloom()` (AsciiGraphRenderer.ts) — ONE point per rep, not a per-rep ring-sampled
+ * `pushCloud` splat (`densityField.ts`) — so the per-cluster point budget is exactly `reps.length`,
+ * not a multiple of it. `lod.test.ts`'s own upper-bound check here is still only a LITERAL range (see
+ * that test's comment for why it cannot be behavioural from inside this file); the real, behavioural
+ * ceiling on the shipped value now lives downstream in `AsciiGraphRenderer.test.ts`
+ * (`BLOOM_MASS_FRAME_BUDGET`), which imports this constant directly and also cross-checks it against
+ * a live renderer's actual per-frame `bloomPoints` — the number this constant was always really about.
  *
  * So: 24 is the brief's band midpoint, chosen for headroom on both sides, not a number this file
  * derives from first principles — say so plainly rather than dress up a coincidence as a proof.

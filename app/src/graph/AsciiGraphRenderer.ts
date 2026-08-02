@@ -1719,9 +1719,20 @@ export class AsciiGraphRenderer implements GraphRenderer {
         const rgb = this.slotBloomRgb(ev.color);
         // THE FIX (Task 24b): one BloomPoint per representative, each carrying its OWN `rep.weight`
         // share of this frame's mass alpha (`a`), positioned at the mass's already-projected screen
-        // anchor (`ev.sx`/`ev.sy`, itself correct at rest AND mid mode-morph — see projectEntities())
-        // plus that rep's own world-space offset from the cluster centroid, scaled by the SAME `s`
-        // above. Weighting by `rep.weight` (how many real members that point stands for) rather than
+        // anchor (`ev.sx`/`ev.sy` — correct at rest AND mid mode-morph, full camera pipeline, see
+        // projectEntities()) plus that rep's own world-space offset from the cluster centroid, scaled
+        // by the SAME blended `s` above. The blended SCALE is correct for the whole transition (that
+        // is what `s` being `cameraFrame().s` rather than a stale product buys, per the comment
+        // above) — the OFFSET itself is not exact mid-morph: it is a flat `* s`, so it skips both the
+        // pitch foreshortening (`cos(rx)`, nonzero for the whole transition since `rx` only reaches 0
+        // at flatten = 1) and the per-mass perspective divide (`persp`) that `ev.sx`/`ev.sy` itself
+        // gets from the full projection. Inherited, not introduced here: the pre-24b ellipse scaled
+        // `sdx`/`sdy` by the exact same flat `s` with the exact same gap, and reps carry no per-rep 3D
+        // counterpart to project through the full pipeline with — closing it would be a larger change
+        // than this task's brief calls for, so it is left as an accepted, unchanged approximation
+        // rather than silently fixed here.
+        //
+        // Weighting by `rep.weight` (how many real members that point stands for) rather than
         // by rep COUNT (an equal 1/reps.length split) is the deliberate choice: lod.ts's `reps` doc
         // comment measures reps as MASS-BLIND (a dense sub-population can earn as few as 4 of 24
         // reps while 20 lone strays each earn their own) — weighting equally by count would light a

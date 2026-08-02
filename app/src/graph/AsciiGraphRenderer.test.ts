@@ -23,7 +23,7 @@ import { buildColorSlots } from "./clusterVisual";
 import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
 import { MODE_MORPH_MS } from "./modeMorph";
 import { FIELD_H, FIELD_W, type DensityField } from "./densityField";
-import { buildLodIndex, LOD_MIN_CLUSTER, type LodNodeInput } from "./lod";
+import { buildLodIndex, LOD_MIN_CLUSTER, LOD_REP_POINTS_K, type LodNodeInput } from "./lod";
 import { parseHexColor } from "./bloomColor";
 import { THEMES } from "../../../core/src/theme/tokens";
 
@@ -3690,10 +3690,11 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     // the reps' own weighted second moment is a reasonable stand-in for the true one, checked here
     // against an INDEPENDENT reference (`ls`, computed via the un-summarized leaf pass over the same
     // 275 world positions — never via lod.ts's k-means, so this is not self-certifying). Measured on
-    // this fixture: sdx off by 0.7%, sdy by 6.2% — a 20% relative bound is generous headroom above
-    // that while still catching a real regression (an x/y swap here is off by ~59%).
+    // this fixture: sdx off by 0.7%, sdy by 6.2% — a 10% relative bound is still comfortable headroom
+    // above that (1.6x the worse axis) while catching a real regression far tighter than the 20% a
+    // looser bound would (an x/y swap here is off by ~59% either way).
     const ms = masses.r.computeStats(), ls = leaves.r.computeStats();
-    const REP_MOMENT_TOL = 0.2;
+    const REP_MOMENT_TOL = 0.1;
     expect(Math.abs(ms.bloomSdx - ls.bloomSdx) / ls.bloomSdx).toBeLessThan(REP_MOMENT_TOL);
     expect(Math.abs(ms.bloomSdy - ls.bloomSdy) / ls.bloomSdy).toBeLessThan(REP_MOMENT_TOL);
     expect(ls.bloomSdx / ls.bloomSdy).toBeGreaterThan(1.5);     // the fixture really is anisotropic
@@ -4066,18 +4067,41 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
  * `expect(cluster.count).toBe(250)` calls below prove that precondition rather than assume it.
  */
 describe("LOD rep-count downstream cost ceiling (Task 24a round-2 review, pinned here — Task 24b consumes it)", () => {
-  /** 8 communities x 250 members, ONE hierarchy level, each community a spread (non-collinear) grid
-   *  so k-means has room to place up to 64 distinct centroids without degenerating. */
-  function coarseFixture(): LodNodeInput[] {
-    const nodes: LodNodeInput[] = [];
+  /** ONE point set — 8 communities x 250 members, non-collinear grids so k-means has room to place up
+   *  to 64 distinct centroids without degenerating — that BOTH fixture shapes below derive from, so
+   *  the pure (`LodNodeInput`) and rendered (`GraphNode`-shaped) versions can never drift apart. */
+  function coarseMembers(): { id: string; community: number; x: number; y: number }[] {
+    const out: { id: string; community: number; x: number; y: number }[] = [];
     const COLS = 20; // 250 members -> 13 rows of 20, last row partial
     for (let c = 0; c < 8; c++) {
       for (let m = 0; m < 250; m++) {
         const col = m % COLS, row = Math.floor(m / COLS);
-        nodes.push({ id: `c${c}n${m}`, path: [c], x: c * 5000 + col * 7, y: row * 7 });
+        out.push({ id: `c${c}n${m}`, community: c, x: c * 5000 + col * 7, y: row * 7 });
       }
     }
-    return nodes;
+    return out;
+  }
+
+  function coarseFixture(): LodNodeInput[] {
+    return coarseMembers().map((p) => ({ id: p.id, path: [p.community], x: p.x, y: p.y }));
+  }
+
+  /** The SAME point set, as a mountable graph — one hierarchy level (`communityPath` length 1), so
+   *  `showLodMasses` puts the whole thing on the far band at fit, exactly like `coarseFixture()`'s
+   *  single-level `buildLodIndex` call. Edges are a cheap per-community star; LOD grouping only reads
+   *  `community`/`communityPath`, never edges, so they don't affect `reps` at all. */
+  function coarseGraphFixture() {
+    const nodes = coarseMembers().map((p) => ({
+      id: p.id, label: p.id, kind: "note" as const,
+      position: [p.x, p.y, 0] as [number, number, number], position2d: [p.x, p.y] as [number, number],
+      community: p.community, communityLabel: `Group ${p.community}`, communityPath: [p.community],
+      communityPathLabels: [`Group ${p.community}`],
+    }));
+    const edges: { from: string; to: string; kind: "link" }[] = [];
+    for (let c = 0; c < 8; c++) {
+      for (let m = 1; m < 250; m++) edges.push({ from: `c${c}n0`, to: `c${c}n${m}`, kind: "link" as const });
+    }
+    return { nodes, edges };
   }
 
   /** Sum of `reps.length` over the coarsest (only) level's clusters, for a given `k` — the exact
@@ -4096,23 +4120,57 @@ describe("LOD rep-count downstream cost ceiling (Task 24a round-2 review, pinned
     // uses every centroid, which the non-vacuous checks inside totalRepsFor confirm held here), not
     // copied from a prior run of buildLodIndex itself.
     expect(totalRepsFor(nodes, 16)).toBe(128);
-    expect(totalRepsFor(nodes, 24)).toBe(192);   // LOD_REP_POINTS_K, the shipped default
     expect(totalRepsFor(nodes, 32)).toBe(256);
     expect(totalRepsFor(nodes, 64)).toBe(512);
     expect(totalRepsFor(nodes, 256)).toBe(2000);  // 250 <= 256: the n<=k exact regime, every member
     expect(totalRepsFor(nodes, 10000)).toBe(2000); // ...same, unbounded k can't exceed real membership
 
     // THE CEILING — one ABSOLUTE bare literal, not phrased relative to LOD_REP_POINTS_K, so retuning
-    // the constant can't keep this green by construction. Passes at the shipped band (16/24/32),
-    // fails from 64 up — the same three-way split the reviewer measured, now behind a real number
-    // instead of a range check both 15 and 33 would also have passed.
+    // the constant can't keep this green by construction. Passes at the shipped band (16/32), fails
+    // from 64 up — the same three-way split the reviewer measured, now behind a real number instead
+    // of a range check both 15 and 33 would also have passed.
     const BLOOM_MASS_FRAME_BUDGET = 300;
     expect(totalRepsFor(nodes, 16)).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET);
-    expect(totalRepsFor(nodes, 24)).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET);
     expect(totalRepsFor(nodes, 32)).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET);
     expect(totalRepsFor(nodes, 64)).toBeGreaterThan(BLOOM_MASS_FRAME_BUDGET);
     expect(totalRepsFor(nodes, 256)).toBeGreaterThan(BLOOM_MASS_FRAME_BUDGET);
     expect(totalRepsFor(nodes, 10000)).toBeGreaterThan(BLOOM_MASS_FRAME_BUDGET);
+
+    // THE ACTUAL BINDING (round-1 review): every assertion above sweeps EXPLICIT k literals — none of
+    // them read the shipped `LOD_REP_POINTS_K` constant, so this whole test would stay green even if
+    // that constant were raised to a value the sweep above already proves is over budget. Import and
+    // check it directly, so a future retune of the shipped constant is what this test is actually
+    // about, not incidentally about it.
+    const shippedTotal = totalRepsFor(nodes, LOD_REP_POINTS_K);
+    expect(shippedTotal).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET);
+
+    // THE CONNECTION TO emitBloom (round-1 review): everything above calls `buildLodIndex` directly —
+    // it never exercises `emitBloom` at all, so it would pass unchanged against the pre-24b ellipse
+    // implementation too. Mount the SAME point set as a real graph and confirm the renderer's actual
+    // per-frame `bloomPoints` (mass band only — glyphAlpha is ~0 at fit here, same as every other
+    // fixture in the "phosphor bloom" block above) equals `shippedTotal` exactly. That equality IS
+    // this method's "one BloomPoint per rep, not a per-rep ring-sampled cloud" design, checked rather
+    // than only asserted in a comment: if a future edit made it one `pushCloud` per rep instead (what
+    // `cloudGrid` would spend — up to 8 rings x 16 per ring = 128x this), `bloomPoints` would blow far
+    // past `shippedTotal` and this assertion would catch it even though the 300 budget alone could
+    // not (a per-rep-cloud regression wouldn't change `reps.length`, only what emitBloom does with it).
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = newRenderer();
+    let lastField: Float32Array | null = null;
+    r.mount(host, () => {});
+    r.setBloomCallback((f) => { lastField = f; });
+    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
+    r.render(coarseGraphFixture());
+    frame();
+    interface CostPriv { levelCount: number; glyphAlpha: number }
+    const priv = r as unknown as CostPriv;
+    expect(priv.levelCount).toBe(1);
+    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1); // fit — masses own the field outright
+    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);       // LOD_ALPHA_EPS — no glyph contribution
+    expect(lastField).not.toBeNull();
+    const stats = r.computeStats();
+    expect(stats.bloomPoints).toBe(shippedTotal);
   });
 });
 
