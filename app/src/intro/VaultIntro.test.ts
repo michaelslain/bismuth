@@ -174,6 +174,33 @@ describe("VaultIntro — the first-run cloud on the unified renderer", () => {
     r.destroy();
   });
 
+  it("idly spins the theme slide's cloud — a static first screen is a real regression", () => {
+    // applyGraphConfig sets `spin: true` + `spinSpeed`, and AsciiGraphRenderer's own tick loop
+    // (`!is2d && cfg.spin && nodes.length <= 350 && !userTook && !dragging` → `ry += spinSpeed`)
+    // is the ONLY thing that would ever move this cloud: the theme slide never zooms, pans, or
+    // drags. SMALL_GRAPH's 55 nodes sit under the 350-node cutoff and applyGraphConfig's
+    // viewMode is "3d" (2D never spins, no matter what spin/spinSpeed hold), so idle spin must
+    // be observably live here. This asserts on PROJECTED SCREEN POSITIONS moving across real
+    // frames, not on the config object still holding the value applyGraphConfig wrote into it —
+    // that would pass even if the renderer ignored spin/spinSpeed entirely.
+    const { r } = mountIntroGraph(SMALL_GRAPH);
+    const p = r as unknown as { nodes: { sx: number; sy: number }[] };
+    const before = p.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
+    // One more real tick. Nothing else in this path can still be moving a node's screen position
+    // at this point — the camera starts (and stays) at exactly its 100%/fit resolution with no
+    // zoom/pan/target change anywhere above, so a big dt can't be hiding a leftover camera-glide
+    // confound here the way it would right after a fresh zoom or re-theme.
+    frame(1000);
+    let moved = 0;
+    for (let i = 0; i < p.nodes.length; i++) {
+      if (Math.hypot(p.nodes[i].sx - before[i].sx, p.nodes[i].sy - before[i].sy) > 0.01) moved++;
+    }
+    // The "you" hub sits at the world origin, on the rotation axis — it never moves no matter how
+    // much the cloud spins, so 100% is not attainable; virtually every other node should have.
+    expect(moved).toBeGreaterThan(p.nodes.length * 0.9);
+    r.destroy();
+  });
+
   it("paints the three-brains slide's whole-vault cloud, framed by its own margin + offset", () => {
     const { r, painted } = mountIntroGraph(BIG_GRAPH, "ink", { offsetY: 0.12, fitMargin: 1.55 });
     // 1874 nodes into a 228x50 grid: many share a cell, so the painted count is a large fraction of
