@@ -49,6 +49,7 @@ const SHOTS: { name: string; path: string; setup?: string }[] = [
   { name: "graph-2d-70", path: "/", setup: wheelIn(3) },   // t = 0.30 — far band, masses own the field
   { name: "graph-2d-60", path: "/", setup: wheelIn(4) },   // t = 0.40 — inside the mass→glyph crossfade
   { name: "graph-2d-50", path: "/", setup: wheelIn(5) },   // t = 0.50 — mid band plateau: glyphs + backbone
+  { name: "graph-2d-deep", path: "/", setup: wheelIn(8) },  // deep near band — real member edges, scoped to the visible clusters
   { name: "graph-3d", path: "/", setup: `document.querySelectorAll('button,[role=button]').forEach(b => { if (b.textContent?.trim() === '3D') b.click(); })` },
 ];
 
