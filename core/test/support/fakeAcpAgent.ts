@@ -168,7 +168,31 @@
 // (tool-use → tool-result, equal ids, tool-result strictly after tool-use, exactly one
 // tool-result per id, result after both) need, and folding in the held-prompt registry would only
 // add unrelated async machinery this mode doesn't use.
-import { appendFileSync } from "node:fs";
+//
+// CRASH / NOISE / CHUNK-SPLIT MODES (task 13, "crash mid-turn, malformed output, chunk-boundary
+// framing" — see acpFramingFakeAgent.test.ts): three independent opt-in modes sharing this file's
+// one stdout-writing seam. Each is inert exactly like every mode above — with none of their three
+// env vars set, `handleSessionPrompt`'s plain branch is byte-for-byte unchanged.
+//   - FAKE_ACP_CRASH_AFTER=prompt: emit ONE session/update, then process.exit(1) — never
+//     responding to this session/prompt at all. Proves driver.ts's watchExit reports the turn as a
+//     single result{isError:true}+done+error{code:"exit"}, and that runTurn's own identity guard
+//     (`sessions.get(s.id) !== s`) stops a second, duplicate result/done once its now-rejected
+//     session/prompt call settles after watchExit already tore the session down. Written via a raw
+//     fs.writeSync (not this file's usual process.stdout.write-based notify()) because
+//     process.exit() can truncate output still sitting in Node/Bun's own async stdout buffering on
+//     a piped fd — the write must be guaranteed to have reached the pipe before the process dies.
+//   - FAKE_ACP_NOISE: plain-text and near-JSON-RPC noise (valid JSON, but missing
+//     "jsonrpc":"2.0") interleaved with two real session/update notifications, all before this
+//     request's own response. Proves protocol.ts's parseJsonRpcLine tolerates both — a real CLI's
+//     own startup banner must never kill a turn — while the two real frames and the turn's own
+//     `done` still arrive.
+//   - FAKE_ACP_CHUNK_SPLIT: writes ONE large session/update's JSON-RPC line as raw bytes across
+//     several fs.writeSync() calls, paced with a real delay so the driver's read loop sees them as
+//     separate stream chunks, with one split point landing INSIDE the 4-byte UTF-8 encoding of an
+//     emoji — an ASCII-only split proves nothing here (any decoder survives that); a
+//     mid-multibyte split is what distinguishes driver.ts's own
+//     `TextDecoder(...).decode(chunk, {stream:true})` from a naive `decode(chunk)`.
+import { appendFileSync, writeSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 type JsonRpcMsg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: unknown; result?: unknown; error?: unknown };
@@ -505,6 +529,84 @@ async function runHeldQueueTurn(promptId: number | string, sessionId: string, pr
   settlePrompt(promptId, "end_turn");
 }
 
+// ── Crash / noise / chunk-split modes (see this file's header) ─────────────────────────────────
+
+const crashAfter = process.env.FAKE_ACP_CRASH_AFTER === "prompt" ? "prompt" : "none";
+const noiseMode = !!process.env.FAKE_ACP_NOISE;
+const chunkSplitMode = !!process.env.FAKE_ACP_CHUNK_SPLIT;
+
+/** Distinct from every other mode's own marker text (FAKE_TURN_TEXT, FAKE_QUEUE_TURN_PREFIX, …) so
+ *  a test can never mistake one mode's output for another's. */
+const NOISE_TEXT_A = "fake-acp noise-mode message A";
+const NOISE_TEXT_B = "fake-acp noise-mode message B";
+/** Embedded in a near-JSON-RPC noise line that is missing "jsonrpc":"2.0". Must never surface as
+ *  its own assistant-text frame — if it does, the driver's shape guard (parseJsonRpcLine's own
+ *  `jsonrpc !== "2.0"` check) has been lost. */
+const NOISE_LEAK_MARKER = "NOISE-LEAK-SHOULD-NEVER-APPEAR-AS-A-FRAME";
+
+/** A real 4-byte UTF-8 character (F0 9F 98 80) — the one boundary an ASCII-only chunk split can
+ *  never exercise. */
+const CHUNK_EMOJI = "\u{1F600}";
+/** Large enough to comfortably fit several fs.writeSync() fragments either side of the emoji. */
+const CHUNK_PAYLOAD_TEXT = `chunk-split-payload-start-${"x".repeat(64)}-${CHUNK_EMOJI}-${"y".repeat(64)}-chunk-split-payload-end`;
+/** Real delay between CHUNK-SPLIT MODE's fragments — long enough that the OS/runtime reliably
+ *  delivers each fs.writeSync() as its own read on the driver's side rather than coalescing them,
+ *  short enough not to slow the test. Configurable purely so a consuming test can tune it without
+ *  editing this file. */
+const CHUNK_SPLIT_DELAY_MS = (() => {
+  const raw = Number(process.env.FAKE_ACP_CHUNK_SPLIT_DELAY_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 25;
+})();
+
+/** A single JSON-RPC line, written synchronously to fd 1 — used only by CRASH MODE, where the
+ *  process dies immediately after, so the usual buffered `process.stdout.write` (this file's
+ *  `writeLine`) is not safe to rely on. */
+function writeSyncLine(obj: unknown): void {
+  writeSync(1, JSON.stringify(obj) + "\n");
+}
+
+/** A raw, non-JSON-RPC line — used only by NOISE MODE to simulate a real CLI's own stray stdout
+ *  output (a startup banner, a stray log line) interleaved with real protocol traffic. */
+function writeRawLine(text: string): void {
+  process.stdout.write(text + "\n");
+}
+
+/**
+ * CHUNK-SPLIT MODE's own runner (see this file's header). Builds the one session/update line this
+ * mode ever emits, then writes it to fd 1 in byte fragments — one cut landing INSIDE the emoji's
+ * own 4 bytes, the rest at arbitrary ASCII points either side — each fragment separated by a real
+ * delay so the reading side sees them as distinct stream chunks, not one write() call's worth of
+ * data arriving all at once.
+ */
+async function runChunkSplitUpdate(id: number | string, sessionId: string): Promise<void> {
+  const payload =
+    JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: CHUNK_PAYLOAD_TEXT } } },
+    }) + "\n";
+  const bytes = Buffer.from(payload, "utf8");
+  const emojiBytes = Buffer.from(CHUNK_EMOJI, "utf8"); // 4 bytes: F0 9F 98 80
+  const emojiStart = bytes.indexOf(emojiBytes);
+  if (emojiStart < 0) {
+    // A bug in THIS file's own payload construction, not the driver — fail loudly rather than
+    // silently sending an unsplit line that would prove nothing.
+    throw new Error("fakeAcpAgent: CHUNK_EMOJI bytes not found in CHUNK_PAYLOAD_TEXT's own encoding");
+  }
+  // Cuts: an early ASCII point, INSIDE the emoji (after its first 2 of 4 bytes — the split this
+  // mode exists for), and a late ASCII point. De-duplicated + sorted so a pathological length
+  // can't collapse two cuts into a zero-length fragment.
+  const cuts = Array.from(new Set([Math.floor(bytes.length * 0.3), emojiStart + 2, Math.floor(bytes.length * 0.7)])).sort((a, b) => a - b);
+  let prev = 0;
+  for (const cut of cuts) {
+    writeSync(1, bytes.subarray(prev, cut));
+    prev = cut;
+    await new Promise((r) => setTimeout(r, CHUNK_SPLIT_DELAY_MS));
+  }
+  writeSync(1, bytes.subarray(prev));
+  respond(id, { stopReason: "end_turn" });
+}
+
 let sessionCounter = 0;
 
 function handleInitialize(id: number | string): void {
@@ -599,6 +701,38 @@ function handleSessionPrompt(id: number | string, params: unknown): void {
     // Same deliberate `void` as the permission branch above — handleLine is a sync readline callback,
     // and this runner's own timer-based settle path cannot reject.
     void runHeldQueueTurn(id, sessionId, extractPromptText(params));
+    return;
+  }
+  if (crashAfter === "prompt") {
+    // See this file's header "CRASH MODE". Emit exactly one update, then die — this session/prompt
+    // request never gets a response at all.
+    writeSyncLine({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: FAKE_TURN_TEXT } } },
+    });
+    process.exit(1);
+  }
+  if (noiseMode) {
+    // See this file's header "NOISE MODE". Plain-text noise (pins parseJsonRpcLine's JSON.parse
+    // tolerance), a real frame, near-JSON-RPC noise missing "jsonrpc":"2.0" (pins its shape guard),
+    // then the second real frame — all before this request's own response.
+    writeRawLine("Fake ACP CLI v0.9.3 starting up, connecting to upstream...");
+    notify("session/update", { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: NOISE_TEXT_A } } });
+    writeRawLine(
+      JSON.stringify({
+        method: "session/update",
+        params: { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: NOISE_LEAK_MARKER } } },
+      }),
+    );
+    notify("session/update", { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: NOISE_TEXT_B } } });
+    respond(id, { stopReason: "end_turn" });
+    return;
+  }
+  if (chunkSplitMode) {
+    // See this file's header "CHUNK-SPLIT MODE". Async (real delays between fragments) — the
+    // JSON-RPC response for THIS request is sent by the runner itself once every fragment is out.
+    void runChunkSplitUpdate(id, sessionId);
     return;
   }
   if (toolCallMode) {
