@@ -436,18 +436,35 @@ export function toolCallContentText(content: unknown): string {
   return parts.join("\n");
 }
 
-/** Synthesize a `tool-use` frame's `input` from a ToolCall, which (unlike opencode/Claude tool
- *  calls) carries no structured parameters — only a human-readable `title` and an optional `kind`.
- *  `description` is one of summarizeInput's (app/src/ChatView.tsx) recognized keys, so the expanded
- *  chip and any other input consumer see readable text instead of a raw `{"title":"…"}` blob.
+/**
+ * Build a `tool-use` frame's `input` from a ToolCall.
  *
- *  NOTE: this used to be justified as supplying the chip's one-line SUMMARY, which was true when
- *  the chip was named after `kind` ("edit — Write foo.txt"). Since the chip is now labelled by
- *  `title` too (see toolCallName), that summary would just echo the label, and chipSummary()
- *  suppresses it. The synthesized input still earns its keep for the expanded view — it is the only
- *  place an ACP call's title survives as data rather than as a heading. */
-export function toolCallInput(u: { title?: unknown; kind?: unknown }): unknown {
+ * A ToolCall's arguments are in `rawInput` — ACP's own field for them ("Raw input parameters sent
+ * to the tool"), which real agents populate. That object IS the input; every key of it rides
+ * through, which is what lets summarizeInput (app/src/ChatView.tsx) find a path/command/query to
+ * put on the collapsed chip and the expanded pane show the call's actual arguments.
+ *
+ * Two ACP-level fields are layered on top: the ToolCall's `title` as `description` (one of
+ * summarizeInput's recognized keys, and the only human-readable text a ToolCall is guaranteed to
+ * carry) and its `kind`. Those two WIN over identically-named `rawInput` keys, because they are not
+ * arguments: `kind` here must keep saying what the frame's own `kind` says, since the two are shown
+ * side by side and the frame's is what picks the icon. Letting a tool parameter that happens to be
+ * named `kind` overwrite it would put a contradiction on screen. Holding that order also keeps the
+ * merge strictly additive, so nothing that reads this object today can change behaviour. Such a
+ * parameter is shadowed here; that is the price, and it is confined to these two names.
+ *
+ * (The chip's label and the permission modal's are NOT at stake in this ordering — both come from
+ * toolCallName() reading the ToolCall directly, never from this object.)
+ *
+ * `rawInput` is optional — an agent calling a zero-argument tool sends `{}`, and one may omit it
+ * entirely — so a title-and-kind-only result stays valid. Anything that is not a plain object is
+ * ignored rather than spread key-by-key. Nothing usable at all → undefined, so a chip never shows
+ * an empty `{}`.
+ */
+export function toolCallInput(u: { title?: unknown; kind?: unknown; rawInput?: unknown }): unknown {
   const out: Record<string, unknown> = {};
+  const raw = u.rawInput;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) Object.assign(out, raw);
   if (typeof u.title === "string" && u.title) out.description = u.title;
   if (typeof u.kind === "string" && u.kind) out.kind = u.kind;
   return Object.keys(out).length ? out : undefined;
