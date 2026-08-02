@@ -291,19 +291,18 @@ describe("buildLodIndex — per-cluster representative points (reps)", () => {
     // The LOWER edge now has real behavioural backing: the "24 equal blobs" test below is exactly
     // the shape that needs k this large (fewer clusters than distinct real sub-populations forces
     // some to share or lose a rep — see that test's own comment). The UPPER edge does NOT have an
-    // in-file behavioural test, and I don't think it can: the actual cost this constant bounds is
-    // DOWNSTREAM, in Task 24b's `pushCloud` (one small bloom splat per rep, per the field's own doc
-    // comment above) — a file in this task's OFF-LIMITS boundary (`densityField.ts`). Any cost
-    // property measured here (e.g. `buildLodIndex`'s own build time) would not exercise that cost
-    // at all: k-means only runs when a cluster's member count exceeds k, so a large K mostly just
-    // takes the `n <= k` early-return path faster, which is not what makes a large K expensive.
-    // Pinning the upper edge to a REAL number would mean importing Task 24b's cost constants
-    // (`CLOUD_MAX_RINGS`/`CLOUD_MAX_PER_RING`) into this test file, which is the kind of premature
-    // coupling across the task boundary this plan is explicitly organized to avoid. So: the upper
-    // bound stays a brief-imposed ceiling, checked here only as a literal (not a derived property),
-    // and that limitation is written down rather than implied away.
+    // in-file behavioural test: Task 24b's actual wiring turned out simpler than earlier drafts of
+    // this comment predicted — each `reps` point becomes its own single `BloomPoint` push in
+    // `emitBloom()` (AsciiGraphRenderer.ts), not a per-rep ring-sampled `pushCloud` splat
+    // (`densityField.ts`), so `CLOUD_MAX_RINGS`/`CLOUD_MAX_PER_RING` are irrelevant to the shipped
+    // cost and there is nothing of that shape to import here. The real, behavioural ceiling on the
+    // shipped value lives downstream in `AsciiGraphRenderer.test.ts` (`BLOOM_MASS_FRAME_BUDGET`),
+    // which imports `LOD_REP_POINTS_K` directly and cross-checks it against a live renderer's
+    // actual per-frame `bloomPoints` — see that test for the real number. So: the upper bound HERE
+    // stays a brief-imposed literal, not because it can't be pinned, but because the pin belongs to
+    // the test downstream that can actually see the cost.
     expect(LOD_REP_POINTS_K).toBeGreaterThanOrEqual(16); // LITERAL lower bound, the brief's own band
-    expect(LOD_REP_POINTS_K).toBeLessThanOrEqual(32);    // LITERAL upper bound — NOT behaviourally pinned, see above
+    expect(LOD_REP_POINTS_K).toBeLessThanOrEqual(32);    // LITERAL upper bound here — behaviourally pinned in AsciiGraphRenderer.test.ts, see above
   });
 
   it("24 equal 10-member blobs spread with no dominant axis: every blob keeps its own rep and exact " +

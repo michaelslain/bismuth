@@ -190,19 +190,21 @@ There are **no per-color override keys** in `appearance` — the theme is the si
 | `spin` | boolean | `true` | — | Idle rotation of the 3D graph. |
 | `showFps` | boolean | `false` | — | Show the frame-rate (FPS) counter. |
 | `spinSpeed` | number | `0.0015` | 0–0.01 | Idle spin speed in radians/frame. |
-| `repulsion` | number | `-10` | -40 – -1 | d3-force `forceManyBody` strength; more negative = nodes push apart harder. |
-| `linkDistance` | number | `5` | 1–40 | Target distance between linked nodes. |
-| `centering` | number | `0.13` | 0–0.5 | `forceX/Y/Z` strength toward the origin; higher = denser ball. |
-| `nodeSize` | number | `6` | 2–16 | Base node radius. |
+| `repulsion` | number | `-10` | -40 – -1 | No effect currently (see note below) — was d3-force `forceManyBody` strength; more negative = nodes push apart harder. |
+| `linkDistance` | number | `5` | 1–40 | No effect currently (see note below) — was target distance between linked nodes. |
+| `centering` | number | `0.13` | 0–0.5 | No effect currently (see note below) — was `forceX/Y/Z` strength toward the origin; higher = denser ball. |
+| `nodeSize` | number | `6` | 2–16 | No effect currently (see note below) — was base node radius. |
 | `showGraphLabels` | boolean | `true` | — | Master toggle for in-scene labels. |
 | `graphLabelHubCount` | number | `10` | 0–30 | Count of top-degree nodes that always have a label. |
-| `nodeSizeMinMult` | number | `0.4` | 0.1–1.0 | Size multiplier for a 0/1-degree leaf (smallest dot). |
-| `nodeSizeDegreeGain` | number | `0.45` | 0.1–1.5 | How fast node size grows with `sqrt(link count)`. |
-| `nodeSizeMaxMult` | number | `6` | 2–12 | Ceiling on node size (largest hub vs leaf). |
+| `nodeSizeMinMult` | number | `0.4` | 0.1–1.0 | No effect currently (see note below) — was the size multiplier for a 0/1-degree leaf (smallest dot). |
+| `nodeSizeDegreeGain` | number | `0.45` | 0.1–1.5 | No effect currently (see note below) — was how fast node size grows with `sqrt(link count)`. |
+| `nodeSizeMaxMult` | number | `6` | 2–12 | No effect currently (see note below) — was ceiling on node size (largest hub vs leaf). |
 | `mapDefaultZoom` | number | `2` | 1–18 | Default zoom for the Bases map view when it can't fit all markers. |
 | `refreshDebounceMs` | number | `300` | 100–1000 | Delay before rebuilding the graph after an edit burst in ms. |
 
 The graph's 2D/3D view mode is **intentionally absent** from this section. It is a transient `localStorage` toggle in `GraphView.tsx` and never writes `.settings`.
+
+`repulsion`, `linkDistance`, `centering`, `nodeSize`, `nodeSizeMinMult`, `nodeSizeDegreeGain`, and `nodeSizeMaxMult` currently have no effect — they're vocabulary from the pre-ASCII force-directed renderer. The keys still exist and validate, but nothing reads them: `GraphView.tsx`'s `buildConfig()` never forwards them into `GraphConfig`, and `core/src/layout.ts`'s force-directed pass uses its own hardcoded constants instead. Kept for now as a deliberately deferred product decision, not removed.
 
 ### `editor`
 

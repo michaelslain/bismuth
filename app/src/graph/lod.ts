@@ -385,6 +385,13 @@ function representativePoints(pts0: { x: number; y: number }[], k: number, mx0: 
   // pattern as `sdx`/`sdy`'s clamp and densityField.ts's `sanitizeSpread` — degrade a bad point to
   // a safe stand-in (the centroid over its FINITE members) rather than propagate it, which keeps
   // the weight sum exactly `n` (the point is still counted, just relocated) instead of dropping it.
+  //
+  // UNREACHABLE TODAY, not load-bearing: this function's only caller (`buildLodIndex` above) already
+  // sanitizes `pts` and derives `mx0`/`my0` from that sanitized set (Task 30's sanitize-once step),
+  // so both inputs here are already finite by the time they arrive. Proved by mutation, not just
+  // argued: replacing this guard's body leaves `lod.test.ts` fully green (30/30). Kept anyway as
+  // defence-in-depth — a future caller that skips that guarantee should still degrade safely rather
+  // than propagate a NaN.
   let safeSx = 0, safeSy = 0, safeCount = 0;
   for (const p of pts0) if (Number.isFinite(p.x) && Number.isFinite(p.y)) { safeSx += p.x; safeSy += p.y; safeCount++; }
   const fbX = Number.isFinite(mx0) ? mx0 : (safeCount > 0 ? safeSx / safeCount : 0);

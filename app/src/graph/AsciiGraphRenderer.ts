@@ -385,8 +385,11 @@ interface NodeView {
   // `projValid && within bounds`; edges (real, vector-stroked — see strokeEdges()) gate on
   // `projValid` alone, exactly like the pre-redesign CanvasGraphRenderer's `onScreen` — the canvas's
   // own paint-time clip handles an edge whose far endpoint is merely off-field, so its on-screen
-  // portion still draws instead of the edge being dropped entirely. Always true in 2D (no
-  // perspective to fail).
+  // portion still draws instead of the edge being dropped entirely. NOT always true in 2D: `is2d`
+  // flips before the entering/leaving-2D morph finishes, and for that transition a mass's
+  // projection can cross the camera plane — measured driving `sy` past -100,000px, see
+  // `projectEntities()`'s own `projValid` guard comment, later in this file. Nothing relies on the
+  // false claim today; every 2D consumer checks `projValid` anyway.
   projValid: boolean;
 }
 interface EdgeView { a: NodeView; b: NodeView; kr: number }
@@ -2551,12 +2554,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   /**
    * This frame's BLENDED camera — flatten (0=full 3D, 1=full flat 2D, `this.morphFlatten`), the
-   * derived rotation/perspective terms, the blended world scale, and the blended dolly. Computed
-   * ONCE per frame and shared by EVERY projection pass (`projectNodes()` for individual glyphs,
-   * `projectEntities()` for LOD masses) — not an optimisation, a correctness requirement: round-1
-   * review found that `projectEntities()` was reading `this.pxPerWorld`/`this.res` directly with
-   * no blend at all, so the LOD masses (the ONLY thing actually drawn for the entire 500ms of an
-   * entering-2D transition in the app's default configuration — `glyphAlpha` is pinned at 0 the
+   * derived rotation/perspective terms, the blended world scale, and the blended dolly. Called once
+   * per projection PASS this frame, not memoized once for the whole frame — `projectNodes()` calls
+   * it once, `projectEntities()` once per active level, and `emitBloom()` once more (see its own
+   * comment for why re-deriving there is cheap and exact) — but it is a pure function of frame
+   * state, so every call within one frame returns identical values. THAT agreement across calls is
+   * the correctness requirement: round-1 review found that `projectEntities()` was reading
+   * `this.pxPerWorld`/`this.res` directly with no blend at all, so the LOD masses (the ONLY thing
+   * actually drawn for the entire 500ms of an entering-2D transition in the app's default
+   * configuration — `glyphAlpha` is pinned at 0 the
    * whole time, since `res` resets to 1 on every flip and the far band owns t=0 outright; see
    * rasterize()'s `lodOn`/`mix` gate) never moved, so the flip still read as a cut even though this
    * task's glyph-level morph was correct. Both passes must read the SAME blended camera on a frame
@@ -2630,8 +2636,11 @@ export class AsciiGraphRenderer implements GraphRenderer {
   }
 
   /** The copied camera math (CanvasGraphRenderer.project/projectPositions), evaluated inline with
-   *  the per-frame constants hoisted. 2D is the same pipeline with rx = ry = 0 over the flat
-   *  layout, so perspective resolves to 1. No allocation. */
+   *  the per-frame constants hoisted. At rest, 2D collapses to rx = ry = 0 over the flat layout, so
+   *  perspective resolves to 1 — but NOT during an entering/leaving-2D morph: `is2d` flips before
+   *  `rx`/`ry` finish lerping to 0 (see cameraFrame()), so persp != 1 for the transition's duration.
+   *  Not allocation-free either — `blendPosition` allocates a 3-tuple per node per frame, same as
+   *  `projectEntities()`. */
   private projectNodes() {
     const m = this.m;
     const P = this.P;

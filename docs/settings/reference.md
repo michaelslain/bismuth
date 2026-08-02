@@ -69,21 +69,23 @@ appearance:
 Knowledge-graph rendering and force-layout behavior.
 
 > **Gotcha — the 2D/3D dimension is NOT a setting.** It is a transient, per-window UI toggle (localStorage-backed in `app/src/GraphView.tsx`). There is no `graph.viewMode` key (a test asserts its absence) — switching dimension never rewrites `.settings`. Likewise the old color keys `graph.palette`, `graph.edgeColor`, `graph.backgroundColor` are gone (graph color is derived from `appearance.theme`).
+>
+> **Gotcha — `repulsion`, `linkDistance`, `centering`, `nodeSize`, `nodeSizeMinMult`, `nodeSizeDegreeGain`, and `nodeSizeMaxMult` currently have no effect.** They're vocabulary from the pre-ASCII force-directed renderer. The keys still exist in the schema and still validate, but nothing reads them: `GraphView.tsx`'s `buildConfig()` never forwards them into `GraphConfig`, and `core/src/layout.ts`'s force-directed pass uses its own hardcoded constants rather than these settings. Removing the keys is a deliberately deferred product decision — this is a documentation note, not a deprecation.
 
 | Key | Type | Default | Bounds | Doc |
 |-----|------|---------|--------|-----|
 | `spin` | boolean | `true` | — | Idle rotation of the graph. |
 | `showFps` | boolean | `false` | — | Show the frame-rate (FPS) counter on the graph. |
 | `spinSpeed` | number | `0.0015` | min `0`, max `0.01` | Idle spin speed (radians/frame). |
-| `repulsion` | number | `-10` | min `-40`, max `-1` | Node repulsion; more negative pushes apart harder. |
-| `linkDistance` | number | `5` | min `1`, max `40` | Target distance between linked nodes. |
-| `centering` | number | `0.13` | min `0`, max `0.5` | Pull toward center; higher = denser ball. |
-| `nodeSize` | number | `6` | min `2`, max `16` | Base node radius. |
+| `repulsion` | number | `-10` | min `-40`, max `-1` | No effect currently (see Gotcha above) — was node repulsion; more negative pushed apart harder. |
+| `linkDistance` | number | `5` | min `1`, max `40` | No effect currently (see Gotcha above) — was target distance between linked nodes. |
+| `centering` | number | `0.13` | min `0`, max `0.5` | No effect currently (see Gotcha above) — was pull toward center; higher = denser ball. |
+| `nodeSize` | number | `6` | min `2`, max `16` | No effect currently (see Gotcha above) — was base node radius. |
 | `showGraphLabels` | boolean | `true` | — | Master toggle for in-scene labels. |
 | `graphLabelHubCount` | number | `10` | min `0`, max `30` | Top-degree nodes that always get a label. |
-| `nodeSizeMinMult` | number | `0.4` | min `0.1`, max `1` | Size multiplier for a 0/1-degree leaf node (the smallest dots). |
-| `nodeSizeDegreeGain` | number | `0.45` | min `0.1`, max `1.5` | How fast node size grows with `sqrt(link count)`. |
-| `nodeSizeMaxMult` | number | `6` | min `2`, max `12` | Ceiling on node size (biggest hub vs a leaf). |
+| `nodeSizeMinMult` | number | `0.4` | min `0.1`, max `1` | No effect currently (see Gotcha above) — was the size multiplier for a 0/1-degree leaf node (the smallest dots). |
+| `nodeSizeDegreeGain` | number | `0.45` | min `0.1`, max `1.5` | No effect currently (see Gotcha above) — was how fast node size grows with `sqrt(link count)`. |
+| `nodeSizeMaxMult` | number | `6` | min `2`, max `12` | No effect currently (see Gotcha above) — was ceiling on node size (biggest hub vs a leaf). |
 | `mapDefaultZoom` | number | `2` | min `1`, max `18` | Default zoom for the Bases map view when it can't fit markers. |
 | `refreshDebounceMs` | number | `300` | min `100`, max `1000` | Delay before rebuilding the graph after an edit burst (ms). |
 | `backgroundNoise` | boolean | `false` | — | The faint ASCII noise texture under the graph field. Off by default. |
