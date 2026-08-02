@@ -34,14 +34,38 @@
 //   backbone.ts      the hub-to-hub group-level edge backbone + the three-band zoom handover
 //   cameraModel.ts   the 3D dolly, derived from the resolution ladder rather than tracked separately
 //
-// FOUR things did NOT come across. They are recorded here rather than in a working document because
-// a deleted file's capabilities are exactly what a codebase forgets:
+// FOUR things did NOT come across, at the time this list was first written. They are recorded here
+// rather than in a working document because a deleted file's capabilities are exactly what a
+// codebase forgets:
 //
-//  1. THE ANIMATED 2D<->3D MORPH (`morph` 0..1, `easeInOutCubic`, `MODE_MORPH_MS` 500, a per-node
-//     p3->p2 lerp with an orbit unwind). This renderer HARD-RESETS the camera on a `viewMode` flip
-//     instead (`AsciiGraphRenderer.setConfig`): rx/ry/pan zeroed, resolution back to 100%. The flip
-//     is therefore a cut, not a transition. Never decided against — the merge plan listed it as an
-//     open choice and no task closed it.
+//  1. ~~THE ANIMATED 2D<->3D MORPH~~ — RESTORED, Task 22 (round 2, after a review round caught two
+//     defects in round 1 — see below). Canvas's version (`morph` 0..1, `easeInOutCubic`,
+//     `MODE_MORPH_MS` 500, a per-node p3->p2 lerp with an orbit unwind) is now `modeMorph.ts`, wired
+//     through `AsciiGraphRenderer.setConfig`/`tick`/`cameraFrame`/`projectNodes`/`projectEntities`.
+//     A `viewMode` flip eases across MODE_MORPH_MS instead of cutting — the finished transition
+//     still lands exactly where the old hard reset did (same rx/ry/pan/res/target, see setConfig),
+//     so the end state this list originally described is unchanged; only the path to it is no
+//     longer a single frame. Two things this restoration got wrong on its first pass, both fixed
+//     with the SAME architectural change (capturing every blended quantity's `from` LIVE rather
+//     than from one fixed reference — see `modeMorph.ts`'s header and `lerp`'s doc comment):
+//       - LOD masses (the far band's aggregate entities, `showLodMasses: true` — the app's shipped
+//         default outside "local" mode) didn't move at all: `glyphAlpha` is pinned at 0 for the
+//         ENTIRE 500ms of an entering-2D transition (`res` resets to 1 on every flip, so
+//         `resolutionT` is 0 the whole time and the far band owns t=0 outright), so
+//         `projectNodes()`'s glyph-level blend never ran, and `projectEntities()` read
+//         `this.pxPerWorld`/`this.res`/`ev.wx`/`ev.wy` directly with no blend of its own. The user
+//         saw the 3D field cut straight to the static final mass layout. Fixed by giving each
+//         entity a `p3` centroid (`EntityView.p3`) and sharing ONE `cameraFrame()` between
+//         `projectNodes()` and `projectEntities()`, so whichever pass is actually drawing (masses,
+//         glyphs, or both) reads the same moving camera.
+//       - A SECOND `viewMode` flip arriving before the first transition finished always restarted
+//         `flatten`'s sweep from a hardcoded far endpoint, and separately captured the orbit to
+//         unwind FROM by reading `this.rx`/`this.ry` after they had already been snapped to the
+//         resting default — never the orbit actually on screen. Both produced a visible jump AWAY
+//         from the new destination. Fixed by keeping `this.morphFlatten`/`this.rx`/`this.ry` LIVE
+//         for the full duration of any in-flight transition (tick() writes the interpolated value
+//         back every frame) and having a new flip capture wherever they currently are as its own
+//         `from` — correct whether that flip is fresh or an interruption.
 //
 //  2. DEPTH-ORDERED CELL ARBITRATION IN 3D. Canvas drew nodes far->near into a `drawOrder` array, so
 //     a near node always painted over a far one and `BACK_INTERACT_CUTOFF` (0.18) additionally
@@ -59,9 +83,16 @@
 //     `EDGE_DIM_ALPHA`) and accenting the hovered glyph, which is a weaker affordance on a dense
 //     field than a positive mark would be.
 //
-//  4. LABEL PILLS (a rounded translucent background box behind a name). Replaced by a
-//     ground-coloured `fillRect` under each label's cells — same job (a name is never read through
-//     the field behind it), squarer corners.
+//  4. LABEL PILLS (a rounded translucent background box behind a name) — STALE as written below;
+//     corrected by Task 22 to describe the CURRENT mechanism, not the one this list originally
+//     recorded. It first read "replaced by a ground-coloured `fillRect` under each label's cells" —
+//     true when this list was written, but Task 21 replaced that opaque `fillRect` (which erased
+//     every edge running behind a label) with a per-glyph `strokeText` halo (`LABEL_HALO_EM`,
+//     `AsciiGraphRenderer.ts`'s paint()) PLUS glyph suppression at the source
+//     (`reserveLabelCells` blanks a label's cells before the field-glyph pass ever draws into them,
+//     rather than drawing them and covering them). Same job as the pill either way (a name is never
+//     read through the field behind it), but the field around a name is no longer plated over —
+//     only each letter's own outline gets a cleared ring.
 //
 // Two more of the deleted renderer's features were DEAD before the merge began and were deleted, not
 // dropped: `clearAroundSelf` (a screen-space clear zone around the "you" hub) and `drawWorkflowLanes`.

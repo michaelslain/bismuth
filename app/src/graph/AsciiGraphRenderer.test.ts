@@ -21,6 +21,7 @@ import { CLUSTER_LABEL_MAX_CHARS, clusterLevelAlphas } from "./labelSelection";
 import { DEFAULT_LEVEL_REVEAL_T, EDGE_WEIGHT_BUCKETS, bandsForT, edgeWeightBucketRange } from "./backbone";
 import { buildColorSlots } from "./clusterVisual";
 import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
+import { MODE_MORPH_MS } from "./modeMorph";
 import { FIELD_H, FIELD_W, type DensityField } from "./densityField";
 import { parseHexColor } from "./bloomColor";
 import { THEMES } from "../../../core/src/theme/tokens";
@@ -1412,6 +1413,37 @@ describe("THE LAW — zoom is resolution, never scale", () => {
     settle(200);
     expect(zooms.at(-1)!).toBeLessThan(100);
     expect(ctx.font).toBe(fontBefore);
+    r.destroy();
+  });
+
+  /**
+   * REQUIRED (round-1 review) — THE NINTH TEST. Every LAW test above mounts once and only ever
+   * wheel-zooms afterward; none calls setConfig() a SECOND time, so (now that setConfig's very
+   * first call settles inertly — see `hasConfigured`/`noViewYet`) none of them ever enters the
+   * 2D<->3D mode morph at all. THE LAW held throughout it regardless (independently measured), but
+   * no test here actually exercised that path — a future change that made the morph "look better"
+   * by scaling a glyph into place mid-transition would have shipped with every one of the eight
+   * tests above still green. This one flips `viewMode`, pumps every frame of the transition, and
+   * checks the font string and the label-halo stroke width directly: both are ONE distinct value
+   * across the entire 500ms, not just at the two settled ends.
+   */
+  it("holds across the animated 2D<->3D morph itself, not just across a wheel zoom", () => {
+    const { r } = mountRenderer("3d", sampleGraph(), { showGraphLabels: true } as never);
+    settle(60);
+    const fontBefore = ctx.font;
+    ctx.fonts.length = 0; ctx.strokeTexts.length = 0;
+
+    r.setConfig({ ...CONFIG, viewMode: "2d", showGraphLabels: true } as never);
+    let t = 2000;
+    for (let i = 0; i <= 40; i++) { frame(t); t += 16; } // > MODE_MORPH_MS (500ms) of frames
+
+    // Sanity: the transition actually drew something to check, across more than one frame.
+    expect(ctx.fonts.length).toBeGreaterThan(1);
+    expect(new Set(ctx.fonts).size).toBe(1);
+    expect([...new Set(ctx.fonts)][0]).toBe(fontBefore);
+
+    expect(ctx.strokeTexts.length).toBeGreaterThan(0);
+    expect(new Set(ctx.strokeTexts.map((s) => s.width)).size).toBe(1);
     r.destroy();
   });
 });
@@ -4795,5 +4827,432 @@ describe("the phosphor bloom carries each cluster's own territory colour (Task 2
       return false;
     });
     expect(seen).toEqual([true, true]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Task 22 — the animated 2D<->3D morph (modeMorph.ts), restoring EPITAPH item 1.
+//
+// Before this task a `viewMode` flip hard-reset the camera in setConfig() (rx/ry/pan zeroed,
+// resolution back to 100%) — a cut, not a transition. These tests pin that a flip now runs a
+// genuine multi-frame morph (modeMorph.ts's pure model, unit-tested on its own in
+// modeMorph.test.ts) and that the FINISHED transition still lands exactly where the old hard reset
+// used to — this is a transition, not a new camera.
+// ---------------------------------------------------------------------------------------------
+describe("the animated 2D<->3D morph (modeMorph.ts)", () => {
+  /** The private morph + camera state these tests read. Cast-only — the public surface stays
+   *  exactly GraphRenderer. */
+  interface MorphPriv {
+    nodes: { sx: number; sy: number; node: { id: string } }[];
+    rx: number; ry: number; panX: number; panY: number; res: number; goalRes: number; zoomPct: number;
+    target: [number, number, number];
+    modeMorph: {
+      fromFlatten: number; toFlatten: number;
+      fromRx: number; fromRy: number; toRx: number; toRy: number;
+      startT: number | null;
+    } | null;
+    morphFlatten: number;
+  }
+  const morphPriv = (r: AsciiGraphRenderer) => r as unknown as MorphPriv;
+
+  it("entering 2D: the first rendered frame continues the old 3D view exactly, the midpoint is genuinely partway, and the field keeps moving until it settles", () => {
+    const { r } = mountRenderer("3d");
+    settle(60); // fully settled in 3D — no glide left in flight
+    const priv = morphPriv(r);
+    const before = priv.nodes.map((n) => ({ id: n.node.id, sx: n.sx, sy: n.sy }));
+
+    r.setConfig({ ...CONFIG, viewMode: "2d" });
+    // The flip QUEUES a transition instead of cutting straight to the flat layout.
+    expect(priv.modeMorph).not.toBeNull();
+
+    // The very first frame actually rendered after the flip: this tick's own timestamp seeds
+    // modeMorph.startT, so elapsed is exactly 0 and flatten is exactly 0 — a continuation of the
+    // last 3D frame, not already the flattened 2D one.
+    frame(2000);
+    expect(priv.morphFlatten).toBe(0);
+    const justAfter = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
+    for (let i = 0; i < before.length; i++) {
+      expect(justAfter[i].sx).toBeCloseTo(before[i].sx, 6);
+      expect(justAfter[i].sy).toBeCloseTo(before[i].sy, 6);
+    }
+
+    // Halfway through MODE_MORPH_MS: easeInOutCubic(0.5) is exactly 0.5 (modeMorph.test.ts pins
+    // this identity independently), so flatten is exactly 0.5 here — genuinely partway, neither
+    // endpoint. Every node's screen position must have actually moved from the post-flip frame.
+    frame(2000 + MODE_MORPH_MS / 2);
+    expect(priv.morphFlatten).toBe(0.5);
+    const mid = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
+    for (let i = 0; i < before.length; i++) {
+      expect(mid[i].sx !== justAfter[i].sx || mid[i].sy !== justAfter[i].sy).toBe(true);
+    }
+
+    // Past the duration the transition finishes and stops tracking itself — and the field has kept
+    // moving since the midpoint (proving the animation runs all the way to its end, not just a
+    // single eased step at the start).
+    frame(2000 + MODE_MORPH_MS + 100);
+    expect(priv.modeMorph).toBeNull();
+    const settled = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
+    for (let i = 0; i < mid.length; i++) {
+      expect(settled[i].sx !== mid[i].sx || settled[i].sy !== mid[i].sy).toBe(true);
+    }
+  });
+
+  it("entering 2D: the finished transition lands EXACTLY where the old hard reset used to — a fresh 2D mount agrees on screen position and every camera field", () => {
+    const { r } = mountRenderer("3d");
+    settle(60);
+    r.setConfig({ ...CONFIG, viewMode: "2d" });
+    let t = 3000;
+    for (let i = 0; i < 40; i++) { frame(t); t += 16; } // well past MODE_MORPH_MS
+    const priv = morphPriv(r);
+    expect(priv.modeMorph).toBeNull(); // settled — no transition left in flight
+    const morphed = priv.nodes.map((n) => ({ id: n.node.id, sx: n.sx, sy: n.sy }));
+
+    // Comparandum: a SEPARATE renderer mounted directly in 2D — no transition ever ran.
+    const { r: fresh } = mountRenderer("2d");
+    settle(60);
+    const freshPriv = morphPriv(fresh);
+    const freshById = new Map(freshPriv.nodes.map((n) => [n.node.id, { sx: n.sx, sy: n.sy }]));
+
+    expect(morphed.length).toBeGreaterThan(0);
+    for (const m of morphed) {
+      const f = freshById.get(m.id)!;
+      expect(m.sx).toBeCloseTo(f.sx, 6);
+      expect(m.sy).toBeCloseTo(f.sy, 6);
+    }
+    // The camera bookkeeping itself matches the documented hard-reset values exactly. `rx` is 0,
+    // not the 3D resting `-0.5`: this.rx/this.ry are now the LIVE orbit actually on screen (round-1
+    // fix — see AsciiGraphRenderer.ts's `modeMorph` field doc), and the field is flat, so the
+    // rendered orbit — the only orbit that exists now — is level. `-0.5` is still where a
+    // SUBSEQUENT flip back to 3D would animate TO (setConfig's `toRx`), not a value parked here.
+    expect(priv.rx).toBe(0); expect(priv.ry).toBe(0);
+    expect(priv.panX).toBe(0); expect(priv.panY).toBe(0);
+    expect(priv.res).toBe(1); expect(priv.goalRes).toBe(1);
+    expect(priv.zoomPct).toBe(100);
+    expect(priv.target).toEqual([0, 0, 0]);
+  });
+
+  it("entering 3D (the reverse direction) also eases rather than cuts, and settles at the resting orbit", () => {
+    const { r } = mountRenderer("2d");
+    settle(60);
+    const priv = morphPriv(r);
+    r.setConfig({ ...CONFIG, viewMode: "3d" });
+    expect(priv.modeMorph).not.toBeNull();
+
+    frame(5000);
+    expect(priv.morphFlatten).toBe(1); // entering 3D: flatten STARTS at 1 (still fully flat) ...
+    frame(5000 + MODE_MORPH_MS / 2);
+    expect(priv.morphFlatten).toBe(0.5); // ... genuinely partway at the midpoint ...
+    frame(5000 + MODE_MORPH_MS + 100);
+    expect(priv.morphFlatten).toBe(0);   // ... and ENDS at 0 (full 3D), not a jump either direction.
+    expect(priv.modeMorph).toBeNull();
+    expect(priv.rx).toBe(-0.5); expect(priv.ry).toBe(0);
+  });
+
+  /**
+   * Three communities, each on its OWN ring at a distinct, CONSISTENT world-Z depth (+400/0/-400,
+   * not `sampleGraph()`'s per-node cyclic z, which averages ALMOST TO ZERO within a community —
+   * measured -11.25 world units for community 0 there, an order of magnitude too small to move a
+   * mass's centroid across a cell boundary once projected). Every member of one community shares
+   * (near enough) the same depth, so the community's p3 CENTROID carries that depth undiluted —
+   * exactly what a mass's `p3` field needs to make its blended position move by more than a
+   * sub-pixel amount as `flatten` runs 0..1.
+   */
+  function morphMassGraph() {
+    const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
+    const edges: ReturnType<typeof sampleGraph>["edges"] = [];
+    const RINGS = [{ c: 0, z: 400 }, { c: 1, z: 0 }, { c: 2, z: -400 }];
+    for (const { c, z } of RINGS) {
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        nodes.push({
+          id: `c${c}k${k}`, label: `note ${c}${k}`, kind: "note" as const,
+          position: [(c * 300 + Math.cos(a) * 80) * RING_SCALE, Math.sin(a) * 80 * RING_SCALE, z * RING_SCALE] as [number, number, number],
+          position2d: [(c * 300 + Math.cos(a) * 80) * RING_SCALE, Math.sin(a) * 80 * RING_SCALE] as [number, number],
+          community: c, communityLabel: `Cluster ${c}`,
+        });
+      }
+      for (let k = 1; k < 8; k++) edges.push({ from: `c${c}k0`, to: `c${c}k${k}`, kind: "link" as const });
+    }
+    return { nodes, edges };
+  }
+
+  /**
+   * REQUIRED (round-1 review, Critical 1). `showLodMasses: true` is the app's SHIPPED default for
+   * any non-"local" graph mode (GraphView.tsx) — every test above uses bare `CONFIG`, which leaves
+   * it unset, and round-1 review found that was the ONE configuration where the whole task worked:
+   * with masses on, `res` resets to 1 on every flip (unchanged, out of this task's scope), pinning
+   * `resolutionT` at 0 for the entire transition, and `bandsForT(0, …)` gives `massAlpha = 1` —
+   * `glyphAlpha` is gated OFF (`<= LOD_ALPHA_EPS`) the WHOLE 500ms, so `projectNodes()` (this task's
+   * glyph blend) never runs at all. The only thing drawn is the far band's aggregate masses, and
+   * `projectEntities()` used to read `this.pxPerWorld`/`this.res`/`ev.wx`/`ev.wy` directly with no
+   * blend anywhere — so the user saw the 3D glyph field cut straight to the final, static 2D mass
+   * layout in one frame, no matter how correct the (invisible) glyph-level morph was underneath.
+   * This test drives that exact configuration and asserts the DRAWN field (what `paint()` actually
+   * issued to the canvas, not an internal `flatten` value) differs at each of five samples across
+   * the transition — the round-1 review's own methodology ("distinct frames: 1 of 5" before the
+   * fix, on this exact measurement).
+   */
+  it("REQUIRED — entering 2D with LOD masses on (the app's default configuration) moves the DRAWN field across the transition, not a cut to a frozen aggregate", () => {
+    const { r } = mountRenderer("3d", morphMassGraph(), { showLodMasses: true });
+    settle(60);
+
+    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
+
+    const drawnAt = (tMs: number) => {
+      ctx.fills.length = 0;
+      frame(tMs);
+      return ctx.fills.map((f) => `${f.text}@${f.x.toFixed(2)},${f.y.toFixed(2)}`).sort().join("|");
+    };
+    const t0 = 2000;
+    const samples = [t0, t0 + 125, t0 + 250, t0 + 375, t0 + 500].map(drawnAt);
+    // Sanity the fixture actually exercises the mass path at all (a vacuous "nothing ever drew
+    // anything" would trivially pass the distinctness assertion below for the wrong reason).
+    expect(samples.every((s) => s.length > 0)).toBe(true);
+    // Distinct DRAWN output at every one of the five samples — not "at least one differs", the
+    // full "5 of 5" the round-1 review used to describe the fix (and measured as "1 of 5" on the
+    // pre-fix code — see the mutation-proof below and this task's report for the reproduction).
+    expect(new Set(samples).size).toBe(5);
+  });
+
+  /**
+   * IMPORTANT (round-2 review) — not pinned by any test above, INCLUDING the "5 distinct drawn
+   * frames" test immediately above. `projectEntities()`'s `blendPosition(ev.p3, [ev.wx, ev.wy, 0],
+   * flatten)` call is what makes a mass's FIRST frame of a transition continue from wherever the
+   * pre-flip 3D camera actually showed it — the exact continuity the glyph test far above
+   * (":4858") pins for individual nodes. The distinctness test does NOT catch its removal:
+   * `cameraFrame()`'s shared rotation/dolly/scale keeps moving on its own for the whole 500ms
+   * regardless of whether any given ENTITY's own position is blended, so a mutation that drops just
+   * the per-entity p3 blend (masses parked at their final flat `[wx, wy, 0]` position, viewed
+   * through a still-rotating camera) still produces 5 distinct drawn frames — just ones where the
+   * masses are already fanned out to their final 2D layout instead of clustered where the tilted 3D
+   * camera actually had them.
+   *
+   * Masses never actually project while `is2d` is false (`lodOn`'s own gate — see rasterize()), so
+   * there is no LIVE "last pre-flip 3D frame" to read `entityLevels[…].sx/sy` off, the way the
+   * glyph test reads `nv.sx/sy` off for free (nodes always project). Calling `projectEntities()`
+   * itself (privately) to get that comparandum was tried and rejected: `before` and `after` would
+   * then both come from the SAME method with the SAME effective inputs (the settled pre-flip camera
+   * and the transition's first-frame camera are identical — flatten 0, rx -0.5, ry 0, no dolly,
+   * `res` pinned to 1 either way), so they would agree by construction for ANY deterministic
+   * `projectEntities()` implementation, correct or not — the comparison could never actually go red
+   * on a formula bug, only on a degenerate FIXTURE. Instead this computes the ground truth BY HAND,
+   * independently of `projectEntities()`, applying the exact projection formula the two projection
+   * passes share (`cameraFrame()`'s doc comment) directly to each entity's own `p3` at the captured
+   * pre-flip camera — so a regression in the METHOD under test can actually diverge from it.
+   */
+  it("IMPORTANT — first-frame mass continuity: entering 2D, a mass's first frame continues the pre-flip 3D projection, not the already-fanned-out 2D one", () => {
+    interface MassContinuityPriv {
+      entityLevels: { p3: [number, number, number]; sy: number }[][];
+      P: number;
+      cameraFrame(): {
+        s: number; dolly: number; cyr: number; syr: number; cxr: number; sxr: number;
+        tx: number; ty: number; tz: number; ox: number; oy: number;
+      };
+    }
+    const massPriv = (r: AsciiGraphRenderer) => r as unknown as MassContinuityPriv;
+
+    const { r } = mountRenderer("3d", morphMassGraph(), { showLodMasses: true });
+    settle(60); // fully settled in 3D — this.morphFlatten === 0, this.rx === -0.5 (resting 3D tilt)
+    const priv = massPriv(r);
+
+    // GROUND TRUTH: the shared projection formula (projectNodes()/projectEntities(), see
+    // cameraFrame()'s own doc comment), applied BY HAND to each entity's `p3` at the settled
+    // pre-flip 3D camera — computed independently of projectEntities() itself (see the "rejected"
+    // note above for why calling that method for this side of the comparison would be vacuous).
+    const cam = priv.cameraFrame();
+    const P = priv.P;
+    const groundTruthSy = (p3: [number, number, number]) => {
+      const x = (p3[0] - cam.tx) * cam.s, y = (p3[1] - cam.ty) * cam.s, z = (p3[2] - cam.tz) * cam.s;
+      const x1 = x * cam.cyr + z * cam.syr, z1 = -x * cam.syr + z * cam.cyr;
+      const y2 = y * cam.cxr - z1 * cam.sxr, z2 = y * cam.sxr + z1 * cam.cxr;
+      const persp = P / Math.max(1, P - (z2 + cam.dolly));
+      return cam.oy + y2 * persp;
+    };
+    expect(priv.entityLevels[0].length).toBe(3); // morphMassGraph's three communities, one level
+    const before = priv.entityLevels[0].map((ev) => groundTruthSy(ev.p3));
+    // Non-vacuous: the fixture's per-community z (morphMassGraph's own doc comment) genuinely
+    // separates the three masses' screen-y at this camera angle — a degenerate "already equal"
+    // fixture would make the continuity assertion below pass for the wrong reason.
+    expect(new Set(before.map((v) => v.toFixed(1))).size).toBe(3);
+
+    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
+    // The first REAL frame rendered after the flip: elapsed 0, flatten exactly 0. Goes through the
+    // REAL projectEntities() — the method under test, not the hand-computed ground truth above.
+    frame(2000);
+    const after = priv.entityLevels[0].map((ev) => ev.sy);
+    for (let i = 0; i < before.length; i++) expect(after[i]).toBeCloseTo(before[i], 6);
+  });
+
+  /**
+   * REQUIRED (round-1 review, Critical 2). Before this fix, a SECOND `viewMode` flip arriving
+   * before the first transition finished always restarted `flatten`'s sweep from a hardcoded far
+   * endpoint (entering 2D always started the new sweep at 0, entering 3D always at 1) regardless
+   * of where the field actually was, and separately captured the orbit to unwind FROM by reading
+   * `this.rx`/`this.ry` AFTER they had already been snapped to the resting default — never the
+   * orbit actually on screen. Both produced a visible jump AWAY from the new destination
+   * (round-1 review measured a 16.61px normal step vs. an 87.99px interrupt-frame step — 5.3x —
+   * on an interrupted 3D->2D transition). The fix (this file's `modeMorph` field + `tick()`) keeps
+   * `this.morphFlatten`/`this.rx`/`this.ry` LIVE for the full duration of any in-flight transition
+   * and has a NEW flip capture wherever they currently are as its own `from`, so an interruption's
+   * very first frame (elapsed 0 of the NEW transition) must reproduce the exact pre-interrupt state
+   * — this test checks that directly, then confirms the reversed transition still runs to
+   * completion and lands at the correct (opposite) resting state.
+   */
+  it("REQUIRED — interrupting a transition continues from the field's CURRENT position, not a jump to the opposite endpoint", () => {
+    const { r } = mountRenderer("3d");
+    settle(60);
+    const priv = morphPriv(r);
+
+    r.setConfig({ ...CONFIG, viewMode: "2d" });
+    frame(2000);                     // transition #1, elapsed 0 -> flatten exactly 0
+    frame(2000 + MODE_MORPH_MS / 2); // transition #1, elapsed 250 -> flatten exactly 0.5 (midpoint)
+    expect(priv.morphFlatten).toBe(0.5);
+    const before = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
+
+    // INTERRUPT: flip back to 3D before transition #1 finishes.
+    r.setConfig({ ...CONFIG, viewMode: "3d" });
+    expect(priv.modeMorph).not.toBeNull(); // a NEW transition was queued, not a synchronous snap
+
+    // The very first frame of transition #2: ITS OWN elapsed is 0 (this tick seeds its startT), so
+    // it must reproduce the exact pre-interrupt flatten/position — not jump to flatten=1 (the far
+    // endpoint a naive "always sweep oriented by direction" implementation restarts from).
+    frame(2000 + MODE_MORPH_MS / 2 + 16);
+    expect(priv.morphFlatten).toBeCloseTo(0.5, 9);
+    for (let i = 0; i < before.length; i++) {
+      expect(priv.nodes[i].sx).toBeCloseTo(before[i].sx, 6);
+      expect(priv.nodes[i].sy).toBeCloseTo(before[i].sy, 6);
+    }
+
+    // ...and it genuinely reverses: flatten only DECREASES from here (heading back to full 3D)...
+    let t = 2000 + MODE_MORPH_MS / 2 + 16;
+    let prevFlatten = priv.morphFlatten;
+    for (let i = 0; i < 10; i++) {
+      t += 16;
+      frame(t);
+      expect(priv.morphFlatten).toBeLessThanOrEqual(prevFlatten);
+      prevFlatten = priv.morphFlatten;
+    }
+    // ...and lands EXACTLY at the 3D resting state once transition #2 completes.
+    frame(t + MODE_MORPH_MS);
+    expect(priv.modeMorph).toBeNull();
+    expect(priv.morphFlatten).toBe(0);
+    expect(priv.rx).toBe(-0.5); expect(priv.ry).toBe(0);
+  });
+
+  /**
+   * REQUIRED (round-1 review). `cameraFrame()`'s `dolly = this.cameraDolly(false) * (1 -
+   * flatten)` is identically 0 for the ENTIRE 500ms of every OTHER test in this file, because
+   * `setConfig` resets `res` to 1 synchronously on every flip (unrelated to this task, unchanged)
+   * and `cameraDolly` is itself 0 whenever `res === 1` — so a mutation collapsing the term to the
+   * plain `is2d`-gated `cameraDolly(this.cfg.viewMode === "2d")` (no flatten ramp at all) passes
+   * every other test in this file unchanged; round-1 review measured exactly that. The one
+   * scenario where the two formulas actually diverge is the user zooming WHILE the transition is
+   * still running — an ordinary interaction (scrolling before a flip settles), not a contrived
+   * one — because a later wheel event sets a fresh `goalRes` that tick()'s own (separate,
+   * pre-existing) res-glide then carries `res` away from 1 DURING the transition, independent of
+   * the mode-morph's own progress. This test drives exactly that and reads `cameraFrame()`
+   * directly (cast, like the private-field reads elsewhere in this file) rather than reverse
+   * engineering the dolly from node depth, since `cameraFrame()` already returns it named.
+   */
+  it("REQUIRED — the dolly ramp is real: zooming WHILE a transition is in flight gives a nonzero, decaying dolly, not always zero", () => {
+    interface DollyPriv { res: number; cameraFrame(): { dolly: number; flatten: number } }
+    const dollyPriv = (r: AsciiGraphRenderer) => r as unknown as DollyPriv;
+
+    const { r, viewport } = mountRenderer("3d");
+    settle(60);
+    r.setConfig({ ...CONFIG, viewMode: "2d" });
+    frame(2000); // elapsed 0 of the transition
+    wheelIn(viewport, 3); // zoom IN while the transition is running — sets a fresh, deeper goalRes
+    const priv = dollyPriv(r);
+
+    frame(2000 + MODE_MORPH_MS / 4); // the res-glide and the morph's own progress both move here
+    expect(priv.res).toBeGreaterThan(1.001); // sanity: the zoom actually moved `res` off 1 by now
+    const mid = priv.cameraFrame();
+    expect(mid.flatten).toBeGreaterThan(0);
+    expect(mid.flatten).toBeLessThan(1); // genuinely mid-transition, not settled at either end
+    expect(mid.dolly).toBeGreaterThan(0); // REQUIRED: the ramp term is not identically zero here
+
+    // ...and it decays as the field keeps flattening toward 2D (where the dolly must return to 0
+    // — a flat view has nothing to approach), rather than holding at whatever the zoom set it to.
+    frame(2000 + MODE_MORPH_MS / 4 + 150);
+    const later = dollyPriv(r).cameraFrame();
+    expect(later.flatten).toBeGreaterThan(mid.flatten);
+    expect(later.dolly).toBeLessThan(mid.dolly);
+  });
+
+  /**
+   * MINOR (round-2 review). `emitBloom()`'s far-band cloud spread used to read `this.pxPerWorld *
+   * this.res` under a comment claiming it was "the world→screen scale projectEntities() used this
+   * frame" — true only AT REST. `projectEntities()` actually places every mass at `cameraFrame()`'s
+   * BLENDED `s`, and the two diverge for the whole 500ms of a mode-morph transition whenever the 2D
+   * and 3D fits differ (the ordinary case — `this.pxPerWorld` only ever tracks the ARRIVAL mode's
+   * fit, since `fit()` runs synchronously on the flip before any transition frame renders). This is
+   * directly measurable with exactly ONE community on the field: `pushCloud`'s own doc comment
+   * (densityField.ts) guarantees the emitted cloud reproduces the REQUESTED per-axis standard
+   * deviation exactly, so `computeStats().bloomSdx`/`bloomSdy` (the pre-blur point stats) reflect
+   * whichever scale `emitBloom()` actually used, with no blur/field step in the way.
+   */
+  it("MINOR — the far band's bloom cloud is sized by the SAME blended scale projectEntities() placed the mass at, not the stale arrival-mode-only product", () => {
+    function oneMassGraph() {
+      const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
+      const edges: ReturnType<typeof sampleGraph>["edges"] = [];
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        nodes.push({
+          id: `o${k}`, label: `note ${k}`, kind: "note" as const,
+          position: [Math.cos(a) * 220 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE, 0] as [number, number, number],
+          position2d: [Math.cos(a) * 220 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE] as [number, number],
+          community: 0, communityLabel: "Only", communityPath: [0], communityPathLabels: ["Only"],
+        });
+      }
+      for (let k = 1; k < 16; k++) edges.push({ from: "o0", to: `o${k}`, kind: "link" as const });
+      return { nodes, edges };
+    }
+
+    interface BloomScalePriv {
+      entityLevels: { sdx: number; sdy: number }[][];
+      pxPerWorld: number; res: number; W: number; H: number;
+      cameraFrame(): { flatten: number; s: number };
+    }
+    const bsPriv = (r: AsciiGraphRenderer) => r as unknown as BloomScalePriv;
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = newRenderer();
+    r.mount(host, () => {});
+    r.setBloomCallback(() => {});
+    r.setConfig({ ...CONFIG, viewMode: "3d", showLodMasses: true });
+    r.render(oneMassGraph());
+    ctx.fills.length = 0; ctx.strokes.length = 0;
+    frame();
+    settle(60);
+
+    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
+    frame(2000);
+    frame(2000 + 150); // mid-transition: flatten in (0,1); res stays pinned at 1 (no zoom here), so
+                        // masses own the far band outright (glyphAlpha ~0) for the whole transition.
+
+    const priv = bsPriv(r);
+    expect(priv.entityLevels[0]?.length).toBe(1); // one community — the field's ENTIRE cloud
+    const ev = priv.entityLevels[0][0];
+    const { flatten, s: blendedS } = priv.cameraFrame();
+    expect(flatten).toBeGreaterThan(0);
+    expect(flatten).toBeLessThan(1); // genuinely mid-transition, not settled at either end
+
+    const staleS = priv.pxPerWorld * priv.res;
+    // Non-vacuous: the two scales actually differ at this sample — otherwise the assertion below
+    // would pass no matter which one emitBloom() reads.
+    expect(Math.abs(blendedS - staleS)).toBeGreaterThan(Math.abs(blendedS) * 0.01);
+
+    const stats = r.computeStats();
+    const expectedSdx = (ev.sdx * blendedS) / priv.W;
+    const expectedSdy = (ev.sdy * blendedS) / priv.H;
+    expect(stats.bloomSdx).toBeCloseTo(expectedSdx, 6);
+    expect(stats.bloomSdy).toBeCloseTo(expectedSdy, 6);
+
+    // ...and it does NOT match the stale, arrival-mode-only product — pinning the fix, not merely
+    // "close to something".
+    const staleSdx = (ev.sdx * staleS) / priv.W;
+    expect(Math.abs(stats.bloomSdx - staleSdx)).toBeGreaterThan(Math.abs(expectedSdx) * 0.01);
   });
 });
