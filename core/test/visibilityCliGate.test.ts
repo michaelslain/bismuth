@@ -330,6 +330,20 @@ describe("decideCliGate: path spellings", () => {
     expect(decideCliGate(["read", nfc], entries).allowed).toBe(false);
   });
 
+  test("refuses a restricted path EMBEDDED in a longer token, in either unicode form", () => {
+    // The substring pass, not the per-token pass: an argv token that merely CONTAINS a restricted
+    // path (an export path derived from the hidden note) is not itself a path, so findDeniedEntry
+    // cannot resolve it — only the substring scan sees it, and that scan must fold unicode form the
+    // same way, or the composed spelling of a decomposed name walks straight through it.
+    const nfd = "Private/cafe\u0301.md"; // e + combining acute
+    const nfc = "Private/caf\u00e9.md"; // precomposed e-acute
+    const entries = [{ rel: nfd, abs: `/vault/${nfd}` }];
+    for (const form of [nfd, nfc]) {
+      const d = decideCliGate(["render", "--out", `exports/${form}.html`], entries);
+      expect(d.allowed).toBe(false);
+    }
+  });
+
   test("a path-scoped command naming only VISIBLE files still runs", () => {
     // The widening must not swallow the whole tier: this is the case the gate exists to permit.
     expect(decideCliGate(["read", "public.md"], restricted).allowed).toBe(true);

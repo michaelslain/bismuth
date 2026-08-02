@@ -4,7 +4,7 @@
 // same dual-form deny-list fix (see buildManagedSettingsDeny's doc comment for the empirical bug
 // this closes: a model's Read tool call may report either a relative or an absolute file_path).
 import { test, expect } from "bun:test"
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, appendFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, appendFileSync, chmodSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { realpath } from "node:fs/promises"
@@ -287,4 +287,16 @@ test("buildDenyPaths: a symlink cycle terminates instead of recursing forever", 
   const entries = await buildDenyPaths(vault)
   expect(entries.map((e) => e.rel)).toContain("a/secret.md")
   expect(entries.every((e) => !e.rel.includes("loop/loop"))).toBe(true)
+})
+
+test("resolveDenyPlan: an unreadable SUBDIRECTORY is undetermined (it may hold restricted notes)", async () => {
+  const vault = makeVault({ "public.md": "# Public\n", "locked/inside.md": "# Inside\n" })
+  const locked = join(vault, "locked")
+  chmodSync(locked, 0o000)
+  try {
+    const plan = await resolveDenyPlan(vault)
+    expect(plan.determined).toBe(false)
+  } finally {
+    chmodSync(locked, 0o755)
+  }
 })
