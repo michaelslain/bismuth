@@ -115,6 +115,18 @@ const reattachGraceMs = (): number =>
 const chatGraceMs = (): number =>
   Number(process.env.BISMUTH_CHAT_GRACE_MS) || 30_000;
 
+// Poll period of the background Google-Calendar auto-sync ticker (see createServer's tail). In
+// production this is a fixed 60s poll whose EFFECTIVE cadence is the longer
+// `googleCalendar.syncIntervalMinutes` debounce applied inside the tick, so shortening it here
+// changes when the tick runs, not how often a sync happens.
+//
+// Overridable via BISMUTH_GCAL_TICK_MS for the same reason reattachGraceMs()/chatGraceMs() are:
+// "did a tick happen (or, after stop(), correctly not happen)?" is only observable by waiting one
+// out, and 60s is not a wait any test can make. Read fresh on every call so a test can set it
+// around a single createServer().
+const gcalTickMs = (): number =>
+  Number(process.env.BISMUTH_GCAL_TICK_MS) || 60_000;
+
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 
 /** Cap on a single uploaded attachment (POST /asset). Bounds memory + disk per request. */
@@ -2227,25 +2239,21 @@ export function createServer(cfg: CoreConfig) {
   // against its OWN Google calendar (resolved from that base's frontmatter, with the legacy
   // global mapping as a migration fallback). Each base-file write is picked up by the vault
   // watcher (cache-invalidate + SSE) so the open calendar refreshes. Best-effort +
-  // error-tolerant; the 60s ticker is unref'd so it never keeps the process alive, and is a
+  // error-tolerant; the ticker is unref'd so it never keeps the process alive, and is a
   // no-op until an account is connected (fresh test vaults never are). A run-guard prevents overlap.
   //
-  // KNOWN GAP: this interval is created fresh by every `createServer()` call, and nothing ever
-  // clears it — `server.stop()` below returns Bun.serve()'s own return value, whose `.stop()` closes
-  // the HTTP listener only; it does not hold or clear this `setInterval` handle. A stopped server's
-  // ticker keeps firing for the remaining life of the process, not just while that server is "up".
-  // `.unref()` does not change this: it only lets the process exit once nothing else is pending — it
-  // does not stop the interval from firing while the process (e.g. a whole `bun test` run) stays
-  // alive for other reasons. Suspected cause of an intermittent ENOENT surfacing in an unrelated
-  // test file: `bun test core` runs every test file in one process, so a `createServer()` from an
-  // earlier file whose server was later stopped can still have this interval fire later, during a
-  // different file's tests, reading whatever `vault` that earlier call used — including a
-  // `vault: "/custom/vault"` fixture (`core/test/server.test.ts`) that was never created on disk, via
-  // `listGcalSyncTargets`, if a Google account happens to be connected (state read from a durable,
-  // machine-wide file outside any vault, independent of the fixture) at the time it fires.
+  // The handle is retained so stop() can clear it (see below). It has to be: this interval is
+  // created fresh by every `createServer()` call, and Bun.serve()'s own `.stop()` closes the HTTP
+  // listener only — it has no idea this interval exists. An uncleared ticker outlives the server
+  // that made it and keeps firing for the remaining life of the PROCESS, against the vault that
+  // server was given. `.unref()` does not bound that: unref only lets the process exit once
+  // nothing else is pending, and says nothing about a process that stays alive for other reasons.
+  // Concretely, `bun test core` runs every test file in one process, so a stopped server's ticker
+  // fires during a LATER file and scans a vault path that only ever existed as an earlier file's
+  // fixture — an ENOENT with no connection to whatever test is running when it lands.
   let gcalAutoSyncAt = 0;
   let gcalAutoSyncRunning = false;
-  setInterval(() => {
+  const gcalTicker = setInterval(() => {
     if (gcalAutoSyncRunning || !gcalStatus().connected) return;
     const everyMs = Math.max(1, appConfig.googleCalendar?.syncIntervalMinutes || 15) * 60_000;
     if (Date.now() - gcalAutoSyncAt < everyMs) return;
@@ -2259,8 +2267,27 @@ export function createServer(cfg: CoreConfig) {
         await gcalSync(cfg.vault, t.basePath, t.calendarId, policy, timeZone, theme)
           .catch((e) => console.error(`[gcal] auto-sync failed for ${t.basePath}: ${(e as Error).message}`));
       }
-    })().finally(() => { gcalAutoSyncRunning = false; });
-  }, 60_000).unref();
+    })()
+      // The per-base sync above is already error-tolerant; the vault SCAN that produces the list
+      // was not — listGcalSyncTargets rejects outright when the vault dir is unreadable or gone,
+      // and an uncaught rejection here surfaces as a bare process-level error with no indication
+      // of which vault it came from. Name the vault and keep the ticker alive.
+      .catch((e) => console.error(`[gcal] auto-sync scan failed for ${cfg.vault}: ${(e as Error).message}`))
+      .finally(() => { gcalAutoSyncRunning = false; });
+  }, gcalTickMs());
+  gcalTicker.unref();
+
+  // Teardown rides `stop()` — the verb every caller already uses to shut a server down — rather
+  // than a separate disposer or an augmented return type, so the returned value stays exactly
+  // Bun's `Server` and none of this function's ~130 call sites change. Anything else would leave
+  // the leak in place for every caller that didn't adopt the new API, which is the whole problem.
+  // Idempotent (clearInterval on a cleared handle is a no-op), and the argument + Promise result
+  // are forwarded untouched, so `stop()` / `stop(true)` behave as before in every other respect.
+  const stopHttp = server.stop.bind(server);
+  server.stop = (closeActiveConnections?: boolean): Promise<void> => {
+    clearInterval(gcalTicker);
+    return stopHttp(closeActiveConnections);
+  };
 
   return server;
 }
