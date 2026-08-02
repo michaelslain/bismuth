@@ -79,10 +79,10 @@ describe("pickToolIcon (the ACP title-vs-kind rule)", () => {
 });
 
 describe("chipSummary (the label-echo rule)", () => {
-  // THE REGRESSION THIS GUARDS. An ACP ToolCall has no structured input, so toolCallInput()
-  // synthesizes `{description: title}` and summarizeInput() picks `description` — for an ACP call
-  // the only key present. Once the chip is ALSO labelled by `title`, both halves are the same
-  // string and the chip reads "Write foo.txt — Write foo.txt".
+  // THE REGRESSION THIS GUARDS. toolCallInput() carries an ACP ToolCall's `title` into the input as
+  // `description`, and summarizeInput() picks `description` — the only key present when the call
+  // has no arguments of its own. Once the chip is ALSO labelled by `title`, both halves are the
+  // same string and the chip reads "Write foo.txt — Write foo.txt".
   const TITLE = "Write fake-permission-probe.txt";
 
   test("suppresses a summary that merely repeats the chip's label", () => {

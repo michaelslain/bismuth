@@ -2468,8 +2468,8 @@ export function ChatView(props: {
 
   function ToolChip(p: { part: ToolPart }) {
     const [open, setOpen] = createSignal(false);
-    // chipSummary, not clamp: an ACP tool's only input field IS its title, which is also this
-    // chip's label — see its doc for why the dedup has to precede the clamp.
+    // chipSummary, not clamp: an argument-less ACP tool call's only input field is its title, which
+    // is also this chip's label — see its doc for why the dedup has to precede the clamp.
     const summary = () => chipSummary(summarizeInput(p.part.input), p.part.name, 120);
     return (
       <div class="chat-tool" classList={{ open: open(), error: p.part.isError }}>

@@ -440,6 +440,52 @@ describe("toolCallInput", () => {
     expect(toolCallInput({})).toBeUndefined();
     expect(toolCallInput({ title: "" })).toBeUndefined();
   });
+
+  // ── rawInput: the arguments a real ACP ToolCall actually carries ────────────────────────────
+  // ACP's ToolCall has a `rawInput` object ("Raw input parameters sent to the tool"), and real
+  // agents populate it — goose's own compiled serde field table lists it on ToolCall, next to
+  // `kind`/`status`/`locations`/`rawOutput`.
+
+  test("rawInput's structured arguments ride through alongside the synthesized fields", () => {
+    expect(toolCallInput({ title: "Reading src/index.ts", kind: "read", rawInput: { file_path: "/etc/hosts", limit: 40 } })).toEqual({
+      file_path: "/etc/hosts",
+      limit: 40,
+      description: "Reading src/index.ts",
+      kind: "read",
+    });
+  });
+
+  test("on a name collision the ToolCall's OWN title/kind win over identically-named rawInput keys", () => {
+    // The precedence this pins, and why: `description` and `kind` here are not arguments, they are
+    // the ACP-level identity of the call — `kind` is the same token the tool-use frame carries for
+    // icon selection, and `description` is the title every surface labels the call by. A tool
+    // parameter that happens to share one of those names must not be able to make the derived input
+    // disagree with the chip and the permission modal. Everything NOT colliding still rides through
+    // (`path` below), so the merge stays additive.
+    expect(
+      toolCallInput({
+        title: "Write foo.txt",
+        kind: "edit",
+        rawInput: { description: "a tool argument that happens to be named description", kind: "not-a-toolkind", path: "/tmp/foo.txt" },
+      }),
+    ).toEqual({ description: "Write foo.txt", kind: "edit", path: "/tmp/foo.txt" });
+  });
+
+  test("rawInput alone (no title, no kind) still produces an input rather than undefined", () => {
+    expect(toolCallInput({ rawInput: { query: "gcal" } })).toEqual({ query: "gcal" });
+  });
+
+  test("an EMPTY rawInput contributes nothing, and on its own yields no empty-object chip", () => {
+    // A real goose `bismuth_docs_list` call sends exactly this — the tool takes no arguments.
+    expect(toolCallInput({ title: "bismuth: bismuth docs list", rawInput: {} })).toEqual({ description: "bismuth: bismuth docs list" });
+    expect(toolCallInput({ rawInput: {} })).toBeUndefined();
+  });
+
+  test("a rawInput that is not a plain object is ignored rather than spread key-by-key", () => {
+    expect(toolCallInput({ title: "T", rawInput: "garbage" })).toEqual({ description: "T" });
+    expect(toolCallInput({ title: "T", rawInput: ["a", "b"] })).toEqual({ description: "T" });
+    expect(toolCallInput({ title: "T", rawInput: null })).toEqual({ description: "T" });
+  });
 });
 
 describe("toolCallName", () => {
@@ -526,6 +572,19 @@ describe("translateSessionUpdate", () => {
     expect(translateSessionUpdate({ sessionUpdate: "tool_call", toolCallId: "tc_4", title: "Run tests", status: "in_progress" }, state)).toEqual([
       { type: "tool-use", id: "tc_4", name: "Run tests", input: { description: "Run tests" } },
     ]);
+  });
+
+  test("a tool_call's rawInput reaches the tool-use frame's input without disturbing name or kind", () => {
+    const state = newAcpTranslateState(blankManifest());
+    // `rawInput.kind` is deliberately a DIFFERENT string from the ToolCall's own `kind`, so the
+    // three things this pins fail independently: the arguments reach `input`, the frame's `kind`
+    // (what picks the icon) still comes from the ToolCall, and `input.kind` does too.
+    expect(
+      translateSessionUpdate(
+        { sessionUpdate: "tool_call", toolCallId: "tc_5", title: "Search the docs", kind: "search", status: "in_progress", rawInput: { query: "gcal", kind: "not-a-toolkind" } },
+        state,
+      ),
+    ).toEqual([{ type: "tool-use", id: "tc_5", name: "Search the docs", kind: "search", input: { query: "gcal", description: "Search the docs", kind: "search" } }]);
   });
 
   test("a failed tool_call_update carries isError:true", () => {

@@ -60,11 +60,14 @@ export function clamp(s: string, max: number): string {
 /**
  * The chip's one-line summary — empty when it would merely repeat the chip's own label.
  *
- * WHY. An ACP ToolCall carries no structured parameters, so `toolCallInput()` synthesizes an input
- * of `{description: title}` and `summarizeInput()` ranks `description` among its keys — for an ACP
- * call it is the ONLY key present, so it always wins. Now that the chip is also LABELLED by `title`
+ * WHY. `toolCallInput()` (core/src/chatProviders/acp/protocol.ts) carries an ACP ToolCall's `title`
+ * into the input as `description`, and `summarizeInput()` ranks `description` among its keys. For a
+ * call with no arguments of its own — a zero-argument tool, or an agent that omits ACP's `rawInput`
+ * — it is the ONLY key present, so it always wins; and since the chip is also LABELLED by `title`
  * (the fix this module was extracted for), label and summary are the same string, and the chip reads
- * "Write foo.txt — Write foo.txt". Suppressing the echo is the whole rule.
+ * "Write foo.txt — Write foo.txt". Suppressing the echo is the whole rule. A call that DOES carry
+ * arguments needs no suppression: `command`/`file_path`/`path`/`query`/… all outrank `description`
+ * in summarizeInput's order, so the summary is a real argument and differs from the label already.
  *
  * The subtle part, and the reason this is a function rather than an inline `!==`: the comparison
  * must happen on the RAW text, BEFORE clamping. Clamp first and any label longer than `max` comes

@@ -425,7 +425,7 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
   // different opinions about how to name the same ACP ToolCall —
   //   driver.ts    name || title || kind || "tool"   → resolved to `title` on real traffic
   //   protocol.ts  name || kind || "tool"            → resolved to `kind`  on real traffic
-  //   toolCallInput()  reads {title, kind}, no `name` at all — matching the real schema
+  //   toolCallInput()  reads {title, kind, rawInput}, no `name` at all — matching the real schema
   // A real ACP ToolCall has NO `name` field, so the first two disagreed on every tool that has a
   // title: within ONE turn the permission modal said "Write foo.txt" and the tool chip said "edit".
   // Both call sites now resolve `title` first, and the tool-use frame carries `kind` alongside so

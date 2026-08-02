@@ -160,17 +160,16 @@ describeOrSkip("the real goose CLI, driven through the ACP driver, against a moc
    * test could drive that is both REAL (goose actually declares and executes it, not a name it
    * invents) and safe to actually execute for real (no writes, no shell, no network).
    *
-   * REAL DIVERGENCE FOUND (this task's own live research — see the task's report for the full
-   * transcript): a real goose ACP `tool_call` update carries `rawInput` (ACP's OWN spec'd field for
-   * the tool's structured arguments — confirmed against `@zed-industries/agent-client-protocol`'s
-   * schema — populated live here as `rawInput:{}` since bismuth_docs_list takes none, and as the
-   * REAL query object for a tool that takes arguments, e.g. `rawInput:{"query":"gcal"}` for
-   * bismuth_docs_search) — but `chatProviders/acp/protocol.ts`'s `toolCallInput()` NEVER reads
-   * `rawInput` at all; it only ever synthesizes `{description: title, kind}` from the ToolCall's
-   * title/kind. That function's own doc comment claims ACP tool calls carry "no structured
-   * parameters" — true of what Bismuth currently reads, false of what a real ACP ToolCall actually
-   * carries on the wire. Not fixed here (this task's file list is test-only) — recorded precisely,
-   * per the task brief, rather than bent to fit.
+   * REAL DIVERGENCE FOUND HERE, FIXED SINCE: a real goose ACP `tool_call` update carries `rawInput`
+   * (ACP's OWN spec'd field for the tool's structured arguments — populated live here as
+   * `rawInput:{}` since bismuth_docs_list takes none, and as the REAL query object for a tool that
+   * takes arguments, e.g. `rawInput:{"query":"gcal"}` for bismuth_docs_search), and
+   * `chatProviders/acp/protocol.ts`'s `toolCallInput()` could not see it — its parameter type
+   * declared only `title`/`kind`, so callers handed it the whole update and the arguments were
+   * dropped, leaving every ACP tool chip showing a JSON restatement of its own heading. It now
+   * merges `rawInput`; see its doc for the precedence rule and acpProtocol.test.ts for the
+   * assertions pinning it. This test's own call is the zero-argument case (`rawInput:{}`), so its
+   * frames are unchanged by that fix.
    *
    * Also observed live, NOT a divergence (both are spec-legal — ACP's `kind` is optional, and this
    * one real agent simply never sends it): goose's own `tool_call` notification never carries a
