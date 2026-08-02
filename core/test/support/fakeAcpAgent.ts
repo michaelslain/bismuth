@@ -148,6 +148,26 @@
 // `session/resume` gets no dedicated handler: a rejected `session/load` falls through to the same
 // `default:` case it always did, and gets the same plain `{}` — all driver.ts needs from it (it
 // sets `s.sessionId` from the caller's own id either way, never from either response).
+//
+// TOOL-CALL MODE (task 12, "live tool-use, both halves" — see acpToolUseFakeAgent.test.ts): opt-in
+// via FAKE_ACP_TOOL_CALL (any truthy value), decoupled from every mode above the same way each of
+// those is decoupled from the others — with the var unset, `handleSessionPrompt`'s plain branch
+// (promptHold === "none") is completely unchanged, byte-for-byte.
+//
+// Reproduces the plain (non-permission, non-queue) shape of a real ACP tool call round trip: one
+// `tool_call` notification (status "in_progress"), then one `tool_call_update` (status
+// "completed", carrying a `{type:"content", content:{type:"text", text}}` entry — the same
+// AcpToolCallContentEntry shape ./protocol.ts's toolCallContentText already expects), THEN the
+// turn's own `agent_message_chunk` + `session/prompt` response — mirroring the real order a live
+// agent uses (announce the call, resolve it, THEN keep talking), confirmed against a real `goose`
+// acp session driven through an actual Bismuth MCP tool call in this task's own research (see the
+// task's report). Deliberately NOT reusing HELD-PROMPT MODE's `runHeldPermissionPrompt`/
+// `runHeldQueueTurn` machinery: this mode never withholds the `session/prompt` response and never
+// calls INTO the client (no session/request_permission, no callClient) — a plain, synchronous
+// two-notification-then-respond sequence is all Task 12's ordering assertions
+// (tool-use → tool-result, equal ids, tool-result strictly after tool-use, exactly one
+// tool-result per id, result after both) need, and folding in the held-prompt registry would only
+// add unrelated async machinery this mode doesn't use.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -272,6 +292,25 @@ const promptHold = process.env.FAKE_ACP_PROMPT_HOLD === "permission" ? "permissi
 const rejectSessionLoad = !!process.env.FAKE_ACP_REJECT_SESSION_LOAD;
 const rejectSessionLoadCode = process.env.FAKE_ACP_REJECT_SESSION_LOAD_CODE !== undefined ? Number(process.env.FAKE_ACP_REJECT_SESSION_LOAD_CODE) : -32601;
 const rejectSessionLoadMessage = process.env.FAKE_ACP_REJECT_SESSION_LOAD_MESSAGE ?? "Method not found: session/load";
+
+// ── Tool-call mode (see this file's header, "TOOL-CALL MODE") ───────────────────────────────────
+
+/** Unset (default, every pre-existing test's own value): `handleSessionPrompt`'s plain branch is
+ *  untouched. Truthy: that branch also emits a `tool_call` + `tool_call_update` pair before the
+ *  turn's usual `agent_message_chunk` + response. Irrelevant (never read) when promptHold !==
+ *  "none", since the permission/queue branches return before reaching the plain branch at all. */
+const toolCallMode = !!process.env.FAKE_ACP_TOOL_CALL;
+
+/** Fixed id/title/kind/result text for tool-call mode's one synthetic call. `title`+`kind`-only
+ *  (no `name`) is deliberately the real ACP ToolCall shape — see PERM_TOOL_TITLE's own comment for
+ *  why that fidelity is what lets a consuming test observe the driver's real naming behavior
+ *  (toolCallName: title first, kind last resort, never a `name` field no real ToolCall has).
+ *  Distinct id/title/kind/text from every other mode's own constants (PERM_TOOL_*, FAKE_TURN_TEXT,
+ *  FAKE_QUEUE_TURN_PREFIX) so a test can never mistake one mode's output for another's. */
+const TOOLUSE_TOOL_CALL_ID = "fake-tool-use-call-1";
+const TOOLUSE_TOOL_TITLE = "Read fake-tool-use-probe.txt";
+const TOOLUSE_TOOL_KIND = "read";
+const TOOLUSE_RESULT_TEXT = "fake tool result: 3 lines read";
 
 /** How long "queue" mode holds each `session/prompt` open before auto-settling — see this file's
  *  header. Configurable via `FAKE_ACP_QUEUE_HOLD_MS` purely so a consuming test can tune the window
@@ -561,6 +600,24 @@ function handleSessionPrompt(id: number | string, params: unknown): void {
     // and this runner's own timer-based settle path cannot reject.
     void runHeldQueueTurn(id, sessionId, extractPromptText(params));
     return;
+  }
+  if (toolCallMode) {
+    // See this file's header "TOOL-CALL MODE". Synchronous — nothing is withheld, unlike
+    // held-prompt mode's runners: announce the call, resolve it, THEN keep talking, all before this
+    // request's own response — the same order confirmed live against a real goose ACP tool call.
+    notify("session/update", {
+      sessionId,
+      update: { sessionUpdate: "tool_call", toolCallId: TOOLUSE_TOOL_CALL_ID, title: TOOLUSE_TOOL_TITLE, kind: TOOLUSE_TOOL_KIND, status: "in_progress" },
+    });
+    notify("session/update", {
+      sessionId,
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: TOOLUSE_TOOL_CALL_ID,
+        status: "completed",
+        content: [{ type: "content", content: { type: "text", text: TOOLUSE_RESULT_TEXT } }],
+      },
+    });
   }
   notify("session/update", {
     sessionId,
