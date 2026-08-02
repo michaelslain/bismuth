@@ -67,15 +67,76 @@
 //         back every frame) and having a new flip capture wherever they currently are as its own
 //         `from` — correct whether that flip is fresh or an interruption.
 //
-//  2. DEPTH-ORDERED CELL ARBITRATION IN 3D. Canvas drew nodes far->near into a `drawOrder` array, so
-//     a near node always painted over a far one and `BACK_INTERACT_CUTOFF` (0.18) additionally
-//     excluded back-layer nodes from hover/click. This renderer's node pass writes
-//     `cellNode[idx] = i` in ARRAY order with no depth comparison, and the hit test resolves through
-//     that same buffer — so when two 3D nodes contest one cell, the later-indexed one wins the glyph
-//     AND the click regardless of which is nearer the camera. Depth is cued by glyph weight and
-//     `depthAlpha`, not by occlusion. Cell aggregation is the grid's whole point (two nodes on one
-//     cell collapsing to one mark is the mechanism behind "zoom changes density, not visual
-//     language"), so ordering the collapse by depth is a refinement, not a restoration.
+//  2. ~~DEPTH-ORDERED CELL ARBITRATION IN 3D~~ — RESTORED (as an ordering refinement, not a
+//     restoration — see below), Task 23. Canvas drew nodes far->near into a `drawOrder` array, so a
+//     near node always painted over a far one. This renderer's node pass used to write
+//     `cellNode[idx] = i` in ARRAY order with no depth comparison, and the hit test (`pick()`,
+//     asciiGrid.ts's `nearestCellNode`) resolves through that same buffer — so when two 3D nodes
+//     contested one cell, the later-indexed one won the glyph AND the click regardless of which was
+//     nearer the camera. Fixed at the single write site: before claiming a cell, a node now checks
+//     `nv.dr` (0 far..1 near, already computed per-frame by `projectNodes()`, from the FRAME's
+//     blended camera — see `cameraFrame()` — so this is correct mid-morph and under any orbit, not
+//     just at rest) against whichever node currently owns it and skips the write when it is not at
+//     least as near — one comparison, no second pass or sort. `>=`, not `>`, so a TIE still falls
+//     through to "whichever wrote last": at rest in 2D (and any degenerate/flat 3D frame) every
+//     node's `dr` is the same flat 1, so every contest ties and 2D's arbitration is a verified no-op
+//     there, unchanged from before this task. Depth is still CUED by glyph weight and `depthAlpha`,
+//     not by occlusion — this only decides which node's cue is the one shown. Cell aggregation is
+//     the grid's whole point (two nodes on one cell collapsing to one mark is the mechanism behind
+//     "zoom changes density, not visual language"); this orders the collapse by depth, it does not
+//     un-collapse it.
+//
+//     The strongest argument for this fix: Canvas's own `pick()` (`817bad5:…CanvasGraphRenderer.ts
+//     :1717-1729`) had NO depth arbitration in its hit test AT ALL — it walked every on-screen node
+//     and picked whichever was nearest the cursor in flat 2D SCREEN space, with `BACK_INTERACT_CUTOFF`
+//     as its ONLY depth-related term (an exclusion, not an ordering). This renderer's hit test is now
+//     genuinely depth-ordered for the contested case — strictly stronger than what the cutoff ever
+//     bought Canvas there, which is why NOT porting the cutoff (below) costs nothing this fix doesn't
+//     already cover.
+//
+//     CAVEAT — "2D's arbitration is a no-op" holds AT REST, not for the full 500ms of a transition
+//     INTO 2D. `is2d` (`rasterize()`'s flag, `cfg.viewMode === "2d"`) is the ARRIVAL mode, true from
+//     the flip's very first frame, but the blended position (`modeMorph`) is still genuinely 3D for
+//     the whole transition — so `nv.dr` is NOT flat yet and this arbitration is actually LIVE, while
+//     `alpha = is2d ? 1 : depthAlpha(nv.dr)` and `nodeGlyph(…, !is2d, …)` (both keyed on the same
+//     `is2d`) already take the flat-2D branch from frame one. The behaviour is arguably still
+//     correct — the nodes really are at different depths on screen mid-morph — but for that window
+//     cell ownership is decided by a depth the user gets no visual (alpha/glyph) cue for at all.
+//
+//     `BACK_INTERACT_CUTOFF` (0.18) — Canvas's SEPARATE behaviour of excluding back-layer nodes from
+//     hover/click entirely, below a fixed depth-rank threshold — did NOT come back, on purpose. This
+//     field's depth cue was already a deliberate departure from Canvas's (occlusion): item 3 below
+//     documents choosing DIMMING over a positive hover ring for the same reason — a weaker affordance
+//     that never fully suppresses. `depthAlpha`'s OWN floor (`min = 0.22` — asciiGrid.ts; note this is
+//     NOT Canvas's `DEPTH_MIN_OPACITY`, a name that exists in `AsciiGraphRenderer.ts` only as a
+//     comment on the unrelated `EDGE_DEPTH_MIN = 0.04`, the edge-fade floor) does mean
+//     `depthAlpha(nv.dr)` alone never reaches 0. But that is not the same claim as "no glyph this
+//     field draws is ever fully invisible" — the composed alpha layers `DIM_ALPHA` (0.28, hover/focus
+//     dimming), `nv.dim` (0.45, daemon-disabled), and `glyphA` (the LOD crossfade weight) ON TOP of
+//     `depthAlpha`, and `paint()` quantizes the result to 16 buckets (`this.alphaBuf[i] & 0xf0`)
+//     before drawing — so anything that composes under 16/255 renders at globalAlpha EXACTLY 0, not
+//     faint. Concretely: with a hover or cluster focus active, a non-focused 3D node below
+//     `dr ≈ 0.054` already paints at 0; add `nv.dim` and the cutoff widens to `dr ≈ 0.56`. So a user
+//     CAN click a node they cannot see — this is real, just not new: arbitration only changes which
+//     of two CONTESTING nodes claims a cell, and an UNCONTESTED faint-to-invisible node was equally
+//     clickable before this task (the old code wrote `cellNode` unconditionally too). The two
+//     arguments that actually carry the decision are the ones above: this fix already makes the
+//     contested case strictly depth-correct, which is more than the cutoff ever bought there, and
+//     excluding an uncontested drawn glyph from interaction would still be the odd one out among this
+//     renderer's legibility choices, invisible or not.
+//
+//     TWO MINOR, ACCEPTED side effects of ordering contests by depth (not of the array-order tie-break
+//     — neither bullet below is a tie; both nodes have a strict `dr` winner):
+//      - A `hot` node (`activeFile` / a search match) farther than a nearer non-matching node on the
+//        same cell now DETERMINISTICALLY loses its accent glyph and click target every frame, rather
+//        than the old array-order coin flip — `hot` is computed after the depth skip, so a losing
+//        node never reaches it. Not a regression versus Canvas (its `drawOrder` sorted purely on
+//        depth too, with the identical outcome); hover is unaffected, since it resolves THROUGH
+//        `cellNode` and correctly reports whichever node the cell now shows.
+//      - Speculative, not reproduced on a real graph: a label (`layoutLabels`, keyed off each node's
+//        own screen position, not `cellNode`) can in principle still be drawn for a node whose glyph
+//        just lost its cell to a nearer neighbour, i.e. a name pointing at a cell that no longer shows
+//        that name's node. Worth knowing if a labelled-but-glyphless node is ever reported.
 //
 //  3. FILLED DOTS SIZED BY DEGREE, and the hover RING on the hovered node and its neighbours.
 //     The dots are out of scope by design — the spec replaces them with the glyph degree ramp. The
