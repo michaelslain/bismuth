@@ -269,7 +269,7 @@ cd app
 bun run build
 ```
 
-The build uses manual chunk splitting (see `vite.config.ts`) to keep the entry bundle small: Three.js + d3-force-3d, xterm, KaTeX, jspdf + html2canvas, and marked are each split into separate lazy chunks.
+The build uses manual chunk splitting (see `vite.config.ts`) to keep the entry bundle small: d3-force-3d, xterm, KaTeX, jspdf + html2canvas, and marked are each split into separate lazy chunks.
 
 ### Tauri native binary
 

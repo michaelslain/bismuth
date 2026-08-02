@@ -456,7 +456,7 @@ Each source module has a corresponding `*.test.ts`. Notable:
 
 ## `app/src/` — Frontend Application
 
-Solid.js + TypeScript + CodeMirror 6 + Three.js. Styled with CSS Modules colocated with components and a global `App.css`.
+Solid.js + TypeScript + CodeMirror 6. Styled with CSS Modules colocated with components and a global `App.css`.
 
 ### Root / Shell
 
