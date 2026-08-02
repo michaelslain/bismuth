@@ -15,8 +15,8 @@
 //     the ladder entirely. (The old `graphLabelHubCount: 9999` was an attempt at this that could
 //     never have worked — see GraphConfig.labelEveryNode's doc.)
 //   • showLodMasses is left off. A ` ```graph ` block carries no communities (layoutGraphData
-//     below explains why), so there is nothing to aggregate and every node draws as itself at
-//     every zoom stop.
+//     in embeddedGraphRender.ts explains why), so there is nothing to aggregate and every node
+//     draws as itself at every zoom stop.
 //
 // The round-trip: every edit tool below mutates the parsed spec through the pure helpers
 // and hands the CANONICAL serialized markdown to props.onChange, which the widget writes
@@ -32,15 +32,19 @@
 //   SOURCE   reveal the raw fence for hand-editing (collapses when the caret leaves)
 // Node drag-repositioning is intentionally NOT in: layout is computed (deterministically)
 // from the structure, so positions aren't part of the markdown model.
+//
+// layoutGraphData/embeddedGraphConfig — the two pure units this component feeds to the
+// renderer — live in the sibling embeddedGraphRender.ts, not here: bun test can't import
+// anything from a .tsx file in this repo (see that file's header for why), and EmbeddedGraph.
+// test.ts needs to drive them directly against a real AsciiGraphRenderer.
 
 import { createEffect, createSignal, onCleanup, onMount, Show, For } from "solid-js";
 import { AsciiGraphRenderer } from "./AsciiGraphRenderer";
-import type { GraphConfig, GraphRenderer } from "./graphRenderer";
-import { computeLayout } from "../../../core/src/layout";
+import type { GraphRenderer } from "./graphRenderer";
+import { layoutGraphData, embeddedGraphConfig } from "./embeddedGraphRender";
 import {
   parseGraphBlock,
   serializeGraphBlock,
-  graphBlockToGraphData,
   addNode,
   removeNode,
   renameNode,
@@ -50,9 +54,8 @@ import {
   removeEdgesBetween,
   type GraphBlockSpec,
 } from "../../../core/src/graphBlock";
-import { settings, DEFAULT_ACCENT_PALETTE, type Settings } from "../settings";
-import { resolveAppearance, type ColorTokens } from "../themes";
-import { paletteToInts, hexToInt } from "../themeColors";
+import { settings } from "../settings";
+import { resolveAppearance } from "../themes";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { IconButton } from "../ui/IconButton";
 import { IconTextButton } from "../ui/IconTextButton";
@@ -67,95 +70,6 @@ type Tool = "select" | "connect" | "erase";
 const [tool, setTool] = createSignal<Tool>("select");
 const [directed, setDirected] = createSignal(true);
 const [dim, setDim] = createSignal<"2d" | "3d">("2d");
-
-/** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). Mirrors GraphView's mixHex. */
-function mixHex(a: number, b: number, t: number): number {
-  const ch = (shift: number) => {
-    const av = (a >> shift) & 0xff;
-    const bv = (b >> shift) & 0xff;
-    return Math.round(av + (bv - av) * t) & 0xff;
-  };
-  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
-}
-
-/** Attach deterministic layout coords (position/position2d) computed client-side — an
- *  embedded diagram is small, so the sync settle is instant; determinism means the same
- *  markdown always reproduces the same picture.
- *
- *  KNOWN LIMITATION (Task 5, fix round 2 — left as-is, by design, not an oversight): `input.nodes`
- *  below carries no `community`/`communityPath` — a hand-authored ` ```graph ` block has no Louvain
- *  detection run over it, so there's genuinely no community data to attach (unlike GraphView.tsx's
- *  LOCAL mode, which DOES have it available from the full engine graph and now passes it through —
- *  see localLayoutInput.ts). The user's call: keep embedded diagrams simple rather than run detection
- *  inline for what's usually a handful of nodes, where any visual overlap costs little.
- *
- *  Concretely, this means the "two densely-linked clusters joined by one bridge visibly separate"
- *  property the deleted core/test/layout.test.ts assertion used to guard does NOT hold here under the
- *  shipped LinLog + degreeRepulsion default (measured — same two-6/10/20/40-clique-plus-bridge fixture,
- *  centroid distance ÷ intra-cluster spread, single 120-tick settle, >1 = clusters read as distinct):
- *      cluster size     6       10      20      40
- *      pre-Task-5      2.006   1.742   1.970   2.141   (always > 1: clusters separate)
- *      shipped         0.813   1.344   0.237   2.388   (0.813 / 0.237 are BELOW 1: clusters visibly
- *                                                        interpenetrate — the centroids sit closer
- *                                                        together than the clusters' own radii)
- *  Not a monotonic regression (40 is fine, 6 and 20 aren't) — it's noise from the combination lacking
- *  any community signal to lock onto, not a consistent shrink. If this ever becomes a real complaint
- *  (as opposed to a documented, accepted trade-off), the fix is almost certainly NOT re-tuning physics
- *  constants here — see COMMUNITY_SEP_MULT's hazard comment in core/src/layout.ts for why that trap is
- *  easy to fall into — but giving embedded blocks SOME grouping signal to feed `computeLayout`, e.g. an
- *  author-specified `group:` field per node, synthesized into `community`. */
-export function layoutGraphData(spec: GraphBlockSpec) {
-  const data = graphBlockToGraphData(spec);
-  if (data.nodes.length === 0) return data;
-  const input = {
-    nodes: data.nodes.map((n) => ({ id: n.id })),
-    edges: data.edges.map((e) => ({ from: e.from, to: e.to })),
-  };
-  const pos3 = computeLayout(input, { dimensions: 3, refineTicks: 120 });
-  const pos2 = computeLayout(input, { dimensions: 2, refineTicks: 80, initialPositions: pos3 });
-  for (const n of data.nodes) {
-    n.position = pos3[n.id];
-    const p2 = pos2[n.id];
-    if (p2) n.position2d = [p2[0], p2[1]];
-  }
-  return data;
-}
-
-/** The block's live GraphConfig, mirroring GraphView's derivation with the embedded-diagram
- *  overrides (no idle spin, every node labelled). Extracted from the createEffect below so the
- *  headless smoke test can drive a real renderer with the EXACT object the block ships — the
- *  component itself can't be mounted under `bun test` (bun resolves solid-js/web to its SERVER
- *  build, so `render()` throws "Client-only API called on the server side"; that is why there is
- *  not one .test.tsx in this repo). */
-export function embeddedGraphConfig(
-  gs: Settings["graph"], ap: ColorTokens, dim: "2d" | "3d",
-): GraphConfig {
-  const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
-  return {
-    spin: false,
-    spinSpeed: gs.spinSpeed,
-    palette: paletteToInts(palette),
-    repulsion: gs.repulsion,
-    linkDistance: gs.linkDistance,
-    centering: gs.centering,
-    nodeSize: gs.nodeSize,
-    viewMode: dim,
-    showGraphLabels: true,
-    labelEveryNode: true, // a diagram's labels ARE its content — see the file header
-    graphLabelHubCount: 0, // moot under labelEveryNode: nothing needs ranking when nothing is cut
-    nodeSizeMinMult: gs.nodeSizeMinMult,
-    nodeSizeDegreeGain: gs.nodeSizeDegreeGain,
-    nodeSizeMaxMult: gs.nodeSizeMaxMult,
-    edgeColor: ap.isLight
-      ? mixHex(hexToInt(ap.neutral, 0xaeb4c2), hexToInt(ap.background, 0xffffff), 0.45)
-      : hexToInt(ap.neutral, 0xaeb4c2),
-    edgeOpacity: ap.isLight ? 0.3 : 0.45,
-    backgroundColor: hexToInt(ap.background, 0x14151b),
-    labelTextColor: ap.isLight ? ap.foreground : "rgba(232,232,238,0.95)",
-    labelBgColor: ap.isLight ? "rgba(255,255,255,0.82)" : "rgba(14,14,17,0.6)",
-    selfColor: hexToInt(ap.foreground, 0xffffff),
-  };
-}
 
 export function EmbeddedGraph(props: {
   source: string;
@@ -231,8 +145,8 @@ export function EmbeddedGraph(props: {
   });
   onCleanup(() => renderer.destroy());
 
-  // Live theme + graph settings (see embeddedGraphConfig above for the derivation + the two
-  // deliberate divergences from the knowledge graph's contract).
+  // Live theme + graph settings (see embeddedGraphConfig in embeddedGraphRender.ts for the
+  // derivation + the two deliberate divergences from the knowledge graph's contract).
   createEffect(() => {
     renderer.setConfig(embeddedGraphConfig(settings.graph, resolveAppearance(settings.appearance), dim()));
   });
