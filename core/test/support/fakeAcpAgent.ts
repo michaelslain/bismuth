@@ -276,8 +276,8 @@ const rejectSessionLoadMessage = process.env.FAKE_ACP_REJECT_SESSION_LOAD_MESSAG
  * AcpToolCallContentEntry shape ./protocol.ts's toolCallContentText already expects), THEN the
  * turn's own `agent_message_chunk` + `session/prompt` response — mirroring the real order a live
  * agent uses (announce the call, resolve it, THEN keep talking), confirmed against a real `goose`
- * acp session driven through an actual Bismuth MCP tool call (`bismuth_docs_search`, goose's own
- * MCP-namespaced tool name): the real wire capture showed `tool_call`, then `tool_call_update`, then
+ * acp session driven through an actual Bismuth MCP tool call (`bismuth__bismuth_docs_list`, goose's
+ * own MCP-namespaced tool name): the real wire capture showed `tool_call`, then `tool_call_update`, then
  * the `session/prompt` response, in that literal order on stdout, with no `kind` field at all (goose
  * never sends one — unlike this fake, which does, so together the two are the exercised case for
  * both `kind` present and absent). Deliberately NOT reusing HELD-PROMPT MODE's `runHeldPermissionPrompt`/

@@ -74,8 +74,10 @@ describeOrSkip("the real goose CLI, driven through the ACP driver, against a moc
   // fresh XDG dirs, matching this file's existing one-mock-per-test shape rather than switching to
   // the shared-singleton pattern opencodeMocked.test.ts uses). A single `let mock` reassigned by a
   // SECOND test's setup() call would orphan the FIRST test's own mock server — afterAll's old
-  // `mock?.stop()` only ever stopped whichever one was assigned LAST — reproduced live as exactly
-  // that leak before this fix (see this task's report). Tracked in an array and stopped in full.
+  // `mock?.stop()` only ever stopped whichever one was assigned LAST. (This follows directly from
+  // that single-variable-reassignment shape, not from an observed leak: the pre-fix file had
+  // exactly one test, so the two-setup()-calls scenario never actually ran before this task added
+  // a second test.) Tracked in an array and stopped in full.
   let mock: MockLlmHandle | undefined;
   const mocks: MockLlmHandle[] = [];
   const chatIds: string[] = [];
