@@ -114,7 +114,15 @@ export class VisibilityUndeterminedError extends Error {
  * Cycles are caught exactly (the descent chain below); this bounds the acyclic-but-huge shapes,
  * and a vault that hits it is UNDETERMINED, not empty.
  */
-const MAX_WALK_ENTRIES = 200_000;
+export const MAX_WALK_ENTRIES = 200_000;
+
+/** Walk bounds, overridable per call. `maxEntries` exists so the budget MECHANISM can be exercised
+ *  at a small bound instead of by materializing 200k reachable entries; production callers pass
+ *  nothing and get {@link MAX_WALK_ENTRIES}. A test that sets the bound cannot also be the thing
+ *  that pins it — the default is asserted independently. */
+export interface WalkLimits {
+  maxEntries?: number;
+}
 
 /** One walked file: its vault-relative path, and the absolute path with every symlinked DIRECTORY
  *  on the way to it resolved. */
@@ -153,9 +161,13 @@ interface WalkedFile {
  * nothing behind it to miss. (ENOENT on the ROOT is not that case: the vault we were asked about is
  * not there, which is a question we cannot answer rather than an answer of "nothing".)
  */
-async function listVisibilityFiles(root: string, canonicalRoot: string): Promise<WalkedFile[]> {
+async function listVisibilityFiles(
+  root: string,
+  canonicalRoot: string,
+  maxEntries: number = MAX_WALK_ENTRIES,
+): Promise<WalkedFile[]> {
   const out: WalkedFile[] = [];
-  let budget = MAX_WALK_ENTRIES;
+  let budget = maxEntries;
 
   const walk = async (absDir: string, relDir: string, canonDir: string, chain: string[]): Promise<void> => {
     let entries;
@@ -173,7 +185,7 @@ async function listVisibilityFiles(root: string, canonicalRoot: string): Promise
       if (d.name === ".git" || d.name === ".settings") continue;
       if (--budget < 0) {
         throw new VisibilityUndeterminedError(
-          `vault has more than ${MAX_WALK_ENTRIES} reachable entries (symlink fan-out?) — the walk stopped early`,
+          `vault has more than ${maxEntries} reachable entries (symlink fan-out?) — the walk stopped early`,
         );
       }
       const rel = relDir ? `${relDir}/${d.name}` : d.name;
@@ -424,9 +436,13 @@ const READ_CONCURRENCY = 64;
  * (applyStemInheritance) then covers export sidecars and same-stem siblings that have neither a
  * restricting folder nor frontmatter of their own. See each helper's doc comment for why.
  */
-export async function resolveDenyPlan(root: string, channel: VisibilityChannel): Promise<DenyPlan> {
+export async function resolveDenyPlan(
+  root: string,
+  channel: VisibilityChannel,
+  opts: WalkLimits = {},
+): Promise<DenyPlan> {
   try {
-    return { determined: true, entries: await walkDenyEntries(root, channel) };
+    return { determined: true, entries: await walkDenyEntries(root, channel, opts) };
   } catch (e) {
     if (e instanceof VisibilityUndeterminedError) return { determined: false, reason: e.message };
     throw e;
@@ -441,11 +457,19 @@ export async function resolveDenyPlan(root: string, channel: VisibilityChannel):
  * branch on the reason should call resolveDenyPlan instead. What no caller can do any more is
  * receive an empty list for a vault that was never read.
  */
-export async function buildDenyPaths(root: string, channel: VisibilityChannel): Promise<DenyEntry[]> {
-  return walkDenyEntries(root, channel);
+export async function buildDenyPaths(
+  root: string,
+  channel: VisibilityChannel,
+  opts: WalkLimits = {},
+): Promise<DenyEntry[]> {
+  return walkDenyEntries(root, channel, opts);
 }
 
-async function walkDenyEntries(root: string, channel: VisibilityChannel): Promise<DenyEntry[]> {
+async function walkDenyEntries(
+  root: string,
+  channel: VisibilityChannel,
+  opts: WalkLimits = {},
+): Promise<DenyEntry[]> {
   const folders = await readFolderVisibilityResult(root);
   // A `.settings` that exists but does not parse is the single sharpest instance of the
   // determined/undetermined confusion: `folderVisibility: {Private: hidden}` and a syntax error two
@@ -463,7 +487,7 @@ async function walkDenyEntries(root: string, channel: VisibilityChannel): Promis
       `cannot resolve the vault root ${root}: ${e instanceof Error ? e.message : String(e)}`,
     );
   });
-  const walked = await listVisibilityFiles(root, canonicalRoot);
+  const walked = await listVisibilityFiles(root, canonicalRoot, opts.maxEntries);
   const cascadeCache = new Map<string, Visibility>();
 
   const resolved = await mapWithConcurrency(walked, READ_CONCURRENCY, async (file): Promise<ResolvedFile> => {
@@ -491,15 +515,24 @@ async function walkDenyEntries(root: string, channel: VisibilityChannel): Promis
 
   applyStemInheritance(resolved);
 
+  // The absolute spellings one restricted file is readable at, deduped, minus `abs` itself.
+  //
+  // Two produce an alias, and both are the same class of aliasing:
+  //  - a symlinked DIRECTORY on the way to the file (canonicalAbs), and
+  //  - the CALLER's own spelling of the vault root, when it differs from the canonical one. On
+  //    macOS a vault opened as `/var/…` or `/tmp/…` canonicalizes to `/private/var/…` through a
+  //    firmlink, and a tool reporting the path the session was actually started with would have
+  //    matched nothing at all. Vaults under /Users are unaffected, which is why this hid so well.
   return resolved
     .filter((f) => !isVisibleToChannel(f.visibility, channel))
-    // Reached through a symlinked directory: the link spelling and the resolved spelling are two
-    // absolute paths for one file, so the second goes in `aliases` rather than becoming a second
-    // entry — `entries.length` stays a count of NOTES, which is what the refusal messages report.
-    // (Equal for every file in an ordinary vault, so `aliases` is absent there.)
-    .map((f) => (f.canonicalAbs === f.abs
-      ? { rel: f.rel, abs: f.abs }
-      : { rel: f.rel, abs: f.abs, aliases: [f.canonicalAbs] }));
+    // One ENTRY per file — `entries.length` stays a count of NOTES, which is what the refusal
+    // messages report — with the other spellings in `aliases` (absent in an ordinary vault).
+    // Both candidates collapse into `abs` for a vault with no symlink and a canonical root, so the
+    // dedupe below is what makes this a no-op there; no separate "are they equal" branch is needed.
+    .map((f) => {
+      const aliases = [...new Set([f.canonicalAbs, join(root, f.rel)])].filter((a) => a !== f.abs);
+      return aliases.length === 0 ? { rel: f.rel, abs: f.abs } : { rel: f.rel, abs: f.abs, aliases };
+    });
 }
 
 /**
@@ -613,7 +646,7 @@ export function denyPathSet(entries: DenyEntry[]): Set<string> {
  * remains an honesty boundary, not a security boundary: it closes the spellings a model reaches for,
  * not the ones a process determined to get at the file could construct.
  */
-function normalizeForCompare(p: string): string {
+export function normalizeForCompare(p: string): string {
   const rooted = p.startsWith("/");
   const segs: string[] = [];
   for (const seg of p.split("/")) {

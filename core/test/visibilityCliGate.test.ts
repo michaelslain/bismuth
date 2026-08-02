@@ -344,6 +344,49 @@ describe("decideCliGate: path spellings", () => {
     }
   });
 
+  test("refuses a restricted path embedded in a longer token under EVERY segment spelling", () => {
+    // The reported hole: `findDeniedEntry` cannot resolve a token whose path is only a substring,
+    // and an unnormalized substring scan cannot see through `/./` or `//`. The `..` spelling was
+    // caught by luck (the needle survives the detour verbatim), which is not coverage.
+    for (const spelling of [
+      "exports/Private/secret.md.html",
+      "exports/Private/./secret.md.html",
+      "exports/Private/../Private/secret.md.html",
+      "exports/Private//secret.md.html",
+      "exports/PRIVATE/./SECRET.md.html",
+    ]) {
+      const d = decideCliGate(["render", "--out", spelling], restricted);
+      expect(d.allowed).toBe(false);
+      expect(d.reason).toContain("Private/secret.md");
+    }
+  });
+
+  test("an innocent token that merely resembles a restricted path still runs", () => {
+    // Negative controls for the widening above: normalizing the whole token must not smear the
+    // deny across neighbouring names, sibling directories, or a `..` that lands somewhere visible.
+    for (const spelling of [
+      "exports/public.md.html",
+      "exports/Privateer/secretive.md.html",
+      "exports/Private/../public.md.html",
+    ]) {
+      expect(decideCliGate(["render", "--out", spelling], restricted).allowed).toBe(true);
+    }
+  });
+
+  test("the substring scan over-refuses a token that CONTAINS a restricted path as a prefix", () => {
+    // Not a regression and not introduced by segment normalization — both of these refuse on the
+    // unnormalized scan too, because the deny path is a literal substring of the token. Pinned
+    // rather than left undocumented: it is the deliberate direction of this gate (a false refusal
+    // costs one tool call; a false allow leaks a note), and someone reading the "over-inclusive on
+    // purpose" note above should be able to see exactly what that buys and costs.
+    for (const spelling of [
+      "exports/NotPrivate/secret.md.backup.html", // contains "Private/secret.md"
+      "exports/Private/secret.mdx.html", //          "secret.md" is a prefix of "secret.mdx"
+    ]) {
+      expect(decideCliGate(["render", "--out", spelling], restricted).allowed).toBe(false);
+    }
+  });
+
   test("a path-scoped command naming only VISIBLE files still runs", () => {
     // The widening must not swallow the whole tier: this is the case the gate exists to permit.
     expect(decideCliGate(["read", "public.md"], restricted).allowed).toBe(true);

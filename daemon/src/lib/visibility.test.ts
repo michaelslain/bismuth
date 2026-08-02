@@ -13,12 +13,19 @@ import {
   isVisibleToDaemon,
   buildDenyPaths,
   resolveDenyPlan,
+  MAX_WALK_ENTRIES,
   VisibilityUndeterminedError,
   buildManagedSettingsDeny,
   absDenyPaths,
   sandboxFailIfUnavailable,
   type DenyEntry,
 } from "./visibility.ts"
+
+/** An entry's {rel, abs} only — `aliases` is asserted separately. Every vault here is a macOS
+ *  tmpdir, so `/var/…` vs `/private/var/…` gives all of them a root-spelling alias. */
+function pair(e: DenyEntry): { rel: string; abs: string } {
+  return { rel: e.rel, abs: e.abs }
+}
 
 function makeVault(files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "bismuth-daemon-vis-"))
@@ -76,7 +83,7 @@ test("buildDenyPaths: 'hidden' AND 'chat-only' are both daemon-restricted (only 
   })
   const root = await realpath(vault)
   const denied = (await buildDenyPaths(vault)).sort((a, b) => a.rel.localeCompare(b.rel))
-  expect(denied).toEqual(
+  expect(denied.map(pair)).toEqual(
     [
       { rel: "draft.md", abs: join(root, "draft.md") },
       { rel: "secret.md", abs: join(root, "secret.md") },
@@ -88,7 +95,7 @@ test("buildDenyPaths: includes .daemon memory notes", async () => {
   const vault = makeVault({ ".daemon/memory/note.md": "---\nvisibility: hidden\n---\nSome memory\n" })
   const root = await realpath(vault)
   const denied = await buildDenyPaths(vault)
-  expect(denied).toEqual([{ rel: ".daemon/memory/note.md", abs: join(root, ".daemon/memory/note.md") }])
+  expect(denied.map(pair)).toEqual([{ rel: ".daemon/memory/note.md", abs: join(root, ".daemon/memory/note.md") }])
 })
 
 // --- buildManagedSettingsDeny / absDenyPaths ---
@@ -299,4 +306,34 @@ test("resolveDenyPlan: an unreadable SUBDIRECTORY is undetermined (it may hold r
   } finally {
     chmodSync(locked, 0o755)
   }
+})
+
+test("MAX_WALK_ENTRIES is 200_000", () => {
+  // Pinned independently of the mechanism test below — a test that both chooses and asserts a
+  // bound can never fail.
+  expect(MAX_WALK_ENTRIES).toBe(200_000)
+})
+
+test("resolveDenyPlan: exceeding the walk's entry budget is undetermined, not a short list", async () => {
+  const vault = makeVault({
+    "a.md": "---\nvisibility: hidden\n---\n# A\n",
+    "b.md": "# B\n",
+    "c.md": "# C\n",
+    "d.md": "# D\n",
+  })
+  const plan = await resolveDenyPlan(vault, { maxEntries: 3 })
+  expect(plan.determined).toBe(false)
+  expect(plan).not.toMatchObject({ determined: true })
+  const ok = await resolveDenyPlan(vault)
+  expect(ok).toMatchObject({ determined: true })
+})
+
+test("buildDenyPaths: the caller's own root spelling is an alias when it differs from the canonical one", async () => {
+  const vault = makeVault({ "secret.md": "---\nvisibility: hidden\n---\n# Secret\n" })
+  const canonical = await realpath(vault)
+  if (canonical === vault) return
+  const entries = await buildDenyPaths(vault)
+  expect(entries).toHaveLength(1)
+  expect(entries[0]!.aliases).toContain(join(vault, "secret.md"))
+  expect(absDenyPaths(entries)).toContain(join(vault, "secret.md"))
 })

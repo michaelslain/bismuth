@@ -17,6 +17,7 @@ import {
   denyPathSet,
   type DenyEntry,
   isDeniedPath,
+  MAX_WALK_ENTRIES,
   sandboxDenyRead,
   sandboxFailIfUnavailable,
 } from "../src/visibility";
@@ -110,6 +111,14 @@ async function realVault(vault: string): Promise<string> {
   return realpath(vault);
 }
 
+/** An entry's {rel, abs} only. These assertions are about WHICH files are denied and under what
+ *  canonical path; `aliases` (the other absolute spellings of the same file) is asserted on its
+ *  own below. Every vault here is a macOS tmpdir, so `/var/…` vs `/private/var/…` gives all of
+ *  them an alias. */
+function pair(e: DenyEntry): { rel: string; abs: string } {
+  return { rel: e.rel, abs: e.abs };
+}
+
 test("buildDenyPaths: empty vault with no visibility rules denies nothing", async () => {
   const vault = makeVault({ "a.md": "# A\n" });
   expect(await buildDenyPaths(vault, "chat")).toEqual([]);
@@ -125,8 +134,8 @@ test("buildDenyPaths: 'hidden' file denies for both channels; 'chat-only' denies
   const root = await realVault(vault);
   const chatDeny = await buildDenyPaths(vault, "chat");
   const daemonDeny = await buildDenyPaths(vault, "daemon");
-  expect(chatDeny).toEqual([{ rel: "secret.md", abs: join(root, "secret.md") }]);
-  expect([...daemonDeny].sort((a, b) => a.rel.localeCompare(b.rel))).toEqual(
+  expect(chatDeny.map(pair)).toEqual([{ rel: "secret.md", abs: join(root, "secret.md") }]);
+  expect([...daemonDeny].sort((a, b) => a.rel.localeCompare(b.rel)).map(pair)).toEqual(
     [{ rel: "draft.md", abs: join(root, "draft.md") }, { rel: "secret.md", abs: join(root, "secret.md") }].sort((a, b) =>
       a.rel.localeCompare(b.rel),
     ),
@@ -142,7 +151,7 @@ test("buildDenyPaths: folder-level rule cascades to files with no explicit visib
   await setFolderVisibility(vault, "private", "hidden");
   const root = await realVault(vault);
   const denied = await buildDenyPaths(vault, "chat");
-  expect([...denied].sort((a, b) => a.rel.localeCompare(b.rel))).toEqual(
+  expect([...denied].sort((a, b) => a.rel.localeCompare(b.rel)).map(pair)).toEqual(
     [{ rel: "private/a.md", abs: join(root, "private/a.md") }, { rel: "private/b.md", abs: join(root, "private/b.md") }].sort(
       (a, b) => a.rel.localeCompare(b.rel),
     ),
@@ -157,7 +166,7 @@ test("buildDenyPaths: an explicit file override inside a hidden folder is honore
   await setFolderVisibility(vault, "private", "hidden");
   const root = await realVault(vault);
   const denied = await buildDenyPaths(vault, "chat");
-  expect(denied).toEqual([{ rel: "private/a.md", abs: join(root, "private/a.md") }]);
+  expect(denied.map(pair)).toEqual([{ rel: "private/a.md", abs: join(root, "private/a.md") }]);
 });
 
 test("buildDenyPaths: includes .daemon memory notes (ordinary vault files under the same frontmatter path)", async () => {
@@ -166,7 +175,7 @@ test("buildDenyPaths: includes .daemon memory notes (ordinary vault files under 
   });
   const root = await realVault(vault);
   const denied = await buildDenyPaths(vault, "chat");
-  expect(denied).toEqual([{ rel: ".daemon/memory/note.md", abs: join(root, ".daemon/memory/note.md") }]);
+  expect(denied.map(pair)).toEqual([{ rel: ".daemon/memory/note.md", abs: join(root, ".daemon/memory/note.md") }]);
 });
 
 // --- buildManagedSettingsDeny / absDenyPaths / denyPathSet ---
@@ -542,12 +551,18 @@ test("buildDenyPaths: a file under a symlinked directory denies BOTH absolute sp
   expect(linked).toBeDefined();
   // One ENTRY per file (so a "N notes are restricted" message counts notes)...
   expect(entries.filter((e) => e.rel === "linkdir/secret.md")).toHaveLength(1);
-  // ...carrying both absolute paths the file is readable at.
-  expect(absDenyPaths(entries).sort()).toEqual([
+  // ...carrying every absolute path the file is readable at. Two independent aliasing axes
+  // multiply here: the link vs. the real directory, and (on a macOS tmpdir) the caller's `/var/…`
+  // root spelling vs. its `/private/var/…` canonical form.
+  const abs = absDenyPaths(entries);
+  for (const spelling of [
     join(canonical, "linkdir/secret.md"),
     join(canonical, "realdir/secret.md"),
-    join(canonical, "realdir/secret.md"),
-  ].sort());
+    join(vault, "linkdir/secret.md"),
+    join(vault, "realdir/secret.md"),
+  ]) {
+    expect(abs).toContain(spelling);
+  }
   // The sandbox deny-read list must carry the resolved spelling too — a tool that resolves the
   // link reports that one, and a deny keyed only on the link path would never match it.
   expect(sandboxDenyRead(entries, vault)).toContain(join(canonical, "realdir/secret.md"));
@@ -639,4 +654,61 @@ test("the fail-safes downstream of an undetermined walk cannot be reached with a
     BISMUTH_MCP_CHANNEL: "daemon",
   });
   expect(decision.allowed).toBe(false);
+});
+
+// --- The caller's own root spelling (macOS firmlinks) ---
+
+test("buildDenyPaths: the caller's own root spelling is an alias when it differs from the canonical one", async () => {
+  // A macOS tmpdir IS this case: mkdtemp hands back /var/folders/… which realpaths to
+  // /private/var/folders/… through a firmlink, and BOTH open the file. A session started with
+  // cwd=/var/… reports that spelling, so a deny list holding only the canonical one matched nothing.
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\n# Secret\n" });
+  const canonical = await realpath(vault);
+  if (canonical === vault) return; // not a firmlinked tmpdir on this machine — nothing to assert
+
+  const entries = await buildDenyPaths(vault, "daemon");
+  expect(entries).toHaveLength(1); // still ONE note, not one per spelling
+  expect(entries[0]!.abs).toBe(join(canonical, "Private/secret.md"));
+  expect(entries[0]!.aliases).toContain(join(vault, "Private/secret.md"));
+  // Both spellings must actually gate, not merely appear in the list.
+  expect(isDeniedPath(entries, join(vault, "Private/secret.md"))).toBe(true);
+  expect(isDeniedPath(entries, join(canonical, "Private/secret.md"))).toBe(true);
+  // And both must reach the sandbox, which only ever sees absolute paths.
+  expect(sandboxDenyRead(entries, vault)).toContain(join(vault, "Private/secret.md"));
+});
+
+test("buildDenyPaths: no alias is emitted when the caller's root is already canonical", async () => {
+  const vault = await realpath(makeVault({ "s.md": "---\nvisibility: hidden\n---\n# S\n" }));
+  const entries = await buildDenyPaths(vault, "daemon");
+  expect(entries).toEqual([{ rel: "s.md", abs: join(vault, "s.md") }]);
+  expect(entries[0]!.aliases).toBeUndefined();
+});
+
+// --- The walk's entry budget ---
+
+test("MAX_WALK_ENTRIES is 200_000", () => {
+  // Pinned on its own, independent of the mechanism test below. A test that both CHOOSES a bound
+  // and asserts against it can never fail; this is the assertion that can.
+  expect(MAX_WALK_ENTRIES).toBe(200_000);
+});
+
+test("resolveDenyPlan: exceeding the walk's entry budget is undetermined, not a short list", async () => {
+  const vault = makeVault({
+    "a.md": "---\nvisibility: hidden\n---\n# A\n",
+    "b.md": "# B\n",
+    "c.md": "# C\n",
+    "d.md": "# D\n",
+  });
+  // Four entries against a bound of 3: the walk stops early, so the restricted set it found is
+  // necessarily incomplete and must not be reported as the answer.
+  const plan = await resolveDenyPlan(vault, "daemon", { maxEntries: 3 });
+  expect(plan.determined).toBe(false);
+  expect(plan.determined === false && plan.reason).toContain("3");
+  // Specifically not the shape this whole change exists to prevent.
+  expect(plan).not.toMatchObject({ determined: true });
+  // The same vault under the real default is answerable, so the refusal is the BOUND talking and
+  // not something else about this vault.
+  const ok = await resolveDenyPlan(vault, "daemon");
+  expect(ok).toMatchObject({ determined: true });
+  expect(ok.determined === true && ok.entries.map((e) => e.rel)).toEqual(["a.md"]);
 });

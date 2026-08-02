@@ -136,7 +136,15 @@ export class VisibilityUndeterminedError extends Error {
 /** Upper bound on directory entries the walk will consider — symlinked directories are followed,
  *  so the reachable set is a graph, not a tree. Cycles are caught exactly (the descent chain
  *  below); this bounds acyclic-but-huge fan-out, and hitting it is UNDETERMINED, not empty. */
-const MAX_WALK_ENTRIES = 200_000
+export const MAX_WALK_ENTRIES = 200_000
+
+/** Walk bounds, overridable per call — mirrors core/src/visibility.ts's WalkLimits. `maxEntries`
+ *  exists so the budget MECHANISM can be exercised at a small bound rather than by materializing
+ *  200k reachable entries; production callers pass nothing. The default is pinned by its own
+ *  assertion, separately from any test that sets it. */
+export interface WalkLimits {
+  maxEntries?: number
+}
 
 /** One walked file: its vault-relative path, and the absolute path with every symlinked DIRECTORY
  *  on the way to it resolved. */
@@ -170,9 +178,13 @@ interface WalkedFile {
  * listed and does not now, so there is nothing behind it to miss. (ENOENT on the ROOT is not that
  * case: the vault we were asked about is not there.)
  */
-async function listVisibilityFiles(root: string, canonicalRoot: string): Promise<WalkedFile[]> {
+async function listVisibilityFiles(
+  root: string,
+  canonicalRoot: string,
+  maxEntries: number = MAX_WALK_ENTRIES,
+): Promise<WalkedFile[]> {
   const out: WalkedFile[] = []
-  let budget = MAX_WALK_ENTRIES
+  let budget = maxEntries
 
   const walk = async (absDir: string, relDir: string, canonDir: string, chain: string[]): Promise<void> => {
     let entries
@@ -188,7 +200,7 @@ async function listVisibilityFiles(root: string, canonicalRoot: string): Promise
       if (d.name === ".git" || d.name === ".settings") continue
       if (--budget < 0) {
         throw new VisibilityUndeterminedError(
-          `vault has more than ${MAX_WALK_ENTRIES} reachable entries (symlink fan-out?) — the walk stopped early`,
+          `vault has more than ${maxEntries} reachable entries (symlink fan-out?) — the walk stopped early`,
         )
       }
       const rel = relDir ? `${relDir}/${d.name}` : d.name
@@ -432,9 +444,9 @@ const READ_CONCURRENCY = 64
  * (applyStemInheritance) then covers export sidecars and same-stem siblings that have neither a
  * restricting folder nor frontmatter of their own. See each helper's doc comment for why.
  */
-export async function resolveDenyPlan(root: string): Promise<DenyPlan> {
+export async function resolveDenyPlan(root: string, opts: WalkLimits = {}): Promise<DenyPlan> {
   try {
-    return { determined: true, entries: await walkDenyEntries(root) }
+    return { determined: true, entries: await walkDenyEntries(root, opts) }
   } catch (e) {
     if (e instanceof VisibilityUndeterminedError) return { determined: false, reason: e.message }
     throw e
@@ -447,11 +459,11 @@ export async function resolveDenyPlan(root: string): Promise<DenyPlan> {
  * answer for a vault whose restrictions cannot be read. What no caller can receive any more is an
  * empty list for a vault that was never read.
  */
-export async function buildDenyPaths(root: string): Promise<DenyEntry[]> {
-  return walkDenyEntries(root)
+export async function buildDenyPaths(root: string, opts: WalkLimits = {}): Promise<DenyEntry[]> {
+  return walkDenyEntries(root, opts)
 }
 
-async function walkDenyEntries(root: string): Promise<DenyEntry[]> {
+async function walkDenyEntries(root: string, opts: WalkLimits = {}): Promise<DenyEntry[]> {
   const folderVisibility = await readFolderVisibility(root)
   // Canonicalize the root before joining: the SDK's own tools resolve symlinks in the paths they
   // report (e.g. on macOS a vault under a tmp dir is really under /private/var or /private/tmp),
@@ -462,7 +474,7 @@ async function walkDenyEntries(root: string): Promise<DenyEntry[]> {
       `cannot resolve the vault root ${root}: ${e instanceof Error ? e.message : String(e)}`,
     )
   })
-  const walked = await listVisibilityFiles(root, canonicalRoot)
+  const walked = await listVisibilityFiles(root, canonicalRoot, opts.maxEntries)
   const cascadeCache = new Map<string, Visibility>()
 
   const resolved = await mapWithConcurrency(walked, READ_CONCURRENCY, async (file): Promise<ResolvedFile> => {
@@ -488,14 +500,19 @@ async function walkDenyEntries(root: string): Promise<DenyEntry[]> {
 
   applyStemInheritance(resolved)
 
+  // The absolute spellings one restricted file is readable at, deduped, minus `abs` itself: a
+  // symlinked DIRECTORY on the way to it, and the CALLER's own spelling of the vault root when it
+  // differs from the canonical one (macOS firmlinks: `/var/…` canonicalizes to `/private/var/…`).
+  // Mirrors core/src/visibility.ts.
   return resolved
     .filter((f) => !isVisibleToDaemon(f.visibility))
-    // Reached through a symlinked directory: two absolute paths for one file, and which one a tool
-    // reports depends on whether it resolved the link. The second goes in `aliases` rather than
-    // becoming a second entry, so `entries.length` stays a count of NOTES.
-    .map((f) => (f.canonicalAbs === f.abs
-      ? { rel: f.rel, abs: f.abs }
-      : { rel: f.rel, abs: f.abs, aliases: [f.canonicalAbs] }))
+    // One ENTRY per file, so `entries.length` stays a count of NOTES; other spellings in `aliases`.
+    // Both candidates collapse into `abs` for a vault with no symlink and a canonical root, so the
+    // dedupe is what makes this a no-op there; no separate equality branch is needed.
+    .map((f) => {
+      const aliases = [...new Set([f.canonicalAbs, join(root, f.rel)])].filter((a) => a !== f.abs)
+      return aliases.length === 0 ? { rel: f.rel, abs: f.abs } : { rel: f.rel, abs: f.abs, aliases }
+    })
 }
 
 /**

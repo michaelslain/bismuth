@@ -44,7 +44,7 @@
 //    only the MCP server's own env block sets it) will pass `--vault`/`--dir` explicitly, and a gate
 //    that only checked env would be a no-op for exactly the invocation shape this file exists to
 //    cover.
-import { buildDenyPaths, findDeniedEntry, type DenyEntry, type VisibilityChannel } from "./visibility";
+import { buildDenyPaths, findDeniedEntry, normalizeForCompare, type DenyEntry, type VisibilityChannel } from "./visibility";
 
 /** Which channel this MCP server is serving, from `BISMUTH_MCP_CHANNEL`.
  *
@@ -188,13 +188,29 @@ export interface GateDecision {
   reason?: string;
 }
 
-/** Case-fold and NFC-normalize for the substring scan below. Mirrors visibility.ts's
- *  normalizeForCompare on the two axes a substring test can honor — a whole argv token is not a
- *  path, so its `.`/`..` segments cannot be resolved in place; that axis is covered by running each
- *  token through findDeniedEntry instead. Without the NFC step, a `café.md` written composed slid
- *  past a deny list built from the decomposed name (and vice versa) while opening the same file. */
+/**
+ * Reduce an argv token, and each deny path it is scanned against, to the same comparison form —
+ * visibility.ts's `normalizeForCompare`, applied to the WHOLE token rather than to a path.
+ *
+ * All three spelling axes have to be folded here, not two. An earlier version of this function
+ * folded only case and Unicode form, on the reasoning that a whole argv token is not a path and so
+ * its `.`/`..` segments could not be resolved in place — with the segment axis left to the
+ * per-token `findDeniedEntry` pass above. That reasoning is right for a token that IS a path and
+ * wrong for one that merely CONTAINS one, and the gap was real:
+ * `render --out exports/Private/./secret.md.html` returned `allowed: true`, because
+ * `findDeniedEntry` cannot resolve a token whose path is a substring, and an unnormalized substring
+ * scan cannot see through the `/./`. (`//` slipped the same way. The `..` spelling happened to be
+ * caught, since `Private/../Private/secret.md` still contains `Private/secret.md` verbatim — which
+ * is luck, not coverage.)
+ *
+ * Normalizing the whole token is safe because both sides of the scan get the identical treatment: a
+ * path embedded in a longer string keeps its segment boundaries, so `exports/Private/./secret.md`
+ * folds to `exports/private/secret.md` and still contains the folded needle. It is deliberately
+ * over-inclusive in the same direction as the rest of this gate — a false refusal costs one tool
+ * call, a false allow leaks a note.
+ */
 function foldForScan(s: string): string {
-  return s.toLowerCase().normalize("NFC");
+  return normalizeForCompare(s);
 }
 
 /** The path-shaped pieces of one argv token: the token itself, and — for `--flag=value` and
@@ -217,8 +233,10 @@ function pathCandidates(arg: string): string[] {
  *     other gate does. `bismuth read Private/../Private/secret.md` opens the file, so it must
  *     refuse.
  *  2. A SUBSTRING test against each token in both path forms, which catches a path embedded
- *     somewhere a whole-token check cannot see it — a longer query string, a quoted shell fragment.
- *     Case- and NFC-folded for the same reason pass 1 is.
+ *     somewhere a whole-token check cannot see it — a longer query string, a quoted shell fragment,
+ *     an export path derived from the note. Both sides go through `foldForScan`, which folds all
+ *     three spelling axes and not just the two a substring test looks like it can honor; see that
+ *     function for the `/./`-inside-a-longer-token hole that costs.
  */
 export function decideCliGate(
   args: string[],
