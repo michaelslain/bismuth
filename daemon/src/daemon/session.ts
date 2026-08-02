@@ -5,7 +5,7 @@ import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"
 import { whichClaude } from "../lib/claudeWhich.ts"
 import { augmentPath } from "../lib/childEnv.ts"
-import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, sandboxFailIfUnavailable, type DenyEntry } from "../lib/visibility.ts"
+import { buildDenyPaths, buildManagedSettingsDeny, buildSandboxDenyPaths, sandboxFailIfUnavailable, type DenyEntry } from "../lib/visibility.ts"
 import { mcpBin, cliBin, docsDir } from "../lib/bismuthPaths.ts"
 import { recordDaemonSessionId } from "./sessionIds.ts"
 import { sendCodexMessage } from "./codexSession.ts"
@@ -280,6 +280,11 @@ export function buildQueryOptions(
   // (see buildManagedSettingsDeny). Omitted entirely when nothing is restricted, so an
   // unrestricted vault is unaffected.
   //
+  // `denyRead` comes from `buildSandboxDenyPaths`, not `sandboxDenyRead`: the restricted files and
+  // `.git` are only two thirds of the set. The third is the owner-token run record — read it and
+  // core's HTTP surface hands this session every hidden note unfiltered, whatever the tool gate
+  // says. See buildSandboxDenyPaths' doc comment.
+  //
   // `failIfUnavailable: sandboxFailIfUnavailable(denyEntries)` (never a fixed `false`) — measured
   // 2026-07-30 (docs/vault/visibility.md, visibility-acceptance.md): a fixed `false` let a session
   // whose sandbox couldn't start run anyway with ONLY managedSettings standing guard, which a raw
@@ -304,7 +309,7 @@ export function buildQueryOptions(
       enabled: true,
       failIfUnavailable: sandboxFailIfUnavailable(denyEntries),
       allowUnsandboxedCommands: false,
-      filesystem: { denyRead: sandboxDenyRead(denyEntries, ctx.root) },
+      filesystem: { denyRead: buildSandboxDenyPaths(denyEntries, ctx.root) },
     }
     // When ANY file is restricted, hard-disable the bismuth_cli MCP tool (its `file read` can
     // target any vault, escaping the managedSettings deny) AND Grep/Glob (an unscoped whole-vault

@@ -20,6 +20,7 @@ import { open, readdir, readFile, realpath, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { parse as parseYaml } from "yaml"
 import { parseFrontmatter } from "./frontmatter.ts"
+import { ownerTokenDenyPaths } from "./bismuthPaths.ts"
 
 export type Visibility = "all" | "chat-only" | "hidden"
 /** A file's own explicit frontmatter value; `undefined` = absent = inherit. */
@@ -549,6 +550,25 @@ export function absDenyPaths(entries: DenyEntry[]): string[] {
 export function sandboxDenyRead(entries: DenyEntry[], vaultRoot: string): string[] {
   if (entries.length === 0) return []
   return [...absDenyPaths(entries), join(vaultRoot, ".git")]
+}
+
+/**
+ * THE deny-read list this workspace's session spawns use: {@link sandboxDenyRead} plus the
+ * owner-token run record. A deliberate literal copy of core/src/visibility.ts's
+ * `buildSandboxDenyPaths` — see that function's doc comment for the full reasoning.
+ *
+ * In short: the token grants an HTTP caller the `"owner"` channel, unfiltered, and it lives OUTSIDE
+ * the vault, so nothing derived from the vault walk reaches it. Its 0600 mode stops another user and
+ * not this session, which runs as the same uid that wrote it. A daemon session that reads that file
+ * and replays it in `X-Bismuth-Token` gets back exactly the notes this list exists to withhold.
+ *
+ * Gated on `entries.length > 0` like everything else here: an unrestricted vault is spawned with no
+ * sandbox option at all, so there is no profile a token deny could ride in on.
+ */
+export function buildSandboxDenyPaths(entries: DenyEntry[], vaultRoot: string): string[] {
+  const base = sandboxDenyRead(entries, vaultRoot)
+  if (base.length === 0) return []
+  return [...base, ...ownerTokenDenyPaths(vaultRoot)]
 }
 
 /**

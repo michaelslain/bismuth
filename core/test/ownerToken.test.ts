@@ -1,11 +1,17 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync, symlinkSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../src/server";
-import { mintOwnerToken, resolveRequestChannel, ownerTokenDenyPath } from "../src/ownerToken";
-import { readRunRecords, runRecordPath } from "../src/runRegistry";
+import { mintOwnerToken, resolveRequestChannel, ownerTokenDenyPath, ownerTokenDenyPaths } from "../src/ownerToken";
+import { readRunRecords, runRecordPath, runKey } from "../src/runRegistry";
+import { buildDenyPaths } from "../src/visibility";
+import { buildChatSandboxOption } from "../src/chat";
 import { makeVault, makeSampleVault } from "./helpers";
+import {
+  ownerTokenDenyPath as daemonOwnerTokenDenyPath,
+  ownerTokenDenyPaths as daemonOwnerTokenDenyPaths,
+} from "../../daemon/src/lib/bismuthPaths.ts";
 
 // Isolate the run registry for this whole file: writeRunRecord/readRunRecords must never touch
 // the real ~/.bismuth/run while these tests boot throwaway servers (mirrors the module-scope
@@ -312,5 +318,148 @@ test("GET /chat/sessions, GET /chat/session-messages, POST /chat/search are owne
     expect((await searchReq({ "X-Bismuth-Token": token })).status).toBe(200);
   } finally {
     server.stop(true);
+  }
+});
+
+// ---- The token file vs. the OS sandbox the Claude paths actually spawn under -------------------
+//
+// Everything above proves the HTTP gate refuses a tokenless caller. This proves the other half:
+// that an agent inside a restricted session cannot simply GO GET the token. The two are one
+// boundary — a deny list that omits the run record leaves the HTTP gate answering "owner" to the
+// very process it is meant to filter.
+//
+// The probe is a real Seatbelt spawn, no agent and no vendor call. It is representative of the
+// Claude paths' own sandbox, not merely of Bismuth's opencode wrapper: Claude Code 2.1.220
+// (/Users/…/.local/share/claude/versions/2.1.220) spawns Bash tool calls as
+// `env … /usr/bin/sandbox-exec -p <profile> <shell> -c <cmd>` and compiles each
+// `sandbox.filesystem.denyRead` entry to `(deny file-read* (subpath "<abs>") (with message …))`
+// under a leading `(allow file-read*)` — the same primitive, on the same absolute paths, with no
+// cwd scoping. CLAUDE_PROFILE below reproduces that shape verbatim so this test fails for the same
+// reason a live session would.
+const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
+const CAN_SANDBOX = process.platform === "darwin" && existsSync(SANDBOX_EXEC);
+
+/** Claude Code 2.1.220's own read-deny profile shape, reproduced for the probe. */
+function claudeShapedProfile(denyRead: string[]): string {
+  const lines = ["(version 1)", "(allow default)", "(allow file-read*)"];
+  for (const p of denyRead) lines.push("(deny file-read*", `  (subpath ${JSON.stringify(p)})`, '  (with message "visibility"))');
+  return `${lines.join("\n")}\n`;
+}
+
+function readUnderProfile(profile: string, file: string): { out: string; code: number | null } {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-ownertoken-sb-"));
+  const sb = join(dir, "p.sb");
+  writeFileSync(sb, profile);
+  const r = Bun.spawnSync([SANDBOX_EXEC, "-f", sb, "/bin/cat", file], { stdout: "pipe", stderr: "pipe" });
+  return { out: new TextDecoder().decode(r.stdout), code: r.exitCode };
+}
+
+test.skipIf(!CAN_SANDBOX)(
+  "a chat session's own sandbox profile makes the owner-token run record UNREADABLE — the token never reaches a Bash `cat`",
+  async () => {
+    const vault = makeVault({
+      "secret.md": "---\nvisibility: hidden\n---\nTOKEN-SEATBELT-HIDDEN-BODY\n",
+      "public.md": "a visible note\n",
+    });
+    const server = createServer({ vault, port: 0 });
+    try {
+      const token = tokenFor(vault);
+      const record = runRecordPath(vault);
+
+      // Control 1 — the probe can SEE a successful read. The record is mode 0600 and owned by this
+      // uid, which is the agent's uid too: unsandboxed, the token is simply there for the taking.
+      expect(readFileSync(record, "utf8")).toContain(token);
+
+      const entries = await buildDenyPaths(vault, "chat");
+      expect(entries.length).toBeGreaterThan(0);
+      const denyRead = (buildChatSandboxOption(entries, vault)?.filesystem as { denyRead?: string[] } | undefined)?.denyRead ?? [];
+
+      const attack = readUnderProfile(claudeShapedProfile(denyRead), record);
+      expect(attack.out).not.toContain(token);
+      expect(attack.code).not.toBe(0);
+
+      // Control 2 — the same profile is not simply denying everything: a VISIBLE note still reads,
+      // so the failure above is the token deny and not a broken profile.
+      const visible = readUnderProfile(claudeShapedProfile(denyRead), join(vault, "public.md"));
+      expect(visible.out).toContain("a visible note");
+      expect(visible.code).toBe(0);
+    } finally {
+      server.stop(true);
+    }
+  },
+);
+
+// A deny path that names the record through a symlink does not deny it — Seatbelt resolves links
+// before matching, so the raw spelling is a silent no-op (verified directly against sandbox-exec:
+// the same file, denied by its `/var/…` spelling, still `cat`s; denied by its `/private/var/…`
+// spelling, it does not). ownerTokenDenyPaths therefore emits the canonical form alongside the raw
+// one, exactly as DenyEntry.aliases does for vault files.
+test("ownerTokenDenyPaths emits the canonical spelling when the run dir is reached through a symlink", () => {
+  const real = mkdtempSync(join(tmpdir(), "bismuth-run-real-"));
+  const link = join(mkdtempSync(join(tmpdir(), "bismuth-run-link-")), "runlink");
+  symlinkSync(real, link);
+  const saved = process.env.BISMUTH_RUN_DIR;
+  process.env.BISMUTH_RUN_DIR = link;
+  try {
+    const paths = ownerTokenDenyPaths("/some/vault");
+    const viaLink = join(link, `${runKey("/some/vault")}.json`);
+    const viaReal = join(realpathSync(real), `${runKey("/some/vault")}.json`);
+    expect(viaLink).not.toBe(viaReal); // the fixture is only meaningful if the two spellings differ
+    expect(paths).toContain(viaReal);
+    expect(paths).toContain(viaLink);
+  } finally {
+    if (saved === undefined) delete process.env.BISMUTH_RUN_DIR;
+    else process.env.BISMUTH_RUN_DIR = saved;
+  }
+});
+
+test("ownerTokenDenyPaths collapses to the single path when no link is involved", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "bismuth-run-plain-")));
+  const saved = process.env.BISMUTH_RUN_DIR;
+  process.env.BISMUTH_RUN_DIR = dir;
+  try {
+    expect(ownerTokenDenyPaths("/some/vault")).toEqual([join(dir, `${runKey("/some/vault")}.json`)]);
+  } finally {
+    if (saved === undefined) delete process.env.BISMUTH_RUN_DIR;
+    else process.env.BISMUTH_RUN_DIR = saved;
+  }
+});
+
+// ---- Cross-workspace parity: the daemon's ported copy must name the SAME file ------------------
+//
+// The daemon is a separate workspace and a separately-bundled binary with no dependency on
+// @bismuth/core, so its deny list computes the run-record path from its own copy of this logic
+// (daemon/src/lib/bismuthPaths.ts). Two implementations that must agree is exactly the shape of
+// defect this branch has already been bitten by once. If they drift, the daemon's sandbox denies a
+// path no process ever opens and the token stays readable — with every unit test on both sides
+// still green, because each would be asserting against its own spelling. This is the assertion that
+// cannot be satisfied by drift.
+test("the daemon's ported ownerTokenDenyPath resolves byte-identically to core's, for every vault-path shape", () => {
+  for (const vault of [
+    "/Users/x/vault",
+    "/Users/x/vault with spaces",
+    "/Users/x/vault/trailing/",
+    "/Users/x/váult-nfc-é",
+    "/private/var/folders/ab/cd/T/bismuth-vault-XyZ",
+    "/",
+  ]) {
+    expect(daemonOwnerTokenDenyPath(vault)).toBe(ownerTokenDenyPath(vault));
+  }
+});
+
+test("the daemon's ported copy honours BISMUTH_RUN_DIR the same way core's does — including the canonical-spelling expansion", () => {
+  const real = mkdtempSync(join(tmpdir(), "bismuth-parity-real-"));
+  const link = join(mkdtempSync(join(tmpdir(), "bismuth-parity-link-")), "runlink");
+  symlinkSync(real, link);
+  const saved = process.env.BISMUTH_RUN_DIR;
+  try {
+    process.env.BISMUTH_RUN_DIR = link;
+    expect(daemonOwnerTokenDenyPaths("/Users/x/vault")).toEqual(ownerTokenDenyPaths("/Users/x/vault"));
+    expect(ownerTokenDenyPaths("/Users/x/vault").length).toBe(2); // the fixture must actually exercise the link branch
+    process.env.BISMUTH_RUN_DIR = realpathSync(real);
+    expect(daemonOwnerTokenDenyPaths("/Users/x/vault")).toEqual(ownerTokenDenyPaths("/Users/x/vault"));
+  } finally {
+    if (saved === undefined) delete process.env.BISMUTH_RUN_DIR;
+    else process.env.BISMUTH_RUN_DIR = saved;
   }
 });

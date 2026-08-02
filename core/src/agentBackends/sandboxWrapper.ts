@@ -27,16 +27,15 @@
 //    see {@link isSandboxApplyFailure}. Treat that as a REFUSAL, never as a signal to retry the same
 //    turn unwrapped: the failure means the OS-level gate never engaged, not that the CLI misbehaved.
 //
-// Pure profile-text/argv building ({@link buildSeatbeltProfile}, {@link wrapArgv},
-// {@link buildSandboxDenyPaths}) is separated from the one effectful helper
-// ({@link materializeSandboxProfile}) so the interesting logic is unit-testable with no filesystem
-// or subprocess involved.
+// Pure profile-text/argv building ({@link buildSeatbeltProfile}, {@link wrapArgv}) is separated
+// from the one effectful helper ({@link materializeSandboxProfile}) so the interesting logic is
+// unit-testable with no filesystem or subprocess involved. WHICH paths a profile denies is not
+// decided here — every agent spawn, this one included, resolves that from visibility.ts's
+// `buildSandboxDenyPaths` so the set cannot drift between backends.
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { sandboxDenyRead, type DenyEntry } from "../visibility";
-import { ownerTokenDenyPath } from "../ownerToken";
 
 /** Where `sandbox-exec` lives on every Mac — a normal, Apple-signed, stock part of the OS (no
  *  install needed). It carries a decade-old "(DEPRECATED)" man-page label with no runtime warning
@@ -138,25 +137,6 @@ export function buildSeatbeltProfile(denyPaths: string[]): string {
 export function wrapArgv(argv: string[], profilePath: string | null, sandboxExecPath: string = SANDBOX_EXEC_PATH): string[] {
   if (!profilePath) return argv;
   return [sandboxExecPath, "-f", profilePath, ...argv];
-}
-
-/**
- * PURE. Every absolute path a Seatbelt profile should deny reading for one channel: the vault's
- * restricted files plus its `.git` history (via `sandboxDenyRead` — NOT reimplemented here, called
- * verbatim, per its own doc comment on why `.git` must be covered) plus the owner-token file
- * (ownerToken.ts's `ownerTokenDenyPath` — see that module's "NOTE FOR INTEGRATOR": this branch's
- * `core/src/visibility.ts` doesn't fold the token in itself, since it's owned by a different
- * concurrent task, so any NEW deny-list consumer — this one — must add it explicitly).
- *
- * Gated on `entries.length > 0` throughout, INCLUDING the token line: an unrestricted vault (no
- * `visibility:` setting anywhere) needs no gate at all — the feature must stay invisible until the
- * vault actually uses it (docs/vault/visibility.md), and an owner-token leak against a vault with
- * nothing hidden gives an agent no more than the (also unfiltered) HTTP surface already would.
- */
-export function buildSandboxDenyPaths(entries: DenyEntry[], vaultRoot: string): string[] {
-  const base = sandboxDenyRead(entries, vaultRoot);
-  if (base.length === 0) return [];
-  return [...base, ownerTokenDenyPath(vaultRoot)];
 }
 
 /** `<vault>/.daemon/tmp` — where a materialized profile lives. Reused across turns whose deny set

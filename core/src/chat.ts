@@ -17,7 +17,7 @@ import {
 import { whichClaude } from "./claudeWhich";
 import { loadSessionModel, saveSessionModel } from "./chatModelStore";
 import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
-import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, sandboxFailIfUnavailable, isDeniedPath, type DenyEntry } from "./visibility";
+import { buildDenyPaths, buildManagedSettingsDeny, buildSandboxDenyPaths, sandboxFailIfUnavailable, isDeniedPath, type DenyEntry } from "./visibility";
 import { readDaemonSessionIds } from "./daemon";
 import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
 import { emit, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
@@ -1009,6 +1009,11 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
  * mirroring sandboxDenyRead's own double-guard in visibility.ts). Extracted from spawnChatQuery so
  * it is unit-testable without spawning the real SDK query().
  *
+ * `denyRead` comes from `buildSandboxDenyPaths`, not `sandboxDenyRead`: the restricted files and
+ * `.git` are only two thirds of the set. The third is the owner-token run record — read it and the
+ * HTTP surface hands back every hidden note unfiltered, which makes a deny list that omits it
+ * self-defeating. See that function's doc comment.
+ *
  * `allowUnsandboxedCommands: false` (Task 9) is the fix for a live probe that found the model
  * calling its OWN Bash tool with `dangerouslyDisableSandbox: true` to skip the OS sandbox on its
  * own initiative, TWICE, while being asked to read a hidden note — not an adversarial bypass, just
@@ -1028,7 +1033,7 @@ export function buildChatSandboxOption(denyEntries: DenyEntry[], cwd: string): R
     enabled: true,
     failIfUnavailable: sandboxFailIfUnavailable(denyEntries),
     allowUnsandboxedCommands: false,
-    filesystem: { denyRead: sandboxDenyRead(denyEntries, cwd) },
+    filesystem: { denyRead: buildSandboxDenyPaths(denyEntries, cwd) },
   };
 }
 

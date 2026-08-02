@@ -18,6 +18,8 @@
 // reads more than its tool gate allows" (co-resident on the same machine), not "a remote network
 // attacker" — see the module doc in visibility.ts for the full scope.
 import { randomBytes } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { runRecordPath } from "./runRegistry";
 
 /** Which caller a request identifies as, resolved by {@link resolveRequestChannel}. */
@@ -60,15 +62,63 @@ export function resolveRequestChannel(headers: Pick<Headers, "get">, token: stri
 /**
  * The path of the run-record file that carries this boot's token (see runRegistry.ts). If an
  * agent process could read this file, the token is a trivially readable master key that defeats
- * every other layer — so it MUST be folded into every channel's deny plan alongside `.git`
- * (visibility.ts's `sandboxDenyRead` already appends `.git` for the identical reason).
+ * every other layer — so it is folded into every channel's deny plan alongside `.git`
+ * (visibility.ts's `sandboxDenyRead` appends `.git` for the identical reason).
  *
- * NOTE FOR INTEGRATOR (core/src/visibility.ts is owned by a concurrent task on this branch, so
- * this repo does not wire it in directly): add `ownerTokenDenyPath(vault)`'s result to
- * `sandboxDenyRead`'s (or `DenyPlan.ownerTokenFile`'s) output for every channel, unconditionally
- * — even when nothing else is restricted, because the token file exists the moment the server
- * boots, independent of whether the vault has any `visibility:` settings.
+ * WIRING, as it now stands. `visibility.ts`'s {@link buildSandboxDenyPaths} is the single
+ * composition point, and all three agent spawns resolve their read-deny list from it:
+ * `chat.ts`'s `buildChatSandboxOption`, `daemon/src/daemon/session.ts`'s `buildQueryOptions` (via
+ * that workspace's ported mirror — the daemon cannot import `@bismuth/core`; a parity test in
+ * `core/test/ownerToken.test.ts` pins the two path computations together), and
+ * `agentBackends/sandboxWrapper.ts` for the non-Claude backends. No agent spawn composes a
+ * deny-read list any other way.
+ *
+ * It rides the `entries.length > 0` gate, NOT unconditionally, because there is nowhere else for
+ * it to ride: an unrestricted vault is spawned with no sandbox option at all, so a token path
+ * emitted for it would be discarded, and an unrestricted vault has nothing for the token to
+ * expose that a tokenless caller cannot already read.
+ *
+ * `managedSettings.permissions.deny` (buildManagedSettingsDeny) deliberately does NOT carry the
+ * token. That layer constrains the Read/Edit/Grep/Glob tool CALLING CONVENTION and is blind to a
+ * Bash `cat`; the OS sandbox is what actually stops the read, and it is enabled with
+ * `failIfUnavailable: true` (sandboxFailIfUnavailable) whenever the token deny applies, so there
+ * is no configuration in which the token is denied by one layer only.
  */
 export function ownerTokenDenyPath(vault: string): string {
   return runRecordPath(vault);
+}
+
+/**
+ * Every absolute spelling of {@link ownerTokenDenyPath} — the form a deny list takes, mirroring
+ * `DenyEntry.aliases`/`absForms` in visibility.ts.
+ *
+ * A deny path that names a file through a symlink is a SILENT NO-OP. Seatbelt resolves symlinks
+ * before matching, so `(deny file-read* (subpath "/var/folders/…/rec.json"))` does not stop
+ * `cat /var/folders/…/rec.json` when `/var` is a symlink to `/private/var`; only the canonical
+ * spelling of the same path denies it. This is the same
+ * hazard `walkDenyEntries` already canonicalizes the vault root against, and it reaches the run
+ * record through both supported spellings of its directory: `BISMUTH_RUN_DIR`, and a `homedir()`
+ * that is itself behind a link. Both forms are emitted rather than the canonical one alone, so a
+ * caller comparing strings (rather than opening files) still recognizes the path it was given.
+ */
+export function ownerTokenDenyPaths(vault: string): string[] {
+  const raw = ownerTokenDenyPath(vault);
+  const canonical = canonicalizeRecordPath(raw);
+  return canonical === raw ? [raw] : [raw, canonical];
+}
+
+/** `raw` with symlinks resolved, or `raw` unchanged when it cannot be resolved. Falls back to
+ *  resolving the DIRECTORY when the record file itself is absent (a core that has not booted yet,
+ *  or one that already exited): the directory is what carries the `/var` → `/private/var` class of
+ *  link, so its canonical form plus the untouched basename is the same answer. */
+function canonicalizeRecordPath(raw: string): string {
+  try {
+    return realpathSync(raw);
+  } catch {
+    try {
+      return join(realpathSync(dirname(raw)), basename(raw));
+    } catch {
+      return raw;
+    }
+  }
 }
