@@ -38,17 +38,34 @@
 // rather than in a working document because a deleted file's capabilities are exactly what a
 // codebase forgets:
 //
-//  1. ~~THE ANIMATED 2D<->3D MORPH~~ — RESTORED, Task 22. Canvas's version (`morph` 0..1,
-//     `easeInOutCubic`, `MODE_MORPH_MS` 500, a per-node p3->p2 lerp with an orbit unwind) is now
-//     `modeMorph.ts`, wired into `AsciiGraphRenderer.setConfig`/`tick`/`projectNodes`. A `viewMode`
-//     flip eases across MODE_MORPH_MS instead of cutting — the finished transition still lands
-//     exactly where the old hard reset did (same rx/ry/pan/res/target, see setConfig), so the end
-//     state this list originally described is unchanged; only the path to it is no longer a single
-//     frame. One deliberate, documented divergence from the source: `modeMorph.ts`'s orbit unwind is
-//     a closed-form lerp, not Canvas's per-frame `rx *= 1 - e` recurrence — that recurrence is not a
-//     pure function of elapsed time (it depends on the actual sequence of frame timestamps a session
-//     rendered at), so a "no timers" pure model implements the curve it approximates instead of a
-//     shape it cannot literally replicate. See modeMorph.ts's header and `unwindOrbit`'s doc comment.
+//  1. ~~THE ANIMATED 2D<->3D MORPH~~ — RESTORED, Task 22 (round 2, after a review round caught two
+//     defects in round 1 — see below). Canvas's version (`morph` 0..1, `easeInOutCubic`,
+//     `MODE_MORPH_MS` 500, a per-node p3->p2 lerp with an orbit unwind) is now `modeMorph.ts`, wired
+//     through `AsciiGraphRenderer.setConfig`/`tick`/`cameraFrame`/`projectNodes`/`projectEntities`.
+//     A `viewMode` flip eases across MODE_MORPH_MS instead of cutting — the finished transition
+//     still lands exactly where the old hard reset did (same rx/ry/pan/res/target, see setConfig),
+//     so the end state this list originally described is unchanged; only the path to it is no
+//     longer a single frame. Two things this restoration got wrong on its first pass, both fixed
+//     with the SAME architectural change (capturing every blended quantity's `from` LIVE rather
+//     than from one fixed reference — see `modeMorph.ts`'s header and `lerp`'s doc comment):
+//       - LOD masses (the far band's aggregate entities, `showLodMasses: true` — the app's shipped
+//         default outside "local" mode) didn't move at all: `glyphAlpha` is pinned at 0 for the
+//         ENTIRE 500ms of an entering-2D transition (`res` resets to 1 on every flip, so
+//         `resolutionT` is 0 the whole time and the far band owns t=0 outright), so
+//         `projectNodes()`'s glyph-level blend never ran, and `projectEntities()` read
+//         `this.pxPerWorld`/`this.res`/`ev.wx`/`ev.wy` directly with no blend of its own. The user
+//         saw the 3D field cut straight to the static final mass layout. Fixed by giving each
+//         entity a `p3` centroid (`EntityView.p3`) and sharing ONE `cameraFrame()` between
+//         `projectNodes()` and `projectEntities()`, so whichever pass is actually drawing (masses,
+//         glyphs, or both) reads the same moving camera.
+//       - A SECOND `viewMode` flip arriving before the first transition finished always restarted
+//         `flatten`'s sweep from a hardcoded far endpoint, and separately captured the orbit to
+//         unwind FROM by reading `this.rx`/`this.ry` after they had already been snapped to the
+//         resting default — never the orbit actually on screen. Both produced a visible jump AWAY
+//         from the new destination. Fixed by keeping `this.morphFlatten`/`this.rx`/`this.ry` LIVE
+//         for the full duration of any in-flight transition (tick() writes the interpolated value
+//         back every frame) and having a new flip capture wherever they currently are as its own
+//         `from` — correct whether that flip is fresh or an interruption.
 //
 //  2. DEPTH-ORDERED CELL ARBITRATION IN 3D. Canvas drew nodes far->near into a `drawOrder` array, so
 //     a near node always painted over a far one and `BACK_INTERACT_CUTOFF` (0.18) additionally

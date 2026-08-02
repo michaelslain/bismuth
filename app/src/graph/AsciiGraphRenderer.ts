@@ -66,7 +66,7 @@ import {
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
 import { buildBloom, pushCloud, type BloomPoint, type DensityField } from "./densityField";
 import { dollyForT, zoomT } from "./cameraModel";
-import { blendPosition, MODE_MORPH_MS, morphProgress, unwindOrbit } from "./modeMorph";
+import { blendPosition, lerp, MODE_MORPH_MS, morphProgress } from "./modeMorph";
 import {
   scaleToSpacing, createSpacingCache, cloneVec3Array, type SpacingCache, type Vec3 as RespaceVec3,
 } from "./respace";
@@ -398,6 +398,12 @@ interface EntityView {
   community: number;
   count: number;
   wx: number; wy: number; // members' 2D world centroid (same space as NodeView.p2)
+  // Members' 3D world centroid (same space as NodeView.p3), added for the 2D<->3D mode morph —
+  // `projectEntities()` blends this toward `[wx, wy, 0]` by the frame's flatten fraction, the same
+  // way `projectNodes()` blends a node's `p3` toward its `p2` (see modeMorph.ts's `blendPosition`).
+  // Computed once per structural build (`centroid3` over the entity's own `memberIds`), never per
+  // frame — LOD entities don't move between builds any more than a node's own p3/p2 do.
+  p3: Vec3;
   sdx: number; sdy: number; // members' per-axis world spread about it (lod.ts LodCluster.sdx/sdy) —
                           // how big the summarized thing IS, which the bloom needs and the compact
                           // mass GLYPH's own rowR/colR deliberately are not. See emitBloom().
@@ -707,19 +713,37 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   // 2D<->3D MODE MORPH (modeMorph.ts) — what a `viewMode` flip now runs instead of the hard camera
   // cut setConfig used to apply (see graphRenderer.ts's EPITAPH item 1). `null` when settled — no
-  // flip in flight. `rx0`/`ry0` are the 3D orbit to unwind FROM when entering 2D, captured in
-  // setConfig BEFORE this.rx/this.ry are reset to their resting values (see projectNodes()'s rx3d/
-  // ry3d comment for why entering 3D needs no captured value of its own). `startT` is null until
-  // the first tick() after the flip supplies a real rAF timestamp to measure elapsed time from —
-  // setConfig can run between frames, so "now" at flip time isn't necessarily a timestamp this
-  // renderer's clock (driven entirely by rAF, see `lastFrameT`) has any way to produce.
-  private modeMorph: { rx0: number; ry0: number; startT: number | null } | null = null;
-  // Has setConfig() ever been called before — see setConfig()'s `firstConfig` comment for why the
-  // very first call must never queue a transition (there is no prior rendered view to morph FROM).
+  // flip in flight.
+  //
+  // FROM/TO, not a fixed reference + a flatten-shaped decay (round 1's `unwindOrbit` design) —
+  // round-1 review caught that design jumping when a transition is INTERRUPTED (a second flip
+  // before the first finishes): `flatten` always restarted its sweep from a hardcoded far endpoint
+  // regardless of where the field currently was, and the captured orbit reference (`this.rx` at
+  // flip time) was read AFTER setConfig had already snapped it to the resting value, so it was
+  // never the orbit actually on screen. Both are fixed by capturing the LIVE state — wherever
+  // `this.morphFlatten`/`this.rx`/`this.ry` actually are the instant a NEW transition starts,
+  // whether that is a fresh flip or an interruption — as `from`, and lerping toward a fixed `to`
+  // (the resting state for the ARRIVAL mode) over `startT..startT+MODE_MORPH_MS`. This is only
+  // correct because `this.rx`/`this.ry` are now kept LIVE for the ENTIRE transition (tick() writes
+  // the interpolated value back every frame — see tick()'s own comment) rather than being written
+  // once at flip time and left stale.
+  //
+  // `startT` is null until the first tick() after the flip supplies a real rAF timestamp to
+  // measure elapsed time from — setConfig can run between frames, so "now" at flip time isn't
+  // necessarily a timestamp this renderer's clock (driven entirely by rAF, see `lastFrameT`) has
+  // any way to produce.
+  private modeMorph: {
+    fromFlatten: number; toFlatten: number;
+    fromRx: number; fromRy: number; toRx: number; toRy: number;
+    startT: number | null;
+  } | null = null;
+  // Has setConfig() ever been called before, AND populated at least one node — see setConfig()'s
+  // `noViewYet` comment for why either condition alone means "there is no prior rendered view to
+  // morph FROM", so a flip under either one settles instantly instead of queueing a transition.
   private hasConfigured = false;
-  // This frame's mode-morph flatten fraction (0 = full 3D, 1 = full flat 2D) — written once per
-  // tick(), read by projectNodes(). At rest (this.modeMorph null) tick() sets this to exactly
-  // `is2d ? 1 : 0`, so projectNodes()'s blended quantities collapse to today's plain is2d branch.
+  // This frame's mode-morph flatten fraction (0 = full 3D, 1 = full flat 2D) — maintained by
+  // tick() while a transition is in flight, and settled instantly (in setConfig) whenever there is
+  // no prior view to animate from. Read by every projection pass via cameraFrame().
   private morphFlatten = 0;
 
   // interaction
@@ -1058,7 +1082,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const { rowR, colR } = massRadii(c.count, this.cellW, this.cellH);
       const ev: EntityView = {
         flat: this.entityFlat.length, level: L, community: c.community, count: c.count,
-        wx: c.wx, wy: c.wy, sdx: c.sdx, sdy: c.sdy,
+        wx: c.wx, wy: c.wy,
+        // The 3D-side reference `projectEntities()` blends FROM as the field enters 2D — see
+        // `EntityView.p3`'s own doc comment. `centroid3` already exists for exactly this shape of
+        // computation (`getCommunityCentroids()` below uses it the same way, over a different
+        // grouping); reusing it here is one function, not a second implementation of "average some
+        // p3s" to keep in sync.
+        p3: centroid3(c.memberIds.map((id) => this.byId.get(id)!.p3)),
+        sdx: c.sdx, sdy: c.sdy,
         color: C_FAINT, // placeholder — restyle() (called at the end of build()) assigns the real
                          // per-level community colour via rebuildEntityColors() before any paint runs
         name: this.communityNamesByLevel[L]?.get(c.community) ?? `cluster ${c.community}`,
@@ -1100,18 +1131,27 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   setConfig(cfg: GraphConfig) {
     const prevMode = this.cfg.viewMode;
-    // Whether a REAL previous config already existed — as opposed to `prevMode` merely being the
-    // constructor's hardcoded default ("3d") that nothing has ever actually rendered under. Every
-    // caller (GraphView, EmbeddedGraph, VaultIntro, and this file's own `mountRenderer`) calls
-    // setConfig() once right after mount(), often with `viewMode: "2d"`, BEFORE render() has ever
-    // populated a single node — that call's `cfg.viewMode !== prevMode` is true, but there is no
-    // "old view" on screen for a morph to transition FROM. Gating the transition on this flag (not
-    // on `this.nodes.length` or similar) is what keeps that first call inert: without it, half the
-    // fixtures in this file — anything that mounts directly into 2D — would spend their first
-    // MODE_MORPH_MS animating in from a 3D layout nothing ever displayed, and every test that reads
-    // node screen position within a couple of frame()s of mounting would measure a still-morphing
-    // field instead of the settled one it asked for.
-    const firstConfig = !this.hasConfigured;
+    // Whether there is a REAL prior view on screen for a mode-morph transition to animate FROM.
+    // FALSE in two cases, both meaning "nothing has actually been rendered under `prevMode` yet":
+    //  - `!this.hasConfigured` — `prevMode` is merely the constructor's hardcoded default ("3d"),
+    //    never a mode this renderer has been configured with before. Every caller (GraphView,
+    //    EmbeddedGraph, VaultIntro, and this file's own `mountRenderer`) calls setConfig() once
+    //    right after mount(), often with `viewMode: "2d"`, BEFORE render() has ever populated a
+    //    single node — that call's `cfg.viewMode !== prevMode` is true, but there is nothing on
+    //    screen to morph from.
+    //  - `this.nodes.length === 0` — hasConfigured can be true with an empty graph (a render() that
+    //    cleared everything, or a config change that races ahead of the first render()); same
+    //    conclusion, a different cause, which is why this is a SEPARATE check from hasConfigured
+    //    rather than folded into "was this the first call" — the two conditions happen to coincide
+    //    for today's callers, but they are different invariants, and only checking hasConfigured
+    //    would silently start an animate-from-nothing transition the day some caller's render()
+    //    order changes.
+    // Gating on either is what keeps setConfig's very first (or graph-less) call inert: without it,
+    // half the fixtures in this file — anything that mounts directly into 2D — would spend their
+    // first MODE_MORPH_MS animating in from a 3D layout nothing ever displayed, and every test that
+    // reads node screen position within a couple of frame()s of mounting would measure a
+    // still-morphing field instead of the settled one it asked for.
+    const noViewYet = !this.hasConfigured || this.nodes.length === 0;
     this.hasConfigured = true;
     this.cfg = cfg;
     this.applyGround();
@@ -1127,15 +1167,33 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // 2D and 3D fit different layouts (radius2 vs radius3), so a dimension flip re-fits — and
     // returns the field to 0% so the flipped view opens on the whole graph, not a stale crop.
     if (cfg.viewMode !== prevMode) {
-      // Start the 2D<->3D mode morph (modeMorph.ts) — but only on a GENUINE flip (see
-      // `firstConfig` above). Capture the orbit the field is CURRENTLY drawn at before it's
-      // overwritten by the reset below — entering 2D, that pre-flip angle is exactly what
-      // projectNodes() unwinds FROM (this.rx/this.ry themselves are about to become the fresh
-      // resting value, so this is the only place the pre-flip angle survives). tick() eases the
-      // camera/positions from here into the reset state below over MODE_MORPH_MS, instead of the
-      // flip cutting straight to it — the end state is unchanged either way.
-      if (!firstConfig) this.modeMorph = { rx0: this.rx, ry0: this.ry, startT: null };
-      this.rx = -0.5; this.ry = 0;
+      // Start the 2D<->3D mode morph (modeMorph.ts) — but only on a GENUINE flip with something
+      // already on screen (see `noViewYet` above). `fromFlatten`/`fromRx`/`fromRy` are captured
+      // LIVE: `this.morphFlatten`/`this.rx`/`this.ry` are kept current for the ENTIRE duration of
+      // any in-flight transition (tick() writes the interpolated value back every frame — see
+      // tick()'s own comment), so reading them here is correct whether this flip is starting a
+      // fresh transition or INTERRUPTING one already in flight — round-1 review found the previous
+      // design reading a value already reset to the resting default in the interrupted case, which
+      // produced a visible jump. `this.rx`/`this.ry` are deliberately NOT reset here any more (the
+      // old hard-reset this comment used to describe): resetting them synchronously would both
+      // erase the live value just captured into `fromRx`/`fromRy` AND cut straight to the arrival
+      // orbit instead of easing to it. tick() carries every one of `morphFlatten`/`rx`/`ry` to
+      // their target over MODE_MORPH_MS; the end state is unchanged either way.
+      if (noViewYet) {
+        // Nothing to animate from — settle instantly, matching what today's callers actually see:
+        // a fresh 2D mount opens flat, a fresh 3D mount opens at the resting orbit.
+        this.morphFlatten = cfg.viewMode === "2d" ? 1 : 0;
+        this.rx = cfg.viewMode === "2d" ? 0 : -0.5;
+        this.ry = 0;
+        this.modeMorph = null;
+      } else {
+        this.modeMorph = {
+          fromFlatten: this.morphFlatten, toFlatten: cfg.viewMode === "2d" ? 1 : 0,
+          fromRx: this.rx, fromRy: this.ry,
+          toRx: cfg.viewMode === "2d" ? 0 : -0.5, toRy: 0,
+          startT: null,
+        };
+      }
       this.panX = 0; this.panY = 0;
       this.zoomPct = 100;
       this.res = 1; this.goalRes = 1;
@@ -1443,7 +1501,18 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.res = 1; this.goalRes = 1;
       this.target = [0, 0, 0]; this.goalTarget = [0, 0, 0];
       this.panX = 0; this.panY = 0; this.userTook = false;
-      this.rx = -0.5; this.ry = 0;
+      // Mode-dependent, not a bare `-0.5` — a resetCamera fit is "snap to the whole-graph
+      // overview" (a genuinely new/very different graph — see render()'s shouldResetView), not a
+      // viewMode flip, so it settles the SAME way setConfig's `noViewYet` branch does rather than
+      // leaving a stale in-flight transition or an orbit left over from the other mode. Before the
+      // 2D<->3D mode morph this always wrote `-0.5` unconditionally, which was silently WRONG for
+      // 2D and only ever harmless because `projectNodes()` used to force `rx = is2d ? 0 :
+      // this.rx` regardless of what this field held — that force-override is gone now that `rx`/
+      // `ry` are read live (see `cameraFrame()`), so a 2D reset leaving `rx` at `-0.5` would
+      // otherwise rotate the "flat" field by a stale 3D tilt on every fresh 2D graph load.
+      this.modeMorph = null;
+      this.morphFlatten = is2d ? 1 : 0;
+      this.rx = is2d ? 0 : -0.5; this.ry = 0;
     } else {
       this.goalRes = resFromPercent(this.zoomPct, this.maxRes);
     }
@@ -1471,21 +1540,30 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.lastFrameT = t;
 
     const is2d = this.cfg.viewMode === "2d";
-    // 2D<->3D MODE MORPH (modeMorph.ts) — this frame's flatten fraction: 0 = full 3D, 1 = full
-    // flat 2D. At rest (no flip in flight) it's exactly `is2d ? 1 : 0`, matching projectNodes()'s
-    // original hard branch term for term (see that function's comment). `startT` is captured off
-    // THIS tick's own rAF timestamp, so elapsed time is measured from the first frame actually
-    // rendered after the flip, never from setConfig's call time.
-    let flatten = is2d ? 1 : 0;
+    // 2D<->3D MODE MORPH (modeMorph.ts) — advance the in-flight transition, if any, and write the
+    // interpolated flatten fraction/orbit back to LIVE state (`this.morphFlatten`/`this.rx`/
+    // `this.ry`) every frame, not just a transient local computed inside a projection pass. That
+    // "written back" property is exactly what round-1 review's interruption fix needs: a SECOND
+    // flip arriving mid-transition (setConfig) reads `this.morphFlatten`/`this.rx`/`this.ry` as its
+    // new `from*`, and that read is only correct because THIS block kept them current for every
+    // frame of the transition it might be interrupting, not merely at its start.
+    //
+    // `startT` is captured off THIS tick's own rAF timestamp, so elapsed time is measured from the
+    // first frame actually rendered after the flip, never from setConfig's call time. At rest (no
+    // `modeMorph` in flight) nothing here runs — `morphFlatten`/`rx`/`ry` already hold whatever
+    // setConfig's `noViewYet` settle or the previous transition's own completion last left them at,
+    // and (in 3D) a drag updates `rx`/`ry` directly elsewhere, same as before this task.
     if (this.modeMorph) {
       if (this.modeMorph.startT === null) this.modeMorph.startT = t;
       const elapsed = t - this.modeMorph.startT;
       const progress = morphProgress(elapsed, MODE_MORPH_MS);
-      flatten = is2d ? progress : 1 - progress;
+      const mm = this.modeMorph;
+      this.morphFlatten = lerp(mm.fromFlatten, mm.toFlatten, progress);
+      this.rx = lerp(mm.fromRx, mm.toRx, progress);
+      this.ry = lerp(mm.fromRy, mm.toRy, progress);
       this.dirty = true;
       if (elapsed >= MODE_MORPH_MS) this.modeMorph = null;
     }
-    this.morphFlatten = flatten;
     if (!is2d && this.cfg.spin && this.nodes.length <= 350 && !this.userTook && !this.dragging) {
       this.ry += this.cfg.spinSpeed ?? 0.0015; this.dirty = true;
     }
@@ -1818,7 +1896,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // member edges it classifies below are held at ~0 by `memberEdgeAlpha` in strokeEdges() — the
     // backbone tells the between-group story there instead.
     if (glyphA > LOD_ALPHA_EPS) {
-      this.projectNodes(is2d);
+      this.projectNodes();
 
       // ---- THE LOCALITY GATE, part 1: which clusters am I actually looking at? ------------------
       // Scoped to `lodOn`, i.e. to the band ladder itself, and that scope is the whole justification
@@ -2074,21 +2152,51 @@ export class AsciiGraphRenderer implements GraphRenderer {
     return COMM_BLEND_BASE + idx;
   }
 
-  /** Project one level's entities (2D only — the flat pipeline with rx = ry = 0, i.e. two
-   *  multiplies per entity). O(clusters), allocation-free: scratch lives on the prebuilt views. */
+  /**
+   * Project one level's entities — LOD masses only ever draw when `is2d` (`lodOn`'s own gate), so
+   * this was "2D only, rx=ry=0, two multiplies per entity" before the 2D<->3D mode morph. It still
+   * only ever RUNS when `is2d`, but it now shares `cameraFrame()` with `projectNodes()` and blends
+   * each entity's position from its `p3` centroid toward `[wx, wy, 0]` by the frame's flatten
+   * fraction, exactly like a node's `p3`->`p2` blend.
+   *
+   * THIS IS THE FIX for round-1 review's Critical 1: the far band's masses are the ONLY thing
+   * drawn for the entire 500ms of an entering-2D transition in the app's default configuration
+   * (`showLodMasses: true`) — `res` resets to 1 on every flip, so `resolutionT` is 0 the whole
+   * time, and `bandsForT(0, …)` gives `massAlpha = 1` (glyphs are gated OFF at `glyphAlpha <=
+   * LOD_ALPHA_EPS`, see rasterize()). Before this fix, this function read `this.pxPerWorld` /
+   * `this.res` / `ev.wx`/`wy` directly — all of them either mode-current-only or flat 2D
+   * world-space, none of them touched by the morph — so the masses sat at their final 2D position
+   * from the very first frame and the visible field never changed until the transition's internal
+   * state quietly finished underneath a frozen picture. Sharing `cameraFrame()` (rotation, dolly,
+   * blended scale) and blending `p3`->`[wx,wy,0]` the same way glyphs do makes the masses the field
+   * ACTUALLY shows move continuously too, entering AND leaving 2D.
+   *
+   * O(clusters), allocation-free: scratch lives on the prebuilt views (`blendPosition` allocates a
+   * 3-tuple per entity per frame, same as `projectNodes()` already does per node — not new cost of
+   * a different order, this pass was already O(clusters) per frame).
+   */
   private projectEntities(level: number) {
     const m = this.m;
-    const s = this.pxPerWorld * this.res;
-    const tx = this.target[0], ty = this.target[1];
-    // The QUANTIZED pan (see rasterize()/asciiGrid.ts quantizePan) — same world→cell phase the node
-    // projection below uses, so entity masses never wiggle relative to the notes they summarize.
-    const ox = this.originX(this.panXQ);
-    const oy = this.originY(this.panYQ);
+    const P = this.P;
+    const { flatten, s, dolly, cyr, syr, cxr, sxr, tx, ty, tz, ox, oy } = this.cameraFrame();
     const capRow = Math.max(1, (m.rows / 7) | 0);
     const capCol = Math.max(2, (m.cols / 7) | 0);
     for (const ev of this.entityLevels[level]) {
-      ev.sx = ox + (ev.wx - tx) * s;
-      ev.sy = oy + (ev.wy - ty) * s;
+      const p = blendPosition(ev.p3, [ev.wx, ev.wy, 0], flatten);
+      const x = (p[0] - tx) * s, y = (p[1] - ty) * s, z = (p[2] - tz) * s;
+      const x1 = x * cyr + z * syr, z1 = -x * syr + z * cyr;
+      const y2 = y * cxr - z1 * sxr, z2 = y * sxr + z1 * cxr;
+      const zc = z2 + dolly;
+      const persp = P / Math.max(1, P - zc);
+      ev.sx = ox + x1 * persp;
+      ev.sy = oy + y2 * persp;
+      // At rest (flatten exactly 0 or 1, no transition in flight) `persp` is exactly 1 and `zc` is
+      // exactly 0 — see this method's own reasoning for why `nearPlane`/`MIN_PERSP` need no gate
+      // here the way `projectNodes()`'s `projValid` does: an entity only ever projects while
+      // `is2d`, and 2D's own dolly/rotation are always 0 at rest, so there is no near-plane to
+      // approach outside an in-flight transition, and a transition's dolly is itself 0 for the
+      // reason in this method's own doc comment (`res` pinned to 1 by the flip). Left unguarded
+      // rather than adding a check nothing on the default path can trip.
       ev.col = Math.round((ev.sx - m.padX) / m.cellW);
       ev.row = Math.round((ev.sy - m.padY) / m.cellH);
       ev.drawnRowR = Math.min(ev.rowR, capRow);
@@ -2316,42 +2424,48 @@ export class AsciiGraphRenderer implements GraphRenderer {
     return Math.max(0, Math.min(ceiling, wanted));
   }
 
-  /** The copied camera math (CanvasGraphRenderer.project/projectPositions), evaluated inline with
-   *  the per-frame constants hoisted. 2D is the same pipeline with rx = ry = 0 over the flat
-   *  layout, so perspective resolves to 1. No allocation. */
-  private projectNodes(is2d: boolean) {
-    const m = this.m;
+  /**
+   * This frame's BLENDED camera — flatten (0=full 3D, 1=full flat 2D, `this.morphFlatten`), the
+   * derived rotation/perspective terms, the blended world scale, and the blended dolly. Computed
+   * ONCE per frame and shared by EVERY projection pass (`projectNodes()` for individual glyphs,
+   * `projectEntities()` for LOD masses) — not an optimisation, a correctness requirement: round-1
+   * review found that `projectEntities()` was reading `this.pxPerWorld`/`this.res` directly with
+   * no blend at all, so the LOD masses (the ONLY thing actually drawn for the entire 500ms of an
+   * entering-2D transition in the app's default configuration — `glyphAlpha` is pinned at 0 the
+   * whole time, since `res` resets to 1 on every flip and the far band owns t=0 outright; see
+   * rasterize()'s `lodOn`/`mix` gate) never moved, so the flip still read as a cut even though this
+   * task's glyph-level morph was correct. Both passes must read the SAME blended camera on a frame
+   * where one of them doesn't even run, so this cannot live inside `projectNodes()` alone.
+   *
+   * `rx`/`ry` are read straight off `this.rx`/`this.ry` — no separate capture or unwind needed here
+   * any more, because tick() now keeps them LIVE for the full duration of any transition (round-1
+   * fix; see tick()'s own comment and `modeMorph`'s field doc for the interruption bug this
+   * replaces). At rest (`this.modeMorph` null) `flatten` is exactly `is2d ? 1 : 0` (set either by
+   * setConfig's `noViewYet` settle or by a just-completed transition's exact final lerp), which
+   * collapses every blended quantity below to the ORIGINAL hard is2d branch, term for term.
+   *
+   * `cameraDolly(false)` is deliberately the "as if fully 3D" value regardless of the current mode:
+   * a flat view's own dolly is always 0, so blending TOWARD it by `flatten` needs no separate
+   * branch. Likewise the world scale blends the 2D box-fit (density, via `res`) and the 3D
+   * radius-fit — neither number is a glyph size, so blending it mid-transition does not touch THE
+   * LAW (font size never changes with zoom). BOTH fits are recomputed via `fitPxPerWorldFor` rather
+   * than read off `this.pxPerWorld` — that field only ever tracks the CURRENT mode's fit (fit()'s
+   * own doc comment), which by the time any frame renders is ALREADY the arrival mode's value
+   * (setConfig calls fit() synchronously on the flip), so reading it for the DEPARTING dimension
+   * here would silently substitute the wrong fit for the entire transition, not just its first
+   * frame.
+   */
+  private cameraFrame(): {
+    flatten: number; s: number; dolly: number;
+    cyr: number; syr: number; cxr: number; sxr: number;
+    camDist: number; nearPlane: number; tx: number; ty: number; tz: number; ox: number; oy: number;
+  } {
     const P = this.P;
-    // 2D<->3D MODE MORPH (modeMorph.ts) — `flatten` is this frame's 0..1 blend, 0 = full 3D camera
-    // + layout, 1 = full flat 2D, written once per frame by tick(). At rest (no viewMode flip in
-    // flight) `flatten` is exactly `is2d ? 1 : 0`, which collapses every blended quantity below to
-    // the ORIGINAL hard is2d branch, term for term — a settled frame computes bit-identical numbers
-    // to before this task, it just takes one extra multiply-by-0-or-1 to get there.
     const flatten = this.morphFlatten;
-    // The 3D orbit to unwind AWAY FROM as `flatten` runs 0->1 (unwindOrbit's rx0/ry0 — see its own
-    // doc comment for the endpoint guarantees). Entering 2D, this.rx/this.ry have ALREADY been
-    // reset to their resting values by setConfig (the flip itself is synchronous) — the pre-flip
-    // orbit survives only in the captured this.modeMorph.rx0/ry0. Entering 3D, or at rest in either
-    // mode, this.rx/this.ry already hold the correct 3D-side value (the fresh resting orbit, or
-    // whatever the user has since dragged to), so there is nothing separate to capture.
-    const rx3d = this.modeMorph && is2d ? this.modeMorph.rx0 : this.rx;
-    const ry3d = this.modeMorph && is2d ? this.modeMorph.ry0 : this.ry;
-    const { rx, ry } = unwindOrbit(rx3d, ry3d, flatten);
-    // The camera. In 3D the magnification lives in the DOLLY, so the world sits at its fit scale and
-    // `res` does not multiply into `z2` a second time (cameraDolly() has the derivation). In 2D there
-    // is no camera to move, so `res` scales the world exactly as it always has. `cameraDolly(false)`
-    // is deliberately the "as if fully 3D" value regardless of `is2d`: a flat view's own dolly is
-    // always 0, so blending TOWARD it by `flatten` needs no separate branch. Likewise the world
-    // scale blends the 2D box-fit (density, via `res`) and the 3D radius-fit — neither number is a
-    // glyph size, so blending it mid-transition does not touch THE LAW (font size never changes
-    // with zoom). BOTH fits are recomputed via `fitPxPerWorldFor` rather than read off
-    // `this.pxPerWorld` — that field only ever tracks the CURRENT mode's fit (fit()'s own doc
-    // comment), which by the time any frame renders is ALREADY the arrival mode's value (setConfig
-    // calls fit() synchronously on the flip), so reading it for the DEPARTING dimension here would
-    // silently substitute the wrong fit for the entire transition, not just its first frame.
+    const rx = this.rx, ry = this.ry;
     const dolly = this.cameraDolly(false) * (1 - flatten);
     const s2d = this.fitPxPerWorldFor(true) * this.res, s3d = this.fitPxPerWorldFor(false);
-    const s = s3d + (s2d - s3d) * flatten;
+    const s = lerp(s3d, s2d, flatten);
     // Distance from the camera to the TARGET plane. The NEAR plane below is a fixed fraction of
     // THIS, not of the focal length `P`: `persp` is uniformly `P/camDist`× larger once the camera has
     // dollied in, so a threshold pinned to `P` would tighten by that same factor and start culling
@@ -2387,13 +2501,23 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // cannot re-phase the world→cell rounding mid-interaction and needs no quantization.
     const ox = this.originX(this.panXQ);
     const oy = this.originY(this.panYQ);
+    return { flatten, s, dolly, cyr, syr, cxr, sxr, camDist, nearPlane, tx, ty, tz, ox, oy };
+  }
+
+  /** The copied camera math (CanvasGraphRenderer.project/projectPositions), evaluated inline with
+   *  the per-frame constants hoisted. 2D is the same pipeline with rx = ry = 0 over the flat
+   *  layout, so perspective resolves to 1. No allocation. */
+  private projectNodes() {
+    const m = this.m;
+    const P = this.P;
+    const { flatten, s, dolly, cyr, syr, cxr, sxr, nearPlane, tx, ty, tz, ox, oy } = this.cameraFrame();
     let minZ = Infinity, maxZ = -Infinity;
     for (const nv of this.nodes) {
       const p = blendPosition(nv.p3, nv.p2, flatten);
       const x = (p[0] - tx) * s, y = (p[1] - ty) * s, z = (p[2] - tz) * s;
       const x1 = x * cyr + z * syr, z1 = -x * syr + z * cyr;
       const y2 = y * cxr - z1 * sxr, z2 = y * sxr + z1 * cxr;
-      const zc = z2 + dolly;                           // the derived camera approach — see cameraDolly()
+      const zc = z2 + dolly;                           // the derived camera approach — see cameraDolly()/cameraFrame()'s camDist
       const persp = P / Math.max(1, P - zc);
       nv.sx = ox + x1 * persp;
       nv.sy = oy + y2 * persp;

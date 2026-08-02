@@ -6,7 +6,7 @@
 // mix-fraction) in, value out.
 import { describe, expect, it } from "bun:test";
 import {
-  blendPosition, easeInOutCubic, MODE_MORPH_MS, morphProgress, unwindOrbit,
+  blendPosition, easeInOutCubic, lerp, MODE_MORPH_MS, morphProgress,
 } from "./modeMorph";
 import type { Vec3 } from "./graphRenderer";
 
@@ -130,37 +130,43 @@ describe("blendPosition — the per-node 3D<->2D position blend", () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// unwindOrbit
+// lerp — the general FROM/TO interpolation that replaced `unwindOrbit` (round-1 fix: interrupting
+// a transition needs an arbitrary LIVE `from`, not one fixed reference orbit — see modeMorph.ts's
+// header for the history).
 // ---------------------------------------------------------------------------------------------
 
-describe("unwindOrbit — the camera orbit's flatten-fraction blend", () => {
-  it("at flatten <= 0 returns the full 3D orbit EXACTLY", () => {
-    for (const flatten of [0, -1, -0.2]) {
-      expect(unwindOrbit(-0.5, 0.37, flatten)).toEqual({ rx: -0.5, ry: 0.37 });
+describe("lerp — linear interpolation, exact at both ends", () => {
+  it("at progress <= 0 returns `from` EXACTLY, for any `to`", () => {
+    for (const progress of [0, -1, -0.2]) {
+      expect(lerp(-0.5, 0.37, progress)).toBe(-0.5);
+      expect(lerp(1.2, -0.8, progress)).toBe(1.2);
     }
   });
 
-  it("at flatten >= 1 is level EXACTLY — {rx: 0, ry: 0} — for any starting orbit", () => {
-    const starts: [number, number][] = [[-0.5, 0], [1.2, -0.8], [0, 0]];
-    for (const [rx0, ry0] of starts) {
-      for (const flatten of [1, 1.4, 3]) {
-        expect(unwindOrbit(rx0, ry0, flatten)).toEqual({ rx: 0, ry: 0 });
+  it("at progress >= 1 returns `to` EXACTLY, for any `from`", () => {
+    const pairs: [number, number][] = [[-0.5, 0], [1.2, -0.8], [0, 0], [1e20, 1]];
+    for (const [from, to] of pairs) {
+      for (const progress of [1, 1.4, 3]) {
+        expect(lerp(from, to, progress)).toBe(to);
       }
     }
   });
 
-  it("decays monotonically in magnitude as flatten runs 0 -> 1", () => {
-    const rx0 = -0.5, ry0 = 0.8;
-    let prevRx = Math.abs(rx0), prevRy = Math.abs(ry0);
+  it("moves monotonically from `from` toward `to` as progress runs 0 -> 1", () => {
+    const from = -0.5, to = 0.3;
+    let prev = from;
     for (let i = 1; i <= 20; i++) {
-      const { rx, ry } = unwindOrbit(rx0, ry0, i / 20);
-      expect(Math.abs(rx)).toBeLessThanOrEqual(prevRx);
-      expect(Math.abs(ry)).toBeLessThanOrEqual(prevRy);
-      prevRx = Math.abs(rx); prevRy = Math.abs(ry);
+      const v = lerp(from, to, i / 20);
+      expect(v).toBeGreaterThanOrEqual(prev);
+      prev = v;
     }
   });
 
-  it("is a plain lerp-to-zero, not the source's per-frame compounding multiply — see modeMorph.ts's divergence note", () => {
-    expect(unwindOrbit(-0.5, 0.4, 0.5)).toEqual({ rx: -0.25, ry: 0.2 });
+  it("matches the plain arithmetic at an OFF-MIDPOINT sample — disambiguates direction, unlike a 0.5 sample alone", () => {
+    // At progress = 0.5, lerp(a, b, 0.5) and lerp(b, a, 0.5) coincide (both land on the
+    // midpoint), so a single midpoint assertion cannot tell a correctly-oriented lerp from one
+    // with `from`/`to` swapped. 0.25 does not have that symmetry.
+    expect(lerp(-0.5, 0.4, 0.25)).toBeCloseTo(-0.275, 10);
+    expect(lerp(0.4, -0.5, 0.25)).toBeCloseTo(0.175, 10);
   });
 });

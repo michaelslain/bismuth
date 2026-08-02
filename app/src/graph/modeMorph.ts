@@ -7,16 +7,26 @@
 // AsciiGraphRenderer's wiring is a thin adapter rather than where the logic lives.
 //
 // Ported from CanvasGraphRenderer.ts (readable at `git show 817bad5:app/src/graph/CanvasGraphRenderer.ts`)
-// — NOT verbatim. Two of the three pieces below (morphProgress, blendPosition) are direct,
-// behaviour-preserving extractions. The third (unwindOrbit) is a MEASURED DIVERGENCE, documented at
-// its own definition: the source's orbit-unwind was a per-frame recurrence (it multiplies the
-// CURRENT, already-decayed orbit angle by a freshly-recomputed factor every rendered frame), which
-// is not a pure function of elapsed time — replaying it exactly requires the actual sequence of
-// frame timestamps a session rendered at. A "no timers" pure model cannot reproduce that without
-// becoming stateful, so this file implements the closed form that recurrence approximates instead of
-// copying a shape it structurally cannot replicate. See unwindOrbit's doc comment for the measured
-// difference and why the two endpoints (all that the wiring's end-state contract requires) still
-// agree exactly.
+// — NOT verbatim. `morphProgress` and `blendPosition` are direct, behaviour-preserving extractions.
+//
+// `lerp` (below) replaced an earlier `unwindOrbit(rx0, ry0, flatten)` that computed the camera
+// orbit as a FIXED reference angle times a flatten-shaped decay factor — modelled on Canvas's own
+// per-frame `rx *= 1 - e` (CanvasGraphRenderer.ts:1167), which is a recurrence over the CURRENT,
+// already-decayed value, not a pure function of elapsed time (replaying it exactly needs the actual
+// sequence of frame timestamps a session rendered at, which a "no timers" pure model cannot
+// reproduce without smuggling frame history back in as hidden state — hence the closed form
+// instead of a literal port).
+//
+// Round-1 review found that fixed-reference design broke when a transition is INTERRUPTED (a
+// second `viewMode` flip before the first finishes): the flatten/orbit sweep always restarted from
+// a hardcoded far endpoint, producing a visible jump away from wherever the field actually was.
+// The fix is architectural, not a tweak to the old function: instead of "one fixed reference,
+// decayed by the current flatten", every blended camera quantity is now a plain FROM/TO lerp where
+// `from` is captured LIVE — wherever the quantity actually is the instant a transition (re)starts —
+// and `to` is the resting value for the arrival mode. `lerp` is that primitive, used identically for
+// the flatten fraction itself and for each orbit angle (see AsciiGraphRenderer.ts's `modeMorph`
+// field and `tick()` for where `from` is captured and how the interpolated value is written back to
+// live state every frame, which is what makes a LATER interruption's own `from` correct in turn).
 
 import type { Vec3 } from "./graphRenderer";
 
@@ -35,8 +45,8 @@ export function easeInOutCubic(t: number): number {
  * `durationMs`. Clamped BEFORE easing, not after: `elapsedMs <= 0` returns EXACTLY 0 and
  * `elapsedMs >= durationMs` returns EXACTLY 1 for any `durationMs > 0` — the two endpoints a caller
  * needs to decide "is this transition over yet" without a separate comparison, and the property
- * `blendPosition`/`unwindOrbit`'s own endpoint guarantees are built on. `durationMs <= 0` is a
- * degenerate instant transition: always 1 (there is no interval to be partway through).
+ * `blendPosition`/`lerp`'s own endpoint guarantees are built on. `durationMs <= 0` is a degenerate
+ * instant transition: always 1 (there is no interval to be partway through).
  *
  * Monotonic non-decreasing over any INCREASING sequence of `elapsedMs` for a fixed `durationMs` —
  * `easeInOutCubic` is monotonic on [0,1] and the pre-clamp is monotonic by construction, so the
@@ -61,9 +71,11 @@ export function morphProgress(elapsedMs: number, durationMs: number = MODE_MORPH
  * same value but is not guaranteed bit-identical once floating-point rounding is involved, and the
  * brief requires an ABSOLUTE assertion there, not a `toBeCloseTo`.
  *
- * Callers orient `flatten` for whichever direction the transition is running: entering 2D,
- * `flatten` IS the eased morph progress (`morphProgress`'s return); entering 3D, it's
- * `1 - morphProgress(...)` — see AsciiGraphRenderer.ts's call site.
+ * `flatten` is the CURRENT frame's flatten fraction (`AsciiGraphRenderer`'s `this.morphFlatten`) —
+ * safe to read directly regardless of whether the current transition is fresh or an interruption of
+ * an earlier one, because `p3`/`p2` are fixed per-node reference points, not per-transition captured
+ * state; only `flatten` itself needs interruption-safe bookkeeping (see `lerp`'s doc comment), and
+ * once it has that, this function needs none of its own.
  */
 export function blendPosition(p3: Vec3, p2: Vec3, flatten: number): Vec3 {
   if (flatten <= 0) return p3;
@@ -76,34 +88,22 @@ export function blendPosition(p3: Vec3, p2: Vec3, flatten: number): Vec3 {
 }
 
 /**
- * The camera orbit at flatten fraction `flatten` (same convention as `blendPosition`: 0 = the full
- * 3D orbit `(rx0, ry0)`, 1 = level). `unwindOrbit(rx0, ry0, 0)` returns `{rx: rx0, ry: ry0}`
- * EXACTLY and `unwindOrbit(rx0, ry0, 1)` returns `{rx: 0, ry: 0}` EXACTLY — the camera is level
- * precisely when the field is fully flat, matching the flat 2D projection's own hardcoded `rx = ry
- * = 0` (AsciiGraphRenderer.ts's `projectNodes`) at the instant the transition hands off to it.
+ * Linear interpolation from `from` to `to` at progress `progress`, exact at both ends by
+ * construction: `progress <= 0` returns `from` UNCHANGED and `progress >= 1` returns `to`
+ * UNCHANGED, rather than relying on `from + (to - from) * progress` to land on them — that
+ * expression is not guaranteed bit-identical to either endpoint in IEEE-754 (it can lose precision
+ * by subtraction-then-addition when `from`/`to` differ by many orders of magnitude), so the
+ * endpoints are special-cased instead of hoped for.
  *
- * MEASURED DIVERGENCE FROM THE SOURCE (module header has the full reasoning). Canvas's tick()
- * unwound the orbit with `this.rx *= 1 - e; this.ry *= 1 - e` (CanvasGraphRenderer.ts:1167),
- * evaluated once per RENDERED FRAME against the CURRENT, already-decayed `this.rx`, with `e`
- * recomputed fresh from absolute elapsed time every call. That is a per-frame RECURRENCE, not a
- * pure function of elapsed time: `rx(t)` depends on the actual sequence of frame timestamps a
- * session happened to render at (`rx` after N frames is `rx0 * product(1 - e(t_i))` over the
- * SPECIFIC `t_i` the session rendered, not a formula of `t` alone), so two sessions morphing over
- * the identical 500ms at different frame rates would unwind along measurably different curves. A
- * "no timers" pure module (this file's own contract) cannot reproduce a history-dependent
- * recurrence without smuggling the frame history back in as hidden state — so this implements the
- * closed form that recurrence approximates instead: a plain lerp from the starting orbit down to
- * level, using the SAME eased progress as the position blend. It shares both endpoints with the
- * source exactly (full orbit at the transition's start, level at its end, which is everything the
- * wiring's end-state contract requires) and is monotonic and framerate-independent in between,
- * where the source was neither.
+ * The general-purpose replacement for the old `unwindOrbit` (module header has the full history):
+ * where that function tied the camera orbit to ONE fixed reference angle and a flatten-derived
+ * decay, `lerp` takes an explicit `from`/`to` pair, so a caller can supply whatever the LIVE value
+ * actually is at the moment a transition starts — the fix for the interruption bug round-1 review
+ * found. Used identically for the flatten fraction itself and for each orbit angle; see
+ * AsciiGraphRenderer.ts's `tick()`.
  */
-export function unwindOrbit(rx0: number, ry0: number, flatten: number): { rx: number; ry: number } {
-  // The `flatten >= 1` branch returns the literal `0`, not `rx0 * 0` — `rx0` is negative for the
-  // renderer's own resting 3D orbit (-0.5), and `-0.5 * 0` is `-0`, which is a DIFFERENT value from
-  // `0` under `Object.is` (and so under `toEqual`) even though `-0 === 0`. "Level" should mean
-  // exactly `0`, not a sign-preserving almost-zero.
-  if (flatten >= 1) return { rx: 0, ry: 0 };
-  const carry = flatten <= 0 ? 1 : 1 - flatten;
-  return { rx: rx0 * carry, ry: ry0 * carry };
+export function lerp(from: number, to: number, progress: number): number {
+  if (progress <= 0) return from;
+  if (progress >= 1) return to;
+  return from + (to - from) * progress;
 }
