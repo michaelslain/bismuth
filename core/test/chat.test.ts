@@ -37,6 +37,7 @@ import {
 } from "../src/chat";
 import { whichClaude } from "../src/claudeWhich";
 import { sandboxFailIfUnavailable } from "../src/visibility";
+import { shouldRunLiveTests } from "./liveGate";
 
 // extractEditorContextPaths backs captureToMemory's visibility gate (skip capturing a session
 // that touched a chat-only/hidden file) — it parses the SAME preamble format app/src/
@@ -432,14 +433,16 @@ describe("buildChatSandboxOption (the value spawnChatQuery's sandbox option is b
 });
 
 // These are real round-trips: they spawn the user's `claude` binary (machine-login auth, no API
-// key) against a TEMP dir — NEVER the vault. Guarded to skip gracefully when claude isn't on PATH
-// or can't be reached, so the suite stays green in environments without it.
-const HAS_CLAUDE = whichClaude() !== null;
-const describeOrSkip = HAS_CLAUDE ? describe : describe.skip;
+// key) against a TEMP dir — NEVER the vault. Opt-in, not opt-out: `bun test` on a machine with
+// `claude` installed must not touch the user's Anthropic account. Set BISMUTH_LIVE_TESTS=1 to run
+// these deliberately. Gate logic lives in shouldRunLiveTests (liveGate.ts) so its full truth
+// table is unit-tested independently of this file — see liveGate.test.ts.
+const LIVE = shouldRunLiveTests(process.env, whichClaude() !== null);
+const describeOrSkip = LIVE ? describe : describe.skip;
 
-if (!HAS_CLAUDE) {
+if (!LIVE) {
   // eslint-disable-next-line no-console
-  console.warn("[chat.test] `claude` not found on PATH — skipping visual Claude Code smoke tests.");
+  console.warn("[chat.test] live Claude tests skipped — set BISMUTH_LIVE_TESTS=1 to run them (makes real API calls against your Anthropic account).");
 }
 
 /**
