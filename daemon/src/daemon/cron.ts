@@ -2,7 +2,7 @@ import { join } from "node:path"
 import { readdir, readFile, writeFile, unlink, rename, mkdir } from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { sendMessage } from "./session"
+import { sendMessage, composeBackendRefusalNote } from "./session"
 import { processPageTriggers } from "./pages"
 import { resolveIncrementalRun, advanceIncrementalCheckpoint, type CheckpointDirKind } from "./incrementalCron"
 
@@ -885,7 +885,10 @@ async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string
       if (job.notify) {
         const status = result === "success" ? "completed" : result === "failed" ? "failed" : "completed (unknown result)"
         const notifyMsg = parseNotifyMessage(response.result) || `Cron job ${status}.`
-        notify(`${ctx.name}: ${job.name}`, notifyMsg)
+        // composeBackendRefusalNote: this cron's own OS notification is the only place a silent
+        // settings.daemon.backend downgrade (hidden notes forced this run onto Claude) would ever
+        // reach the user — see session.ts's resolveDaemonBackend.
+        notify(`${ctx.name}: ${job.name}`, composeBackendRefusalNote(notifyMsg, response.backendRefusal))
       }
     } catch (err) {
       if (ac.signal.aborted) {
