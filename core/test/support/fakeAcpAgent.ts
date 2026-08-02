@@ -276,8 +276,11 @@ const rejectSessionLoadMessage = process.env.FAKE_ACP_REJECT_SESSION_LOAD_MESSAG
  * AcpToolCallContentEntry shape ./protocol.ts's toolCallContentText already expects), THEN the
  * turn's own `agent_message_chunk` + `session/prompt` response — mirroring the real order a live
  * agent uses (announce the call, resolve it, THEN keep talking), confirmed against a real `goose`
- * acp session driven through an actual Bismuth MCP tool call in the task that built this mode (see
- * that task's report). Deliberately NOT reusing HELD-PROMPT MODE's `runHeldPermissionPrompt`/
+ * acp session driven through an actual Bismuth MCP tool call (`bismuth_docs_search`, goose's own
+ * MCP-namespaced tool name): the real wire capture showed `tool_call`, then `tool_call_update`, then
+ * the `session/prompt` response, in that literal order on stdout, with no `kind` field at all (goose
+ * never sends one — unlike this fake, which does, so together the two are the exercised case for
+ * both `kind` present and absent). Deliberately NOT reusing HELD-PROMPT MODE's `runHeldPermissionPrompt`/
  * `runHeldQueueTurn` machinery: this mode never withholds the `session/prompt` response and never
  * calls INTO the client (no session/request_permission, no callClient) — a plain, synchronous
  * two-notification-then-respond sequence is all Task 12's ordering assertions
@@ -673,8 +676,9 @@ function handleSessionNew(id: number | string): void {
     respond(id, {
       sessionId,
       // Select OPTIONS are `{value, name}` — the spec's `SessionConfigSelectOption`, and what every
-      // real agent driven against a local mock emits (cline 3.0.48, goose, openclaw; see
-      // .superpowers/sdd/2026-08-01-agent-integration-completion/task-1-report.md). These were
+      // real agent driven against a local mock emits: verbatim captures off cline 3.0.48, `goose acp`,
+      // and `openclaw acp` each showed every select option shaped `{value, name}`, never `{id, name}`.
+      // These were
       // `{id, name}` until 2026-08-01: a shape NO shipping ACP agent has ever emitted, which made
       // this fake certify a fiction — detectModelShape's `configOptions` branch filtered on `.id`,
       // so it passed here while returning an empty model list for every real binary. `id` on the

@@ -134,10 +134,10 @@ describe("isMethodNotFoundError", () => {
 // ── Version-skew model-shape detection ───────────────────────────────────────────────────────
 
 // PROVENANCE OF THE NEW-SHAPE FIXTURES BELOW. Every `configOptions` fixture in this block is
-// written from, or explicitly derived from, `session/new` results captured off REAL agent binaries
-// driven against a local mock — see the capture log at
-// .superpowers/sdd/2026-08-01-agent-integration-completion/task-1-report.md. Each fixture says
-// which it is, in its own comment: **captured** ones transcribe the payload; **derived** ones
+// written from, or explicitly derived from, `session/new` results captured live off cline 3.0.48,
+// `goose acp`, and `openclaw acp` (with a real `openclaw gateway run` alongside it) — each installed
+// locally and driven against a local mock model host, never a live account or a real LLM call.
+// Each fixture says which it is, in its own comment: **captured** ones transcribe the payload; **derived** ones
 // (abbreviated option lists, degenerate edge cases, filled-in ids) start from a captured structure
 // and say exactly what was changed. Read the per-test note before treating any of them as wire
 // truth — a blanket "all verbatim" claim here would be the same overclaim this block exists to
