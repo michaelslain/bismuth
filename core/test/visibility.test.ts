@@ -1,21 +1,29 @@
 // core/test/visibility.test.ts
 import { test, expect } from "bun:test";
-import { join } from "node:path";
+import { join, basename } from "node:path";
+import { tmpdir } from "node:os";
 import { realpath } from "node:fs/promises";
+import { symlinkSync, chmodSync, appendFileSync } from "node:fs";
 import {
   resolveVisibility,
   resolveFolderVisibility,
   isVisibleToChat,
   isVisibleToDaemon,
   buildDenyPaths,
+  resolveDenyPlan,
+  VisibilityUndeterminedError,
   buildManagedSettingsDeny,
   absDenyPaths,
   denyPathSet,
   type DenyEntry,
   isDeniedPath,
+  sandboxDenyRead,
   sandboxFailIfUnavailable,
 } from "../src/visibility";
 import { setFolderVisibility, readFolderVisibility } from "../src/settings";
+import { readNote } from "../src/files";
+import { resolveVisibilityGate } from "../src/agentBackends/visibilityGate";
+import { gateCliArgs } from "../src/visibilityCliGate";
 import { makeVault } from "./helpers";
 
 // --- resolveVisibility (files) ---
@@ -450,4 +458,185 @@ test("verification scenario from the task: a.md/b.txt/c.json/sketch.draw+.png in
     "hidden-folder/sketch.draw.png",
   ]);
   expect(denied).not.toContain("hidden-folder/exempt.md");
+});
+
+// --- Path spelling: `.`/`..` segments, unicode form, and the vault-escaping relative form ---
+//
+// Each spelling below names the SAME file as the plain one: `resolveInVault` (core/src/files.ts)
+// resolves the path before its containment check, so `readNote` opens the hidden note under every
+// one of them. Asserting on readNote alongside isDeniedPath is what keeps these from being
+// self-referential — the property is "the deny check agrees with what the filesystem will open",
+// not "the deny check agrees with a list this test wrote down".
+
+test("isDeniedPath: a `.` or `..` segment names the same file, and readNote opens it under both", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\n# Secret\n" });
+  const entries = await buildDenyPaths(vault, "daemon");
+  for (const spelling of [
+    "Private/secret.md",
+    "Private/./secret.md",
+    "Private/../Private/secret.md",
+    "./Private/../Private/./secret.md",
+  ]) {
+    // The filesystem opens it...
+    expect(await readNote(vault, spelling)).toContain("# Secret");
+    // ...so the deny check must say so too.
+    expect(isDeniedPath(entries, spelling)).toBe(true);
+  }
+});
+
+test("isDeniedPath: a relative path that climbs out of the vault and back in is denied", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\n# Secret\n" });
+  const entries = await buildDenyPaths(vault, "daemon");
+  const escaping = `../${basename(vault)}/Private/secret.md`;
+  expect(await readNote(vault, escaping)).toContain("# Secret");
+  expect(isDeniedPath(entries, escaping)).toBe(true);
+});
+
+test("isDeniedPath: a `..` that does NOT resolve back to a restricted file stays allowed", async () => {
+  const vault = makeVault({
+    "Private/secret.md": "---\nvisibility: hidden\n---\n# Secret\n",
+    "public.md": "# Public\n",
+  });
+  const entries = await buildDenyPaths(vault, "daemon");
+  // Climbs out of Private/ and lands on a visible note — the segment resolution must not smear
+  // the deny across everything containing the word "Private".
+  expect(isDeniedPath(entries, "Private/../public.md")).toBe(false);
+  expect(isDeniedPath(entries, "public.md")).toBe(false);
+});
+
+test("isDeniedPath: an NFC spelling of an NFD filename is denied (both open the same file)", async () => {
+  const nfd = "Private/cafe\u0301.md"; // e + combining acute
+  const nfc = "Private/caf\u00e9.md"; // precomposed e-acute
+  expect(nfd).not.toBe(nfc);
+  const vault = makeVault({ [nfd]: "---\nvisibility: hidden\n---\n# Cafe\n" });
+  const entries = await buildDenyPaths(vault, "daemon");
+  for (const spelling of [nfd, nfc]) {
+    expect(await readNote(vault, spelling)).toContain("# Cafe");
+    expect(isDeniedPath(entries, spelling)).toBe(true);
+  }
+});
+
+// --- Symlinked directories ---
+
+test("buildDenyPaths: a symlinked directory is walked, so the subtree behind it is denied", async () => {
+  const vault = makeVault({
+    "real-hidden/inside.md": "---\nvisibility: hidden\n---\n# Inside\n",
+    "public.md": "# Public\n",
+  });
+  symlinkSync(join(vault, "real-hidden"), join(vault, "link-to-hidden"));
+  const entries = await buildDenyPaths(vault, "daemon");
+  // Readable through the link...
+  expect(await readNote(vault, "link-to-hidden/inside.md")).toContain("# Inside");
+  // ...so it must be denied under the link's spelling as well as the real one.
+  expect(isDeniedPath(entries, "link-to-hidden/inside.md")).toBe(true);
+  expect(isDeniedPath(entries, "real-hidden/inside.md")).toBe(true);
+  expect(isDeniedPath(entries, "public.md")).toBe(false);
+});
+
+test("buildDenyPaths: a file under a symlinked directory denies BOTH absolute spellings, as one entry", async () => {
+  const vault = makeVault({ "realdir/secret.md": "---\nvisibility: hidden\n---\n# Secret\n" });
+  symlinkSync(join(vault, "realdir"), join(vault, "linkdir"));
+  const canonical = await realpath(vault);
+  const entries = await buildDenyPaths(vault, "daemon");
+  const linked = entries.find((e) => e.rel === "linkdir/secret.md");
+  expect(linked).toBeDefined();
+  // One ENTRY per file (so a "N notes are restricted" message counts notes)...
+  expect(entries.filter((e) => e.rel === "linkdir/secret.md")).toHaveLength(1);
+  // ...carrying both absolute paths the file is readable at.
+  expect(absDenyPaths(entries).sort()).toEqual([
+    join(canonical, "linkdir/secret.md"),
+    join(canonical, "realdir/secret.md"),
+    join(canonical, "realdir/secret.md"),
+  ].sort());
+  // The sandbox deny-read list must carry the resolved spelling too — a tool that resolves the
+  // link reports that one, and a deny keyed only on the link path would never match it.
+  expect(sandboxDenyRead(entries, vault)).toContain(join(canonical, "realdir/secret.md"));
+  expect(sandboxDenyRead(entries, vault)).toContain(join(canonical, "linkdir/secret.md"));
+});
+
+test("buildDenyPaths: a symlink cycle terminates instead of recursing forever", async () => {
+  const vault = makeVault({ "a/secret.md": "---\nvisibility: hidden\n---\n# Secret\n" });
+  // a/loop -> a  (a link back onto its own ancestor chain)
+  symlinkSync(join(vault, "a"), join(vault, "a", "loop"));
+  const entries = await buildDenyPaths(vault, "daemon");
+  expect(entries.map((e) => e.rel)).toContain("a/secret.md");
+  // Followed once through the link, then stopped — never "a/loop/loop/...".
+  expect(entries.every((e) => !e.rel.includes("loop/loop"))).toBe(true);
+});
+
+test("buildDenyPaths: a symlink to a FILE is still enforced, and a broken link is harmless", async () => {
+  const vault = makeVault({ "secret.md": "---\nvisibility: hidden\n---\n# Secret\n" });
+  symlinkSync(join(vault, "secret.md"), join(vault, "alias.md"));
+  symlinkSync(join(vault, "nowhere.md"), join(vault, "broken.md"));
+  const entries = await buildDenyPaths(vault, "daemon");
+  // alias.md carries the same frontmatter bytes, read through the link.
+  expect(entries.map((e) => e.rel).sort()).toEqual(["alias.md", "secret.md"]);
+});
+
+// --- Undetermined: the walk could not enumerate what is restricted ---
+
+test("resolveDenyPlan: a vault that is not there is undetermined, NOT unrestricted", async () => {
+  const missing = join(tmpdir(), `bismuth-absent-${Date.now()}`);
+  const plan = await resolveDenyPlan(missing, "daemon");
+  expect(plan.determined).toBe(false);
+  // The whole point of the distinction: `[]` would have read as "nothing is hidden".
+  expect(plan).not.toMatchObject({ determined: true, entries: [] });
+});
+
+test("buildDenyPaths: a vault that is not there throws rather than returning an empty list", async () => {
+  const missing = join(tmpdir(), `bismuth-absent-${Date.now()}`);
+  expect(buildDenyPaths(missing, "daemon")).rejects.toThrow(VisibilityUndeterminedError);
+});
+
+test("resolveDenyPlan: an unreadable SUBDIRECTORY is undetermined (it may hold restricted notes)", async () => {
+  const vault = makeVault({ "public.md": "# Public\n", "locked/inside.md": "# Inside\n" });
+  const locked = join(vault, "locked");
+  chmodSync(locked, 0o000);
+  try {
+    const plan = await resolveDenyPlan(vault, "daemon");
+    expect(plan.determined).toBe(false);
+  } finally {
+    chmodSync(locked, 0o755);
+  }
+});
+
+test("resolveDenyPlan: a corrupt .settings is undetermined, and the folder cascade does not silently vanish", async () => {
+  const vault = makeVault({
+    "Private/secret.md": "---\nvisibility: hidden\n---\n# Secret\n",
+    "real-hidden/inside.md": "# Inside\n",
+  });
+  await setFolderVisibility(vault, "real-hidden", "hidden");
+  const before = await resolveDenyPlan(vault, "daemon");
+  expect(before.determined).toBe(true);
+  expect(before.determined && before.entries.map((e) => e.rel).sort())
+    .toEqual(["Private/secret.md", "real-hidden/inside.md"]);
+
+  // One stray fragment appended to the same file the cascade was read from.
+  appendFileSync(join(vault, ".settings"), "\n  [not: valid yaml\n:::\n");
+
+  const after = await resolveDenyPlan(vault, "daemon");
+  expect(after.determined).toBe(false);
+  // Specifically NOT the pre-fix behaviour: the folder-hidden note quietly dropping off the list
+  // while the frontmatter-hidden one stayed, with no error anywhere.
+  expect(after).not.toMatchObject({ determined: true });
+});
+
+test("resolveDenyPlan: an ABSENT .settings is determined — a vault that hides nothing is an answer", async () => {
+  const vault = makeVault({ "public.md": "# Public\n" });
+  const plan = await resolveDenyPlan(vault, "daemon");
+  expect(plan).toEqual({ determined: true, entries: [] });
+});
+
+test("the fail-safes downstream of an undetermined walk cannot be reached with an empty list", async () => {
+  const missing = join(tmpdir(), `bismuth-absent-${Date.now()}`);
+  // resolveVisibilityGate's "an UNREADABLE vault refuses" branch — unreachable before, because the
+  // walk answered [] and the gate short-circuited on "restricts nothing, allow everything".
+  const verdict = await resolveVisibilityGate("opencode", "daemon", missing);
+  expect(verdict.allowed).toBe(false);
+  // The CLI gate's refusal, same story: `search` is a content-scanning command.
+  const decision = await gateCliArgs(["search", "secret"], {
+    BISMUTH_VAULT: missing,
+    BISMUTH_MCP_CHANNEL: "daemon",
+  });
+  expect(decision.allowed).toBe(false);
 });

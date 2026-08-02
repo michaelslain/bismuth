@@ -294,3 +294,45 @@ test("an EMPTY channel value is the owner, not an agent — found by the accepta
   expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "nonsense" })).toBe("daemon");
   expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "chat" })).toBe("chat");
 });
+
+// --- Path spelling in argv: the same three axes isDeniedPath resolves ---
+//
+// The gate's original match was a lowercased SUBSTRING test, which handles case but nothing else.
+// `bismuth read Private/../Private/secret.md` opens the hidden note (resolveInVault resolves the
+// segments), and `café.md` written composed opens a file stored decomposed — both slid through.
+
+describe("decideCliGate: path spellings", () => {
+  const restricted = [{ rel: "Private/secret.md", abs: "/vault/Private/secret.md" }];
+
+  test("refuses a `.` or `..` spelling of a restricted path", () => {
+    for (const spelling of [
+      "Private/secret.md",
+      "Private/./secret.md",
+      "Private/../Private/secret.md",
+      "./Private/secret.md",
+    ]) {
+      const d = decideCliGate(["read", spelling], restricted);
+      expect(d.allowed).toBe(false);
+      expect(d.reason).toContain("Private/secret.md");
+    }
+  });
+
+  test("refuses a `.`/`..` spelling carried in a --flag=value pair", () => {
+    expect(decideCliGate(["read", "--path=Private/../Private/secret.md"], restricted).allowed).toBe(false);
+  });
+
+  test("refuses an NFC spelling of a restricted path stored decomposed", () => {
+    const nfd = "Private/cafe\u0301.md"; // e + combining acute
+    const nfc = "Private/caf\u00e9.md"; // precomposed e-acute
+    expect(nfd).not.toBe(nfc);
+    const entries = [{ rel: nfd, abs: `/vault/${nfd}` }];
+    expect(decideCliGate(["read", nfd], entries).allowed).toBe(false);
+    expect(decideCliGate(["read", nfc], entries).allowed).toBe(false);
+  });
+
+  test("a path-scoped command naming only VISIBLE files still runs", () => {
+    // The widening must not swallow the whole tier: this is the case the gate exists to permit.
+    expect(decideCliGate(["read", "public.md"], restricted).allowed).toBe(true);
+    expect(decideCliGate(["read", "Private/../public.md"], restricted).allowed).toBe(true);
+  });
+});

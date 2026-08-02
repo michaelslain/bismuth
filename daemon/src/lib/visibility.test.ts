@@ -4,7 +4,7 @@
 // same dual-form deny-list fix (see buildManagedSettingsDeny's doc comment for the empirical bug
 // this closes: a model's Read tool call may report either a relative or an absolute file_path).
 import { test, expect } from "bun:test"
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, appendFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { realpath } from "node:fs/promises"
@@ -12,6 +12,8 @@ import {
   resolveVisibility,
   isVisibleToDaemon,
   buildDenyPaths,
+  resolveDenyPlan,
+  VisibilityUndeterminedError,
   buildManagedSettingsDeny,
   absDenyPaths,
   sandboxFailIfUnavailable,
@@ -226,4 +228,63 @@ test("verification scenario: a.md/b.txt/c.json/sketch.draw+.png in a hidden fold
     "hidden-folder/sketch.draw.png",
   ])
   expect(denied).not.toContain("hidden-folder/exempt.md")
+})
+
+// --- Undetermined + symlinked directories (ported alongside core/src/visibility.ts) ---
+
+test("resolveDenyPlan: a vault that is not there is undetermined, NOT unrestricted", async () => {
+  const missing = join(tmpdir(), `bismuth-daemon-absent-${Date.now()}`)
+  const plan = await resolveDenyPlan(missing)
+  expect(plan.determined).toBe(false)
+  expect(plan).not.toMatchObject({ determined: true, entries: [] })
+})
+
+test("buildDenyPaths: a vault that is not there throws rather than returning an empty list", async () => {
+  const missing = join(tmpdir(), `bismuth-daemon-absent-${Date.now()}`)
+  expect(buildDenyPaths(missing)).rejects.toThrow(VisibilityUndeterminedError)
+})
+
+test("resolveDenyPlan: a corrupt .settings is undetermined, so the folder cascade cannot silently vanish", async () => {
+  const vault = makeVault({
+    "Private/secret.md": "---\nvisibility: hidden\n---\n# Secret\n",
+    "real-hidden/inside.md": "# Inside\n",
+    ".settings": "folderVisibility:\n  real-hidden: hidden\n",
+  })
+  const before = await resolveDenyPlan(vault)
+  expect(before.determined).toBe(true)
+  expect(before.determined && before.entries.map((e) => e.rel).sort())
+    .toEqual(["Private/secret.md", "real-hidden/inside.md"])
+
+  appendFileSync(join(vault, ".settings"), "\n  [not: valid yaml\n:::\n")
+
+  const after = await resolveDenyPlan(vault)
+  expect(after.determined).toBe(false)
+})
+
+test("resolveDenyPlan: an ABSENT .settings is determined — a vault that hides nothing is an answer", async () => {
+  const vault = makeVault({ "public.md": "# Public\n" })
+  expect(await resolveDenyPlan(vault)).toEqual({ determined: true, entries: [] })
+})
+
+test("buildDenyPaths: a symlinked directory is walked, so the subtree behind it is denied", async () => {
+  const vault = makeVault({ "real-hidden/inside.md": "---\nvisibility: hidden\n---\n# Inside\n" })
+  symlinkSync(join(vault, "real-hidden"), join(vault, "link-to-hidden"))
+  const canonical = await realpath(vault)
+  const entries = await buildDenyPaths(vault)
+  expect(entries.map((e) => e.rel).sort()).toEqual(["link-to-hidden/inside.md", "real-hidden/inside.md"])
+  // Both absolute spellings reach the sandbox deny list — a tool that resolved the link reports
+  // the second, and a deny keyed only on the link path would never match it.
+  const abs = absDenyPaths(entries)
+  expect(abs).toContain(join(canonical, "link-to-hidden/inside.md"))
+  expect(abs).toContain(join(canonical, "real-hidden/inside.md"))
+  // ...and managedSettings covers every form too.
+  expect(buildManagedSettingsDeny(entries)).toContain(`Read(${join(canonical, "real-hidden/inside.md")})`)
+})
+
+test("buildDenyPaths: a symlink cycle terminates instead of recursing forever", async () => {
+  const vault = makeVault({ "a/secret.md": "---\nvisibility: hidden\n---\n# Secret\n" })
+  symlinkSync(join(vault, "a"), join(vault, "a", "loop"))
+  const entries = await buildDenyPaths(vault)
+  expect(entries.map((e) => e.rel)).toContain("a/secret.md")
+  expect(entries.every((e) => !e.rel.includes("loop/loop"))).toBe(true)
 })

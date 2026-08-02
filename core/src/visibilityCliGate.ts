@@ -44,7 +44,7 @@
 //    only the MCP server's own env block sets it) will pass `--vault`/`--dir` explicitly, and a gate
 //    that only checked env would be a no-op for exactly the invocation shape this file exists to
 //    cover.
-import { buildDenyPaths, type VisibilityChannel } from "./visibility";
+import { buildDenyPaths, findDeniedEntry, type DenyEntry, type VisibilityChannel } from "./visibility";
 
 /** Which channel this MCP server is serving, from `BISMUTH_MCP_CHANNEL`.
  *
@@ -188,17 +188,41 @@ export interface GateDecision {
   reason?: string;
 }
 
+/** Case-fold and NFC-normalize for the substring scan below. Mirrors visibility.ts's
+ *  normalizeForCompare on the two axes a substring test can honor — a whole argv token is not a
+ *  path, so its `.`/`..` segments cannot be resolved in place; that axis is covered by running each
+ *  token through findDeniedEntry instead. Without the NFC step, a `café.md` written composed slid
+ *  past a deny list built from the decomposed name (and vice versa) while opening the same file. */
+function foldForScan(s: string): string {
+  return s.toLowerCase().normalize("NFC");
+}
+
+/** The path-shaped pieces of one argv token: the token itself, and — for `--flag=value` and
+ *  `path=value` query fragments — whatever follows the first `=`. Each is handed to
+ *  findDeniedEntry, which resolves `.`/`..` and both other spelling axes properly. */
+function pathCandidates(arg: string): string[] {
+  const eq = arg.indexOf("=");
+  if (eq === -1 || eq === arg.length - 1) return [arg];
+  return [arg, arg.slice(eq + 1)];
+}
+
 /**
  * Pure: decide whether `args` may run, given the restricted paths for this channel.
  *
- * `restricted` is the `{rel, abs}` list from `buildDenyPaths`. A match is a SUBSTRING test against
- * each argv token in both path forms, which also catches a path embedded in a query string or a
- * `--flag=value` pair. Case-insensitive, because macOS filesystems are case-insensitive by default
- * and `private/SECRET.md` opens the same file as `Private/secret.md`.
+ * `restricted` is the `{rel, abs}` list from `buildDenyPaths`. Two passes, because neither alone is
+ * enough:
+ *
+ *  1. Each argv token (and the value half of a `--flag=value` / `path=value` pair) goes through
+ *     `findDeniedEntry`, which resolves `.`/`..` segments, Unicode form and case the same way every
+ *     other gate does. `bismuth read Private/../Private/secret.md` opens the file, so it must
+ *     refuse.
+ *  2. A SUBSTRING test against each token in both path forms, which catches a path embedded
+ *     somewhere a whole-token check cannot see it — a longer query string, a quoted shell fragment.
+ *     Case- and NFC-folded for the same reason pass 1 is.
  */
 export function decideCliGate(
   args: string[],
-  restricted: { rel: string; abs: string }[],
+  restricted: DenyEntry[],
 ): GateDecision {
   if (restricted.length === 0) return { allowed: true };
 
@@ -214,19 +238,26 @@ export function decideCliGate(
     };
   }
 
-  const haystack = args.map((a) => a.toLowerCase());
+  const refusal = (entry: DenyEntry): GateDecision => ({
+    allowed: false,
+    reason:
+      `Refused: "${entry.rel}" is marked off-limits to AI sessions by this vault's visibility ` +
+      `settings. Do not try to reach it another way — tell the user it is hidden if they need to know.`,
+  });
+
+  for (const arg of args) {
+    for (const candidate of pathCandidates(arg)) {
+      const hit = findDeniedEntry(restricted, candidate);
+      if (hit) return refusal(hit);
+    }
+  }
+
+  const haystack = args.map(foldForScan);
   for (const entry of restricted) {
     for (const form of [entry.rel, entry.abs]) {
-      const needle = form.toLowerCase();
+      const needle = foldForScan(form);
       if (!needle) continue;
-      if (haystack.some((a) => a.includes(needle))) {
-        return {
-          allowed: false,
-          reason:
-            `Refused: "${entry.rel}" is marked off-limits to AI sessions by this vault's visibility ` +
-            `settings. Do not try to reach it another way — tell the user it is hidden if they need to know.`,
-        };
-      }
+      if (haystack.some((a) => a.includes(needle))) return refusal(entry);
     }
   }
   return { allowed: true };
