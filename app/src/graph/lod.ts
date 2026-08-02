@@ -57,7 +57,51 @@ export interface LodCluster {
   sdx: number;
   sdy: number;
   memberIds: string[];
+  /** `LOD_REP_POINTS_K` (or fewer, if the cluster has fewer members than that) world points
+   *  standing in for this cluster's members, each carrying `weight` = how many members it
+   *  represents. Weights across `reps` sum to `count` EXACTLY, at every k — see lod.test.ts's
+   *  "conserves total weight exactly" case. Computed by `representativePoints()` in the SAME
+   *  member pass that accumulates the centroid/SD above (one extra push per member into a
+   *  per-group point list, finalized alongside `sdx`/`sdy` — no second walk over `nodes`).
+   *
+   *  THE CONVERGENCE PROPERTY THAT MAKES THIS RIGHT RATHER THAN MERELY BETTER: once a cluster has
+   *  `count <= LOD_REP_POINTS_K` members, `reps` IS the member set — every member becomes its own
+   *  representative point at weight 1, so the mass→glyph handover this feeds (Task 24b's phosphor
+   *  bloom) is EXACT at the boundary, not an approximation that happens to look close. See
+   *  lod.test.ts's "reproduces the members EXACTLY... once k >= the member count".
+   *
+   *  Consumed by AsciiGraphRenderer's `emitBloom()` → densityField.ts's `pushCloud` (Task 24b, not
+   *  wired here): instead of synthesizing one Gaussian-ish cloud from `sdx`/`sdy` centred on
+   *  (`wx`,`wy`) — which places density at the CENTROID even when no member lives anywhere near
+   *  it (two well-separated blobs summarized by one ellipse invents mass in the empty gap between
+   *  them, exactly the failure `pushCloud`'s header measures) — the bloom can emit real weighted
+   *  points, so a cluster's real clumpiness and diagonal elongation survive the summary instead of
+   *  being smoothed into one ellipse. */
+  reps: LodRepPoint[];
 }
+
+/** One representative world point standing in for `weight` members of a `LodCluster` (same 2D
+ *  world space as `wx`/`wy`). See `LodCluster.reps`. */
+export interface LodRepPoint {
+  x: number;
+  y: number;
+  weight: number;
+}
+
+/**
+ * How many representative points (`LodCluster.reps`) a cluster gets, at most — the brief's own
+ * 16-32 band; 24 is its midpoint. Reasoning for landing there rather than either edge: the
+ * reference vault's coarsest-level masses run 40-300 members (`massRadii`'s doc comment) — at 16
+ * points a 300-member mass gives each point ~19 members' worth of weight, coarse enough that a
+ * small secondary blob (say, 20 of the 300) could be represented by a single surviving point or
+ * none; at 24 that floor is ~13 members per point, comfortably resolving a blob an order of
+ * magnitude smaller than its parent. Above 32 the per-cluster point budget starts costing more
+ * than the leaf pass it is standing in for once each point becomes its own small `pushCloud`
+ * splat (densityField.ts) — the same "cost no more than the notes it replaces" ceiling `massRadii`
+ * and `CLOUD_MAX_RINGS`/`CLOUD_MAX_PER_RING` already hold to. 24 sits centred in the specified
+ * band with headroom either side, not picked to make any one test pass.
+ */
+export const LOD_REP_POINTS_K = 24;
 
 /** One aggregate edge: every real link between two communities' member sets, summarized.
  *  `a`/`b` index into the level's `clusters` array; `w` is the 0..1 log-scaled visual weight. */
@@ -104,6 +148,7 @@ export function buildLodIndex(
   nodes: LodNodeInput[],
   edges: { from: string; to: string }[],
   minCluster = LOD_MIN_CLUSTER,
+  repK = LOD_REP_POINTS_K,
 ): LodLevel[] {
   let levelCount = 0;
   for (const n of nodes) if (n.path && n.path.length > levelCount) levelCount = n.path.length;
@@ -114,15 +159,19 @@ export function buildLodIndex(
 
   const out: LodLevel[] = [];
   for (let L = 0; L < levelCount; L++) {
-    const groups = new Map<number, { sx: number; sy: number; sxx: number; syy: number; ids: string[] }>();
+    const groups = new Map<
+      number,
+      { sx: number; sy: number; sxx: number; syy: number; ids: string[]; pts: { x: number; y: number }[] }
+    >();
     for (const n of nodes) {
       const c = n.path?.[L];
       if (c == null) continue;
       let g = groups.get(c);
-      if (!g) { g = { sx: 0, sy: 0, sxx: 0, syy: 0, ids: [] }; groups.set(c, g); }
+      if (!g) { g = { sx: 0, sy: 0, sxx: 0, syy: 0, ids: [], pts: [] }; groups.set(c, g); }
       g.sx += n.x; g.sy += n.y;
       g.sxx += n.x * n.x; g.syy += n.y * n.y;
       g.ids.push(n.id);
+      g.pts.push({ x: n.x, y: n.y });
     }
     const clusters: LodCluster[] = [...groups.entries()]
       .filter(([, g]) => g.ids.length >= minCluster)
@@ -138,6 +187,7 @@ export function buildLodIndex(
           sdx: Math.sqrt(Math.max(0, g.sxx / n - mx * mx)),
           sdy: Math.sqrt(Math.max(0, g.syy / n - my * my)),
           memberIds: g.ids,
+          reps: representativePoints(g.pts, repK),
         };
       })
       .sort((a, b) => b.count - a.count || a.community - b.community);
@@ -168,6 +218,42 @@ export function buildLodIndex(
     out.push({ clusters, edges: aggEdges, maxEdgeCount });
   }
   return out;
+}
+
+/**
+ * `LodCluster.reps`: up to `k` representative world points for a cluster whose members are `pts`,
+ * each weighted by how many members it stands for (weights sum to `pts.length` exactly).
+ *
+ * DETERMINISTIC SYSTEMATIC SAMPLE over `pts` in the order the single member pass built it (the
+ * SAME order `memberIds` ends up in) — index `j` (0..k-1) picks member `floor(j * n / k)`. Two
+ * properties fall out of that one formula with no extra cases:
+ *
+ *  - `n <= k`: every member is its own representative at weight 1 — this IS the member set, not an
+ *    approximation of it. That is the convergence property lod.test.ts pins directly: as k grows
+ *    to cover a cluster, `reps` becomes the leaf pass exactly, so the mass→glyph handover this
+ *    feeds is exact at the boundary rather than merely close.
+ *  - `n > k`: `floor(j*n/k)` is strictly increasing in `j` (successive gaps are `floor(n/k)` or
+ *    one more, both >= 1 since `n/k > 1`), so it can never sample the same member twice, and each
+ *    of the `k` survivors carries weight `n/k` — `k * (n/k) = n`, so nothing is lost or
+ *    double-counted at any `k` (lod.test.ts's weight-conservation case).
+ *
+ * No RNG, so `buildLodIndex` stays a pure function of its arguments (repeat calls on the same
+ * graph return the same reps, which is what makes this testable without a seed). That is sound
+ * PRECISELY because community membership order is driven by vault/graph build order, not by
+ * spatial position — an evenly spaced pick over it lands across a cluster's real sub-populations
+ * in roughly their real proportions (see lod.test.ts's two-blob fixture, where 30/10-split blobs
+ * come back represented ~30/10, not 50/50), without needing true randomness to get there.
+ */
+function representativePoints(pts: { x: number; y: number }[], k: number): LodRepPoint[] {
+  const n = pts.length;
+  if (n <= k) return pts.map((p) => ({ x: p.x, y: p.y, weight: 1 }));
+  const w = n / k;
+  const reps: LodRepPoint[] = new Array(k);
+  for (let j = 0; j < k; j++) {
+    const p = pts[Math.floor((j * n) / k)];
+    reps[j] = { x: p.x, y: p.y, weight: w };
+  }
+  return reps;
 }
 
 /** Log-scaled 0..1 visual weight for an aggregate edge carrying `count` real links, against the
