@@ -58,7 +58,7 @@ import { structuralGraphSig, shouldResetView } from "./graphStability";
 import { noiseField, DEFAULT_NOISE_SEED } from "../ui/ascii/noiseField";
 import {
   AGG_EDGE_ALPHA_MIN, AGG_EDGE_DOUBLE_W, LOD_ALPHA_EPS, buildLodIndex, lodMix, massCellAlpha,
-  massCellCode, massRadii, type LodLevel,
+  massCellCode, massRadii, type LodLevel, type LodRepPoint,
 } from "./lod";
 import {
   EDGE_WEIGHT_BUCKETS, buildLevelEdges, computeEdgeLevelWeights, edgeWeightBucketRange,
@@ -405,12 +405,22 @@ interface EntityView {
   // frame — LOD entities don't move between builds any more than a node's own p3/p2 do.
   p3: Vec3;
   sdx: number; sdy: number; // members' per-axis world spread about it (lod.ts LodCluster.sdx/sdy) —
-                          // how big the summarized thing IS, which the bloom needs and the compact
-                          // mass GLYPH's own rowR/colR deliberately are not. See emitBloom().
+                          // how big the summarized thing IS, which the compact mass GLYPH's own
+                          // rowR/colR deliberately are not. Task 24b: no longer the bloom's PRIMARY
+                          // input (see `reps` below and emitBloom()) — kept as the fallback shape for
+                          // the (unreachable in practice) empty-`reps` case, so that path still emits
+                          // a cloud rather than degenerating to a point.
   color: number;          // ramp slot — the SAME key layoutClusterNames uses, so mass == name colour
   name: string;
   rowR: number; colR: number; // uncapped mass radii in cells (sqrt scaling — lod.ts massRadii)
   memberIds: string[];
+  // Task 24b: real weighted stand-ins for the cluster's members (lod.ts's LodCluster.reps — read its
+  // doc comment for the algorithm and the MASS-BLIND caveat). The bloom emits ONE point per rep,
+  // each carrying its own `weight` share of the cluster's light, instead of one synthesized ellipse
+  // — so a cluster with two well-separated sub-populations lights BOTH of them, not the empty gap
+  // between (see emitBloom()'s doc comment and densityField.ts's `pushCloud` header for why an
+  // ellipse invents mass a real cluster shape doesn't have). Same 2D world space as `wx`/`wy`.
+  reps: LodRepPoint[];
   // per-frame scratch
   sx: number; sy: number; col: number; row: number; onGrid: boolean;
   drawnRowR: number; drawnColR: number; // grid-capped radii for this frame
@@ -1102,7 +1112,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         color: C_FAINT, // placeholder — restyle() (called at the end of build()) assigns the real
                          // per-level community colour via rebuildEntityColors() before any paint runs
         name: this.communityNamesByLevel[L]?.get(c.community) ?? `cluster ${c.community}`,
-        rowR, colR, memberIds: c.memberIds,
+        rowR, colR, memberIds: c.memberIds, reps: c.reps,
         sx: 0, sy: 0, col: -1, row: -1, onGrid: false, drawnRowR: rowR, drawnColR: colR,
       };
       this.entityFlat.push(ev);
@@ -1640,18 +1650,25 @@ export class AsciiGraphRenderer implements GraphRenderer {
    * ladder that broke it; a screenshot did. Do not re-key this off `this.nodes` alone, and do not
    * "fix" a future version of that bug by hoisting the projection out of its gate.
    *
-   *   far band  — the MASSES own the field: each aggregate entity emits a CLOUD (densityField.ts's
-   *               `pushCloud`) centred on its projected centroid, carrying MEMBER COUNT × that
-   *               level's own mass alpha (its depth in the hierarchy ladder) and spread over the
-   *               members' own projected extent (`sdx`/`sdy` × the same world→screen scale
-   *               `projectEntities` uses). Both halves of that are load-bearing. The COUNT weight
-   *               is what makes the handover continuous rather than merely non-empty: a mass
-   *               standing in for `count` notes contributes exactly the light those `count` glyphs
-   *               contribute once they rasterize, and `blur()` is mass-conserving, so the total
-   *               does not jump when the bands swap. The SPREAD is what stops it doing so as a
-   *               spike — see `pushCloud`'s comment for the measurement, and note the spread is the
-   *               MEMBERS' extent, not the compact mass glyph's `drawnRowR`/`drawnColR`: the bloom
-   *               summarizes the same notes the mass does, at the size those notes actually occupy.
+   *   far band  — the MASSES own the field: each aggregate entity emits ONE POINT PER REPRESENTATIVE
+   *               (lod.ts's `LodCluster.reps`, threaded onto `EntityView.reps` — Task 24b), each
+   *               positioned at that rep's own projected world location and weighted by its OWN
+   *               `rep.weight` share of the level's mass alpha, not by an equal split. Weights sum
+   *               to `count`, so — same as before — a mass standing in for `count` notes contributes
+   *               exactly the light those `count` glyphs contribute once they rasterize, and
+   *               `blur()` is mass-conserving, so the total does not jump when the bands swap. What
+   *               changed is WHERE that light lands: up to `LOD_REP_POINTS_K` real points spread
+   *               over the members' actual positions, not one synthesized ellipse centred on the
+   *               centroid. A cluster with two well-separated sub-populations now lights both of
+   *               them; the old ellipse (`densityField.ts`'s `pushCloud`, sized off `sdx`/`sdy`)
+   *               invented mass in the empty gap between — see `pushCloud`'s own header for the
+   *               measurement of that failure mode, and lod.ts's `reps` doc comment for why
+   *               representative points are the fix (real positions, not a statistical spread) and
+   *               for the MASS-BLIND caveat this emission inherits (rep DENSITY does not track
+   *               member density — weighting by `rep.weight` rather than by rep COUNT is what keeps
+   *               the actual light correct regardless). `pushCloud`/`sdx`/`sdy` survive only as the
+   *               fallback for the pathological empty-`reps` case (see the loop below) — an
+   *               aggregate is still never emitted as a bare point, even there.
    *               `massLevelAlphas[L] > LOD_ALPHA_EPS` also certifies `projectEntities(L)` ran this
    *               frame — see that field's doc comment.
    *   mid/near  — the GLYPHS own it: the screen positions `projectNodes()` already wrote this frame
@@ -1688,21 +1705,64 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // (fit() runs synchronously on the flip, before any transition frame renders), while
     // `projectEntities()` places every mass at the BLENDED scale between the two. Reading the stale
     // product here would size the far band's cloud for where a mass is ABOUT TO BE, not where it
-    // actually sits: position (sx/sy) would be right and the cloud's SPREAD (sdx/sdy, which is what
-    // this `s` scales) would be wrong for the whole transition. cameraFrame() is a cheap pure
-    // function of state nothing mutates between rasterize() and here (see tick()'s call order), so
-    // calling it again reproduces the exact value the mass positions were placed with this frame,
+    // actually sits: position (sx/sy) would be right and every rep's OFFSET from it (which this `s`
+    // scales — see the loop below) would be wrong for the whole transition. cameraFrame() is a cheap
+    // pure function of state nothing mutates between rasterize() and here (see tick()'s call order),
+    // so calling it again reproduces the exact value the mass positions were placed with this frame,
     // not a second, independent one. (2D only, which is the only place a mass band exists.)
     const s = this.cameraFrame().s;
     for (let L = 0; L < this.entityLevels.length; L++) {
       const a = this.massLevelAlphas[L] ?? 0;
       if (a <= LOD_ALPHA_EPS) continue;
       for (const ev of this.entityLevels[L]) {
-        const x = ev.sx / this.W, y = ev.sy / this.H;
-        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-        const w = ev.count * a;
-        pushCloud(pts, x, y, (ev.sdx * s) / this.W, (ev.sdy * s) / this.H, w, this.slotBloomRgb(ev.color));
-        weight += w;
+        if (!Number.isFinite(ev.sx) || !Number.isFinite(ev.sy)) continue;
+        const rgb = this.slotBloomRgb(ev.color);
+        // THE FIX (Task 24b): one BloomPoint per representative, each carrying its OWN `rep.weight`
+        // share of this frame's mass alpha (`a`), positioned at the mass's already-projected screen
+        // anchor (`ev.sx`/`ev.sy` — correct at rest AND mid mode-morph, full camera pipeline, see
+        // projectEntities()) plus that rep's own world-space offset from the cluster centroid, scaled
+        // by the SAME blended `s` above. The blended SCALE is correct for the whole transition (that
+        // is what `s` being `cameraFrame().s` rather than a stale product buys, per the comment
+        // above) — the OFFSET itself is not exact mid-morph: it is a flat `* s`, so it skips both the
+        // pitch foreshortening (`cos(rx)`, nonzero for the whole transition since `rx` only reaches 0
+        // at flatten = 1) and the per-mass perspective divide (`persp`) that `ev.sx`/`ev.sy` itself
+        // gets from the full projection. Inherited, not introduced here: the pre-24b ellipse scaled
+        // `sdx`/`sdy` by the exact same flat `s` with the exact same gap, and reps carry no per-rep 3D
+        // counterpart to project through the full pipeline with — closing it would be a larger change
+        // than this task's brief calls for, so it is left as an accepted, unchanged approximation
+        // rather than silently fixed here.
+        //
+        // Weighting by `rep.weight` (how many real members that point stands for) rather than
+        // by rep COUNT (an equal 1/reps.length split) is the deliberate choice: lod.ts's `reps` doc
+        // comment measures reps as MASS-BLIND (a dense sub-population can earn as few as 4 of 24
+        // reps while 20 lone strays each earn their own) — weighting equally by count would light a
+        // spread-out region far brighter than a dense one holding 17x its members, which is wrong
+        // for what this field claims to show (density). Weighting by `rep.weight` keeps the total
+        // light exactly where the real members are AND in true proportion to how many of them there
+        // are; summed over a cluster's reps it is exactly `a * count`, so nothing here changes the
+        // level's total contribution, only how it is distributed across the field.
+        if (ev.reps.length === 0) {
+          // Defensive only: buildLodIndex/representativePoints (lod.ts) never return an empty `reps`
+          // for a cluster that exists at all (LOD_MIN_CLUSTER guarantees count >= 4, and
+          // representativePoints only returns [] for n === 0 members). Falls back to the PRE-24b
+          // ellipse (pushCloud, sized off sdx/sdy) rather than a bare weighted point, so even this
+          // unreachable path still emits a cloud, never a point — see this method's own doc comment.
+          const x = ev.sx / this.W, y = ev.sy / this.H;
+          if (Number.isFinite(x) && Number.isFinite(y)) {
+            const w = ev.count * a;
+            pushCloud(pts, x, y, (ev.sdx * s) / this.W, (ev.sdy * s) / this.H, w, rgb);
+            weight += w;
+          }
+          continue;
+        }
+        for (const rep of ev.reps) {
+          const x = (ev.sx + (rep.x - ev.wx) * s) / this.W;
+          const y = (ev.sy + (rep.y - ev.wy) * s) / this.H;
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          const w = rep.weight * a;
+          pts.push({ x, y, weight: w, rgb });
+          weight += w;
+        }
       }
     }
     if (this.glyphAlpha > LOD_ALPHA_EPS) {

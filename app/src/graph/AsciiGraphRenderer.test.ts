@@ -23,6 +23,7 @@ import { buildColorSlots } from "./clusterVisual";
 import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
 import { MODE_MORPH_MS } from "./modeMorph";
 import { FIELD_H, FIELD_W, type DensityField } from "./densityField";
+import { buildLodIndex, LOD_MIN_CLUSTER, LOD_REP_POINTS_K, type LodNodeInput } from "./lod";
 import { parseHexColor } from "./bloomColor";
 import { THEMES } from "../../../core/src/theme/tokens";
 
@@ -3678,12 +3679,24 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     // THE EMITTED POINTS, before buildBloom. This is where the size is actually checkable: `blur`
     // adds a fixed ~5.3-cell variance to whatever it is handed, and on this fixture that swamps the
     // y spread — a quarter-scale per-axis error (converting y through W instead of H, say) survives
-    // the field comparison below entirely. Pre-blur the two agree to floating-point, because both
-    // are the same linear map of the same 275 world positions by two different routes: one projects
-    // each member, the other projects the centroid and reproduces the members' second moment.
+    // the field comparison below entirely.
+    //
+    // Task 24b: the two are no longer expected to agree to FLOATING-POINT. Pre-24b, `masses` emitted
+    // one synthesized ellipse reproducing the members' EXACT population second moment (pushCloud's
+    // own exact-moment identity, sized directly off `sdx`/`sdy`); now it emits real k-means
+    // REPRESENTATIVE points (lod.ts's `LodCluster.reps`), and averaging away WITHIN-rep variance is
+    // an intrinsic, expected property of that summary (a rep is a real sub-population's centroid,
+    // not the population itself — see lod.ts's own `reps` doc comment). What must still hold is that
+    // the reps' own weighted second moment is a reasonable stand-in for the true one, checked here
+    // against an INDEPENDENT reference (`ls`, computed via the un-summarized leaf pass over the same
+    // 275 world positions — never via lod.ts's k-means, so this is not self-certifying). Measured on
+    // this fixture: sdx off by 0.7%, sdy by 6.2% — a 10% relative bound is still comfortable headroom
+    // above that (1.6x the worse axis) while catching a real regression far tighter than the 20% a
+    // looser bound would (an x/y swap here is off by ~59% either way).
     const ms = masses.r.computeStats(), ls = leaves.r.computeStats();
-    expect(ms.bloomSdx).toBeCloseTo(ls.bloomSdx, 9);
-    expect(ms.bloomSdy).toBeCloseTo(ls.bloomSdy, 9);
+    const REP_MOMENT_TOL = 0.1;
+    expect(Math.abs(ms.bloomSdx - ls.bloomSdx) / ls.bloomSdx).toBeLessThan(REP_MOMENT_TOL);
+    expect(Math.abs(ms.bloomSdy - ls.bloomSdy) / ls.bloomSdy).toBeLessThan(REP_MOMENT_TOL);
     expect(ls.bloomSdx / ls.bloomSdy).toBeGreaterThan(1.5);     // the fixture really is anisotropic
     expect(ms.bloomSdy).toBeGreaterThan(0);                     // ...and neither axis is degenerate
 
@@ -3821,6 +3834,343 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     expect(stats.bloomPoints).toBe(SPREAD_COUNT);   // one point per node, no clouds
     expect(stats.bloomWeight).toBeGreaterThan(0);
     expect(stats.bloomWeight).toBeLessThanOrEqual(SPREAD_COUNT); // depthAlpha <= 1 per node
+  });
+
+  /**
+   * TASK 24b. ONE community whose 300 members form TWO tight, well-separated blobs (not one blob —
+   * every other fixture in this block) — the exact shape `LodCluster.reps` exists for (lod.ts's own
+   * doc comment: "two well-separated blobs summarized by one ellipse invents mass in the empty gap
+   * between them"). 300 > `LOD_REP_POINTS_K` (24), so `representativePoints()` really does run its
+   * k-means, not the `n <= k` exact-passthrough case — and because the two blobs are FAR apart
+   * relative to their own width, farthest-first seeding cannot avoid putting real seeds in both (a
+   * seed placed only in one blob leaves the other, ~500 world units away, the single farthest
+   * remaining point every round). So the reps this cluster gets are known, structurally, to cover
+   * BOTH blobs, not just one — the fixture is non-vacuous for what this test checks, not merely
+   * plausible.
+   */
+  function twinBlobGraph() {
+    const nodes = [];
+    const edges = [];
+    const COLS = 10, ROWS = 15; // 150 members per blob, 300 total
+    const SPACING = 6 * RING_SCALE;
+    const SEP = 350 * RING_SCALE; // blob-centre-to-blob-centre half-distance — ~13x the blob's own
+                                   // width (COLS*SPACING = 90 vs SEP*2 = 1050·RING_SCALE-normalised),
+                                   // i.e. genuinely "tight blobs, far apart", not a gradient between them.
+    let i = 0;
+    for (const cx of [-SEP, SEP]) {
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const x = cx + (c - (COLS - 1) / 2) * SPACING;
+          const y = (r - (ROWS - 1) / 2) * SPACING;
+          nodes.push({
+            id: `t${i}`, label: `note ${i}`, kind: "note" as const,
+            position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+            community: 0, communityLabel: "Twin", communityPath: [0], communityPathLabels: ["Twin"],
+          });
+          i++;
+        }
+      }
+    }
+    for (let k = 1; k < i; k++) edges.push({ from: "t0", to: `t${k}`, kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  /** Per-COLUMN summed field weight — collapses the y axis so a left/right bimodal shape shows up
+   *  as a two-hump profile regardless of how each blob is spread vertically. */
+  function columnProfile(f: Float32Array): number[] {
+    const cols = new Array<number>(FIELD_W).fill(0);
+    for (let row = 0; row < FIELD_H; row++) {
+      for (let col = 0; col < FIELD_W; col++) cols[col] += f[row * FIELD_W + col];
+    }
+    return cols;
+  }
+
+  it("REQUIRED — a clumped, anisotropic (two-blob) cluster lights the blobs, not the empty gap between them", () => {
+    // The regression this pins: emitting a mass as one ellipse sized off sdx/sdy places its BRIGHTEST
+    // light at the CENTROID — which for two symmetric, well-separated blobs is the empty gap exactly
+    // halfway between them, a place with zero real members. Representative points instead land where
+    // the members actually are: two peaks flanking a dark trough.
+    const { priv, field } = mountBloom(twinBlobGraph(), true);
+    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1); // fit — masses own the field outright
+    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);
+
+    const f = field();
+    expect(f).not.toBeNull();
+    const cols = columnProfile(f!);
+
+    // Recentring (build()'s bounding-box centre step) puts the gap's midpoint at world x=0, and fit
+    // centres world x=0 on the field — so the trough is expected near the middle column, and the two
+    // peaks flank it left and right. Locate them by scanning rather than assuming an exact index: the
+    // fit's own padding/box math is a different subsystem than the one this test checks.
+    const mid = FIELD_W / 2;
+    let leftPeakCol = 0, leftPeakV = -1;
+    for (let c = 0; c < mid - 2; c++) if (cols[c] > leftPeakV) { leftPeakV = cols[c]; leftPeakCol = c; }
+    let rightPeakCol = 0, rightPeakV = -1;
+    for (let c = Math.ceil(mid) + 2; c < FIELD_W; c++) if (cols[c] > rightPeakV) { rightPeakV = cols[c]; rightPeakCol = c; }
+    const centerV = (cols[Math.floor(mid)] + cols[Math.ceil(mid) - 1]) / 2;
+
+    // Non-vacuous: two REAL, separated peaks exist at all (not e.g. one degenerate blob because the
+    // fixture collapsed) and each carries real weight.
+    expect(leftPeakCol).toBeLessThan(mid);
+    expect(rightPeakCol).toBeGreaterThan(mid);
+    expect(leftPeakV).toBeGreaterThan(0);
+    expect(rightPeakV).toBeGreaterThan(0);
+
+    // THE CHECK: the gap is dark relative to the blobs it separates — the property a single
+    // synthesized ellipse (sized to span both blobs) cannot have, because its peak sits AT the
+    // centroid, i.e. in the gap. A generous factor (not "basically zero") because blur still leaks
+    // some light across a >40-cell separation; the pre-fix ellipse fails this by a wide margin
+    // regardless (see this test run against the pre-24b implementation, below).
+    expect(centerV).toBeLessThan(0.5 * Math.min(leftPeakV, rightPeakV));
+  });
+
+  /**
+   * TASK 24b — THE WEIGHTING DECISION. lod.ts's `reps` doc comment measures `reps` as MASS-BLIND: a
+   * dense core can earn as few as 4 of 24 reps (each standing for ~70 members) while lone, scattered
+   * strays earn one rep EACH (standing for 1) — rep COUNT does not track member density. This fixture
+   * reproduces that shape directly (a 280-member dense core plus 20 lone, widely-scattered strays, one
+   * community) to make the choice this test is named for checkable: weight each emitted point by
+   * `rep.weight` (how many real members it stands for — correct for MASS) or by an equal 1/reps.length
+   * split (correct only if rep COUNT tracked member count, which the mass-blind property says it does
+   * not). The two predict OPPOSITE outcomes here: by `rep.weight`, the dense core (93% of the real
+   * membership) must dominate the field; by equal count-split, the ~20 single-member stray reps would
+   * outnumber the core's handful of reps and could plausibly outshine it instead.
+   */
+  function denseCoreWithStraysGraph() {
+    const nodes = [];
+    const edges = [];
+    const CORE_SIDE = 17; // 289 grid points, trimmed to 280 below
+    const CORE_SPACING = 3 * RING_SCALE;
+    let i = 0;
+    for (let r = 0; r < CORE_SIDE && i < 280; r++) {
+      for (let c = 0; c < CORE_SIDE && i < 280; c++) {
+        const x = (c - (CORE_SIDE - 1) / 2) * CORE_SPACING;
+        const y = (r - (CORE_SIDE - 1) / 2) * CORE_SPACING;
+        nodes.push({
+          id: `d${i}`, label: `note ${i}`, kind: "note" as const,
+          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+          community: 0, communityLabel: "Dense", communityPath: [0], communityPathLabels: ["Dense"],
+        });
+        i++;
+      }
+    }
+    const STRAYS = 20, STRAY_RADIUS = 900 * RING_SCALE;
+    for (let s = 0; s < STRAYS; s++) {
+      const a = (s / STRAYS) * Math.PI * 2;
+      const x = Math.cos(a) * STRAY_RADIUS, y = Math.sin(a) * STRAY_RADIUS;
+      nodes.push({
+        id: `d${i}`, label: `stray ${s}`, kind: "note" as const,
+        position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+        community: 0, communityLabel: "Dense", communityPath: [0], communityPathLabels: ["Dense"],
+      });
+      i++;
+    }
+    for (let k = 1; k < i; k++) edges.push({ from: "d0", to: `d${k}`, kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  it("REQUIRED — weighting by rep.weight (not rep count) reproduces the true population spread; weighting by rep count would not", () => {
+    // Why this checks the SPREAD rather than the FIELD directly: at this field resolution (64x40)
+    // the blur kernel's reach (radius 6, tripled) is wide enough relative to the fixture's own
+    // geometry that the dense core's own halo floods almost the entire post-blur field regardless of
+    // weighting scheme — the post-normalise picture alone can't distinguish the two hypotheses here.
+    // The weighted SECOND MOMENT can: it is computed by emitBloom's own generic, resolution- and
+    // blur-independent moment pass (the same `mx/my/mxx/myy` loop over `pts` that every other bloom
+    // test in this file already trusts — see e.g. the anisotropic-spread test above), straight off
+    // the pre-blur point list.
+    const { r, priv } = mountBloom(denseCoreWithStraysGraph(), true);
+    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1);
+    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);
+
+    interface RepsPriv {
+      entityLevels: { reps: { x: number; y: number; weight: number }[]; count: number; wx: number; wy: number }[][];
+      W: number; H: number;
+      cameraFrame(): { s: number };
+    }
+    const rp = r as unknown as RepsPriv;
+    expect(rp.entityLevels[0]?.length).toBe(1); // one community — the field's entire cloud
+    const ev = rp.entityLevels[0][0];
+    const reps = ev.reps;
+    expect(ev.count).toBe(300); // 280 core + 20 strays
+
+    // A rep can only carry `weight > 1` if it summarizes more than one member — and only the DENSE
+    // CORE has co-located members at all (every stray is, by construction, isolated from every other
+    // member by ~900x the core's own spacing), so a multi-weight rep can only be a core rep.
+    const coreReps = reps.filter((rp2) => rp2.weight > 1);
+    const strayReps = reps.filter((rp2) => rp2.weight === 1);
+    expect(coreReps.length).toBeGreaterThan(0);
+    expect(strayReps.length).toBeGreaterThan(0);
+    // The mass-blind property itself, non-vacuously present in THIS fixture: the core's real 280
+    // members are NOT represented by 280/300 of the reps — count and mass diverge, which is exactly
+    // what makes "weight by rep.weight" and "weight by rep count" different claims here.
+    expect(coreReps.length / reps.length).toBeLessThan(280 / 300);
+    const coreWeight = coreReps.reduce((s, rp2) => s + rp2.weight, 0);
+    expect(coreWeight).toBeGreaterThanOrEqual(270); // the core's real members really did land as core reps
+
+    // THE TWO HYPOTHESES, computed directly from `reps` (never by calling emitBloom): the per-axis
+    // variance about the TRUE population centroid (`ev.wx`/`ev.wy` — exact by lod.ts's own
+    // weight-conservation guarantee, independent of how emitBloom might split light across reps) if
+    // every rep's share of the light is `rep.weight` (correct) versus an equal 1/reps.length share
+    // (rep-count-based, i.e. what this task's brief calls "wrong for this shape"). Both strays and
+    // core sit near-symmetrically around the centroid (a full circle of strays around a centred
+    // core), so the two hypotheses' MEANS coincide — it is the SPREAD that diverges, because a
+    // FRACTION OF WEIGHT (6.7% by mass vs 83% by count) sitting a long way out dominates a
+    // squared-distance sum either way, just by very different amounts.
+    function axisVar(mean: number, axis: "x" | "y", weightFn: (p: { weight: number }) => number): number {
+      let sw = 0, swdd = 0;
+      for (const rp2 of reps) { const w = weightFn(rp2); const d = rp2[axis] - mean; sw += w; swdd += w * d * d; }
+      return swdd / sw;
+    }
+    const varWeightedX = axisVar(ev.wx, "x", (p) => p.weight), varCountX = axisVar(ev.wx, "x", () => 1);
+    const varWeightedY = axisVar(ev.wy, "y", (p) => p.weight), varCountY = axisVar(ev.wy, "y", () => 1);
+
+    // Non-vacuous: the two hypotheses really do predict substantially different spreads for this
+    // fixture (measured: ~12x apart) — if they didn't, the check below couldn't distinguish them.
+    expect(varCountX).toBeGreaterThan(varWeightedX * 3);
+    expect(varCountY).toBeGreaterThan(varWeightedY * 3);
+
+    // THE CHECK: the ACTUAL renderer's measured spread (`computeStats().bloomSdx`/`bloomSdy`, screen
+    // fractions) converted back to world units via the SAME per-axis scale `emitBloom` itself applies
+    // to every rep offset (`cameraFrame().s` — the scale is not what is under test here, only the
+    // weighting is; reusing it to convert units is the same pattern the "MINOR" bloom-scale test
+    // above already establishes) sits close to the WEIGHT-based prediction and clearly below the
+    // COUNT-based one.
+    const { s } = rp.cameraFrame();
+    const stats = r.computeStats();
+    const worldSdxFromStats = (stats.bloomSdx * rp.W) / s;
+    const worldSdyFromStats = (stats.bloomSdy * rp.H) / s;
+    expect(worldSdxFromStats * worldSdxFromStats).toBeLessThan(varCountX * 0.5);
+    expect(worldSdyFromStats * worldSdyFromStats).toBeLessThan(varCountY * 0.5);
+    // ...and it is in the right ballpark of the CORRECT hypothesis, not just "smaller than the wrong
+    // one" by coincidence (glyphAlpha's small nonzero residual and the level's own mass alpha are the
+    // only things that could still move it a little, hence a band rather than an exact match).
+    expect(worldSdxFromStats * worldSdxFromStats).toBeGreaterThan(varWeightedX * 0.5);
+    expect(worldSdxFromStats * worldSdxFromStats).toBeLessThan(varWeightedX * 2);
+    expect(worldSdyFromStats * worldSdyFromStats).toBeGreaterThan(varWeightedY * 0.5);
+    expect(worldSdyFromStats * worldSdyFromStats).toBeLessThan(varWeightedY * 2);
+  });
+});
+
+/**
+ * TASK 24a ROUND-2 REVIEW, CARRIED FORWARD — pinned here because the real cost driver is downstream,
+ * in THIS file's `emitBloom()`, not in `buildLodIndex` itself. Task 24a shipped `LOD_REP_POINTS_K`
+ * (lod.ts) with only a tautological range test (`>= 16 && <= 32`, which K=15 and K=33 also fail) and
+ * could not pin an upper bound because nothing downstream of `reps` existed yet to cost it against.
+ * It does now: emitBloom() emits exactly ONE BloomPoint per rep (a single push, not a per-rep
+ * ring-sampled cloud — see emitBloom's own doc comment for why that design was chosen), so a
+ * cluster's `reps.length` IS its exact per-frame emission cost, not a proxy that needs scaling.
+ *
+ * Reproduces the reviewer's own measured fixture (a 3-level-shaped graph reduced to just its
+ * coarsest level, since that is the only level this cost bound is about): 2000 members in 8
+ * communities of 250 each — every community's `count` (250) exceeds every `k` swept below, so
+ * `representativePoints()` really does run its k-means, not the `n <= k` exact passthrough; the
+ * `expect(cluster.count).toBe(250)` calls below prove that precondition rather than assume it.
+ */
+describe("LOD rep-count downstream cost ceiling (Task 24a round-2 review, pinned here — Task 24b consumes it)", () => {
+  /** ONE point set — 8 communities x 250 members, non-collinear grids so k-means has room to place up
+   *  to 64 distinct centroids without degenerating — that BOTH fixture shapes below derive from, so
+   *  the pure (`LodNodeInput`) and rendered (`GraphNode`-shaped) versions can never drift apart. */
+  function coarseMembers(): { id: string; community: number; x: number; y: number }[] {
+    const out: { id: string; community: number; x: number; y: number }[] = [];
+    const COLS = 20; // 250 members -> 13 rows of 20, last row partial
+    for (let c = 0; c < 8; c++) {
+      for (let m = 0; m < 250; m++) {
+        const col = m % COLS, row = Math.floor(m / COLS);
+        out.push({ id: `c${c}n${m}`, community: c, x: c * 5000 + col * 7, y: row * 7 });
+      }
+    }
+    return out;
+  }
+
+  function coarseFixture(): LodNodeInput[] {
+    return coarseMembers().map((p) => ({ id: p.id, path: [p.community], x: p.x, y: p.y }));
+  }
+
+  /** The SAME point set, as a mountable graph — one hierarchy level (`communityPath` length 1), so
+   *  `showLodMasses` puts the whole thing on the far band at fit, exactly like `coarseFixture()`'s
+   *  single-level `buildLodIndex` call. Edges are a cheap per-community star; LOD grouping only reads
+   *  `community`/`communityPath`, never edges, so they don't affect `reps` at all. */
+  function coarseGraphFixture() {
+    const nodes = coarseMembers().map((p) => ({
+      id: p.id, label: p.id, kind: "note" as const,
+      position: [p.x, p.y, 0] as [number, number, number], position2d: [p.x, p.y] as [number, number],
+      community: p.community, communityLabel: `Group ${p.community}`, communityPath: [p.community],
+      communityPathLabels: [`Group ${p.community}`],
+    }));
+    const edges: { from: string; to: string; kind: "link" }[] = [];
+    for (let c = 0; c < 8; c++) {
+      for (let m = 1; m < 250; m++) edges.push({ from: `c${c}n0`, to: `c${c}n${m}`, kind: "link" as const });
+    }
+    return { nodes, edges };
+  }
+
+  /** Sum of `reps.length` over the coarsest (only) level's clusters, for a given `k` — the exact
+   *  quantity `emitBloom()` turns into that many `pts.push()` calls once that level owns the field. */
+  function totalRepsFor(nodes: LodNodeInput[], k: number): number {
+    const levels = buildLodIndex(nodes, [], LOD_MIN_CLUSTER, k);
+    expect(levels[0]?.clusters.length).toBe(8);              // non-vacuous: still 8 real communities...
+    for (const c of levels[0].clusters) expect(c.count).toBe(250); // ...of 250 members each, every k
+    return levels[0].clusters.reduce((s, c) => s + c.reps.length, 0);
+  }
+
+  it("REQUIRED — total reps (this emission's real per-frame cost) scales with k exactly as measured, and a fixed budget separates the shipped band from a bad choice", () => {
+    const nodes = coarseFixture();
+
+    // Exact counts, derived independently (8 clusters * min(k, 250) each — valid once k-means fully
+    // uses every centroid, which the non-vacuous checks inside totalRepsFor confirm held here), not
+    // copied from a prior run of buildLodIndex itself.
+    expect(totalRepsFor(nodes, 16)).toBe(128);
+    expect(totalRepsFor(nodes, 32)).toBe(256);
+    expect(totalRepsFor(nodes, 64)).toBe(512);
+    expect(totalRepsFor(nodes, 256)).toBe(2000);  // 250 <= 256: the n<=k exact regime, every member
+    expect(totalRepsFor(nodes, 10000)).toBe(2000); // ...same, unbounded k can't exceed real membership
+
+    // THE CEILING — one ABSOLUTE bare literal, not phrased relative to LOD_REP_POINTS_K, so retuning
+    // the constant can't keep this green by construction. Passes at the shipped band (16/32), fails
+    // from 64 up — the same three-way split the reviewer measured, now behind a real number instead
+    // of a range check both 15 and 33 would also have passed.
+    const BLOOM_MASS_FRAME_BUDGET = 300;
+    expect(totalRepsFor(nodes, 16)).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET);
+    expect(totalRepsFor(nodes, 32)).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET);
+    expect(totalRepsFor(nodes, 64)).toBeGreaterThan(BLOOM_MASS_FRAME_BUDGET);
+    expect(totalRepsFor(nodes, 256)).toBeGreaterThan(BLOOM_MASS_FRAME_BUDGET);
+    expect(totalRepsFor(nodes, 10000)).toBeGreaterThan(BLOOM_MASS_FRAME_BUDGET);
+
+    // THE ACTUAL BINDING (round-1 review): every assertion above sweeps EXPLICIT k literals — none of
+    // them read the shipped `LOD_REP_POINTS_K` constant, so this whole test would stay green even if
+    // that constant were raised to a value the sweep above already proves is over budget. Import and
+    // check it directly, so a future retune of the shipped constant is what this test is actually
+    // about, not incidentally about it.
+    const shippedTotal = totalRepsFor(nodes, LOD_REP_POINTS_K);
+    expect(shippedTotal).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET);
+
+    // THE CONNECTION TO emitBloom (round-1 review): everything above calls `buildLodIndex` directly —
+    // it never exercises `emitBloom` at all, so it would pass unchanged against the pre-24b ellipse
+    // implementation too. Mount the SAME point set as a real graph and confirm the renderer's actual
+    // per-frame `bloomPoints` (mass band only — glyphAlpha is ~0 at fit here, same as every other
+    // fixture in the "phosphor bloom" block above) equals `shippedTotal` exactly. That equality IS
+    // this method's "one BloomPoint per rep, not a per-rep ring-sampled cloud" design, checked rather
+    // than only asserted in a comment: if a future edit made it one `pushCloud` per rep instead (what
+    // `cloudGrid` would spend — up to 8 rings x 16 per ring = 128x this), `bloomPoints` would blow far
+    // past `shippedTotal` and this assertion would catch it even though the 300 budget alone could
+    // not (a per-rep-cloud regression wouldn't change `reps.length`, only what emitBloom does with it).
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = newRenderer();
+    let lastField: Float32Array | null = null;
+    r.mount(host, () => {});
+    r.setBloomCallback((f) => { lastField = f; });
+    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
+    r.render(coarseGraphFixture());
+    frame();
+    interface CostPriv { levelCount: number; glyphAlpha: number }
+    const priv = r as unknown as CostPriv;
+    expect(priv.levelCount).toBe(1);
+    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1); // fit — masses own the field outright
+    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);       // LOD_ALPHA_EPS — no glyph contribution
+    expect(lastField).not.toBeNull();
+    const stats = r.computeStats();
+    expect(stats.bloomPoints).toBe(shippedTotal);
   });
 });
 
