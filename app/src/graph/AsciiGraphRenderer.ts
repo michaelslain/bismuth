@@ -2060,11 +2060,31 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
       // Layer 3 — nodes. Weight is the glyph (degree ramp, shifted by depth band in 3D), colour is
       // the cluster; the hovered / active node takes the accent.
+      //
+      // DEPTH ARBITRATION (Task 23 / EPITAPH item 2): a cell two 3D nodes collapse onto used to be
+      // owned by whichever was LATER in `this.nodes`' array order, with no regard for which was
+      // actually nearer the camera — so a far node could paint over a near one, and steal its click,
+      // purely by array-index luck. Canvas drew far->near into a `drawOrder` array so a near dot
+      // always painted last, over a far one; this field has no such second pass (every layer writes
+      // its cell buffers in one), so the ordering has to be enforced right here, at the write. `nv.dr`
+      // (0 far..1 near — see projectNodes()) is already known for every node this frame, so no second
+      // projection or sort is needed: just compare against whichever node currently owns the cell and
+      // skip the write when we are NOT at least as near. `>=`, not `>`, so a TIE keeps the existing
+      // (pre-fix) behaviour: in 2D — and any degenerate/flat 3D frame — `dr` is the SAME `1` for
+      // every node (projectNodes()'s `flat` branch), so every comparison ties and the later node in
+      // array order keeps winning, exactly as before this comparison existed; only a genuine depth
+      // DIFFERENCE ever changes the outcome. Cell aggregation itself is untouched — a losing node
+      // still collapses into the winner's ONE mark, it just no longer gets to be the mark. This also
+      // fixes the hit test for free: `pick()` resolves through this SAME `cellNode` buffer
+      // (asciiGrid.ts's `nearestCellNode`), so whichever node's glyph a cell shows is also the one a
+      // click there opens.
       for (let i = 0; i < this.nodes.length; i++) {
         const nv = this.nodes[i];
         if (!nv.onGrid) continue;
         this.notesOnScreenFrame++;
         const idx = nv.row * m.cols + nv.col;
+        const occupant = this.cellNode[idx];
+        if (occupant >= 0 && nv.dr < this.nodes[occupant].dr) continue; // a nearer node already owns this cell
         const id = nv.node.id;
         const hot = id === this.hoveredId || id === this.activeFile || this.searchMatches.has(id);
         let alpha = is2d ? 1 : depthAlpha(nv.dr);

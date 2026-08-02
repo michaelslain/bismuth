@@ -5256,3 +5256,111 @@ describe("the animated 2D<->3D morph (modeMorph.ts)", () => {
     expect(Math.abs(stats.bloomSdx - staleSdx)).toBeGreaterThan(Math.abs(expectedSdx) * 0.01);
   });
 });
+
+describe("depth-ordered cell arbitration in 3D (Task 23) — the nearer node owns a shared cell's glyph AND its hit test", () => {
+  // EPITAPH item 2: `cellNode[idx] = i` used to be written in ARRAY order with no depth comparison —
+  // whichever node was LATER in `this.nodes` won a shared cell's glyph, and the hit test (`pick()`,
+  // asciiGrid.ts's `nearestCellNode`) resolves through that SAME buffer, so it stole the click too,
+  // regardless of which node was actually nearer the camera. Canvas drew far->near into a `drawOrder`
+  // array so a near dot always painted over a far one; this field has no second pass, so the fix has
+  // to arbitrate right at the single write site (AsciiGraphRenderer.ts's node-glyph loop).
+  interface DepthPriv {
+    rx: number; ry: number; dirty: boolean;
+    cellNode: Int32Array;
+    m: { cols: number; rows: number };
+    nodes: { sx: number; sy: number; dr: number; col: number; row: number; onGrid: boolean; node: { id: string } }[];
+  }
+  const depthPriv = (r: AsciiGraphRenderer) => r as unknown as DepthPriv;
+
+  /** Two notes facing the camera head-on — x = y = 0 for both, only z (world depth) differs — so
+   *  their SCREEN position is identical regardless of depth: a guaranteed cell collision that does
+   *  not depend on the resting camera's tilt or any grid-resolution luck. `this.nodes` mirrors
+   *  `g.nodes` index-for-index (build()'s `g.nodes.map((node, i) => ...)`), so which element of
+   *  `nodes` comes first fixes which node is LATER in array order — the exact axis the pre-fix bug
+   *  keyed off. Both orderings are exercised below so a passing suite proves the winner tracks DEPTH,
+   *  not "whichever happens to load first" or "whichever happens to load last". */
+  function facingPairGraph(order: "near-last" | "far-last") {
+    const near = {
+      id: "near", label: "near", kind: "note" as const,
+      position: [0, 0, 100] as [number, number, number], position2d: [0, 0] as [number, number],
+    };
+    const far = {
+      id: "far", label: "far", kind: "note" as const,
+      position: [0, 0, -100] as [number, number, number], position2d: [0, 0] as [number, number],
+    };
+    return { nodes: order === "near-last" ? [far, near] : [near, far], edges: [] };
+  }
+
+  /** Point the camera straight down the Z axis (rx = ry = 0) instead of the resting 3D tilt (-0.5,
+   *  0). With no rotation, x/y alone decide screen column/row and z alone decides depth — both this
+   *  fixture's x = y = 0 nodes land at the exact same pixel, and z's sign maps directly onto which
+   *  one is nearer, with no trigonometry needed to line the two up. Same pattern as this file's
+   *  existing `parkAtT`: mutate private camera state directly, mark dirty, force one repaint. */
+  function faceCameraOn(r: AsciiGraphRenderer) {
+    const p = depthPriv(r);
+    p.rx = 0; p.ry = 0; p.dirty = true;
+    frame();
+  }
+
+  for (const order of ["near-last", "far-last"] as const) {
+    it(`3D: the NEARER node wins the shared cell's glyph and hit test, regardless of array order (${order})`, () => {
+      const { r, viewport, clicks, hovers } = mountRenderer("3d", facingPairGraph(order));
+      faceCameraOn(r);
+      const p = depthPriv(r);
+      const withIndex = p.nodes.map((n, i) => ({ ...n, i }));
+      const near = withIndex.find((n) => n.node.id === "near")!;
+      const far = withIndex.find((n) => n.node.id === "far")!;
+
+      // Non-vacuous first: prove the fixture actually collides (same cell) and actually carries
+      // depth (different dr) — otherwise "the near one wins" would hold for ANY implementation,
+      // including the buggy one, and the test would prove nothing.
+      expect(near.onGrid).toBe(true);
+      expect(far.onGrid).toBe(true);
+      expect(near.col).toBe(far.col);
+      expect(near.row).toBe(far.row);
+      expect(near.dr).toBeGreaterThan(far.dr); // genuine depth separation, not a tie
+
+      const idx = near.row * p.m.cols + near.col;
+      // THE GLYPH: whichever node the shared cell's buffer names is the one whose glyph is on
+      // screen there — this is the write `cellNode[idx] = i` writes.
+      expect(p.cellNode[idx]).toBe(near.i);
+      expect(p.cellNode[idx]).not.toBe(far.i);
+
+      // THE HIT TEST: pick() (asciiGrid.ts's nearestCellNode) resolves through this SAME cellNode
+      // buffer, so a pointer over the shared cell must hover/click the near node, never the far one,
+      // in EITHER array order.
+      window.dispatchEvent(new PointerEvent("pointermove", { clientX: near.sx, clientY: near.sy }));
+      expect(hovers.at(-1)).toBe("near");
+      viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: near.sx, clientY: near.sy }));
+      window.dispatchEvent(new PointerEvent("pointerup", { clientX: near.sx, clientY: near.sy }));
+      expect(clicks).toEqual(["near"]);
+      r.destroy();
+    });
+  }
+
+  for (const order of ["near-last", "far-last"] as const) {
+    it(`2D: arbitration is a NO-OP — the LAST node in array order still wins a shared cell, exactly as before this task (${order})`, () => {
+      // In 2D every node's `dr` is the SAME flat 1 (projectNodes()'s `flat` branch — 2D carries no
+      // depth at all, z is hard-zeroed via p2), so the new `>=` comparison ties on every contest and
+      // falls through to "whichever wrote last" — the untouched pre-fix behaviour. Reusing the exact
+      // same fixture (only the mount mode differs) is the point: it proves 2D is unaffected by this
+      // task's change, not merely that SOME 2D graph happens to still work.
+      const { r } = mountRenderer("2d", facingPairGraph(order));
+      const p = depthPriv(r);
+      const withIndex = p.nodes.map((n, i) => ({ ...n, i }));
+      const near = withIndex.find((n) => n.node.id === "near")!;
+      const far = withIndex.find((n) => n.node.id === "far")!;
+
+      expect(near.onGrid).toBe(true);
+      expect(far.onGrid).toBe(true);
+      expect(near.col).toBe(far.col);
+      expect(near.row).toBe(far.row);
+      expect(near.dr).toBe(far.dr); // no depth in 2D — both flat at 1, a genuine tie
+
+      const idx = near.row * p.m.cols + near.col;
+      const lastIndex = p.nodes.length - 1; // "near-last" -> near is index 1; "far-last" -> far is index 1
+      expect(p.cellNode[idx]).toBe(lastIndex);
+      r.destroy();
+    });
+  }
+});
