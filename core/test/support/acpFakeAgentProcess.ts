@@ -72,20 +72,22 @@ export async function waitForPidFile(pidFile: string, timeoutMs = 5_000): Promis
  * subset that is STILL alive once `timeoutMs` elapses (empty array = clean). Never throws itself: a
  * caller that wants its own teardown (temp-dir `rmSync`, etc.) to run regardless of the outcome should
  * call this, do that cleanup, THEN decide whether to throw — which is why this is split from
- * `assertProcessesGone` below rather than always throwing immediately.
+ * `assertProcessesGone` below rather than always throwing immediately. Polls every pid concurrently
+ * against one shared deadline, so N simultaneously-alive pids cost max(timeoutMs), not N * timeoutMs.
  */
 export async function waitProcessesGone(pids: number[], timeoutMs = 5_000): Promise<number[]> {
-  const stillAlive: number[] = [];
-  for (const pid of pids) {
-    const deadline = Date.now() + timeoutMs;
-    let alive = pidAlive(pid);
-    while (alive && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 100));
-      alive = pidAlive(pid);
-    }
-    if (alive) stillAlive.push(pid);
-  }
-  return stillAlive;
+  const deadline = Date.now() + timeoutMs;
+  const results = await Promise.all(
+    pids.map(async (pid) => {
+      let alive = pidAlive(pid);
+      while (alive && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+        alive = pidAlive(pid);
+      }
+      return alive ? pid : undefined;
+    }),
+  );
+  return results.filter((pid): pid is number => pid !== undefined);
 }
 
 /** Convenience wrapper for a test file with no cleanup-ordering concerns of its own: polls (as
