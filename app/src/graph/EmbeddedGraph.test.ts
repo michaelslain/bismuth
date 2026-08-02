@@ -13,13 +13,25 @@
 // same order `onMount` does. Everything between those two units and the renderer is a `setConfig` /
 // `render` pair; what could actually break in the migration is on this side of the seam.
 //
+// TASK 26 — THIS FILE NEVER ACTUALLY RAN. It originally imported those two exports straight from
+// EmbeddedGraph.tsx. That's a DIFFERENT problem than the one described above: even though neither
+// export contains a line of JSX, `bun test` still has to pick a JSX transform for the whole .tsx
+// file that HOSTS them, and Solid's `jsx:"preserve"` + `jsxImportSource:"solid-js"` isn't an
+// executable mode Bun supports — it silently fell back to the classic React runtime and errored
+// importing `react/jsx-dev-runtime`, which isn't installed. `bun test app/src/graph` reported this
+// as "1 fail / 1 error" — easy to read past in a summary line — and it had that shape from the
+// commit that added it (confirmed by checking out 6890c3e and running it there: same failure, zero
+// passes). The fix is the import below: `layoutGraphData`/`embeddedGraphConfig` now live in
+// embeddedGraphRender.ts, a plain .ts file with no JSX anywhere in it, so no JSX transform is ever
+// invoked to load it.
+//
 // TEST ISOLATION (see AsciiGraphRenderer.test.ts for the full reasoning): Bun loads every
 // `bun test app/src` module into ONE process, so the DOM globals go in beforeAll (not at module
 // top level) and the two patched prototypes are restored in afterAll.
 import { GlobalWindow } from "happy-dom";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { AsciiGraphRenderer } from "./AsciiGraphRenderer";
-import { embeddedGraphConfig, layoutGraphData } from "./EmbeddedGraph";
+import { embeddedGraphConfig, layoutGraphData } from "./embeddedGraphRender";
 import type { GraphConfig, GraphRenderer } from "./graphRenderer";
 import { parseGraphBlock } from "../../../core/src/graphBlock";
 import { DEFAULTS } from "../settings";
