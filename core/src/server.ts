@@ -2277,17 +2277,28 @@ export function createServer(cfg: CoreConfig) {
   }, gcalTickMs());
   gcalTicker.unref();
 
-  // Teardown rides `stop()` — the verb every caller already uses to shut a server down — rather
-  // than a separate disposer or an augmented return type, so the returned value stays exactly
-  // Bun's `Server` and none of this function's ~130 call sites change. Anything else would leave
-  // the leak in place for every caller that didn't adopt the new API, which is the whole problem.
-  // Idempotent (clearInterval on a cleared handle is a no-op), and the argument + Promise result
-  // are forwarded untouched, so `stop()` / `stop(true)` behave as before in every other respect.
+  // Teardown rides the verbs a caller already uses to shut a server down — rather than a separate
+  // disposer or an augmented return type, so the returned value stays exactly Bun's `Server` and
+  // none of this function's 121 call sites change. Anything else would leave the leak in place for
+  // every caller that didn't adopt the new API, which is the whole problem. Idempotent
+  // (clearInterval on a cleared handle is a no-op), and stop()'s argument + Promise result are
+  // forwarded untouched, so `stop()` / `stop(true)` behave as before in every other respect.
   const stopHttp = server.stop.bind(server);
-  server.stop = (closeActiveConnections?: boolean): Promise<void> => {
+  const shutdown = (closeActiveConnections?: boolean): Promise<void> => {
     clearInterval(gcalTicker);
     return stopHttp(closeActiveConnections);
   };
+  server.stop = shutdown;
+
+  // Bun's `Server` is `Disposable`, so `using server = createServer(…)` is a SECOND shutdown verb:
+  // it closes the listener through Bun's own `Symbol.dispose` without ever reaching stop() above.
+  // Route it through the same teardown, or a disposed server keeps ticking. Defined rather than
+  // assigned because Bun's prototype property is non-writable (`writable: false`) — a plain
+  // assignment throws in strict mode, which every module here is.
+  Object.defineProperty(server, Symbol.dispose, {
+    value: () => { void shutdown(true); },
+    configurable: true,
+  });
 
   return server;
 }
