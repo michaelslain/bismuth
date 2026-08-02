@@ -9,8 +9,11 @@
 // components cannot be rendered under `bun test` in this repo: bun resolves `solid-js/web` to its
 // SERVER build, so `render()` throws "Client-only API called on the server side". (That is why
 // there is not one `.test.tsx` in the tree.) So the two things `IntroGraph` actually owns are
-// exported — `applyGraphConfig` and the two baked clouds — and this file replays `IntroGraph`'s
-// own onMount sequence against a real AsciiGraphRenderer, in order:
+// exported — `applyGraphConfig` and the two baked clouds — from a sibling plain-`.ts` module,
+// `./vaultIntroGraph` (NOT from `./VaultIntro` itself: a `.tsx` file cannot be imported under `bun
+// test` at all in this repo — see that module's header comment for the full root cause, confirmed
+// against Task 26's identical fix for `app/src/graph/embeddedGraphRender.ts`). This file replays
+// `IntroGraph`'s own onMount sequence against a real AsciiGraphRenderer, in order:
 //     mount → setBloomCallback → render → applyGraphConfig → setFitMargin → setFrameOffsetY → setVisible
 // Get that order or those arguments wrong and the intro is blank; everything else in the component
 // is slide chrome.
@@ -23,7 +26,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { AsciiGraphRenderer } from "../graph/AsciiGraphRenderer";
 import type { GraphRenderer } from "../graph/graphRenderer";
 import type { DensityField } from "../graph/densityField";
-import { applyGraphConfig, BIG_GRAPH, SMALL_GRAPH } from "./VaultIntro";
+import { applyGraphConfig, BIG_GRAPH, SMALL_GRAPH } from "./vaultIntroGraph";
 import { THEME_NAMES, type ThemeName } from "../themes";
 import { NODE_GLYPHS } from "../graph/asciiGrid";
 import type { GraphData } from "../../../core/src/graph";
