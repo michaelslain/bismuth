@@ -5363,4 +5363,115 @@ describe("depth-ordered cell arbitration in 3D (Task 23) — the nearer node own
       r.destroy();
     });
   }
+
+  // ---- ROUND-1 REVIEW GAPS ----------------------------------------------------------------------
+  // The four tests above all mount AT REST, with the camera forced to `rx = ry = 0` and exactly two
+  // contesting nodes. Three wrong implementations of the arbitration line survive every one of them
+  // (and the rest of the 530-test suite) unchanged:
+  //   - gating the comparison on `this.modeMorph == null` (arbitration silently OFF for the whole
+  //     500ms of any in-flight 2D<->3D transition) — never exercised, since every test above mounts
+  //     and reads before any transition starts;
+  //   - comparing `Math.round(nv.dr)` instead of `nv.dr` (depth rounded to its nearest EXTREME) —
+  //     invisible above because a bare two-node fixture forces `dr` to exactly {0, 1} via
+  //     `projectNodes()`'s own min/max normalization, which is already the extremes;
+  //   - comparing raw `nv.p3[2]` (world z) instead of `nv.dr` (camera depth) — invisible above
+  //     because `rx = ry = 0` is the one orientation where world-z order and camera-depth order
+  //     happen to coincide.
+  // These three probes close each gap: a rotated camera (world-z order and camera-depth order
+  // deliberately inverted), a paint sampled mid-transition (`morphFlatten` strictly inside (0, 1)),
+  // and a contesting pair placed strictly INTERIOR to the frame's depth range (spacer nodes own the
+  // 0/1 endpoints) so the pair's own `dr` is a real, small difference, not the normalization
+  // endpoints themselves.
+  interface Probe23Priv extends DepthPriv { morphFlatten: number }
+  const probe23Priv = (r: AsciiGraphRenderer) => r as unknown as Probe23Priv;
+
+  /** Two notes at x = y = 0, differing only in world z (`hiZz`/`loZz`) — named by which has the
+   *  LARGER world z, deliberately NOT "near"/"far": the rotated-camera probe below yaws 180 degrees
+   *  specifically so world-z order and camera-depth order invert, and a near/far label would be
+   *  backwards for exactly the case that probe exists to catch. `last` controls which one is LATER
+   *  in array order (`this.nodes` mirrors `g.nodes` index-for-index). `spacers`, when on, adds two
+   *  further-out nodes ("front"/"back") that own the frame's depth extremes, so `hiZ`/`loZ` — placed
+   *  close together relative to the spacers — land at an interior, non-extreme `dr` instead of
+   *  exactly {0, 1}; it also gives the graph real X extent, so the 2D layout a 3D->2D morph blends
+   *  toward isn't the single degenerate point `facingPairGraph`'s x = y = 0 pair collapses to. */
+  function depthPairGraph(last: "hiZ" | "loZ", spacers = false, hiZz = 100, loZz = -100) {
+    const mk = (id: string, x: number, y: number, z: number) => ({
+      id, label: id, kind: "note" as const,
+      position: [x, y, z] as [number, number, number], position2d: [x, y] as [number, number],
+    });
+    const hiZ = mk("hiZ", 0, 0, hiZz), loZ = mk("loZ", 0, 0, loZz);
+    const nodes = last === "hiZ" ? [loZ, hiZ] : [hiZ, loZ];
+    if (spacers) { nodes.push(mk("front", 900, 0, 200)); nodes.push(mk("back", -900, 0, -1000)); }
+    return { nodes, edges: [] as { from: string; to: string; kind: "link" }[] };
+  }
+
+  function readPair(r: AsciiGraphRenderer) {
+    const p = probe23Priv(r);
+    const withIdx = p.nodes.map((n, i) => ({ ...n, i }));
+    return { p, hiZ: withIdx.find((n) => n.node.id === "hiZ")!, loZ: withIdx.find((n) => n.node.id === "loZ")! };
+  }
+
+  for (const last of ["hiZ", "loZ"] as const) {
+    it(`PROBE — rotated camera (ry = PI): the CAMERA-nearer node wins even though the yaw inverted which world-z that is (${last} last)`, () => {
+      const { r } = mountRenderer("3d", depthPairGraph(last));
+      const p0 = probe23Priv(r); p0.rx = 0; p0.ry = Math.PI; p0.dirty = true; frame();
+      const { p, hiZ, loZ } = readPair(r);
+      expect(hiZ.onGrid).toBe(true); expect(loZ.onGrid).toBe(true);
+      expect(hiZ.col).toBe(loZ.col); expect(hiZ.row).toBe(loZ.row);
+      // Non-vacuous: the 180-degree yaw genuinely INVERTS which node is camera-nearer relative to
+      // raw world z — `loZ` (the smaller world z) is now nearer. A comparison keyed on `nv.p3[2]`
+      // instead of `nv.dr` would pick `hiZ` here, the wrong node.
+      expect(loZ.dr).toBeGreaterThan(hiZ.dr);
+      const idx = loZ.row * p.m.cols + loZ.col;
+      expect(p.cellNode[idx]).toBe(loZ.i);
+      expect(p.cellNode[idx]).not.toBe(hiZ.i);
+      r.destroy();
+    });
+  }
+
+  for (const last of ["hiZ", "loZ"] as const) {
+    it(`PROBE — mid 3D->2D transition: arbitration stays live while dr is still real, well before the morph settles (${last} last)`, () => {
+      const { r } = mountRenderer("3d", depthPairGraph(last, true));
+      const p0 = probe23Priv(r); p0.rx = 0; p0.ry = 0; p0.dirty = true; frame();
+      r.setConfig({ ...CONFIG, viewMode: "2d" });
+      frame(2000);
+      frame(2000 + MODE_MORPH_MS / 2);
+      const { p, hiZ, loZ } = readPair(r);
+      // Non-vacuous: genuinely mid-transition (neither endpoint)...
+      expect(p.morphFlatten).toBeGreaterThan(0);
+      expect(p.morphFlatten).toBeLessThan(1);
+      expect(hiZ.onGrid).toBe(true); expect(loZ.onGrid).toBe(true);
+      expect(hiZ.col).toBe(loZ.col); expect(hiZ.row).toBe(loZ.row);
+      // ...AND still genuinely depth-separated at this sample — a comparison gated on
+      // `this.modeMorph == null` would skip arbitration entirely here and fall back to array order.
+      expect(hiZ.dr).toBeGreaterThan(loZ.dr);
+      const idx = hiZ.row * p.m.cols + hiZ.col;
+      expect(p.cellNode[idx]).toBe(hiZ.i);
+      r.destroy();
+    });
+  }
+
+  for (const last of ["hiZ", "loZ"] as const) {
+    it(`PROBE — the contesting pair sits mid-range (dr close together, well off the 0/1 endpoints), not at the normalization extremes (${last} last)`, () => {
+      // Spacer nodes ("front"/"back") own the depth EXTREMES (dr 0 and 1); hiZ/loZ sit close
+      // together near the near end, so their OWN dr difference is small and interior — the shape a
+      // real vault's contested cell actually has, unlike the plain two-node fixture above where dr
+      // is necessarily exactly {0, 1} (there is nothing else to set the range).
+      const { r } = mountRenderer("3d", depthPairGraph(last, true, 100, 50));
+      const p0 = probe23Priv(r); p0.rx = 0; p0.ry = 0; p0.dirty = true; frame();
+      const { p, hiZ, loZ } = readPair(r);
+      expect(hiZ.col).toBe(loZ.col); expect(hiZ.row).toBe(loZ.row);
+      // Non-vacuous: both strictly interior, on the SAME side of 0.5, close together — a comparison
+      // that rounds `dr` to its nearest extreme (`Math.round(nv.dr) < Math.round(...)`) sees a TIE
+      // (1 < 1 is false either way) here instead of resolving the real, small difference between
+      // them, and would fall back to array order.
+      expect(loZ.dr).toBeGreaterThan(0.6);
+      expect(hiZ.dr).toBeLessThan(0.99);
+      expect(hiZ.dr - loZ.dr).toBeLessThan(0.2);
+      expect(hiZ.dr).toBeGreaterThan(loZ.dr);
+      const idx = hiZ.row * p.m.cols + hiZ.col;
+      expect(p.cellNode[idx]).toBe(hiZ.i);
+      r.destroy();
+    });
+  }
 });
