@@ -81,7 +81,21 @@ export interface LodCluster {
    *  it (two well-separated blobs summarized by one ellipse invents mass in the empty gap between
    *  them, exactly the failure `pushCloud`'s header measures) — the bloom can emit real weighted
    *  points, so a cluster's real clumpiness and diagonal elongation survive the summary instead of
-   *  being smoothed into one ellipse. */
+   *  being smoothed into one ellipse.
+   *
+   *  MASS-BLIND BY DESIGN — worth knowing before consuming this for "real clumpiness" (Task 24b's
+   *  stated goal): farthest-first seeding spreads `reps` to COVER distinct spatial regions, not to
+   *  divide member COUNT evenly. Measured (Round-2 review): a 280-member dense core plus 20 lone,
+   *  scattered strays can give the core as few as 4 of 24 reps (each standing for ~70 members)
+   *  while each stray earns its own rep (standing for 1) — reps.length ends up denser where members
+   *  are SPATIALLY spread out, not where there are MORE of them. Weights stay exact regardless (see
+   *  above), and this is arguably the more correct placement of mass (a scattered stray needs its
+   *  own point to be seen at all; a dense core's shape is still well summarized by few points close
+   *  together) — it is also strictly better than v1, which gave that same kind of lone stray a
+   *  single point at 12.5× its true weight. Not re-architected for this (a real, density-weighted
+   *  k-means variant would be a bigger change than this task's brief calls for) — recorded here so
+   *  Task 24b's bloom-weighting code isn't surprised by a rep that stands for 70 members looking the
+   *  same size as one that stands for 1. */
   reps: LodRepPoint[];
 }
 
@@ -244,11 +258,21 @@ export function buildLodIndex(
   return out;
 }
 
-/** Lloyd's-algorithm iteration cap for `representativePoints`' k-means — not a tuning constant in
- *  the "retune to fix a test" sense, a termination guarantee: at the per-cluster sizes this runs
- *  on (tens to a few hundred members, `k` in the 16-32 band), k-means on 2D points converges in a
- *  handful of iterations; this just bounds the pathological case. Cost is O(n·k) per iteration,
- *  trivially cheap at build time (never per frame). */
+/** Lloyd's-algorithm iteration cap for `representativePoints`' k-means. Round-2 review: an earlier
+ *  version of this comment called it "a termination guarantee, not a tuning constant" — checked
+ *  directly and that overclaimed. A 1000-point roughly-gaussian cloud does NOT fully converge by
+ *  iteration 20 (measured: inertia — sum of squared member-to-nearest-rep distance — still ~0.3%
+ *  above its converged value at 500 iterations; capping at 1 iteration instead of 20 costs ~25%
+ *  more on that same shape). So this DOES trade summary quality for iteration cost on some inputs,
+ *  same as any other bounded-iteration numerical method — say so rather than imply otherwise.
+ *  What stays true regardless of where this is set: `reps`' weights are exact integer counts of
+ *  whatever assignment exists when iteration stops, converged or not (Lloyd's iteration only ever
+ *  reassigns a point to a DIFFERENT existing cluster and recomputes that cluster's own mean, so the
+ *  partition is always a complete, exact accounting of all `n` points) — quality of placement, not
+ *  correctness of weight, is what an iteration cap trades away. Cost is O(n·k) per iteration,
+ *  trivially cheap at the per-cluster sizes this runs on (tens to a few hundred members) and at
+ *  build time (never per frame) — headroom was chosen generously for that reason, not derived from
+ *  a convergence proof. */
 const KMEANS_MAX_ITERS = 20;
 
 /**
@@ -307,9 +331,24 @@ const KMEANS_MAX_ITERS = 20;
  * `n / k`-style floating division ever touches a weight. See lod.test.ts's "weight sum is an exact
  * integer" case.
  */
-function representativePoints(pts: { x: number; y: number }[], k: number, mx: number, my: number): LodRepPoint[] {
-  const n = pts.length;
+function representativePoints(pts0: { x: number; y: number }[], k: number, mx0: number, my0: number): LodRepPoint[] {
+  const n = pts0.length;
   if (n === 0) return [];
+  // Round-2 review: a non-finite member coordinate (or a centroid corrupted by summing one — even
+  // though `sdx`/`sdy`'s OWN clamp above only guards floating-point cancellation, not a literal
+  // NaN/Infinity input) must never reach a distance computation below: one bad point turned a
+  // whole cluster's `reps` into a single NaN rep, or silently shrank the rep count. Same house
+  // pattern as `sdx`/`sdy`'s clamp and densityField.ts's `sanitizeSpread` — degrade a bad point to
+  // a safe stand-in (the centroid over its FINITE members) rather than propagate it, which keeps
+  // the weight sum exactly `n` (the point is still counted, just relocated) instead of dropping it.
+  let safeSx = 0, safeSy = 0, safeCount = 0;
+  for (const p of pts0) if (Number.isFinite(p.x) && Number.isFinite(p.y)) { safeSx += p.x; safeSy += p.y; safeCount++; }
+  const fbX = Number.isFinite(mx0) ? mx0 : (safeCount > 0 ? safeSx / safeCount : 0);
+  const fbY = Number.isFinite(my0) ? my0 : (safeCount > 0 ? safeSy / safeCount : 0);
+  const pts = safeCount === n ? pts0
+    : pts0.map((p) => (Number.isFinite(p.x) && Number.isFinite(p.y) ? p : { x: fbX, y: fbY }));
+  const mx = fbX, my = fbY;
+
   if (n <= k) return pts.map((p) => ({ x: p.x, y: p.y, weight: 1 }));
 
   // Deterministic FARTHEST-FIRST seeding (Gonzalez's greedy k-center traversal): start from the
@@ -360,21 +399,33 @@ function representativePoints(pts: { x: number; y: number }[], k: number, mx: nu
       }
       if (assign[i] !== best) { assign[i] = best; changed = true; }
     }
-    if (!changed && iter > 0) break;
+    // `assign` starts at -1, so `changed` is unconditionally true on the first pass — no `iter > 0`
+    // guard needed.
+    if (!changed) break;
     const sx = new Array(k).fill(0), sy = new Array(k).fill(0), cnt = new Array(k).fill(0);
     for (let i = 0; i < n; i++) { const j = assign[i]; sx[j] += pts[i].x; sy[j] += pts[i].y; cnt[j]++; }
+    // Empty clusters (every point closer to some other centroid): reseed to the point currently
+    // farthest from ITS assigned centroid, so the next reassignment pass can pull a real,
+    // under-served region onto this centroid instead of leaving it a dead, zero-weight slot. Not
+    // observed to fire on any fixture this file's tests exercise (farthest-first seeding rarely
+    // leaves a centroid with nothing nearest to it) — kept as a defensive repair for shapes this
+    // suite doesn't cover, not because it's load-bearing today. `usedFarI` stops two empty clusters
+    // in the SAME round from both reseeding to the identical point: without it, each scan measures
+    // distance against its OWN point's current cluster, so two independent scans can pick the same
+    // farthest point.
+    const usedFarI = new Set<number>();
     for (let j = 0; j < k; j++) {
       if (cnt[j] > 0) { cx[j] = sx[j] / cnt[j]; cy[j] = sy[j] / cnt[j]; continue; }
-      // Empty cluster: reseed to the point currently farthest from ITS assigned centroid, so the
-      // next reassignment pass can pull a real, under-served region onto this centroid instead of
-      // leaving it a dead, zero-weight slot.
-      let farI = 0, farD = -1;
+      let farI = -1, farD = -1;
       for (let i = 0; i < n; i++) {
+        if (usedFarI.has(i)) continue;
         const cj = assign[i];
         const dx = pts[i].x - cx[cj], dy = pts[i].y - cy[cj];
         const d = dx * dx + dy * dy;
         if (d > farD) { farD = d; farI = i; }
       }
+      if (farI === -1) continue; // every point already claimed as a reseed target this round
+      usedFarI.add(farI);
       cx[j] = pts[farI].x; cy[j] = pts[farI].y;
     }
   }

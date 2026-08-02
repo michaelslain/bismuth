@@ -285,8 +285,77 @@ describe("buildLodIndex — per-cluster representative points (reps)", () => {
     // other test in this file, because those tests followed whatever the constant was rather than
     // pinning it. This is the one place the shipped VALUE is checked, against literal bounds that
     // do not move if the constant does: raising it to 10000 (or dropping it to 1) must go red here.
+    //
+    // Round-2 review, CRITICAL-2 (partial): this range check alone is a fact about the number, not
+    // a behavioural property — K=15 and K=33 fail it too, for no reason beyond "outside the band".
+    // The LOWER edge now has real behavioural backing: the "24 equal blobs" test below is exactly
+    // the shape that needs k this large (fewer clusters than distinct real sub-populations forces
+    // some to share or lose a rep — see that test's own comment). The UPPER edge does NOT have an
+    // in-file behavioural test, and I don't think it can: the actual cost this constant bounds is
+    // DOWNSTREAM, in Task 24b's `pushCloud` (one small bloom splat per rep, per the field's own doc
+    // comment above) — a file in this task's OFF-LIMITS boundary (`densityField.ts`). Any cost
+    // property measured here (e.g. `buildLodIndex`'s own build time) would not exercise that cost
+    // at all: k-means only runs when a cluster's member count exceeds k, so a large K mostly just
+    // takes the `n <= k` early-return path faster, which is not what makes a large K expensive.
+    // Pinning the upper edge to a REAL number would mean importing Task 24b's cost constants
+    // (`CLOUD_MAX_RINGS`/`CLOUD_MAX_PER_RING`) into this test file, which is the kind of premature
+    // coupling across the task boundary this plan is explicitly organized to avoid. So: the upper
+    // bound stays a brief-imposed ceiling, checked here only as a literal (not a derived property),
+    // and that limitation is written down rather than implied away.
     expect(LOD_REP_POINTS_K).toBeGreaterThanOrEqual(16); // LITERAL lower bound, the brief's own band
-    expect(LOD_REP_POINTS_K).toBeLessThanOrEqual(32);    // LITERAL upper bound — the actual cost ceiling
+    expect(LOD_REP_POINTS_K).toBeLessThanOrEqual(32);    // LITERAL upper bound — NOT behaviourally pinned, see above
+  });
+
+  it("24 equal 10-member blobs spread with no dominant axis: every blob keeps its own rep and exact " +
+    "weight — the seeding strategy is load-bearing, not incidental", () => {
+    // Round-2 review, IMPORTANT (new): farthest-first seeding is what makes this pass. Swapping it
+    // for plain first-k-in-encounter-order seeding (verified directly, not just claimed) leaves
+    // this file's OTHER tests fully green — they all use few, very well-separated populations,
+    // where any seeding converges to the same partition under Lloyd's iteration — while 10 of these
+    // 24 blobs come back with ZERO reps under that mutant. This fixture is the discriminating shape
+    // both directions: many SIMILAR-sized populations with NO dominant axis (the same isotropic
+    // arrangement `representativePoints`' doc comment cites as the reason v2's 1D projection was
+    // abandoned), at k exactly equal to the population count, so every population needs its OWN
+    // seed and none can be shared.
+    const numBlobs = 24, blobSize = 10, radius = 1000;
+    const jitter = [-2, -1, 0, 1, 2];
+    const ns: { id: string; path: number[]; x: number; y: number }[] = [];
+    const centers: { x: number; y: number }[] = [];
+    for (let b = 0; b < numBlobs; b++) {
+      const angle = (b / numBlobs) * 2 * Math.PI;
+      const cx = radius * Math.cos(angle), cy = radius * Math.sin(angle);
+      centers.push({ x: cx, y: cy });
+      for (let i = 0; i < blobSize; i++) {
+        ns.push({ id: `b${b}_${i}`, path: [0], x: cx + jitter[i % 5], y: cy + jitter[(i * 3) % 5] });
+      }
+    }
+    const c = buildLodIndex(ns, [], 1, 24)[0].clusters[0];
+    expect(c.count).toBe(numBlobs * blobSize);
+    for (const center of centers) {
+      const near = c.reps.filter((r) => Math.hypot(r.x - center.x, r.y - center.y) < 50);
+      expect(near.length).toBeGreaterThanOrEqual(1); // LITERAL: every blob keeps at least 1 rep
+      const w = near.reduce((a, r) => a + r.weight, 0);
+      expect(w).toBe(10); // LITERAL and exact: every blob's true 10 members, not diluted or lost
+    }
+  });
+
+  it("a non-finite member coordinate degrades to a safe stand-in instead of propagating — no NaN " +
+    "rep, no silently shrunk rep count", () => {
+    // Round-2 review: an earlier version let one NaN member turn a whole cluster's `reps` into a
+    // single NaN rep, and let one Infinity member silently drop the rep count (24 -> 20). Verify
+    // both are gone: weight conservation still holds exactly, and no rep coordinate is non-finite.
+    const good = Array.from({ length: 39 }, (_, i) => ({ id: `g${i}`, path: [0], x: i * 3, y: i * i }));
+    const withNaN = [...good, { id: "bad", path: [0], x: NaN, y: 5 }];
+    const cNaN = buildLodIndex(withNaN, [], 1, 24)[0].clusters[0];
+    expect(cNaN.count).toBe(40);
+    for (const r of cNaN.reps) { expect(Number.isFinite(r.x)).toBe(true); expect(Number.isFinite(r.y)).toBe(true); }
+    expect(cNaN.reps.reduce((a, r) => a + r.weight, 0)).toBe(40);
+
+    const withInfinity = [...good, { id: "bad", path: [0], x: Infinity, y: 5 }];
+    const cInf = buildLodIndex(withInfinity, [], 1, 24)[0].clusters[0];
+    expect(cInf.count).toBe(40);
+    for (const r of cInf.reps) { expect(Number.isFinite(r.x)).toBe(true); expect(Number.isFinite(r.y)).toBe(true); }
+    expect(cInf.reps.reduce((a, r) => a + r.weight, 0)).toBe(40); // ABSOLUTE: no member silently dropped
   });
 });
 
