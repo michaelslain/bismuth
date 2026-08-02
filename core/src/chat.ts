@@ -986,6 +986,36 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
 }
 
 /**
+ * Pure: the `sandbox` SDK option for spawnChatQuery — undefined when nothing is restricted, so an
+ * unrestricted vault's spawn omits `sandbox` entirely, exactly as before (spawnChatQuery ALSO gates
+ * its whole call site on `denyEntries.length > 0`, so this internal check is belt-and-suspenders,
+ * mirroring sandboxDenyRead's own double-guard in visibility.ts). Extracted from spawnChatQuery so
+ * it is unit-testable without spawning the real SDK query().
+ *
+ * `allowUnsandboxedCommands: false` (Task 9) is the fix for a live probe that found the model
+ * calling its OWN Bash tool with `dangerouslyDisableSandbox: true` to skip the OS sandbox on its
+ * own initiative, TWICE, while being asked to read a hidden note — not an adversarial bypass, just
+ * the app's own agent behaving normally. `failIfUnavailable` only gates a sandbox that fails to
+ * START; it does nothing about a sandbox the model itself asks to skip on a per-call basis. Per
+ * sdk.d.ts's `Settings.sandbox.allowUnsandboxedCommands` docstring (0.3.186, line 5659 — the only
+ * prose anywhere in the bundled types describing this field; `Options.sandbox`'s zod-derived
+ * `SandboxSettings` at line 2596 shares the identical field/shape but carries no doc comment of its
+ * own at its declaration site — see docs/vault/visibility.md for the full citation + verification
+ * notes): "Allow commands to run outside the sandbox via the dangerouslyDisableSandbox parameter.
+ * When false, the dangerouslyDisableSandbox parameter is completely ignored and all commands must
+ * run sandboxed. Default: true."
+ */
+export function buildChatSandboxOption(denyEntries: DenyEntry[], cwd: string): Record<string, unknown> | undefined {
+  if (denyEntries.length === 0) return undefined;
+  return {
+    enabled: true,
+    failIfUnavailable: sandboxFailIfUnavailable(denyEntries),
+    allowUnsandboxedCommands: false,
+    filesystem: { denyRead: sandboxDenyRead(denyEntries, cwd) },
+  };
+}
+
+/**
  * Build query() for a session from a fresh deny list and assign `session.q`. Extracted so a
  * mid-conversation visibility change can respawn (see respawnSession) — managedSettings +
  * sandbox are fixed at spawn and cannot be updated on a running query(), so re-gating them means
@@ -1124,14 +1154,14 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         // convention). Restricted vault → fail closed; unrestricted vault → unaffected, exactly as
         // before this fix (sandboxFailIfUnavailable([]) is false, and this whole block is only
         // included when denyEntries.length > 0 anyway).
+        //
+        // sandbox itself is now built by buildChatSandboxOption (Task 9), which additionally sets
+        // `allowUnsandboxedCommands: false` — see its doc comment for why (stops the model turning
+        // its own sandbox off via the Bash tool's `dangerouslyDisableSandbox` parameter).
         ...(denyEntries.length > 0
           ? {
               managedSettings: { permissions: { deny: buildManagedSettingsDeny(denyEntries) } },
-              sandbox: {
-                enabled: true,
-                failIfUnavailable: sandboxFailIfUnavailable(denyEntries),
-                filesystem: { denyRead: sandboxDenyRead(denyEntries, session.cwd) },
-              },
+              sandbox: buildChatSandboxOption(denyEntries, session.cwd),
             }
           : {}),
         // Memory auto-recall (daemon-gated). The visual chat is an SDK session with NO relay
