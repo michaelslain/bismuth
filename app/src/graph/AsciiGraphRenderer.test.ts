@@ -1584,7 +1584,14 @@ describe("Task 11 — the 3D camera dolly is derived from the resolution ladder"
       expect(p.res).toBeCloseTo(p.maxRes, 6);            // we really are at the 0% stop
       const onGrid = p.nodes.filter((nv) => nv.onGrid).length;
       expect(onGrid).toBeGreaterThan(20);                // measured 43 of 300
-      expect(painted.at(-1)!).toBeGreaterThan(20);       // measured 40 node CELLS
+      // Measured 19 node CELLS, and the number MOVED from 40 in Task 21 without the picture changing
+      // by a pixel. `painted` is what paint()'s row loop drew, and labels used to be given their
+      // ground by an opaque rect painted OVER that loop's output; they now take their cells before it
+      // runs (reserveLabelCells blanks charBuf) so the same glyphs are never drawn instead of being
+      // drawn and covered. On this deliberately tiny 320x220 field, 22 labels claim 21 of the 40 node
+      // cells — measured directly, both counts, on the old code and the new. So the two numbers are
+      // "rasterized" and "visible", and 19 is the honest one.
+      expect(painted.at(-1)!).toBeGreaterThan(15);
       expect(ballNodeRuns().length).toBeGreaterThan(0);  // ...and they are real note glyphs, in a community colour
     });
   });
@@ -3309,23 +3316,29 @@ describe("a label never erases the field behind it (Task 21 — 'it splits')", (
    *  (the hub's own name), which is what makes the plate wide. */
   function starGraph() {
     const DEGS = [0, 6, 12, 20, 32, 48, 70, 90, 118, 150, 180, 210, 250, 290, 320, 340, 348, 354];
-    const nodes: {
+    type N = {
       id: string; label: string; kind: "note"; position: [number, number, number];
       position2d: [number, number]; community: number; communityLabel: string;
-    }[] = [{
-      id: "hub", label: "Violent Acts and Urban Space", kind: "note",
-      position: [0, 0, 0], position2d: [0, 0], community: 0, communityLabel: "Star",
-    }];
+    };
+    const at = (id: string, label: string, x: number, y: number): N => ({
+      id, label, kind: "note", position: [x, y, 0], position2d: [x, y], community: 0, communityLabel: "Star",
+    });
+    const nodes: N[] = [at("hub", "Violent Acts and Urban Space", 0, 0)];
     const edges: { from: string; to: string; kind: "link" }[] = [];
     DEGS.forEach((d, i) => {
       const a = (d * Math.PI) / 180;
-      const x = Math.cos(a) * 90, y = Math.sin(a) * 90;
-      nodes.push({
-        id: `s${i}`, label: `spoke ${i}`, kind: "note",
-        position: [x, y, 0], position2d: [x, y], community: 0, communityLabel: "Star",
-      });
+      nodes.push(at(`s${i}`, `spoke ${i}`, Math.cos(a) * 90, Math.sin(a) * 90));
       edges.push({ from: "hub", to: `s${i}`, kind: "link" });
     });
+    // CLOSE-IN NEIGHBOURS along +x, i.e. along the row the hub's own label is placed on. At the near
+    // stop the outer ring is ~1600px out, so these land in the label's first ~200px — they are what
+    // puts FIELD GLYPHS under the name's cells, which is the other half of what the opaque plate used
+    // to cover and what the "still separates every name" A/B measures. Without them that test is
+    // vacuous (it passed with the glyph suppression deleted, which is how this was caught).
+    for (let k = 0; k < 14; k++) {
+      nodes.push(at(`c${k}`, `close ${k}`, 1.5 + k * 0.8, 0));
+      edges.push({ from: "hub", to: `c${k}`, kind: "link" });
+    }
     return { nodes, edges, degs: DEGS };
   }
 
@@ -3369,9 +3382,9 @@ describe("a label never erases the field behind it (Task 21 — 'it splits')", (
     return (inside / (n + 1)) * len;
   }
 
-  function mountStar() {
+  function mountStar(showGraphLabels = true) {
     const g = starGraph();
-    const { r } = mountRenderer("2d", g as unknown as ReturnType<typeof sampleGraph>, { showLodMasses: true });
+    const { r } = mountRenderer("2d", g as unknown as ReturnType<typeof sampleGraph>, { showLodMasses: true, showGraphLabels });
     // The hub's label is FORCED (active file), so it draws at alpha 1 at any zoom — the label the
     // user's screenshot has lying across the fan.
     r.setActiveFile("hub");
@@ -3380,6 +3393,17 @@ describe("a label never erases the field behind it (Task 21 — 'it splits')", (
     // pushing the hub clean off the field. The user's view is centred on the hub.
     parkOnStar(r, ["hub"]);
     return { r, priv: starPriv(r), g };
+  }
+
+  /** Which grid cells a text run drawn at (x, y) by paint()'s row loop covers — the inverse of that
+   *  loop's own `padX + col * cellW` / `padY + row * cellH + cellH / 2` placement. Spaces are the
+   *  run's own gap filler (`if (run) run += " "`), not ink, so they are skipped. */
+  function cellsOfFill(f: { text: string; x: number; y: number }, m: StarPriv["m"]) {
+    const row = Math.round((f.y - m.cellH / 2 - m.padY) / m.cellH);
+    const col0 = Math.round((f.x - m.padX) / m.cellW);
+    const out: string[] = [];
+    for (let k = 0; k < f.text.length; k++) if (f.text[k] !== " ") out.push(`${col0 + k},${row}`);
+    return out;
   }
 
   it("the setup really does put a long label across a fan of stroked spokes", () => {
@@ -3417,34 +3441,48 @@ describe("a label never erases the field behind it (Task 21 — 'it splits')", (
     r.destroy();
   });
 
-  it("still separates every name from the field behind it", () => {
+  it("gives every name a ground halo instead — the plate's legibility job, at glyph scale", () => {
     const { r, priv } = mountStar();
-    // Legibility is why the plate existed, so it has to be replaced, not merely deleted. Two things
-    // stand in for it, and both are asserted: a ground-coloured HALO under every name (so a line
-    // passing behind it still reads as behind it)...
+    expect(priv.labels.length).toBeGreaterThan(0);
     expect(ctx.strokeTexts.length).toBe(priv.labels.length);
     for (const l of priv.labels) {
       const halo = ctx.strokeTexts.find((h) => h.text === l.text);
       expect(halo).toBeDefined();
+      // Wide enough to actually separate a glyph from a line crossing it...
       expect(halo!.width).toBeGreaterThan(1);
-    }
-    // ...and the FIELD GLYPHS under a name's cells, which the plate used to cover, are now never
-    // rasterized there at all — so no `o` is ever painted inside a letter.
-    const cellsUnder = new Set<string>();
-    for (const l of priv.labels) {
-      for (let c = l.col - 1; c <= l.col + l.widthCells; c++) cellsUnder.add(`${c},${l.row}`);
-    }
-    const labelTexts = new Set(priv.labels.map((l) => l.text));
-    for (const f of ctx.fills) {
-      if (labelTexts.has(f.text)) continue; // the names themselves
-      const row = Math.round((f.y - priv.m.cellH / 2 - priv.m.padY) / priv.m.cellH);
-      const col0 = Math.round((f.x - priv.m.padX) / priv.m.cellW);
-      for (let k = 0; k < f.text.length; k++) {
-        if (f.text[k] === " ") continue;
-        expect(cellsUnder.has(`${col0 + k},${row}`)).toBe(false);
-      }
+      // ...and carrying the label's OWN alpha, so a crossfading name leaves no dark ghost stroked at
+      // full strength over the field it is fading out of.
+      expect(halo!.alpha).toBeLessThanOrEqual(l.alpha + 1e-9);
     }
     r.destroy();
+  });
+
+  it("suppresses the field glyphs under a name at the source, where the plate used to cover them", () => {
+    // A/B on the SAME camera: the plate's other job was hiding the field behind a name, so deleting
+    // it without replacement would leave `o`s painted inside the letters. Measured by rendering the
+    // identical frame with labels OFF and asking what the field draws in the very cells the labelled
+    // frame reserves.
+    const labelled = mountStar(true);
+    const cellsUnder = new Set<string>();
+    for (const l of labelled.priv.labels) {
+      for (let c = l.col - 1; c <= l.col + l.widthCells; c++) cellsUnder.add(`${c},${l.row}`);
+    }
+    const labelTexts = new Set(labelled.priv.labels.map((l) => l.text));
+    const withLabels = ctx.fills
+      .filter((f) => !labelTexts.has(f.text))
+      .flatMap((f) => cellsOfFill(f, labelled.priv.m))
+      .filter((k) => cellsUnder.has(k));
+    labelled.r.destroy();
+
+    const bare = mountStar(false);
+    expect(bare.priv.labels.length).toBe(0); // labels really are off
+    const withoutLabels = ctx.fills.flatMap((f) => cellsOfFill(f, bare.priv.m)).filter((k) => cellsUnder.has(k));
+    bare.r.destroy();
+
+    // The fixture's close-in neighbours really do put glyphs there — without this the assertion
+    // below is vacuous, which is exactly how deleting the suppression first slipped through.
+    expect(withoutLabels.length).toBeGreaterThan(0);
+    expect(withLabels).toEqual([]);
   });
 });
 
