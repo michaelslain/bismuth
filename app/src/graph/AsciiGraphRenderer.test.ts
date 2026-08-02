@@ -5015,6 +5015,75 @@ describe("the animated 2D<->3D morph (modeMorph.ts)", () => {
   });
 
   /**
+   * IMPORTANT (round-2 review) — not pinned by any test above, INCLUDING the "5 distinct drawn
+   * frames" test immediately above. `projectEntities()`'s `blendPosition(ev.p3, [ev.wx, ev.wy, 0],
+   * flatten)` call is what makes a mass's FIRST frame of a transition continue from wherever the
+   * pre-flip 3D camera actually showed it — the exact continuity the glyph test far above
+   * (":4858") pins for individual nodes. The distinctness test does NOT catch its removal:
+   * `cameraFrame()`'s shared rotation/dolly/scale keeps moving on its own for the whole 500ms
+   * regardless of whether any given ENTITY's own position is blended, so a mutation that drops just
+   * the per-entity p3 blend (masses parked at their final flat `[wx, wy, 0]` position, viewed
+   * through a still-rotating camera) still produces 5 distinct drawn frames — just ones where the
+   * masses are already fanned out to their final 2D layout instead of clustered where the tilted 3D
+   * camera actually had them.
+   *
+   * Masses never actually project while `is2d` is false (`lodOn`'s own gate — see rasterize()), so
+   * there is no LIVE "last pre-flip 3D frame" to read `entityLevels[…].sx/sy` off, the way the
+   * glyph test reads `nv.sx/sy` off for free (nodes always project). Calling `projectEntities()`
+   * itself (privately) to get that comparandum was tried and rejected: `before` and `after` would
+   * then both come from the SAME method with the SAME effective inputs (the settled pre-flip camera
+   * and the transition's first-frame camera are identical — flatten 0, rx -0.5, ry 0, no dolly,
+   * `res` pinned to 1 either way), so they would agree by construction for ANY deterministic
+   * `projectEntities()` implementation, correct or not — the comparison could never actually go red
+   * on a formula bug, only on a degenerate FIXTURE. Instead this computes the ground truth BY HAND,
+   * independently of `projectEntities()`, applying the exact projection formula the two projection
+   * passes share (`cameraFrame()`'s doc comment) directly to each entity's own `p3` at the captured
+   * pre-flip camera — so a regression in the METHOD under test can actually diverge from it.
+   */
+  it("IMPORTANT — first-frame mass continuity: entering 2D, a mass's first frame continues the pre-flip 3D projection, not the already-fanned-out 2D one", () => {
+    interface MassContinuityPriv {
+      entityLevels: { p3: [number, number, number]; sy: number }[][];
+      P: number;
+      cameraFrame(): {
+        s: number; dolly: number; cyr: number; syr: number; cxr: number; sxr: number;
+        tx: number; ty: number; tz: number; ox: number; oy: number;
+      };
+    }
+    const massPriv = (r: AsciiGraphRenderer) => r as unknown as MassContinuityPriv;
+
+    const { r } = mountRenderer("3d", morphMassGraph(), { showLodMasses: true });
+    settle(60); // fully settled in 3D — this.morphFlatten === 0, this.rx === -0.5 (resting 3D tilt)
+    const priv = massPriv(r);
+
+    // GROUND TRUTH: the shared projection formula (projectNodes()/projectEntities(), see
+    // cameraFrame()'s own doc comment), applied BY HAND to each entity's `p3` at the settled
+    // pre-flip 3D camera — computed independently of projectEntities() itself (see the "rejected"
+    // note above for why calling that method for this side of the comparison would be vacuous).
+    const cam = priv.cameraFrame();
+    const P = priv.P;
+    const groundTruthSy = (p3: [number, number, number]) => {
+      const x = (p3[0] - cam.tx) * cam.s, y = (p3[1] - cam.ty) * cam.s, z = (p3[2] - cam.tz) * cam.s;
+      const x1 = x * cam.cyr + z * cam.syr, z1 = -x * cam.syr + z * cam.cyr;
+      const y2 = y * cam.cxr - z1 * cam.sxr, z2 = y * cam.sxr + z1 * cam.cxr;
+      const persp = P / Math.max(1, P - (z2 + cam.dolly));
+      return cam.oy + y2 * persp;
+    };
+    expect(priv.entityLevels[0].length).toBe(3); // morphMassGraph's three communities, one level
+    const before = priv.entityLevels[0].map((ev) => groundTruthSy(ev.p3));
+    // Non-vacuous: the fixture's per-community z (morphMassGraph's own doc comment) genuinely
+    // separates the three masses' screen-y at this camera angle — a degenerate "already equal"
+    // fixture would make the continuity assertion below pass for the wrong reason.
+    expect(new Set(before.map((v) => v.toFixed(1))).size).toBe(3);
+
+    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
+    // The first REAL frame rendered after the flip: elapsed 0, flatten exactly 0. Goes through the
+    // REAL projectEntities() — the method under test, not the hand-computed ground truth above.
+    frame(2000);
+    const after = priv.entityLevels[0].map((ev) => ev.sy);
+    for (let i = 0; i < before.length; i++) expect(after[i]).toBeCloseTo(before[i], 6);
+  });
+
+  /**
    * REQUIRED (round-1 review, Critical 2). Before this fix, a SECOND `viewMode` flip arriving
    * before the first transition finished always restarted `flatten`'s sweep from a hardcoded far
    * endpoint (entering 2D always started the new sweep at 0, entering 3D always at 1) regardless
@@ -5109,5 +5178,81 @@ describe("the animated 2D<->3D morph (modeMorph.ts)", () => {
     const later = dollyPriv(r).cameraFrame();
     expect(later.flatten).toBeGreaterThan(mid.flatten);
     expect(later.dolly).toBeLessThan(mid.dolly);
+  });
+
+  /**
+   * MINOR (round-2 review). `emitBloom()`'s far-band cloud spread used to read `this.pxPerWorld *
+   * this.res` under a comment claiming it was "the world→screen scale projectEntities() used this
+   * frame" — true only AT REST. `projectEntities()` actually places every mass at `cameraFrame()`'s
+   * BLENDED `s`, and the two diverge for the whole 500ms of a mode-morph transition whenever the 2D
+   * and 3D fits differ (the ordinary case — `this.pxPerWorld` only ever tracks the ARRIVAL mode's
+   * fit, since `fit()` runs synchronously on the flip before any transition frame renders). This is
+   * directly measurable with exactly ONE community on the field: `pushCloud`'s own doc comment
+   * (densityField.ts) guarantees the emitted cloud reproduces the REQUESTED per-axis standard
+   * deviation exactly, so `computeStats().bloomSdx`/`bloomSdy` (the pre-blur point stats) reflect
+   * whichever scale `emitBloom()` actually used, with no blur/field step in the way.
+   */
+  it("MINOR — the far band's bloom cloud is sized by the SAME blended scale projectEntities() placed the mass at, not the stale arrival-mode-only product", () => {
+    function oneMassGraph() {
+      const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
+      const edges: ReturnType<typeof sampleGraph>["edges"] = [];
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        nodes.push({
+          id: `o${k}`, label: `note ${k}`, kind: "note" as const,
+          position: [Math.cos(a) * 220 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE, 0] as [number, number, number],
+          position2d: [Math.cos(a) * 220 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE] as [number, number],
+          community: 0, communityLabel: "Only", communityPath: [0], communityPathLabels: ["Only"],
+        });
+      }
+      for (let k = 1; k < 16; k++) edges.push({ from: "o0", to: `o${k}`, kind: "link" as const });
+      return { nodes, edges };
+    }
+
+    interface BloomScalePriv {
+      entityLevels: { sdx: number; sdy: number }[][];
+      pxPerWorld: number; res: number; W: number; H: number;
+      cameraFrame(): { flatten: number; s: number };
+    }
+    const bsPriv = (r: AsciiGraphRenderer) => r as unknown as BloomScalePriv;
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = newRenderer();
+    r.mount(host, () => {});
+    r.setBloomCallback(() => {});
+    r.setConfig({ ...CONFIG, viewMode: "3d", showLodMasses: true });
+    r.render(oneMassGraph());
+    ctx.fills.length = 0; ctx.strokes.length = 0;
+    frame();
+    settle(60);
+
+    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
+    frame(2000);
+    frame(2000 + 150); // mid-transition: flatten in (0,1); res stays pinned at 1 (no zoom here), so
+                        // masses own the far band outright (glyphAlpha ~0) for the whole transition.
+
+    const priv = bsPriv(r);
+    expect(priv.entityLevels[0]?.length).toBe(1); // one community — the field's ENTIRE cloud
+    const ev = priv.entityLevels[0][0];
+    const { flatten, s: blendedS } = priv.cameraFrame();
+    expect(flatten).toBeGreaterThan(0);
+    expect(flatten).toBeLessThan(1); // genuinely mid-transition, not settled at either end
+
+    const staleS = priv.pxPerWorld * priv.res;
+    // Non-vacuous: the two scales actually differ at this sample — otherwise the assertion below
+    // would pass no matter which one emitBloom() reads.
+    expect(Math.abs(blendedS - staleS)).toBeGreaterThan(Math.abs(blendedS) * 0.01);
+
+    const stats = r.computeStats();
+    const expectedSdx = (ev.sdx * blendedS) / priv.W;
+    const expectedSdy = (ev.sdy * blendedS) / priv.H;
+    expect(stats.bloomSdx).toBeCloseTo(expectedSdx, 6);
+    expect(stats.bloomSdy).toBeCloseTo(expectedSdy, 6);
+
+    // ...and it does NOT match the stale, arrival-mode-only product — pinning the fix, not merely
+    // "close to something".
+    const staleSdx = (ev.sdx * staleS) / priv.W;
+    expect(Math.abs(stats.bloomSdx - staleSdx)).toBeGreaterThan(Math.abs(expectedSdx) * 0.01);
   });
 });

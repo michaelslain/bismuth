@@ -732,6 +732,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
   // measure elapsed time from — setConfig can run between frames, so "now" at flip time isn't
   // necessarily a timestamp this renderer's clock (driven entirely by rAF, see `lastFrameT`) has
   // any way to produce.
+  //
+  // TWO KNOWN, ACCEPTED GAPS a reader extending this should know about (neither fixed, both
+  // deliberate, see their own sites for the reasoning): (1) spin is effectively suppressed for the
+  // whole duration of an entering-3D transition — tick()'s modeMorph lerp overwrites `this.ry`
+  // fresh every frame, discarding whatever the spin block (which runs after it) added the frame
+  // before (see tick()'s own comment at the spin block). (2) a structural graph reload mid-morph
+  // (`fit(resetCamera=true)`, i.e. `shouldResetView`) discards an in-flight transition outright and
+  // snaps to the new mode's resting state rather than letting it finish or re-targeting it (see
+  // fit()'s own comment at its `resetCamera` branch).
   private modeMorph: {
     fromFlatten: number; toFlatten: number;
     fromRx: number; fromRy: number; toRx: number; toRy: number;
@@ -1510,6 +1519,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
       // this.rx` regardless of what this field held — that force-override is gone now that `rx`/
       // `ry` are read live (see `cameraFrame()`), so a 2D reset leaving `rx` at `-0.5` would
       // otherwise rotate the "flat" field by a stale 3D tilt on every fresh 2D graph load.
+      //
+      // KNOWN, ACCEPTED GAP (documented, not fixed): if a viewMode-flip transition is still in
+      // flight when a resetCamera fit runs (a structural graph reload mid-morph — render()'s
+      // `shouldResetView` decides when this fires), it is discarded outright rather than let finish
+      // or re-target: `this.modeMorph = null` below drops it and the camera SNAPS straight to the
+      // new mode's resting state instead of continuing to ease. A resetCamera fit is "snap to the
+      // whole-graph overview" by design, and reconciling that with a transition already in flight
+      // (finish it first? re-target it? drop it silently, as now?) is a design decision outside this
+      // task's scope, not a one-line fix — flagged so it is not silently rediscovered as a bug.
       this.modeMorph = null;
       this.morphFlatten = is2d ? 1 : 0;
       this.rx = is2d ? 0 : -0.5; this.ry = 0;
@@ -1564,6 +1582,14 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.dirty = true;
       if (elapsed >= MODE_MORPH_MS) this.modeMorph = null;
     }
+    // KNOWN, ACCEPTED GAP (documented, not fixed): spin is effectively suppressed for the whole
+    // duration of an entering-3D transition. This block runs AFTER the modeMorph block above, so on
+    // the frame it fires, `this.ry` is `lerp(...) + spinSpeed` for that one paint — but the NEXT
+    // frame's modeMorph block (if the transition is still in flight) overwrites `this.ry` fresh from
+    // `mm.fromRy`/`mm.toRy` at the new progress, which has no memory of the nudge just added and so
+    // discards it rather than carrying it forward. Net visible effect over the 500ms: the orbit just
+    // traces the lerp curve as if spin were off, then resumes accumulating once the transition clears
+    // `this.modeMorph`. Entering 2D is unaffected (`!is2d` is false the instant the flip lands).
     if (!is2d && this.cfg.spin && this.nodes.length <= 350 && !this.userTook && !this.dragging) {
       this.ry += this.cfg.spinSpeed ?? 0.0015; this.dirty = true;
     }
@@ -1654,9 +1680,20 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (!this.onBloom) return;
     const pts: BloomPoint[] = [];
     let weight = 0;
-    // The world→screen scale projectEntities() used this frame, so the emitted cloud lands exactly
-    // where the members would have. (2D only, which is the only place a mass band exists.)
-    const s = this.pxPerWorld * this.res;
+    // The world→screen scale THIS frame's projectEntities() actually used: cameraFrame()'s blended
+    // `s`, not `this.pxPerWorld * this.res`. The two AGREE at rest (`this.pxPerWorld` is the live
+    // mode's fit, `this.res` the live resolution, and cameraFrame()'s `flatten` collapses to exactly
+    // `is2d ? 1 : 0` — see cameraFrame()'s own doc comment) but DIVERGE for the whole duration of a
+    // mode-morph transition, because `this.pxPerWorld` only ever tracks the ARRIVAL mode's fit
+    // (fit() runs synchronously on the flip, before any transition frame renders), while
+    // `projectEntities()` places every mass at the BLENDED scale between the two. Reading the stale
+    // product here would size the far band's cloud for where a mass is ABOUT TO BE, not where it
+    // actually sits: position (sx/sy) would be right and the cloud's SPREAD (sdx/sdy, which is what
+    // this `s` scales) would be wrong for the whole transition. cameraFrame() is a cheap pure
+    // function of state nothing mutates between rasterize() and here (see tick()'s call order), so
+    // calling it again reproduces the exact value the mass positions were placed with this frame,
+    // not a second, independent one. (2D only, which is the only place a mass band exists.)
+    const s = this.cameraFrame().s;
     for (let L = 0; L < this.entityLevels.length; L++) {
       const a = this.massLevelAlphas[L] ?? 0;
       if (a <= LOD_ALPHA_EPS) continue;
@@ -2178,7 +2215,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private projectEntities(level: number) {
     const m = this.m;
     const P = this.P;
-    const { flatten, s, dolly, cyr, syr, cxr, sxr, tx, ty, tz, ox, oy } = this.cameraFrame();
+    const { flatten, s, dolly, cyr, syr, cxr, sxr, nearPlane, tx, ty, tz, ox, oy } = this.cameraFrame();
     const capRow = Math.max(1, (m.rows / 7) | 0);
     const capCol = Math.max(2, (m.cols / 7) | 0);
     for (const ev of this.entityLevels[level]) {
@@ -2190,19 +2227,27 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const persp = P / Math.max(1, P - zc);
       ev.sx = ox + x1 * persp;
       ev.sy = oy + y2 * persp;
-      // At rest (flatten exactly 0 or 1, no transition in flight) `persp` is exactly 1 and `zc` is
-      // exactly 0 — see this method's own reasoning for why `nearPlane`/`MIN_PERSP` need no gate
-      // here the way `projectNodes()`'s `projValid` does: an entity only ever projects while
-      // `is2d`, and 2D's own dolly/rotation are always 0 at rest, so there is no near-plane to
-      // approach outside an in-flight transition, and a transition's dolly is itself 0 for the
-      // reason in this method's own doc comment (`res` pinned to 1 by the flip). Left unguarded
-      // rather than adding a check nothing on the default path can trip.
+      // `projValid` — the same near/far guard `projectNodes()` computes as `nv.projValid`. This
+      // USED to be left out on the reasoning that "a transition's dolly is itself 0" (`res` pinned
+      // to 1 by the flip), so there was supposedly no near plane for a mass to approach outside an
+      // in-flight transition. That reasoning is false in general, and this file's own dolly-ramp
+      // test (above) proves it: `cameraFrame()`'s dolly is `cameraDolly(false) * (1 - flatten)`,
+      // which is nonzero and can be substantial for the WHOLE transition the instant a user zooms
+      // while it is running (an ordinary interaction, not a contrived one) — measured driving `sy`
+      // past -100,000px for a mass whose projection crosses the camera plane under that scenario.
+      // Nothing draws wrong TODAY without this guard — a projection that far gone already fails the
+      // plain grid-bounds check below by sheer magnitude, and `emitBloom`'s separate raw read of
+      // `sx`/`sy` is saved by `buildBloom`'s own 0..1 clip — but both of those are incidental
+      // properties of OTHER code, not something this method guarantees, so the guard is added for
+      // the same reason `projectNodes()` has one: correctness should not depend on two unrelated
+      // safety nets downstream happening to agree.
+      const projValid = persp > MIN_PERSP && zc < nearPlane;
       ev.col = Math.round((ev.sx - m.padX) / m.cellW);
       ev.row = Math.round((ev.sy - m.padY) / m.cellH);
       ev.drawnRowR = Math.min(ev.rowR, capRow);
       ev.drawnColR = Math.min(ev.colR, capCol);
       // A mass whose CENTRE is off-grid can still overlap the field by up to its radius.
-      ev.onGrid = ev.col >= -ev.drawnColR && ev.col < m.cols + ev.drawnColR
+      ev.onGrid = projValid && ev.col >= -ev.drawnColR && ev.col < m.cols + ev.drawnColR
         && ev.row >= -ev.drawnRowR && ev.row < m.rows + ev.drawnRowR;
     }
   }
