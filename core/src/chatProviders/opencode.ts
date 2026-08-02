@@ -292,6 +292,32 @@ function opencodePreconditionRefusal(denyEntries: DenyEntry[], why: string): str
   );
 }
 
+/** What the user sees when the vault's restricted set could not be enumerated at all. Distinct from
+ *  opencodePreconditionRefusal, which is about a KNOWN restricted set this backend can't enforce. */
+function undeterminedRefusal(reason: string): string {
+  return (
+    "Bismuth couldn't read this vault's visibility settings, so this chat wasn't started rather " +
+    `than risk running without them (${reason}). Check the vault's \`.settings\` file, then try again.`
+  );
+}
+
+/** The restricted set for this vault's chat channel, or the REASON the walk could not determine it.
+ *  `buildDenyPaths` throws rather than reporting an empty set for a vault it failed to read (see
+ *  core/src/visibility.ts's DenyPlan); every caller here refuses on `undetermined`.
+ *
+ *  Carries the diagnostic rather than discarding it, matching chat.ts and visibilityGate: the
+ *  message a user gets says WHICH file is unparseable, which is the difference between a fixable
+ *  error and a mysterious one. */
+type DenyLookup = { ok: true; entries: DenyEntry[] } | { ok: false; reason: string };
+
+async function denyEntriesOrReason(cwd: string): Promise<DenyLookup> {
+  try {
+    return { ok: true, entries: await buildDenyPaths(cwd, "chat") };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** Create (or resume) a session, preferring server mode when the shared `opencode serve` process is
  *  up (or comes up within its startup timeout) — see ./opencodeServer.ts. Async because both modes
  *  now involve awaiting something before the session is ready to use (the shared server's startup
@@ -316,7 +342,12 @@ async function getOrCreateSession(
 
   // Visibility gate (docs/vault/visibility.md): resolved fresh at every session open, mirroring
   // chat.ts's createSession — see this file's top-of-file note for the full rationale.
-  const denyEntries = await buildDenyPaths(cwd, "chat");
+  const lookup = await denyEntriesOrReason(cwd);
+  if (!lookup.ok) {
+    sink({ type: "error", code: "visibility-refused", binary: "opencode", message: undeterminedRefusal(lookup.reason) });
+    return null;
+  }
+  const denyEntries = lookup.entries;
   const restricted = denyEntries.length > 0;
   if (restricted) {
     const availability = checkSandboxWrapperAvailability({ selfSandboxes: can("opencode", "selfSandboxes") });
@@ -488,7 +519,9 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
   // explicit respawn — see docs/vault/visibility.md's "Mid-session change" table). This also covers
   // a session whose MODE was locked to "run" for an unrelated reason (an old opencode with no
   // `serve` support) at a point when the vault had nothing restricted yet.
-  const denyEntries = await buildDenyPaths(s.cwd, "chat");
+  const legacyLookup = await denyEntriesOrReason(s.cwd);
+  if (!legacyLookup.ok) return refuseTurn(s, undeterminedRefusal(legacyLookup.reason), "visibility-refused");
+  const denyEntries = legacyLookup.entries;
   let profilePath: string | null = null;
   if (denyEntries.length > 0) {
     const availability = checkSandboxWrapperAvailability({ selfSandboxes: can("opencode", "selfSandboxes") });
@@ -635,7 +668,9 @@ async function runTurnLegacy(s: OpencodeSession, text: string): Promise<void> {
 async function runTurn(s: OpencodeSession, text: string, images?: ChatImage[]): Promise<void> {
   if (s.mode === "run") return runTurnLegacy(s, text);
 
-  const denyEntries = await buildDenyPaths(s.cwd, "chat");
+  const lookup = await denyEntriesOrReason(s.cwd);
+  if (!lookup.ok) return refuseTurn(s, undeterminedRefusal(lookup.reason), "visibility-refused");
+  const denyEntries = lookup.entries;
   if (denyEntries.length > 0) {
     return refuseTurn(
       s,

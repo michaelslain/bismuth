@@ -18,7 +18,20 @@ export const SETTINGS_FILE = ".settings";
 /** Legacy location (vault root) — migrated into `.settings` on first open. */
 export const LEGACY_SETTINGS_FILE = "settings.yaml";
 
-export interface ReadSettingsResult { raw: string; data: Record<string, unknown>; }
+export interface ReadSettingsResult {
+  raw: string;
+  data: Record<string, unknown>;
+  /**
+   * Set when the file EXISTS but its YAML did not parse — `data` is then `{}` for the same reason a
+   * missing file yields `{}`, and the two cases are indistinguishable from `data` alone.
+   *
+   * Almost every reader is right to ignore this: the app must boot, and the editor must open the
+   * file to be fixed, even when a stray character has broken it. It exists for the one reader whose
+   * `{}` is not a harmless fallback — the visibility walk, where an empty `folderVisibility` map is
+   * the difference between "this folder is hidden from agents" and "nothing here is hidden".
+   */
+  parseError?: string;
+}
 
 /**
  * One-time relocation of older settings layouts into the single `.settings` file. Handles two
@@ -93,19 +106,23 @@ async function withSettingsMutex<T>(
   return result;
 }
 
-/** Read settings.yaml. Returns null if absent; tolerant of malformed YAML (data → {}). */
+/** Read settings.yaml. Returns null if absent; tolerant of malformed YAML (data → {}, and
+ *  `parseError` set so a reader that must not treat corrupt as empty can tell — see
+ *  {@link ReadSettingsResult.parseError} and {@link readFolderVisibilityResult}). */
 export async function readSettings(vault: string): Promise<ReadSettingsResult | null> {
   const full = join(vault, SETTINGS_FILE);
   if (!(await Bun.file(full).exists())) return null;
   const raw = await readNote(vault, SETTINGS_FILE);
   let data: Record<string, unknown> = {};
+  let parseError: string | undefined;
   try {
     const parsed = parse(raw);
     if (parsed && typeof parsed === "object") data = parsed as Record<string, unknown>;
-  } catch {
+  } catch (e) {
     data = {}; // corrupt file degrades to empty — callers fall back to defaults
+    parseError = e instanceof Error ? e.message : String(e);
   }
-  return { raw, data };
+  return { raw, data, ...(parseError === undefined ? {} : { parseError }) };
 }
 
 /**
@@ -534,11 +551,37 @@ function readFolderVisibilityFrom(data: Record<string, unknown>): Record<string,
     v === "chat-only" || v === "hidden" ? [normalizeFolderKey(k), v] : null);
 }
 
-/** Read the per-folder visibility map from settings.yaml. Absent file / section → {}. */
+/** Read the per-folder visibility map from settings.yaml. Absent file / section / corrupt YAML →
+ *  {}. For the ENFORCEMENT read, which must not treat a corrupt file as an empty map, use
+ *  {@link readFolderVisibilityResult}. */
 export async function readFolderVisibility(vault: string): Promise<Record<string, "chat-only" | "hidden">> {
   const res = await readSettings(vault);
   if (!res) return {};
   return readFolderVisibilityFrom(res.data);
+}
+
+/** Either the folder-visibility map, or the reason it could not be determined. */
+export type FolderVisibilityResult =
+  | { ok: true; map: Record<string, "chat-only" | "hidden"> }
+  | { ok: false; reason: string };
+
+/**
+ * The folder-visibility map for a reader that must distinguish "no folders are restricted" from
+ * "this file does not say what is restricted".
+ *
+ * An ABSENT `.settings` is `ok` with an empty map — a vault that has never been configured restricts
+ * nothing, and that is a fact, not a gap. A `.settings` that exists but does not parse is NOT ok:
+ * its `folderVisibility:` block may well have named the folder the user is relying on, and
+ * {@link readFolderVisibility}'s `{}` is byte-identical to the answer for a vault that hides
+ * nothing. An unreadable-but-present file propagates its read error to the caller, as before.
+ */
+export async function readFolderVisibilityResult(vault: string): Promise<FolderVisibilityResult> {
+  const res = await readSettings(vault);
+  if (!res) return { ok: true, map: {} };
+  if (res.parseError !== undefined) {
+    return { ok: false, reason: `${SETTINGS_FILE} is not valid YAML (${res.parseError})` };
+  }
+  return { ok: true, map: readFolderVisibilityFrom(res.data) };
 }
 
 /** Read the dailyNotes config from settings.yaml. Absent file → seeded default. */

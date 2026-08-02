@@ -121,8 +121,10 @@ export type ChatFrame =
    *  backend, `restrictedCount` is how many notes/folders are restricted (a COUNT only — never their
    *  names or paths, since naming a hidden note in an error message would defeat the point of hiding
    *  it), and `message` is the full user-facing explanation built by {@link visibilityRefusalMessage}.
-   *  Emitted INSTEAD OF opening the session — never as a mid-turn failure; `spawn`/`exit` = the
-   *  child failed; `error` = an SDK/turn error. */
+   *  Emitted INSTEAD OF opening the session, with one exception: a mid-session re-read of the
+   *  vault's visibility that cannot be resolved (respawnSession) emits it and ends the session,
+   *  rather than continue a conversation whose deny list no longer describes the vault.
+   *  `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
   | {
       type: "error";
       code: "no-claude" | "no-opencode" | "no-binary" | "visibility-refused" | "spawn" | "exit" | "error";
@@ -915,8 +917,23 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
   // Visibility gate (core/src/visibility.ts): resolve every note's effective visibility for the
   // "chat" channel and deny the restricted subset. Per-file paths, not folder globs — an explicit
   // file-level override inside a restricted folder is honored automatically (buildDenyPaths never
-  // emits a deny for it).
-  const denyEntries = await buildDenyPaths(cwd, "chat");
+  // emits a deny for it). A walk that cannot enumerate the vault throws rather than reporting an
+  // empty restricted set, so the session is refused instead of spawning with no deny list.
+  let denyEntries: DenyEntry[];
+  try {
+    denyEntries = await buildDenyPaths(cwd, "chat");
+  } catch (e) {
+    sink({
+      type: "error",
+      code: "visibility-refused",
+      binary: "claude",
+      message:
+        "Bismuth couldn't read this vault's visibility settings, so this chat wasn't started rather " +
+        `than risk running without them (${e instanceof Error ? e.message : String(e)}). Check the ` +
+        "vault's `.settings` file, then try again.",
+    });
+    return null;
+  }
 
   // Resuming an existing conversation: preload the model IT was last set to (Bug #89 — keyed by the
   // durable SDK session_id, chatModelStore.ts). spawnChatQuery re-applies it via q.setModel() right
@@ -1251,7 +1268,25 @@ export function computerUseChange(
 async function respawnSession(session: ChatSession): Promise<void> {
   session.visibilityDirty = false;
   session.spawnOptionsDirty = false;
-  const denyEntries = await buildDenyPaths(session.cwd, "chat");
+  // The respawn exists because the vault's visibility changed; if the new state cannot be
+  // enumerated, continuing on the session's PREVIOUS deny list would run the next turn against a
+  // list that no longer describes the vault. End the session instead.
+  let denyEntries: DenyEntry[];
+  try {
+    denyEntries = await buildDenyPaths(session.cwd, "chat");
+  } catch (e) {
+    session.sink({
+      type: "error",
+      code: "visibility-refused",
+      binary: "claude",
+      message:
+        "Bismuth couldn't re-read this vault's visibility settings, so this chat was stopped rather " +
+        `than continue without them (${e instanceof Error ? e.message : String(e)}). Check the ` +
+        "vault's `.settings` file, then reopen the chat.",
+    });
+    closeChat(session.id);
+    return;
+  }
   session.deniedEntries = denyEntries;
   // Tear down the old query() (interrupt any in-flight, then close) — NOT closeChat, which would
   // capture-to-memory and drop the session from the registry. NOTE: no await between the close and
