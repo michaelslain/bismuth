@@ -22,25 +22,28 @@
 // fakeAcpAgent.ts — the JSON-RPC protocol logic lives there, not in this file.
 //
 // No production files were changed for this task.
+//
+// PID-VERIFIED TEARDOWN (task-F, test-isolation hardening): retrofitted onto the shared
+// ../support/acpFakeAgentProcess.ts helper — the same module acpAbortFakeAgent.test.ts and
+// acpQueueFakeAgent.test.ts already consume — rather than this file's own former inline
+// mkdtempSync/writeFileSync/chmodSync stub-writer. `closeChat()` only SENDS a signal
+// (SIGTERM, escalating to SIGKILL after driver.ts's own grace window); it never confirms the
+// process actually exited. Without a pid-backed poll, a survivor goes unnoticed — the same class of
+// bug fixed for openclaw (F1) and for the sibling ACP fake-agent files earlier — and this file's own
+// per-test temp dirs (`bismuth-acp-fake-stub-*`/`bismuth-acp-fake-echo-*`) were found leaked in
+// tmpdir() with no live process attached (F2). Teardown below now confirms every pid it captured is
+// actually gone BEFORE removing directories, and removes directories regardless of whether that
+// confirmation succeeds.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
+import { makeAcpFakeAgentStubDir, pidAlive, waitForPidFile, waitProcessesGone } from "../support/acpFakeAgentProcess";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 const FAKE_TURN_TEXT = "Hello from the fake ACP agent"; // must match fakeAcpAgent.ts's own constant
-
-function makeStubBinDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "bismuth-acp-fake-stub-"));
-  const stubPath = join(dir, "cline");
-  // A thin bash shim, same shape as relay/test/wrap.test.ts's own stub bodies — execs the real
-  // logic in fakeAcpAgent.ts rather than duplicating the JSON-RPC handling inline here.
-  writeFileSync(stubPath, `#!/bin/bash\nexec bun run ${JSON.stringify(FAKE_AGENT_SCRIPT)} "$@"\n`);
-  chmodSync(stubPath, 0o755);
-  return dir;
-}
 
 /** One `{method, params}` line per inbound JSON-RPC request the fake agent received, in arrival
  *  order — see fakeAcpAgent.ts's `echo()`. Tolerant of the file not existing yet (an empty array,
@@ -77,7 +80,14 @@ async function waitForCondition(check: () => boolean, timeoutMs: number, descrip
 }
 
 describe("the ACP driver against a fake agent (zero network access, zero CLI dependency)", () => {
-  let stubDir: string;
+  let stubDir: string | undefined;
+  let pidDir: string | undefined;
+  // `| undefined`, reset at the top of every beforeEach (review finding, Minor 1): without this, a
+  // beforeEach that throws AFTER a previous test's own pidFile was assigned (e.g. mkdtempSync for
+  // pidDir failing on a LATER test) would leave pidFile pointing at the PREVIOUS test's already-
+  // removed path — stale state surviving a throw, the same class of bug stubDir/pidDir already
+  // guard against.
+  let pidFile: string | undefined;
   let savedPath: string | undefined;
   let savedShape: string | undefined;
   let savedEchoFile: string | undefined;
@@ -86,18 +96,28 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
   // never removed, leaving a `bismuth-acp-fake-echo-*` dir in $TMPDIR after every run).
   let echoDir: string | undefined;
   const chatIds: string[] = [];
+  // Pids this test itself caused to exist (via waitForPidFile, called once each test's own process is
+  // confirmed up), verified gone in afterEach — mirrors acpAbortFakeAgent.test.ts's/
+  // acpQueueFakeAgent.test.ts's identical shape.
+  const spawnedPids: number[] = [];
 
   beforeEach(() => {
-    // Snapshot env BEFORE anything that can throw (makeStubBinDir: mkdtempSync/writeFileSync/
-    // chmodSync) — a final-review finding, the same env-save-ordering class of bug fixed elsewhere
-    // on this branch: on a first-beforeEach throw here, `savedPath` would stay `undefined`, and
-    // afterEach's restore (`if (savedPath === undefined) delete process.env.PATH`) would then strip
-    // PATH from the shared `bun test` process for every LATER test that spawns a subprocess.
+    // Snapshot env BEFORE anything that can throw (makeAcpFakeAgentStubDir: mkdtempSync/
+    // writeFileSync/chmodSync) — a final-review finding, the same env-save-ordering class of bug
+    // fixed elsewhere on this branch: on a first-beforeEach throw here, `savedPath` would stay
+    // `undefined`, and afterEach's restore (`if (savedPath === undefined) delete process.env.PATH`)
+    // would then strip PATH from the shared `bun test` process for every LATER test that spawns a
+    // subprocess.
     savedPath = process.env.PATH;
     savedShape = process.env.FAKE_ACP_MODEL_SHAPE;
     savedEchoFile = process.env.FAKE_ACP_ECHO_FILE;
     echoDir = undefined;
-    stubDir = makeStubBinDir();
+    stubDir = undefined;
+    pidDir = undefined;
+    pidFile = undefined;
+    pidDir = mkdtempSync(join(tmpdir(), "bismuth-acp-fake-pid-"));
+    pidFile = join(pidDir, "agent.pid");
+    stubDir = makeAcpFakeAgentStubDir("bismuth-acp-fake-stub-", "cline", FAKE_AGENT_SCRIPT, pidFile);
     // Prepended, not appended: must win over any real `cline` this machine happens to have
     // installed elsewhere on PATH (this task installed one temporarily under .offline-cli-tools/ —
     // see the task report).
@@ -112,9 +132,22 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
     else process.env.FAKE_ACP_MODEL_SHAPE = savedShape;
     if (savedEchoFile === undefined) delete process.env.FAKE_ACP_ECHO_FILE;
     else process.env.FAKE_ACP_ECHO_FILE = savedEchoFile;
-    rmSync(stubDir, { recursive: true, force: true });
+
+    // closeChat() only SENDS a signal (SIGTERM, escalating to SIGKILL after driver.ts's own grace
+    // window) — it does not wait for the process to exit. Poll by OWNED pid (never a `pgrep -f`
+    // pattern match) via the shared helper; do the temp-dir cleanup regardless of the outcome, THEN
+    // throw if anything survived — see acpFakeAgentProcess.ts's own header for why cleanup must not
+    // be skippable by this check's own failure.
+    const stillAlive = await waitProcessesGone(spawnedPids.splice(0));
+
+    if (stubDir) rmSync(stubDir, { recursive: true, force: true });
     if (echoDir) rmSync(echoDir, { recursive: true, force: true });
-  });
+    if (pidDir) rmSync(pidDir, { recursive: true, force: true });
+
+    if (stillAlive.length > 0) {
+      throw new Error(`acpFakeAgent.test: fake-agent pid(s) ${stillAlive.join(", ")} still alive after closeChat — a real leak.`);
+    }
+  }, 15_000);
 
   afterAll(() => {
     // Belt-and-suspenders: afterEach already restores these, but a thrown assertion mid-test must
@@ -137,6 +170,14 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       const { sink, frames, waitFor } = makeChatFrameCollector(12_000);
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
+
+      // Captured as early as possible (review Minor 2: a pid captured only after later frame waits
+      // leaves the leak check vacuous for this test if it fails BEFORE reaching that point, even
+      // though the process was already spawned) — the stub writes its own pid before exec'ing into
+      // the fake agent, independent of ACP protocol progress, so this never races the frames below.
+      const pid = await waitForPidFile(pidFile!);
+      spawnedPids.push(pid);
+      expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
 
       const modelsFrame = await waitFor((f) => f.type === "models");
       expect(modelsFrame.type).toBe("models");
@@ -177,6 +218,11 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       const { sink, waitFor } = makeChatFrameCollector(12_000); // below the 15_000ms Bun timeout below — see the OLD-shape test's identical comment
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
+
+      // Captured as early as possible — see the OLD-shape test's identical comment (review Minor 2).
+      const pid = await waitForPidFile(pidFile!);
+      spawnedPids.push(pid);
+      expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
 
       const modelsFrame = await waitFor((f) => f.type === "models");
       expect(modelsFrame.type).toBe("models");
@@ -225,6 +271,12 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       const { sink, frames, waitFor } = makeChatFrameCollector(15_000);
 
       CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
+
+      // Captured as early as possible — see the OLD-shape test's identical comment (review Minor 2).
+      const pid = await waitForPidFile(pidFile!);
+      spawnedPids.push(pid);
+      expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
+
       await waitFor((f) => f.type === "models");
       await waitFor((f) => f.type === "done"); // first turn settled
 
@@ -277,6 +329,16 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
       // spawn+register the session ASYNCHRONOUSLY — detaching before the "session" frame arrives
       // would find no session yet and silently no-op).
       CHAT_BACKENDS.cline.openSession({ chatId, cwd: "/tmp", sink: sink1, computerUse: false });
+
+      // Captured as early as possible, before even the "session" frame wait below (review Minor 2:
+      // a pid captured only after a later frame arrives leaves the leak check vacuous for a test
+      // that fails before reaching that point, even though the process was already spawned by
+      // openSession() above) — the stub writes its own pid before exec'ing, independent of protocol
+      // progress.
+      const pid = await waitForPidFile(pidFile!);
+      spawnedPids.push(pid);
+      expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
+
       await waitFor1((f) => f.type === "session");
 
       // Queue turn 1 (kicks off session/prompt), then detach IMMEDIATELY (synchronously, same tick)

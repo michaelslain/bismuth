@@ -40,13 +40,24 @@
 // test-support fake agent gained a new opt-in mode, verified inert with the mode's env var unset
 // (see that file's header). The fourth test (TOOL NAMING, at the bottom) is the regression guard
 // for a later change to acp/{driver,protocol}.ts; the fake was NOT touched for it.
+//
+// PID-VERIFIED TEARDOWN (task-F, test-isolation hardening): retrofitted onto the shared
+// ../support/acpFakeAgentProcess.ts helper — the same module acpAbortFakeAgent.test.ts,
+// acpQueueFakeAgent.test.ts and (as of this same task) acpFakeAgent.test.ts already consume —
+// rather than this file's own former inline mkdtempSync/writeFileSync/chmodSync stub-writer.
+// `closeChat()` only SENDS a signal; it never confirms the process actually exited. This file's own
+// per-test temp dirs (`bismuth-acp-perm-stub-*`/`bismuth-acp-perm-echo-*`) were found leaked in
+// tmpdir() with no live process attached. Teardown below now confirms every pid it captured is
+// actually gone BEFORE removing directories, and removes directories regardless of whether that
+// confirmation succeeds.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatFrame } from "../../src/chat";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
+import { makeAcpFakeAgentStubDir, pidAlive, waitForPidFile, waitProcessesGone } from "../support/acpFakeAgentProcess";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 
@@ -92,14 +103,6 @@ interface EchoLine {
   error?: unknown;
 }
 
-function makeStubBinDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "bismuth-acp-perm-stub-"));
-  const stubPath = join(dir, "cline");
-  writeFileSync(stubPath, `#!/bin/bash\nexec bun run ${JSON.stringify(FAKE_AGENT_SCRIPT)} "$@"\n`);
-  chmodSync(stubPath, 0o755);
-  return dir;
-}
-
 /** Same tolerance contract as acpFakeAgent.test.ts's own copy: a missing file is an empty array (this
  *  is polled before the fake has written anything), and a torn last line — read while the fake is
  *  mid-appendFileSync — is dropped so the CURRENT poll fails and is retried 50ms later, rather than
@@ -132,14 +135,18 @@ async function waitForCondition(check: () => boolean, timeoutMs: number, descrip
 }
 
 describe("the ACP driver's permission round-trip against a fake agent that holds the turn open (zero network, zero CLI dependency)", () => {
-  // `| undefined` with an explicit reset each beforeEach, matching acpFakeAgent.test.ts:87's own
-  // shape: if makeStubBinDir()/mkdtempSync throws in the FIRST beforeEach, these stay undefined and
+  // `| undefined` with an explicit reset each beforeEach, matching acpFakeAgent.test.ts's own shape:
+  // if makeAcpFakeAgentStubDir()/mkdtempSync throws in the FIRST beforeEach, these stay undefined and
   // afterEach's rmSync would be handed `undefined` — which throws ERR_INVALID_ARG_TYPE and MASKS the
   // original failure (`force:true` swallows ENOENT, not an invalid argument type). This exact bug has
   // shipped in this harness before.
   let stubDir: string | undefined;
   let echoDir: string | undefined;
   let echoFile: string;
+  let pidDir: string | undefined;
+  // `| undefined`, reset at the top of every beforeEach (review finding, Minor 1) — see
+  // acpFakeAgent.test.ts's identical comment on its own pidFile.
+  let pidFile: string | undefined;
   const savedEnv: Record<string, string | undefined> = {};
   const ENV_KEYS = [
     "PATH",
@@ -151,6 +158,10 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
     "FAKE_ACP_CLINE_AUTHED",
   ] as const;
   const chatIds: string[] = [];
+  // Pids this test itself caused to exist (via waitForPidFile, called once driveToParkedPermission
+  // confirms the process is up), verified gone in afterEach — mirrors acpAbortFakeAgent.test.ts's/
+  // acpQueueFakeAgent.test.ts's identical shape.
+  const spawnedPids: number[] = [];
 
   function restoreEnv(): void {
     for (const k of ENV_KEYS) {
@@ -170,7 +181,11 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
     // pointed at the PREVIOUS test's already-removed directory.
     stubDir = undefined;
     echoDir = undefined;
-    stubDir = makeStubBinDir();
+    pidDir = undefined;
+    pidFile = undefined;
+    pidDir = mkdtempSync(join(tmpdir(), "bismuth-acp-perm-pid-"));
+    pidFile = join(pidDir, "agent.pid");
+    stubDir = makeAcpFakeAgentStubDir("bismuth-acp-perm-stub-", "cline", FAKE_AGENT_SCRIPT, pidFile);
     echoDir = mkdtempSync(join(tmpdir(), "bismuth-acp-perm-echo-"));
     echoFile = join(echoDir, "echo.jsonl");
 
@@ -188,14 +203,27 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
     delete process.env.FAKE_ACP_PERMISSION_OPTIONS;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     // Env restore FIRST: a throw from the closeChat loop must never skip restoration and leave a
     // later test in this file (or a later file in this same process) pointed at a stub PATH.
     restoreEnv();
     for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
+
+    // closeChat() only SENDS a signal (SIGTERM, escalating to SIGKILL after driver.ts's own grace
+    // window) — it does not wait for the process to exit. Poll by OWNED pid (never a `pgrep -f`
+    // pattern match) via the shared helper; do the temp-dir cleanup regardless of the outcome, THEN
+    // throw if anything survived — see acpFakeAgentProcess.ts's own header for why cleanup must not
+    // be skippable by this check's own failure.
+    const stillAlive = await waitProcessesGone(spawnedPids.splice(0));
+
     if (stubDir) rmSync(stubDir, { recursive: true, force: true });
     if (echoDir) rmSync(echoDir, { recursive: true, force: true });
-  });
+    if (pidDir) rmSync(pidDir, { recursive: true, force: true });
+
+    if (stillAlive.length > 0) {
+      throw new Error(`acpPermissionFakeAgent.test: fake-agent pid(s) ${stillAlive.join(", ")} still alive after closeChat — a real leak.`);
+    }
+  }, 15_000);
 
   afterAll(() => {
     // Belt-and-suspenders: a thrown assertion mid-test must never leave a LATER, unrelated test file
@@ -223,6 +251,16 @@ describe("the ACP driver's permission round-trip against a fake agent that holds
     const { sink, frames, waitFor } = makeChatFrameCollector(12_000);
 
     CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "hello" });
+
+    // Captured as early as possible, right after the process is spawned (review Minor 2: a pid
+    // captured only after the permission frame arrives leaves the leak check vacuous for a test
+    // that fails before that frame ever shows up, even though the process was already spawned by
+    // sendMessage() above) — the stub writes its own pid before exec'ing, independent of ACP
+    // protocol progress, so this never races anything below. Captured once here (the one entry
+    // point every test in this file drives through) rather than per-test.
+    const pid = await waitForPidFile(pidFile!);
+    spawnedPids.push(pid);
+    expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
 
     const permission = expectFrame(await waitFor((f) => f.type === "permission"), "permission");
 
