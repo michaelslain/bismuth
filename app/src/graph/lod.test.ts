@@ -7,7 +7,8 @@
 // through the raster buffers; this file pins the arithmetic directly.
 import { describe, expect, it } from "bun:test";
 import {
-  AGG_EDGE_DOUBLE_W, aggEdgeWeight, buildLodIndex, LOD_MIN_CLUSTER, lodMix, massCellAlpha, massCellCode, massRadii,
+  AGG_EDGE_DOUBLE_W, aggEdgeWeight, buildLodIndex, LOD_MIN_CLUSTER, LOD_REP_POINTS_K, lodMix, massCellAlpha,
+  massCellCode, massRadii,
 } from "./lod";
 import { FILE_LABEL_REVEAL_T } from "./labelSelection";
 import { CELL_H, CELL_W } from "./asciiGrid";
@@ -119,6 +120,127 @@ describe("buildLodIndex — aggregate entities", () => {
     expect(levels[0].clusters.length).toBe(2);   // "lonely" is not summarized
     expect(levels[0].edges.length).toBe(1);      // ...so neither is its connector
     expect(levels[0].edges[0].count).toBe(1);
+  });
+});
+
+describe("buildLodIndex — per-cluster representative points (reps)", () => {
+  /** Weighted population sd of a rep set, on one axis — same population-variance formula the
+   *  `pop()` helper above uses on raw members, just weighted. Used to compare a `reps` set's own
+   *  implied spread against the cluster's real member spread (`sdx`/`sdy`), which the "records
+   *  each entity's member SPREAD" test above already pins as the correct population sd of the raw
+   *  fixture coordinates — so comparing against `c.sdx`/`c.sdy` here is comparing against
+   *  independently-verified ground truth, not against this file's own new code. */
+  function weightedPopSd(reps: { x: number; y: number; weight: number }[], axis: "x" | "y"): number {
+    const W = reps.reduce((a, r) => a + r.weight, 0);
+    const m = reps.reduce((a, r) => a + r.weight * r[axis], 0) / W;
+    const v = reps.reduce((a, r) => a + r.weight * (r[axis] - m) * (r[axis] - m), 0) / W;
+    return Math.sqrt(v);
+  }
+
+  it("reproduces the members EXACTLY, as a set with unit weights, once k >= the member count", () => {
+    // The shipped default fixture's clusters are 2-6 members — every one is well under
+    // LOD_REP_POINTS_K, so this exercises k >= n with the PRODUCT default, not a special-cased k.
+    const levels = buildLodIndex(nodes(), edges, 1);
+    const raw = nodes();
+    for (const level of levels) {
+      for (const c of level.clusters) {
+        expect(c.count).toBeLessThan(LOD_REP_POINTS_K); // precondition: this really is the k >= n case
+        expect(c.reps.length).toBe(c.count);
+        expect(c.reps.every((r) => r.weight === 1)).toBe(true);
+        const repSet = new Set(c.reps.map((r) => `${r.x},${r.y}`));
+        const memberSet = new Set(c.memberIds.map((id) => {
+          const n = raw.find((x) => x.id === id)!;
+          return `${n.x},${n.y}`;
+        }));
+        expect(repSet).toEqual(memberSet);
+      }
+    }
+  });
+
+  it("still reproduces exactly at the exact boundary k === n, with an explicit small k", () => {
+    // Pin the boundary itself, not just "some k comfortably above n" — a fencepost error (k > n
+    // required instead of k >= n) would only show up exactly here.
+    const ns = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, path: [0], x: i * 3, y: -i * 5 }));
+    const levels = buildLodIndex(ns, [], 1, 7);
+    const c = levels[0].clusters[0];
+    expect(c.count).toBe(7);
+    expect(c.reps.length).toBe(7);
+    expect(c.reps.every((r) => r.weight === 1)).toBe(true);
+    expect(new Set(c.reps.map((r) => `${r.x},${r.y}`))).toEqual(new Set(ns.map((n) => `${n.x},${n.y}`)));
+  });
+
+  it("conserves total weight exactly (no members lost or double-counted) whether k is below, at, or above n", () => {
+    const ns = Array.from({ length: 10 }, (_, i) => ({ id: `m${i}`, path: [0], x: i, y: i * i }));
+    for (const k of [3, 7, 10, 24]) {
+      const c = buildLodIndex(ns, [], 1, k)[0].clusters[0];
+      expect(c.reps.length).toBe(Math.min(10, k));
+      const totalWeight = c.reps.reduce((a, r) => a + r.weight, 0);
+      expect(totalWeight).toBeCloseTo(10, 8); // ABSOLUTE: ten members in, ten members' worth of weight out
+      // Every rep is a REAL member coordinate — nothing invented, unlike an ellipse sampled from
+      // sdx/sdy (which places mass at arbitrary points on a curve no member ever occupied).
+      const memberCoords = new Set(ns.map((n) => `${n.x},${n.y}`));
+      for (const r of c.reps) expect(memberCoords.has(`${r.x},${r.y}`)).toBe(true);
+    }
+  });
+
+  it("on a deliberately clumped, anisotropic fixture (two tight blobs on a diagonal), reps stay in the " +
+    "blobs and split proportionally — a single centroid+sd ellipse cannot do either", () => {
+    // Blob A: 30 members tightly jittered around (-1000, -1000). Blob B: 10 members tightly
+    // jittered around (+1000, 1000) — far apart, on the diagonal, deliberately NOT axis-aligned so
+    // an isotropic or axis-aligned synthesis has nowhere to hide. Listed in blob order (A's 30
+    // first, B's 10 next): the cluster's OWN encounter order, unrelated to anything the fix reads.
+    const jitter = [-2, -1, 0, 1, 2];
+    const A = Array.from({ length: 30 }, (_, i) => ({
+      id: `A${i}`, path: [0], x: -1000 + jitter[i % 5], y: -1000 + jitter[(i * 3) % 5],
+    }));
+    const B = Array.from({ length: 10 }, (_, i) => ({
+      id: `B${i}`, path: [0], x: 1000 + jitter[i % 5], y: 1000 + jitter[(i * 3) % 5],
+    }));
+    const ns = [...A, ...B];
+    const levels = buildLodIndex(ns, [], 1, LOD_REP_POINTS_K);
+    const c = levels[0].clusters[0];
+    expect(c.count).toBe(40);
+
+    // --- Prove the fixture actually exhibits the problem an ellipse has -------------------------
+    // A single centroid+sd "ellipse" summary is centred at (wx, wy) with radii (sdx, sdy). If that
+    // centre sits nowhere near EITHER real blob, an ellipse drawn there necessarily invents density
+    // in the empty gap between them — the exact failure `pushCloud`'s header measures. Confirm the
+    // centroid really does land in that empty gap before trusting the fix's assertions below.
+    const distTo = (px: number, py: number) => Math.hypot(c.wx - px, c.wy - py);
+    expect(distTo(-1000, -1000)).toBeGreaterThan(500); // nowhere near blob A
+    expect(distTo(1000, 1000)).toBeGreaterThan(500);   // nowhere near blob B either
+    // ...and the ellipse's own radii are enormous relative to either blob's real 2-unit jitter —
+    // an ellipse this size, centred in the gap, covers the gap itself, not two tight blobs.
+    expect(c.sdx).toBeGreaterThan(500);
+    expect(c.sdy).toBeGreaterThan(500);
+
+    // --- The fix: every rep sits inside a real blob, never in the gap --------------------------
+    for (const r of c.reps) {
+      const dA = Math.hypot(r.x - -1000, r.y - -1000);
+      const dB = Math.hypot(r.x - 1000, r.y - 1000);
+      expect(Math.min(dA, dB)).toBeLessThan(10); // within the +-2 jitter (with room to spare), not the gap
+    }
+    // Both blobs are actually represented (not just the majority one)...
+    const nearA = c.reps.filter((r) => Math.hypot(r.x - -1000, r.y - -1000) < 10);
+    const nearB = c.reps.filter((r) => Math.hypot(r.x - 1000, r.y - 1000) < 10);
+    expect(nearA.length).toBeGreaterThan(0);
+    expect(nearB.length).toBeGreaterThan(0);
+    // ...and split proportionally to the real 30/10 membership, not evenly split 50/50 as an
+    // ellipse's symmetric density would imply.
+    const wA = nearA.reduce((a, r) => a + r.weight, 0);
+    const wB = nearB.reduce((a, r) => a + r.weight, 0);
+    expect(wA).toBeCloseTo(30, 0);
+    expect(wB).toBeCloseTo(10, 0);
+
+    // --- reps' OWN spread matches the members' real spread far better than a single centroid ---
+    // (a single centroid is a POINT — spread 0, i.e. 100% wrong on an axis whose real spread is
+    // ~1000). The weighted reps reproduce the real (sdx, sdy) closely; a bare centroid cannot.
+    const repSdx = weightedPopSd(c.reps, "x");
+    const repSdy = weightedPopSd(c.reps, "y");
+    expect(repSdx).toBeGreaterThan(c.sdx * 0.85);
+    expect(repSdy).toBeGreaterThan(c.sdy * 0.85);
+    expect(repSdx).toBeLessThan(c.sdx * 1.15);
+    expect(repSdy).toBeLessThan(c.sdy * 1.15);
   });
 });
 
