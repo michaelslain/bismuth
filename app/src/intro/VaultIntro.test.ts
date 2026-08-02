@@ -9,8 +9,11 @@
 // components cannot be rendered under `bun test` in this repo: bun resolves `solid-js/web` to its
 // SERVER build, so `render()` throws "Client-only API called on the server side". (That is why
 // there is not one `.test.tsx` in the tree.) So the two things `IntroGraph` actually owns are
-// exported — `applyGraphConfig` and the two baked clouds — and this file replays `IntroGraph`'s
-// own onMount sequence against a real AsciiGraphRenderer, in order:
+// exported — `applyGraphConfig` and the two baked clouds — from a sibling plain-`.ts` module,
+// `./vaultIntroGraph` (NOT from `./VaultIntro` itself: a `.tsx` file cannot be imported under `bun
+// test` at all in this repo — see that module's header comment for the full root cause, confirmed
+// against Task 26's identical fix for `app/src/graph/embeddedGraphRender.ts`). This file replays
+// `IntroGraph`'s own onMount sequence against a real AsciiGraphRenderer, in order:
 //     mount → setBloomCallback → render → applyGraphConfig → setFitMargin → setFrameOffsetY → setVisible
 // Get that order or those arguments wrong and the intro is blank; everything else in the component
 // is slide chrome.
@@ -23,7 +26,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { AsciiGraphRenderer } from "../graph/AsciiGraphRenderer";
 import type { GraphRenderer } from "../graph/graphRenderer";
 import type { DensityField } from "../graph/densityField";
-import { applyGraphConfig, BIG_GRAPH, SMALL_GRAPH } from "./VaultIntro";
+import { applyGraphConfig, BIG_GRAPH, SMALL_GRAPH } from "./vaultIntroGraph";
 import { THEME_NAMES, type ThemeName } from "../themes";
 import { NODE_GLYPHS } from "../graph/asciiGrid";
 import type { GraphData } from "../../../core/src/graph";
@@ -168,6 +171,33 @@ describe("VaultIntro — the first-run cloud on the unified renderer", () => {
     expect(statsOf(r).notesOnScreen).toBe(SMALL_GRAPH.nodes.length);
     expect(painted.at(-1)).toBeGreaterThan(0);
     expect(ctx.strokes).toBeGreaterThan(0); // the link edges too
+    r.destroy();
+  });
+
+  it("idly spins the theme slide's cloud — a static first screen is a real regression", () => {
+    // applyGraphConfig sets `spin: true` + `spinSpeed`, and AsciiGraphRenderer's own tick loop
+    // (`!is2d && cfg.spin && nodes.length <= 350 && !userTook && !dragging` → `ry += spinSpeed`)
+    // is the ONLY thing that would ever move this cloud: the theme slide never zooms, pans, or
+    // drags. SMALL_GRAPH's 55 nodes sit under the 350-node cutoff and applyGraphConfig's
+    // viewMode is "3d" (2D never spins, no matter what spin/spinSpeed hold), so idle spin must
+    // be observably live here. This asserts on PROJECTED SCREEN POSITIONS moving across real
+    // frames, not on the config object still holding the value applyGraphConfig wrote into it —
+    // that would pass even if the renderer ignored spin/spinSpeed entirely.
+    const { r } = mountIntroGraph(SMALL_GRAPH);
+    const p = r as unknown as { nodes: { sx: number; sy: number }[] };
+    const before = p.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
+    // One more real tick. Nothing else in this path can still be moving a node's screen position
+    // at this point — the camera starts (and stays) at exactly its 100%/fit resolution with no
+    // zoom/pan/target change anywhere above, so a big dt can't be hiding a leftover camera-glide
+    // confound here the way it would right after a fresh zoom or re-theme.
+    frame(1000);
+    let moved = 0;
+    for (let i = 0; i < p.nodes.length; i++) {
+      if (Math.hypot(p.nodes[i].sx - before[i].sx, p.nodes[i].sy - before[i].sy) > 0.01) moved++;
+    }
+    // The "you" hub sits at the world origin, on the rotation axis — it never moves no matter how
+    // much the cloud spins, so 100% is not attainable; virtually every other node should have.
+    expect(moved).toBeGreaterThan(p.nodes.length * 0.9);
     r.destroy();
   });
 
