@@ -33,8 +33,17 @@ export interface SyncManifest {
   bases: Record<string, BaseSync>; // keyed by the calendar base's vault path
 }
 
-export function gcalDir(home = homedir()): string {
-  return join(home, ".bismuth", "gcal");
+/**
+ * Where the durable Google-Calendar credentials + sync manifest live: `~/.bismuth/gcal`,
+ * or BISMUTH_GCAL_DIR when set (the same override BISMUTH_RUN_DIR / BISMUTH_CHAT_DIR /
+ * BISMUTH_DAEMON_DIR give their machine-wide dirs). This dir holds a real refresh token and
+ * sits OUTSIDE every vault, so a process that must not touch the user's Google account — a
+ * test run, a sandbox — has no other way to be isolated from it. An explicit `home` argument
+ * still wins, so a caller that names a home means that home.
+ */
+export function gcalDir(home?: string): string {
+  if (home === undefined && process.env.BISMUTH_GCAL_DIR) return process.env.BISMUTH_GCAL_DIR;
+  return join(home ?? homedir(), ".bismuth", "gcal");
 }
 function manifestPath(home?: string): string {
   return join(gcalDir(home), "sync.json");
