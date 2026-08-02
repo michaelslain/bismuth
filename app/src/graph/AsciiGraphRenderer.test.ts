@@ -237,9 +237,9 @@ function sampleGraph() {
 }
 
 const CONFIG = {
-  spin: false, spinSpeed: 0, palette: [], repulsion: 0, linkDistance: 5, centering: 0, nodeSize: 6,
-  viewMode: "3d" as const, showGraphLabels: true, graphLabelHubCount: 6, nodeSizeMinMult: 0.4,
-  nodeSizeDegreeGain: 0.45, nodeSizeMaxMult: 6, edgeColor: 0, edgeOpacity: 0.3, backgroundColor: 0,
+  spin: false, spinSpeed: 0, palette: [],
+  viewMode: "3d" as const, showGraphLabels: true, graphLabelHubCount: 6,
+  edgeColor: 0, edgeOpacity: 0.3, backgroundColor: 0,
   labelTextColor: "#fff", labelBgColor: "#000", selfColor: 0xffffff,
 };
 

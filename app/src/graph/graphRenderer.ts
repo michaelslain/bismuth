@@ -170,16 +170,9 @@ export interface GraphConfig {
   spin: boolean;
   spinSpeed: number;
   palette: number[];
-  repulsion: number;
-  linkDistance: number;
-  centering: number;
-  nodeSize: number;
   viewMode: "2d" | "3d";
   showGraphLabels: boolean;
   graphLabelHubCount: number;
-  nodeSizeMinMult: number;
-  nodeSizeDegreeGain: number;
-  nodeSizeMaxMult: number;
   edgeColor: number;
   edgeOpacity: number;
   backgroundColor: number;
