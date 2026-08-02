@@ -23,8 +23,9 @@
 // write a developer's real ~/.config/goose, independent of (and in addition to) backendMockEnv's own
 // mapping, which only points goose's PROVIDER at the mock.
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { whichBinary } from "../../src/claudeWhich";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
@@ -40,6 +41,26 @@ if (!HAS_GOOSE) {
   console.warn("[gooseMocked.test] skipped — the `goose` CLI is not installed on this machine (nothing to drive).");
 }
 
+/**
+ * Task 12 (step 2 of 2, "live tool-use, the fixture half"): does a REAL machine-wide install of
+ * Bismuth's own MCP server exist? `chatProviders/acp/driver.ts`'s `buildMcpServers()` only adds the
+ * "bismuth" MCP server to a session's `mcpServers` when `~/.bismuth/bin/bismuth-mcp` exists — a
+ * side effect of the desktop app having installed its machine-wide tools at least once
+ * (`core/src/bismuthInstall.ts`), NOT something this test file can create for itself (that binary
+ * is a real compiled artifact, not a stub). Without it, `goose` would never learn about a
+ * "bismuth__bismuth_docs_list" tool at all (confirmed live in this task's own research — see
+ * gooseToolUse test below), so the tool-call fixture couldn't be driven meaningfully. A missing
+ * install here is a missing-PRECONDITION skip, same spirit as HAS_GOOSE's missing-BINARY skip —
+ * never a missing-account skip.
+ */
+const HAS_BISMUTH_MCP = existsSync(join(homedir(), ".bismuth", "bin", "bismuth-mcp"));
+if (HAS_GOOSE && !HAS_BISMUTH_MCP) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[gooseMocked.test] the live tool-use test is skipped — ~/.bismuth/bin/bismuth-mcp isn't installed on this machine (no MCP server for goose to call a tool on).",
+  );
+}
+
 describeOrSkip("the real goose CLI, driven through the ACP driver, against a mock LLM (zero account API calls)", () => {
   const ENV_KEYS = ["ANTHROPIC_HOST", "ANTHROPIC_API_KEY", "GOOSE_PROVIDER", "GOOSE_MODEL", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"] as const;
   // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — a code-review finding on this
@@ -48,7 +69,15 @@ describeOrSkip("the real goose CLI, driven through the ACP driver, against a moc
   // developer's real ANTHROPIC_API_KEY/XDG_* vars this test never touched.
   const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  // EVERY mock spawned across this file's tests, not just the latest — this file now has more than
+  // one test, and each calls setup() independently (its own isolated aimock instance + its own
+  // fresh XDG dirs, matching this file's existing one-mock-per-test shape rather than switching to
+  // the shared-singleton pattern opencodeMocked.test.ts uses). A single `let mock` reassigned by a
+  // SECOND test's setup() call would orphan the FIRST test's own mock server — afterAll's old
+  // `mock?.stop()` only ever stopped whichever one was assigned LAST — reproduced live as exactly
+  // that leak before this fix (see this task's report). Tracked in an array and stopped in full.
   let mock: MockLlmHandle | undefined;
+  const mocks: MockLlmHandle[] = [];
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
 
@@ -60,6 +89,7 @@ describeOrSkip("the real goose CLI, driven through the ACP driver, against a moc
 
   async function setup(): Promise<void> {
     mock = await startMockLlm();
+    mocks.push(mock);
     const mockEnv = backendMockEnv("goose", mock.url);
     for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v;
     // Isolation, not mocking — see this file's header.
@@ -73,7 +103,7 @@ describeOrSkip("the real goose CLI, driven through the ACP driver, against a moc
       if (savedEnv[k] === undefined) delete process.env[k];
       else process.env[k] = savedEnv[k];
     }
-    await mock?.stop();
+    for (const m of mocks.splice(0)) await m.stop();
   });
 
   afterEach(async () => {
@@ -113,6 +143,99 @@ describeOrSkip("the real goose CLI, driven through the ACP driver, against a moc
       expect(doneIdx).toBeGreaterThan(resultIdx);
       const resultFrame = frames[resultIdx];
       if (resultFrame.type === "result") expect(resultFrame.isError).toBe(false);
+    },
+    60_000,
+  );
+
+  /**
+   * Task 12 (step 2 of 2, "live tool-use, the fixture half"): drive a REAL goose ACP tool call
+   * through Bismuth's own production driver, using `core/test/fixtures/llm/tool-call.json`'s
+   * `response.toolCalls` + a `match.toolCallId` follow-up (aimock's own tool-call fixture shape).
+   *
+   * WHY `bismuth__bismuth_docs_list` OF ALL TOOLS: `goose acp` is spawned with no `--with-builtin`
+   * extension (`chatProviders/acp/agents.ts`'s goose entry is plain `["acp"]`), so it registers NO
+   * tools at all UNLESS `session/new`'s `mcpServers` gives it one — and `buildMcpServers()`
+   * (driver.ts) only does that when `~/.bismuth/bin/bismuth-mcp` exists (HAS_BISMUTH_MCP above).
+   * `bismuth_docs_list` is read-only (lists doc pages; see mcp/src/server.ts) — the only tool this
+   * test could drive that is both REAL (goose actually declares and executes it, not a name it
+   * invents) and safe to actually execute for real (no writes, no shell, no network).
+   *
+   * REAL DIVERGENCE FOUND (this task's own live research — see the task's report for the full
+   * transcript): a real goose ACP `tool_call` update carries `rawInput` (ACP's OWN spec'd field for
+   * the tool's structured arguments — confirmed against `@zed-industries/agent-client-protocol`'s
+   * schema — populated live here as `rawInput:{}` since bismuth_docs_list takes none, and as the
+   * REAL query object for a tool that takes arguments, e.g. `rawInput:{"query":"gcal"}` for
+   * bismuth_docs_search) — but `chatProviders/acp/protocol.ts`'s `toolCallInput()` NEVER reads
+   * `rawInput` at all; it only ever synthesizes `{description: title, kind}` from the ToolCall's
+   * title/kind. That function's own doc comment claims ACP tool calls carry "no structured
+   * parameters" — true of what Bismuth currently reads, false of what a real ACP ToolCall actually
+   * carries on the wire. Not fixed here (this task's file list is test-only) — recorded precisely,
+   * per the task brief, rather than bent to fit.
+   *
+   * Also observed live, NOT a divergence (both are spec-legal — ACP's `kind` is optional, and this
+   * one real agent simply never sends it): goose's own `tool_call` notification never carries a
+   * `kind` field at all, so this tool-use frame's `kind` is `undefined` — the OTHER real, exercised
+   * branch of Task 2's `kind`-optional design, distinct from the fake-agent test's populated case.
+   */
+  test.if(HAS_BISMUTH_MCP)(
+    "a real goose ACP tool call (bismuth__bismuth_docs_list, a genuine Bismuth MCP tool) yields tool-use then tool-result with equal ids, then completes normally",
+    async () => {
+      await setup();
+
+      const cwd = await newTempDir("bismuth-goose-toolcall-cwd-");
+      const chatId = "goose-mocked-toolcall-" + Date.now();
+      chatIds.push(chatId);
+      const { sink, frames, waitFor } = makeChatFrameCollector();
+
+      CHAT_BACKENDS.goose.sendMessage({ chatId, cwd, sink, computerUse: false, text: "please list the bismuth docs" });
+
+      await waitFor((f) => f.type === "done");
+
+      // Exactly one of each — never "at least one".
+      const toolUseFrames = frames.filter((f) => f.type === "tool-use");
+      const toolResultFrames = frames.filter((f) => f.type === "tool-result");
+      expect(toolUseFrames.length).toBe(1);
+      expect(toolResultFrames.length).toBe(1);
+
+      const toolUse = toolUseFrames[0];
+      const toolResult = toolResultFrames[0];
+      if (toolUse.type !== "tool-use" || toolResult.type !== "tool-result") throw new Error("unreachable — filtered above");
+
+      // Equal ids — the literal id THIS fixture chose (never derived from either wire response), so
+      // this can only pass if the id genuinely round-tripped through goose's real tool_call ->
+      // tool_call_update -> Bismuth's translator.
+      expect(toolUse.id).toBe("toolu_task12_docslist");
+      expect(toolResult.id).toBe(toolUse.id);
+
+      // name: a real ACP ToolCall has no `name` field, so this must be goose's own human-readable
+      // `title` for the call (confirmed live: "bismuth: bismuth docs list"), never a raw tool
+      // identifier and never the synthesized "tool" fallback.
+      expect(toolUse.name.length).toBeGreaterThan(0);
+      expect(toolUse.name).not.toBe("tool");
+      // kind: see this test's own header — a real, live-confirmed negative: goose's tool_call never
+      // sends one.
+      expect(toolUse.kind).toBeUndefined();
+
+      expect(toolResult.isError).toBe(false);
+      // The real MCP tool's real output — bismuth_docs_list against an EMPTY cwd (no docs there)
+      // returns an empty JSON array, verbatim, as the tool_call_update's content text.
+      expect(toolResult.content).toBe("[]");
+
+      // Ordering: tool-result strictly after tool-use, result strictly after tool-result, done after
+      // result — same three-part ordering discipline as the fake-agent half's test.
+      const toolUseIdx = frames.indexOf(toolUse);
+      const toolResultIdx = frames.indexOf(toolResult);
+      expect(toolResultIdx).toBeGreaterThan(toolUseIdx);
+      const resultIdx = frames.findIndex((f) => f.type === "result");
+      expect(resultIdx).toBeGreaterThan(toolResultIdx);
+      const resultFrame = frames[resultIdx];
+      if (resultFrame.type === "result") expect(resultFrame.isError).toBe(false);
+      const doneIdx = frames.findIndex((f) => f.type === "done");
+      expect(doneIdx).toBeGreaterThan(resultIdx);
+
+      // The turn's own prose (built from the fixture's toolCallId follow-up) still arrived.
+      const assistantTexts = frames.filter((f) => f.type === "assistant-text").map((f) => (f.type === "assistant-text" ? f.text : ""));
+      expect(assistantTexts.join("")).toBe("Thanks, got the docs list.");
     },
     60_000,
   );
