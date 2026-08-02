@@ -411,6 +411,48 @@ describe("buildLodIndex — non-finite member coordinates at CLUSTER CONSTRUCTIO
     expect(levels[0].clusters[0].count).toBe(6);
   });
 
+  it("a MOSTLY (not entirely) non-finite cluster is NOT omitted — omission is for the all-bad " +
+    "case only, not a coverage gap a more aggressive threshold could quietly widen", () => {
+    // Review round 1: mutating the omission condition from `safeCount === 0` to `safeCount <= n /
+    // 2` left all 29 tests green, because the two existing fixtures only covered the extremes (1
+    // bad of 40, 40 bad of 40) — nothing pinned the middle. A `safeCount <= n / 2` policy would
+    // silently drop this fixture's cluster (15 good of 40, i.e. safeCount=15 <= n/2=20), which the
+    // brief never asked for: the brief's own omission case is "every member non-finite", not
+    // "more than half". This pins that boundary directly.
+    const good = Array.from({ length: 15 }, (_, i) => ({ id: `g${i}`, path: [0], x: i * 3, y: i * i }));
+    const bad = Array.from({ length: 25 }, (_, i) => ({ id: `bad${i}`, path: [0], x: NaN, y: 5 }));
+    const c = buildLodIndex([...good, ...bad], [], 1, 24)[0].clusters[0];
+    expect(c).toBeDefined(); // NOT omitted, even though 25 of its 40 members are non-finite
+    expect(c.count).toBe(40);
+    expect(Number.isFinite(c.wx)).toBe(true);
+    expect(Number.isFinite(c.wy)).toBe(true);
+    expect(Number.isFinite(c.sdx)).toBe(true);
+    expect(Number.isFinite(c.sdy)).toBe(true);
+    for (const r of c.reps) { expect(Number.isFinite(r.x)).toBe(true); expect(Number.isFinite(r.y)).toBe(true); }
+    expect(c.reps.reduce((a, r) => a + r.weight, 0)).toBe(40);
+    // Consistent with the surviving (finite) members' own mean, same check as the single-bad-member
+    // test above: reps and the centroid derive from the same sanitized point set.
+    const W = c.reps.reduce((a, r) => a + r.weight, 0);
+    const repMx = c.reps.reduce((a, r) => a + r.weight * r.x, 0) / W;
+    const repMy = c.reps.reduce((a, r) => a + r.weight * r.y, 0) / W;
+    expect(repMx).toBeCloseTo(c.wx, 6);
+    expect(repMy).toBeCloseTo(c.wy, 6);
+
+    // The reviewer's own more extreme measurement: 1 finite member of 40 (safeCount=1) is ALSO not
+    // omitted, and every non-finite member collapses onto that single real point exactly (0 real
+    // spread to summarize from just one true position).
+    const oneGood = [{ id: "solo", path: [1], x: 42, y: 17 }];
+    const allElseBad = Array.from({ length: 39 }, (_, i) => ({ id: `b${i}`, path: [1], x: NaN, y: NaN }));
+    const c2 = buildLodIndex([...oneGood, ...allElseBad], [], 1, 24)[0].clusters[0];
+    expect(c2).toBeDefined();
+    expect(c2.count).toBe(40);
+    expect(c2.wx).toBe(42);
+    expect(c2.wy).toBe(17);
+    expect(c2.sdx).toBe(0);
+    expect(c2.sdy).toBe(0);
+    expect(c2.reps.reduce((a, r) => a + r.weight, 0)).toBe(40);
+  });
+
   it("logs exactly one console.warn per build when a non-finite member is sanitized, none when " +
     "input is clean (Step 5) — silently absorbing a layout bug forever is not free", () => {
     const good = Array.from({ length: 39 }, (_, i) => ({ id: `g${i}`, path: [0], x: i * 3, y: i * i }));

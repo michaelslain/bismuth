@@ -275,7 +275,7 @@ export function buildLodIndex(
       if (ca == null || cb == null || ca === cb) continue;
       const ia = indexByCommunity.get(ca);
       const ib = indexByCommunity.get(cb);
-      if (ia === undefined || ib === undefined) continue; // an endpoint's community is under minCluster
+      if (ia === undefined || ib === undefined) continue; // endpoint's community is under minCluster, or (Task 30) omitted for having no finite member
       const lo = Math.min(ia, ib), hi = Math.max(ia, ib);
       const key = lo * clusters.length + hi;
       let p = pair.get(key);
