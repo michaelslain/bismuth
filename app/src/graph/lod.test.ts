@@ -7,7 +7,8 @@
 // through the raster buffers; this file pins the arithmetic directly.
 import { describe, expect, it } from "bun:test";
 import {
-  AGG_EDGE_DOUBLE_W, aggEdgeWeight, buildLodIndex, LOD_MIN_CLUSTER, lodMix, massCellAlpha, massCellCode, massRadii,
+  AGG_EDGE_DOUBLE_W, aggEdgeWeight, buildLodIndex, LOD_MIN_CLUSTER, LOD_REP_POINTS_K, lodMix, massCellAlpha,
+  massCellCode, massRadii,
 } from "./lod";
 import { FILE_LABEL_REVEAL_T } from "./labelSelection";
 import { CELL_H, CELL_W } from "./asciiGrid";
@@ -119,6 +120,242 @@ describe("buildLodIndex — aggregate entities", () => {
     expect(levels[0].clusters.length).toBe(2);   // "lonely" is not summarized
     expect(levels[0].edges.length).toBe(1);      // ...so neither is its connector
     expect(levels[0].edges[0].count).toBe(1);
+  });
+});
+
+describe("buildLodIndex — per-cluster representative points (reps)", () => {
+  /** Weighted population sd of a rep set, on one axis — same population-variance formula the
+   *  `pop()` helper above uses on raw members, just weighted. Used to compare a `reps` set's own
+   *  implied spread against the cluster's real member spread (`sdx`/`sdy`), which the "records
+   *  each entity's member SPREAD" test above already pins as the correct population sd of the raw
+   *  fixture coordinates — so comparing against `c.sdx`/`c.sdy` here is comparing against
+   *  independently-verified ground truth, not against this file's own new code. */
+  function weightedPopSd(reps: { x: number; y: number; weight: number }[], axis: "x" | "y"): number {
+    const W = reps.reduce((a, r) => a + r.weight, 0);
+    const m = reps.reduce((a, r) => a + r.weight * r[axis], 0) / W;
+    const v = reps.reduce((a, r) => a + r.weight * (r[axis] - m) * (r[axis] - m), 0) / W;
+    return Math.sqrt(v);
+  }
+
+  // NOTE on constant-independence (Round-1 review, CRITICAL-2): every `k` used below is a LITERAL
+  // passed explicitly to `buildLodIndex`'s 4th argument, never the imported `LOD_REP_POINTS_K`.
+  // These tests pin the ALGORITHM's behaviour at a given k; whether 24 (or 8, or 64) is the right
+  // SHIPPED default is a separate, narrower claim pinned once, below, directly on the constant.
+
+  it("reproduces the members EXACTLY, as a set with unit weights, whenever k >= the member count " +
+    "(both comfortably above n and exactly at n === k)", () => {
+    const ns = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, path: [0], x: i * 3, y: -i * 5 }));
+    for (const k of [7, 24]) { // n === k, and k comfortably above n — both literals
+      const c = buildLodIndex(ns, [], 1, k)[0].clusters[0];
+      expect(c.count).toBe(7);
+      expect(c.reps.length).toBe(7);
+      expect(c.reps.every((r) => r.weight === 1)).toBe(true);
+      expect(new Set(c.reps.map((r) => `${r.x},${r.y}`))).toEqual(new Set(ns.map((n) => `${n.x},${n.y}`)));
+    }
+  });
+
+  it("drops no member at n = k + 1 — the smallest case where reps stop being exact", () => {
+    // Round-1 review (IMPORTANT-2) found a first version silently dropped exactly one member here
+    // (always the last in encounter order). With k-means, n = k+1 puts one real member into some
+    // cluster alongside another, so weight conservation must still hold exactly even though
+    // point-level exactness has just ended (one rep is now a 2-member average).
+    const k = 24;
+    const ns = Array.from({ length: k + 1 }, (_, i) => ({ id: `m${i}`, path: [0], x: i * 7, y: i * i }));
+    const c = buildLodIndex(ns, [], 1, k)[0].clusters[0];
+    expect(c.count).toBe(k + 1);
+    expect(c.reps.length).toBeLessThanOrEqual(k);
+    const total = c.reps.reduce((a, r) => a + r.weight, 0);
+    expect(total).toBe(k + 1); // exact integer — see the dedicated exactness test below
+    for (const r of c.reps) expect(Number.isInteger(r.weight)).toBe(true);
+  });
+
+  it("conserves total weight as an EXACT INTEGER — no members lost or double-counted — " +
+    "whether k is below, at, or above n", () => {
+    // v1's `n / k` weight landed off by up to 9.09e-13 in a broader sweep (Round-1 review,
+    // IMPORTANT-3); k-means weights are member COUNTS, so the sum must be bit-exact, not merely
+    // toBeCloseTo.
+    const ns = Array.from({ length: 10 }, (_, i) => ({ id: `m${i}`, path: [0], x: i, y: i * i }));
+    for (const k of [3, 7, 10, 24]) {
+      const c = buildLodIndex(ns, [], 1, k)[0].clusters[0];
+      expect(c.reps.length).toBeLessThanOrEqual(Math.min(10, k));
+      const totalWeight = c.reps.reduce((a, r) => a + r.weight, 0);
+      expect(totalWeight).toBe(10); // ABSOLUTE and bit-exact: ten members in, ten members' worth of weight out
+      for (const r of c.reps) expect(Number.isInteger(r.weight)).toBe(true);
+    }
+  });
+
+  it("a spatially separated 8-member sub-blob inside a 300-member cluster keeps its own " +
+    "representation — not zeroed by encounter order, not diluted away", () => {
+    // Round-1 review CRITICAL-1: a real vault's `core/src/files.ts` walk is folder-contiguous and
+    // unsorted, so a cluster's members arrive as contiguous per-folder runs, not a
+    // position-independent shuffle. This fixture reproduces that shape directly: 292 "background"
+    // members spread broadly (never near the sub-blob) plus an 8-member sub-blob planted as ONE
+    // CONTIGUOUS RUN in the middle of encounter order — the folder-run shape the review measured
+    // failing against a stride sample.
+    //
+    // WHY 8, NOT THE REVIEW'S OWN "20-member" EXAMPLE: checked directly against a fixed-stride
+    // sampler (this file's v1, reinstated temporarily to verify) — at n=300 and ANY k in the
+    // brief's 16-32 band, the widest possible gap between stride samples is under 20 (300/16 = 18.75
+    // members between samples, worst case), so by pigeonhole a CONTIGUOUS 20-member run can never
+    // fully avoid every sample; the review's own suggested numbers cannot force a full zero here.
+    // An 8-member run can (8 < the ~12-19-member gaps in that band) and was confirmed, by direct
+    // sweep, to hit an exact zero at a real offset (13, used below) under that stride sampler —
+    // i.e. this fixture is proven capable of failing before trusting that the fix passes it.
+    const background = Array.from({ length: 292 }, (_, i) => {
+      const angle = (i / 292) * 2 * Math.PI * 3.3;
+      const r = 200 + (i % 7) * 20;
+      return { id: `bg${i}`, path: [0], x: r * Math.cos(angle), y: r * Math.sin(angle) };
+    });
+    const jitter = [-2, -1, 0, 1, 2];
+    const subCx = 5000, subCy = 5000;
+    const subBlob = Array.from({ length: 8 }, (_, i) => ({
+      id: `sub${i}`, path: [0], x: subCx + jitter[i % 5], y: subCy + jitter[(i * 3) % 5],
+    }));
+    const ns = [...background.slice(0, 13), ...subBlob, ...background.slice(13)];
+    const c = buildLodIndex(ns, [], 1, 24)[0].clusters[0];
+    expect(c.count).toBe(300);
+
+    const nearSubBlob = c.reps.filter((r) => Math.hypot(r.x - subCx, r.y - subCy) < 50);
+    expect(nearSubBlob.length).toBeGreaterThanOrEqual(1); // LITERAL: at least 1 rep lies within the sub-blob
+    const subBlobWeight = nearSubBlob.reduce((a, r) => a + r.weight, 0);
+    expect(Math.abs(subBlobWeight - 8)).toBeLessThan(3); // LITERAL: represented weight within 3 of the true 8
+  });
+
+  it("on a deliberately clumped, anisotropic fixture (two tight blobs on a diagonal), reps stay in the " +
+    "blobs and split proportionally, EVEN ON AN UGLY SPLIT — a single centroid+sd ellipse cannot do either", () => {
+    // Blob A / Blob B sizes are 29/11 — deliberately NOT a multiple of 1/k (Round-1 review,
+    // IMPORTANT-4: a 30/10 split is an exact multiple of 1/24 and passed by arithmetic coincidence;
+    // 29/11 does not have that property, so a pass here is not a fixture accident.
+    const nA = 29, nB = 11;
+    const jitter = [-2, -1, 0, 1, 2];
+    const A = Array.from({ length: nA }, (_, i) => ({
+      id: `A${i}`, path: [0], x: -1000 + jitter[i % 5], y: -1000 + jitter[(i * 3) % 5],
+    }));
+    const B = Array.from({ length: nB }, (_, i) => ({
+      id: `B${i}`, path: [0], x: 1000 + jitter[i % 5], y: 1000 + jitter[(i * 3) % 5],
+    }));
+    const ns = [...A, ...B];
+    const c = buildLodIndex(ns, [], 1, 24)[0].clusters[0];
+    expect(c.count).toBe(nA + nB);
+
+    // --- Prove the fixture actually exhibits the problem an ellipse has -------------------------
+    // A single centroid+sd "ellipse" summary is centred at (wx, wy) with radii (sdx, sdy). If that
+    // centre sits nowhere near EITHER real blob, an ellipse drawn there necessarily invents density
+    // in the empty gap between them — the exact failure `pushCloud`'s header measures. Confirm the
+    // centroid really does land in that empty gap before trusting the fix's assertions below.
+    const distTo = (px: number, py: number) => Math.hypot(c.wx - px, c.wy - py);
+    expect(distTo(-1000, -1000)).toBeGreaterThan(500); // nowhere near blob A
+    expect(distTo(1000, 1000)).toBeGreaterThan(500);   // nowhere near blob B either
+    // ...and the ellipse's own radii are enormous relative to either blob's real 2-unit jitter —
+    // an ellipse this size, centred in the gap, covers the gap itself, not two tight blobs.
+    expect(c.sdx).toBeGreaterThan(500);
+    expect(c.sdy).toBeGreaterThan(500);
+
+    // --- The fix: every rep sits inside a real blob, never in the gap --------------------------
+    for (const r of c.reps) {
+      const dA = Math.hypot(r.x - -1000, r.y - -1000);
+      const dB = Math.hypot(r.x - 1000, r.y - 1000);
+      expect(Math.min(dA, dB)).toBeLessThan(10); // within the +-2 jitter (with room to spare), not the gap
+    }
+    // Both blobs are actually represented (not just the majority one)...
+    const nearA = c.reps.filter((r) => Math.hypot(r.x - -1000, r.y - -1000) < 10);
+    const nearB = c.reps.filter((r) => Math.hypot(r.x - 1000, r.y - 1000) < 10);
+    expect(nearA.length).toBeGreaterThan(0);
+    expect(nearB.length).toBeGreaterThan(0);
+    // ...and split EXACTLY along the real 29/11 membership (k-means assigns every point to exactly
+    // one real blob when the blobs are this well separated — no quantization to multiples of n/k).
+    const wA = nearA.reduce((a, r) => a + r.weight, 0);
+    const wB = nearB.reduce((a, r) => a + r.weight, 0);
+    expect(wA).toBe(nA);
+    expect(wB).toBe(nB);
+
+    // --- reps' OWN spread matches the members' real spread far better than a single centroid ---
+    // (a single centroid is a POINT — spread 0, i.e. 100% wrong on an axis whose real spread is
+    // ~1000). The weighted reps reproduce the real (sdx, sdy) closely; a bare centroid cannot.
+    const repSdx = weightedPopSd(c.reps, "x");
+    const repSdy = weightedPopSd(c.reps, "y");
+    expect(repSdx).toBeGreaterThan(c.sdx * 0.85);
+    expect(repSdy).toBeGreaterThan(c.sdy * 0.85);
+    expect(repSdx).toBeLessThan(c.sdx * 1.15);
+    expect(repSdy).toBeLessThan(c.sdy * 1.15);
+  });
+
+  it("LOD_REP_POINTS_K stays within the brief's cost ceiling — pinned from ABOVE, not just documented", () => {
+    // Round-1 review, CRITICAL-2: k=8,16,32,64,256,1000,10000 were ALL fully green against every
+    // other test in this file, because those tests followed whatever the constant was rather than
+    // pinning it. This is the one place the shipped VALUE is checked, against literal bounds that
+    // do not move if the constant does: raising it to 10000 (or dropping it to 1) must go red here.
+    //
+    // Round-2 review, CRITICAL-2 (partial): this range check alone is a fact about the number, not
+    // a behavioural property — K=15 and K=33 fail it too, for no reason beyond "outside the band".
+    // The LOWER edge now has real behavioural backing: the "24 equal blobs" test below is exactly
+    // the shape that needs k this large (fewer clusters than distinct real sub-populations forces
+    // some to share or lose a rep — see that test's own comment). The UPPER edge does NOT have an
+    // in-file behavioural test, and I don't think it can: the actual cost this constant bounds is
+    // DOWNSTREAM, in Task 24b's `pushCloud` (one small bloom splat per rep, per the field's own doc
+    // comment above) — a file in this task's OFF-LIMITS boundary (`densityField.ts`). Any cost
+    // property measured here (e.g. `buildLodIndex`'s own build time) would not exercise that cost
+    // at all: k-means only runs when a cluster's member count exceeds k, so a large K mostly just
+    // takes the `n <= k` early-return path faster, which is not what makes a large K expensive.
+    // Pinning the upper edge to a REAL number would mean importing Task 24b's cost constants
+    // (`CLOUD_MAX_RINGS`/`CLOUD_MAX_PER_RING`) into this test file, which is the kind of premature
+    // coupling across the task boundary this plan is explicitly organized to avoid. So: the upper
+    // bound stays a brief-imposed ceiling, checked here only as a literal (not a derived property),
+    // and that limitation is written down rather than implied away.
+    expect(LOD_REP_POINTS_K).toBeGreaterThanOrEqual(16); // LITERAL lower bound, the brief's own band
+    expect(LOD_REP_POINTS_K).toBeLessThanOrEqual(32);    // LITERAL upper bound — NOT behaviourally pinned, see above
+  });
+
+  it("24 equal 10-member blobs spread with no dominant axis: every blob keeps its own rep and exact " +
+    "weight — the seeding strategy is load-bearing, not incidental", () => {
+    // Round-2 review, IMPORTANT (new): farthest-first seeding is what makes this pass. Swapping it
+    // for plain first-k-in-encounter-order seeding (verified directly, not just claimed) leaves
+    // this file's OTHER tests fully green — they all use few, very well-separated populations,
+    // where any seeding converges to the same partition under Lloyd's iteration — while 10 of these
+    // 24 blobs come back with ZERO reps under that mutant. This fixture is the discriminating shape
+    // both directions: many SIMILAR-sized populations with NO dominant axis (the same isotropic
+    // arrangement `representativePoints`' doc comment cites as the reason v2's 1D projection was
+    // abandoned), at k exactly equal to the population count, so every population needs its OWN
+    // seed and none can be shared.
+    const numBlobs = 24, blobSize = 10, radius = 1000;
+    const jitter = [-2, -1, 0, 1, 2];
+    const ns: { id: string; path: number[]; x: number; y: number }[] = [];
+    const centers: { x: number; y: number }[] = [];
+    for (let b = 0; b < numBlobs; b++) {
+      const angle = (b / numBlobs) * 2 * Math.PI;
+      const cx = radius * Math.cos(angle), cy = radius * Math.sin(angle);
+      centers.push({ x: cx, y: cy });
+      for (let i = 0; i < blobSize; i++) {
+        ns.push({ id: `b${b}_${i}`, path: [0], x: cx + jitter[i % 5], y: cy + jitter[(i * 3) % 5] });
+      }
+    }
+    const c = buildLodIndex(ns, [], 1, 24)[0].clusters[0];
+    expect(c.count).toBe(numBlobs * blobSize);
+    for (const center of centers) {
+      const near = c.reps.filter((r) => Math.hypot(r.x - center.x, r.y - center.y) < 50);
+      expect(near.length).toBeGreaterThanOrEqual(1); // LITERAL: every blob keeps at least 1 rep
+      const w = near.reduce((a, r) => a + r.weight, 0);
+      expect(w).toBe(10); // LITERAL and exact: every blob's true 10 members, not diluted or lost
+    }
+  });
+
+  it("a non-finite member coordinate degrades to a safe stand-in instead of propagating — no NaN " +
+    "rep, no silently shrunk rep count", () => {
+    // Round-2 review: an earlier version let one NaN member turn a whole cluster's `reps` into a
+    // single NaN rep, and let one Infinity member silently drop the rep count (24 -> 20). Verify
+    // both are gone: weight conservation still holds exactly, and no rep coordinate is non-finite.
+    const good = Array.from({ length: 39 }, (_, i) => ({ id: `g${i}`, path: [0], x: i * 3, y: i * i }));
+    const withNaN = [...good, { id: "bad", path: [0], x: NaN, y: 5 }];
+    const cNaN = buildLodIndex(withNaN, [], 1, 24)[0].clusters[0];
+    expect(cNaN.count).toBe(40);
+    for (const r of cNaN.reps) { expect(Number.isFinite(r.x)).toBe(true); expect(Number.isFinite(r.y)).toBe(true); }
+    expect(cNaN.reps.reduce((a, r) => a + r.weight, 0)).toBe(40);
+
+    const withInfinity = [...good, { id: "bad", path: [0], x: Infinity, y: 5 }];
+    const cInf = buildLodIndex(withInfinity, [], 1, 24)[0].clusters[0];
+    expect(cInf.count).toBe(40);
+    for (const r of cInf.reps) { expect(Number.isFinite(r.x)).toBe(true); expect(Number.isFinite(r.y)).toBe(true); }
+    expect(cInf.reps.reduce((a, r) => a + r.weight, 0)).toBe(40); // ABSOLUTE: no member silently dropped
   });
 });
 
