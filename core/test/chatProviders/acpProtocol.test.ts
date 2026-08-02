@@ -134,10 +134,10 @@ describe("isMethodNotFoundError", () => {
 // ── Version-skew model-shape detection ───────────────────────────────────────────────────────
 
 // PROVENANCE OF THE NEW-SHAPE FIXTURES BELOW. Every `configOptions` fixture in this block is
-// written from, or explicitly derived from, `session/new` results captured off REAL agent binaries
-// driven against a local mock — see the capture log at
-// .superpowers/sdd/2026-08-01-agent-integration-completion/task-1-report.md. Each fixture says
-// which it is, in its own comment: **captured** ones transcribe the payload; **derived** ones
+// written from, or explicitly derived from, `session/new` results captured live off cline 3.0.48,
+// `goose acp`, and `openclaw acp` (with a real `openclaw gateway run` alongside it) — each installed
+// locally and driven against a local mock model host, never a live account or a real LLM call.
+// Each fixture says which it is, in its own comment: **captured** ones transcribe the payload; **derived** ones
 // (abbreviated option lists, degenerate edge cases, filled-in ids) start from a captured structure
 // and say exactly what was changed. Read the per-test note before treating any of them as wire
 // truth — a blanket "all verbatim" claim here would be the same overclaim this block exists to
@@ -151,7 +151,9 @@ describe("isMethodNotFoundError", () => {
 // Do not "simplify" these back to `{id, …}`.
 describe("detectModelShape", () => {
   test("reads option values (the spec shape), not ids", () => {
-    // Captured live from cline 3.0.48 — see task-1-report.md §1a for the verbatim `session/new`.
+    // Captured live from cline 3.0.48's real session/new result — this IS that capture's verbatim
+    // model-selector entry (cline also emits a sibling provider selector, category:"model" too,
+    // elided here since this test only exercises the model list).
     const info = detectModelShape({
       configOptions: [
         { type: "select", id: "model", name: "Model", category: "model", currentValue: "mock-model",
@@ -266,11 +268,12 @@ describe("detectModelShape", () => {
   });
 
   test("NEW shape: configOptions with category 'model', plus a sibling thought_level option", () => {
-    // Structure captured live from `goose acp` (task-1-report.md §1c): selector ids "model" and
-    // "thinking_effort", categories "model"/"thought_level", currentValue "claude-haiku-4-5"/"off",
-    // options `{value, name}`. The report elided goose's full option lists (6 models, 5 effort
-    // levels) for length, so the lists here are a faithful SUBSET of that shape, not a verbatim
-    // transcription of all 11 entries — the shape is what this asserts on.
+    // Structure captured live from a real `goose acp` session (installed locally, driven against a
+    // mock LLM host, never a real account): selector ids "model" and "thinking_effort", categories
+    // "model"/"thought_level", currentValue "claude-haiku-4-5"/"off", options `{value, name}`. The
+    // real capture had goose's full option lists (6 models, 5 effort levels); the lists here are a
+    // faithful SUBSET of that shape, not a verbatim transcription of all 11 entries — the shape is
+    // what this asserts on.
     const result = {
       sessionId: "sess_1",
       configOptions: [
@@ -349,10 +352,11 @@ describe("detectModelShape", () => {
   });
 
   test("NONE: an agent with configOptions but no category 'model' entry and no models field (openclaw)", () => {
-    // DERIVED from the `openclaw acp` capture (task-1-report.md §1c). What is captured: a populated
+    // DERIVED from a real `openclaw acp` capture (openclaw installed locally, driven with a real
+    // `openclaw gateway run` alongside it, against a mock LLM host). What was captured: a populated
     // `configOptions` array whose categories are thought_level / fast_mode / verbose_level /
     // reasoning_level / response_usage / elevated_level, with NO category:"model" entry and no
-    // `models` field. The report records only those category NAMES, so the selector ids and option
+    // `models` field. Only those category NAMES were captured, so the selector ids and option
     // values below are filled in — the facts this asserts on (no model category, no models field,
     // therefore "none") are real; the specific strings are not transcribed.
     // The complement of the goose rule: falling through IS correct here, because there is no

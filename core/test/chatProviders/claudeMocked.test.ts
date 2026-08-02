@@ -22,8 +22,8 @@
 // Claude Agent SDK forwards an explicit `options.env` to the spawned child VERBATIM (verified by
 // reading node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs: an explicit `env` option is used
 // as the child's env as-is, not re-merged with the SDK's own default `{...process.env}` fallback,
-// which only applies when the caller passes no `env` at all). This was verified empirically by
-// running this exact test, not assumed — see the report for the full account of what was checked.
+// which only applies when the caller passes no `env` at all) — confirmed directly in sdk.mjs, not
+// assumed from documentation.
 //
 // No production files were changed for this task.
 import { afterAll, afterEach, describe, expect, test } from "bun:test";

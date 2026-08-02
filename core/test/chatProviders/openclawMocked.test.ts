@@ -160,6 +160,16 @@ function chatCompletionsHitCount(metricsText: string): number {
 // the port via `lsof`+`ps` and cross-referencing its name) adds real complexity and its own
 // platform-portability fragility for a residual risk this small. If this check is ever seen to fail
 // spuriously, that is the first hypothesis to rule out before assuming a genuine leak.
+//
+// A further caveat on what `isPortBound`'s bind-and-release actually proves: it assumes rebinding
+// the port without `SO_REUSEPORT` is a valid liveness probe against whatever else might hold it. A
+// listener bound with `SO_REUSEPORT` can let an unrelated socket share the same port instead of
+// failing with EADDRINUSE, which would be a real bypass of this check if either side of the
+// collision used it. This machine cannot exercise that path either way to find out: `node:net`'s
+// `createServer().listen({port, reusePort: true})` returns `ENOTSUP` ("operation not supported on
+// socket") on this macOS/Node build (verified live), so `SO_REUSEPORT` bind behavior — and therefore
+// whether this bypass is reachable — is untested here. Linux CI, where `SO_REUSEPORT` is normally
+// supported, is unverified.
 function collectDescendantPids(rootPid: number): number[] {
   const out: number[] = [];
   const frontier = [rootPid];
