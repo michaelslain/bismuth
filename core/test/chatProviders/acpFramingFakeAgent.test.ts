@@ -186,7 +186,7 @@ describe("crash mid-turn, malformed output, and chunk-boundary framing, driven t
       const errors = frames.filter((f): f is Extract<ChatFrame, { type: "error" }> => f.type === "error");
       expect(results.length).toBe(1);
       expect(results[0].isError).toBe(true);
-      // THE assertion the task brief calls out by name.
+      // Exactly one done frame — no duplicate terminal frame from a stray watchExit re-fire.
       expect(frames.filter((f) => f.type === "done").length).toBe(1);
       expect(errors.length).toBe(1);
       expect(errors[0].code).toBe("exit");

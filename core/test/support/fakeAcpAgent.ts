@@ -119,8 +119,8 @@ function notify(method: string, params: unknown): void {
  * claudeSpawnEnv(process.env, "chat") — a plain spread, verified in claudeMocked.test.ts's own
  * finding for the sibling Claude driver).
  *
- * SCOPE: the original version of this file covered exactly the driver verbs its own founding task's
- * brief called out — initialize, session/new (both model shapes), session/prompt (a streamed
+ * SCOPE: the original version of this file covered exactly these driver verbs —
+ * initialize, session/new (both model shapes), session/prompt (a streamed
  * session/update + a settling response), plus enough of session/set_config_option +
  * session/set_model to prove setModel/setEffort dispatch to the RIGHT wire method for each shape.
  * Every mode below is additive on top of that base.

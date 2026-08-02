@@ -38,14 +38,15 @@
 //     arrived. A queue that dequeues LIFO (or otherwise reorders — e.g. `Array.prototype.pop()`
 //     swapped in for `.shift()` in driver.ts's `runTurn`) is indistinguishable from a correct one
 //     with only ONE item ever queued (the first test, with only a second message, has nothing to
-//     reorder against), which is why this second test needs three messages, not two, despite this
-//     task's brief describing "two sendMessage calls" as the base scenario.
+//     reorder against), which is why this second test needs three messages, not two.
 //   - Every `session/prompt`'s own `sessionId` is compared against an INDEPENDENTLY-obtained value —
 //     the ACP session id read off the driver's own `"session"` ChatFrame (emitted once, at
 //     `openSession` time, before either test sends a single message) — never against each OTHER.
-//     `s.sessionId` (driver.ts) is assigned exactly once and never reassigned, so comparing the wire
-//     values only to each other is a tautology once `prompts.length` is already pinned: review found
-//     this and it is fixed here (see Mutation C in this task's report for the failing proof).
+//     `s.sessionId` (driver.ts:578) is assigned exactly once and never reassigned, so comparing the
+//     wire values only to each other is a tautology once `prompts.length` is already pinned — it
+//     would stay green even if driver.ts sent the chat id (`s.id`) instead of the real ACP session id
+//     (`s.sessionId`) in `session/prompt`. Anchoring to the independently-read session id above
+//     closes that gap.
 //
 // WHAT EACH ASSERTION PROTECTS, stated as a property rather than an audit trail (so this stays
 // accurate as driver.ts changes, instead of narrating a one-time verification run):
@@ -241,7 +242,7 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
     // even theoretically ours to close: a throw between "session close requested" and "temp dirs
     // removed" must never skip the removal. What this can NEVER cover: the whole process (this
     // `bun test` run) being killed with SIGKILL — no `finally` runs when there is no process left to
-    // run it in. See this task's report for that half of the mechanism.
+    // run it in; that half is categorically unfixable from inside this file.
     let stillAlive: number[] = [];
     try {
       for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
@@ -271,9 +272,9 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
   /**
    * Pre-create the session and wait for the handshake+session/new round trip to finish (the
    * "session" frame) before this file's own turn-QUEUE scenario begins. Without this, the very
-   * first `sendMessage` call on a brand-new chat races its OWN async session creation — a real,
-   * separately-documented gap in sendMessage's "new session" branch (see driver.ts's own comment on
-   * it, cited by name in this task's report) — which would make a bare
+   * first `sendMessage` call on a brand-new chat races its OWN async session creation — a real gap
+   * driver.ts's own "new session" branch documents itself (see its "PRE-EXISTING GAP" comment,
+   * driver.ts:643) — which would make a bare
    * two-`sendMessage`-calls-back-to-back test flaky for a reason that has nothing to do with the
    * queue this task is testing. Pre-creating the session and waiting for confirmation that it is
    * open (turnActive: false, sessionId assigned) makes the FIRST `sendMessage` call below take the

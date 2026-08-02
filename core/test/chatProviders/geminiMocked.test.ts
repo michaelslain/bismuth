@@ -40,7 +40,7 @@
 // skipNextSpeakerCheck` — ACP mode (exactly the mode `--experimental-acp`/`--acp` puts gemini-cli
 // into, which is all Bismuth's driver ever uses) unconditionally forces it `true`, so
 // `checkNextSpeaker` never runs. Confirmed two ways: (a) reading gemini-cli 0.53.0's bundled source
-// directly (installed to a scratch dir OUTSIDE this repo, per this task's brief — `npm install
+// directly (installed to a scratch dir OUTSIDE this repo — `npm install
 // --prefix <scratch>/gemini-cli @google/gemini-cli`), and (b) the live repro's own timeline/journal:
 // no second ~65-90s retry storm after the classifier's, and exactly 2 total requests once fixed (one
 // on `:generateContent`, the classifier; one on `:streamGenerateContent`, the turn — see hitCount's

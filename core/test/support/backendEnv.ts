@@ -3,7 +3,7 @@
 // (core/test/support/mockLlm.ts) instead of a real provider API — the other half of the
 // zero-real-API-calls test harness Tasks 3/4 build integration tests on top of.
 //
-// HONESTY, per the task brief: every row below is labeled with exactly what was actually
+// HONESTY: every row below is labeled with exactly what was actually
 // established for it, using this vocabulary (final-review finding: an earlier version of this
 // comment claimed the vocabulary was "VERIFIED or GUESSED" — no row below has said GUESSED since
 // Task 4; every row that started as a guess was either upgraded to one of the labels below with a
@@ -194,7 +194,7 @@ export function backendMockEnv(backendId: string, mockUrl: string, workDir?: str
     //     "old" branch that the fake-agent test (acpFakeAgent.test.ts) otherwise only proves
     //     synthetically.
     //   - A FULL TURN completing: root cause of the earlier stall, found by reading gemini-cli 0.53.0's
-    //     own bundled source (installed OUTSIDE this repo to a scratch dir, per this task's brief) and
+    //     own bundled source (installed OUTSIDE this repo to a scratch dir) and
     //     confirmed live via a raw-JSON-RPC repro against a real llmock instance with `--metrics` and its
     //     `GET /__aimock/journal` request log. A real turn makes TWO model calls, not one, on TWO
     //     DIFFERENT endpoints: `POST /v1beta/models/{model}:generateContent` (non-streaming) and

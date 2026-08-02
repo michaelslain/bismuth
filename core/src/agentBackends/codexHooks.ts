@@ -4,8 +4,8 @@
 // `codex` launched with cwd = a Bismuth vault reports its session lifecycle into Bismuth's
 // "agents" graph — WITHOUT a PATH shim. Codex auto-discovers `.codex/hooks.json` for any `codex`
 // invocation whose cwd is inside that project (alongside the global `~/.codex/hooks.json`); see
-// docs/chat/backends.md's Surface 3 section and this task's research report. MEDIUM confidence: the
-// project-scope file-discovery mechanics came from a source read of codex-rs/hooks (not a stable
+// docs/chat/backends.md's Surface 3 section. MEDIUM confidence: the project-scope file-discovery
+// mechanics came from a source read of codex-rs/hooks (not a stable
 // dated docs page) — the hooks/`[hooks]` config.toml mechanism itself IS on Codex's current
 // published docs, so the feature is real; only the exact discovery path is unverified against an
 // installed CLI. If wrong, the failure mode is simply "no agents-graph nodes for Codex sessions" —
@@ -39,11 +39,14 @@ const HOOKS_JSON_DESCRIPTION = "Bismuth relay lifecycle hooks — reports this C
  * outside a Bismuth terminal tab), a tight fetch timeout, every error swallowed, and the process
  * ALWAYS exits 0 — a hook must never fail or block the user's Codex session.
  *
- * Field names read off stdin (session_id, cwd, agent_id, agent_type, last_assistant_message) match
- * Codex's SessionStart/SubagentStart/SubagentStop/SessionEnd hook payloads verbatim per the research
- * report backing this task — the same snake_case shape Claude Code's own hooks use, so one script
- * covers both event families without per-field translation. Plain JS (no TypeScript-only syntax) so
- * it runs unmodified under `bun run` with no transpile-time surprises.
+ * Field names read off stdin (session_id, cwd, agent_id, agent_type, last_assistant_message) are
+ * assumed to match Codex's SessionStart/SubagentStart/SubagentStop/SessionEnd hook payloads
+ * verbatim — the same snake_case shape Claude Code's own hooks use (relay/lib/report.ts), so one
+ * script covers both event families without per-field translation. Unverified against a live Codex
+ * hook invocation; every field read is optional (`str()` below returns undefined for anything else),
+ * so a name mismatch degrades the same way as the file-discovery guess above — silently absent, never
+ * a crash. Plain JS (no TypeScript-only syntax) so it runs unmodified under `bun run` with no
+ * transpile-time surprises.
  */
 export function codexHookScriptSource(): string {
   return [

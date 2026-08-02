@@ -2218,8 +2218,8 @@ export function createServer(cfg: CoreConfig) {
   // app …` CLI, the launchd daemon — can find which port serves this vault, AND (new) this boot's
   // owner token, giving a future owner-side CLI caller a path to read it and present it (nothing
   // in THIS change makes the `bismuth` CLI itself do so yet — see the integrator note in
-  // ownerToken.ts / this task's final report; until it does, a bare `bismuth api …` is treated as
-  // a non-owner "daemon"-channel request, same as any other tokenless caller).
+  // ownerToken.ts; until it does, a bare `bismuth api …` is treated as a non-owner "daemon"-channel
+  // request, same as any other tokenless caller).
   // Best-effort; cleaned up on exit. Written 0600 (runRegistry.ts) since it now carries a secret.
   if (typeof server.port === "number") {
     writeRunRecord({ port: server.port, vault: cfg.vault, pid: process.pid, token: ownerToken });

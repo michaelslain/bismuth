@@ -33,9 +33,9 @@
 // "thread.started" event of the stream — the same "-s <sessionID> per invocation" shape
 // opencode.ts already uses for its own per-turn subprocess.
 //
-// `--json` vs `--experimental-json`: the research backing this task captured `codex exec --json`
-// from the CLI's own `--help` output (a real, documented flag). Separately, reading the (now
-// removed) SDK's compiled source showed IT invokes `codex exec --experimental-json` internally —
+// `--json` vs `--experimental-json`: `codex exec --json` is a real, documented flag captured from
+// the CLI's own `--help` output. Separately, reading the (now removed) SDK's compiled source showed
+// IT invokes `codex exec --experimental-json` internally —
 // the same OpenAI-maintained package, pinned to the exact CLI version it targets. Both are real,
 // evidenced spellings for what is presumably the same wire protocol, and this driver cannot tell
 // which one a given installed `codex` recognizes without running it. So `--json` is tried first
@@ -441,8 +441,8 @@ export function abortTurn(chatId: string): void {
 export function setModel(chatId: string, model: string): void {
   const s = sessions.get(chatId);
   if (!s) return;
-  // No model-list capability (see catalog.ts) — treat as a free-form string per this task's
-  // instructions (OpenAI's model naming churns), not an enum. Blank clears back to Codex's default.
+  // No model-list capability (see catalog.ts) — treat as a free-form string, not an enum (OpenAI's
+  // model naming churns). Blank clears back to Codex's default.
   const trimmed = model.trim();
   s.model = trimmed || undefined;
 }
