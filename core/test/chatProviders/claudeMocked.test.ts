@@ -8,7 +8,7 @@
 // quota against the user's own account and is opt-in via BISMUTH_LIVE_TESTS), this test's whole
 // point is that no account and no quota are ever touched. It only needs to skip when the
 // `claude` binary itself isn't installed (CI may not have it) — that is a missing-binary skip,
-// not a missing-account skip, and the two must never be conflated (see the task brief).
+// not a missing-account skip, and the two must never be conflated.
 //
 // FINDING (Step 2 of the brief): core/src/chat.ts's spawnChatQuery does NOT build its subprocess
 // env via claudeSpawnEnv() (core/src/claudeWhich.ts) — that helper is used by the OTHER chat

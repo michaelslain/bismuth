@@ -4,8 +4,8 @@
 // be read by anything that needs "what agents does the ACP driver know about" without pulling in
 // Bun/node:fs (same bundle-safety reason core/src/agentBackends/catalog.ts stays import-free).
 //
-// Every entry here is verified live against a specific CLI in the ACP research report EXCEPT
-// where a comment says otherwise — see the per-entry notes for exactly what's confirmed vs guessed.
+// Every entry here is verified live against a specific CLI EXCEPT where a comment says otherwise —
+// see the per-entry notes for exactly what's confirmed vs guessed.
 import type { BackendId } from "../../agentBackends/catalog";
 
 export interface AcpAgentSpec {

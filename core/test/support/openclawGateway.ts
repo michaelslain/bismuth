@@ -33,8 +33,8 @@
 // showing zero matching processes within 2s of a plain `proc.kill()`. No process-group tricks needed.
 // stop() still races a grace-period timeout and escalates to SIGKILL as defense-in-depth (the same
 // belt-and-suspenders posture mockLlm.ts's stopProcess takes), and the TEST FILE's own afterEach does
-// an independent `ps`-based verification per this task's brief ("verify with ps that nothing
-// survives") rather than trusting this module's resolution alone — `pid` below (the direct child's,
+// an independent `ps`-based verification that nothing survives, rather than trusting this module's
+// resolution alone — `pid` below (the direct child's,
 // i.e. the launcher's own pid — the one `ps` showed the grandchild's teardown rides along with) is
 // what that check uses; it is NOT the renamed `openclaw-gateway` grandchild's own pid.
 //

@@ -41,8 +41,8 @@
 //      against a half-dead bridge indefinitely, not just briefly) — see this file's own orphan check
 //      in `afterEach` below, which is what surfaces a regression here if this escalation ever breaks.
 //
-// SABOTAGE NOTES (per this task's brief — every new assertion was broken once, confirmed it failed,
-// then reverted): the fixture-text assertion was flipped to expect literal "hello" (lowercase, the
+// SABOTAGE NOTES (every new assertion below was broken once, confirmed it failed, then reverted):
+// the fixture-text assertion was flipped to expect literal "hello" (lowercase, the
 // PROMPT text, not the fixture's reply) — failed as expected ("Hello!" !== "hello"). The
 // path-specific /metrics assertion was changed to check a path that never gets hit
 // ("/v1/does-not-exist") — failed as expected (0 !== >0). The `isError` assertion was flipped to
@@ -104,9 +104,9 @@ function chatCompletionsHitCount(metricsText: string): number {
 // awaited `proc.exited` — that is the ACP bridge case below, which needs a different mechanism
 // entirely (see TOPOLOGY NOTE).
 //
-// TOPOLOGY NOTE, precisely (per this task's brief: "if openclaw's process topology does not fit the
-// helper's shape... say so explicitly and handle it" — and per review: state exactly which shapes
-// are covered and which are not, rather than a comment that reads as covering more than it does).
+// TOPOLOGY NOTE, precisely: openclaw's process topology does not fit the standard helper's
+// single-pid shape, so this comment says so explicitly and handles it — stating exactly which
+// shapes are covered and which are not, rather than reading as if it covered more than it does.
 // This file has THREE distinct leak shapes, each requiring a DIFFERENT check:
 //   1. Gateway launcher / mock — KNOWN pid, already-confirmed-dead-by-await. Covered by the
 //      immediate `pidAlive()` checks below.
@@ -334,8 +334,8 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     for (const dir of tempDirs.splice(0)) {
       await rm(dir, { recursive: true, force: true }).catch(() => {});
     }
-    // Per this task's brief: "Kill every process you start... verify with ps that nothing
-    // survives" — OWNED checks only, never a machine-wide `pgrep -f` (see pidAlive's/
+    // Every process this test starts must be killed, and its death verified — OWNED checks only,
+    // never a machine-wide `pgrep -f` (see pidAlive's/
     // collectDescendantPids's own doc comments for why that matters, not just style). Every check
     // below runs AFTER all cleanup above, so a failing check can never skip it.
     //
@@ -434,10 +434,10 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
       const resultFrame = frames[resultIdx];
       if (resultFrame.type === "result") expect(resultFrame.isError).toBe(false);
 
-      // The process-level proof this task's brief specifically demands: a PATH-SPECIFIC counter
-      // delta (never the mere presence of a metric name — see this file's chatCompletionsHitCount
-      // doc comment for the exact failure mode avoided) confirming the request actually landed on
-      // the mock, not merely that the driver reported success.
+      // The process-level proof: a PATH-SPECIFIC counter delta (never the mere presence of a metric
+      // name — see this file's chatCompletionsHitCount doc comment for the exact failure mode
+      // avoided) confirming the request actually landed on the mock, not merely that the driver
+      // reported success.
       const after = chatCompletionsHitCount(await fetch(`${mock!.url}/metrics`).then((r) => r.text()));
       expect(after).toBeGreaterThan(before);
     },

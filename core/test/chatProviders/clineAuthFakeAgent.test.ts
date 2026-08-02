@@ -25,8 +25,7 @@
 //   2. Completion path: with the fake's gate OPEN (FAKE_ACP_CLINE_AUTHED=1, mirroring the real
 //      CLINE_API_KEY bypass this task found — see fakeAcpAgent.ts's header), a full turn completes:
 //      the fixture's distinctive sentinel arrives as assistant-text, then a `result` frame with
-//      isError:false, then `done` — and no `error` frame ever appears. This is the coverage the task
-//      brief calls out as not existing anywhere in this repo before this task.
+//      isError:false, then `done` — and no `error` frame ever appears.
 //
 // STUB-BINARY PATTERN: identical to acpFakeAgent.test.ts (which cites relay/test/wrap.test.ts as the
 // original precedent) — write an executable stub named "cline" into a throwaway temp dir, prepend
@@ -141,10 +140,10 @@ describe("Bismuth's ACP driver against a fake agent reproducing cline's REAL aut
         expect(errorFrame.message).toContain(CLINE_AUTH_MESSAGE);
       }
 
-      // The actual safety assertion (mirrors clineMocked.test.ts's own real-binary test, and the
-      // task brief's own warning: `waitFor` above resolves on the FIRST "error" frame and ignores
-      // everything before it, so on its own it would still pass even if a stray success frame had
-      // arrived first). createSession's error path is a dead end — nothing else fires afterward —
+      // The actual safety assertion (mirrors clineMocked.test.ts's own real-binary test): `waitFor`
+      // above resolves on the FIRST "error" frame and ignores everything before it, so on its own it
+      // would still pass even if a stray success frame had arrived first. createSession's error path
+      // is a dead end — nothing else fires afterward —
       // so `frames` holds the WHOLE transcript by now, not just the one frame waited for.
       expect(frames.some((f) => f.type === "assistant-text")).toBe(false);
       expect(frames.some((f) => f.type === "result")).toBe(false);

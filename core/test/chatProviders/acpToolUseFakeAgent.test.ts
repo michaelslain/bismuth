@@ -171,8 +171,8 @@ describe("live tool-use (tool_call -> tool_call_update), driven through the ACP 
       // slip through an id===id-style comparison).
       expect(toolUse.id).toBe(TOOLUSE_TOOL_CALL_ID);
       expect(toolResult.id).toBe(TOOLUSE_TOOL_CALL_ID);
-      // THE equal-ids assertion the task brief calls out by name, checked directly (not merely
-      // implied by both matching the same literal above).
+      // THE equal-ids assertion, checked directly (not merely implied by both matching the same
+      // literal above).
       expect(toolResult.id).toBe(toolUse.id);
 
       // name: the real ACP ToolCall has no `name` field — only `title` (required) and `kind`

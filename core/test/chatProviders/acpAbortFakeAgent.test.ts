@@ -27,8 +27,8 @@
 // afterward. The first test below exercises the exact "late real reply after abort" scenario the
 // wrinkle describes and asserts zero new frames land because of it.
 //
-// ONE BEHAVIOURAL DETAIL THAT LOOKS LIKE A BUG BUT ISN'T (this task's brief calls it out explicitly):
-// after `abortTurn`, the correct `result` frame has `isError === false` — driver.ts:571 treats a
+// ONE BEHAVIOURAL DETAIL THAT LOOKS LIKE A BUG BUT ISN'T:
+// after `abortTurn`, the correct `result` frame has `isError === false` — driver.ts:593 treats a
 // cancelled stopReason as a clean turn end, not a failure, mirroring opencode.ts's own `aborting`
 // flag. A test asserting `isError: true` there would be WRONG, not stricter.
 //
@@ -39,9 +39,9 @@
 // zero CLI dependency, zero account contact. ADDED HERE: the stub also writes its own (post-`exec`,
 // therefore stable) pid to a file before handing off to the fake agent script, because
 // `CHAT_BACKENDS.cline.closeChat()` kills its subprocess internally and returns void — there is no
-// other way to get a concrete pid to verify "no orphan" against, and this task's brief is explicit
-// that the check must be BY PID, never a `pgrep -f` pattern match (which can't distinguish a process
-// this test started from an unrelated one already running on the machine).
+// other way to get a concrete pid to verify "no orphan" against, and the check must be BY PID, never
+// a `pgrep -f` pattern match (which can't distinguish a process this test started from an unrelated
+// one already running on the machine).
 //
 // No production files were changed for this task — only the test-support fake agent gained the
 // drain+guard fix described above, verified inert with FAKE_ACP_PROMPT_HOLD unset (that mode's own
@@ -155,8 +155,8 @@ describe("abortTurn and a never-settling turn, driven through the ACP driver aga
   ] as const;
   const chatIds: string[] = [];
   // Pids this test itself caused to exist (via waitForPidFile, called once driveToParkedPermission
-  // confirms the process is up), verified gone in afterEach — the "kill every process you start,
-  // verify by pid" half of this task's global constraints, not just Step 3's own ask.
+  // confirms the process is up), verified gone in afterEach — every process this test starts must be
+  // killed, and its death verified by pid.
   const spawnedPids: number[] = [];
 
   function restoreEnv(): void {
@@ -199,8 +199,8 @@ describe("abortTurn and a never-settling turn, driven through the ACP driver aga
     restoreEnv();
     for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
 
-    // Per this task's global constraints: kill every process this test started, verify with `ps` by
-    // an OWNED pid, never a `pgrep -f` pattern match. closeChat()'s own kill is
+    // Every process this test started must be killed, verified with `ps` by an OWNED pid, never a
+    // `pgrep -f` pattern match. closeChat()'s own kill is
     // SIGTERM-then-SIGKILL-after-KILL_ESCALATION_GRACE_MS (3000ms, driver.ts) fire-and-forget, so a
     // single immediate `ps` here would race that escalation — bounded poll instead (now the shared
     // ../support/acpFakeAgentProcess.ts helper, same 5s default timeout this loop used inline before).
@@ -283,8 +283,8 @@ describe("abortTurn and a never-settling turn, driven through the ACP driver aga
       expect(frames.filter((f) => f.type === "done").length).toBe(1);
       expect(frames.filter((f) => f.type === "error").length).toBe(0);
 
-      // THE ONE DETAIL THAT LOOKS LIKE A BUG BUT ISN'T (this task's brief): a cancel is a clean turn
-      // end, not a failure — driver.ts:571 only flags isError for stopReason "refusal".
+      // THE ONE DETAIL THAT LOOKS LIKE A BUG BUT ISN'T: a cancel is a clean turn
+      // end, not a failure — driver.ts:593 only flags isError for stopReason "refusal".
       expect(expectFrame(frames[resultIdx], "result").isError).toBe(false);
 
       // The driver actually sent session/cancel (not just internally flipped a flag) — exactly one,

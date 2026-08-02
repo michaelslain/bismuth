@@ -2,9 +2,9 @@
 // PURE Agent Client Protocol (ACP) plumbing: the JSON-RPC 2.0 envelope, the slice of the ACP method
 // surface Bismuth's driver speaks, and translateSessionUpdate — the ACP analogue of
 // ../opencodeTranslate.ts's translateOpencodeEvent. No spawning, no IO, nothing Bun/node-specific:
-// everything here is unit-tested against fixtures shaped like the verified schema (see the ACP
-// research report handed to this task — grepped against @agentclientprotocol/sdk@1.3.0's generated
-// .d.ts). ../acp/driver.ts is the effectful half (spawns the agent subprocess, owns the socket).
+// everything here is unit-tested against fixtures shaped like the schema verified by grepping
+// @agentclientprotocol/sdk@1.3.0's generated .d.ts. ../acp/driver.ts is the effectful half (spawns
+// the agent subprocess, owns the socket).
 //
 // Version-skew posture: ACP's ecosystem is visibly mid-migration (the TS SDK is at 1.3.0; the
 // still-current Zed claude-code-acp adapter pins 0.14.1). Every parser here treats its input as

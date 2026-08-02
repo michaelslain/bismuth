@@ -2,9 +2,9 @@
 // ACP driver (core/src/chatProviders/acp/driver.ts, via `cline --acp` — see
 // chatProviders/acp/agents.ts). Skips only when the `cline` binary itself is missing.
 //
-// THIS IS NOT AN END-TO-END "TURN COMPLETES" TEST, and that is the point. Per the task brief's
-// finding #1 (confirmed live this task — see backendEnv.ts's `cline` case comment for the complete
-// write-up): cline's ACP mode gates `session/new` behind a REAL OAuth `authenticate` call ("Sign in
+// THIS IS NOT AN END-TO-END "TURN COMPLETES" TEST, and that is the point. Confirmed live (see
+// backendEnv.ts's `cline` case comment for the complete write-up): cline's ACP mode gates
+// `session/new` behind a REAL OAuth `authenticate` call ("Sign in
 // with Cline" / "Sign in with ChatGPT Subscription" — no other methods are ever offered), which
 // hangs waiting for actual interactive login and cannot be satisfied by a mock. There is no env var,
 // CLI flag, or config file this task could find that lets cline's ACP mode skip this gate — unlike

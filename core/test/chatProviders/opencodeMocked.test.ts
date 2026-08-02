@@ -4,7 +4,7 @@
 // local mock LLM server (core/test/support/mockLlm.ts) with ZERO calls against any real provider
 // account. Mirrors claudeMocked.test.ts's shape (Task 3): runs by default in `bun test core`, skips
 // only when the `opencode` binary itself is missing — a missing-BINARY skip, never a missing-account
-// skip (see the task brief).
+// skip.
 //
 // TWO REAL DRIVER QUIRKS FOUND THIS TASK (both load-bearing for this test's shape — see
 // backendEnv.ts's `opencode` case comment for the full write-up):

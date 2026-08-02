@@ -1,7 +1,7 @@
 // Tests for the pure ACP (Agent Client Protocol) translation + JSON-RPC plumbing
-// (core/src/chatProviders/acp/protocol.ts) against shapes verified in the ACP research report
-// (grepped against @agentclientprotocol/sdk@1.3.0's generated .d.ts, plus the still-current
-// claude-code-acp adapter pinned to sdk 0.14.1 — the version-skew case). No ACP agent binary is
+// (core/src/chatProviders/acp/protocol.ts) against shapes verified by grepping
+// @agentclientprotocol/sdk@1.3.0's generated .d.ts, plus the still-current
+// claude-code-acp adapter pinned to sdk 0.14.1 — the version-skew case. No ACP agent binary is
 // spawned here — see ./driver.ts for the effectful half, which is untested for the same reason
 // core/src/chatProviders/opencode.ts is untested (only its pure translate module has a test file).
 import { describe, expect, test } from "bun:test";
@@ -145,8 +145,9 @@ describe("isMethodNotFoundError", () => {
 // the fixtures these replaced used `{id, name}` select options, **a shape no shipping ACP agent
 // has ever emitted** (`SessionConfigSelectOption` is `{value, name, description?}` in every
 // @agentclientprotocol/sdk generation checked: 0.20.0, 0.24.0, 0.29.0, 1.3.0). Those fixtures were
-// green against a fiction: they were written from the same research report as the code, so they
-// agreed with each other and with nothing real, and they hid the fact that detectModelShape's
+// green against a fiction: the fixtures and the code shared the same assumed shape rather than
+// either being checked independently against real traffic, so they agreed with each other and with
+// nothing real, and they hid the fact that detectModelShape's
 // `configOptions` branch had never returned a model from any real binary, for any backend.
 // Do not "simplify" these back to `{id, …}`.
 describe("detectModelShape", () => {

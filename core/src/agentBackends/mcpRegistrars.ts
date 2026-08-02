@@ -11,7 +11,7 @@
 // ~/.config/amp, ~/.factory, ~/.config/crush, ~/.config/goose, or spawning a real agent binary
 // (see core/test/agentBackends/mcpRegistrars.test.ts).
 //
-// Per-CLI mechanism table (see the research reports this was built from):
+// Per-CLI mechanism table:
 //  - Codex:    `codex mcp add <name> --env K=V -- <cmd>` → ~/.codex/config.toml. TOML is NEVER
 //              hand-edited (rule: Codex goes through `codex mcp add` or not at all). No verified
 //              `mcp remove`; unregister() attempts the conventional sibling verb best-effort.

@@ -706,7 +706,7 @@ export type OpencodePromptPart = { type: "text"; text: string } | { type: "file"
  * `data:` URL (verified live: `POST /session/{id}/message` accepted a `FilePartInput{type:"file",
  * mime,url:"data:image/png;base64,..."}` with HTTP 200, and a vision-capable free model
  * (`opencode/mimo-v2.5-free`) genuinely read pixel content back — this was NOT assumed from the SDK
- * types, it was independently confirmed with one real call per this task's brief). Text-less image
+ * types, it was independently confirmed with one real call). Text-less image
  * turns still carry a (possibly empty) leading text part, matching the CLI path's own "always send
  * something" convention.
  */
