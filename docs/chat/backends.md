@@ -256,8 +256,9 @@ knows**, and it has shown up four times:
    `resolveDaemonBackend` hardcoded `want === "claude"` instead of reading it. A flag nobody reads is
    the purest form of this failure mode: it costs nothing to set and asserts nothing true. Fixed by
    turning it into the per-channel shape above and making it the thing two real chokepoints
-   (`resolveDaemonBackend`, and — partially, see the gap noted in
-   [../vault/visibility.md](../vault/visibility.md) — the chat provider router) actually branch on.
+   (`resolveDaemonBackend`, and the chat provider router's `resolveVisibilityGate` — see
+   [../vault/visibility.md](../vault/visibility.md#the-chokepoint-and-why-it-lives-in-the-router))
+   actually branch on.
 
 The lesson generalises: when a flag, a payload field, or a generated type asserts a capability,
 prefer the version of the code that can be wrong *loudly*. A missing control is a small annoyance; a
