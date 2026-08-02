@@ -66,6 +66,37 @@ test("ownerTokenDenyPath names the exact run-record file every channel's deny pl
   expect(ownerTokenDenyPath(vault)).toBe(runRecordPath(vault));
 });
 
+// ---- CORS preflight: the browser must be ALLOWED TO SEND X-Bismuth-Token in the first place ----
+//
+// Every test below this point drives the server with Bun's `fetch`, which never enforces CORS —
+// it will happily deliver a header the browser would have refused to send. That is exactly why a
+// prior version of this file could pass in full while every real browser request carrying
+// X-Bismuth-Token was silently blocked at the preflight: nothing here ever asked the server what
+// its PREFLIGHT response actually promises. A browser decides whether to send the real request at
+// all by parsing the OPTIONS response's Access-Control-Allow-Headers — so that is the exact value
+// this test pins, independent of whether the follow-up request would have been accepted.
+test("OPTIONS preflight for X-Bismuth-Token: Access-Control-Allow-Headers must name it, or the browser refuses to ever send the real request", async () => {
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/file?path=whatever.md`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://localhost:1420",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "X-Bismuth-Token",
+      },
+    });
+    const allowed = (res.headers.get("Access-Control-Allow-Headers") ?? "")
+      .split(",")
+      .map((h) => h.trim().toLowerCase());
+    expect(allowed).toContain("x-bismuth-token");
+  } finally {
+    server.stop(true);
+  }
+});
+
 // ---- HTTP routes: the tokenless request is refused/filtered, the tokenful one is not ----------
 
 test("T-H1: GET /file — a hidden note 403s without the token and never leaks its body; 200 with the token; a visible note stays 200 either way", async () => {

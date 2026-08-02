@@ -31,7 +31,7 @@ This is the complete, exhaustive reference for the Bismuth **core backend** HTTP
 Every response is post-processed by `withCors`, setting:
 - `Access-Control-Allow-Origin: *`
 - `Access-Control-Allow-Methods: GET,PUT,POST,OPTIONS`
-- `Access-Control-Allow-Headers: Content-Type`
+- `Access-Control-Allow-Headers: Content-Type, X-Bismuth-Token` (must name every custom header a real client attaches — see `core/src/ownerToken.ts` — or the browser's preflight refuses to ever send the real request)
 
 A bare `OPTIONS` request to any path returns `204`-ish (`new Response(null)`) with the CORS headers. (Verified: `OPTIONS /graph` returns `Access-Control-Allow-Origin: *` and `Methods` containing `GET`.)
 
