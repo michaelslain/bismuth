@@ -124,7 +124,7 @@ The catalog's own doc comment states the honesty rule in these words: *"a value 
 | Backend | Chat | Daemon | `selfSandboxes` | Verified? |
 |---|---|---|---|---|
 | `claude` | **native** — `managedSettings.permissions.deny` + `sandbox.filesystem.denyRead` + `disallowedTools`, together, plus a live path-aware `canUseTool` auto-deny; `sandbox.failIfUnavailable` follows the deny list (see "Sandbox availability" below) so a restricted vault fails closed rather than silently running unsandboxed | **native** — the identical triple, rebuilt fresh every message | `true` (own Seatbelt — never a wrap target) | **Yes** — Step-0 spike (below) + `core/test/chat.test.ts`'s live "visibility" test, re-attacked by a red-team pass across absolute/relative paths, symlinks, hardlinks, case variants, `../` traversal, Grep/Glob, and Task-subagent delegation. All blocked. |
-| `opencode` | **wrapper-macos** — a Seatbelt profile wraps the per-turn `opencode run` subprocess (`chatProviders/opencode.ts`); a restricted vault never uses the shared `opencode serve` process (see "the wrapper mechanism" below) | **none** — no opencode daemon integration exists in this codebase at all (`capabilities.daemon: false`); moot regardless of the visibility question | `false` (wrappable) | **Yes, live** — a real `opencode run --format json --auto` turn, wrapped, against `opencode/deepseek-v4-flash-free` ($0 cost): the structured read tool AND the Bash `cat` fallback both denied, in one turn. **Not verified**: the "grep every file for the token, without naming it" case timed out twice against the free model rotation — treat the wrapper's shell-level grep denial (verified separately) as a strong argument, not a measurement, for the tool-level case. |
+| `opencode` | **none** — downgraded from `wrapper-macos`; a restricted vault refuses opencode for chat outright rather than run the per-turn `opencode run` subprocess (`chatProviders/opencode.ts`) wrapped or not | **none** — no opencode daemon integration exists in this codebase at all (`capabilities.daemon: false`); moot regardless of the visibility question | `false` (wrappable) | **No** — the third dated section of [visibility-acceptance.md](visibility-acceptance.md) recorded a real `opencode run --format json --auto` turn, wrapped, against `opencode/deepseek-v4-flash-free` ($0 cost): the structured read tool AND the Bash `cat` fallback both denied, but the turn never concluded and the two follow-up probes it was supposed to measure never dispatched before the run was killed. Two of three probes incomplete does not meet the catalog's live-acceptance bar, so this cannot stand at `wrapper-macos`; a `launchctl submit` bypass attempt also surfaced a real, unexercised escape shape (spawning outside the wrapped process tree) worth a dedicated rerun. |
 | `codex` | **none** | **none** | `true` (own Seatbelt, `codex-rs/sandboxing/src/seatbelt.rs` — confirmed from source; per-nesting rule below, can never be a wrap target) | **No.** Codex's own `[permissions.*].filesystem` layer is self-described *beta* and has had one upstream deny-read bypass already fixed (PR #23943); whether headless `codex exec` — Bismuth's actual invocation — honours a project `.codex/config.toml` profile at all is **unverified**, and codex was not installed on the machine this catalog was authored on. `daemon/src/daemon/session.ts`'s `resolveDaemonBackend` refuses codex for the daemon the moment any note is hidden, degrading to Claude with a logged reason. |
 | `cline` | **none** | **none** (`capabilities.daemon: false`) | `false` | **No.** Not installed on the machine this catalog was authored on; Cline's own docs say its `beforeTool` plugin pattern does not cover `execute_command`/`search_files`/`list_files`, and no OS sandbox exists in Cline itself. First graduation would require a recorded live wrapper run. |
 | `gemini` | **none** | **none** | `false` | **No.** Not installed here. Gemini CLI's shipped source (`grep.ts`/`ripGrep.ts`/`ls.ts`/`shell.ts`) bypasses the ACP `fs/*` capability entirely — confirmed by reading it, not guessed. |
@@ -172,14 +172,12 @@ review. One chokepoint can — and a **new** backend is refused by default, beca
 starts at `"none"` and the router reads the catalog rather than trusting the driver.
 
 - `claude` never reaches a refusal (native, both channels).
-- `opencode` additionally checks the wrapper's own preconditions inside `chatProviders/opencode.ts`
-  — platform, `sandbox-exec`, and whether the session is already bound to shared server mode — and
-  pushes `code: "visibility-refused"` so the dedicated panel renders. That check is deliberately
-  *not* merged into the router's: the router answers "this backend has no verified mechanism at
-  all", while opencode's answers "opencode normally can enforce, but a specific precondition failed
-  right here", and naming the specific precondition is the whole value of the message.
-- `codex` and every ACP backend (`cline`/`gemini`/`goose`/`openclaw`/the two hidden adapters) are
-  refused by the router before their driver is ever spawned.
+- `opencode`, `codex`, and every ACP backend (`cline`/`gemini`/`goose`/`openclaw`/the two hidden
+  adapters) are refused by the router before their driver is ever spawned — none carries a verified
+  mechanism for chat today (see the table above). `chatProviders/opencode.ts` still carries its own
+  precondition-refusal path (`opencodePreconditionRefusal`, checking platform/`sandbox-exec`/shared-
+  server binding) from when its catalog entry was `wrapper-macos`; it stays dormant behind the
+  router's earlier refusal unless a future acceptance run restores that capability.
 
 Verified by `core/test/agentBackends/visibilityGate.test.ts`, which asserts all seven are refused,
 that an unknown backend id refuses rather than inheriting the default backend's answer, that an

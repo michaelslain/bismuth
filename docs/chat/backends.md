@@ -189,9 +189,11 @@ reason rather than throwing, because the daemon is always-on and its crons must 
 
 `capabilities.visibilityGate` used to be a single boolean — "true for exactly one backend" — which
 could not say "enforced for chat but not the daemon," "only on macOS," or "only because Bismuth wraps
-it, not because the CLI itself enforces anything." All three of those are real for at least one
-backend today (opencode's chat channel is wrapped, on macOS only, and its daemon channel is refused
-outright), so the flag became a per-channel, mechanism-naming value:
+it, not because the CLI itself enforces anything." All three of those were real design requirements
+(opencode's chat channel was wrapped, on macOS only, until an incomplete acceptance run downgraded it
+to `none` — see [../vault/visibility.md](../vault/visibility.md#per-backendper-channel-enforcement)
+for the current per-backend table — and its daemon channel is refused outright regardless), so the
+flag became a per-channel, mechanism-naming value:
 
 ```ts
 type VisibilityEnforcement = "native" | "wrapper-macos" | "none";
@@ -208,9 +210,11 @@ that backend on that channel rather than run it unprotected.
 The full per-backend/per-channel table — which nine backends land where, on which platform, by which
 mechanism, and **verified or not** — lives in
 [../vault/visibility.md](../vault/visibility.md#per-backendper-channel-enforcement), not here, so
-there is exactly one place it can go stale. That page also documents a real, currently-open gap: the
-catalog says which backends are *supposed* to be refused, but not every chat driver has been wired to
-actually check it yet.
+there is exactly one place it can go stale. That page also documents a gap it used to have and no
+longer does: the seven non-Claude drivers were each written independently and not one of them checked
+visibility, so the catalog said which backends were *supposed* to be refused while the code would
+have run some of them ungated. `resolveVisibilityGate` (`core/src/agentBackends/visibilityGate.ts`)
+closed it as a single chokepoint the chat router calls before any backend is spawned.
 
 ## Adding a backend
 
