@@ -101,7 +101,16 @@ const dec = new TextDecoder();
 const reattachGraceMs = (): number =>
   Number(process.env.BISMUTH_TERMINAL_GRACE_MS) || 30_000;
 
-const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
+// Access-Control-Allow-Headers must name every custom request header a real client actually
+// attaches, or the browser's preflight refuses the follow-up request outright (the request never
+// even reaches this server — Bun's `fetch` in tests doesn't enforce this, which is exactly how
+// this gap went uncaught; see the OPTIONS-preflight test in ownerToken.test.ts).
+// X-Bismuth-Token: attached by every app/src/api.ts transport call once an owner token is resolved
+// (ownerTokenHeaders()) — the sole reason this fix exists. X-Bismuth-Channel is NOT listed here on
+// purpose: nothing in this codebase sends it over an actual cross-origin HTTP request today (it
+// only appears in server-side tests that call resolveRequestChannel/fetch directly); add it here
+// the moment a real client starts sending it, not before.
+const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-Bismuth-Token" };
 
 /** Cap on a single uploaded attachment (POST /asset). Bounds memory + disk per request. */
 const MAX_ASSET_BYTES = 100 * 1024 * 1024; // 100 MB
