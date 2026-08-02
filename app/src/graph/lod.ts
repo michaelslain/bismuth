@@ -195,39 +195,73 @@ export function buildLodIndex(
   const pathById = new Map<string, number[]>();
   for (const n of nodes) if (n.path && n.path.length) pathById.set(n.id, n.path);
 
+  // Task 30: at most one console.warn for the WHOLE build, not one per offending cluster/level —
+  // this file's own header states buildLodIndex runs once per graph build, never per frame (unlike
+  // respace.ts's scaleToSpacing, which needed a module-level, per-process throttle because it can
+  // run every frame), so a flag local to this one call already gives "once per build" for free.
+  let warnedNonFiniteOnce = false;
+
   const out: LodLevel[] = [];
   for (let L = 0; L < levelCount; L++) {
-    const groups = new Map<
-      number,
-      { sx: number; sy: number; sxx: number; syy: number; ids: string[]; pts: { x: number; y: number }[] }
-    >();
+    const groups = new Map<number, { ids: string[]; pts: { x: number; y: number }[] }>();
     for (const n of nodes) {
       const c = n.path?.[L];
       if (c == null) continue;
       let g = groups.get(c);
-      if (!g) { g = { sx: 0, sy: 0, sxx: 0, syy: 0, ids: [], pts: [] }; groups.set(c, g); }
-      g.sx += n.x; g.sy += n.y;
-      g.sxx += n.x * n.x; g.syy += n.y * n.y;
+      if (!g) { g = { ids: [], pts: [] }; groups.set(c, g); }
       g.ids.push(n.id);
       g.pts.push({ x: n.x, y: n.y });
     }
     const clusters: LodCluster[] = [...groups.entries()]
       .filter(([, g]) => g.ids.length >= minCluster)
-      .map(([community, g]) => {
+      .map(([community, g]): LodCluster | null => {
         const n = g.ids.length;
-        const mx = g.sx / n, my = g.sy / n;
+        // Task 30: sanitize the member points ONCE, here — before wx/wy/sdx/sdy OR reps are
+        // derived — so all of them come from the SAME point set and therefore agree. Previously
+        // this sanitization lived only inside representativePoints(), one layer down: wx/wy/sdx/sdy
+        // were computed from the raw (possibly non-finite) sums above, so a single bad member left
+        // reps clean while wx/wy/sdx/sdy stayed NaN — an internally inconsistent cluster where a
+        // consumer that health-checks reps alone would wrongly conclude the whole cluster is fine.
+        let safeSx = 0, safeSy = 0, safeCount = 0;
+        for (const p of g.pts) {
+          if (Number.isFinite(p.x) && Number.isFinite(p.y)) { safeSx += p.x; safeSy += p.y; safeCount++; }
+        }
+        if (safeCount < n) {
+          if (!warnedNonFiniteOnce) {
+            warnedNonFiniteOnce = true;
+            console.warn(
+              `buildLodIndex: non-finite member coordinate(s) at level ${L} (community ${community}) — ` +
+              "sanitized rather than propagated. This points at an upstream layout bug, not expected " +
+              "input; further occurrences this build are suppressed.",
+            );
+          }
+          // Step 4: every member non-finite means there is no real position to summarize at all —
+          // fabricating one at (0, 0) would draw a mass with no relationship to its members, in
+          // whatever unrelated part of the graph happens to sit at the origin. Omit the cluster
+          // instead, the same choice LOD_MIN_CLUSTER already makes for communities too small to
+          // summarize honestly: a mass that cannot be given a truthful position is not drawn as one.
+          if (safeCount === 0) return null;
+        }
+        const pts = safeCount === n ? g.pts
+          : g.pts.map((p) => (
+              Number.isFinite(p.x) && Number.isFinite(p.y) ? p : { x: safeSx / safeCount, y: safeSy / safeCount }
+            ));
+        let sx = 0, sy = 0, sxx = 0, syy = 0;
+        for (const p of pts) { sx += p.x; sy += p.y; sxx += p.x * p.x; syy += p.y * p.y; }
+        const mx = sx / n, my = sy / n;
         // E[x²] − E[x]² can go very slightly negative on floating-point cancellation for a tight
         // cluster; clamp at 0 so `sdx`/`sdy` are never NaN (a NaN would propagate into a bloom
         // point and silently drop it).
         return {
           level: L, community, count: n,
           wx: mx, wy: my,
-          sdx: Math.sqrt(Math.max(0, g.sxx / n - mx * mx)),
-          sdy: Math.sqrt(Math.max(0, g.syy / n - my * my)),
+          sdx: Math.sqrt(Math.max(0, sxx / n - mx * mx)),
+          sdy: Math.sqrt(Math.max(0, syy / n - my * my)),
           memberIds: g.ids,
-          reps: representativePoints(g.pts, repK, mx, my),
+          reps: representativePoints(pts, repK, mx, my),
         };
       })
+      .filter((c): c is LodCluster => c !== null)
       .sort((a, b) => b.count - a.count || a.community - b.community);
     const indexByCommunity = new Map<number, number>();
     clusters.forEach((c, i) => indexByCommunity.set(c.community, i));
@@ -241,7 +275,7 @@ export function buildLodIndex(
       if (ca == null || cb == null || ca === cb) continue;
       const ia = indexByCommunity.get(ca);
       const ib = indexByCommunity.get(cb);
-      if (ia === undefined || ib === undefined) continue; // an endpoint's community is under minCluster
+      if (ia === undefined || ib === undefined) continue; // endpoint's community is under minCluster, or (Task 30) omitted for having no finite member
       const lo = Math.min(ia, ib), hi = Math.max(ia, ib);
       const key = lo * clusters.length + hi;
       let p = pair.get(key);
