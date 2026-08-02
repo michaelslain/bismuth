@@ -327,9 +327,9 @@ const OPENCODE: BackendDescriptor = {
     terminal: true,
     // No session telemetry: an opencode session still does not appear in the agents graph. Server
     // mode's session.children()/session lifecycle events COULD feed this, but wiring it into
-    // core/src/relay.ts's registry is a separate surface this task didn't build — raising this flag
-    // without that wiring would be exactly the "claims something that doesn't work" trap the task
-    // brief warns against, so it stays false until that integration exists.
+    // core/src/relay.ts's registry is a separate surface that isn't built yet — raising this flag
+    // without that wiring would claim a capability the backend doesn't actually have, so it stays
+    // false until that integration exists.
     agentsGraph: "none",
     subagents: false,
     daemon: false,
@@ -467,26 +467,25 @@ const CODEX: BackendDescriptor = {
 };
 
 /**
- * Every ACP agent shares ONE capability profile — verified against the ACP research report backing
- * chatProviders/acp/: per-turn deltas + thinking + tool calls-with-results + resume + cancel +
- * images + slash commands all ride the same session/update stream, and session/new.mcpServers gives
- * every one of them per-session MCP injection with zero global config file (mcp: "cli" here really
- * means "the driver builds the mcpServers array itself" — there's no `<bin> mcp add` involved, but
- * it's the same "no config-file surgery" story the mcp:"cli" flag exists to signal for Claude).
+ * Every ACP agent shares ONE capability profile: per-turn deltas + thinking + tool
+ * calls-with-results + resume + cancel + images + slash commands all ride the same session/update
+ * stream, and session/new.mcpServers gives every one of them per-session MCP injection with zero
+ * global config file (mcp: "cli" here really means "the driver builds the mcpServers array itself"
+ * — there's no `<bin> mcp add` involved, but it's the same "no config-file surgery" story the
+ * mcp:"cli" flag exists to signal for Claude).
  *
  * Capabilities NOT claimed, and why:
- *  - historyReplay/sessionPicker: false — ACP has no transcript-export or cross-session-list method
- *    (confirmed absent in the research report). Claiming either would populate a history picker /
- *    reopened tab with nothing.
- *  - cost/contextUsage: false for EVERY agent here, not just the two 0.14.1-pinned adapters — the
- *    research report confirms usage_update (which carries both) is an SDK ~1.x-only session/update
- *    kind, and cline (native, not an adapter) was independently confirmed to use the OLDER
- *    model-selection shape too; gemini/goose/openclaw's exact pinned SDK version was never verified
- *    live, so claiming cost/contextUsage there would be a guess this driver cannot back — false
- *    across the board is the honest default until a specific agent is verified to emit it.
+ *  - historyReplay/sessionPicker: false — ACP has no transcript-export or cross-session-list method.
+ *    Claiming either would populate a history picker / reopened tab with nothing.
+ *  - cost/contextUsage: false for EVERY agent here, not just the two 0.14.1-pinned adapters —
+ *    usage_update (which carries both) is an SDK ~1.x-only session/update kind, and cline (native,
+ *    not an adapter) was independently confirmed to use the OLDER model-selection shape too;
+ *    gemini/goose/openclaw's exact pinned SDK version was never verified live, so claiming
+ *    cost/contextUsage there would be a guess this driver cannot back — false across the board is
+ *    the honest default until a specific agent is verified to emit it.
  *  - computerUse: false — no `--chrome`-equivalent capability exists in the verified ACP surface.
- *  - agentsGraph/subagents/daemon: false — Surface 3/4 dead ends per the research report (no
- *    session-lifecycle telemetry, no systemPrompt field for the daemon's persona injection).
+ *  - agentsGraph/subagents/daemon: false — Surface 3/4 dead ends (no session-lifecycle telemetry, no
+ *    systemPrompt field for the daemon's persona injection).
  *  - visibilityGate: {chat:"none", daemon:"none"} for EVERY agent sharing this profile. None
  *    exposes Claude Code's own managedSettings/sandbox/disallowedTools trio, and none has been
  *    proven wrappable: cline/gemini/goose are not installed on the machine this catalog was

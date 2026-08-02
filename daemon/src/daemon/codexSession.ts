@@ -36,7 +36,7 @@ import type { BotResponse, SendOptions } from "./session.ts"
  *    a per-vault directory is NOT documented by OpenAI for multi-tenant use — it is an inference
  *    from CODEX_HOME's documented purpose (config/session root), not a live smoke test (no `codex`
  *    binary is installed in this sandbox). Verify this actually isolates auth/session state per
- *    vault before relying on it in production — see this task's final report.
+ *    vault before relying on it in production.
  *  - Persona/system-prompt equivalent: `codex exec` has no system-prompt flag (confirmed absent
  *    from the CLI's own config reference) — AGENTS.md is its designed channel instead (see
  *    docs/chat/backends.md's Surface 6). refreshIdentityAgentsMd below refreshes a managed block

@@ -11,8 +11,8 @@
 // never makes an HTTP call of any kind — there is no model API on the other end of it, mock or
 // real).
 //
-// STUB-BINARY PATTERN: mirrors relay/test/wrap.test.ts exactly (cited in this task's brief as the
-// precedent) — write an executable stub file NAMED like a real ACP agent binary ("cline", chosen
+// STUB-BINARY PATTERN: mirrors relay/test/wrap.test.ts exactly — write an executable stub file
+// NAMED like a real ACP agent binary ("cline", chosen
 // because agents.ts's cline entry has the simplest args list, `["--acp"]`, no fallbackArgs retry to
 // account for) into a throwaway temp dir, PREPEND that dir onto PATH so core/src/claudeWhich.ts's
 // whichBinary("cline") resolves the stub instead of any real `cline` this machine might have
@@ -119,8 +119,7 @@ describe("the ACP driver against a fake agent (zero network access, zero CLI dep
     pidFile = join(pidDir, "agent.pid");
     stubDir = makeAcpFakeAgentStubDir("bismuth-acp-fake-stub-", "cline", FAKE_AGENT_SCRIPT, pidFile);
     // Prepended, not appended: must win over any real `cline` this machine happens to have
-    // installed elsewhere on PATH (this task installed one temporarily under .offline-cli-tools/ —
-    // see the task report).
+    // installed elsewhere on PATH.
     process.env.PATH = `${stubDir}:${savedPath ?? ""}`;
   });
 

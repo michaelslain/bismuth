@@ -9,23 +9,23 @@
 // installed in this sandbox, so there is nothing real to spawn against.
 //
 // SDK-vs-hand-roll: HAND-ROLLED, deliberately not `@agentclientprotocol/sdk`. The wire slice this
-// driver needs (JSON-RPC request/notification/response framing, the handful of methods listed in
-// the ACP research report) is small — ./protocol.ts's envelope helpers are ~120 lines — and the
-// SDK's own major version is visibly churning (1.3.0 today; the still-current claude-code-acp
-// adapter pins 0.14.1 with materially different NewSessionResponse fields), which this driver
-// already has to branch around via detectModelShape regardless of which JSON-RPC transport sends
-// the bytes. Adding the dependency would not remove that branching, and would add a second
-// generated-schema surface (Zod validators + `.gen.d.ts` types) to keep in sync with the very
-// version skew the research report calls out as the central risk — hand-rolling keeps the whole
-// wire contract in one small, readable, tolerant-by-construction file instead. Revisit if a future
-// task wants request/response types generated from the SDK's schema directly.
+// driver needs (JSON-RPC request/notification/response framing, a small handful of methods) is
+// small — ./protocol.ts's envelope helpers are ~120 lines — and the SDK's own major version is
+// visibly churning (1.3.0 today; the still-current claude-code-acp adapter pins 0.14.1 with
+// materially different NewSessionResponse fields), which this driver already has to branch around
+// via detectModelShape regardless of which JSON-RPC transport sends the bytes. Adding the
+// dependency would not remove that branching, and would add a second generated-schema surface (Zod
+// validators + `.gen.d.ts` types) to keep in sync with that same version skew — hand-rolling keeps
+// the whole wire contract in one small, readable, tolerant-by-construction file instead. Revisit if
+// a future task wants request/response types generated from the SDK's schema directly.
 //
 // Lifecycle (mirrors ../opencode.ts's session registry conventions — Map<chatId, session>, emit /
 // rebindSessionSink / scheduleSessionClose from ../sessionSink, a turn queue, process.on("exit")
 // teardown, tolerant parsing that never throws into a user's chat):
 //   1. openSession/sendMessage/resumeSession spawn the agent (if not already running for this
 //      chat), `initialize`, then `session/new` (or `session/load`, falling back to `session/resume`
-//      on a method-not-found error — the version-skew fallback the research report documents).
+//      on a method-not-found error — the version-skew fallback for agents that don't implement
+//      `session/load`).
 //   2. Each user turn is one `session/prompt` call; its `session/update` notifications stream
 //      ChatFrames via ./protocol.ts's translateSessionUpdate as they arrive; its `stopReason`
 //      response ends the turn (`result` + `done`) — `"cancelled"` is NOT treated as an error,
@@ -85,9 +85,8 @@ import {
  * A deliberate literal duplicate of daemon/src/lib/bismuthPaths.ts's `mcpBin()` (same convention:
  * "the daemon is a separate workspace + separately-bundled binary, so it must not import across
  * into @bismuth/core") rather than importing core/src/bismuthInstall.ts's BIN_DIR/MCP_DEST — those
- * consts are private (not exported) and that file is concurrently owned by another task per this
- * task's brief (read-only). existsSync-gated so a machine where the app never installed the tools
- * degrades to an empty mcpServers array, never a crash.
+ * consts are private (not exported by that file). existsSync-gated so a machine where the app never
+ * installed the tools degrades to an empty mcpServers array, never a crash.
  */
 function bismuthMcpBin(): string | null {
   const p = join(homedir(), ".bismuth", "bin", "bismuth-mcp");
@@ -118,14 +117,14 @@ function buildMcpServers(vaultRoot: string, memoryDir?: string): AcpMcpServerStd
 
 // ── initialize handshake params ────────────────────────────────────────────────────────────────
 
-// GUESS: the research report verifies initialize's TOP-LEVEL shape
+// GUESS: initialize's TOP-LEVEL shape is confirmed
 // ({protocolVersion, clientCapabilities, clientInfo} in, {protocolVersion, agentCapabilities,
-// authMethods, agentInfo} out) but not clientCapabilities' own field names beyond one bundle-strings
-// artifact ("an fs.readTextFile: z.boolean() capability flag" seen in cline's compiled binary).
-// `protocolVersion: 1` mirrors the integer-version convention most JSON-RPC dev-tool protocols use
-// (LSP et al) — untested against a real agent. clientCapabilities below declares NO fs/terminal
-// support, which IS mandatory per this task's brief regardless of the exact shape: never claim a
-// capability with no backing client-method implementation.
+// authMethods, agentInfo} out), but clientCapabilities' own field names are not, beyond one
+// bundle-strings artifact ("an fs.readTextFile: z.boolean() capability flag" seen in cline's
+// compiled binary). `protocolVersion: 1` mirrors the integer-version convention most JSON-RPC
+// dev-tool protocols use (LSP et al) — untested against a real agent. clientCapabilities below
+// declares NO fs/terminal support: never claim a capability with no backing client-method
+// implementation.
 const INITIALIZE_PARAMS = {
   protocolVersion: 1,
   clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
@@ -414,8 +413,8 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
   }
 
   /** Await `promise`, but resolve early (exited:true) if the process exits first — the signal
-   *  handshake()'s fallbackArgs retry watches for ("the process exits before initialize responds",
-   *  per the ACP research report). Untested against a real agent binary (none installed here). */
+   *  handshake()'s fallbackArgs retry watches for: the process exiting before initialize responds.
+   *  Untested against a real agent binary (none installed here). */
   function raceExit(s: AcpSession, promise: Promise<unknown>): Promise<{ ok: boolean; exited: boolean }> {
     return new Promise((resolve) => {
       let settled = false;
@@ -665,7 +664,7 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
       void createSession(ctx.chatId, ctx.cwd, ctx.sink, ctx.memoryDir, ctx.sessionId);
     },
 
-    // ACP has no transcript-export method (confirmed absent in the research report) — historyReplay
+    // ACP has no transcript-export method — historyReplay
     // is declared false in the catalog; this only satisfies the ChatBackend interface.
     sessionHistoryFrames: async () => [],
 
@@ -706,9 +705,9 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
             /* best-effort — a rejected switch just leaves the previous model active */
           });
       } else if (s.modelShape.shape === "old") {
-        // GUESS: session/set_model's param shape is not detailed in the research report beyond the
-        // method name itself — mirrored off NewSessionResponse.models.currentModelId's field
-        // naming. Untested against a real 0.14.x-era agent (claude-code-acp/cline).
+        // GUESS: session/set_model's param shape is not otherwise confirmed beyond the method name
+        // itself — mirrored off NewSessionResponse.models.currentModelId's field naming. Untested
+        // against a real 0.14.x-era agent (claude-code-acp/cline).
         void call(s, "session/set_model", { sessionId: s.sessionId, modelId: model })
           .then(() => {
             s.modelShape = { ...s.modelShape, currentModelId: model };
@@ -755,10 +754,11 @@ function createAcpBackend(agentId: BackendId): ChatBackend {
     // as the same Default/Plan/Accept-Edits/Bypass vocabulary Claude's permission-mode picker
     // offers, and no ACP session/update kind carries an AskUserQuestion-style multi-choice prompt
     // (only session/request_permission, implemented above as respondPermission) — mapping either
-    // onto ACP would be a guess with no research backing. Net effect: the header's permission-mode
-    // picker still RENDERS (this task's brief sets permissionModes:true for the live permission
-    // prompts respondPermission answers), but picking a mode is a no-op for every ACP backend — a
-    // known rough edge, called out in this task's final report.
+    // onto ACP would be a guess with no research backing. Net effect: catalog.ts's
+    // ACP_SHARED_CAPABILITIES declares permissionPrompts:true (respondPermission above answers those
+    // live prompts) and permissionModes:false, so the header's permission-mode picker does not
+    // render at all for any ACP backend — rendering as a no-op picker was the ORIGINAL shape of this
+    // same gap, fixed by splitting the one flag into two (see ACP_SHARED_CAPABILITIES's own comment).
     setEffort: (chatId: string, effort: string) => {
       const s = sessions.get(chatId);
       if (!s || !s.sessionId || !s.modelShape.effortConfigId) return;

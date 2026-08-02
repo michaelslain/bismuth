@@ -1,7 +1,7 @@
 // core/test/chatProviders/codexProtocol.test.ts
 // Pure unit tests for the ThreadEvent -> ChatFrame translator. Never spawns `codex` — every event
 // here is hand-built, matching the shapes verified from @openai/codex-sdk's shipped dist/index.d.ts
-// (see protocol.ts's header) plus the one real captured JSONL sample from the research report.
+// (see protocol.ts's header).
 import { describe, expect, test } from "bun:test";
 import { newCodexTranslateState, resetCodexTurnState, translateThreadEvent } from "../../src/chatProviders/codex/protocol";
 

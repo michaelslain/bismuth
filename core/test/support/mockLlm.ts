@@ -41,7 +41,8 @@
 // SAFETY: startMockLlm() REJECTS (never hangs, never resolves a "maybe it's fine" handle) if the
 // banner never arrives within STARTUP_TIMEOUT_MS. A test harness whose mock failed to start must
 // fail loud immediately, not silently let a caller's CLI fall through to a real API — the same
-// property the task brief calls out for a misconfigured ANTHROPIC_BASE_URL.
+// property a misconfigured ANTHROPIC_BASE_URL has: it errors rather than silently falling back to
+// the real Anthropic cloud, so a misconfigured test can never silently bill the user's account.
 //
 // ORPHAN SAFETY NET — SCOPE CORRECTION (final-review finding): mirrors opencodeServer.ts's own
 // `process.on("exit", shutdownAll)` — every spawned child is tracked in a module-level `liveProcs`
