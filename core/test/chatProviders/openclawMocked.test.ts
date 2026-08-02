@@ -130,11 +130,36 @@ function chatCompletionsHitCount(metricsText: string): number {
 //      alive 14 hours later, the gateway holding a listening socket) could be, IF the launcher had
 //      already been reaped by then — indistinguishable from "both still alive" (shape 2, which IS
 //      covered) from the outside, but requiring a different check.
-// Shape 3 is now covered separately, NOT by a pid or process-tree mechanism at all (nothing rooted
-// at this test process can see an orphan): `waitPortFree` below re-binds the exact ephemeral port
-// this Gateway was configured to listen on (the same probe-by-binding technique `getFreePort()`
-// itself uses) — if ANYTHING is still bound there once `gateway.stop()` has resolved, that is
-// unambiguous evidence of a surviving listener, orphaned or not, pid known or not.
+// Shape 3's REALISTIC sub-case — a surviving Gateway grandchild that is STILL LISTENING — is now
+// covered: `waitPortFree` below re-binds the exact ephemeral port this Gateway was configured to
+// listen on (the same probe-by-binding technique `getFreePort()` itself uses). Confirmed live: a
+// dummy listener bound on that port after the real `gateway.stop()` resolved made both tests fail,
+// reporting the exact port.
+//
+// PRECISELY WHAT THIS PROVES, AND WHAT IT STILL DOES NOT (a second review round caught this file's
+// FIRST version of this note overclaiming again, one level deeper — the port check was described as
+// covering "shape 3" outright, when it only covers the listening sub-case): `waitPortFree` proves
+// "no listener is bound to this port." It does NOT prove "no orphaned process exists." A grandchild
+// that closes its own listening socket but stays alive, reparented to PID 1, reads `isPortBound ===
+// false` (nothing is bound, so the probe binds cleanly) AND is invisible to `collectDescendantPids`
+// (no longer this process's descendant) — that specific shape is uncovered by every mechanism in
+// this file, and this comment does not claim otherwise. The surviving-and-still-LISTENING case is
+// the realistic one in practice (the whole reason the historical leak was ever noticed at all was
+// `lsof` finding a listening socket — see this file's F1 header) and closing it is genuinely
+// valuable; it is not the same claim as closing every possible orphan shape, and this comment says
+// so explicitly rather than leaving that gap implicit.
+//
+// A separate, narrower race: `getFreePort()` binds then immediately releases the port before handing
+// it to the Gateway, and `waitPortFree` re-binds it again at teardown, tens of seconds later — an
+// UNRELATED process (e.g. a different concurrently-running test file's own ephemeral server) could
+// coincidentally acquire that exact port number in either gap and produce a false positive ("still
+// bound" reported for a reason that has nothing to do with this test's own Gateway). Judged not
+// worth defending against here: the collision requires an exact match against the OS's ephemeral
+// port range (tens of thousands of candidates) within a narrow window, this check only runs twice
+// per suite run (once per test in this file), and the only real mitigation (identifying WHO holds
+// the port via `lsof`+`ps` and cross-referencing its name) adds real complexity and its own
+// platform-portability fragility for a residual risk this small. If this check is ever seen to fail
+// spuriously, that is the first hypothesis to rule out before assuming a genuine leak.
 function collectDescendantPids(rootPid: number): number[] {
   const out: number[] = [];
   const frontier = [rootPid];
@@ -163,14 +188,16 @@ function describePid(pid: number): string {
   return out || `${pid} (already gone)`;
 }
 
-/** True if `port` is still bound by ANYONE on 127.0.0.1 — checked by attempting to bind an ephemeral
+/** True if `port` is still BOUND by anyone on 127.0.0.1 — checked by attempting to bind an ephemeral
  *  listener there ourselves, the exact same probe-by-binding technique openclawGateway.ts's own
- *  `getFreePort()` uses. Deliberately NOT pid- or process-tree-based: this is what actually covers
- *  shape 3 in the TOPOLOGY NOTE above (a Gateway grandchild that outlives an already-reaped
- *  launcher) — a reparented orphan is no longer a descendant of this test process at all, so no
- *  pid/tree scan rooted here can ever see it, but it is still bound to THIS specific ephemeral port,
- *  which nothing else on the machine has any legitimate reason to hold once this test's own Gateway
- *  should have released it. */
+ *  `getFreePort()` uses. Deliberately NOT pid- or process-tree-based: this is ORPHANED-LISTENER
+ *  detection, not orphan-PROCESS detection (see the TOPOLOGY NOTE above's own "PRECISELY WHAT THIS
+ *  PROVES" paragraph) — it catches a Gateway grandchild that outlives an already-reaped launcher
+ *  WHILE STILL LISTENING (a reparented orphan is no longer a descendant of this test process at
+ *  all, so no pid/tree scan rooted here can ever see it, but a bound socket is directly observable
+ *  regardless of ancestry). It does NOT catch an orphan that has already closed its listening
+ *  socket but is still alive — that process is invisible to this check too, `false` here says
+ *  "nothing is bound," not "nothing survived." */
 function isPortBound(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const srv = createServer();
@@ -208,9 +235,11 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
   let mock: MockLlmHandle | undefined;
   let capture: CaptureLlmHandle | undefined;
   let gateway: OpenclawGatewayHandle | undefined;
-  // The exact ephemeral port `setup()`/`setupCapture()` picked for THIS test's own Gateway — see
-  // `isPortBound`/`waitPortFree`'s doc comments for why afterEach re-checks it directly (the
-  // launcher-already-exited orphan shape a pid/process-tree scan cannot see).
+  // The exact ephemeral port `setup()`/`setupCapture()` picked for THIS test's own Gateway,
+  // assigned ONLY once startOpenclawGateway has confirmed it's actually listening there (see
+  // setup()'s own comment on why the assignment is anchored there, not at getFreePort() time) — see
+  // `isPortBound`/`waitPortFree`'s doc comments for what afterEach's re-check of it does and does
+  // not prove (orphaned-LISTENER detection, not orphan-process detection).
   let gatewayPort: number | undefined;
   const chatIds: string[] = [];
   const tempDirs: string[] = [];
@@ -228,7 +257,6 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     mock = await startMockLlm(undefined, ["--metrics"]);
     const workDir = await newTempDir("bismuth-openclaw-workdir-");
     const port = await getFreePort();
-    gatewayPort = port;
     const mockEnv = backendMockEnv("openclaw", mock.url, workDir, port);
     for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v;
     // The Gateway and the ACP bridge (spawned later by CHAT_BACKENDS.openclaw, via
@@ -239,6 +267,17 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     // so startOpenclawGateway can verify its OWN readiness banner reports that same port (see
     // openclawGateway.ts's LISTEN_BANNER_RE doc comment for why the comparison matters).
     gateway = await startOpenclawGateway(process.env, port);
+    // Assigned only once startOpenclawGateway has RESOLVED (review round 2 finding): its own
+    // readiness protocol confirms a real banner was observed on stdout AND that banner's own port
+    // matched `port` before it resolves — so this is the earliest point at which "the Gateway is
+    // actually bound to `port`" is a demonstrated fact, not an assumption. Assigning it any earlier
+    // (e.g. right after getFreePort()) would leave `gatewayPort` set even if startOpenclawGateway
+    // then THREW (a bad config, the binary missing, a startup timeout) — and afterEach's
+    // `waitPortFree` check would then pass VACUOUSLY: "free" because nothing was ever bound there,
+    // not because a real Gateway was torn down cleanly. A check that cannot fail because the thing
+    // it inspects never existed proves nothing; anchoring the assignment on a confirmed-successful
+    // start closes that.
+    gatewayPort = port;
   }
 
   /** Setup variant for the session-isolation test below: same Gateway isolation, but the LLM
@@ -251,10 +290,13 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     capture = startCaptureLlmServer(replyText);
     const workDir = await newTempDir("bismuth-openclaw-iso-workdir-");
     const port = await getFreePort();
-    gatewayPort = port;
     const mockEnv = backendMockEnv("openclaw", capture.url, workDir, port);
     for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v;
     gateway = await startOpenclawGateway(process.env, port);
+    // See setup()'s identical comment: assigned only after startOpenclawGateway confirms a real
+    // banner was observed on this exact port, so a failed start can never make waitPortFree pass
+    // vacuously.
+    gatewayPort = port;
   }
 
   afterAll(async () => {
@@ -303,7 +345,9 @@ describeOrSkip("the real openclaw CLI, driven through the ACP driver, against a 
     // Gateway grandchild, LAUNCHER-ALREADY-EXITED orphan shape (TOPOLOGY NOTE shape 3): the launcher
     // pid check above only proves the LAUNCHER is gone — it says nothing about a grandchild that
     // separated and outlived it, already reparented to PID 1 by now. Re-bind the Gateway's own
-    // ephemeral port directly instead of walking any process tree.
+    // ephemeral port directly instead of walking any process tree. ORPHANED-LISTENER detection only
+    // (see isPortBound's own doc comment) — an orphan that already released this port but stayed
+    // alive is not caught by this check either.
     if (port !== undefined && (await waitPortFree(port))) {
       throw new Error(
         `openclawMocked.test: port ${port} (this test's own Gateway port) is still bound after gateway.stop() ` +
