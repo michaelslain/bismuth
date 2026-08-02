@@ -232,17 +232,30 @@ describe("the ACP driver's turn queue: a message sent while the previous turn is
     // Env restore FIRST: a throw below must never skip restoration and leave a later test (in this
     // file or a later file in this same process) pointed at a stub PATH.
     restoreEnv();
-    for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
 
-    // closeChat() only SENDS a signal (SIGTERM, escalating to SIGKILL after driver.ts's
-    // KILL_ESCALATION_GRACE_MS if ignored) — it does not wait for the process to exit. Poll by OWNED
-    // pid (never a `pgrep -f` pattern match) via the shared helper, do the temp-dir cleanup regardless
-    // of the outcome, THEN throw if anything survived — see acpFakeAgentProcess.ts's own header.
-    const stillAlive = await waitProcessesGone(spawnedPids.splice(0));
+    // Temp-dir cleanup lives in `finally`, not merely "after" the close/poll calls: closeChat() and
+    // waitProcessesGone() are both non-throwing as of this writing (closeChat's own
+    // killWithEscalation wraps every proc.kill() in try/catch; waitProcessesGone never throws by its
+    // own doc comment/contract), so this is defense-in-depth against a FUTURE regression in either —
+    // not a currently-observed gap — but it costs nothing and closes the only ordering hole that is
+    // even theoretically ours to close: a throw between "session close requested" and "temp dirs
+    // removed" must never skip the removal. What this can NEVER cover: the whole process (this
+    // `bun test` run) being killed with SIGKILL — no `finally` runs when there is no process left to
+    // run it in. See this task's report for that half of the mechanism.
+    let stillAlive: number[] = [];
+    try {
+      for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
 
-    if (stubDir) rmSync(stubDir, { recursive: true, force: true });
-    if (echoDir) rmSync(echoDir, { recursive: true, force: true });
-    if (pidDir) rmSync(pidDir, { recursive: true, force: true });
+      // closeChat() only SENDS a signal (SIGTERM, escalating to SIGKILL after driver.ts's
+      // KILL_ESCALATION_GRACE_MS if ignored) — it does not wait for the process to exit. Poll by
+      // OWNED pid (never a `pgrep -f` pattern match) via the shared helper — see
+      // acpFakeAgentProcess.ts's own header.
+      stillAlive = await waitProcessesGone(spawnedPids.splice(0));
+    } finally {
+      if (stubDir) rmSync(stubDir, { recursive: true, force: true });
+      if (echoDir) rmSync(echoDir, { recursive: true, force: true });
+      if (pidDir) rmSync(pidDir, { recursive: true, force: true });
+    }
 
     if (stillAlive.length > 0) {
       throw new Error(`acpQueueFakeAgent.test: fake-agent pid(s) ${stillAlive.join(", ")} still alive after closeChat — a real leak.`);
