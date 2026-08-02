@@ -1,0 +1,16 @@
+{
+  "fixtures": [
+    {
+      "match": { "userMessage": "please list the bismuth docs" },
+      "response": {
+        "toolCalls": [
+          { "name": "bismuth__bismuth_docs_list", "arguments": {}, "id": "toolu_task12_docslist" }
+        ]
+      }
+    },
+    {
+      "match": { "toolCallId": "toolu_task12_docslist" },
+      "response": { "content": "Thanks, got the docs list." }
+    }
+  ]
+}
