@@ -75,6 +75,7 @@ import {
   commandEntriesFromApi,
   modelEntriesFromProviders,
   newOpencodeServerTurnState,
+  reconcileOpencodeFinalParts,
   newOpencodeTurnState,
   opencodeErrorMessage,
   opencodePermissionResponse,
@@ -424,6 +425,10 @@ async function runTurnServer(s: OpencodeSession, text: string, images: ChatImage
 
   let isError = false;
   let costUsd: number | null = null;
+  // The authoritative final message parts off the HTTP response. Held here (rather than emitted at
+  // the call site) so reconciliation runs AFTER the listener is torn down — no late SSE event can
+  // then interleave with it — but BEFORE `result`/`done`, so the text still lands in the right order.
+  let finalParts: unknown = null;
   try {
     // Per-turn memory injection (RE-FIX: opencode had none before server mode): recall off the
     // CURRENT prompt and ride it as `system` — a genuine per-call override, verified live
@@ -447,6 +452,7 @@ async function runTurnServer(s: OpencodeSession, text: string, images: ChatImage
         if (!s.aborting) emit(s, { type: "error", code: "error", message: opencodeErrorMessage({ error: res.data.info.error }) });
       }
       costUsd = res.data?.info?.cost ?? null;
+      finalParts = res.data?.parts ?? null;
     } else {
       const parts = buildOpencodePromptParts(text, images);
       const modelObj = model ? splitOpencodeModelId(model) : null;
@@ -465,6 +471,7 @@ async function runTurnServer(s: OpencodeSession, text: string, images: ChatImage
         if (!s.aborting) emit(s, { type: "error", code: "error", message: opencodeErrorMessage({ error: res.data.info.error }) });
       }
       costUsd = res.data?.info?.cost ?? null;
+      finalParts = res.data?.parts ?? null;
     }
   } catch (e) {
     isError = !s.aborting;
@@ -473,9 +480,17 @@ async function runTurnServer(s: OpencodeSession, text: string, images: ChatImage
     unregister();
   }
 
+  // Captured BEFORE the reset below: a deliberate Stop must not have the cancelled turn's partial
+  // text replayed at it, and `s.aborting` is cleared on the very next line.
+  const wasAborted = s.aborting;
   s.aborting = false;
   // The session may have been closed (closeChat) while this turn ran — nothing left to report to.
   if (sessions.get(s.id) !== s) return;
+
+  // Emit anything the event stream never delivered (see reconcileOpencodeFinalParts): the HTTP
+  // response is the source of truth for what the model actually said, the stream only makes it
+  // appear sooner. A fully-streamed turn reconciles to zero frames.
+  if (!wasAborted) for (const frame of reconcileOpencodeFinalParts(finalParts, state)) emit(s, frame);
 
   emit(s, { type: "result", isError, numTurns: 1, costUsd });
   emit(s, { type: "done" });

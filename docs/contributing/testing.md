@@ -58,23 +58,17 @@ Run the gate by hand any time with `bun run gate`, or the fast suite alone with 
 
 ### Quarantined suites
 
-One suite is **quarantined** — opted out of both gates via `shouldRunQuarantinedTests`
-(`core/test/slowGate.ts`), run with `BISMUTH_RUN_QUARANTINED=1`:
+None right now. The mechanism was introduced for `opencodeMocked.test.ts`, whose ~1-in-3 failure
+turned out to be a **real product bug** rather than a bad test — opencode server mode dropped
+streamed reply text whenever the SSE deltas lost the race against the HTTP response, so a chat could
+answer and render nothing. It is fixed (`reconcileOpencodeFinalParts`), the suite is back in both
+gates, and the quarantine helper was removed rather than left as dead scaffolding.
 
-- `core/test/chatProviders/opencodeMocked.test.ts` — fails ~1 run in 3, independent of machine
-  load, because opencode server mode registers its per-session SSE listener but does not confirm it
-  is live before issuing `session.prompt()`; a fast turn completes before the listener catches its
-  deltas and no `assistant-text` frames arrive.
-
-This is a **real user-facing bug** (an opencode chat can silently lose its streamed reply), not a
-bad test, and it is unfixed — the fix belongs in `runTurnServer` (`core/src/chatProviders/opencode.ts`),
-replacing the mock-side `--latency` margin with an actual synchronization point.
-
-Quarantine is a deliberate trade, and the bar for it is high: since pre-push *blocks* on the full
-suite, a test failing a third of the time does not keep anyone honest — it teaches the team to
-reach for `--no-verify`, which disables the gate for everything else too. The cost is that this
-area is unguarded until the bug is fixed. Add to the quarantine list only when the mechanism is
-understood, written down, and tracked.
+If a suite ever genuinely needs quarantining, the bar is high, and the reason is that pre-push
+*blocks* on the full suite: a test failing a third of the time does not keep anyone honest, it
+teaches the team to reach for `--no-verify`, which disables the gate for everything else too. Add
+one only when the mechanism is understood, written down, and tracked — and prefer fixing the bug,
+which is what happened here.
 
 ## Upgrade tests: what happens to an existing user's data on update
 

@@ -1,0 +1,35 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "app/src/bases/BaseView.module.css"
+        ],
+        "createdAt": "2026-08-03T23:27:32.163Z",
+        "reason": "Blockquote border-left is standard markdown quote styling; the cardCover spine is an intentional 7-colour theme-coordinated design element."
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "app/src/bases/BaseView.module.css"
+        ],
+        "createdAt": "2026-08-03T23:27:32.251Z",
+        "reason": "False positive: matches CSS selectors (.bismuth-embed-img) in a stylesheet, which contains no img tags or src attributes at all."
+      },
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          "app/src/bases/BaseView.module.css"
+        ],
+        "createdAt": "2026-08-03T23:27:38.068Z",
+        "reason": "Kanban drop placeholder must animate real layout space (height/margin) to open a gap sized to the dragged card; transform/opacity cannot, and grid-template-rows does not apply to a flex column."
+      }
+    ]
+  }
+}
