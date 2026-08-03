@@ -28,52 +28,38 @@
 //    repeated live runs. This is a mock-server pacing fix, NOT a driver change — no production files
 //    were touched for this task.
 //
-// KNOWN FLAKE, NOT LOAD-GATED (task-15, diagnosed not fixed — corrected after an earlier version of
-// this note wrongly claimed it was rare on a clean slate and reduced by this file's own Step-3b leak
-// fix; neither claim survived a second measurement round and both are retracted below). Affects the
-// FIRST test above ("a turn sent through CHAT_BACKENDS.opencode returns the fixture's exact text"),
-// NOT the reopen-branch test further down.
+// FIXED — THE LOST REPLY (was a ~1-in-3 flake in this file, now a real bug fixed in the driver).
 //
-// MEASURED (task-15, two rounds): on a genuinely clean slate — zero `opencode serve` processes
-// running before, during, or after, confirmed by pid check each time — 12 solo runs of this file
-// produced 4 failures (33%), at 1-minute load averages ranging from 2.50 to 6.89 with NO visible
-// threshold: failures occurred at both the lowest (2.73) and a middling (6.71) load sampled, while
-// FIVE STRAIGHT PASSES landed at the highest loads sampled (6.50-6.89). This is not the load-gated
-// story an earlier version of this note claimed (which reported 0/15 clean-slate failures — that
-// was wrong, superseded by this larger, repeated sample) — treat this as failing roughly 1 run in 3
-// regardless of ordinary machine load, not as something a quiet machine avoids.
+// This file used to fail roughly one run in three, and the note here blamed the per-session SSE
+// listener "not being live" before `session.prompt()`. That diagnosis was WRONG, and is retracted:
+// the global event subscription is awaited inside `ensureOpencodeServer` before any handle is
+// handed out, and `registerOpencodeServerListener` is synchronous and runs before the prompt call.
+// The listener was always live.
 //
-// ROOT CAUSE, confirmed by direct frame-level instrumentation (not guessed): a fresh session's open
-// sequence always emits TWO `manifest` frames — `manifest`, `session`, `manifest`, `models`, `auth` —
-// and this is NORMAL, not a symptom: `emitOpenFrames` emits one immediately, then a second once
-// `ensureOpenInfo` populates the module-level `commandsCache` for the first time in this process (see
-// `opencode.ts`'s `emitOpenFrames`). Confirmed identical, frame-for-frame, in both passing AND
-// failing runs — instrumented four solo trials with per-frame timestamps; the one that failed showed
-// the EXACT SAME manifest/session/manifest/models/auth sequence as the three that passed, entirely
-// BEFORE `sendMessage()` was ever called. The duplicate manifest is opening boilerplate, unrelated to
-// the failure; an earlier version of this note that treated it as a possible sign of a mid-turn
-// re-announce was chasing a red herring.
+// The ACTUAL mechanism, found by instrumenting event dispatch (logging every event's session id and
+// whether a listener matched): server mode has TWO INDEPENDENT CHANNELS — the blocking HTTP
+// `session.prompt()` call, and the ONE global SSE stream the deltas ride on, consumed by a detached
+// loop (`consumeEvents`). Nothing orders those against each other. `runTurnServer` tore its
+// listener down in a `finally` the instant the HTTP response landed, so every delta still in flight
+// was dropped on the floor. `result`/`done`/`title` still fired because those are emitted directly
+// rather than off the stream — which is exactly the reported symptom: a turn that completes
+// normally, with zero `assistant-text`. The instrumentation showed 6 of 15 `message.part.updated`
+// events arriving with NO listener registered, on EVERY run, passing ones included.
 //
-// The actual failure, also confirmed by that same instrumentation: after the identical open sequence,
-// `runTurnServer`'s blocking `session.prompt()` HTTP call still resolves NORMALLY — `result`, `done`,
-// and `title` all fire, in the failing trial exactly as in the passing ones — but zero
-// `assistant-text` frames ever arrive. This is precisely finding #2's own mechanism above (the
-// per-session SSE listener, registered via `registerOpencodeServerListener` just before that same
-// call, not having caught the model's streamed deltas before the exchange completed) — just
-// occurring at a much higher baseline rate in this environment/opencode version than the "40ms
-// reliably produced one clean frame" the original finding reported.
+// This was never a test problem. A real user on opencode server mode could watch a chat answer and
+// render nothing.
 //
-// NOT FIXED HERE: a real fix needs `core/src/chatProviders/opencode.ts`'s `runTurnServer` to
-// positively confirm its per-session SSE registration is live before issuing `session.prompt()`,
-// replacing the fixed-margin mock-side workaround with a real synchronization point — a production
-// driver change to a shared code path, out of this task's scope. This file's OWN Step-3b leak fix
-// (afterAll now confirms every process it kills is actually dead — see killAndConfirmDead's doc
-// comment) is UNRELATED to this flake and does not reduce it — that connection, drawn in an earlier
-// version of this note, does not hold up: this failure reproduces at the same ~33% rate on a slate
-// with zero leaked processes of any kind. Documented here rather than silently accepted: a
-// known-flaky test that's honestly labelled to the RIGHT test and the RIGHT mechanism is survivable;
-// one pointing at the wrong test, or claiming a fix that doesn't apply, sends the next person
-// investigating a red run looking in the wrong place entirely.
+// THE FIX (core/src/chatProviders/opencodeTranslate.ts's `reconcileOpencodeFinalParts`, called from
+// `runTurnServer` before `result`/`done`): the HTTP response returns `{ info, parts }` — the
+// complete final message — so the turn now reconciles what the stream actually delivered against
+// that authoritative copy and emits any missing remainder. De-duped through the same `unseenSuffix`
+// primitive the settled-snapshot path uses, so a fully-streamed turn reconciles to zero frames and
+// nothing is ever printed twice. Deterministic: no timing margin, no `--latency` dependence. The
+// stream is now purely a latency optimisation — it makes text appear sooner, it is not the source
+// of truth. Verified with 16 consecutive green runs of this file (~1-in-700 by chance at the old
+// rate). The `--latency 40` in setup() below is retained as mock-server pacing for finding #2's
+// separate concern, not as a workaround for this.
+//
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -83,17 +69,14 @@ import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { backendMockEnv } from "../support/backendEnv";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
-import { shouldRunSlowTests, shouldRunQuarantinedTests } from "../slowGate";
+import { shouldRunSlowTests } from "../slowGate";
 
 const HAS_OPENCODE = whichBinary("opencode") !== null;
-// Gated three ways: the binary must exist, the slow-suite opt-out must not be set (this spawns a
-// REAL agent binary), and — because of the ~33% SSE-registration flake documented at the top of
-// this file — it is QUARANTINED, so it is opt-IN rather than blocking `.githooks/pre-push`.
-// The underlying bug is real and unfixed; see shouldRunQuarantinedTests in ../slowGate.ts.
-const describeOrSkip =
-  HAS_OPENCODE && shouldRunSlowTests(process.env) && shouldRunQuarantinedTests(process.env)
-    ? describe
-    : describe.skip;
+// Gated on the binary existing and on the slow-suite opt-out (this spawns a REAL agent binary).
+// NO LONGER QUARANTINED: the ~1-in-3 flake this file documented was a real product bug, now fixed —
+// see the "LOST REPLY" note below and reconcileOpencodeFinalParts in ../../src/chatProviders/
+// opencodeTranslate.ts.
+const describeOrSkip = HAS_OPENCODE && shouldRunSlowTests(process.env) ? describe : describe.skip;
 
 if (!HAS_OPENCODE) {
   // eslint-disable-next-line no-console

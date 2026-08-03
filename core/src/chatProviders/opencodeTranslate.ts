@@ -639,6 +639,43 @@ export function translateOpencodeServerEvent(raw: unknown, state: OpencodeServer
   return []; // session.*/permission.*/todo.*/etc: not this function's concern
 }
 
+/**
+ * Emit whatever the event stream did NOT deliver, from the AUTHORITATIVE final message the
+ * `session.prompt`/`session.command` HTTP call returns (`{ info, parts }`).
+ *
+ * THE BUG THIS CLOSES. Server mode has two independent channels: the blocking HTTP call that
+ * resolves when the turn is complete, and the ONE global SSE stream the deltas ride on, consumed by
+ * a detached loop (opencodeServer.ts's `consumeEvents`). Nothing orders those two against each
+ * other. `runTurnServer` used to unregister its per-session listener the instant the HTTP response
+ * landed, so any delta still in flight was dropped on the floor — while `result`/`done`/`title`
+ * still fired, because those are emitted directly rather than off the stream. Symptom: a chat that
+ * completes normally but shows NO reply text, roughly one turn in three (measured, load-independent).
+ *
+ * The fix is deterministic rather than a timing margin: reconcile against the final parts before
+ * finishing the turn. The stream stays a pure latency optimisation — it makes text appear sooner —
+ * and the HTTP response is the source of truth for what was actually said.
+ *
+ * De-duping is `unseenSuffix`, the same primitive the settled-snapshot path already uses, so a
+ * fully-streamed turn reconciles to zero frames and nothing is ever printed twice.
+ */
+export function reconcileOpencodeFinalParts(parts: unknown, state: OpencodeServerTurnState): ChatFrame[] {
+  if (!Array.isArray(parts)) return [];
+  const out: ChatFrame[] = [];
+  for (const raw of parts) {
+    if (!raw || typeof raw !== "object") continue;
+    const part = raw as Record<string, unknown>;
+    if (part.type !== "text" && part.type !== "reasoning") continue; // tool parts already chipped
+    const id = typeof part.id === "string" ? part.id : "";
+    if (!id) continue;
+    state.partKind.set(id, part.type);
+    const text = typeof part.text === "string" ? part.text : "";
+    const delta = unseenSuffix(state, id, text);
+    if (!delta) continue;
+    out.push(part.type === "reasoning" ? { type: "thinking", text: delta } : { type: "assistant-text", text: delta });
+  }
+  return out;
+}
+
 /** One pending approval ask, normalized out of whichever shape the live server emits (see the
  *  top-of-section note on "permission.asked" vs the SDK-declared "permission.updated"/Permission —
  *  this reads BOTH the observed live field names ("permission"/"patterns") and the SDK-declared ones

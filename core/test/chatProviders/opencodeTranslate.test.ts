@@ -7,6 +7,7 @@ import {
   modelEntriesFromProviders,
   type OpencodeApiProvider,
   newOpencodeServerTurnState,
+  reconcileOpencodeFinalParts,
   newOpencodeTurnState,
   opencodeErrorMessage,
   opencodePermissionResponse,
@@ -738,5 +739,69 @@ describe("buildOpencodePromptParts", () => {
     expect(parts).toHaveLength(3);
     expect(parts[1]).toEqual({ type: "file", mime: "image/png", url: "data:image/png;base64,AAAA" });
     expect(parts[2]).toEqual({ type: "file", mime: "image/jpeg", url: "data:image/jpeg;base64,BBBB" });
+  });
+});
+
+// Regression coverage for the server-mode lost-reply bug: `session.prompt()`'s HTTP response and
+// the global SSE stream are independent channels, so the turn could finish (and its per-session
+// listener be torn down) with deltas still in flight — a chat that completed normally but showed no
+// text, ~1 turn in 3. reconcileOpencodeFinalParts makes the HTTP response authoritative.
+describe("reconcileOpencodeFinalParts (server mode's lost-reply backfill)", () => {
+  const textPart = (id: string, text: string) => ({ id, type: "text", text, messageID: "m1" });
+
+  test("a turn whose deltas never arrived emits the whole reply from the final parts", () => {
+    const state = newOpencodeServerTurnState();
+    const frames = reconcileOpencodeFinalParts([textPart("p1", "Hello!")], state);
+    expect(frames).toEqual([{ type: "assistant-text", text: "Hello!" }]);
+  });
+
+  test("a fully-streamed turn reconciles to NOTHING — text is never printed twice", () => {
+    const state = newOpencodeServerTurnState();
+    // Simulate the stream having already delivered the whole part.
+    translateOpencodeServerEvent(
+      { type: "message.part.updated", properties: { part: textPart("p1", "Hello!") } },
+      state,
+    );
+    expect(reconcileOpencodeFinalParts([textPart("p1", "Hello!")], state)).toEqual([]);
+  });
+
+  test("a PARTIALLY streamed turn emits only the missing suffix", () => {
+    const state = newOpencodeServerTurnState();
+    translateOpencodeServerEvent(
+      { type: "message.part.updated", properties: { part: textPart("p1", "Hel") } },
+      state,
+    );
+    expect(reconcileOpencodeFinalParts([textPart("p1", "Hello!")], state)).toEqual([
+      { type: "assistant-text", text: "lo!" },
+    ]);
+  });
+
+  test("reasoning parts backfill as `thinking`, not as assistant text", () => {
+    const state = newOpencodeServerTurnState();
+    const frames = reconcileOpencodeFinalParts([{ id: "r1", type: "reasoning", text: "hmm" }], state);
+    expect(frames).toEqual([{ type: "thinking", text: "hmm" }]);
+  });
+
+  test("tool parts are skipped — they are already chipped by the stream's own tool handling", () => {
+    const state = newOpencodeServerTurnState();
+    const frames = reconcileOpencodeFinalParts(
+      [{ id: "t1", type: "tool", callID: "c1", state: { status: "completed" } }, textPart("p1", "done")],
+      state,
+    );
+    expect(frames).toEqual([{ type: "assistant-text", text: "done" }]);
+  });
+
+  test("it is idempotent — reconciling the same final parts twice cannot double-print", () => {
+    const state = newOpencodeServerTurnState();
+    expect(reconcileOpencodeFinalParts([textPart("p1", "Hi")], state)).toHaveLength(1);
+    expect(reconcileOpencodeFinalParts([textPart("p1", "Hi")], state)).toEqual([]);
+  });
+
+  test("junk in, nothing out — a missing/!array/garbage payload never throws", () => {
+    const state = newOpencodeServerTurnState();
+    expect(reconcileOpencodeFinalParts(null, state)).toEqual([]);
+    expect(reconcileOpencodeFinalParts(undefined, state)).toEqual([]);
+    expect(reconcileOpencodeFinalParts("nope", state)).toEqual([]);
+    expect(reconcileOpencodeFinalParts([null, 7, {}, { type: "text" }], state)).toEqual([]);
   });
 });
