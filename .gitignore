@@ -1,4 +1,5 @@
 node_modules/
+node_modules
 dist/
 target/
 .superpowers/
@@ -41,3 +42,6 @@ relay/shim/zdotdir/.zsh_history
 # — heavy (a real npm install with vendored platform binaries), never committed. See
 # docs/contributing/testing.md's offline-testing section for how these get used.
 .offline-cli-tools/
+
+# visual-regression screenshots (bench/visual.ts)
+shots/

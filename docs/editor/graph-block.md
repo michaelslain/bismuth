@@ -3,7 +3,9 @@
 > Code: `core/src/graphBlock.ts` (pure parser / serializer / mutations, unit-tested in
 > `core/test/graphBlock.test.ts`), `app/src/editor/graphBlock.ts` (the CodeMirror
 > extension, mirroring the ` ```query ` block), `app/src/graph/EmbeddedGraph.tsx` (the
-> rendered widget — reuses `CanvasGraphRenderer` + `core/src/layout.ts`).
+> rendered widget — reuses `core/src/layout.ts` for layout and mounts `AsciiGraphRenderer`,
+> the same renderer the knowledge graph uses, through the `GraphRenderer` seam
+> (`app/src/graph/graphRenderer.ts`) rather than a second renderer implementation).
 
 A ` ```graph ` fenced block in a note body renders **inline as an interactive graph**
 (the same canvas renderer as the knowledge graph). It is a lossless **markdown ⇄ graph
@@ -65,6 +67,13 @@ Layout is **computed, not stored**: node positions come from the same determinis
 layout as the knowledge graph (`core/src/layout.ts`), so the same markdown always draws
 the same picture and positions are not part of the DSL. Node drag-repositioning is
 therefore intentionally not an edit tool.
+
+**Known limitation**: unlike the knowledge graph, an embedded block carries no
+`community`/`communityPath` data (a hand-authored block has no Louvain detection run over
+it), so it gets none of the layout's community-separation forces. For small,
+community-less graphs this means visually distinct clusters can interpenetrate rather than
+separate cleanly — see `app/src/graph/EmbeddedGraph.tsx`'s `layoutGraphData` JSDoc for the
+measured ratios. This is a documented, accepted trade-off, not a bug.
 
 ## Notes
 

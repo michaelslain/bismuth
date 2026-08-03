@@ -398,7 +398,7 @@ export function graphSig(graph: GraphData, vaultKey: string): string {
 
 The signature hashes **sorted edge `from|to|kind` triples**, not just edge count. This means retargeting a wikilink from `[[A]]` to `[[B]]` (same node set, same edge count) correctly busts the cache.
 
-`CACHE_VERSION` is currently `"v5"`. Changing it invalidates all on-disk cache entries — this is done whenever the layout algorithm changes in a way that alters output positions.
+`CACHE_VERSION` is currently `"v20"`. Changing it invalidates all on-disk cache entries — this is done whenever the layout algorithm changes in a way that alters output positions. (The frontend's own `GRAPH_CACHE_KEY` localStorage cache in `app/src/App.tsx` must be bumped in lockstep — see its comment — or a stale instant-painted layout can survive past a `CACHE_VERSION` bump until the next launch.)
 
 ### Warm-start seeding
 

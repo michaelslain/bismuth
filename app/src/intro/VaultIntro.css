@@ -112,7 +112,7 @@
 .vi-graph3d-labels {
   display: none;
 }
-/* The cluster-glow + vignette are rendered by <GraphAtmosphere> (graph/graphAtmosphere.css),
+/* The phosphor bloom + vignette are rendered by <GraphAtmosphere> (graph/graphAtmosphere.css),
    the same component + styles the app's GraphView uses. */
 
 /* ---- hero zone (per-slide non-graph visual only; the graph is a background layer) ---- */

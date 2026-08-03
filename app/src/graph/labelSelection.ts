@@ -1,9 +1,8 @@
 // app/src/graph/labelSelection.ts
-// Pure helper for the LabelLayer: which nodes get a permanent label regardless of camera state.
+// Pure label-ladder math for the renderer: which nodes get a permanent label regardless of camera
+// state, and how cluster/file names crossfade across the zoom ladder.
 // Combines top-degree hubs with the currently-open file.
-// Pure (no DOM, no Three.js) so it can be unit-tested directly.
-
-import { drawnNodeRadius } from "./collide";
+// Pure (no DOM, no canvas) so it can be unit-tested directly.
 
 type NodeLike = { id: string; kind: string };
 type EdgeEndpoint = string | { id: string };
@@ -56,83 +55,6 @@ export function computeAlwaysOnSet(
 
 // ---------------------------------------------------------------------------
 // 2D rendered-size label gating (no permanent hubs, no radius-from-center).
-//
-// Label visibility in 2D is driven by a node's *on-screen* size — its
-// importance (degree multiplier) times zoom (smaller worldPerPixel = zoomed in)
-// — plus an on-screen density cap so labels never pile up. Position relative to
-// the viewport center never decides anything.
-// ---------------------------------------------------------------------------
-
-/**
- * On-screen radius in CSS px of a node drawn with degree multiplier `scale`.
- * Mirrors collide.ts: the node's world radius (`drawnNodeRadius`) divided by the
- * world-units-per-pixel of the current camera projection gives its pixel radius.
- * Larger `scale` (higher degree) and smaller `worldPerPixel` (zoomed in) both
- * yield a larger rendered radius.
- */
-export function renderedPixelRadius(
-  nodeSize: number,
-  scale: number,
-  fovDeg: number,
-  worldPerPixel: number,
-): number {
-  return drawnNodeRadius(nodeSize, scale, fovDeg) / worldPerPixel;
-}
-
-export interface LabelCandidate {
-  id: string;
-  px: number; // projected screen position (CSS px)
-  py: number;
-  w: number; // label box size (CSS px)
-  h: number;
-  renderedPx: number; // node's on-screen radius (importance×zoom signal)
-  forced: boolean; // hover / search-match / active file → bypass the size gate
-}
-
-export interface LabelSelectOpts {
-  thresholdPx: number; // min renderedPx to be a candidate (default ~6)
-  gridCell: number; // screen grid cell size in px (default 64)
-  perCell: number; // max labels per cell (default 1)
-}
-
-/**
- * Pure label selection: forced labels always pass; others must clear
- * `thresholdPx`; then a screen-space grid keeps the worthiest (largest
- * renderedPx) `perCell` per cell and rejects overlaps. Returns the accepted id
- * set. No DOM, no Three.js.
- *
- * Ordering: forced candidates first, then by `renderedPx` descending, ties
- * broken by id. Forced labels also occupy their grid cell (so they declutter
- * neighbours) but are never themselves rejected by the cap.
- */
-export function selectVisibleLabels(
-  cands: LabelCandidate[],
-  opts: LabelSelectOpts,
-): Set<string> {
-  const accepted = new Set<string>();
-  const cellCounts = new Map<string, number>();
-
-  const ordered = [...cands].sort((a, b) => {
-    if (a.forced !== b.forced) return a.forced ? -1 : 1;
-    if (b.renderedPx !== a.renderedPx) return b.renderedPx - a.renderedPx;
-    return a.id.localeCompare(b.id);
-  });
-
-  for (const c of ordered) {
-    const key =
-      Math.floor(c.px / opts.gridCell) + ":" + Math.floor(c.py / opts.gridCell);
-    const count = cellCounts.get(key) ?? 0;
-
-    const passes = c.forced || (c.renderedPx >= opts.thresholdPx && count < opts.perCell);
-    if (!passes) continue;
-
-    accepted.add(c.id);
-    cellCounts.set(key, count + 1);
-  }
-
-  return accepted;
-}
-
 // ---------------------------------------------------------------------------
 // Zoom-driven label MODE: below a reveal point the field names CLUSTERS, not files — file names
 // crossfade in (and their per-frame budget ramps up) only as the camera keeps zooming in. All of

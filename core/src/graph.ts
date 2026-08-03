@@ -131,7 +131,7 @@ export function subgraphByKinds(g: GraphData, kinds: Set<NodeKind>): GraphData {
  * Hierarchy fields (`community`, `communityPath`, `communityPathLabels`) are STRIPPED from the result.
  * They describe a node's place in the whole vault's community structure, which is meaningless inside a
  * one-note neighbourhood — and every consumer treats their absence as "one flat level" (see
- * CanvasGraphRenderer's colorLevelsFor / AsciiGraphRenderer's colorLevelsFor), so dropping them is how
+ * AsciiGraphRenderer's colorLevelsFor), so dropping them is how
  * a local view says "no clustering here" without needing a flag threaded through the renderers.
  *
  * Positions are left untouched but are NOT meaningful for a local view — they came from a layout of

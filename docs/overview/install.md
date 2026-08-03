@@ -269,7 +269,7 @@ cd app
 bun run build
 ```
 
-The build uses manual chunk splitting (see `vite.config.ts`) to keep the entry bundle small: Three.js + d3-force-3d, xterm, KaTeX, jspdf + html2canvas, and marked are each split into separate lazy chunks.
+The build uses manual chunk splitting (see `vite.config.ts`) to keep the entry bundle small: d3-force-3d, xterm, KaTeX, jspdf + html2canvas, and marked are each split into separate lazy chunks.
 
 ### Tauri native binary
 
@@ -326,7 +326,7 @@ const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App
 | Slide | What it shows |
 |---|---|
 | `welcome` | "Notes that think." — wikilinks pitch, centered crystal mark |
-| `theme` | "Pick your palette." — a `Select` dropdown over all themes; choosing one **live-recolors a real 3D knowledge graph** (the app's own `WebGLRenderer` drawing a baked-layout dummy point-cloud, `SMALL_GRAPH`) and re-themes the whole takeover |
+| `theme` | "Pick your palette." — a `Select` dropdown over all themes; choosing one **live-recolors a real 3D knowledge graph** (the app's own `AsciiGraphRenderer` drawing a baked-layout dummy point-cloud, `SMALL_GRAPH`) and re-themes the whole takeover |
 | `graph` | "Three brains, one mind." — the same 3D graph carries over, cross-fading to a bigger condensed cloud (`BIG_GRAPH`) |
 | `daemon` | "An agent that never sleeps." — the background Bismuth daemon |
 | `claude` | "Let Claude tend it." — MCP / Claude Code |

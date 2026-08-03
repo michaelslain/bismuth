@@ -2,8 +2,9 @@
    A full-window takeover shown only on first launch (gated in index.tsx). A short
    slideshow: welcome -> choose your theme -> three brains -> daemon -> claude -> begin.
    The theme step shows a real 3D knowledge graph (dummy unlabeled nodes, the app's own
-   WebGL renderer); clicking a theme option recolors it live to that palette, and the SAME
-   graph carries into the "Three brains, one mind" slide. The picked theme also re-themes
+   graph renderer — AsciiGraphRenderer, through the GraphRenderer seam, the SAME instance
+   type the knowledge-graph pane mounts); clicking a theme option recolors it live to that
+   palette, and the SAME graph carries into the "Three brains, one mind" slide. The picked theme also re-themes
    the whole takeover and seeds the new vault's appearance.theme (written by the Tauri
    `choose_first_vault` command on the CTA — unchanged contract). Reuses the standard ui/
    buttons + theme system.
@@ -26,15 +27,16 @@ import { TextButton } from "../ui/TextButton";
 import { IconButton } from "../ui/IconButton";
 import { Chip } from "../ui/Chip";
 import { Icon } from "../icons/Icon";
-import { CanvasGraphRenderer } from "../graph/CanvasGraphRenderer";
-import { GraphAtmosphere } from "../graph/GraphAtmosphere";
-import { paletteToInts, hexToInt } from "../themeColors";
+import { AsciiGraphRenderer } from "../graph/AsciiGraphRenderer";
+import type { GraphRenderer } from "../graph/graphRenderer";
+import { GraphAtmosphere, type BloomSink } from "../graph/GraphAtmosphere";
 import type { GraphData } from "../../../core/src/graph";
 import { THEME_NAMES, THEMES, THEME_LABELS, DEFAULT_THEME, resolveAppearance, type ThemeName } from "../themes";
 import { settingsToCssVars, setCssVars } from "../settingsCssVars";
-import { DEFAULTS, DEFAULT_ACCENT_PALETTE } from "../settings";
+import { DEFAULTS } from "../settings";
 import { isTauri } from "../nativeMenu";
 import { WordmarkHero, DaemonStage, ClaudeStage, Lockup } from "./marks";
+import { SMALL_GRAPH, BIG_GRAPH, applyGraphConfig } from "./vaultIntroGraph";
 import "./VaultIntro.css";
 
 type SlideKey = "welcome" | "theme" | "graph" | "daemon" | "claude" | "powerups" | "begin";
@@ -97,84 +99,16 @@ const SLIDES: Slide[] = [
 // localStorage key the post-restart app reads to run the chosen power-ups against the real backend.
 const POWERUPS_KEY = "bismuth-first-run-powerups";
 
-// Build a point-cloud graph with BAKED positions (a seeded random sphere). Baking positions
-// means the renderer draws the layout directly — no cold force-settle, no auto-fit race — so
-// it frames any node count instantly and reliably. The "you" hub sits at the center.
-function makeCloud(n: number, radius: number, seed: number): GraphData {
-  let s = seed;
-  const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-  const nodes: GraphData["nodes"] = [
-    { id: "you", label: "", kind: "self", position: [0, 0, 0], position2d: [0, 0] },
-  ];
-  for (let i = 0; i < n; i++) {
-    const r = radius * Math.cbrt(rnd());
-    const theta = rnd() * Math.PI * 2;
-    const phi = Math.acos(2 * rnd() - 1);
-    const x = r * Math.sin(phi) * Math.cos(theta);
-    const y = r * Math.sin(phi) * Math.sin(theta);
-    const z = r * Math.cos(phi);
-    nodes.push({
-      id: `n${i}`,
-      label: "",
-      kind: "note",
-      community: i % 5,
-      position: [x, y, z] as [number, number, number],
-      position2d: [x, y] as [number, number],
-    });
-  }
-  const edges: GraphData["edges"] = [];
-  for (let i = 0; i < n; i++) {
-    if (i % 6 === 0) edges.push({ from: "you", to: `n${i}`, kind: "link" });
-    if (i >= 7) edges.push({ from: `n${i - 7}`, to: `n${i}`, kind: "link" });
-  }
-  return { nodes, edges };
-}
+// SMALL_GRAPH, BIG_GRAPH, and applyGraphConfig live in ./vaultIntroGraph (a plain .ts module,
+// no JSX) — see that file's header comment for why. It's the same defect + same fix shape as
+// Task 26's `app/src/graph/embeddedGraphRender.ts`: `bun test` cannot load ANY .tsx file's JSX
+// transform in this repo (Solid, not React), so anything a test imports must live outside one.
 
-// Theme slide: a small starter cloud (just enough to show the palette). Three-brains slide:
-// a whole vault's worth of notes (~the size of a real Bismuth vault) — the explosion.
-const SMALL_GRAPH = makeCloud(54, 300, 1234567);
-const BIG_GRAPH = makeCloud(1874, 760, 987654321);
-
-// The renderer caches settled node positions in localStorage under these keys (shared with
-// the app's GraphView). The intro's dummy graphs must NOT read stale cached positions (they'd
-// restore nodes off-screen) or persist their own into the app — so we wipe them on enter+exit.
-const GRAPHPOS_KEYS = ["bismuth-graphpos:v5:2d", "bismuth-graphpos:v5:3d"];
-const clearGraphPosCache = () => {
-  try {
-    for (const k of GRAPHPOS_KEYS) localStorage.removeItem(k);
-  } catch {
-    /* private mode — non-fatal */
-  }
-};
-
-// Push the chosen theme's colors into a renderer. Shared by both IntroGraph instances.
-function applyGraphConfig(renderer: CanvasGraphRenderer, name: ThemeName) {
-  const ap = THEMES[name];
-  const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
-  renderer.setConfig({
-    spin: true,
-    spinSpeed: 0.0016,
-    palette: paletteToInts(palette),
-    repulsion: -12,
-    linkDistance: 6,
-    centering: 0.13,
-    nodeSize: 8,
-    viewMode: "3d",
-    showGraphLabels: false,
-    graphLabelHubCount: 0,
-    nodeSizeMinMult: 0.7,
-    nodeSizeDegreeGain: 0.5,
-    nodeSizeMaxMult: 3.5,
-    edgeColor: hexToInt(ap.neutral, 0xaeb4c2),
-    edgeOpacity: ap.isLight ? 0.22 : 0.34,
-    // Transparent canvas so the .vi-root radial gradient shows THROUGH the graph.
-    transparent: true,
-    backgroundColor: hexToInt(ap.background, 0x14151b),
-    labelTextColor: "rgba(0,0,0,0)",
-    labelBgColor: "rgba(0,0,0,0)",
-    selfColor: hexToInt(ap.foreground, 0xffffff),
-  });
-}
+// (A localStorage settled-position cache used to be wiped here on enter+exit. Neither renderer has
+// persisted layout to localStorage for some time — `bismuth-graphpos:v5:*` had no reader and no
+// writer left in the tree — and these graphs bake their own positions anyway, so the wipe was
+// clearing keys nothing wrote. Removed with the renderer migration rather than left as a comment
+// asserting something untrue about first-run behaviour.)
 
 // One self-contained 3D graph instance (its own renderer + canvas + atmosphere). Renders its
 // baked-layout graph ONCE (framed instantly, no settle/auto-fit motion), recolors on theme
@@ -183,10 +117,18 @@ function applyGraphConfig(renderer: CanvasGraphRenderer, name: ThemeName) {
 // `.active` opacity transition, so there's no shared instance and no re-render on slide change.
 function IntroGraph(props: { graph: GraphData; pose: "full" | "condensed"; active: boolean; theme: ThemeName; offsetY?: number; fitMargin?: number }) {
   let host!: HTMLDivElement;
-  const renderer = new CanvasGraphRenderer();
+  const renderer: GraphRenderer = new AsciiGraphRenderer();
+  // This renderer instance never gets swapped — one IntroGraph drives one renderer for its whole
+  // life — so wiring it straight to a sink here has none of the staleness risk a `renderer` prop
+  // has on GraphAtmosphere. Still
+  // going through the same BloomSink shape as GraphView.tsx rather than a one-off, so there is
+  // exactly one way <GraphAtmosphere> is ever fed a field. See GraphAtmosphere.tsx's file-level
+  // comment for why it takes a sink instead of the renderer itself.
+  const bloomSink: BloomSink = {};
   let mounted = false;
   onMount(() => {
     renderer.mount(host, () => {});
+    renderer.setBloomCallback?.((field) => bloomSink.current?.(field));
     renderer.render(props.graph);
     mounted = true;
     applyGraphConfig(renderer, props.theme);
@@ -202,7 +144,7 @@ function IntroGraph(props: { graph: GraphData; pose: "full" | "condensed"; activ
   return (
     <div class="vi-graph3d" data-pose={props.pose} classList={{ active: props.active }}>
       <div class="vi-graph3d-canvas" ref={host} />
-      <GraphAtmosphere renderer={renderer} />
+      <GraphAtmosphere sink={bloomSink} />
     </div>
   );
 }
@@ -230,11 +172,6 @@ export default function VaultIntro() {
   const skip = () => go(last); // jump to the CTA rather than bailing — there's no vault yet
 
   const varsFor = (name: ThemeName) => settingsToCssVars({ ...DEFAULTS, appearance: { ...DEFAULTS.appearance, theme: name } });
-
-  // First-run is backend-free; clear the renderer's shared position cache on enter+exit so the
-  // intro's baked-layout graphs never read stale layouts or leak positions into the app cache.
-  onMount(clearGraphPosCache);
-  onCleanup(clearGraphPosCache);
 
   // Live re-theme: paint the chosen theme onto the whole takeover. Each IntroGraph recolors its
   // own renderer separately (see the component below). No persistence here — only on commit

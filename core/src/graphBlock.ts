@@ -294,7 +294,7 @@ export function removeEdgesBetween(spec: GraphBlockSpec, a: string, b: string): 
 
 /**
  * Project the block spec onto the shared GraphData shape so the embedded widget can feed
- * the ordinary graph stack (core/layout.ts + CanvasGraphRenderer) unchanged. Nodes render
+ * the ordinary graph stack (core/layout.ts + AsciiGraphRenderer) unchanged. Nodes render
  * as "note" dots (labels default to the id); edges as plain "link" lines.
  */
 export function graphBlockToGraphData(spec: GraphBlockSpec): GraphData {

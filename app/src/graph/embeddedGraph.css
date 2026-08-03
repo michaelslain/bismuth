@@ -1,6 +1,6 @@
 /* app/src/graph/embeddedGraph.css
  * The ```graph note block's card (EmbeddedGraph.tsx): toolbar + canvas + edit row +
- * footer. The canvas itself is the shared CanvasGraphRenderer (graphCanvas.css); its
+ * footer. The canvas itself is the shared AsciiGraphRenderer (asciiGraph.css); its
  * .graph-viewport mounts position:absolute inside .graph-block-canvas.
  */
 

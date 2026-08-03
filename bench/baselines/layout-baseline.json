@@ -1,0 +1,50 @@
+{
+  "label": "part1-final",
+  "opts": {},
+  "vault": {
+    "dir": "/Users/michaelslain/Documents/dev/bismuth-graph-vault",
+    "edges": 5077,
+    "edgesRaw": 5078,
+    "selfLoops": 1,
+    "nodes": 2262,
+    "communities": 357,
+    "fingerprint": "5558f545e13b163b"
+  },
+  "timing": {
+    "layout3dMs": 11166,
+    "layout2dMs": 7212,
+    "totalMs": 18378
+  },
+  "paths": {
+    "separation": {
+      "pairs": 2557191,
+      "exact": true
+    },
+    "crossings": {
+      "pairs": 12885426,
+      "exact": true
+    },
+    "exactPairLimit": 20000000
+  },
+  "nanFields": [],
+  "d3": {
+    "neighbourhoodPreservationDegree": 0.1241655695765395,
+    "neighbourhoodPreservationK10": 0.2963918491538878,
+    "separation": 0.1827923463715893,
+    "crossings": 0,
+    "nnCV": 0.4281161623720532,
+    "nnMin": 11.357816691600547,
+    "nnMedian": 15.033296378372908,
+    "stressCorrelation": 0.30718767171847483
+  },
+  "d2": {
+    "neighbourhoodPreservationDegree": 0.130228912623103,
+    "neighbourhoodPreservationK10": 0.2718722364614704,
+    "separation": 0.09687118577664669,
+    "crossings": 0.017643587576859535,
+    "nnCV": 0.6293617132192543,
+    "nnMin": 13.601470508735444,
+    "nnMedian": 18.110770276274835,
+    "stressCorrelation": 0.19666077728678746
+  }
+}

@@ -7,6 +7,7 @@ import {
   snapshot,
   prune,
   resetRelay,
+  DONE_SUBAGENT_TTL_MS,
 } from "../src/relay";
 
 beforeEach(() => resetRelay());
@@ -69,6 +70,30 @@ test("finished subagents are pruned after the TTL", () => {
   expect(snapshot(1200 + 4_000).subagents).toHaveLength(1);
   // Past TTL → pruned.
   expect(snapshot(1200 + 9_000).subagents).toHaveLength(0);
+});
+
+// stopSubagent's only caller is the SubagentStop hook, which fires throughout a terminal tab's
+// entire life — the registry's other sweep site, prune(), only runs on tab close. Without an
+// eager sweep inside stopSubagent itself, a long-lived tab that runs many sequential Task calls
+// would pile up one done RelaySubagent (full lastMessage and all) per call for as long as the tab
+// stays open, since nothing else ever visits the registry in between.
+test("stopSubagent eagerly sweeps other expired-done subagents, so a long-lived tab doesn't need snapshot() or prune() to bound the registry", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Explore" }, 1100);
+  startSubagent({ parentSessionId: "s1", agentId: "a2", agentType: "Plan" }, 1150);
+  stopSubagent({ agentId: "a1" }, 1200); // a1 done at 1200 — just finished, not swept yet.
+
+  // Much later in the SAME tab (no prune(), no snapshot() called in between), a2 finishes too.
+  // stopSubagent's own internal sweep must evict a1 (long past its TTL) as a side effect of THIS
+  // call alone.
+  stopSubagent({ agentId: "a2" }, 1200 + DONE_SUBAGENT_TTL_MS + 1000);
+
+  // Probe with a "now" that, on its own, is NOT enough to evict a1 (only ~1s past its own doneAt,
+  // nowhere near the TTL) — if a1 still showed up here it would mean eviction only ever happens
+  // when snapshot()/prune() itself is later called with a late-enough clock, not eagerly from
+  // stopSubagent as this fix requires.
+  const probeNow = 1200 + 1000;
+  expect(snapshot(probeNow).subagents.map((s) => s.agentId)).toEqual(["a2"]);
 });
 
 // The linger must be a BEAT, not a minute. It exists so a subagent that starts and finishes

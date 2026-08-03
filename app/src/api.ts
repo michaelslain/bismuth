@@ -237,7 +237,6 @@ const rowsInflight = new Map<string, Promise<Row[]>>();
 
 export const api = {
   graph: () => getJson<GraphData>("/graph"),
-  agentGraph: () => getJson<GraphData>("/agent-graph"),
   daemonGraph: () => getJson<GraphData>("/daemon/graph"),
   // Daemon supervision writes (crons + processes). Enable/disable edits the
   // shared `enabled` frontmatter; runCron drops a trigger the daemon fires. Return the

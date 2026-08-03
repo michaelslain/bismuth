@@ -33,8 +33,12 @@ removed when it merged into Bismuth). The relay registry now lives **in core**
    - `SessionEnd` → `bin/session-end-hook.ts` → `POST /relay/session/end` (drop the
      session node when Claude exits, so it doesn't linger until the pane closes; skips
      `clear`/`compact`, which keep the terminal's Claude running).
-3. `core/src/agents.ts` builds the graph from the registry; the frontend draws
-   you → session → subagent (`app/src/graph/agentLayout.ts` `layoutAgentGraph`).
+3. `core/src/relay.ts` holds the registry (sessions + subagents), pruned when a terminal tab
+   closes (`terminal.ts`'s `killSession` → `relay.ts`'s `prune`). The frontend "agents" graph
+   that used to render it (you → session → subagent) was removed; nothing reads the registry
+   today, but it — and these hooks — stay, since `core/src/chat.ts` shares its TTL constants
+   and `core/src/agents.ts`'s `ChatAgentSession` type for its own, separate per-chat subagent
+   tracking.
 
 All hooks are **best-effort**: they no-op without `CLAUDE_TERMINAL_ID`, swallow every
 error, and exit 0 within a budget so they never block the user's session

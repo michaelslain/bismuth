@@ -106,8 +106,6 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
         return access.listTree(vault);
       case "GET /vault-data":
         return buildVaultRows(vault);
-      case "GET /agent-graph":
-        return { nodes: [], edges: [] }; // no relay on mobile
       case "GET /config":
         return { vault, memory: memory ?? null };
       case "GET /settings":

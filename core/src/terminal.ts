@@ -6,6 +6,7 @@ import { existsSync, mkdtempSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { whichClaude, whichBinary } from "./claudeWhich";
 import { BACKEND_LIST } from "./agentBackends/catalog";
+import { prune as relayPrune } from "./relay";
 
 export interface Session {
   id: string;
@@ -582,6 +583,11 @@ export function killSession(id: string): void {
     // already dead
   }
   sessions.delete(id);
+  // A tab closing is exactly the event the relay registry has no hook for (see relay.ts's
+  // `prune` doc comment) — without this, a closed-tab session (and its whole subagent subtree)
+  // and any subagent past its done-TTL/backstop age would linger in the registry forever, since
+  // nothing else reads/prunes it now that the old GET /agent-graph poll is gone.
+  relayPrune(new Set(listSessionIds()));
 }
 
 export function sessionCount(): number {

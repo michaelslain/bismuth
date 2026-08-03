@@ -59,7 +59,6 @@ export interface Settings {
     mapDefaultZoom: number;       // default zoom for the Bases map view
     refreshDebounceMs: number;    // ms before rebuilding the graph after edits
     backgroundNoise: boolean;     // faint ASCII noise texture under the graph field; off by default
-    renderer: "ascii" | "standard"; // which look draws the graph: the ASCII character field or the standard dots+edges
   };
   editor: {
     defaultMode: "source" | "visual"; // how a note opens: raw markdown editor vs no-code visual editor
