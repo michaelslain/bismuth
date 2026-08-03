@@ -44,7 +44,7 @@
 //    only the MCP server's own env block sets it) will pass `--vault`/`--dir` explicitly, and a gate
 //    that only checked env would be a no-op for exactly the invocation shape this file exists to
 //    cover.
-import { buildDenyPaths, type VisibilityChannel } from "./visibility";
+import { buildDenyPaths, findDeniedEntry, normalizeForCompare, type DenyEntry, type VisibilityChannel } from "./visibility";
 
 /** Which channel this MCP server is serving, from `BISMUTH_MCP_CHANNEL`.
  *
@@ -189,16 +189,64 @@ export interface GateDecision {
 }
 
 /**
+ * Reduce an argv token, and each deny path it is scanned against, to the same comparison form —
+ * visibility.ts's `normalizeForCompare`, applied to the WHOLE token rather than to a path.
+ *
+ * All three spelling axes have to be folded here, not two. An earlier version of this function
+ * folded only case and Unicode form, on the reasoning that a whole argv token is not a path and so
+ * its `.`/`..` segments could not be resolved in place — with the segment axis left to the
+ * per-token `findDeniedEntry` pass above. That reasoning is right for a token that IS a path and
+ * wrong for one that merely CONTAINS one, and the gap was real:
+ * `render --out exports/Private/./secret.md.html` returned `allowed: true`, because
+ * `findDeniedEntry` cannot resolve a token whose path is a substring, and an unnormalized substring
+ * scan cannot see through the `/./`. (`//` slipped the same way. The `..` spelling happened to be
+ * caught, since `Private/../Private/secret.md` still contains `Private/secret.md` verbatim — which
+ * is luck, not coverage.)
+ *
+ * Normalizing the whole token is safe because both sides of the scan get the identical treatment: a
+ * path embedded in a longer string keeps its segment boundaries, so `exports/Private/./secret.md`
+ * folds to `exports/private/secret.md` and still contains the folded needle.
+ *
+ * NOT purely over-inclusive, despite the rest of this gate being so. Resolving segments also
+ * dissolves a restricted path that only survived in a token as a verbatim substring:
+ * `read Private/secret.md/../other.md` used to refuse and now runs. It should run — that path
+ * resolves to `Private/other.md` and cannot reach the hidden note (see normalizeForCompare's note
+ * on why, and the tests pinning it). So this pass trades a handful of false refusals away rather
+ * than adding to them; the over-inclusiveness that remains is the substring test itself, which
+ * still refuses a token that merely CONTAINS a restricted path as a prefix.
+ */
+function foldForScan(s: string): string {
+  return normalizeForCompare(s);
+}
+
+/** The path-shaped pieces of one argv token: the token itself, and — for `--flag=value` and
+ *  `path=value` query fragments — whatever follows the first `=`. Each is handed to
+ *  findDeniedEntry, which resolves `.`/`..` and both other spelling axes properly. */
+function pathCandidates(arg: string): string[] {
+  const eq = arg.indexOf("=");
+  if (eq === -1 || eq === arg.length - 1) return [arg];
+  return [arg, arg.slice(eq + 1)];
+}
+
+/**
  * Pure: decide whether `args` may run, given the restricted paths for this channel.
  *
- * `restricted` is the `{rel, abs}` list from `buildDenyPaths`. A match is a SUBSTRING test against
- * each argv token in both path forms, which also catches a path embedded in a query string or a
- * `--flag=value` pair. Case-insensitive, because macOS filesystems are case-insensitive by default
- * and `private/SECRET.md` opens the same file as `Private/secret.md`.
+ * `restricted` is the `{rel, abs}` list from `buildDenyPaths`. Two passes, because neither alone is
+ * enough:
+ *
+ *  1. Each argv token (and the value half of a `--flag=value` / `path=value` pair) goes through
+ *     `findDeniedEntry`, which resolves `.`/`..` segments, Unicode form and case the same way every
+ *     other gate does. `bismuth read Private/../Private/secret.md` opens the file, so it must
+ *     refuse.
+ *  2. A SUBSTRING test against each token in both path forms, which catches a path embedded
+ *     somewhere a whole-token check cannot see it — a longer query string, a quoted shell fragment,
+ *     an export path derived from the note. Both sides go through `foldForScan`, which folds all
+ *     three spelling axes and not just the two a substring test looks like it can honor; see that
+ *     function for the `/./`-inside-a-longer-token hole that costs.
  */
 export function decideCliGate(
   args: string[],
-  restricted: { rel: string; abs: string }[],
+  restricted: DenyEntry[],
 ): GateDecision {
   if (restricted.length === 0) return { allowed: true };
 
@@ -214,19 +262,26 @@ export function decideCliGate(
     };
   }
 
-  const haystack = args.map((a) => a.toLowerCase());
+  const refusal = (entry: DenyEntry): GateDecision => ({
+    allowed: false,
+    reason:
+      `Refused: "${entry.rel}" is marked off-limits to AI sessions by this vault's visibility ` +
+      `settings. Do not try to reach it another way — tell the user it is hidden if they need to know.`,
+  });
+
+  for (const arg of args) {
+    for (const candidate of pathCandidates(arg)) {
+      const hit = findDeniedEntry(restricted, candidate);
+      if (hit) return refusal(hit);
+    }
+  }
+
+  const haystack = args.map(foldForScan);
   for (const entry of restricted) {
     for (const form of [entry.rel, entry.abs]) {
-      const needle = form.toLowerCase();
+      const needle = foldForScan(form);
       if (!needle) continue;
-      if (haystack.some((a) => a.includes(needle))) {
-        return {
-          allowed: false,
-          reason:
-            `Refused: "${entry.rel}" is marked off-limits to AI sessions by this vault's visibility ` +
-            `settings. Do not try to reach it another way — tell the user it is hidden if they need to know.`,
-        };
-      }
+      if (haystack.some((a) => a.includes(needle))) return refusal(entry);
     }
   }
   return { allowed: true };

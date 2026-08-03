@@ -11,7 +11,7 @@
 // The rule it encodes, from docs/vault/visibility.md: a backend may serve a restricted vault only
 // if its catalog capability says it has a VERIFIED enforcement mechanism for that channel. Anything
 // else refuses — loudly, with both ways out named — rather than running unprotected.
-import { buildDenyPaths, type VisibilityChannel } from "../visibility";
+import { resolveDenyPlan, type VisibilityChannel } from "../visibility";
 import { visibilityRefusalMessage } from "../chat";
 import { BACKENDS, isBackendId, type BackendDescriptor } from "./catalog";
 
@@ -38,6 +38,9 @@ export function enforcesFor(d: BackendDescriptor, channel: VisibilityChannel): b
  *    backend, which would silently hand a typo'd or newer-build id Claude's "enforced" answer — so
  *    the id is validated before the descriptor is looked up.
  *  - An UNREADABLE vault refuses. If we cannot tell what is restricted, we must assume something is.
+ *    This one is only reachable because `resolveDenyPlan` has a third state to report: while the
+ *    walk answered `[]` for a vault it had failed to read, this branch could not fire for the case
+ *    it names, and every unreadable vault was allowed through as unrestricted.
  *  - A backend with no verified mechanism refuses, even though its CLI might in fact be safe. "It
  *    should work, it's the same OS primitive" is exactly the reasoning ./catalog.ts's honesty rule
  *    forbids.
@@ -49,18 +52,22 @@ export async function resolveVisibilityGate(
   channel: VisibilityChannel,
   root: string,
 ): Promise<GateVerdict> {
-  let restricted;
+  let plan;
   try {
-    restricted = await buildDenyPaths(root, channel);
-  } catch {
+    plan = await resolveDenyPlan(root, channel);
+  } catch (e) {
+    plan = { determined: false as const, reason: e instanceof Error ? e.message : String(e) };
+  }
+  if (!plan.determined) {
     return {
       allowed: false,
       restrictedCount: 0,
       message:
         "Bismuth couldn't read this vault's visibility settings, so this chat wasn't started rather " +
-        "than risk running without them. Check the vault's `.settings` file, then try again.",
+        `than risk running without them (${plan.reason}). Check the vault's \`.settings\` file, then try again.`,
     };
   }
+  const restricted = plan.entries;
   if (restricted.length === 0) return { allowed: true };
 
   // Unknown id: refuse before backendOf() can degrade it into the default backend's answer.

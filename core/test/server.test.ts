@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import { resetUiControl } from "../src/uiControl";
 import { createTerminalSession, killSession } from "../src/terminal";
 import { searchPromptDeps } from "../src/searchPrompt";
 import { makeSampleVault } from "./helpers";
+import * as visibility from "../src/visibility";
 
 // Isolate the daemon machine dir + the legacy claude-bot source for the WHOLE file. A
 // daemon-enabled server (the merged-brain test) runs migrateDaemonState on boot AND again from
@@ -2135,6 +2136,39 @@ test("GET /asset is channel-filtered: a hidden asset's BYTES are not readable wi
     const ok = await fetch(`${base}/asset?path=essay.md`);
     expect(ok.status).toBe(200);
   } finally {
+    server.stop(true);
+  }
+});
+
+test("the per-request deny list is cached per vault version, and invalidated by an edit", async () => {
+  // A raw timing assertion (warm < cold) is what the audit's benchmark shape suggests, but wall-clock
+  // deltas flake under CI/sandbox scheduling jitter. A call counter around buildDenyPaths gives the
+  // same signal deterministically: the walk (visibility.ts's exported entry point) must run exactly
+  // once per vault version, no matter how many non-owner requests ask in between, and must run AGAIN
+  // the moment an edit bumps the version — that second half is the one that actually matters (a stale
+  // cache serving permissive data past an edit is the bug class to avoid).
+  const { vault, memory } = await makeSampleVault();
+  await Bun.write(join(vault, "Private", "secret.md"), "---\nvisibility: hidden\n---\nSENTINEL-CACHE\n");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const walkSpy = spyOn(visibility, "buildDenyPaths");
+  try {
+    // Two tokenless reads of a VISIBLE note: the second must hit the memo, not re-walk the vault.
+    const first = await fetch(`${base}/file?path=essay.md`);
+    expect(first.status).toBe(200);
+    const second = await fetch(`${base}/file?path=essay.md`);
+    expect(second.status).toBe(200);
+    expect(walkSpy).toHaveBeenCalledTimes(1);
+
+    // An edit must still take effect: unhide the note, then a tokenless read succeeds — proving the
+    // memo was dropped (invalidated), not left stale, and that a fresh walk ran to pick up the edit.
+    await Bun.write(join(vault, "Private", "secret.md"), "no frontmatter now\n");
+    await new Promise((r) => setTimeout(r, 400)); // watcher debounce is 250ms
+    const after = await fetch(`${base}/file?path=Private/secret.md`);
+    expect(after.status).toBe(200);
+    expect(walkSpy).toHaveBeenCalledTimes(2);
+  } finally {
+    walkSpy.mockRestore();
     server.stop(true);
   }
 });

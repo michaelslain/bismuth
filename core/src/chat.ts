@@ -17,7 +17,7 @@ import {
 import { whichClaude } from "./claudeWhich";
 import { loadSessionModel, saveSessionModel } from "./chatModelStore";
 import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
-import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, isDeniedPath, type DenyEntry } from "./visibility";
+import { buildDenyPaths, buildManagedSettingsDeny, sandboxDenyRead, sandboxFailIfUnavailable, isDeniedPath, type DenyEntry } from "./visibility";
 import { readDaemonSessionIds } from "./daemon";
 import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
 import { detachSessionSink, emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
@@ -126,8 +126,10 @@ export type ChatFrame =
    *  backend, `restrictedCount` is how many notes/folders are restricted (a COUNT only — never their
    *  names or paths, since naming a hidden note in an error message would defeat the point of hiding
    *  it), and `message` is the full user-facing explanation built by {@link visibilityRefusalMessage}.
-   *  Emitted INSTEAD OF opening the session — never as a mid-turn failure; `spawn`/`exit` = the
-   *  child failed; `error` = an SDK/turn error. */
+   *  Emitted INSTEAD OF opening the session, with one exception: a mid-session re-read of the
+   *  vault's visibility that cannot be resolved (respawnSession) emits it and ends the session,
+   *  rather than continue a conversation whose deny list no longer describes the vault.
+   *  `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
   | {
       type: "error";
       code: "no-claude" | "no-opencode" | "no-binary" | "visibility-refused" | "spawn" | "exit" | "error";
@@ -916,8 +918,23 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
   // Visibility gate (core/src/visibility.ts): resolve every note's effective visibility for the
   // "chat" channel and deny the restricted subset. Per-file paths, not folder globs — an explicit
   // file-level override inside a restricted folder is honored automatically (buildDenyPaths never
-  // emits a deny for it).
-  const denyEntries = await buildDenyPaths(cwd, "chat");
+  // emits a deny for it). A walk that cannot enumerate the vault throws rather than reporting an
+  // empty restricted set, so the session is refused instead of spawning with no deny list.
+  let denyEntries: DenyEntry[];
+  try {
+    denyEntries = await buildDenyPaths(cwd, "chat");
+  } catch (e) {
+    sink({
+      type: "error",
+      code: "visibility-refused",
+      binary: "claude",
+      message:
+        "Bismuth couldn't read this vault's visibility settings, so this chat wasn't started rather " +
+        `than risk running without them (${e instanceof Error ? e.message : String(e)}). Check the ` +
+        "vault's `.settings` file, then try again.",
+    });
+    return null;
+  }
 
   // Resuming an existing conversation: preload the model IT was last set to (Bug #89 — keyed by the
   // durable SDK session_id, chatModelStore.ts). spawnChatQuery re-applies it via q.setModel() right
@@ -984,6 +1001,36 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
   // over the same generator. (respawnSession respawns its own query() + drain out of band.)
   void drain(session);
   return session;
+}
+
+/**
+ * Pure: the `sandbox` SDK option for spawnChatQuery — undefined when nothing is restricted, so an
+ * unrestricted vault's spawn omits `sandbox` entirely, exactly as before (spawnChatQuery ALSO gates
+ * its whole call site on `denyEntries.length > 0`, so this internal check is belt-and-suspenders,
+ * mirroring sandboxDenyRead's own double-guard in visibility.ts). Extracted from spawnChatQuery so
+ * it is unit-testable without spawning the real SDK query().
+ *
+ * `allowUnsandboxedCommands: false` (Task 9) is the fix for a live probe that found the model
+ * calling its OWN Bash tool with `dangerouslyDisableSandbox: true` to skip the OS sandbox on its
+ * own initiative, TWICE, while being asked to read a hidden note — not an adversarial bypass, just
+ * the app's own agent behaving normally. `failIfUnavailable` only gates a sandbox that fails to
+ * START; it does nothing about a sandbox the model itself asks to skip on a per-call basis. Per
+ * sdk.d.ts's `Settings.sandbox.allowUnsandboxedCommands` docstring (0.3.186, line 5659 — the only
+ * prose anywhere in the bundled types describing this field; `Options.sandbox`'s zod-derived
+ * `SandboxSettings` at line 2596 shares the identical field/shape but carries no doc comment of its
+ * own at its declaration site — see docs/vault/visibility.md for the full citation + verification
+ * notes): "Allow commands to run outside the sandbox via the dangerouslyDisableSandbox parameter.
+ * When false, the dangerouslyDisableSandbox parameter is completely ignored and all commands must
+ * run sandboxed. Default: true."
+ */
+export function buildChatSandboxOption(denyEntries: DenyEntry[], cwd: string): Record<string, unknown> | undefined {
+  if (denyEntries.length === 0) return undefined;
+  return {
+    enabled: true,
+    failIfUnavailable: sandboxFailIfUnavailable(denyEntries),
+    allowUnsandboxedCommands: false,
+    filesystem: { denyRead: sandboxDenyRead(denyEntries, cwd) },
+  };
 }
 
 /**
@@ -1116,10 +1163,23 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         // survives this session's permission mode (Step-0 spike). `sandbox` additionally blocks a
         // Bash `cat`/`grep` at the OS level (verified on macOS). Omitted entirely when nothing is
         // restricted, so a vault with no visibility settings behaves exactly as before.
+        //
+        // `failIfUnavailable: sandboxFailIfUnavailable(denyEntries)` (never a fixed `false`) — a
+        // 2026-07-30 measurement (docs/vault/visibility.md, visibility-acceptance.md) found that a
+        // fixed `false` let a session whose sandbox couldn't start run anyway with ONLY
+        // managedSettings standing guard, which a raw Bash `cat`/`bismuth read`/`python3 -c` walks
+        // straight past (managedSettings only restricts the Read/Edit/Grep/Glob tool calling
+        // convention). Restricted vault → fail closed; unrestricted vault → unaffected, exactly as
+        // before this fix (sandboxFailIfUnavailable([]) is false, and this whole block is only
+        // included when denyEntries.length > 0 anyway).
+        //
+        // sandbox itself is now built by buildChatSandboxOption (Task 9), which additionally sets
+        // `allowUnsandboxedCommands: false` — see its doc comment for why (stops the model turning
+        // its own sandbox off via the Bash tool's `dangerouslyDisableSandbox` parameter).
         ...(denyEntries.length > 0
           ? {
               managedSettings: { permissions: { deny: buildManagedSettingsDeny(denyEntries) } },
-              sandbox: { enabled: true, failIfUnavailable: false, filesystem: { denyRead: sandboxDenyRead(denyEntries, session.cwd) } },
+              sandbox: buildChatSandboxOption(denyEntries, session.cwd),
             }
           : {}),
         // Memory auto-recall (daemon-gated). The visual chat is an SDK session with NO relay
@@ -1209,7 +1269,25 @@ export function computerUseChange(
 async function respawnSession(session: ChatSession): Promise<void> {
   session.visibilityDirty = false;
   session.spawnOptionsDirty = false;
-  const denyEntries = await buildDenyPaths(session.cwd, "chat");
+  // The respawn exists because the vault's visibility changed; if the new state cannot be
+  // enumerated, continuing on the session's PREVIOUS deny list would run the next turn against a
+  // list that no longer describes the vault. End the session instead.
+  let denyEntries: DenyEntry[];
+  try {
+    denyEntries = await buildDenyPaths(session.cwd, "chat");
+  } catch (e) {
+    session.sink({
+      type: "error",
+      code: "visibility-refused",
+      binary: "claude",
+      message:
+        "Bismuth couldn't re-read this vault's visibility settings, so this chat was stopped rather " +
+        `than continue without them (${e instanceof Error ? e.message : String(e)}). Check the ` +
+        "vault's `.settings` file, then reopen the chat.",
+    });
+    closeChat(session.id);
+    return;
+  }
   session.deniedEntries = denyEntries;
   // Tear down the old query() (interrupt any in-flight, then close) — NOT closeChat, which would
   // capture-to-memory and drop the session from the registry. NOTE: no await between the close and

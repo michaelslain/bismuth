@@ -16,7 +16,7 @@
 // The discovery walk (listVisibilityFiles + buildDenyPaths) is the whole enforcement surface —
 // a file it misses is unprotected. Keep this file's walk logic byte-for-byte in step with
 // core/src/visibility.ts's; see that file's comments for the reasoning behind each fix.
-import { open, readdir, readFile, realpath } from "node:fs/promises"
+import { open, readdir, readFile, realpath, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { parse as parseYaml } from "yaml"
 import { parseFrontmatter } from "./frontmatter.ts"
@@ -90,18 +90,67 @@ function normalizeFolderVisibility(raw: unknown): Record<string, Visibility> {
   return out
 }
 
-/** Read the folderVisibility map from the vault's settings. Never throws — an unreadable,
- *  missing, or corrupt file reads as {}. Mirrors registry.ts's readDaemonSettings fallback. */
+/**
+ * Read the folderVisibility map from the vault's settings, trying the same shapes registry.ts's
+ * readDaemonSettings does (first readable wins).
+ *
+ * NOT tolerant of a corrupt file, unlike every other `.settings` reader in this codebase. An
+ * absent settings file and one whose YAML has a syntax error both used to yield `{}`, and `{}`
+ * means "no folder is restricted" — so appending one stray character to a settings file whose
+ * `folderVisibility:` block hid a folder silently un-hid every note in it, with no error anywhere.
+ * A file that is PRESENT but unparseable throws {@link VisibilityUndeterminedError}; a file that is
+ * simply not there is an answer, and yields `{}`.
+ */
 async function readFolderVisibility(root: string): Promise<Record<string, Visibility>> {
   for (const rel of [".settings", join(".settings", "settings.yaml"), "settings.yaml"]) {
+    let raw: string
     try {
-      const doc = parseYaml(await readFile(join(root, rel), "utf-8")) as { folderVisibility?: unknown } | null
-      if (doc !== null) return normalizeFolderVisibility(doc.folderVisibility)
+      raw = await readFile(join(root, rel), "utf-8")
     } catch {
-      // unreadable/missing/dir → try the next shape
+      continue // absent, a directory, or unreadable in this shape → try the next
     }
+    let doc: { folderVisibility?: unknown } | null
+    try {
+      doc = parseYaml(raw) as { folderVisibility?: unknown } | null
+    } catch (e) {
+      throw new VisibilityUndeterminedError(
+        `${rel} is not valid YAML (${e instanceof Error ? e.message : String(e)})`,
+      )
+    }
+    if (doc !== null) return normalizeFolderVisibility(doc.folderVisibility)
   }
   return {}
+}
+
+/**
+ * Thrown when the walk cannot enumerate what this vault restricts — see {@link DenyPlan}. A
+ * deliberate literal copy of core/src/visibility.ts's class of the same name.
+ */
+export class VisibilityUndeterminedError extends Error {
+  constructor(reason: string) {
+    super(reason)
+    this.name = "VisibilityUndeterminedError"
+  }
+}
+
+/** Upper bound on directory entries the walk will consider — symlinked directories are followed,
+ *  so the reachable set is a graph, not a tree. Cycles are caught exactly (the descent chain
+ *  below); this bounds acyclic-but-huge fan-out, and hitting it is UNDETERMINED, not empty. */
+export const MAX_WALK_ENTRIES = 200_000
+
+/** Walk bounds, overridable per call — mirrors core/src/visibility.ts's WalkLimits. `maxEntries`
+ *  exists so the budget MECHANISM can be exercised at a small bound rather than by materializing
+ *  200k reachable entries; production callers pass nothing. The default is pinned by its own
+ *  assertion, separately from any test that sets it. */
+export interface WalkLimits {
+  maxEntries?: number
+}
+
+/** One walked file: its vault-relative path, and the absolute path with every symlinked DIRECTORY
+ *  on the way to it resolved. */
+interface WalkedFile {
+  rel: string
+  canonicalAbs: string
 }
 
 /**
@@ -116,27 +165,71 @@ async function readFolderVisibility(root: string): Promise<Record<string, Visibi
  * the user marked `hidden` was invisible to this walk and therefore unenforced, even though the
  * sidebar badged its FOLDER as hidden. Widening to every extension is what makes the folder
  * cascade (in buildDenyPaths) a hard floor instead of a suggestion.
+ *
+ * SYMLINKED DIRECTORIES are followed. `Dirent.isDirectory()` is false for a link that points at a
+ * directory, so such an entry used to be pushed as a FILE; readOwnVisibility then hit EISDIR and
+ * returned undefined, leaving the whole subtree behind the link — explicit `visibility: hidden`
+ * files included — with no deny entry while reading fine through the link's path.
+ *
+ * FAILURE IS NOT EMPTINESS. A readdir that fails is a subtree we cannot see into, and this walk is
+ * the whole enforcement surface: returning only what we did read reports a SHORTER restricted list
+ * than the truth, which every consumer reads as "less is hidden". It throws instead. The one
+ * exception is a subtree that ENOENT'd out from under us mid-walk — it existed when its parent was
+ * listed and does not now, so there is nothing behind it to miss. (ENOENT on the ROOT is not that
+ * case: the vault we were asked about is not there.)
  */
-async function listVisibilityFiles(root: string): Promise<string[]> {
-  const out: string[] = []
-  const walk = async (absDir: string, relDir: string): Promise<void> => {
+async function listVisibilityFiles(
+  root: string,
+  canonicalRoot: string,
+  maxEntries: number = MAX_WALK_ENTRIES,
+): Promise<WalkedFile[]> {
+  const out: WalkedFile[] = []
+  let budget = maxEntries
+
+  const walk = async (absDir: string, relDir: string, canonDir: string, chain: string[]): Promise<void> => {
     let entries
     try {
       entries = await readdir(absDir, { withFileTypes: true })
-    } catch {
-      return
+    } catch (e) {
+      if (relDir !== "" && (e as NodeJS.ErrnoException)?.code === "ENOENT") return
+      throw new VisibilityUndeterminedError(
+        `cannot list ${relDir === "" ? "the vault root" : relDir}: ${e instanceof Error ? e.message : String(e)}`,
+      )
     }
     for (const d of entries) {
       if (d.name === ".git" || d.name === ".settings") continue
-      const rel = relDir ? `${relDir}/${d.name}` : d.name
-      if (d.isDirectory()) {
-        await walk(join(absDir, d.name), rel)
-      } else {
-        out.push(rel)
+      if (--budget < 0) {
+        throw new VisibilityUndeterminedError(
+          `vault has more than ${maxEntries} reachable entries (symlink fan-out?) — the walk stopped early`,
+        )
       }
+      const rel = relDir ? `${relDir}/${d.name}` : d.name
+      const abs = join(absDir, d.name)
+      if (d.isDirectory()) {
+        const next = join(canonDir, d.name)
+        await walk(abs, rel, next, [...chain, next])
+        continue
+      }
+      if (d.isSymbolicLink()) {
+        // stat() follows the link; lstat/Dirent cannot tell us what it points AT.
+        const target = await stat(abs).catch(() => null)
+        if (target?.isDirectory()) {
+          const real = await realpath(abs).catch(() => null)
+          if (real === null) {
+            out.push({ rel, canonicalAbs: join(canonDir, d.name) })
+            continue
+          }
+          if (chain.includes(real)) continue // link back onto our own descent — a cycle
+          await walk(abs, rel, real, [...chain, real])
+          continue
+        }
+        // A link to a FILE (or a broken link): one entry, same as a regular file.
+      }
+      out.push({ rel, canonicalAbs: join(canonDir, d.name) })
     }
   }
-  await walk(root, "")
+
+  await walk(root, "", canonicalRoot, [canonicalRoot])
   return out
 }
 
@@ -230,7 +323,11 @@ const VISIBILITY_RANK: Record<Visibility, number> = { all: 0, "chat-only": 1, hi
 
 interface ResolvedFile {
   rel: string
+  /** `rel` joined onto the canonical vault root — the spelling that follows the walked path. */
   abs: string
+  /** The same file with symlinked directories on the way to it resolved; equals `abs` unless the
+   *  walk crossed a link. */
+  canonicalAbs: string
   dir: string
   stem: string
   visibility: Visibility
@@ -279,13 +376,41 @@ function applyStemInheritance(files: ResolvedFile[]): void {
   }
 }
 
-/** One restricted note, in both path forms a Claude Code tool call may report it in. */
+/**
+ * One restricted note — ONE entry per restricted file, so `entries.length` is a count of notes.
+ *
+ * `abs` is the file's path under the canonical vault root. That is not always the only absolute
+ * path it is readable at: a file under a symlinked DIRECTORY is equally readable at the path with
+ * the link resolved, and which of the two a tool reports depends on whether it resolved the link.
+ * The other spellings go in `aliases`, and every consumer that emits absolute paths emits all of
+ * them. Mirrors core/src/visibility.ts's DenyEntry.
+ */
 export interface DenyEntry {
   /** Vault-relative path (e.g. "private/secret.md"). */
   rel: string
-  /** Canonical (symlink-resolved) absolute path. */
+  /** This file's path under the canonical vault root — always `<canonicalRoot>/<rel>`. */
   abs: string
+  /** Further absolute paths the same file is readable at; absent when there are none. */
+  aliases?: string[]
 }
+
+/** Every absolute spelling of one entry. */
+function absForms(e: DenyEntry): string[] {
+  return e.aliases === undefined ? [e.abs] : [e.abs, ...e.aliases]
+}
+
+/**
+ * The result of a visibility walk, with its third state made explicit. A deliberate literal copy of
+ * core/src/visibility.ts's DenyPlan — see that file for the full reasoning.
+ *
+ * `determined: false` is NOT "nothing is restricted". It is "this vault did not tell us what is
+ * restricted". The two used to be the same value (`[]`), which meant `sandboxFailIfUnavailable`,
+ * `sandboxDenyRead`'s `.git` deny and `resolveDaemonBackend`'s refusal all reported "unrestricted"
+ * for a vault the daemon had simply failed to read.
+ */
+export type DenyPlan =
+  | { determined: true; entries: DenyEntry[] }
+  | { determined: false; reason: string }
 
 /** Bounded-concurrency map: `Promise.all` over thousands of files would open that many file
  *  descriptors at once and risk EMFILE on a large vault; this caps how many `readOwnVisibility`
@@ -319,16 +444,41 @@ const READ_CONCURRENCY = 64
  * (applyStemInheritance) then covers export sidecars and same-stem siblings that have neither a
  * restricting folder nor frontmatter of their own. See each helper's doc comment for why.
  */
-export async function buildDenyPaths(root: string): Promise<DenyEntry[]> {
+export async function resolveDenyPlan(root: string, opts: WalkLimits = {}): Promise<DenyPlan> {
+  try {
+    return { determined: true, entries: await walkDenyEntries(root, opts) }
+  } catch (e) {
+    if (e instanceof VisibilityUndeterminedError) return { determined: false, reason: e.message }
+    throw e
+  }
+}
+
+/**
+ * {@link resolveDenyPlan}'s entries, or a thrown {@link VisibilityUndeterminedError}. `sendMessage`
+ * calls this at the top of every message, where a throw refuses the message — which is the correct
+ * answer for a vault whose restrictions cannot be read. What no caller can receive any more is an
+ * empty list for a vault that was never read.
+ */
+export async function buildDenyPaths(root: string, opts: WalkLimits = {}): Promise<DenyEntry[]> {
+  return walkDenyEntries(root, opts)
+}
+
+async function walkDenyEntries(root: string, opts: WalkLimits = {}): Promise<DenyEntry[]> {
   const folderVisibility = await readFolderVisibility(root)
-  const rels = await listVisibilityFiles(root)
   // Canonicalize the root before joining: the SDK's own tools resolve symlinks in the paths they
   // report (e.g. on macOS a vault under a tmp dir is really under /private/var or /private/tmp),
-  // so a deny path built from a non-canonical root would silently never match theirs.
-  const canonicalRoot = await realpath(root).catch(() => root)
+  // so a deny path built from a non-canonical root would silently never match theirs. A root that
+  // cannot be resolved is undetermined for that same reason.
+  const canonicalRoot = await realpath(root).catch((e: unknown) => {
+    throw new VisibilityUndeterminedError(
+      `cannot resolve the vault root ${root}: ${e instanceof Error ? e.message : String(e)}`,
+    )
+  })
+  const walked = await listVisibilityFiles(root, canonicalRoot, opts.maxEntries)
   const cascadeCache = new Map<string, Visibility>()
 
-  const resolved = await mapWithConcurrency(rels, READ_CONCURRENCY, async (rel): Promise<ResolvedFile> => {
+  const resolved = await mapWithConcurrency(walked, READ_CONCURRENCY, async (file): Promise<ResolvedFile> => {
+    const { rel, canonicalAbs } = file
     const { dir, base } = splitRelPath(rel)
     // Memory notes (.daemon/memory/**): frontmatter-only, never folder cascade — keeps the deny
     // list in agreement with recall/searchMemory (which don't know the folder map). See the core
@@ -340,6 +490,7 @@ export async function buildDenyPaths(root: string): Promise<DenyEntry[]> {
     return {
       rel,
       abs: join(canonicalRoot, rel),
+      canonicalAbs,
       dir,
       stem: preDotStem(base),
       visibility: isVisibilityLiteral(own) ? own : cascade,
@@ -349,7 +500,19 @@ export async function buildDenyPaths(root: string): Promise<DenyEntry[]> {
 
   applyStemInheritance(resolved)
 
-  return resolved.filter((f) => !isVisibleToDaemon(f.visibility)).map((f) => ({ rel: f.rel, abs: f.abs }))
+  // The absolute spellings one restricted file is readable at, deduped, minus `abs` itself: a
+  // symlinked DIRECTORY on the way to it, and the CALLER's own spelling of the vault root when it
+  // differs from the canonical one (macOS firmlinks: `/var/…` canonicalizes to `/private/var/…`).
+  // Mirrors core/src/visibility.ts.
+  return resolved
+    .filter((f) => !isVisibleToDaemon(f.visibility))
+    // One ENTRY per file, so `entries.length` stays a count of NOTES; other spellings in `aliases`.
+    // Both candidates collapse into `abs` for a vault with no symlink and a canonical root, so the
+    // dedupe is what makes this a no-op there; no separate equality branch is needed.
+    .map((f) => {
+      const aliases = [...new Set([f.canonicalAbs, join(root, f.rel)])].filter((a) => a !== f.abs)
+      return aliases.length === 0 ? { rel: f.rel, abs: f.abs } : { rel: f.rel, abs: f.abs, aliases }
+    })
 }
 
 /**
@@ -360,14 +523,17 @@ export async function buildDenyPaths(root: string): Promise<DenyEntry[]> {
  * against an absolute deny pattern — a rule keyed on only one form silently fails to match the other.
  */
 export function buildManagedSettingsDeny(entries: DenyEntry[]): string[] {
-  return entries.flatMap(({ rel, abs }) =>
-    (["Read", "Edit", "Grep", "Glob"] as const).flatMap((tool) => [`${tool}(${rel})`, `${tool}(${abs})`]),
+  return entries.flatMap((e) =>
+    [e.rel, ...absForms(e)].flatMap((path) =>
+      (["Read", "Edit", "Grep", "Glob"] as const).map((tool) => `${tool}(${path})`),
+    ),
   )
 }
 
-/** The absolute paths only — what `sandbox.filesystem.denyRead` requires. */
+/** The absolute paths only — what `sandbox.filesystem.denyRead` requires. Every spelling of every
+ *  entry (see {@link DenyEntry.aliases}), not one per file. */
 export function absDenyPaths(entries: DenyEntry[]): string[] {
-  return entries.map((e) => e.abs)
+  return entries.flatMap(absForms)
 }
 
 /**
@@ -383,4 +549,19 @@ export function absDenyPaths(entries: DenyEntry[]): string[] {
 export function sandboxDenyRead(entries: DenyEntry[], vaultRoot: string): string[] {
   if (entries.length === 0) return []
   return [...absDenyPaths(entries), join(vaultRoot, ".git")]
+}
+
+/**
+ * Pure: `sandbox.failIfUnavailable` for this vault's daemon session. A deliberate literal copy of
+ * core/src/visibility.ts's `sandboxFailIfUnavailable` (see that file's doc comment for the full
+ * measurement this is based on — 2026-07-30, docs/vault/visibility.md + visibility-acceptance.md).
+ *
+ * `session.ts` used to pass a fixed `false` here, so a sandbox that couldn't start let the daemon's
+ * session run anyway with only `managedSettings.permissions.deny` standing guard — which restricts
+ * the Read/Edit/Grep/Glob tool CALLING CONVENTION and does nothing to a raw Bash subprocess
+ * (`bismuth read`, `cat`, `python3 -c`). Conditional on `entries`, never a fixed `true`: a vault
+ * that hides nothing must keep running on a machine where the sandbox can't start at all.
+ */
+export function sandboxFailIfUnavailable(entries: DenyEntry[]): boolean {
+  return entries.length > 0
 }

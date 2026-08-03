@@ -123,8 +123,8 @@ The catalog's own doc comment states the honesty rule in these words: *"a value 
 
 | Backend | Chat | Daemon | `selfSandboxes` | Verified? |
 |---|---|---|---|---|
-| `claude` | **native** — `managedSettings.permissions.deny` + `sandbox.filesystem.denyRead` + `disallowedTools`, together, plus a live path-aware `canUseTool` auto-deny | **native** — the identical triple, rebuilt fresh every message | `true` (own Seatbelt — never a wrap target) | **Yes** — Step-0 spike (below) + `core/test/chat.test.ts`'s live "visibility" test, re-attacked by a red-team pass across absolute/relative paths, symlinks, hardlinks, case variants, `../` traversal, Grep/Glob, and Task-subagent delegation. All blocked. |
-| `opencode` | **wrapper-macos** — a Seatbelt profile wraps the per-turn `opencode run` subprocess (`chatProviders/opencode.ts`); a restricted vault never uses the shared `opencode serve` process (see "the wrapper mechanism" below) | **none** — no opencode daemon integration exists in this codebase at all (`capabilities.daemon: false`); moot regardless of the visibility question | `false` (wrappable) | **Yes, live** — a real `opencode run --format json --auto` turn, wrapped, against `opencode/deepseek-v4-flash-free` ($0 cost): the structured read tool AND the Bash `cat` fallback both denied, in one turn. **Not verified**: the "grep every file for the token, without naming it" case timed out twice against the free model rotation — treat the wrapper's shell-level grep denial (verified separately) as a strong argument, not a measurement, for the tool-level case. |
+| `claude` | **native** — `managedSettings.permissions.deny` + `sandbox.filesystem.denyRead` + `disallowedTools`, together, plus a live path-aware `canUseTool` auto-deny; `sandbox.failIfUnavailable` follows the deny list (see "Sandbox availability" below) so a restricted vault fails closed rather than silently running unsandboxed | **native** — the identical triple, rebuilt fresh every message | `true` (own Seatbelt — never a wrap target) | **Yes** — Step-0 spike (below) + `core/test/chat.test.ts`'s live "visibility" test, re-attacked by a red-team pass across absolute/relative paths, symlinks, hardlinks, case variants, `../` traversal, Grep/Glob, and Task-subagent delegation. All blocked. |
+| `opencode` | **none** — downgraded from `wrapper-macos`; a restricted vault refuses opencode for chat outright rather than run the per-turn `opencode run` subprocess (`chatProviders/opencode.ts`) wrapped or not | **none** — no opencode daemon integration exists in this codebase at all (`capabilities.daemon: false`); moot regardless of the visibility question | `false` (wrappable) | **No** — the third dated section of [visibility-acceptance.md](visibility-acceptance.md) recorded a real `opencode run --format json --auto` turn, wrapped, against `opencode/deepseek-v4-flash-free` ($0 cost): the structured read tool AND the Bash `cat` fallback both denied, but the turn never concluded and the two follow-up probes it was supposed to measure never dispatched before the run was killed. Two of three probes incomplete does not meet the catalog's live-acceptance bar, so this cannot stand at `wrapper-macos`; a `launchctl submit` bypass attempt also surfaced a real, unexercised escape shape (spawning outside the wrapped process tree) worth a dedicated rerun. |
 | `codex` | **none** | **none** | `true` (own Seatbelt, `codex-rs/sandboxing/src/seatbelt.rs` — confirmed from source; per-nesting rule below, can never be a wrap target) | **No.** Codex's own `[permissions.*].filesystem` layer is self-described *beta* and has had one upstream deny-read bypass already fixed (PR #23943); whether headless `codex exec` — Bismuth's actual invocation — honours a project `.codex/config.toml` profile at all is **unverified**, and codex was not installed on the machine this catalog was authored on. `daemon/src/daemon/session.ts`'s `resolveDaemonBackend` refuses codex for the daemon the moment any note is hidden, degrading to Claude with a logged reason. |
 | `cline` | **none** | **none** (`capabilities.daemon: false`) | `false` | **No.** Not installed on the machine this catalog was authored on; Cline's own docs say its `beforeTool` plugin pattern does not cover `execute_command`/`search_files`/`list_files`, and no OS sandbox exists in Cline itself. First graduation would require a recorded live wrapper run. |
 | `gemini` | **none** | **none** | `false` | **No.** Not installed here. Gemini CLI's shipped source (`grep.ts`/`ripGrep.ts`/`ls.ts`/`shell.ts`) bypasses the ACP `fs/*` capability entirely — confirmed by reading it, not guessed. |
@@ -150,11 +150,12 @@ The profile denies `file-read*` by `subpath` (not `literal`) for every restricte
 
 Beyond the table above: **every non-macOS host** stays refused for every non-Claude backend, for both channels — Landlock (Linux) is allowlist-only with no negation and needs a bundled syscall helper on kernel ≥5.13; bubblewrap needs unprivileged user namespaces and masks with a 0-byte file rather than a real permission error. **Neither was tested — there is no Linux machine in any spike.** Claiming Linux parity here would be inventing a result, so the wrapper's `checkSandboxWrapperAvailability` resolves to unavailable on any non-Darwin platform, full stop.
 
-### Two things that stay uncovered even where a channel IS enforced
+### Things that stay uncovered even where a channel IS enforced
 
 - **Existence and metadata leak.** A read-deny (Seatbelt or Claude's own) still lets `ls -la` show a hidden file's name, size, permissions, and mtime; `grep -r` prints `./secret.md: Operation not permitted`, which names it; `GET /tree` badges it. "Hidden" means the *content* is unreachable, not that the note's existence is secret.
 - **A stripped copy.** If the exact bytes are written to a new path with no `visibility:` key and no restricted stem or folder — by a human, or by an agent before a note was hidden — no path-based deny list can know. The widened walk and stem inheritance close the *organic* cases (export sidecars, hidden folders, copies that keep frontmatter); a deliberate strip of the frontmatter is out of reach of this design, and of any deny-list design.
 - **The within-turn window.** A note marked hidden *during* a turn is not covered until that turn ends, on every backend including Claude — a mid-turn rename was verified to defeat an already-built deny list. A `subpath` deny on an already-restricted *folder* closes the common case (a new file added to a folder that was already hidden is covered immediately), but a file restricted mid-turn for the first time is not retroactively gated within that same turn.
+- **A model-requested sandbox opt-out — FIXED (Task 9).** See "Sandbox availability: fail closed, not open" below — `dangerouslyDisableSandbox` lets a Bash tool call skip the OS sandbox entirely; it used to be honored by default (`sandbox.allowUnsandboxedCommands` was never set to `false`). `chat.ts`'s `spawnChatQuery` (via the extracted `buildChatSandboxOption`) and `daemon/session.ts`'s `buildQueryOptions` now both set `allowUnsandboxedCommands: false` whenever anything is restricted (the same `denyEntries.length > 0` guard as every other gate here; an unrestricted vault is unaffected — `sandbox` stays omitted entirely, exactly as before). See "Sandbox availability" below for the exact SDK citation and for what the live re-verification did and did not establish — in short, five live haiku probes against a temp vault could not reproduce a model invoking `dangerouslyDisableSandbox: true` on its own initiative (nor even when explicitly instructed to), so this fix could not be exercised through a reproduced live leak-then-fixed round trip; it rests on unit tests (`core/test/chat.test.ts`, `daemon/test/session.test.ts`) plus the SDK's documented semantics for the field.
 
 ### The chokepoint, and why it lives in the router
 
@@ -171,14 +172,12 @@ review. One chokepoint can — and a **new** backend is refused by default, beca
 starts at `"none"` and the router reads the catalog rather than trusting the driver.
 
 - `claude` never reaches a refusal (native, both channels).
-- `opencode` additionally checks the wrapper's own preconditions inside `chatProviders/opencode.ts`
-  — platform, `sandbox-exec`, and whether the session is already bound to shared server mode — and
-  pushes `code: "visibility-refused"` so the dedicated panel renders. That check is deliberately
-  *not* merged into the router's: the router answers "this backend has no verified mechanism at
-  all", while opencode's answers "opencode normally can enforce, but a specific precondition failed
-  right here", and naming the specific precondition is the whole value of the message.
-- `codex` and every ACP backend (`cline`/`gemini`/`goose`/`openclaw`/the two hidden adapters) are
-  refused by the router before their driver is ever spawned.
+- `opencode`, `codex`, and every ACP backend (`cline`/`gemini`/`goose`/`openclaw`/the two hidden
+  adapters) are refused by the router before their driver is ever spawned — none carries a verified
+  mechanism for chat today (see the table above). `chatProviders/opencode.ts` still carries its own
+  precondition-refusal path (`opencodePreconditionRefusal`, checking platform/`sandbox-exec`/shared-
+  server binding) from when its catalog entry was `wrapper-macos`; it stays dormant behind the
+  router's earlier refusal unless a future acceptance run restores that capability.
 
 Verified by `core/test/agentBackends/visibilityGate.test.ts`, which asserts all seven are refused,
 that an unknown backend id refuses rather than inheriting the default backend's answer, that an
@@ -203,6 +202,155 @@ The lesson generalizes, and it's the same lesson the "Ambient surfaces" table ab
 
 ---
 
+## Sandbox availability: fail closed, not open (2026-07-30 measurement)
+
+An earlier pass reasoned (without measuring) that `BISMUTH_AGENT_CHANNEL` — the env var
+`core/src/visibilityCliGate.ts` reads to gate the `bismuth` CLI/MCP subprocess path — was "the"
+enforcement mechanism, defeatable by unsetting it. That conclusion was wrong to reach by reasoning
+alone, and a live measurement corrects it:
+
+**What was actually measured**, against a real `claude` turn (haiku, the installed CLI, a temp
+vault, `BISMUTH_AGENT_CHANNEL=chat` set exactly as `chat.ts` sets it, `managedSettings.deny` +
+`sandbox.filesystem.denyRead` wired exactly as `spawnChatQuery` wires them):
+
+- A Bash `bismuth read <hidden-note>` failed at the **OS level** — `EPERM: operation not
+  permitted, open '<path>'` — before the CLI's own `visibilityCliGate.ts` ever got a chance to run.
+  That error comes from `sandbox.filesystem.denyRead`, not from `managedSettings`: the Bash tool
+  itself is never in the `managedSettings`/`disallowedTools` deny list (the daemon needs Bash for
+  `bismuth checkpoint`), so nothing about the tool-level deny would have stopped this call — the OS
+  sandbox is what actually did.
+- The model then retried the SAME command with the SDK's own `dangerouslyDisableSandbox: true`
+  Bash-tool parameter (honored by default — `sandbox.allowUnsandboxedCommands` defaults to `true`
+  and neither `chat.ts` nor `daemon/session.ts` overrides it). With the OS sandbox deliberately
+  skipped for that one call, the ONLY thing that still caught it was `visibilityCliGate.ts`'s
+  `BISMUTH_AGENT_CHANNEL` check refusing the `bismuth` subcommand itself.
+
+**So the corrected model is**: the OS sandbox (`sandbox.filesystem.denyRead`) is the layer that
+actually stops an arbitrary Bash read (`cat`, `python3 -c`, anything) — `managedSettings` cannot,
+because it is scoped to the Read/Edit/Grep/Glob tool *calling convention*, never to Bash's argv.
+`BISMUTH_AGENT_CHANNEL` is real, additional, defense-in-depth **specifically for the `bismuth`
+CLI/MCP subprocess path** — the one measured case above where it was the last thing standing
+between a Bash call and a hidden note. And the router chokepoint (`resolveVisibilityGate`,
+"The chokepoint, and why it lives in the router" above) is what covers every backend that has no
+sandbox mechanism at all, by refusing it outright before a session ever opens.
+
+**The hole this measurement found and closed**: `chat.ts` and `daemon/session.ts` both passed
+`sandbox: { enabled: true, failIfUnavailable: false, … }`. The SDK's own bundled type declarations
+(`@anthropic-ai/claude-agent-sdk`'s `sdk.d.ts`, checked directly in both the 0.3.186 core resolves
+and the 0.2.141 daemon resolves) actually contain **two different `sandbox.failIfUnavailable`
+fields on two unrelated types, with contradicting doc comments about the default**:
+
+- `Options.sandbox: SandboxSettings` — the type that governs `query({ prompt, options })`, i.e. the
+  ACTUAL call chat.ts's `spawnChatQuery` and session.ts's `sendMessage` make — says: *"When
+  `enabled: true` is passed via this option, `failIfUnavailable` defaults to `true` — if sandbox
+  dependencies are missing … or the platform is unsupported, `query()` will emit an error result and
+  exit rather than silently running commands unsandboxed. Set `failIfUnavailable: false` to allow
+  graceful degradation."*
+- `Settings.sandbox` — an unrelated, on-disk `settings.json`/managed-settings schema type, never
+  touched by either call site — says: *"Exit with an error at startup if sandbox.enabled is true but
+  the sandbox cannot start … When false (default), a warning is shown and commands run unsandboxed."*
+
+These disagree with each other on which way is the default. The type that actually governs this
+code path is `Options.sandbox`, whose documented default is **fail-closed (`true`)** — meaning the
+pre-fix code's explicit `failIfUnavailable: false` was not merely accepting a permissive default, it
+was **actively overriding a documented-safe one**. Practically, this contradiction is moot for
+correctness either way: both call sites always pass an explicit boolean and never rely on either
+type's default, so which "default" is right never mattered for what actually ran — only for how
+severe a fixed `false` reads. Under either type's semantics, a sandbox that cannot start at all
+(missing OS dependencies, an unsupported platform) with `failIfUnavailable: false` in force makes
+the CLI show a warning and **run the session anyway, fully unsandboxed** — for its entire lifetime,
+not just one command. In that state, `managedSettings.permissions.deny` is *all* that's left, and —
+as measured above — that layer does nothing to a raw Bash `cat`/`bismuth read`/`python3 -c`.
+`BISMUTH_AGENT_CHANNEL` still covers the `bismuth`-subprocess case, but a plain `cat` would go
+completely unguarded.
+
+**The fix** (`core/src/visibility.ts` + `daemon/src/lib/visibility.ts`'s ported twin,
+`sandboxFailIfUnavailable(denyEntries)`): `failIfUnavailable` is now `denyEntries.length > 0`
+instead of a fixed `false`. A restricted vault would rather refuse to open the session than open it
+silently unprotected; an unrestricted vault is unaffected — the whole `sandbox`/`managedSettings`
+block is still omitted entirely when nothing is restricted (as it always was), so a machine where
+sandboxing can't start at all keeps serving every vault that hides nothing exactly as before.
+Covered by `core/test/visibility.test.ts`, `daemon/src/lib/visibility.test.ts`,
+`core/test/chat.test.ts`, and `daemon/test/session.test.ts`.
+
+**What this measurement did NOT verify, stated plainly**: an actual "sandbox unavailable at
+startup" condition could not be forced on this machine without touching the host itself (macOS's
+`/usr/bin/sandbox-exec` is a fixed, no-override system path, present and working here, and there is
+no non-Darwin machine available in this pass) — genuinely attempted (env-var probes, and wrapping
+the harness in an outer Seatbelt jail, which produced a *different*, per-command failure — exit 71,
+`sandbox_apply: Operation not permitted` — not the session-wide graceful-degrade `failIfUnavailable`
+governs). So the corrected `failIfUnavailable: true` behavior (the session refusing to open at all)
+rests on `Options.sandbox`'s documented semantics (the type this code actually calls — see above)
+plus the code-level fact that `managedSettings` cannot cover Bash, not on a reproduced live
+leak-then-fixed round trip. That distinction is recorded here rather than glossed over, per this
+page's own standard.
+
+**A residual gap found by this same measurement, FIXED by Task 9 (2026-07-30)**:
+`dangerouslyDisableSandbox` is a documented, model-controlled Bash-tool parameter, honored whenever
+`sandbox.allowUnsandboxedCommands` isn't explicitly set to `false` (its default is `true`) — and
+neither `chat.ts` nor `daemon/session.ts` set it. The live probe above shows the model invoking it
+*on its own initiative* after a denied Read attempt. For the one command shape measured (`bismuth
+read`), `visibilityCliGate.ts` still caught the retry — but for a command with no equivalent second
+gate (a plain `cat`, `python3 -c`, `head`, …), asking the model to disable the sandbox for that one
+call would remove the ONLY layer that stops it, regardless of `failIfUnavailable` or whether the
+sandbox is otherwise fully available and working.
+
+**The fix**: both call sites now pass `allowUnsandboxedCommands: false` inside the same
+`sandbox: {…}` object, under the same `denyEntries.length > 0` guard as everything else in this
+section — `core/src/chat.ts`'s `spawnChatQuery` (via a small extracted pure helper,
+`buildChatSandboxOption`, so the shape is unit-testable without a real `query()`) and
+`daemon/src/daemon/session.ts`'s `buildQueryOptions`. An unrestricted vault is unaffected: `sandbox`
+is still omitted entirely when nothing is restricted, exactly as before this change.
+
+**The SDK citation, read directly rather than assumed** (learning from this same page's own
+`failIfUnavailable` miscitation above — quoting the wrong one of two structurally-similar types is
+exactly the mistake to avoid here too): `allowUnsandboxedCommands` is a field of the zod-derived
+`SandboxSettings` type that backs `Options.sandbox` — confirmed present at
+`sdk.d.ts` line 2596 (0.3.186, core) / line 2411 (0.2.141, daemon) — but neither declaration site
+carries a doc comment of its own (the zod-schema-derived type has no per-field JSDoc at all). The
+**only** prose anywhere in either bundled `sdk.d.ts` describing what this field does or defaults to
+lives on the structurally-identical, same-named field of the separate, on-disk `Settings.sandbox`
+type (`export declare interface Settings`, line 4469 core / 3928 daemon) — the identical 3-line
+JSDoc block (open/text/close) sits at `sdk.d.ts` lines 5656–5659 (0.3.186 core, field on 5659) and
+lines 5008–5011 (0.2.141 daemon, field on 5011), word-for-word the same text in both versions:
+
+> Allow commands to run outside the sandbox via the dangerouslyDisableSandbox parameter. When false,
+> the dangerouslyDisableSandbox parameter is completely ignored and all commands must run sandboxed.
+> Default: true.
+
+Unlike the `failIfUnavailable` case above, this is **not** a contradiction between the two types —
+there is no competing statement anywhere else about `allowUnsandboxedCommands`'s behavior or
+default, on either type. The confidence that this prose describes `Options.sandbox`'s field (not
+just `Settings.sandbox`'s) rests on the two schemas being field-for-field, order-for-order identical
+(`SandboxSettingsSchema`, `sdk.d.ts` lines 2592–2630 core / 2407–2444 daemon, vs. the `Settings.sandbox`
+literal object starting at line 5649 core / 5001 daemon) across BOTH independently-resolved SDK
+versions — strong evidence they describe the same underlying sandbox-runtime field, not two
+unrelated ones that happen to share a name. That inference is recorded here explicitly rather than
+presented as a verbatim `Options`-side doc comment, which is the exact miscitation this page's
+`failIfUnavailable` section above had to correct.
+
+**What Step 5's live re-verification did and did not establish, stated plainly**: five live `claude`
+turns (haiku, the installed CLI 2.1.220, a fresh temp vault under `/private/tmp/…`, never the real
+vault) were run against a hidden `secret.md`, varying the prompt (instructed to `cat` it; left to
+choose its own tool; explicitly told to pass `dangerouslyDisableSandbox: true`) and the config (with
+and without `settingSources: []` to strip this machine's own ambient `~/.claude` config out of the
+picture). **In every one of the five, under the PRE-fix (`vulnerable`) sandbox shape, the model
+declined to invoke Bash with `dangerouslyDisableSandbox: true` at all** — even when directly
+instructed to — reasoning in its own words that the file was "explicitly in the sandbox's deny
+list" and that bypassing "would defeat that protection." **I could not verify this**: the original
+live escape (the model reaching for `dangerouslyDisableSandbox` unprompted, twice, that motivated
+this task) could not be reproduced on this CLI version/model combination, so there is no reproduced
+live leak-then-fixed round trip to report for this fix — unlike the Step-0 spike's `cat`/`grep`
+OS-level denial above, which WAS reproduced live. The fix therefore rests on: (1) the unit tests
+(`core/test/chat.test.ts`, `daemon/test/session.test.ts`) asserting the exact option shape reaches
+the SDK call, and (2) the SDK's own documented semantics for the field quoted above — not on a
+live-observed behavior change. A future model or CLI version that reintroduces the original
+willingness to bypass would now hit `allowUnsandboxedCommands: false` and have the parameter ignored
+outright, per that documented semantics — but that causal chain is asserted from the type's
+documentation, not demonstrated end-to-end live.
+
+---
+
 ## UI
 
 **Context menu** (`FileTree.tsx`, right-click a file or folder → "Visibility" submenu, next to "Set Icon…"):
@@ -215,7 +363,7 @@ The currently-active row is checkmarked (`✓`). When a node's own setting is ab
 
 **Tree badge**: a small glyph beside a row's icon — `EyeOff` for hidden, `MessageSquareOff` for chat-only — driven by the RESOLVED visibility (`TreeEntry.visibility`), so a plain file deep inside a hidden folder shows the badge without its own frontmatter. Native `title` tooltip names which tier it's in.
 
-**Chat refusal**: when a chat's backend+channel can't honour this vault's hidden notes, `core/src/chat.ts`'s `ChatFrame` error union carries a dedicated code, `"visibility-refused"`, alongside the existing `no-claude`/`no-opencode`/`no-binary` setup-failure codes. It carries `binary` (the refused backend's id) and a `message` built by `visibilityRefusalMessage(backendLabel, restrictedCount)` — **a COUNT of restricted notes/folders only, never their names or paths**, since naming a hidden note in an error message would defeat the point of hiding it. `app/src/ChatView.tsx` renders it as its own panel (a `gateRefusal` signal, distinct from the existing `setupError` panel — a refused backend IS installed, it just can't be trusted with hidden notes, so the panel never tells the user to install anything), with a one-click "USE CLAUDE CODE INSTEAD" button reusing the existing `switchProvider` escape hatch. The composer is disabled exactly as it is for `setupError`. See "A known gap in the current wiring" above for which backends actually reach this frame today.
+**Chat refusal**: when a chat's backend+channel can't honour this vault's hidden notes, `core/src/chat.ts`'s `ChatFrame` error union carries a dedicated code, `"visibility-refused"`, alongside the existing `no-claude`/`no-opencode`/`no-binary` setup-failure codes. It carries `binary` (the refused backend's id) and a `message` built by `visibilityRefusalMessage(backendLabel, restrictedCount)` — **a COUNT of restricted notes/folders only, never their names or paths**, since naming a hidden note in an error message would defeat the point of hiding it. `app/src/ChatView.tsx` renders it as its own panel (a `gateRefusal` signal, distinct from the existing `setupError` panel — a refused backend IS installed, it just can't be trusted with hidden notes, so the panel never tells the user to install anything), with a one-click "USE CLAUDE CODE INSTEAD" button reusing the existing `switchProvider` escape hatch. The composer is disabled exactly as it is for `setupError`. See "The chokepoint, and why it lives in the router" above for which backends actually reach this frame today.
 
 **Daemon refusal**: `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) degrades to Claude rather than throwing — the daemon is always-on and its crons must keep firing — and logs the reason via `console.error`. As of this page **that refusal is log-only**: there is no daemon inbox page or other user-visible surface for it yet, unlike the chat-side frame above.
 

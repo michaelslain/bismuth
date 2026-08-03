@@ -20,10 +20,10 @@
 // managedSettings/sandbox, the CLI/MCP gate, isDeniedPath's live checks) only ever restricts
 // what THIS walk found, so a file it misses is unprotected everywhere. See listVisibilityFiles
 // and buildDenyPaths' doc comments for the extension/frontmatter/stem-inheritance fixes.
-import { open, readdir, realpath } from "node:fs/promises";
+import { open, readdir, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parseFrontmatter } from "./frontmatter";
-import { readFolderVisibility } from "./settings";
+import { readFolderVisibilityResult } from "./settings";
 
 export type Visibility = "all" | "chat-only" | "hidden";
 /** A file's own explicit frontmatter value; `undefined` = absent = inherit. */
@@ -96,6 +96,42 @@ function isVisibleToChannel(v: Visibility, channel: VisibilityChannel): boolean 
 }
 
 /**
+ * Thrown when the walk cannot enumerate what this vault restricts. Distinct from an ordinary error
+ * so callers can tell "the vault said nothing is hidden" from "the vault did not say". See
+ * {@link DenyPlan}.
+ */
+export class VisibilityUndeterminedError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "VisibilityUndeterminedError";
+  }
+}
+
+/**
+ * Upper bound on directory entries the walk will consider. Symlinked directories are followed
+ * (see listVisibilityFiles), and following links makes the reachable set a graph rather than a
+ * tree: N sibling links into a directory holding N more can multiply out far past the file count.
+ * Cycles are caught exactly (the descent chain below); this bounds the acyclic-but-huge shapes,
+ * and a vault that hits it is UNDETERMINED, not empty.
+ */
+export const MAX_WALK_ENTRIES = 200_000;
+
+/** Walk bounds, overridable per call. `maxEntries` exists so the budget MECHANISM can be exercised
+ *  at a small bound instead of by materializing 200k reachable entries; production callers pass
+ *  nothing and get {@link MAX_WALK_ENTRIES}. A test that sets the bound cannot also be the thing
+ *  that pins it — the default is asserted independently. */
+export interface WalkLimits {
+  maxEntries?: number;
+}
+
+/** One walked file: its vault-relative path, and the absolute path with every symlinked DIRECTORY
+ *  on the way to it resolved. */
+interface WalkedFile {
+  rel: string;
+  canonicalAbs: string;
+}
+
+/**
  * Walk EVERY regular file under `root` — any extension, any directory, INCLUDING
  * dot-directories (a note stashed in `.stash/` or similar is still a note; excluding
  * dot-directories was a verified leak). Skips only two names: `.git` (handled as its own
@@ -107,27 +143,80 @@ function isVisibleToChannel(v: Visibility, channel: VisibilityChannel): boolean 
  * the user marked `hidden` was invisible to this walk and therefore unenforced on every channel,
  * even though the sidebar badged its FOLDER as hidden. Widening to every extension is what makes
  * the folder cascade (in buildDenyPaths) a hard floor instead of a suggestion.
+ *
+ * SYMLINKED DIRECTORIES are followed. `Dirent.isDirectory()` is false for a link that points at a
+ * directory, so such an entry used to be pushed as a FILE; readOwnVisibility then hit EISDIR and
+ * returned undefined, and the entire subtree behind the link — including files carrying an explicit
+ * `visibility: hidden` — produced no deny entry at all while reading fine through the link's path.
+ * Following them means the reachable set is a graph, so two bounds apply: the descent CHAIN of
+ * canonical directory paths catches a link back to an ancestor exactly, and MAX_WALK_ENTRIES bounds
+ * the rest. A link is followed once per distinct path it is reachable at, on purpose — each spelling
+ * needs its own deny entry.
+ *
+ * FAILURE IS NOT EMPTINESS. A readdir that fails is a subtree we cannot see into, and this walk is
+ * the whole enforcement surface: returning what we did manage to read would report a SHORTER
+ * restricted list than the truth, which every consumer reads as "less is hidden". So it throws
+ * {@link VisibilityUndeterminedError} instead. The one exception is a subtree that has ENOENT'd
+ * out from under us mid-walk — it existed when its parent was listed and does not now, so there is
+ * nothing behind it to miss. (ENOENT on the ROOT is not that case: the vault we were asked about is
+ * not there, which is a question we cannot answer rather than an answer of "nothing".)
  */
-async function listVisibilityFiles(root: string): Promise<string[]> {
-  const out: string[] = [];
-  const walk = async (absDir: string, relDir: string): Promise<void> => {
+async function listVisibilityFiles(
+  root: string,
+  canonicalRoot: string,
+  maxEntries: number = MAX_WALK_ENTRIES,
+): Promise<WalkedFile[]> {
+  const out: WalkedFile[] = [];
+  let budget = maxEntries;
+
+  const walk = async (absDir: string, relDir: string, canonDir: string, chain: string[]): Promise<void> => {
     let entries;
     try {
       entries = await readdir(absDir, { withFileTypes: true });
-    } catch {
-      return;
+    } catch (e) {
+      // Vanished mid-walk: nothing behind it to miss. Anything else (EACCES, EIO, ELOOP…) is a
+      // subtree that exists and is opaque to us — the honest answer is "we don't know".
+      if (relDir !== "" && (e as NodeJS.ErrnoException)?.code === "ENOENT") return;
+      throw new VisibilityUndeterminedError(
+        `cannot list ${relDir === "" ? "the vault root" : relDir}: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
     for (const d of entries) {
       if (d.name === ".git" || d.name === ".settings") continue;
-      const rel = relDir ? `${relDir}/${d.name}` : d.name;
-      if (d.isDirectory()) {
-        await walk(join(absDir, d.name), rel);
-      } else {
-        out.push(rel);
+      if (--budget < 0) {
+        throw new VisibilityUndeterminedError(
+          `vault has more than ${maxEntries} reachable entries (symlink fan-out?) — the walk stopped early`,
+        );
       }
+      const rel = relDir ? `${relDir}/${d.name}` : d.name;
+      const abs = join(absDir, d.name);
+      if (d.isDirectory()) {
+        const next = join(canonDir, d.name);
+        await walk(abs, rel, next, [...chain, next]);
+        continue;
+      }
+      if (d.isSymbolicLink()) {
+        // stat() follows the link; lstat/Dirent cannot tell us what it points AT.
+        const target = await stat(abs).catch(() => null);
+        if (target?.isDirectory()) {
+          const real = await realpath(abs).catch(() => null);
+          // Unresolvable target: treat as an ordinary file rather than guess. It yields no
+          // frontmatter, and its rel path still inherits the folder cascade.
+          if (real === null) {
+            out.push({ rel, canonicalAbs: join(canonDir, d.name) });
+            continue;
+          }
+          if (chain.includes(real)) continue; // link back onto our own descent — a cycle
+          await walk(abs, rel, real, [...chain, real]);
+          continue;
+        }
+        // A link to a FILE (or a broken link): one entry, same as a regular file.
+      }
+      out.push({ rel, canonicalAbs: join(canonDir, d.name) });
     }
   };
-  await walk(root, "");
+
+  await walk(root, "", canonicalRoot, [canonicalRoot]);
   return out;
 }
 
@@ -222,7 +311,11 @@ const VISIBILITY_RANK: Record<Visibility, number> = { all: 0, "chat-only": 1, hi
 
 interface ResolvedFile {
   rel: string;
+  /** `rel` joined onto the canonical vault root — the spelling that follows the walked path. */
   abs: string;
+  /** The same file with symlinked directories on the way to it resolved; equals `abs` unless the
+   *  walk crossed a link. */
+  canonicalAbs: string;
   dir: string;
   stem: string;
   visibility: Visibility;
@@ -271,13 +364,45 @@ function applyStemInheritance(files: ResolvedFile[]): void {
   }
 }
 
-/** One restricted note, in both path forms a Claude Code tool call may report it in. */
+/**
+ * One restricted note — ONE entry per restricted file, so `entries.length` is a count of notes and
+ * can be shown to a user as one.
+ *
+ * `abs` is the file's path under the canonical vault root. That is not always the only absolute
+ * path it is readable at: a file under a symlinked DIRECTORY is equally readable at the path with
+ * the link resolved, and which of the two a tool reports depends on whether it resolved the link.
+ * The other spellings go in `aliases`, and every consumer that emits absolute paths (absDenyPaths,
+ * buildManagedSettingsDeny, denyPathSet, the isDeniedPath index) emits all of them.
+ */
 export interface DenyEntry {
   /** Vault-relative path (e.g. "private/secret.md"). */
   rel: string;
-  /** Canonical (symlink-resolved) absolute path. */
+  /** This file's path under the canonical vault root — always `<canonicalRoot>/<rel>`. */
   abs: string;
+  /** Further absolute paths the same file is readable at; absent when there are none. */
+  aliases?: string[];
 }
+
+/** Every absolute spelling of one entry. */
+function absForms(e: DenyEntry): string[] {
+  return e.aliases === undefined ? [e.abs] : [e.abs, ...e.aliases];
+}
+
+/**
+ * The result of a visibility walk, with its third state made explicit.
+ *
+ * `determined: false` is NOT "nothing is restricted". It is "this vault did not tell us what is
+ * restricted" — an unreadable subtree, a `.settings` that does not parse, a root that isn't there.
+ * The two used to be the same value (`[]`), which meant every fail-safe written against the walk
+ * — `sandboxFailIfUnavailable`, `sandboxDenyRead`'s `.git` deny, the CLI gate's refusal,
+ * `resolveVisibilityGate`'s "an unreadable vault refuses" — silently reported "unrestricted" for a
+ * vault it had simply failed to read. A boundary that opens when it malfunctions is worse than one
+ * that is absent, because it is trusted; the type is what keeps a consumer from spelling that bug
+ * again.
+ */
+export type DenyPlan =
+  | { determined: true; entries: DenyEntry[] }
+  | { determined: false; reason: string };
 
 /** Bounded-concurrency map: `Promise.all` over thousands of files would open that many file
  *  descriptors at once and risk EMFILE on a large vault; this caps how many `readOwnVisibility`
@@ -311,18 +436,62 @@ const READ_CONCURRENCY = 64;
  * (applyStemInheritance) then covers export sidecars and same-stem siblings that have neither a
  * restricting folder nor frontmatter of their own. See each helper's doc comment for why.
  */
-export async function buildDenyPaths(root: string, channel: VisibilityChannel): Promise<DenyEntry[]> {
-  const folderVisibility = await readFolderVisibility(root);
-  const rels = await listVisibilityFiles(root);
+export async function resolveDenyPlan(
+  root: string,
+  channel: VisibilityChannel,
+  opts: WalkLimits = {},
+): Promise<DenyPlan> {
+  try {
+    return { determined: true, entries: await walkDenyEntries(root, channel, opts) };
+  } catch (e) {
+    if (e instanceof VisibilityUndeterminedError) return { determined: false, reason: e.message };
+    throw e;
+  }
+}
+
+/**
+ * {@link resolveDenyPlan}'s entries, or a thrown {@link VisibilityUndeterminedError}.
+ *
+ * For the callers whose response to "we cannot tell" is already to refuse and say so — the chat
+ * drivers, the CLI gate, the HTTP route dispatch, the daemon's sendMessage. Anything that wants to
+ * branch on the reason should call resolveDenyPlan instead. What no caller can do any more is
+ * receive an empty list for a vault that was never read.
+ */
+export async function buildDenyPaths(
+  root: string,
+  channel: VisibilityChannel,
+  opts: WalkLimits = {},
+): Promise<DenyEntry[]> {
+  return walkDenyEntries(root, channel, opts);
+}
+
+async function walkDenyEntries(
+  root: string,
+  channel: VisibilityChannel,
+  opts: WalkLimits = {},
+): Promise<DenyEntry[]> {
+  const folders = await readFolderVisibilityResult(root);
+  // A `.settings` that exists but does not parse is the single sharpest instance of the
+  // determined/undetermined confusion: `folderVisibility: {Private: hidden}` and a syntax error two
+  // lines below it both used to yield `{}`, so appending one stray character to the settings file
+  // silently un-hid every folder-hidden note with no error and no change to the sidebar badge.
+  if (!folders.ok) throw new VisibilityUndeterminedError(folders.reason);
+  const folderVisibility = folders.map;
   // Canonicalize the root before joining: the SDK's own tools resolve symlinks in the paths they
   // report (e.g. on macOS a vault under a tmp dir is really under /private/var or /private/tmp),
   // so a deny path built from a non-canonical root would silently never match theirs and the
-  // "deny" would be a no-op. Falls back to the given root if it can't be resolved (shouldn't
-  // happen for a real vault, but never let a resolution failure crash the deny-list build).
-  const canonicalRoot = await realpath(root).catch(() => root);
+  // "deny" would be a no-op. A root that cannot be resolved is undetermined for the same reason
+  // the walk is: every absolute deny path we would emit could be one no tool ever reports.
+  const canonicalRoot = await realpath(root).catch((e: unknown) => {
+    throw new VisibilityUndeterminedError(
+      `cannot resolve the vault root ${root}: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  });
+  const walked = await listVisibilityFiles(root, canonicalRoot, opts.maxEntries);
   const cascadeCache = new Map<string, Visibility>();
 
-  const resolved = await mapWithConcurrency(rels, READ_CONCURRENCY, async (rel): Promise<ResolvedFile> => {
+  const resolved = await mapWithConcurrency(walked, READ_CONCURRENCY, async (file): Promise<ResolvedFile> => {
+    const { rel, canonicalAbs } = file;
     const { dir, base } = splitRelPath(rel);
     // Memory notes (.daemon/memory/**) are gated by their OWN frontmatter only, NEVER folder
     // cascade — this keeps the native-tool deny list in agreement with the `recall` MCP tool /
@@ -336,6 +505,7 @@ export async function buildDenyPaths(root: string, channel: VisibilityChannel): 
     return {
       rel,
       abs: join(canonicalRoot, rel),
+      canonicalAbs,
       dir,
       stem: preDotStem(base),
       visibility: isVisibilityLiteral(own) ? own : cascade,
@@ -345,7 +515,24 @@ export async function buildDenyPaths(root: string, channel: VisibilityChannel): 
 
   applyStemInheritance(resolved);
 
-  return resolved.filter((f) => !isVisibleToChannel(f.visibility, channel)).map((f) => ({ rel: f.rel, abs: f.abs }));
+  // The absolute spellings one restricted file is readable at, deduped, minus `abs` itself.
+  //
+  // Two produce an alias, and both are the same class of aliasing:
+  //  - a symlinked DIRECTORY on the way to the file (canonicalAbs), and
+  //  - the CALLER's own spelling of the vault root, when it differs from the canonical one. On
+  //    macOS a vault opened as `/var/…` or `/tmp/…` canonicalizes to `/private/var/…` through a
+  //    firmlink, and a tool reporting the path the session was actually started with would have
+  //    matched nothing at all. Vaults under /Users are unaffected, which is why this hid so well.
+  return resolved
+    .filter((f) => !isVisibleToChannel(f.visibility, channel))
+    // One ENTRY per file — `entries.length` stays a count of NOTES, which is what the refusal
+    // messages report — with the other spellings in `aliases` (absent in an ordinary vault).
+    // Both candidates collapse into `abs` for a vault with no symlink and a canonical root, so the
+    // dedupe below is what makes this a no-op there; no separate "are they equal" branch is needed.
+    .map((f) => {
+      const aliases = [...new Set([f.canonicalAbs, join(root, f.rel)])].filter((a) => a !== f.abs);
+      return aliases.length === 0 ? { rel: f.rel, abs: f.abs } : { rel: f.rel, abs: f.abs, aliases };
+    });
 }
 
 /**
@@ -358,14 +545,17 @@ export async function buildDenyPaths(root: string, channel: VisibilityChannel): 
  * keyed on only one form silently fails to match the other.
  */
 export function buildManagedSettingsDeny(entries: DenyEntry[]): string[] {
-  return entries.flatMap(({ rel, abs }) =>
-    (["Read", "Edit", "Grep", "Glob"] as const).flatMap((tool) => [`${tool}(${rel})`, `${tool}(${abs})`]),
+  return entries.flatMap((e) =>
+    [e.rel, ...absForms(e)].flatMap((path) =>
+      (["Read", "Edit", "Grep", "Glob"] as const).map((tool) => `${tool}(${path})`),
+    ),
   );
 }
 
-/** The absolute paths only — what `sandbox.filesystem.denyRead` requires. */
+/** The absolute paths only — what `sandbox.filesystem.denyRead` requires. Every spelling of every
+ *  entry (see {@link DenyEntry.aliases}), not one per file. */
 export function absDenyPaths(entries: DenyEntry[]): string[] {
-  return entries.map((e) => e.abs);
+  return entries.flatMap(absForms);
 }
 
 /**
@@ -389,6 +579,25 @@ export function sandboxDenyRead(entries: DenyEntry[], vaultRoot: string): string
   return [...absDenyPaths(entries), join(vaultRoot, ".git")];
 }
 
+/**
+ * Pure: `sandbox.failIfUnavailable` for a spawn — whether a sandbox that can't start should hard-
+ * fail the session rather than silently degrade to running unsandboxed. Measured (2026-07-30, see
+ * docs/vault/visibility.md + docs/vault/visibility-acceptance.md's second run): both `chat.ts` and
+ * `daemon/session.ts` used to pass a FIXED `false` here, so a session whose OS sandbox couldn't
+ * start ran anyway — leaving only `managedSettings.permissions.deny`, which restricts the Read/
+ * Edit/Grep/Glob tool CALLING CONVENTION and does nothing at all to a raw Bash subprocess
+ * (`bismuth read`, `cat`, `python3 -c`). A live probe confirmed the OS sandbox is what actually
+ * stops those — `managedSettings` never touches Bash's argv.
+ *
+ * Conditional, never a fixed `true`: an UNRESTRICTED vault (nothing in `entries`) must keep
+ * working exactly as today on a machine where the sandbox can't start at all — failing every chat
+ * there would be a regression worse than the leak this closes. A restricted vault, on the other
+ * hand, would rather refuse to open the session than open it silently unprotected.
+ */
+export function sandboxFailIfUnavailable(entries: DenyEntry[]): boolean {
+  return entries.length > 0;
+}
+
 /** Both path forms of every entry, for an O(1) same-process membership check (e.g. a
  *  canUseTool's `toolInput.file_path`, which may itself be relative OR absolute).
  *
@@ -398,49 +607,144 @@ export function denyPathSet(entries: DenyEntry[]): Set<string> {
   const s = new Set<string>();
   for (const e of entries) {
     s.add(e.rel);
-    s.add(e.abs);
+    for (const abs of absForms(e)) s.add(abs);
   }
   return s;
 }
 
 /**
- * Normalize a path for comparison: strip a leading `./`, collapse repeated slashes, drop a trailing
- * slash, and CASE-FOLD.
+ * Reduce a path to a comparison key: resolve `.` and `..` segments, collapse repeated and trailing
+ * slashes, normalize to Unicode NFC, and case-fold.
  *
- * Case-folding is the load-bearing part. macOS filesystems are case-insensitive by default, so
- * `Private/SECRET.md` opens exactly the same file as `Private/secret.md` while comparing unequal as
- * a string — a deny keyed on an exact match lets the second spelling straight through. Found by
- * red-teaming the shipped `denyPathSet(...).has(p)` check, not by reading it.
+ * Two paths that open the same file must produce the same key, and a filesystem offers several ways
+ * to spell one file. Three are handled here, all three verified against a real vault to open the
+ * hidden note under both spellings while the deny check answered differently:
  *
- * The cost is a false positive on a genuinely case-sensitive volume holding two notes whose paths
- * differ only in case, where one is hidden and one is not. That is a vanishingly rare vault against
- * a leak that is trivial to trigger, so it is the right trade — but it is a trade, so it is written
- * down here rather than left for someone to rediscover.
+ *  - SEGMENTS. `Private/./secret.md` and `Private/../Private/secret.md` name the same file as
+ *    `Private/secret.md`. `resolveInVault` (core/src/files.ts) resolves them before its containment
+ *    check, so the read succeeds; a comparison that only stripped a LEADING `./` did not, so every
+ *    deny check answered false for a file it was holding open.
+ *  - UNICODE FORM. macOS stores `café.md` decomposed (NFD) when created through some tools and
+ *    composed (NFC) through others, and APFS opens the file under either. The two are different
+ *    strings.
+ *  - CASE. macOS filesystems are case-insensitive by default, so `Private/SECRET.md` opens the same
+ *    file as `Private/secret.md`.
+ *
+ * CASE and UNICODE FORM are pure widenings, and both carry the same cost: a false POSITIVE on a
+ * filesystem that would in fact distinguish the two spellings — a case-sensitive volume holding two
+ * notes differing only in case, or an NFC and an NFD file of the same name side by side, one hidden
+ * and one not. Those vaults are vanishingly rare against leaks that are trivial to trigger, so the
+ * trade goes this way; it is a trade, and it is written down rather than left to be rediscovered.
+ *
+ * SEGMENT RESOLUTION IS NOT A WIDENING, and calling it one would be wrong in a way that matters.
+ * It re-points the comparison at a different question: not "does this string contain a restricted
+ * path?" but "does this path RESOLVE to one?" — the same question `resolveInVault` (core/src/files.ts)
+ * answers before it opens anything, by the same lexical `path.resolve` rules. That makes it deny
+ * more in most cases and LESS in a few, and the few are the point:
+ *
+ *   `Private/secret.md/../other.md` resolves to `Private/other.md`
+ *   `Private/secret.md/../../other.md` resolves to `other.md` — a VISIBLE note
+ *
+ * Both used to be denied, purely because the restricted path survived in them as a verbatim
+ * substring; neither can reach the hidden file, because `..` is resolved lexically and never
+ * traverses into `secret.md` at all. Denying them was the bug. Pinned by test, in both directions,
+ * against what the filesystem actually returns rather than against this paragraph.
+ *
+ * A leading `..` that cannot be resolved (the path reaches above its own base) is KEPT, so the key
+ * stays distinct from the same path without it. isDeniedPath resolves those against the vault root
+ * separately.
+ *
+ * What this does NOT do, and no string comparison can: it does not follow symlinks, hard links, or
+ * `/private` vs `/var`-style firmlink aliases at compare time. Those are handled where they can be —
+ * the walk resolves symlinked directories and emits every reachable spelling as its own entry. This
+ * remains an honesty boundary, not a security boundary: it closes the spellings a model reaches for,
+ * not the ones a process determined to get at the file could construct.
  */
-function normalizeForCompare(p: string): string {
-  return p
-    .replace(/^\.\//, "")
-    .replace(/\/{2,}/g, "/")
-    .replace(/\/$/, "")
-    .toLowerCase();
+export function normalizeForCompare(p: string): string {
+  const rooted = p.startsWith("/");
+  const segs: string[] = [];
+  for (const seg of p.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      const last = segs[segs.length - 1];
+      if (last !== undefined && last !== "..") segs.pop();
+      else if (!rooted) segs.push(".."); // no base to climb above — keep it and stay distinct
+      // rooted: ".." above "/" is "/" itself, so drop it
+      continue;
+    }
+    segs.push(seg);
+  }
+  return ((rooted ? "/" : "") + segs.join("/")).toLowerCase().normalize("NFC");
+}
+
+/** Precomputed comparison keys for one entry list, cached per array identity. Callers pass the same
+ *  `DenyEntry[]` for every candidate (a session's entries, a request's memoized walk), and
+ *  filterGraph checks one list against every node in the graph — normalizing the entries once per
+ *  list instead of once per candidate is what keeps that from being quadratic in string work. */
+interface DenyIndex {
+  /** Normalized `rel` and `abs` of every entry, paired with the entry itself. */
+  keys: Array<{ key: string; entry: DenyEntry }>;
+  /** Normalized absolute vault root, when derivable — see findDeniedEntry. */
+  root: string | null;
+}
+const denyIndexCache = new WeakMap<DenyEntry[], DenyIndex>();
+
+function denyIndex(entries: DenyEntry[]): DenyIndex {
+  const hit = denyIndexCache.get(entries);
+  if (hit) return hit;
+  const keys: DenyIndex["keys"] = [];
+  let root: string | null = null;
+  for (const e of entries) {
+    for (const form of [e.rel, ...absForms(e)]) {
+      const key = normalizeForCompare(form);
+      if (key) keys.push({ key, entry: e });
+    }
+    // Recover the vault root: `abs` is always `<canonicalRoot>/<rel>` (aliases are the spellings
+    // that aren't), so stripping the rel path off it leaves the root.
+    if (root === null) {
+      const a = normalizeForCompare(e.abs);
+      const r = normalizeForCompare(e.rel);
+      if (a && r && a.endsWith(`/${r}`)) root = a.slice(0, a.length - r.length - 1);
+    }
+  }
+  const index = { keys, root };
+  denyIndexCache.set(entries, index);
+  return index;
 }
 
 /**
- * Is `candidate` (a path as some MODEL reported it — relative or absolute, any case) one of the
- * restricted entries? Use this for every gate that inspects a tool call's path.
+ * The restricted entry `candidate` names, or undefined. `candidate` is a path as some MODEL
+ * reported it — relative or absolute, any case, any Unicode form, with `.`/`..` segments in it.
  *
  * Also matches a path that lies UNDER a restricted entry, so a directory-shaped deny covers the
  * files inside it rather than only an exact hit on the directory itself.
+ *
+ * A relative candidate is checked twice: as written (against the entries' relative forms) and
+ * resolved against the vault root (against their absolute forms). The second is what catches
+ * `../<vaultname>/Private/secret.md` — a relative path that climbs out of the vault and back in,
+ * which `resolveInVault` resolves and opens.
  */
-export function isDeniedPath(entries: DenyEntry[], candidate: string): boolean {
+export function findDeniedEntry(entries: DenyEntry[], candidate: string): DenyEntry | undefined {
+  if (entries.length === 0) return undefined;
+  const { keys, root } = denyIndex(entries);
+  const forms: string[] = [];
   const c = normalizeForCompare(candidate);
-  if (!c) return false;
-  for (const e of entries) {
-    for (const form of [e.rel, e.abs]) {
-      const f = normalizeForCompare(form);
-      if (!f) continue;
-      if (c === f || c.startsWith(`${f}/`)) return true;
+  if (c) forms.push(c);
+  if (root !== null && !candidate.startsWith("/")) {
+    const resolved = normalizeForCompare(`${root}/${candidate}`);
+    if (resolved && resolved !== c) forms.push(resolved);
+  }
+  if (forms.length === 0) return undefined;
+  for (const { key, entry } of keys) {
+    for (const form of forms) {
+      if (form === key || form.startsWith(`${key}/`)) return entry;
     }
   }
-  return false;
+  return undefined;
+}
+
+/** Is `candidate` one of the restricted entries? See {@link findDeniedEntry} — use this for every
+ *  gate that inspects a tool call's path. */
+export function isDeniedPath(entries: DenyEntry[], candidate: string): boolean {
+  return findDeniedEntry(entries, candidate) !== undefined;
 }

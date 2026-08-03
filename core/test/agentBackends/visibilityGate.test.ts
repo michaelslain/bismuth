@@ -67,6 +67,16 @@ describe("resolveVisibilityGate", () => {
     }
   });
 
+  // opencode was downgraded from "wrapper-macos" to "none" (docs/vault/visibility-acceptance.md's
+  // third dated section: two of three live probes never completed). Nothing above exercises
+  // opencode specifically, so a silent revert of that downgrade would still pass every other test
+  // here — this pins the catalog value itself against that regression.
+  test("opencode is refused for chat — the wrapper-macos downgrade is pinned, not just documented", async () => {
+    expect(BACKENDS.opencode.capabilities.visibilityGate).toEqual({ chat: "none", daemon: "none" });
+    const v = await resolveVisibilityGate("opencode", "chat", vaultWithHidden());
+    expect(v.allowed).toBe(false);
+  });
+
   test("an unknown backend id REFUSES rather than failing open", async () => {
     // backendOf() deliberately degrades an unknown id to the default backend (claude), which would
     // hand a typo'd or future id claude's "enforced" answer. The gate must guard the id first.
