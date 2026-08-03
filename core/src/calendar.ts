@@ -11,16 +11,14 @@ import { parseRows, serializeRows } from "./bases/rows";
 import type { Row } from "./bases/types";
 import { createError } from "./error";
 import { parseRRule, firstOccurrence } from "./gcal/recurrence";
-
-export type RecurrenceType = "daily" | "weekly" | "biweekly" | "monthly";
-
-export interface Recurrence {
-  type: RecurrenceType;
-  daysOfWeek?: number[]; // 0–6, Sunday=0
-  startDate: string; // "YYYY-MM-DD"
-  endDate?: string; // "YYYY-MM-DD"
-  seriesId: string;
-}
+// The recurrence rule model + its date math live in ./bases/recurrence (the canonical copy, which
+// bases/types.ts already re-exports and app/src/export/calendarHtml.ts already imports directly).
+// This module used to carry a byte-identical second copy; it now re-exports that one so the two
+// can't drift. The re-export keeps calendar.ts's own public surface unchanged for cli/src/commands.
+import { toDateStr, addDays, expandRecurrence } from "./bases/recurrence";
+export { toDateStr, addDays, expandRecurrence } from "./bases/recurrence";
+export type { Recurrence, RecurrenceType } from "./bases/recurrence";
+import type { Recurrence } from "./bases/recurrence";
 
 export interface Category {
   name: string;
@@ -180,58 +178,9 @@ function parseLocalDate(iso: string): Date {
   return new Date(iso + "T00:00:00");
 }
 
-export function toDateStr(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-export function addDays(d: Date, n: number): Date {
-  const result = new Date(d);
-  result.setDate(result.getDate() + n);
-  return result;
-}
-
 const dayBefore = (iso: string): string => toDateStr(addDays(parseLocalDate(iso), -1));
 const dayAfter = (iso: string): string => toDateStr(addDays(parseLocalDate(iso), 1));
 
-function daysInMonth(d: Date): number {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-}
-
-function matchesRecurrence(r: Recurrence, dateStr: string): boolean {
-  const d = parseLocalDate(dateStr);
-  const start = parseLocalDate(r.startDate);
-  const dow = d.getDay();
-  if (r.type === "daily") return true;
-  if (r.type === "weekly") return r.daysOfWeek?.includes(dow) ?? dow === start.getDay();
-  if (r.type === "biweekly") {
-    const diffDays = Math.round((d.getTime() - start.getTime()) / 86400000);
-    if (diffDays < 0) return false;
-    const matchesDow = r.daysOfWeek?.includes(dow) ?? dow === start.getDay();
-    return matchesDow && Math.floor(diffDays / 7) % 2 === 0;
-  }
-  if (r.type === "monthly") {
-    const targetDay = Math.min(start.getDate(), daysInMonth(d));
-    return d.getDate() === targetDay;
-  }
-  return false;
-}
-
-export function expandRecurrence(recurrence: Recurrence, rangeStart: string, rangeEnd: string): string[] {
-  const dates: string[] = [];
-  const start = parseLocalDate(recurrence.startDate);
-  const end = recurrence.endDate ? parseLocalDate(recurrence.endDate) : new Date("2100-01-01");
-  const rStart = parseLocalDate(rangeStart);
-  const rEnd = parseLocalDate(rangeEnd);
-  let cursor = new Date(start);
-  while (cursor <= end && cursor <= rEnd) {
-    if (cursor >= rStart && matchesRecurrence(recurrence, toDateStr(cursor))) dates.push(toDateStr(cursor));
-    cursor = addDays(cursor, 1);
-  }
-  return dates;
-}
 
 // ── queries ───────────────────────────────────────────────────────────────
 

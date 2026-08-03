@@ -172,13 +172,3 @@ export function setCssVars(vars: Record<string, string>): void {
   const root = document.documentElement;
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
 }
-
-/** Apply the derived CSS vars to the document root. No-op outside the DOM.
- *  Also sets `color-scheme` from the theme so native form controls + scrollbars
- *  match light/dark themes. */
-export function applyCssVars(s: Settings): void {
-  setCssVars(settingsToCssVars(s));
-  if (typeof document !== "undefined") {
-    document.documentElement.style.colorScheme = resolveAppearance(s.appearance).isLight ? "light" : "dark";
-  }
-}

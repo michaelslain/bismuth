@@ -652,7 +652,11 @@ export async function enableProcess(name: string, ctx: VaultContext): Promise<{ 
   const def = parseProcessFrontmatter(name, frontmatter)
   if (!def) return { ok: false, error: `Process "${name}" is missing required "command" field` }
 
-  const isEnabled = frontmatter.enabled === "true"
+  // Must mirror parseProcessFrontmatter's `enabled !== "false"` default: a definition with NO
+  // `enabled:` key is already ENABLED, so treating a missing key as disabled (=== "true") made a
+  // no-op enable rewrite the file, contradicting this function's own idempotency contract.
+  // disableProcess's `=== "false"` check is the correct mirror of this and stays as-is.
+  const isEnabled = frontmatter.enabled !== "false"
   if (!isEnabled) {
     frontmatter.enabled = "true"
     await writeProcessFile(filePath, frontmatter, body)

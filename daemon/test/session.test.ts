@@ -186,3 +186,21 @@ test("codex is refused for a vault with hidden notes — the ONE path that must 
   // And it IS allowed once nothing is hidden — otherwise the setting would be dead weight.
   expect(resolveDaemonBackend("codex", 0)).toEqual({ backend: "codex" })
 })
+
+// The configured reasoning effort must reach the SDK under the field the SDK actually reads.
+// It used to be assigned to `options.thinkingBudget`, which is not a member of the SDK's Options in
+// either installed version, so the setting was silently dropped on every call — and because
+// buildQueryOptions builds a Record<string, unknown>, no compiler error ever surfaced it. These
+// pin the real field name, which is the only part a typo can break.
+test("buildQueryOptions passes reasoning effort as `effort` (the SDK's real field), not thinkingBudget", () => {
+  const o = buildQueryOptions(ctx, { effort: "high" }, undefined, { systemPrompt: "x" })
+  expect(o.effort).toBe("high")
+  expect(o.thinkingBudget).toBeUndefined()
+})
+
+test("buildQueryOptions maps low/medium effort onto `effort` too, and omits it entirely when unset", () => {
+  expect(buildQueryOptions(ctx, { effort: "low" }, undefined, { systemPrompt: "x" }).effort).toBe("low")
+  expect(buildQueryOptions(ctx, { effort: "medium" }, undefined, { systemPrompt: "x" }).effort).toBe("medium")
+  // No effort configured → the key is absent, so the SDK keeps its own default.
+  expect(buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" }).effort).toBeUndefined()
+})

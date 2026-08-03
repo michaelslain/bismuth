@@ -66,19 +66,7 @@ export class EventStore {
   async editOccurrence(masterId: string, occurrenceDate: string, updates: Partial<CalendarEvent>): Promise<void> {
     const master = this.data.events.find(e => e.id === masterId)
     if (!master?.recurrence) return
-    const { seriesId, endDate: originalEndDate } = master.recurrence
-    const dayAfter = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), 1))
-    // Editing the FIRST occurrence: there's no head segment to keep, so drop the
-    // master entirely rather than leaving a zombie with endDate < startDate.
-    if (occurrenceDate === master.recurrence.startDate) {
-      await this.deleteEvent(masterId)
-    } else {
-      await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore(occurrenceDate) } })
-    }
-    if (!originalEndDate || originalEndDate > occurrenceDate) {
-      const { id, ...masterRest } = master
-      await this.addEvent({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter, endDate: originalEndDate, seriesId } })
-    }
+    await this.splitSeriesAroundOccurrence(master, occurrenceDate)
     const { id, recurrence, ...rest } = master
     const { recurrence: _excluded, ...singleUpdates } = updates as CalendarEvent
     await this.addEvent({ ...rest, ...singleUpdates, date: occurrenceDate })
@@ -93,6 +81,30 @@ export class EventStore {
     await this.updateEvent(master.id, { recurrence: { ...master.recurrence!, endDate: dayBefore(occurrenceDate) } })
   }
 
+  /**
+   * Split a recurring series around ONE occurrence: drop-or-truncate the head segment, then re-add
+   * the tail segment when the series continued past that date.
+   *
+   * Shared verbatim by editOccurrence and deleteOccurrence, which carried byte-identical copies of
+   * this block (the only difference was the word "Editing" vs "Deleting" in the comment).
+   * editOccurrence is exactly this plus one extra addEvent for the edited occurrence itself.
+   */
+  private async splitSeriesAroundOccurrence(master: CalendarEvent, occurrenceDate: string): Promise<void> {
+    const { seriesId, endDate: originalEndDate } = master.recurrence!
+    const dayAfterDate = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), 1))
+    // The FIRST occurrence has no head segment to keep, so drop the master entirely rather than
+    // leaving a zombie with endDate < startDate.
+    if (occurrenceDate === master.recurrence!.startDate) {
+      await this.deleteEvent(master.id)
+    } else {
+      await this.truncateSeriesBefore(master, occurrenceDate)
+    }
+    if (!originalEndDate || originalEndDate > occurrenceDate) {
+      const { id, ...masterRest } = master
+      await this.addEvent({ ...masterRest, recurrence: { ...master.recurrence!, startDate: dayAfterDate, endDate: originalEndDate, seriesId } })
+    }
+  }
+
   async editFollowing(masterId: string, occurrenceDate: string, updates: Partial<CalendarEvent>): Promise<void> {
     const master = this.data.events.find(e => e.id === masterId)
     if (!master?.recurrence) return
@@ -105,19 +117,7 @@ export class EventStore {
   async deleteOccurrence(masterId: string, occurrenceDate: string): Promise<void> {
     const master = this.data.events.find(e => e.id === masterId)
     if (!master?.recurrence) return
-    const { seriesId, endDate: originalEndDate } = master.recurrence
-    const dayAfter = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), 1))
-    // Deleting the FIRST occurrence: drop the master entirely (no head segment to
-    // keep) instead of leaving a zombie with endDate < startDate.
-    if (occurrenceDate === master.recurrence.startDate) {
-      await this.deleteEvent(masterId)
-    } else {
-      await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore(occurrenceDate) } })
-    }
-    if (!originalEndDate || originalEndDate > occurrenceDate) {
-      const { id, ...masterRest } = master
-      await this.addEvent({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter, endDate: originalEndDate, seriesId } })
-    }
+    await this.splitSeriesAroundOccurrence(master, occurrenceDate)
   }
 
   async deleteSeries(seriesId: string): Promise<void> {

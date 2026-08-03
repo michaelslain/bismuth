@@ -70,7 +70,9 @@ function staleness(): string | null {
   }
   const changed = changedFiles(range);
   if (changed.length === 0) return null;
-  const SOURCE = /^((core|app|cli|mcp)\/src\/|relay\/)/;
+  // memory/ and daemon/ are listed too: both are real source workspaces added after this regex was
+  // written, so source changes there used to slip past the "you changed code but no docs" warning.
+  const SOURCE = /^((core|app|cli|mcp|memory|daemon)\/src\/|relay\/)/;
   const touchedSource = changed.some((f) => SOURCE.test(f));
   const touchedDocs = changed.some((f) => f.startsWith("docs/") || f === "CLAUDE.md");
   if (touchedSource && !touchedDocs) {

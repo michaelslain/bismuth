@@ -94,3 +94,33 @@ test('category delete reassigns a multi-category member without duplicating an e
   const ev = s.getEventsForRange('2026-05-01', '2026-05-31')[0]
   expect(ev.categories).toEqual(['home'])
 })
+
+// editOccurrence had no coverage at all, yet it shares its whole series-splitting body with
+// deleteOccurrence (both now call the private splitSeriesAroundOccurrence). These pin the edited
+// day, the untouched neighbours, and the two branches the split has: the FIRST occurrence (no head
+// segment — the master is dropped rather than left with endDate < startDate) and a mid-series one.
+test('editOccurrence changes exactly one day and leaves its neighbours on the series', async () => {
+  const s = await freshStore()
+  await s.addEvent({ title: 'D', date: '2026-05-01', recurrence: { type: 'daily', startDate: '2026-05-01', seriesId: 'x' } })
+  await s.editOccurrence((s as any).data.events[0].id, '2026-05-03', { title: 'Special' })
+  const range = s.getEventsForRange('2026-05-01', '2026-05-05')
+  expect(range.map(e => e.date).sort()).toEqual(['2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-05'])
+  expect(range.find(e => e.date === '2026-05-03')!.title).toBe('Special')
+  expect(range.filter(e => e.title === 'D').length).toBe(4)
+})
+
+test('editOccurrence on the FIRST occurrence keeps the day count (master dropped, not zombied)', async () => {
+  const s = await freshStore()
+  await s.addEvent({ title: 'D', date: '2026-05-01', recurrence: { type: 'daily', startDate: '2026-05-01', seriesId: 'x' } })
+  await s.editOccurrence((s as any).data.events[0].id, '2026-05-01', { title: 'First' })
+  const range = s.getEventsForRange('2026-05-01', '2026-05-04')
+  expect(range.map(e => e.date).sort()).toEqual(['2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04'])
+  expect(range.find(e => e.date === '2026-05-01')!.title).toBe('First')
+})
+
+test('deleteOccurrence on the FIRST occurrence drops just that day', async () => {
+  const s = await freshStore()
+  await s.addEvent({ title: 'D', date: '2026-05-01', recurrence: { type: 'daily', startDate: '2026-05-01', seriesId: 'x' } })
+  await s.deleteOccurrence((s as any).data.events[0].id, '2026-05-01')
+  expect(s.getEventsForRange('2026-05-01', '2026-05-04').map(e => e.date).sort()).toEqual(['2026-05-02', '2026-05-03', '2026-05-04'])
+})

@@ -75,7 +75,9 @@ test("refreshVaultsSeen stamps a served vault so core's TTL can never retire it 
   write({ "/v/served": ANCIENT })
   await refreshVaultsSeen(["/v/served"], { file, force: true })
   // The whole point: the stamp is now recent, so the 30-day TTL is nowhere near expiring.
-  expect(Date.now() - Date.parse(read()["/v/served"])).toBeLessThan(60_000)
+  const stamp = read()["/v/served"]
+  expect(stamp).toBeDefined()
+  expect(Date.now() - Date.parse(stamp!)).toBeLessThan(60_000)
 })
 
 test("refreshVaultsSeen is throttled — a 60s cron tick does not rewrite the file every minute", async () => {

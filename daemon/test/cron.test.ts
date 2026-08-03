@@ -4,7 +4,7 @@
 // as before while accepting the new `on: file-change` + `watch` shape. No sendMessage/session
 // plumbing is touched here — see fileWatch.test.ts for the debounce/matching harness.
 import { test, expect, beforeEach, afterEach } from "bun:test"
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {

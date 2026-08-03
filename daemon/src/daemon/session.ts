@@ -249,7 +249,13 @@ export function buildQueryOptions(
   if (tools.claudeBin) options.pathToClaudeCodeExecutable = tools.claudeBin
 
   if (opts?.effort) {
-    options.thinkingBudget = opts.effort === "high" ? "high" : opts.effort === "low" ? "low" : "medium"
+    // `effort`, NOT `thinkingBudget`: the latter is not a field of the SDK's Options in ANY version
+    // this repo installs (0.2.141 for daemon, 0.3.186 for core — grep both sdk.d.ts: zero hits), so
+    // the daemon's configured reasoning effort was being handed to the SDK under a key it ignores
+    // and silently dropped on every call. `options` is typed Record<string, unknown> here, so the
+    // compiler could not catch the typo. The real field is `effort?: 'low'|'medium'|'high'|'xhigh'
+    // |'max' | number`, and the three values mapped below are all valid members of it.
+    options.effort = opts.effort === "high" ? "high" : opts.effort === "low" ? "low" : "medium"
   }
 
   if (existingSessionId && !opts?.newSession) {
