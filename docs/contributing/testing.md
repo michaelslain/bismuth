@@ -16,6 +16,101 @@ The full suite (~2031 tests across the `core/` and `app/` workspaces) runs in ro
 
 ---
 
+## The commit gate (tests are required to commit)
+
+Tests run automatically on every commit and every push. Both hooks live in `.githooks/`, which is
+already this repo's `core.hooksPath`; a fresh clone enables them with:
+
+```bash
+bun run hooks:install     # git config core.hooksPath .githooks
+```
+
+| | hook | what runs | typical cost |
+|---|---|---|---|
+| **commit** | `.githooks/pre-commit` → `scripts/gate.ts` | typecheck (all workspaces) + **fast** tests for the workspaces your staged files touch | ~30s (one workspace), ~60s (all) |
+| **push** | `.githooks/pre-push` | docs link check + the **full** suite, slow suites included | ~3min |
+
+The split exists so the gate is one people don't route around. Two things narrow the commit gate:
+
+1. **Slow suites are skipped** via `BISMUTH_FAST_TESTS=1` (see `core/test/slowGate.ts`) — the
+   suites that spawn real agent binaries, PTYs or websockets, plus the layout benchmark. That is
+   ~130s of the runtime for the parts least likely to break on an ordinary edit. **Pre-push runs
+   them.** With the variable unset — plain `bun test`, and CI — everything runs, so nobody can
+   lose a suite by forgetting a flag.
+2. **Only affected workspaces are tested**, derived from staged paths (`affectedWorkspaces` in
+   `scripts/gate.ts`, unit-tested in `scripts/gate.test.ts`). Editing `app/` does not re-run
+   `daemon/`. Touching a shared root file (`package.json`, `bun.lock`, `tsconfig.base.json`,
+   `bunfig.toml`, `scripts/`, `.githooks/`) widens it to everything, since those can affect
+   everything. Docs-only commits skip tests entirely.
+
+Typecheck always runs across **all** workspaces regardless of what you staged — it is ~12s and is
+the only thing that catches a change in one workspace breaking another's types.
+
+Bypassing, when you genuinely mean it (a WIP commit on a branch — not how you land on `main`):
+
+```bash
+BISMUTH_SKIP_GATE=1 git commit …    # skip just the gate
+git commit --no-verify              # skip all hooks
+BISMUTH_SKIP_GATE=1 git push        # skip pre-push's test run (docs check still runs)
+```
+
+Run the gate by hand any time with `bun run gate`, or the fast suite alone with `bun run test:fast`.
+
+### Quarantined suites
+
+One suite is **quarantined** — opted out of both gates via `shouldRunQuarantinedTests`
+(`core/test/slowGate.ts`), run with `BISMUTH_RUN_QUARANTINED=1`:
+
+- `core/test/chatProviders/opencodeMocked.test.ts` — fails ~1 run in 3, independent of machine
+  load, because opencode server mode registers its per-session SSE listener but does not confirm it
+  is live before issuing `session.prompt()`; a fast turn completes before the listener catches its
+  deltas and no `assistant-text` frames arrive.
+
+This is a **real user-facing bug** (an opencode chat can silently lose its streamed reply), not a
+bad test, and it is unfixed — the fix belongs in `runTurnServer` (`core/src/chatProviders/opencode.ts`),
+replacing the mock-side `--latency` margin with an actual synchronization point.
+
+Quarantine is a deliberate trade, and the bar for it is high: since pre-push *blocks* on the full
+suite, a test failing a third of the time does not keep anyone honest — it teaches the team to
+reach for `--no-verify`, which disables the gate for everything else too. The cost is that this
+area is unguarded until the bug is fixed. Add to the quarantine list only when the mechanism is
+understood, written down, and tracked.
+
+## Upgrade tests: what happens to an existing user's data on update
+
+`core/test/upgrade/` is the suite that answers "if a user updates Bismuth, do they lose anything?"
+Everything else in the repo tests a vault *this* era's code just created; these start from state an
+**older** Bismuth wrote. Run them alone with `bun run test:upgrade`.
+
+**`settingsUpgrade.test.ts`** drives the real open-path (`reconcileSettings` →
+`migrateSettingsLocation`) from each of the three historical settings layouts — vault-root
+`settings.yaml`, the interim `.settings/settings.yaml` directory, and today's `.settings` file —
+and pins the invariants that matter across a version jump:
+
+- the user's still-valid values survive, and their hand-written comments survive;
+- keys the current schema no longer knows are **preserved, never dropped** (they may belong to a
+  newer build, or a feature that is coming back) — silent data loss is the one unforgivable
+  upgrade outcome;
+- keys added to the schema since that version are seeded with their defaults, so nothing reads
+  `undefined`;
+- retired themes and fonts migrate to current-era values;
+- reconcile is idempotent, and a corrupt or hostile file is left alone for the user to repair
+  rather than silently replaced with defaults.
+
+**`schemaSnapshot.test.ts`** is the tripwire for silent behavior changes. A setting's `default` is
+what every user who never touched that key is running, so changing one changes behavior for the
+entire installed base on upgrade — invisibly, since nothing in their vault changed. The test pins
+every schema path, type, default, bound and enum member to a committed snapshot
+(`core/test/fixtures/upgrade/settings-schema-snapshot.json`). It does not forbid changes; it forces
+them to be deliberate and reviewable. After an intentional schema change:
+
+```bash
+bun run test:bless-schema     # regenerates the snapshot; commit the diff with your change
+```
+
+This is a real failure mode, not a hypothetical: `appearance.editorFontSize` once moved 11.5 → 13.5
+and the only symptom was unrelated tests failing later.
+
 ## Running tests
 
 ### Run all tests (recommended baseline)

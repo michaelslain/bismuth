@@ -1,0 +1,5 @@
+#!/bin/sh
+# Test gate: typecheck + fast tests for the workspaces this commit touches.
+# See scripts/gate.ts for the scoping rules and the deliberate escape hatches.
+# Enabled via: git config core.hooksPath .githooks   (or `bun run hooks:install`)
+exec bun run scripts/gate.ts

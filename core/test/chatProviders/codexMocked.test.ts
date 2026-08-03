@@ -32,9 +32,11 @@ import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { backendMockEnv } from "../support/backendEnv";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
+import { shouldRunSlowTests } from "../slowGate";
 
 const HAS_CODEX = whichBinary("codex") !== null;
-const describeOrSkip = HAS_CODEX ? describe : describe.skip;
+// Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
+const describeOrSkip = HAS_CODEX && shouldRunSlowTests(process.env) ? describe : describe.skip;
 
 if (!HAS_CODEX) {
   // eslint-disable-next-line no-console

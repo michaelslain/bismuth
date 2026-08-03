@@ -1,4 +1,19 @@
 #!/bin/sh
-# Docs gate: block on broken docs links, warn on stale docs. See scripts/check-docs.ts.
-# Enabled via: git config core.hooksPath .githooks
-exec bun run scripts/check-docs.ts --pre-push
+# Pre-push gate — the FULL check, complementing pre-commit's fast one:
+#   1. docs: block on broken links, warn on stale docs (scripts/check-docs.ts)
+#   2. the complete test suite, INCLUDING the slow suites pre-commit skips
+#      (real agent binaries, PTY/websocket integration, the layout benchmark)
+# Enabled via: git config core.hooksPath .githooks   (or `bun run hooks:install`)
+#
+# Bypass deliberately with `git push --no-verify`, or BISMUTH_SKIP_GATE=1 to skip only the tests.
+set -e
+
+bun run scripts/check-docs.ts --pre-push
+
+if [ "$BISMUTH_SKIP_GATE" = "1" ]; then
+  printf '\033[33m[pre-push] full test suite skipped (BISMUTH_SKIP_GATE=1)\033[0m\n'
+  exit 0
+fi
+
+printf '\033[2m[pre-push] running the FULL test suite (slow suites included)…\033[0m\n'
+bun test

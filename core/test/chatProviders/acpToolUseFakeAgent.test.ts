@@ -36,6 +36,7 @@ import type { ChatFrame } from "../../src/chat";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { makeAcpFakeAgentStubDir, pidAlive, waitForPidFile, waitProcessesGone } from "../support/acpFakeAgentProcess";
+import { shouldRunSlowTests } from "../slowGate";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 
@@ -48,7 +49,11 @@ const TOOLUSE_TOOL_TITLE = "Read fake-tool-use-probe.txt";
 const TOOLUSE_TOOL_KIND = "read";
 const TOOLUSE_RESULT_TEXT = "fake tool result: 3 lines read";
 
-describe("live tool-use (tool_call -> tool_call_update), driven through the ACP driver against a fake agent (zero network, zero CLI dependency)", () => {
+// Spawns real processes/sockets, so it is gated as a SLOW suite (see slowGate.ts): the
+// pre-commit gate skips it for latency; pre-push and CI still run it in full.
+const describeOrSkipSlow = shouldRunSlowTests(process.env) ? describe : describe.skip;
+
+describeOrSkipSlow("live tool-use (tool_call -> tool_call_update), driven through the ACP driver against a fake agent (zero network, zero CLI dependency)", () => {
   let stubDir: string | undefined;
   let pidDir: string | undefined;
   let pidFile: string | undefined;

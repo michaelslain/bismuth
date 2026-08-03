@@ -3,6 +3,11 @@ import { computeLayout, computeLayoutAsync, pivotMDS, type Positions } from "../
 // The production tick budget, imported (not a literal) so a test that means "the shipped budget" can
 // never silently pass at a value production doesn't actually use (see REFINE_TICKS's comment there).
 import { REFINE_TICKS } from "../src/layout-cache";
+import { shouldRunSlowTests } from "./slowGate";
+
+// The whole file is a force-simulation benchmark: ~43s, by far the slowest suite in the repo.
+// Gated so the pre-commit gate can skip it (see slowGate.ts); pre-push and CI still run it.
+const t = shouldRunSlowTests(process.env) ? test : test.skip;
 
 function ring(n: number) {
   return {
@@ -15,7 +20,7 @@ function dist(a: [number, number, number], b: [number, number, number]) {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
-test("computeLayout returns a finite position for every node", () => {
+t("computeLayout returns a finite position for every node", () => {
   const pos = computeLayout(ring(60), { refineTicks: 40 });
   expect(Object.keys(pos).length).toBe(60);
   for (const id in pos) {
@@ -24,19 +29,19 @@ test("computeLayout returns a finite position for every node", () => {
   }
 });
 
-test("empty and single-node graphs are handled", () => {
+t("empty and single-node graphs are handled", () => {
   expect(computeLayout({ nodes: [], edges: [] })).toEqual({});
   const one = computeLayout({ nodes: [{ id: "a" }], edges: [] }, { refineTicks: 5 });
   expect(Object.keys(one)).toEqual(["a"]);
   expect(one.a.every((c) => Number.isFinite(c))).toBe(true);
 });
 
-test("2D layout is flat (z = 0)", () => {
+t("2D layout is flat (z = 0)", () => {
   const pos = computeLayout(ring(30), { dimensions: 2, refineTicks: 20 });
   for (const id in pos) expect(pos[id][2]).toBe(0);
 });
 
-test("the DEFAULT 3D shape is roughly spherical", () => {
+t("the DEFAULT 3D shape is roughly spherical", () => {
   const n = 80;
   const nodes = Array.from({ length: n }, (_, i) => ({ id: `n${i}` }));
   const edges = Array.from({ length: n - 1 }, (_, i) => ({ from: "n0", to: `n${i + 1}` }));
@@ -54,7 +59,7 @@ test("the DEFAULT 3D shape is roughly spherical", () => {
 // These two fixtures reproduce the same qualitative shapes (a high-degree hub + many degree-1
 // leaves; a note/tag vault with a handful of hub tags) at a size small enough to stay a fast test.
 
-test("softer repulsion shrinks hub-to-leaf edges vs. the pre-fix default (a mega-tag's edges were the longest in the real vault)", () => {
+t("softer repulsion shrinks hub-to-leaf edges vs. the pre-fix default (a mega-tag's edges were the longest in the real vault)", () => {
   // A single hub with 600 degree-1 leaves — the same shape as the real vault's heaviest tag node
   // (one tag referenced by hundreds of notes). `repulsion` is a LayoutOptions field, so the OLD
   // default (-10) is reconstructed here via an explicit override for a same-fixture comparison,
@@ -81,7 +86,7 @@ test("softer repulsion shrinks hub-to-leaf edges vs. the pre-fix default (a mega
 // shipping the flip at zero direct coverage. linlog.test.ts covers the raw force in isolation; these
 // cover it wired into the real sim (charge/collide/community forces all present).
 
-test('withDefaults actually DEFAULTS to energyModel:"linlog" and degreeRepulsion:true (not merely honours them when passed)', () => {
+t('withDefaults actually DEFAULTS to energyModel:"linlog" and degreeRepulsion:true (not merely honours them when passed)', () => {
   // Every other test in this file that omits energyModel/degreeRepulsion is exercising them only
   // AMBIENTLY — it would keep passing even if withDefaults silently reverted to the pre-Task-5
   // "spring"/false defaults, as long as the physics stayed internally consistent. This is the one
@@ -97,7 +102,7 @@ test('withDefaults actually DEFAULTS to energyModel:"linlog" and degreeRepulsion
   expect(implicit).not.toEqual(explicitOld);
 });
 
-test('energyModel: "linlog" (explicit) settles a ring to different, still-finite geometry than "spring"', () => {
+t('energyModel: "linlog" (explicit) settles a ring to different, still-finite geometry than "spring"', () => {
   const g = ring(60);
   const spring = computeLayout(g, { refineTicks: 80, energyModel: "spring", degreeRepulsion: false });
   const linlog = computeLayout(g, { refineTicks: 80, energyModel: "linlog", degreeRepulsion: false });
@@ -108,7 +113,7 @@ test('energyModel: "linlog" (explicit) settles a ring to different, still-finite
   expect(linlog).not.toEqual(spring);
 });
 
-test("degreeRepulsion: true scales TOTAL system repulsion (not just its distribution) — hub-to-leaf edges roughly double", () => {
+t("degreeRepulsion: true scales TOTAL system repulsion (not just its distribution) — hub-to-leaf edges roughly double", () => {
   // Same mega-tag fixture as the repulsion test above: one hub, 600 degree-1 leaves. The hub's own
   // (degree+1) factor is ~601x base repulsion, so enabling degreeRepulsion inflates the aggregate
   // many-body field this fixture produces, not merely how a fixed budget is split between hub/leaf.
@@ -129,7 +134,7 @@ test("degreeRepulsion: true scales TOTAL system repulsion (not just its distribu
   }
 }, 15000); // four 150-tick settles over a 601-node hub fixture
 
-test("2D layout of a hub-and-leaf vault-like graph keeps real spacing variation, not a uniform honeycomb grid", () => {
+t("2D layout of a hub-and-leaf vault-like graph keeps real spacing variation, not a uniform honeycomb grid", () => {
   // A handful of hub "tags" with lopsided membership sizes (power-law-ish, like real vault tags)
   // plus some note-to-note links so it isn't purely bipartite.
   const numNotes = 400, numTags = 8;
@@ -184,7 +189,7 @@ test("2D layout of a hub-and-leaf vault-like graph keeps real spacing variation,
 // graph, or a community-less embedded query block would fall back to. Flagged in the Task 5 report as
 // a concern rather than silently loosened into a bound that would just curve-fit this one fixture.
 
-test("warm-start nodes missing from the seed are deterministic across runs", () => {
+t("warm-start nodes missing from the seed are deterministic across runs", () => {
   const g = ring(40);
   // A warm-start seed that OMITS one node id ("n7") — it must fall back to a deterministic,
   // hash-seeded position, NOT Math.random(), so both runs place the missing node identically.
@@ -221,7 +226,7 @@ const maxSingletonNorm = (pos: Record<string, [number, number, number]>, N: numb
 // Collide floor (uniform spacing minimum) for a graph of `n` nodes in the given mode — mirrors layout.ts.
 const collideFloorFor = (n: number, dim: 2 | 3) => 5 * Math.min(8, Math.max(1, 400 / n)) * (dim === 2 ? 1.8 : 1) * 1.25;
 
-test("disconnected singletons are reeled into the main cloud, not stranded off to the side", () => {
+t("disconnected singletons are reeled into the main cloud, not stranded off to the side", () => {
   // Regression for the 3rd-brain "lone node off to the side" bug: orphan notes (no in-view links) used
   // to fly to ~1.3-1.6× the cloud radius into empty space. The reel-in must pull them to the rim (~1×).
   const N = 80, SING = 5;
@@ -239,7 +244,7 @@ test("disconnected singletons are reeled into the main cloud, not stranded off t
   expect(maxSingletonNorm(on2, N, SING)).toBeLessThan(1.1);
 });
 
-test("reeled layout emits no overlapping node pairs (the warm renderer can't fix overlaps)", () => {
+t("reeled layout emits no overlapping node pairs (the warm renderer can't fix overlaps)", () => {
   // Strays are reeled in by virtual links fed to the SAME sim, so the existing collide force spaces them.
   const N = 80, SING = 5, n = N + SING;
   const g = denseMainWithSingletons(N, 5, SING);
@@ -253,7 +258,7 @@ test("reeled layout emits no overlapping node pairs (the warm renderer can't fix
   }
 });
 
-test("reel-in is deterministic across runs (no RNG / wall-clock)", () => {
+t("reel-in is deterministic across runs (no RNG / wall-clock)", () => {
   const g = denseMainWithSingletons(80, 5, 5);
   const a3 = computeLayout(g, { dimensions: 3, refineTicks: 120 });
   const b3 = computeLayout(g, { dimensions: 3, refineTicks: 120 });
@@ -262,7 +267,7 @@ test("reel-in is deterministic across runs (no RNG / wall-clock)", () => {
     .toEqual(computeLayout(g, { dimensions: 2, refineTicks: 80, initialPositions: b3 }));
 });
 
-test("components above the size gate are left untouched (genuine islands aren't merged)", () => {
+t("components above the size gate are left untouched (genuine islands aren't merged)", () => {
   // Two equal-size disconnected clusters: both exceed the gate (max(4, 0.25·main)), so NO virtual links
   // are added and the output must be byte-identical to reel-in-disabled — distinct islands stay distinct.
   const nodes = [...Array(40)].map((_, i) => ({ id: `a${i}` })).concat([...Array(40)].map((_, i) => ({ id: `b${i}` })));
@@ -340,7 +345,7 @@ function separation(nodes: { id: string; community: number }[], pos: Positions) 
   return { ratio: wIntra / wNear, intra: wIntra / w };
 }
 
-test("community-aware forces separate communities far better, without collapsing them", () => {
+t("community-aware forces separate communities far better, without collapsing them", () => {
   const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
   for (const dim of [3, 2] as const) {
     const seedOff = dim === 2 ? computeLayout(g, { refineTicks: 120, communityForces: false }) : undefined;
@@ -368,7 +373,7 @@ test("community-aware forces separate communities far better, without collapsing
   }
 });
 
-test("community forces keep the layout overlap-free (they must not fight forceCollide)", () => {
+t("community forces keep the layout overlap-free (they must not fight forceCollide)", () => {
   // Regression for the ordering bug: registered AFTER "collide", the community pull lands unchecked
   // (forceCollide resolves against x+vx and only sees forces that ran before it) and the settle ends
   // with permanently overlapping nodes. Asserted in 2D, where the collide budget is tightest.
@@ -382,7 +387,7 @@ test("community forces keep the layout overlap-free (they must not fight forceCo
   expect(minPair).toBeGreaterThan(collideFloorFor(n, 2) * 0.9);
 });
 
-test("a graph with no community ids is laid out exactly as before (opt-in by data)", () => {
+t("a graph with no community ids is laid out exactly as before (opt-in by data)", () => {
   // Embedded graph blocks, the daemon graph and every pre-existing caller pass nodes without
   // `community` — those must be bit-identical to the community-unaware layout.
   const g = ring(60);
@@ -392,7 +397,7 @@ test("a graph with no community ids is laid out exactly as before (opt-in by dat
   expect(computeLayout(one, { refineTicks: 60 })).toEqual(computeLayout(g, { refineTicks: 60, communityForces: false }));
 });
 
-test("community-aware layout is deterministic across runs", () => {
+t("community-aware layout is deterministic across runs", () => {
   const g = plantedCommunities([30, 25, 20], 0.25);
   const a = computeLayout(g, { refineTicks: 80 });
   expect(a).toEqual(computeLayout(g, { refineTicks: 80 }));
@@ -452,7 +457,7 @@ function separationAtLevel(nodes: { id: string; communityPath: number[] }[], pos
 
 const HIER = [[70, 55, 45], [65, 50, 40], [60, 50, 45]];
 
-test("nesting separates the COARSE level too, without undoing the fine level", () => {
+t("nesting separates the COARSE level too, without undoing the fine level", () => {
   const g = plantedHierarchy(HIER);
   for (const dim of [3, 2] as const) {
     const seedFlat = dim === 2 ? computeLayout(g, { refineTicks: 120, communityLevelDecay: 0 }) : undefined;
@@ -474,7 +479,7 @@ test("nesting separates the COARSE level too, without undoing the fine level", (
   }
 }, 30000); // four full 120-tick settles over a ~480-node fixture
 
-test("coarse levels sit at a LARGER spatial scale than fine ones", () => {
+t("coarse levels sit at a LARGER spatial scale than fine ones", () => {
   // The point of a hierarchy: a super-cluster is a bigger thing than a cluster. If the two levels
   // settled at the same spread they would be the same picture drawn twice.
   const g = plantedHierarchy(HIER);
@@ -484,7 +489,7 @@ test("coarse levels sit at a LARGER spatial scale than fine ones", () => {
   expect(coarse.intra).toBeGreaterThan(fine.intra * 1.3);
 });
 
-test("a 1-level communityPath is byte-identical to no path at all", () => {
+t("a 1-level communityPath is byte-identical to no path at all", () => {
   // The finest level is the tuned baseline; hierarchies must be pure opt-in BY DATA. A single-level
   // path (small vault) and a communityLevelDecay of 0 both have to reproduce it exactly.
   const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
@@ -495,7 +500,7 @@ test("a 1-level communityPath is byte-identical to no path at all", () => {
   expect(computeLayout(withPath, { refineTicks: 80, communityLevelDecay: 0 })).toEqual(flat);
 });
 
-test("an ancestor level that is a copy of its child is skipped, not applied twice", () => {
+t("an ancestor level that is a copy of its child is skipped, not applied twice", () => {
   // Strict nesting means an equal group COUNT implies an identical partition. Re-applying it would
   // silently scale the finest level's tuned constants up, changing the layout for no reason.
   const g = plantedCommunities([80, 70, 60, 40, 30, 20], 0.25);
@@ -504,7 +509,7 @@ test("an ancestor level that is a copy of its child is skipped, not applied twic
   expect(computeLayout(dup, { refineTicks: 80 })).toEqual(flat);
 });
 
-test("nested community forces keep the layout overlap-free (one speed cap for the whole stack)", () => {
+t("nested community forces keep the layout overlap-free (one speed cap for the whole stack)", () => {
   // Regression for the per-level speed cap: capping each level separately lets L levels contribute
   // up to L x COMMUNITY_MAX_STEP, outrunning the collide relaxation. Asserted in 2D (tightest budget).
   const g = plantedHierarchy(HIER);
@@ -516,7 +521,7 @@ test("nested community forces keep the layout overlap-free (one speed cap for th
   expect(minPair).toBeGreaterThan(collideFloorFor(ids.length, 2) * 0.9);
 });
 
-test("nested layout is deterministic across runs", () => {
+t("nested layout is deterministic across runs", () => {
   const g = plantedHierarchy([[30, 25], [28, 22], [26, 20]]);
   const a = computeLayout(g, { refineTicks: 80 });
   expect(a).toEqual(computeLayout(g, { refineTicks: 80 }));
@@ -564,7 +569,7 @@ function plantedHierarchyWithHubs(supers: number[][], globalHubs: number, hubDeg
 // similar node count, which is what actually reproduces the convergence gap — see the comment above).
 const VAULT_SCALE_HIER = Array.from({ length: 12 }, () => Array.from({ length: 3 }, () => 55));
 
-test("vault-scale hierarchy with cross-cutting hubs: coarse separation holds at the PRODUCTION tick budget", () => {
+t("vault-scale hierarchy with cross-cutting hubs: coarse separation holds at the PRODUCTION tick budget", () => {
   const g = plantedHierarchyWithHubs(VAULT_SCALE_HIER, 20, 0.4);
   const pos3 = computeLayout(g, { refineTicks: REFINE_TICKS });
   const pos2 = computeLayout(g, { dimensions: 2, refineTicks: REFINE_TICKS, initialPositions: pos3 });
@@ -587,7 +592,7 @@ test("vault-scale hierarchy with cross-cutting hubs: coarse separation holds at 
   expect(sep.intra).toBeGreaterThan(50);
 }, 45000); // measured ~19s locally (3D + 2D @ 240 ticks over 2000 nodes / ~19k edges)
 
-test("pivotMDS is deterministic", () => {
+t("pivotMDS is deterministic", () => {
   const g = ring(40);
   const index = new Map(g.nodes.map((n, i) => [n.id, i] as const));
   const adj: number[][] = Array.from({ length: 40 }, () => []);
@@ -600,7 +605,7 @@ test("pivotMDS is deterministic", () => {
 // --- Incremental "add-only" pinning (fixedIds) -----------------------------------------------------
 // Used by layout-cache's incremental rebuild: a created note must not scramble the existing layout.
 
-test("fixedIds pins nodes at their initialPositions; only the new node settles", () => {
+t("fixedIds pins nodes at their initialPositions; only the new node settles", () => {
   const seed: Positions = { a: [10, 20, 30], b: [-40, 5, 12], c: [100, -100, 50] };
   const input = { nodes: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }], edges: [{ from: "a", to: "d" }] };
   const pos = computeLayout(input, { refineTicks: 60, initialPositions: { ...seed }, fixedIds: ["a", "b", "c"] });
@@ -612,7 +617,7 @@ test("fixedIds pins nodes at their initialPositions; only the new node settles",
   expect(pos.d.every((n) => Number.isFinite(n))).toBe(true);
 });
 
-test("computeLayoutAsync keeps fixedIds pinned (early-exit path)", async () => {
+t("computeLayoutAsync keeps fixedIds pinned (early-exit path)", async () => {
   const seed: Positions = { a: [10, 20, 30], b: [-40, 5, 0] };
   const input = { nodes: [{ id: "a" }, { id: "b" }, { id: "c" }], edges: [{ from: "a", to: "c" }, { from: "b", to: "c" }] };
   const pos = await computeLayoutAsync(input, { refineTicks: 80, initialPositions: { ...seed }, fixedIds: ["a", "b"] });
@@ -621,7 +626,7 @@ test("computeLayoutAsync keeps fixedIds pinned (early-exit path)", async () => {
   expect(pos.c.every((n) => Number.isFinite(n))).toBe(true);
 });
 
-test("a 2D pinned settle keeps z=0 for the free node", async () => {
+t("a 2D pinned settle keeps z=0 for the free node", async () => {
   const seed: Positions = { a: [10, 20, 0], b: [-30, 8, 0] };
   const input = { nodes: [{ id: "a" }, { id: "b" }, { id: "c" }], edges: [{ from: "a", to: "c" }] };
   const pos = await computeLayoutAsync(input, { dimensions: 2, refineTicks: 60, initialPositions: { ...seed }, fixedIds: ["a", "b"] });

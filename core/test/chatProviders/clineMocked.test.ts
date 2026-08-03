@@ -43,6 +43,7 @@ import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { backendMockEnv } from "../support/backendEnv";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
+import { shouldRunSlowTests } from "../slowGate";
 
 /** Sum of `aimock_requests_total{...}` counter values whose `path` label is aimock's own
  *  `/v1/chat/completions` route (confirmed from aimock's own `server.js`:
@@ -62,7 +63,8 @@ function chatCompletionsHitCount(metricsText: string): number {
 }
 
 const HAS_CLINE = whichBinary("cline") !== null;
-const describeOrSkip = HAS_CLINE ? describe : describe.skip;
+// Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
+const describeOrSkip = HAS_CLINE && shouldRunSlowTests(process.env) ? describe : describe.skip;
 
 if (!HAS_CLINE) {
   // eslint-disable-next-line no-console

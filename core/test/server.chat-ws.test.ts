@@ -59,6 +59,7 @@ import { join } from "node:path";
 import { createServer } from "../src/server";
 import { CHAT_BACKENDS } from "../src/chatProviders/backends";
 import { makeSampleVault } from "./helpers";
+import { shouldRunSlowTests } from "./slowGate";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "support", "fakeAcpAgent.ts");
 /** Must match fakeAcpAgent.ts's own FAKE_TURN_TEXT constant. */
@@ -194,7 +195,11 @@ async function waitForCondition(check: () => boolean, timeoutMs: number, descrip
   throw new Error(`timeout waiting for: ${description}`);
 }
 
-describe("the /chat websocket handler (fake ACP agent — no CLI, no model, no network)", () => {
+// Spawns real processes/sockets, so it is gated as a SLOW suite (see slowGate.ts): the
+// pre-commit gate skips it for latency; pre-push and CI still run it in full.
+const describeOrSkipSlow = shouldRunSlowTests(process.env) ? describe : describe.skip;
+
+describeOrSkipSlow("the /chat websocket handler (fake ACP agent — no CLI, no model, no network)", () => {
   let stubDir: string;
   let savedPath: string | undefined;
   let savedShape: string | undefined;

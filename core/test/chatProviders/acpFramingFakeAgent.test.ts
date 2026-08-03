@@ -34,6 +34,7 @@ import type { ChatFrame } from "../../src/chat";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { makeAcpFakeAgentStubDir, pidAlive, waitForPidFile, waitProcessesGone } from "../support/acpFakeAgentProcess";
+import { shouldRunSlowTests } from "../slowGate";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 
@@ -47,7 +48,11 @@ const NOISE_LEAK_MARKER = "NOISE-LEAK-SHOULD-NEVER-APPEAR-AS-A-FRAME";
 const CHUNK_EMOJI = "\u{1F600}";
 const CHUNK_PAYLOAD_TEXT = `chunk-split-payload-start-${"x".repeat(64)}-${CHUNK_EMOJI}-${"y".repeat(64)}-chunk-split-payload-end`;
 
-describe("crash mid-turn, malformed output, and chunk-boundary framing, driven through the ACP driver against a fake agent (zero network, zero CLI dependency)", () => {
+// Spawns real processes/sockets, so it is gated as a SLOW suite (see slowGate.ts): the
+// pre-commit gate skips it for latency; pre-push and CI still run it in full.
+const describeOrSkipSlow = shouldRunSlowTests(process.env) ? describe : describe.skip;
+
+describeOrSkipSlow("crash mid-turn, malformed output, and chunk-boundary framing, driven through the ACP driver against a fake agent (zero network, zero CLI dependency)", () => {
   let stubDir: string | undefined;
   let pidDir: string | undefined;
   let pidFile: string | undefined;

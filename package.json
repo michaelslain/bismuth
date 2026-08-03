@@ -1,12 +1,25 @@
 {
   "name": "bismuth",
   "private": true,
-  "workspaces": ["core", "cli", "app", "relay", "mcp", "memory", "daemon"],
+  "workspaces": [
+    "core",
+    "cli",
+    "app",
+    "relay",
+    "mcp",
+    "memory",
+    "daemon"
+  ],
   "scripts": {
     "test": "bun test",
     "typecheck": "(cd core && bunx tsc --noEmit) && (cd app && bunx tsc --noEmit) && (cd cli && bunx tsc --noEmit) && (cd mcp && bunx tsc --noEmit) && (cd relay && bunx tsc --noEmit) && (cd memory && bunx tsc --noEmit) && (cd daemon && bunx tsc --noEmit)",
     "core:serve": "bun run core/src/server.ts",
-    "build:app": "cd app && bun run installer"
+    "build:app": "cd app && bun run installer",
+    "test:fast": "BISMUTH_FAST_TESTS=1 bun test",
+    "test:upgrade": "bun test core/test/upgrade",
+    "test:bless-schema": "BLESS_SCHEMA_SNAPSHOT=1 bun test core/test/upgrade/schemaSnapshot.test.ts",
+    "gate": "bun run scripts/gate.ts",
+    "hooks:install": "git config core.hooksPath .githooks && echo 'git hooks enabled (.githooks)'"
   },
   "devDependencies": {
     "emojilib": "^4.0.3",

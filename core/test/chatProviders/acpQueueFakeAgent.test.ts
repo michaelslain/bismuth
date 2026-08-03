@@ -82,6 +82,7 @@ import type { ChatFrame } from "../../src/chat";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { makeAcpFakeAgentStubDir, pidAlive, waitForPidFile, waitProcessesGone } from "../support/acpFakeAgentProcess";
+import { shouldRunSlowTests } from "../slowGate";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 
@@ -166,7 +167,11 @@ async function waitForCondition(check: () => boolean, timeoutMs: number, descrip
   throw new Error(`timeout waiting for: ${description}`);
 }
 
-describe("the ACP driver's turn queue: a message sent while the previous turn is in flight, against a fake agent that holds every turn open (zero network, zero CLI dependency)", () => {
+// Spawns real processes/sockets, so it is gated as a SLOW suite (see slowGate.ts): the
+// pre-commit gate skips it for latency; pre-push and CI still run it in full.
+const describeOrSkipSlow = shouldRunSlowTests(process.env) ? describe : describe.skip;
+
+describeOrSkipSlow("the ACP driver's turn queue: a message sent while the previous turn is in flight, against a fake agent that holds every turn open (zero network, zero CLI dependency)", () => {
   // `| undefined` with explicit resets in beforeEach, matching every sibling fake-agent test file's
   // documented shape: if a throwing call in the FIRST beforeEach fails partway, afterEach must not be
   // handed `undefined` where it expects a string (rmSync's `force:true` swallows ENOENT, not an

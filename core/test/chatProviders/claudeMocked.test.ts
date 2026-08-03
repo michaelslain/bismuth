@@ -36,9 +36,11 @@ import { whichClaude } from "../../src/claudeWhich";
 import { backendMockEnv } from "../support/backendEnv";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
+import { shouldRunSlowTests } from "../slowGate";
 
 const HAS_CLAUDE = whichClaude() !== null;
-const describeOrSkip = HAS_CLAUDE ? describe : describe.skip;
+// Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
+const describeOrSkip = HAS_CLAUDE && shouldRunSlowTests(process.env) ? describe : describe.skip;
 
 if (!HAS_CLAUDE) {
   // eslint-disable-next-line no-console
