@@ -65,9 +65,11 @@ import { startCaptureLlmServer, type CaptureLlmHandle } from "../support/capture
 import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
 import { getFreePort, startOpenclawGateway, type OpenclawGatewayHandle } from "../support/openclawGateway";
 import { pidAlive } from "../support/acpFakeAgentProcess";
+import { shouldRunSlowTests } from "../slowGate";
 
 const HAS_OPENCLAW = whichBinary("openclaw") !== null;
-const describeOrSkip = HAS_OPENCLAW ? describe : describe.skip;
+// Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
+const describeOrSkip = HAS_OPENCLAW && shouldRunSlowTests(process.env) ? describe : describe.skip;
 
 if (!HAS_OPENCLAW) {
   // eslint-disable-next-line no-console

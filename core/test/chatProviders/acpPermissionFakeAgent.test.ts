@@ -58,6 +58,7 @@ import type { ChatFrame } from "../../src/chat";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
 import { makeAcpFakeAgentStubDir, pidAlive, waitForPidFile, waitProcessesGone } from "../support/acpFakeAgentProcess";
+import { shouldRunSlowTests } from "../slowGate";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 
@@ -134,7 +135,11 @@ async function waitForCondition(check: () => boolean, timeoutMs: number, descrip
   throw new Error(`timeout waiting for: ${description}`);
 }
 
-describe("the ACP driver's permission round-trip against a fake agent that holds the turn open (zero network, zero CLI dependency)", () => {
+// Spawns real processes/sockets, so it is gated as a SLOW suite (see slowGate.ts): the
+// pre-commit gate skips it for latency; pre-push and CI still run it in full.
+const describeOrSkipSlow = shouldRunSlowTests(process.env) ? describe : describe.skip;
+
+describeOrSkipSlow("the ACP driver's permission round-trip against a fake agent that holds the turn open (zero network, zero CLI dependency)", () => {
   // `| undefined` with an explicit reset each beforeEach, matching acpFakeAgent.test.ts's own shape:
   // if makeAcpFakeAgentStubDir()/mkdtempSync throws in the FIRST beforeEach, these stay undefined and
   // afterEach's rmSync would be handed `undefined` — which throws ERR_INVALID_ARG_TYPE and MASKS the

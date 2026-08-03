@@ -41,6 +41,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
 import { makeChatFrameCollector } from "../support/chatFrameCollector";
+import { shouldRunSlowTests } from "../slowGate";
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
 const FAKE_TURN_TEXT = "Hello from the fake ACP agent"; // must match fakeAcpAgent.ts's own constant
@@ -54,7 +55,11 @@ function makeStubBinDir(): string {
   return dir;
 }
 
-describe("Bismuth's ACP driver against a fake agent reproducing cline's REAL auth gate (zero network, zero cline binary needed)", () => {
+// Spawns real processes/sockets, so it is gated as a SLOW suite (see slowGate.ts): the
+// pre-commit gate skips it for latency; pre-push and CI still run it in full.
+const describeOrSkipSlow = shouldRunSlowTests(process.env) ? describe : describe.skip;
+
+describeOrSkipSlow("Bismuth's ACP driver against a fake agent reproducing cline's REAL auth gate (zero network, zero cline binary needed)", () => {
   let stubDir: string;
   let savedPath: string | undefined;
   let savedAuthGate: string | undefined;

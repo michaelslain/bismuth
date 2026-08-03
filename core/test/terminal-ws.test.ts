@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import { createServer } from "../src/server";
 import { makeSampleVault } from "./helpers";
 import { listSessionIds } from "../src/terminal";
+import { shouldRunSlowTests } from "./slowGate";
 
 // Connect a binary WebSocket to /terminal and wait for the first server-pushed bytes.
 async function openWs(base: string): Promise<WebSocket> {
@@ -45,7 +46,11 @@ async function waitForShellReady(ws: WebSocket, timeoutMs = 4000): Promise<void>
   await new Promise((r) => setTimeout(r, 150));
 }
 
-test("GET /terminal upgrades to ws and echoes stdin via the PTY", async () => {
+// Spawns real processes/sockets, so it is gated as a SLOW suite (see slowGate.ts): the
+// pre-commit gate skips it for latency; pre-push and CI still run it in full.
+const t = shouldRunSlowTests(process.env) ? test : test.skip;
+
+t("GET /terminal upgrades to ws and echoes stdin via the PTY", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
   const base = `ws://localhost:${server.port}`;
@@ -61,7 +66,7 @@ test("GET /terminal upgrades to ws and echoes stdin via the PTY", async () => {
   }
 }, 10000);
 
-test("GET /terminal rejects out-of-range cols/rows with 400", async () => {
+t("GET /terminal rejects out-of-range cols/rows with 400", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -77,7 +82,7 @@ test("GET /terminal rejects out-of-range cols/rows with 400", async () => {
   }
 });
 
-test("0x01 resize frame propagates to the PTY", async () => {
+t("0x01 resize frame propagates to the PTY", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
   const base = `ws://localhost:${server.port}`;
@@ -111,7 +116,7 @@ test("0x01 resize frame propagates to the PTY", async () => {
   }
 }, 10000);
 
-test("closing the websocket kills the session after the grace period", async () => {
+t("closing the websocket kills the session after the grace period", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
   const base = `ws://localhost:${server.port}`;
@@ -141,7 +146,7 @@ async function openWsTerm(base: string, termId: string): Promise<WebSocket> {
   return ws;
 }
 
-test("reconnecting with the same termId reattaches to the live shell", async () => {
+t("reconnecting with the same termId reattaches to the live shell", async () => {
   // A grace window long enough that the abnormal-close path keeps the PTY alive to reattach.
   process.env.BISMUTH_TERMINAL_GRACE_MS = "8000";
   const { vault, memory } = await makeSampleVault();
@@ -181,7 +186,7 @@ test("reconnecting with the same termId reattaches to the live shell", async () 
   }
 }, 15000);
 
-test("a clean close (1000) kills immediately; an abnormal close waits the grace window", async () => {
+t("a clean close (1000) kills immediately; an abnormal close waits the grace window", async () => {
   process.env.BISMUTH_TERMINAL_GRACE_MS = "600";
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
@@ -210,7 +215,7 @@ test("a clean close (1000) kills immediately; an abnormal close waits the grace 
   }
 }, 10000);
 
-test("shell exit closes the websocket with code 1000 (so the client closes the tab, not respawns)", async () => {
+t("shell exit closes the websocket with code 1000 (so the client closes the tab, not respawns)", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
   const base = `ws://localhost:${server.port}`;

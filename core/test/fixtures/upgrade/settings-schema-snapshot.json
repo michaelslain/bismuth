@@ -1,0 +1,1134 @@
+{
+  "appearance": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.editorFont": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "Monaspace Argon",
+        "Monaspace Krypton",
+        "Monaspace Neon",
+        "Monaspace Radon",
+        "Monaspace Xenon"
+      ]
+    },
+    "default": "Monaspace Xenon",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.editorFontSize": {
+    "type": "number",
+    "default": 13.5,
+    "min": 11,
+    "max": 28,
+    "required": false
+  },
+  "appearance.icon": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "diamond-bloom",
+        "hopper-crystal",
+        "lattice",
+        "nested-diamonds",
+        "node-b",
+        "node-crystal",
+        "node-diamond",
+        "node-rings",
+        "octagon-bloom",
+        "pinwheel",
+        "radial-graph",
+        "spin-cross",
+        "square-funnel",
+        "tri-bloom"
+      ]
+    },
+    "default": "hopper-crystal",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.monoScale": {
+    "type": "number",
+    "default": 1,
+    "min": 0.6,
+    "max": 1,
+    "required": false
+  },
+  "appearance.paletteInputFontSize": {
+    "type": "number",
+    "default": 15,
+    "min": 13,
+    "max": 18,
+    "required": false
+  },
+  "appearance.sidebarGraphHeight": {
+    "type": "number",
+    "default": 305,
+    "min": 200,
+    "max": 500,
+    "required": false
+  },
+  "appearance.sidebarIconFontSize": {
+    "type": "number",
+    "default": 12,
+    "min": 11,
+    "max": 20,
+    "required": false
+  },
+  "appearance.sidebarWidth": {
+    "type": "number",
+    "default": 266,
+    "min": 200,
+    "max": 600,
+    "required": false
+  },
+  "appearance.tabFontSize": {
+    "type": "number",
+    "default": 11.5,
+    "min": 11,
+    "max": 14,
+    "required": false
+  },
+  "appearance.theme": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "cathode",
+        "ink",
+        "paper",
+        "riso"
+      ]
+    },
+    "default": "ink",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.uiFont": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "Monaspace Argon",
+        "Monaspace Krypton",
+        "Monaspace Neon",
+        "Monaspace Radon",
+        "Monaspace Xenon"
+      ]
+    },
+    "default": "Monaspace Xenon",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "appearance.uiFontSize": {
+    "type": "number",
+    "default": 11.5,
+    "min": 11,
+    "max": 16,
+    "required": false
+  },
+  "attachments": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "attachments.folder": {
+    "type": "string",
+    "default": "attachments",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "attachments.naming": {
+    "type": "string",
+    "default": "Pasted image {timestamp}",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "attachments.onDrop": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "copy",
+        "reference"
+      ]
+    },
+    "default": "copy",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "calendar": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "calendar.defaultCategoryColor": {
+    "type": "string",
+    "default": "#4a90e2",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "calendar.defaultView": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "3day",
+        "day",
+        "month",
+        "week"
+      ]
+    },
+    "default": "week",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "calendar.militaryTime": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "calendar.monthCellMinHeight": {
+    "type": "number",
+    "default": 80,
+    "min": 50,
+    "max": 160,
+    "required": false
+  },
+  "calendar.timeGutterWidth": {
+    "type": "number",
+    "default": 50,
+    "min": 40,
+    "max": 80,
+    "required": false
+  },
+  "calendar.weekStartsOnMonday": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "chat": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "chat.computerUse": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "chat.provider": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "claude",
+        "claude-code-acp",
+        "cline",
+        "codex",
+        "codex-acp",
+        "gemini",
+        "goose",
+        "openclaw",
+        "opencode"
+      ]
+    },
+    "default": "claude",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "codex": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "codex.installRelayHooks": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "codex.writeAgentsMd": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.backend": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "claude",
+        "codex"
+      ]
+    },
+    "default": "claude",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.enabled": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "daemon.inboxRetentionDays": {
+    "type": "number",
+    "default": 7,
+    "min": 1,
+    "max": 90,
+    "required": false
+  },
+  "dailyNotes": {
+    "type": {
+      "kind": "list",
+      "item": {
+        "kind": "object"
+      }
+    },
+    "default": [
+      {
+        "id": "journal",
+        "label": "Journal",
+        "icon": "BookOpen",
+        "folder": "Journal",
+        "fileName": "{{date}} journal",
+        "template": "Templates/Journal.md"
+      }
+    ],
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "editor": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "editor.autoSaveDelay": {
+    "type": "number",
+    "default": 800,
+    "min": 200,
+    "max": 3000,
+    "required": false
+  },
+  "editor.defaultMode": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "source",
+        "visual"
+      ]
+    },
+    "default": "source",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "editor.grammarCheck": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "editor.lineHeight": {
+    "type": "number",
+    "default": 1,
+    "min": 0.8,
+    "max": 1.8,
+    "required": false
+  },
+  "editor.lineNumbers": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "editor.lineWrapping": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "editor.livePreview": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "editor.mathMacros": {
+    "type": "string",
+    "default": "",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "editor.spellcheck": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "editor.wrapSelection": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "editor.wrapSelectionChars": {
+    "type": {
+      "kind": "list",
+      "item": "string"
+    },
+    "default": [
+      "*",
+      "_",
+      "~",
+      "`"
+    ],
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "folderIcons": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "folderVisibility": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "googleCalendar": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "googleCalendar.basePath": {
+    "type": "string",
+    "default": "",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "googleCalendar.calendarId": {
+    "type": "string",
+    "default": "primary",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "googleCalendar.conflictPolicy": {
+    "type": {
+      "kind": "enum",
+      "values": [
+        "bismuthWins",
+        "googleWins",
+        "lastWriteWins"
+      ]
+    },
+    "default": "lastWriteWins",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "googleCalendar.enabled": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "googleCalendar.syncIntervalMinutes": {
+    "type": "number",
+    "default": 15,
+    "min": 1,
+    "max": 1440,
+    "required": false
+  },
+  "googleCalendar.timeZone": {
+    "type": "string",
+    "default": "",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "graph": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "graph.backgroundNoise": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "graph.centering": {
+    "type": "number",
+    "default": 0.13,
+    "min": 0,
+    "max": 0.5,
+    "required": false
+  },
+  "graph.graphLabelHubCount": {
+    "type": "number",
+    "default": 10,
+    "min": 0,
+    "max": 30,
+    "required": false
+  },
+  "graph.linkDistance": {
+    "type": "number",
+    "default": 5,
+    "min": 1,
+    "max": 40,
+    "required": false
+  },
+  "graph.mapDefaultZoom": {
+    "type": "number",
+    "default": 2,
+    "min": 1,
+    "max": 18,
+    "required": false
+  },
+  "graph.nodeSize": {
+    "type": "number",
+    "default": 6,
+    "min": 2,
+    "max": 16,
+    "required": false
+  },
+  "graph.nodeSizeDegreeGain": {
+    "type": "number",
+    "default": 0.45,
+    "min": 0.1,
+    "max": 1.5,
+    "required": false
+  },
+  "graph.nodeSizeMaxMult": {
+    "type": "number",
+    "default": 6,
+    "min": 2,
+    "max": 12,
+    "required": false
+  },
+  "graph.nodeSizeMinMult": {
+    "type": "number",
+    "default": 0.4,
+    "min": 0.1,
+    "max": 1,
+    "required": false
+  },
+  "graph.refreshDebounceMs": {
+    "type": "number",
+    "default": 300,
+    "min": 100,
+    "max": 1000,
+    "required": false
+  },
+  "graph.repulsion": {
+    "type": "number",
+    "default": -10,
+    "min": -40,
+    "max": -1,
+    "required": false
+  },
+  "graph.showFps": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "graph.showGraphLabels": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "graph.spin": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "graph.spinSpeed": {
+    "type": "number",
+    "default": 0.0015,
+    "min": 0,
+    "max": 0.01,
+    "required": false
+  },
+  "keybindings": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.close-pane": {
+    "type": "keybind",
+    "default": "Mod+W",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.command-palette": {
+    "type": "keybind",
+    "default": "Mod+P",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.equalize-panes": {
+    "type": "keybind",
+    "default": "Mod+Alt+=",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.find": {
+    "type": "keybind",
+    "default": "Mod+F",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.focus-pane-down": {
+    "type": "keybind",
+    "default": "Mod+Alt+ArrowDown",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.focus-pane-left": {
+    "type": "keybind",
+    "default": "Mod+Alt+ArrowLeft",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.focus-pane-right": {
+    "type": "keybind",
+    "default": "Mod+Alt+ArrowRight",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.focus-pane-up": {
+    "type": "keybind",
+    "default": "Mod+Alt+ArrowUp",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.history-back": {
+    "type": "keybind",
+    "default": "Mod+[",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.history-forward": {
+    "type": "keybind",
+    "default": "Mod+]",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.insert-template": {
+    "type": "keybind",
+    "default": "Alt+T",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.new-claude-chat": {
+    "type": "keybind",
+    "default": "Mod+Shift+C",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.new-tab": {
+    "type": "keybind",
+    "default": "Mod+T",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.quick-switcher": {
+    "type": "keybind",
+    "default": "Mod+O",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.reopen-tab": {
+    "type": "keybind",
+    "default": "Mod+Shift+T",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.split-down": {
+    "type": "keybind",
+    "default": "Mod+Shift+D",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.split-right": {
+    "type": "keybind",
+    "default": "Mod+D",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.terminal": {
+    "type": "keybind",
+    "default": "Mod+`, Mod+J",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.toggle-draw-mode": {
+    "type": "keybind",
+    "default": "Mod+Shift+I",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.toggle-sidebar": {
+    "type": "keybind",
+    "default": "Alt+S",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.zoom-in": {
+    "type": "keybind",
+    "default": "Mod+=, Mod+Shift+=",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.zoom-out": {
+    "type": "keybind",
+    "default": "Mod+-",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "keybindings.zoom-reset": {
+    "type": "keybind",
+    "default": "Mod+0",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "mcp": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "mcp.registerWith": {
+    "type": {
+      "kind": "list",
+      "item": "string"
+    },
+    "default": [],
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "properties": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "server": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "server.fileWatchDebounceMs": {
+    "type": "number",
+    "default": 250,
+    "min": 50,
+    "max": 2000,
+    "required": false
+  },
+  "server.sseHeartbeatMs": {
+    "type": "number",
+    "default": 5000,
+    "min": 1000,
+    "max": 30000,
+    "required": false
+  },
+  "srs": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "srs.baseEase": {
+    "type": "number",
+    "default": 250,
+    "min": 130,
+    "max": 400,
+    "required": false
+  },
+  "srs.easeStep": {
+    "type": "number",
+    "default": 20,
+    "min": 5,
+    "max": 50,
+    "required": false
+  },
+  "srs.easyBonus": {
+    "type": "number",
+    "default": 1.3,
+    "min": 1,
+    "max": 2,
+    "required": false
+  },
+  "srs.easyGraduatingInterval": {
+    "type": "number",
+    "default": 4,
+    "min": 1,
+    "max": 14,
+    "required": false
+  },
+  "srs.goodGraduatingInterval": {
+    "type": "number",
+    "default": 1,
+    "min": 1,
+    "max": 3,
+    "required": false
+  },
+  "srs.lapsesIntervalChange": {
+    "type": "number",
+    "default": 0.5,
+    "min": 0.1,
+    "max": 1,
+    "required": false
+  },
+  "srs.minEase": {
+    "type": "number",
+    "default": 130,
+    "min": 50,
+    "max": 250,
+    "required": false
+  },
+  "tabBar": {
+    "type": {
+      "kind": "list",
+      "item": {
+        "kind": "object"
+      }
+    },
+    "default": [
+      {
+        "command": "new-tab",
+        "icon": "SquarePlus"
+      },
+      {
+        "command": "terminal",
+        "icon": "SquareTerminal"
+      },
+      {
+        "command": "new-claude-chat",
+        "icon": "MessageSquare"
+      }
+    ],
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "templates": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "templates.folder": {
+    "type": {
+      "kind": "path",
+      "only": "dir",
+      "scope": null
+    },
+    "default": "Templates",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "templates.newNote": {
+    "type": {
+      "kind": "path",
+      "only": null,
+      "scope": "templates"
+    },
+    "default": "",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "terminal": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "terminal.cursorBlinkSeconds": {
+    "type": "number",
+    "default": 1.2,
+    "min": 0.6,
+    "max": 2,
+    "required": false
+  },
+  "terminal.cursorGlideMs": {
+    "type": "number",
+    "default": 70,
+    "min": 20,
+    "max": 200,
+    "required": false
+  },
+  "terminal.cursorWidth": {
+    "type": "number",
+    "default": 2,
+    "min": 1,
+    "max": 4,
+    "required": false
+  },
+  "terminal.fontSize": {
+    "type": "number",
+    "default": 13,
+    "min": 9,
+    "max": 20,
+    "required": false
+  },
+  "terminal.lineHeight": {
+    "type": "number",
+    "default": 1.5,
+    "min": 1.2,
+    "max": 2,
+    "required": false
+  },
+  "toolbar": {
+    "type": {
+      "kind": "list",
+      "item": {
+        "kind": "object"
+      }
+    },
+    "default": [
+      {
+        "command": "create-menu",
+        "icon": "Plus"
+      },
+      {
+        "command": "search",
+        "icon": "Search"
+      },
+      {
+        "command": "open-inbox",
+        "icon": "Inbox"
+      }
+    ],
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "ui": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "ui.cardGridMinWidth": {
+    "type": "number",
+    "default": 220,
+    "min": 150,
+    "max": 360,
+    "required": false
+  },
+  "ui.kanbanColumnMaxWidth": {
+    "type": "number",
+    "default": 288,
+    "min": 220,
+    "max": 420,
+    "required": false
+  },
+  "ui.kanbanColumnMinWidth": {
+    "type": "number",
+    "default": 248,
+    "min": 180,
+    "max": 360,
+    "required": false
+  },
+  "ui.mapMinHeight": {
+    "type": "number",
+    "default": 480,
+    "min": 300,
+    "max": 800,
+    "required": false
+  },
+  "ui.paletteTopOffset": {
+    "type": "string",
+    "default": "12vh",
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "ui.paneDividerWidth": {
+    "type": "number",
+    "default": 5,
+    "min": 3,
+    "max": 12,
+    "required": false
+  },
+  "ui.tableMinColWidth": {
+    "type": "number",
+    "default": 60,
+    "min": 30,
+    "max": 150,
+    "required": false
+  },
+  "update": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "update.autoUpdate": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "vault": {
+    "type": {
+      "kind": "object"
+    },
+    "default": null,
+    "min": null,
+    "max": null,
+    "required": false
+  },
+  "vault.backupOnSave": {
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "required": false
+  }
+}
