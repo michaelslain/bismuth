@@ -2,8 +2,21 @@
 //
 // The rendered face of a ```graph note block (app/src/editor/graphBlock.ts): parses the
 // block's DSL body (core/src/graphBlock.ts), lays the graph out with the SAME pure layout
-// the knowledge graph uses (core/src/layout.ts), and renders it with the SAME canvas
-// renderer (CanvasGraphRenderer) — no second renderer.
+// the knowledge graph uses (core/src/layout.ts), and renders it with the SAME renderer the
+// knowledge graph uses (AsciiGraphRenderer, through the GraphRenderer seam) — no second renderer.
+//
+// The renderer is held as a `GraphRenderer`, not as the concrete class: this block only ever
+// needs the seam, and typing it that way is what let CanvasGraphRenderer be deleted.
+//
+// Two renderer contracts this block deliberately diverges from, both because a hand-authored
+// diagram is not a knowledge graph:
+//   • labelEveryNode — the file-label ladder (labelSelection.ts) is zoom-driven and shows NOTHING
+//     at fit, which is where a block opens. A diagram's labels are its content, so it opts out of
+//     the ladder entirely. (The old `graphLabelHubCount: 9999` was an attempt at this that could
+//     never have worked — see GraphConfig.labelEveryNode's doc.)
+//   • showLodMasses is left off. A ` ```graph ` block carries no communities (layoutGraphData
+//     in embeddedGraphRender.ts explains why), so there is nothing to aggregate and every node
+//     draws as itself at every zoom stop.
 //
 // The round-trip: every edit tool below mutates the parsed spec through the pure helpers
 // and hands the CANONICAL serialized markdown to props.onChange, which the widget writes
@@ -19,14 +32,19 @@
 //   SOURCE   reveal the raw fence for hand-editing (collapses when the caret leaves)
 // Node drag-repositioning is intentionally NOT in: layout is computed (deterministically)
 // from the structure, so positions aren't part of the markdown model.
+//
+// layoutGraphData/embeddedGraphConfig — the two pure units this component feeds to the
+// renderer — live in the sibling embeddedGraphRender.ts, not here: bun test can't import
+// anything from a .tsx file in this repo (see that file's header for why), and EmbeddedGraph.
+// test.ts needs to drive them directly against a real AsciiGraphRenderer.
 
 import { createEffect, createSignal, onCleanup, onMount, Show, For } from "solid-js";
-import { CanvasGraphRenderer } from "./CanvasGraphRenderer";
-import { computeLayout } from "../../../core/src/layout";
+import { AsciiGraphRenderer } from "./AsciiGraphRenderer";
+import type { GraphRenderer } from "./graphRenderer";
+import { layoutGraphData, embeddedGraphConfig } from "./embeddedGraphRender";
 import {
   parseGraphBlock,
   serializeGraphBlock,
-  graphBlockToGraphData,
   addNode,
   removeNode,
   renameNode,
@@ -36,9 +54,8 @@ import {
   removeEdgesBetween,
   type GraphBlockSpec,
 } from "../../../core/src/graphBlock";
-import { settings, DEFAULT_ACCENT_PALETTE } from "../settings";
+import { settings } from "../settings";
 import { resolveAppearance } from "../themes";
-import { paletteToInts, hexToInt } from "../themeColors";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { IconButton } from "../ui/IconButton";
 import { IconTextButton } from "../ui/IconTextButton";
@@ -53,36 +70,6 @@ type Tool = "select" | "connect" | "erase";
 const [tool, setTool] = createSignal<Tool>("select");
 const [directed, setDirected] = createSignal(true);
 const [dim, setDim] = createSignal<"2d" | "3d">("2d");
-
-/** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). Mirrors GraphView's mixHex. */
-function mixHex(a: number, b: number, t: number): number {
-  const ch = (shift: number) => {
-    const av = (a >> shift) & 0xff;
-    const bv = (b >> shift) & 0xff;
-    return Math.round(av + (bv - av) * t) & 0xff;
-  };
-  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
-}
-
-/** Attach deterministic layout coords (position/position2d) computed client-side — an
- *  embedded diagram is small, so the sync settle is instant; determinism means the same
- *  markdown always reproduces the same picture. */
-function layoutGraphData(spec: GraphBlockSpec) {
-  const data = graphBlockToGraphData(spec);
-  if (data.nodes.length === 0) return data;
-  const input = {
-    nodes: data.nodes.map((n) => ({ id: n.id })),
-    edges: data.edges.map((e) => ({ from: e.from, to: e.to })),
-  };
-  const pos3 = computeLayout(input, { dimensions: 3, refineTicks: 120 });
-  const pos2 = computeLayout(input, { dimensions: 2, refineTicks: 80, initialPositions: pos3 });
-  for (const n of data.nodes) {
-    n.position = pos3[n.id];
-    const p2 = pos2[n.id];
-    if (p2) n.position2d = [p2[0], p2[1]];
-  }
-  return data;
-}
 
 export function EmbeddedGraph(props: {
   source: string;
@@ -100,7 +87,7 @@ export function EmbeddedGraph(props: {
   const [editId, setEditId] = createSignal("");
   const [editLabel, setEditLabel] = createSignal("");
 
-  const renderer = new CanvasGraphRenderer();
+  const renderer: GraphRenderer = new AsciiGraphRenderer();
   let host!: HTMLDivElement;
 
   // Serialize a mutated spec back into the fence. The widget no-ops identical bodies, so
@@ -158,36 +145,10 @@ export function EmbeddedGraph(props: {
   });
   onCleanup(() => renderer.destroy());
 
-  // Live theme + graph settings, mirroring GraphView's config derivation — with the
-  // embedded-diagram overrides: no idle spin, and EVERY node labeled (a diagram's labels
-  // are its content; the knowledge graph's hub-only curation doesn't apply).
+  // Live theme + graph settings (see embeddedGraphConfig in embeddedGraphRender.ts for the
+  // derivation + the two deliberate divergences from the knowledge graph's contract).
   createEffect(() => {
-    const gs = settings.graph;
-    const ap = resolveAppearance(settings.appearance);
-    const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
-    renderer.setConfig({
-      spin: false,
-      spinSpeed: gs.spinSpeed,
-      palette: paletteToInts(palette),
-      repulsion: gs.repulsion,
-      linkDistance: gs.linkDistance,
-      centering: gs.centering,
-      nodeSize: gs.nodeSize,
-      viewMode: dim(),
-      showGraphLabels: true,
-      graphLabelHubCount: 9999, // always-on labels for every node
-      nodeSizeMinMult: gs.nodeSizeMinMult,
-      nodeSizeDegreeGain: gs.nodeSizeDegreeGain,
-      nodeSizeMaxMult: gs.nodeSizeMaxMult,
-      edgeColor: ap.isLight
-        ? mixHex(hexToInt(ap.neutral, 0xaeb4c2), hexToInt(ap.background, 0xffffff), 0.45)
-        : hexToInt(ap.neutral, 0xaeb4c2),
-      edgeOpacity: ap.isLight ? 0.3 : 0.45,
-      backgroundColor: hexToInt(ap.background, 0x14151b),
-      labelTextColor: ap.isLight ? ap.foreground : "rgba(232,232,238,0.95)",
-      labelBgColor: ap.isLight ? "rgba(255,255,255,0.82)" : "rgba(14,14,17,0.6)",
-      selfColor: hexToInt(ap.foreground, 0xffffff),
-    });
+    renderer.setConfig(embeddedGraphConfig(settings.graph, resolveAppearance(settings.appearance), dim()));
   });
 
   const hint = () => {

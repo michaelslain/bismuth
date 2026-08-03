@@ -21,7 +21,7 @@
 //
 // Pure decision function + a thin stateful wrapper, no DOM/window access — fully unit-testable
 // in isolation. The real wiring (data-ready, paint, visibility, the fallback timer, the 12s
-// safety timer) lives in App.tsx/GraphView.tsx/CanvasGraphRenderer.ts and index.html.
+// safety timer) lives in App.tsx/GraphView.tsx/AsciiGraphRenderer.ts and index.html.
 
 export interface BootGateSignals {
   /** The app's initial graph+tree fetch has settled — success OR failure (allSettled never

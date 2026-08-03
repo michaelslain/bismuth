@@ -6,9 +6,9 @@
 import { COMMAND_CATALOG } from "../../core/src/commands";
 import type { DailyNoteConfig } from "../../core/src/dailyNote";
 
-/** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network,
+/** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory,
  *  daemon=the daemon's cron/process supervision graph */
-export type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon" | "local";
+export type GraphMode = "2nd" | "3rd" | "both" | "daemon" | "local";
 
 export interface CommandHandlers {
   openSettings: () => void;
@@ -122,7 +122,6 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "graph-2nd": () => h.setMode("2nd"),
     "graph-3rd": () => h.setMode("3rd"),
     "graph-both": () => h.setMode("both"),
-    "graph-agents": () => h.setMode("agents"),
     "graph-daemon": () => h.setMode("daemon"),
     "equalize-panes": h.equalizePanes,
     "toggle-sidebar": h.toggleSidebar,

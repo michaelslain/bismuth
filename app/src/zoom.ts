@@ -8,7 +8,7 @@
 // wrapper over WKWebView.pageZoom / WebView2 ZoomFactor / WebKitGTK zoom_level —
 // the SAME mechanism real browsers use for Cmd+=/Cmd+-). This is a genuine
 // engine-level reflow/rescale: text stays crisp (no manual font-size math), the
-// graph canvas (CanvasGraphRenderer) already re-provisions its backing store from
+// graph canvas (AsciiGraphRenderer) already re-provisions its backing store from
 // getBoundingClientRect() x devicePixelRatio via a ResizeObserver, and every
 // existing measurement pattern in the app (getBoundingClientRect, window.innerWidth,
 // position: fixed) keeps meaning exactly what it already means — nothing to

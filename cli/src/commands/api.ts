@@ -1,8 +1,9 @@
 // Commands that reach a RUNNING bismuth server, for capabilities that live in the
 // server process's memory and therefore can't be computed by a standalone CLI
-// process: the relay/agent graph (in-memory registry) and any route you want to
-// hit directly. Everything else in the CLI works headlessly without a server; these
-// don't. API base: --api <url> → BISMUTH_API env → http://localhost:4321.
+// process: any route you want to hit directly (including the relay's in-memory
+// registry, via `bismuth api POST /relay/...`). Everything else in the CLI works
+// headlessly without a server; this doesn't. API base: --api <url> → BISMUTH_API
+// env → http://localhost:4321.
 import type { CommandMap } from "../types";
 import { flag, positionals, fail, out } from "../args";
 import { call } from "../http";
@@ -16,11 +17,6 @@ const unreachable = (base: string) =>
   `could not reach a running server at ${base} — start one with \`bismuth serve\` (or pass --api <url>)`;
 
 export const commands: CommandMap = {
-  "agent-graph": {
-    summary: "Live agents graph (terminal sessions + subagents) from a running server",
-    usage: "[--api <url>]",
-    run: async (args) => out(await call(apiBase(args), "GET", "/agent-graph", undefined, unreachable), args),
-  },
   "api": {
     summary: "Call any server route directly (for in-memory/server-only capabilities)",
     usage: "<GET|POST|PUT> <path> [--json '<body>'] [--api <url>]",

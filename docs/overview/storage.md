@@ -192,7 +192,7 @@ The filename is the `graphSig`:
 <CACHE_VERSION>-<16-hex-chars>
 ```
 
-Current `CACHE_VERSION = "v9"`. The version prefix is bumped whenever the layout algorithm or cache shape changes (e.g. v9 added the persisted full-layout warm-seed that powers incremental add-only relayout) — bumping the version causes all existing cached files to be ignored on the next run (stale files are never explicitly deleted).
+Current `CACHE_VERSION = "v20"`. The version prefix is bumped whenever the layout algorithm or cache shape changes (e.g. v9 added the persisted full-layout warm-seed that powers incremental add-only relayout; v20 is the LinLog energy model + degree-proportional repulsion default) — bumping the version causes all existing cached files to be ignored on the next run (stale files are never explicitly deleted). See `core/src/layout-cache.ts`'s inline comments for the full per-version history.
 
 The SHA-1 is computed over the `vaultKey` string + sorted node ids + sorted `from|to|kind` edge triples. This means retargeting a wikilink (same node set and edge count, different connectivity) correctly busts the cache.
 
@@ -394,16 +394,10 @@ All `localStorage` access is guarded against unavailability and quota errors; fa
 | `bismuth-settings-cache-v1` | `app/src/settings.ts` | Last hydrated `Settings` object; seeds the reactive store on the next launch |
 | `three-brains.settings` | `app/src/settings.ts` | **Legacy key** — read once for first-launch migration, then removed |
 | `oa:graph:viewMode` | `app/src/GraphView.tsx` | 2D / 3D toggle (`"2d"` or `"3d"`); **not** in `.settings` |
-| `bismuth-graphpos:v5:2d` | `app/src/graph/WebGLRenderer.ts` | Settled 2D node positions (id → `[x, y, z]` with `z=0`); merged on save |
-| `bismuth-graphpos:v5:3d` | `app/src/graph/WebGLRenderer.ts` | Settled 3D node positions (id → `[x, y, z]`); merged on save |
 | `bismuth-folds:<vault-relative-path>` | `app/src/editor/foldBlocks.ts` | Set of locked-open fold block ids per note; absent = no locks |
 | `three-brains.harper` | `app/src/editor/harperStore.ts` | Harper spell-checker personal dictionary and ignored lints (`{ words, ignoredLints }`) |
 
-### Notes on graph position keys
-
-The graph position keys are versioned (`v5`). The version is bumped whenever the layout algorithm changes so stale cached positions are dropped and a fresh settle runs. On quota overflow, `evictOtherPositionCaches` removes all `bismuth-graphpos:*` keys except the one being saved, then retries. If the retry also fails, the save is silently skipped.
-
-The positions are merged (not overwritten) on save: the existing blob is parsed and current node positions are overlaid by id. This means a large-but-slowly-changing vault reuses ~99% of cached positions across loads instead of cold-starting every time.
+> **Removed: the client-side graph position cache.** `bismuth-graphpos:v5:2d`/`v5:3d` (formerly written by a since-deleted renderer, `app/src/graph/WebGLRenderer.ts`) and its `evictOtherPositionCaches` quota-eviction helper no longer exist — `app/src/intro/VaultIntro.tsx` (`SMALL_GRAPH`/`BIG_GRAPH`) notes they were removed because nothing reads or writes them: layout is backend-precomputed and attached to each `GraphData` response (see `docs/graph/overview.md`'s Backend-Precomputed 2D/3D Layout section — `core/src/layout-cache.ts` is the durable cache today, under `~/.bismuth/layout-cache/`, not `localStorage`), and the current renderer (`AsciiGraphRenderer.ts`) rescales those positions rather than settling and persisting its own.
 
 ### Notes on the row cache
 
@@ -480,4 +474,4 @@ Browser localStorage:
 
 ---
 
-Source: `core/src/files.ts`, `core/src/settings.ts`, `core/src/layout-cache.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `daemon/src/lib/config.ts`, `daemon/src/lib/platform.ts`, `daemon/src/daemon/defaultCrons.ts`, `daemon/src/daemon/seeds.ts`, `core/src/terminal.ts`, `core/src/backup.ts`, `core/src/relay.ts`, `core/src/schema/settingsSchema.ts`, `core/src/server.ts`, `app/src/App.tsx`, `app/src/GraphView.tsx`, `app/src/graph/WebGLRenderer.ts`, `app/src/viewCache.ts`, `app/src/settings.ts`, `app/src/editor/foldBlocks.ts`, `app/src/editor/harperStore.ts`, `app/src/bases/rowCache.ts`, `relay/shim/zdotdir/.zshrc`, `relay/shim/zdotdir/.zshenv`, `core/test/files.test.ts`, `core/test/settings.test.ts`, `core/test/backup.test.ts`, `core/test/layout-cache.test.ts`, `core/test/daemon.test.ts`, `core/test/terminal.test.ts`
+Source: `core/src/files.ts`, `core/src/settings.ts`, `core/src/layout-cache.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `daemon/src/lib/config.ts`, `daemon/src/lib/platform.ts`, `daemon/src/daemon/defaultCrons.ts`, `daemon/src/daemon/seeds.ts`, `core/src/terminal.ts`, `core/src/backup.ts`, `core/src/relay.ts`, `core/src/schema/settingsSchema.ts`, `core/src/server.ts`, `app/src/App.tsx`, `app/src/GraphView.tsx`, `app/src/intro/VaultIntro.tsx`, `app/src/viewCache.ts`, `app/src/settings.ts`, `app/src/editor/foldBlocks.ts`, `app/src/editor/harperStore.ts`, `app/src/bases/rowCache.ts`, `relay/shim/zdotdir/.zshrc`, `relay/shim/zdotdir/.zshenv`, `core/test/files.test.ts`, `core/test/settings.test.ts`, `core/test/backup.test.ts`, `core/test/layout-cache.test.ts`, `core/test/daemon.test.ts`, `core/test/terminal.test.ts`

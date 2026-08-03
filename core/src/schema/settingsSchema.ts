@@ -110,11 +110,6 @@ export const SETTINGS_SCHEMA: Schema = {
     mapDefaultZoom: { type: "number", default: 2, min: 1, max: 18, doc: "Default zoom for the Bases map view when it can't fit markers." },
     refreshDebounceMs: { type: "number", default: 300, min: 100, max: 1000, doc: "Delay before rebuilding the graph after an edit burst (ms)." },
     backgroundNoise: { type: "boolean", default: false, doc: "The faint ASCII noise texture under the graph field. Off by default." },
-    renderer: {
-      type: enumType(["ascii", "standard"]),
-      default: "ascii",
-      doc: "Which look draws the knowledge graph. 'ascii' is the character field: clusters render as aggregate ASCII masses joined by summarized links, zoom is resolution rather than scale, and the hierarchy reads through zoom-driven colour and a cluster-name ladder. 'standard' is the conventional graph: filled dots sized by degree, vector edges, orbitable 3D and the atmosphere glow. Both draw the same backend layout.",
-    },
   }),
   editor: object({
     defaultMode: {
@@ -269,7 +264,7 @@ export const SETTINGS_SCHEMA: Schema = {
     installRelayHooks: {
       type: "boolean",
       default: false,
-      doc: "Let Bismuth write a project-scoped .codex/hooks.json (+ its small reporting script) into this vault so a Codex session run in a Bismuth terminal tab or chat reports its lifecycle into the in-app agents graph — the same role Claude Code's relay plugin plays. Off by default: writing into the vault is opt-in.",
+      doc: "Let Bismuth write a project-scoped .codex/hooks.json (+ its small reporting script) into this vault so a Codex session run in a Bismuth terminal tab or chat reports its lifecycle into Bismuth's in-process relay registry — the same role Claude Code's relay plugin plays. Off by default: writing into the vault is opt-in.",
     },
   }),
   srs: object({

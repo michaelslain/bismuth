@@ -1,6 +1,6 @@
 // app/src/DaemonList.tsx
 // Daemon-mode sidebar panel: lists cron and process nodes with live status.
-// Replaces the community ClusterLegend when graph mode is "daemon".
+// Shown instead of the in-field cluster names when graph mode is "daemon".
 //
 // Right-clicking a row opens the app's shared context menu (openContextMenu →
 // native menu in Tauri, else the HTML <ContextMenu>) to enable/disable a cron or

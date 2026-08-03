@@ -101,10 +101,10 @@ Also exports: `pathParts(rel)` (decompose a vault-relative path into name/ext/fo
 ### Layout
 
 #### `layout.ts`
-Pure, DOM-free layout computation. `computeLayoutAsync(input, opts?)` — runs PivotMDS (Brandes & Pich, O(k·(V+E))) to get a global seed, then refines with a d3-force-3d simulation. `LayoutOptions`: `dimensions` (2 or 3), `numPivots` (default 50), `refineTicks` (default 150), `repulsion`, `linkDistance`, `centering`, `initialPositions` (skip PivotMDS and warm-start from these coordinates). The force constants (`COLLIDE_RATIO = 1.25`, `COLLIDE_ITERATIONS = 6`, `MANYBODY_THETA = 1.5`) are kept in sync with the renderer (historically `WebGLRenderer.ts`; today `graph/CanvasGraphRenderer.ts`, which reproduces the backend's spacing via a plain uniform rescale rather than re-running a force sim — see that entry) so a precomputed layout matches the spread the renderer draws. Also runs in a browser Worker.
+Pure, DOM-free layout computation. `computeLayoutAsync(input, opts?)` — runs PivotMDS (Brandes & Pich, O(k·(V+E))) to get a global seed, then refines with a d3-force-3d simulation. `LayoutOptions`: `dimensions` (2 or 3), `numPivots` (default 50), `refineTicks` (default 150), `repulsion`, `linkDistance`, `centering`, `initialPositions` (skip PivotMDS and warm-start from these coordinates). The force constants (`COLLIDE_RATIO = 1.25`, `COLLIDE_ITERATIONS = 6`, `MANYBODY_THETA = 1.5`) tune the backend's own settle only — the renderer (`graph/AsciiGraphRenderer.ts`, via `graph/respace.ts`'s `scaleToSpacing()`) deliberately does **not** mirror them; it measures the settled output's own spacing and rescales to a fixed target instead of copying this module's constants (see `respace.ts`'s entry below). Also runs in a browser Worker.
 
 #### `layout-cache.ts`
-Two-tier layout cache (in-memory Map + JSON file in `~/.bismuth/layout-cache`, durable; override `BISMUTH_LAYOUT_CACHE_DIR`). `attachLayout(graph, vaultKey)` — computes both 3D and 2D layouts and attaches `position`/`position2d` to every node. 2D layout is seeded from flattened 3D so the morph flattens in place rather than scrambling. Peek-attaches brain-view layouts when already cached; otherwise they're computed lazily on `GET /graph/views`. `computeViewLayouts(graph, vaultKey)` — computes 2nd/3rd subgraph layouts on demand. `graphSig(graph, vaultKey)` — SHA-1 content hash of sorted node ids + edge endpoints. Cache version `v9` bakes current constants + the persisted warm-seed; bump `CACHE_VERSION` if force constants or cache shape change.
+Two-tier layout cache (in-memory Map + JSON file in `~/.bismuth/layout-cache`, durable; override `BISMUTH_LAYOUT_CACHE_DIR`). `attachLayout(graph, vaultKey)` — computes both 3D and 2D layouts and attaches `position`/`position2d` to every node. 2D layout is seeded from flattened 3D so the morph flattens in place rather than scrambling. Peek-attaches brain-view layouts when already cached; otherwise they're computed lazily on `GET /graph/views`. `computeViewLayouts(graph, vaultKey)` — computes 2nd/3rd subgraph layouts on demand. `graphSig(graph, vaultKey)` — SHA-1 content hash of sorted node ids + edge endpoints. Cache version `v20` bakes current constants (LinLog energy model + degree-proportional repulsion default); bump `CACHE_VERSION` if force constants or cache shape change.
 
 ---
 
@@ -456,7 +456,7 @@ Each source module has a corresponding `*.test.ts`. Notable:
 
 ## `app/src/` — Frontend Application
 
-Solid.js + TypeScript + CodeMirror 6 + Three.js. Styled with CSS Modules colocated with components and a global `App.css`.
+Solid.js + TypeScript + CodeMirror 6. Styled with CSS Modules colocated with components and a global `App.css`.
 
 ### Root / Shell
 
@@ -509,35 +509,47 @@ Derives dynamic theme-aware color values (e.g. ANSI terminal palette from theme)
 
 ### Graph
 
-#### `graph/CanvasGraphRenderer.ts`
-The knowledge-graph renderer (formerly a Three.js/WebGL renderer, `WebGLRenderer.ts` — replaced; that file no longer exists). It is a plain **Canvas-2D** renderer, NOT WebGL/GPU: it does the 3D camera math (orbit + zoom + perspective) by hand in JS and rasterizes nodes, edges, AND labels onto one `<canvas>` in a single draw pass via `ctx.fillText`/`ctx.arc` (`drawCanvas()`) — there is no DOM-overlay label layer in the live render path (see `LabelLayer.ts` below, now dead code). Handles both 2D (flat) and 3D (orbit) modes, morphing between them (`morph`/`morphAnim`, `MODE_MORPH_MS`). Positions come off the backend's precomputed layout (`node.position`/`position2d`) and are reproduced at the renderer's wider on-screen spacing by a one-time uniform rescale about the content centroid (`scaleToSpacing()`) — **not** a client-side force re-simulation (no `d3-force` import at all; the backend's `forceManyBody`/`forceCollide` pass in `core/src/layout.ts` is the only force solve). Key behaviors: edge crowding (per-mode budget/`keepFrac` thinning of low-rank edges, depth-banded fade in 3D), hover highlight (dim non-neighbors via `focusSet()`, one-degree edge lighting), daemon-mode node fill/border (hollow ring vs. filled dot) via `nodeVisualState()` (`isHollow()`/`daemonColor()`). Exposes `GraphConfig`/`HoverNode` types consumed by `GraphView.tsx`; `setGlowCallback()` feeds `GraphAtmosphere`.
+#### `graph/graphRenderer.ts`
+The renderer seam every consumer talks to, and the owner of the types that flow across it (`GraphConfig`, `HoverNode`, `NodeForUI`, `CommunityCentroid`, the `GraphRenderer` interface itself). Three consumers — `GraphView.tsx`, `intro/VaultIntro.tsx`, `graph/EmbeddedGraph.tsx` — all hold their renderer as a `GraphRenderer`, never a concrete class. There is exactly one implementation, `AsciiGraphRenderer`. The file's header carries an EPITAPH for the second implementation this seam used to arbitrate between, `CanvasGraphRenderer.ts` (a 1885-line, zero-test dot-and-line Canvas2D renderer, chosen via a since-removed `graph.renderer` setting) — now deleted — including the four capabilities that did **not** carry over to `AsciiGraphRenderer`: the animated 2D↔3D morph, depth-ordered cell arbitration in 3D, filled degree-sized dots + a hover ring, and rounded label pills.
 
-#### `graph/LabelLayer.ts` (vestigial, unused)
-A DOM-overlay label layer (pool of reused `<div>` elements positioned over a WebGL canvas, viewport culling/occlusion/zoom-band discovery) from the pre-`CanvasGraphRenderer` era. **Not imported anywhere** in the app (labels are now drawn directly onto the canvas by `CanvasGraphRenderer`'s single draw pass) — the only remaining reference is a stale comment in `app/src/App.css`. Left on disk; a future cleanup could delete it outright.
+#### `graph/AsciiGraphRenderer.ts`
+The knowledge-graph renderer — the sole implementation of `GraphRenderer`, mounted by every graph host (the full-pane graph, the sidebar mini-graph, the first-run Vault Intro, and the embedded ` ```graph ` note block). Draws the graph as a fixed-size CHARACTER GRID on a plain Canvas-2D context (`canvas.getContext("2d")` — NOT WebGL/GPU, NOT DOM nodes): nodes and labels rasterize as monospace glyphs snapped to grid cells (a degree/depth ramp `.`/`o`/`@`, see `asciiGrid.ts`'s `nodeGlyph()`); edges are the one exception, drawn as real anti-aliased vector strokes (`strokeEdges()`) beneath the glyphs, not as characters. THE LAW: zoom changes RESOLUTION (world-units-per-cell), never a glyph's on-screen size. Handles 2D and 3D (a hard camera reset on mode switch, not an animated morph); hit-testing (`pick()`, a grid cell lookup rather than a per-node distance search), hover, orbit-drag/pan, wheel/keyboard zoom, and the render loop all live here. Positions come off the backend's precomputed layout and are rescaled (not re-simulated) via `respace.ts`. Delegates its other pure arithmetic to sibling modules below (`asciiGrid.ts`, `backbone.ts`, `clusterVisual.ts`, `cameraModel.ts`, `lod.ts`, `graphFit.ts`, `graphStability.ts`, `densityField.ts`, `labelSelection.ts`). Exercised headlessly under happy-dom with a recording 2D canvas context in `AsciiGraphRenderer.test.ts` (119 tests).
+
+#### `graph/asciiGrid.ts`
+The pure half of the character grid — everything computable without a DOM. Cell metrics (`CELL_W`/`CELL_H`/`FONT_PX`), world↔cell mapping (`pxToCell`, `gridMetrics`), the resolution ladder (`resolutionT`/`resFromT`/`resFromPercent`/`snapZoomPercent`/`maxResFor`, `DEEPEST_WORLD_PER_CELL`), the degree/depth glyph ramp (`nodeGlyph`, `NODE_GLYPHS = [".", "o", "@"]`), and the cell→node hit test (`nearestCellNode`). Unit-tested (`asciiGrid.test.ts`).
+
+#### `graph/respace.ts`
+Node-count-independent resting spacing. `scaleToSpacing(positions, targetSpacing)` measures the input cloud's own median nearest-neighbour distance and solves for the single uniform scale that makes it hit a fixed target, rather than mirroring the backend's (`core/src/layout.ts`) packing constants by copy — deliberately decoupled so the two files' tuning can't silently drift apart. A pure, O(n²)-bounded rescale about the cloud's own centroid; provably order-preserving (a uniform positive scale can't flip which of two pairwise distances is smaller), and kind-agnostic (no notion of node id or `"self"` — a caller wanting the old self-pin-at-origin behavior would have to apply it around this call; none does). Memoized via `createSpacingCache`. Unit-tested (`respace.test.ts`).
+
+#### `graph/backbone.ts`
+Group-level ("the lines between the clusters at this zoom") edge synthesis: `buildLevelEdges` aggregates real edges into hub-to-hub pairs per community-hierarchy level (capped at `MAX_LEVEL_PAIRS` = 700), and `bandsForT` computes the three-band zoom handover (far mass / mid backbone / near member-edge crossfade weights) the renderer's rasterize pass keys off. Unit-tested (`backbone.test.ts`).
+
+#### `graph/clusterVisual.ts`
+Pure cluster-visual intelligence ported out of the deleted Canvas renderer: `buildColorSlots` (rank-based per-level community color assignment, fixing the old hash-based scheme's collisions on real vaults), hub-anchored cluster-name placement (`pickHubAnchor`, `clusterLabelLift`, `clusterExtent`), `inViewport`, `trimDanglingWord`, `pathOf`. Unit-tested (`clusterVisual.test.ts`).
+
+#### `graph/cameraModel.ts`
+Resolves the renderer merge's central tension, zoom-as-resolution vs. zoom-as-camera-dolly: `dollyForT` derives the 3D camera's dolly offset from the same resolution progress that drives labels/LOD/node color, so one wheel notch does both jobs instead of tracking two independent zoom states. `zoomT` is the pre-merge inverse. Unit-tested (`cameraModel.test.ts`).
+
+#### `graph/lod.ts`
+Level-of-detail aggregation for the 2D field — LIVE, the shipped default outside "local" mode. At coarse zoom, each community of the active hierarchy level draws as one aggregate mass (sized by member count) joined by aggregate edges summarizing every real link between two communities' member sets, instead of rasterizing every note. Opt-in via `GraphConfig.showLodMasses`. `lodMix`/`buildLodIndex`/`massRadii`/`massCellCode`. Unit-tested (`lod.test.ts`).
+
+#### `graph/graphFit.ts`
+Pure guards for the fit-to-box math. THE FIT LAW (2D): 100% zoom fills each axis to `FIT_FILL_FRACTION` (0.92) of the graph's own bounding-box half-extents (`boundingHalfExtents`/`fitScaleForBox`), not a circumscribing radius. `isUsableBox`/`finiteVec3`/`boundingRadius` guard against a degenerate mid-layout host box or a non-finite coordinate poisoning the whole cloud's scale. Unit-tested (`graphFit.test.ts`).
+
+#### `graph/graphStability.ts`
+Pure guards that keep the graph's shape and camera stable across re-fetches. `structuralGraphSig` ignores node positions entirely, so a same-structure re-fetch is a no-op for the renderer (it keeps whatever shape it already settled); `shouldResetView` lets the renderer reset the camera only when the visible node set changes substantially (a mode switch / brand-new graph), never on an incidental edit to the graph already on screen. Unit-tested (`graphStability.test.ts`).
+
+#### `graph/densityField.ts`
+The graph's phosphor-bloom atmosphere input. `accumulate` bins screen-fraction points (glyphs in the mid/near band, masses in the far band) into a `FIELD_W × FIELD_H` grid; `buildBloom` normalizes the result to a peak of 1 and feeds `GraphAtmosphere` via `setBloomCallback`. Unit-tested (`densityField.test.ts`).
 
 #### `graph/labelSelection.ts`
-`computeAlwaysOnSet(nodes, topN)` — pure function, returns the top-N nodes by undirected degree count. `renderedPixelRadius(node, nodeSize, camera, viewMode)` — computes a node's screen-space dot radius for 2D gate decisions. Unit-tested.
-
-#### `graph/agentGraphSig.ts`
-`agentGraphSig(graph)` — computes a lightweight change signature for the agents graph (node count + edge count hash). Used by `App.tsx` to dedup polling — only re-renders when the signature changes.
-
-#### `graph/agentLayout.ts`
-Layout utilities specific to the agents graph (radial arrangement of session + subagent nodes).
-
-#### `graph/agentOrg.ts`
-Agent graph org-chart layout helpers.
-
-#### `graph/AgentsGraph.tsx`
-Standalone component for the agents-mode graph sidebar panel.
+Pure label-ladder math — both halves are live. `computeAlwaysOnSet(nodes, edges, activeFile, hubCount)` unions the top-`hubCount` nodes by undirected degree with the active file. The zoom-driven ladder (`fileLabelBudget`/`fileLabelAlpha`/`clusterLabelAlpha`/`clusterLevelAlphas`/`levelBoundaries`/`clusterLabelText`/`eyebrowWidthCells`, plus the `FILE_LABEL_*`/`CLUSTER_LABEL_MAX_CHARS` constants) crossfades cluster names to file names as resolution deepens past `FILE_LABEL_REVEAL_T`. Unit-tested (`labelSelection.test.ts`).
 
 #### `graph/GraphAtmosphere.tsx`
-Shared graph "atmosphere" overlay — the iridescent cluster-glow + depth vignette layered over the graph canvas. Extracted so `GraphView` and the first-run intro graph share one source instead of duplicating the glow divs/wiring. Rendered as a sibling after the renderer's canvas; structurally typed against any renderer exposing `setGlowCallback()` (fed by `CanvasGraphRenderer`'s per-frame top-3 community centroid projections). Styled by `graphAtmosphere.css`.
-
-#### `graph/collide.ts`
-`nodeCollideRadius(node, nodeSize)` / `drawnNodeRadius(node, nodeSize)` — per-node collision-radius helpers. Large hubs use their drawn circle as the collision radius (not a point), padded by `COLLIDE_SIZE_PADDING`. Unit-tested.
+Shared graph "atmosphere" overlay — the iridescent cluster-glow + depth vignette layered over the graph canvas. Extracted so `GraphView` and the first-run intro graph share one source instead of duplicating the glow divs/wiring. Rendered as a sibling after the renderer's canvas; structurally typed against any renderer exposing `setGlowCallback()` (fed by `AsciiGraphRenderer`'s per-frame top-3 community centroid projections, via `densityField.ts`). Styled by `graphAtmosphere.css`.
 
 #### `graph/d3-force-3d.d.ts`
-Frontend-side type stubs for `d3-force-3d` (same as the core-side version).
+Frontend-side type stubs for `d3-force-3d` (same as the core-side version, `core/src/d3-force-3d.d.ts`). Currently unreferenced under `app/src` — `AsciiGraphRenderer.ts` does not import `d3-force-3d` at all; only `core/src/layout.ts`'s server-side force refinement stage still uses the package.
 
 ---
 
@@ -925,11 +937,8 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 #### `ContextMenu.tsx`
 Browser-rendered context menu component. `MenuItem` type.
 
-#### `ClusterLegend.tsx`
-Community cluster legend overlay on the graph (shown in "both"/"2nd"/"3rd" modes, hidden in daemon mode).
-
 #### `GraphView.tsx`
-Graph pane shell. Mounts `CanvasGraphRenderer` + a `GraphAtmosphere` glow/vignette overlay, plus an `AgentsGraph` cards/org-picker overlay in agents mode; exposes mode/view toggles (2nd/3rd/both/agents/daemon, 2D/3D). 2D/3D toggle persisted to localStorage (not `.settings`).
+Graph pane shell. Mounts `AsciiGraphRenderer` (the sole `GraphRenderer` implementation) + a `GraphAtmosphere` glow/vignette overlay; exposes mode/view toggles (2nd/3rd/both/daemon, 2D/3D — the "agents" mode and its `AgentsGraph` cards/org-picker overlay were removed in commit `a6687c0`). 2D/3D toggle persisted to localStorage (not `.settings`).
 
 #### `GraphSearch.tsx`
 Graph search input — highlights matching nodes in the graph.
@@ -1101,4 +1110,4 @@ zsh init dir (`.zshenv`, `.zshrc`). `ZDOTDIR` is set to this dir so the `claude`
 | New graph source type | Use `buildGraphFromNotes` from `core/src/graphBuilder.ts` |
 | New file type supported in panes | `app/src/tabIds.ts` (label/icon), `app/src/PaneContent.tsx` (routing) |
 
-Source: `CLAUDE.md`, `core/src/server.ts`, `core/src/graph.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/agents.ts`, `core/src/graphBuilder.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/sse.ts`, `core/src/asyncCache.ts`, `core/src/changeClassifier.ts`, `core/src/relay.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `core/src/daemonState.ts`, `core/src/daemonInstall.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/files.ts`, `core/src/fileAccess.ts`, `core/src/error.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/community.ts`, `core/src/basesData.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `core/src/bases/types.ts`, `core/src/bases/sourceSpec.ts`, `core/src/srs/scheduler.ts`, `core/src/drawing/model.ts`, `app/src/App.tsx`, `app/src/panes.ts`, `app/src/tabIds.ts`, `app/src/api.ts`, `app/src/serverVersion.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/themes.ts`, `app/src/commands.ts`, `app/src/graph/CanvasGraphRenderer.ts`, `app/src/graph/AgentsGraph.tsx`, `app/src/graph/agentGraphSig.ts`, `app/src/graph/agentLayout.ts`, `app/src/graph/agentOrg.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/export/formats.ts`, `app/src/export/exporters.ts`, `app/src/mobile/bootMobile.ts`, `relay/CLAUDE.md`, `relay/lib/report.ts`, `cli/src/index.ts`, `cli/src/commands/note.ts`, `package.json`, `core/package.json`, `app/package.json`, `cli/package.json`
+Source: `CLAUDE.md`, `core/src/server.ts`, `core/src/graph.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/agents.ts`, `core/src/graphBuilder.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/sse.ts`, `core/src/asyncCache.ts`, `core/src/changeClassifier.ts`, `core/src/relay.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `core/src/daemonState.ts`, `core/src/daemonInstall.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/files.ts`, `core/src/fileAccess.ts`, `core/src/error.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/community.ts`, `core/src/basesData.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `core/src/bases/types.ts`, `core/src/bases/sourceSpec.ts`, `core/src/srs/scheduler.ts`, `core/src/drawing/model.ts`, `app/src/App.tsx`, `app/src/panes.ts`, `app/src/tabIds.ts`, `app/src/api.ts`, `app/src/serverVersion.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/themes.ts`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/export/formats.ts`, `app/src/export/exporters.ts`, `app/src/mobile/bootMobile.ts`, `relay/CLAUDE.md`, `relay/lib/report.ts`, `cli/src/index.ts`, `cli/src/commands/note.ts`, `package.json`, `core/package.json`, `app/package.json`, `cli/package.json`

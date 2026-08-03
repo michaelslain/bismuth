@@ -29,8 +29,18 @@
 //
 // The pure arithmetic (grid sizing, world→cell snapping, the glyph ramp, the cell hit test) lives
 // in ./asciiGrid.ts and is unit-tested there. Its Bresenham trace ("- | / \" with "+" junctions) is
-// now used only by the opt-in LOD AGGREGATE connectors (drawAggregateEdges) — real leaf edges are
-// vector-stroked instead (see strokeEdges()).
+// no longer used by this renderer at all: the LOD aggregate connectors were its last caller, and
+// they are vector strokes now too (see the GROUP LINES block) — a character is an order of
+// magnitude more ink than a hairline, and at the default 2D view they read as a stair-stepped grey
+// scribble across the field rather than as structure. EVERY line the field draws is a vector stroke.
+//
+// THE ZOOM LADDER runs in three bands (backbone.ts `bandsForT`, and its header):
+//   far  — territory masses + cluster names, joined by aggregate connectors (lod.ts)
+//   mid  — individual glyphs, joined by a hub-to-hub BACKBONE over the active hierarchy level
+//   near — individual glyphs, joined by their real member edges
+// plus the colour-tinted intra-cluster mesh at every stop the glyphs are on. The two handovers are
+// crossfades, not switches, and `lodMix` owns both ends of the first one — see the field docs on
+// `glyphAlpha`/`memberEdgeAlpha` for the trap of collapsing them into a single number.
 
 import "./asciiGraph.css";
 import type { GraphData, GraphNode } from "../../../core/src/graph";
@@ -39,15 +49,27 @@ import {
   clusterLabelAlpha, clusterLabelText, clusterLevelAlphas, computeAlwaysOnSet, eyebrowWidthCells,
   FILE_LABEL_FADE_SPAN, fileLabelAlpha, fileLabelBudget, FILE_LABEL_REVEAL_T, levelBoundaries,
 } from "./labelSelection";
+import {
+  buildColorSlots, clusterExtent, clusterLabelLift, inViewport, pathOf, pickHubAnchor, trimDanglingWord,
+} from "./clusterVisual";
 import { hashKey } from "../themeColors";
 import { isUsableBox, finiteVec3, boundingRadius, boundingHalfExtents, fitScaleForBox } from "./graphFit";
 import { structuralGraphSig, shouldResetView } from "./graphStability";
 import { noiseField, DEFAULT_NOISE_SEED } from "../ui/ascii/noiseField";
 import {
   AGG_EDGE_ALPHA_MIN, AGG_EDGE_DOUBLE_W, LOD_ALPHA_EPS, buildLodIndex, lodMix, massCellAlpha,
-  massCellCode, massRadii, type LodLevel,
+  massCellCode, massRadii, type LodLevel, type LodRepPoint,
 } from "./lod";
+import {
+  EDGE_WEIGHT_BUCKETS, buildLevelEdges, computeEdgeLevelWeights, edgeWeightBucketRange,
+} from "./backbone";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
+import { buildBloom, pushCloud, type BloomPoint, type DensityField } from "./densityField";
+import { dollyForT, zoomT } from "./cameraModel";
+import { blendPosition, lerp, MODE_MORPH_MS, morphProgress } from "./modeMorph";
+import {
+  scaleToSpacing, createSpacingCache, cloneVec3Array, type SpacingCache, type Vec3 as RespaceVec3,
+} from "./respace";
 
 /** Numeric per-frame snapshot for QA (`window.__asciiGraphStats`, DEV builds only) — lets the
  *  redesign's fit/LOD/label criteria be asserted against directly instead of eyeballed off a
@@ -59,20 +81,60 @@ export interface AsciiGraphStats {
   labelOverlaps: number;   // count of label PAIRS on the same row whose [col, col+widthCells] spans intersect
   maxLabelChars: number;   // longest label's text.length this frame
   notesOnScreen: number;   // leaf (real) nodes rasterized this frame
-  edgesDrawn: number;      // real edges STROKED (vector) + aggregate connectors traced (grid) this frame
+  edgesClassified: number; // real member edges that survived the budget rank + projection cull AND the
+                           // locality gate, and were sorted into a stroke bucket. NOT a count of lines
+                           // drawn — in the mid band the member tier is bucketed and then held at zero
+                           // alpha, so on the reference vault this reads in the thousands while ~18 lines
+                           // are stroked. Use `edgesStroked` for that. Equals
+                           // `edgesIntraVisible + edgesCrossVisible` exactly (the three-way split below).
+  edgesIntraVisible: number; // ...of which BOTH endpoints sit in the SAME in-view cluster: the structure
+                           // of the neighbourhood on screen.
+  edgesCrossVisible: number; // ...of which the endpoints sit in two DIFFERENT in-view clusters (or one of
+                           // them has no community at all, so no backbone line could stand in for it).
+  edgesTransitingDropped: number; // real member edges the locality gate dropped: at least one endpoint's
+                           // cluster has nothing on screen, so the line merely transits the viewport on its
+                           // way between two places the user cannot see. See `inViewClusters`.
+  edgesStroked: number;    // line segments actually issued to the canvas this paint, all three tiers
+                           // (group lines + intra-cluster mesh + member edges)
+  backbonePairsDropped: number; // connected community pairs the MAX_LEVEL_PAIRS cap threw away, summed over
+                           // levels (build-time, not per frame). Silent truncation is ambiguous with "that
+                           // many pairs exist" — buildLevelEdges returns it precisely so a QA hook can say so.
   inkCoverage: number;     // bounding-box area of non-empty cells / (cols*rows) — glyph/label ink only;
-                           // edges no longer occupy cells, so this reads lower than before the vector-edge pass
+                           // NO edge of any kind occupies a cell any more, so this is pure glyph/label ink
+  bloomPoints: number;     // points handed to buildBloom this frame (masses in the far band, glyphs in the
+                           // mid/near band, both across the crossfade — see emitBloom)
+  bloomWeight: number;     // their total PRE-NORMALISATION weight. Measured on the INPUT on purpose:
+                           // buildBloom normalises its peak to exactly 1, so the emitted field looks
+                           // equally bright whether it came from 2000 nodes or from none. ~conserved
+                           // across the mass->glyph handover; a dip here is the atmosphere going dark.
+  bloomSdx: number;        // weighted per-axis spread of those points, in 0..1 SCREEN FRACTIONS, also
+  bloomSdy: number;        // pre-blur. The blur adds a fixed ~5.3-cell variance to whatever it is
+                           // handed, which on the emitted FIELD swallows per-axis scale errors up to
+                           // ~25% — so "the summary is the right SIZE" is only checkable here, before
+                           // that convolution. Separate x and y, never one radius: the two convert
+                           // through different denominators (W vs H) and swapping them is exactly the
+                           // kind of error a single number hides.
 }
 import {
   CELL_H, CELL_W, FONT_PX,
-  LAYER_EDGE, LAYER_NODE, LAYER_NOISE, PAD_X, PAD_Y, ZOOM_STEP_PCT,
-  clipSegmentToGrid, depthAlpha, fitPxPerWorld, gridMetrics, maxResFor, mergeEdgeCode, nearestCellNode,
+  LAYER_NODE, LAYER_NOISE, PAD_X, PAD_Y, ZOOM_STEP_PCT,
+  depthAlpha, fitPxPerWorld, gridMetrics, maxResFor, nearestCellNode,
   nodeGlyph, pxToCell, quantizePan, resFromPercent, resFromT, resolutionPercent, resolutionT,
-  snapZoomPercent, traceEdge,
+  snapZoomPercent,
   type GridMetrics,
 } from "./asciiGrid";
 
 const FOV_DEG = 60;              // same camera as the old renderer, so framing carries over
+// The projection's two clip planes, as fractions of the camera's distance to the TARGET (`P - dolly`
+// — see projectNodes; with no dolly that distance is `P` and these reduce to the old renderer's
+// literal `persp > 0.05 && zc < P * 0.985`, which is where both numbers come from, unchanged).
+// NEAR_PLANE_SLACK is what keeps `persp` off the projection's singularity — a node is culled once it
+// is within this fraction of the camera plane, capping `persp` at 1/NEAR_PLANE_SLACK ≈ 67×.
+const NEAR_PLANE_SLACK = 0.015;
+const MIN_PERSP = 0.05;          // far cull: a node 20x the FOCAL length behind the target is gone (see projectNodes)
+/** Shared, never-mutated "this frame has no mass band" value for `massLevelAlphas` — 3D, "local"
+ *  mode and community-less graphs assign it every frame, so it must not allocate. */
+const NO_MASS_LEVELS: readonly number[] = [];
 const ORBIT_SPEED = 0.005;       // rad per px of drag (copied)
 const DRAG_THRESHOLD = 5;        // px before a press becomes an orbit/pan rather than a click
 // TIME-based (not frame-rate dependent) exponential ease-out toward the camera goal (resolution +
@@ -84,6 +146,16 @@ const DRAG_THRESHOLD = 5;        // px before a press becomes an orbit/pan rathe
 // is ~1.5x (asciiGrid.ts DEEPEST_WORLD_PER_CELL's deeper absolute floor widened the ladder's range),
 // the same per-frame catch-up snapped to each stop in only a few frames, reading as a jump cut.
 const GLIDE_TAU_MS = 110;
+// The node-count-independent resting spacing respace.ts's `scaleToSpacing` rescales every build's
+// positions onto (see build()). MUST be 14.0 — that's not a natural-looking grid unit, it's the exact
+// calibration input `asciiGrid.ts`'s DEEPEST_WORLD_PER_CELL comment records ("the vault's own local
+// spacing ... has a median nearest-neighbour distance of 14.0 world units"). DEEPEST_WORLD_PER_CELL
+// derives the deep-zoom ladder's fixed absolute floor FROM that 14.0 figure, which used to be true only
+// for the one vault it was measured on — any OTHER vault's own median spacing silently mis-scaled the
+// ladder. Rescaling every graph's resting spacing to this same 14.0 makes the ladder correct for any
+// vault, not just the reference one. If this ever changes, MIN_ZOOM_SPAN and the RING_SCALE test
+// constant in AsciiGraphRenderer.test.ts must move with it (asciiGrid.ts:293 says so explicitly).
+const RESPACE_TARGET_SPACING = 14.0;
 const FALLBACK_MAX_RES = 16;     // pre-fit() bootstrap value for `maxRes` (real one is graph/box-derived — see fit())
 const WHEEL_NOTCH_PX = 120;      // one physical mouse-wheel click (the Windows WHEEL_DELTA convention most
                                   // browsers report a notch as); each notch moves ZOOM_STEP_PCT, trackpad
@@ -95,9 +167,41 @@ const DEPTH_BANDS = 3;           // "." far / "o" mid / "@" near — the ramp sh
 export const DIM_ALPHA = 0.28;   // NODE non-focus dimming on hover / cluster highlight — glyphs read fine
                                   // much dimmer than lines do, so this is deliberately NOT shared with
                                   // edges (see EDGE_DIM_ALPHA below — reusing this one for edges was bug).
-const EDGE_ALPHA_2D = 0.7;
-const EDGE_BUDGET = 2600;        // dense-graph edge thinning (stable per-edge rank, like the old renderer)
-const EDGE_FLOOR = 0.12;
+// Dense-graph edge thinning (stable per-edge rank, like the old renderer). Adopted VERBATIM from
+// CanvasGraphRenderer.ts:179-180 — ASCII shipped a single 2600/0.12 pair for both dimensions, less
+// than half the budget, so a dense vault (the reference one has 4566 edges) drew a visibly thinner
+// graph here than the renderer this one replaces. The 3D FLOOR is deliberately much higher than the
+// 2D one: in 3D the depth-band falloff already thins the far half of the cloud optically, so
+// dropping the same fraction structurally on top of it reads as holes.
+const EDGE_BUDGET_2D = 6000, EDGE_FLOOR_2D = 0.06;
+const EDGE_BUDGET_3D = 6000, EDGE_FLOOR_3D = 0.45;
+// Colour-tinted INTRA-CLUSTER MESH alpha (CanvasGraphRenderer.ts:131). A cluster's BODY is its
+// internal edges — without them a cluster on the glyph bands reads as a dot cloud, not a woven mass.
+const INTRA_EDGE_ALPHA = 0.22;
+const MESH_W_BASE = 0.3, MESH_W_MIN = 0.12, MESH_W_MAX = 1.1;  // CanvasGraphRenderer.ts:1298
+/** Endpoint pull-back for every vector line, in CELL WIDTHS — see strokeEdges()' CLEARANCE comment
+ *  for the derivation. One constant so the member tier and the group tiers can't drift apart. */
+const CLEARANCE_CELLS = 0.55;
+/** LABEL HALO — the ground-coloured `strokeText` drawn under every name, and the whole of Task 21's
+ *  fix. It replaces an opaque ground `fillRect` that erased every edge running behind a label (see
+ *  paint()'s label loop for the measurement). Expressed in EM so it tracks the font, with a floor so
+ *  it never falls under a hairline on a small cell: at the shipped 11.5px cell that is 2.3px, i.e.
+ *  ~1.15px of ground either side of each stroke of each letter — enough to separate a name from a
+ *  line crossing it, small enough that the line still reads as continuous past the glyph. */
+const LABEL_HALO_EM = 0.2;
+const LABEL_HALO_MIN_PX = 2;
+// GROUP LINES — the far band's aggregate connectors and the mid band's hub-to-hub backbone, both
+// vector-stroked through the same batched path (see queueGroupLine/strokeGroupLines). Widths ported
+// from CanvasGraphRenderer.ts:1259/1265; `GROUP_W_BASE + wb * GROUP_W_STEP` is its per-weight-bucket
+// ramp, and the clamp is its own [0.25, 2.4].
+const GROUP_W_BASE = 0.35, GROUP_W_STEP = 0.55, GROUP_W_MIN = 0.25, GROUP_W_MAX = 2.4;
+/** Lightest weight bucket's share of a group line's alpha (CanvasGraphRenderer.ts:1260's `0.55 +
+ *  0.45 * ((wb + 0.5) / WB)`) — heavier group links read heavier, but the lightest still reads. */
+const GROUP_EDGE_ALPHA_MIN = 0.55;
+/** Group-line batching granularity: alphas are quantized to 1/GROUP_ALPHA_STEPS and batched with the
+ *  line width, so a level's lines cost a handful of `stroke()` calls rather than one per line —
+ *  the same "one path per alpha tier" discipline strokeEdges() uses for member edges. */
+const GROUP_ALPHA_STEPS = 24;
 const HIT_RADIUS_CELLS = 2;      // cells searched outward from the cursor for a node
 const CLUSTER_LABEL_TRACKING_EM = 0.14; // tokens/typography.css --ls-eyebrow, applied via ctx.letterSpacing
 
@@ -131,13 +235,32 @@ const C_FG = 5, C_MUTED = 6, C_FAINT = 7, C_ACCENT = 8, C_EDGE = 9;
 const COLOR_VARS = ["--graph-0", "--graph-1", "--graph-2", "--graph-3", "--graph-4", "--fg", "--text-muted", "--faint", "--accent", "--graph-edge"];
 const COLOR_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a", "#e8e8ee", "#9aa0b4", "#6b7086", "#3f6bf0", "#3C4048"];
 const RAMP = [C_G0, C_G1, C_G2, C_G3, C_G4];
-// LEVEL-DRIVEN NODE COLOR (see colorLevelsFor/restyle + rasterize's colour block): during a
-// crossfade between two adjacent hierarchy levels, `colorBuf` needs a blended RGB that plain/faint
-// slots (0..8, resolved through `this.colors`) can't express. `BLEND_BASE + a*RAMP.length + b`
-// (a/b are RAMP slots 0..4) indexes a small per-frame palette built fresh only WHILE actually
-// crossfading (rasterize() skips it entirely at a settled zoom stop — see the `colorW1` gate) —
-// at most RAMP.length² = 25 entries, well inside the Uint8Array `colorBuf` already uses for slots.
+// COMMUNITY COLOUR SLOTS (see rebuildCommunityColors()/colorLevelsFor/restyle + rasterize's colour
+// block, and clusterVisual.ts's buildColorSlots): every (hierarchy level, community) pair gets its
+// OWN resolved colour — ranked by member count, not hashed — via buildColorSlots against ASCII's
+// `--graph-0..4` tokens as the palette. That is a MUCH bigger space than the old 5-slot RAMP (a real
+// vault's finer levels can carry dozens of communities), so colours live in a flat per-build array
+// (`this.commColors`) instead of the fixed `this.colors` table, addressed on `colorBuf` starting at
+// `BLEND_BASE`. `COMM_BLEND_BASE` (below) starts a SEPARATE, per-frame-memoized range for the
+// LEVEL-DRIVEN COLOR crossfade — blending two community colours together while the camera walks
+// between adjacent hierarchy levels — built lazily (only the (a,b) pairs a frame actually asks for,
+// not the full cross product) because the community space is no longer small enough to precompute in
+// full up front. `colorBuf` is a Uint16Array (not Uint8) precisely to give this range room.
 const BLEND_BASE = 16;
+// Lazily-memoized LEVEL-DRIVEN COLOR blend slots — see blendColorSlot()/resolveFillColor(). Set well
+// above any realistic `commColors` span (BLEND_BASE.. ) so the two ranges never collide; MAX_BLEND_SLOTS
+// keeps the memo inside Uint16Array's ceiling regardless of how many distinct (a,b) pairs a frame asks
+// for (a pathological graph degrades to a hard colour cut instead of an out-of-range write — see
+// blendColorSlot()).
+const COMM_BLEND_BASE = 50000;
+const MAX_BLEND_SLOTS = 15000;
+const BLEND_KEY_MUL = 65536; // exceeds any possible colorBuf slot value — safe as a plain JS Map key, never written to a buffer
+// Padding (px) added to the actual canvas box before a screen point counts as "in the viewport" for
+// label-candidate purposes — ported from CanvasGraphRenderer.ts's inViewport call sites (40px) via
+// clusterVisual.ts's inViewport(). See layoutLabels()/layoutClusterNames().
+const VIEWPORT_LABEL_PAD = 40;
+/** Shared empty roster — the fail-closed fallback in layoutClusterNames (see `namableByLevel`). */
+const EMPTY_COMMUNITY_SET: ReadonlySet<number> = new Set<number>();
 
 /** Parse a CSS colour STRING (the tokens table only ever holds `#rgb`/`#rrggbb` hex — see
  *  theme/tokens.ts — or, defensively, `rgb()`/`rgba()`) into 0..255 channels for the LEVEL-DRIVEN
@@ -262,8 +385,11 @@ interface NodeView {
   // `projValid && within bounds`; edges (real, vector-stroked — see strokeEdges()) gate on
   // `projValid` alone, exactly like the pre-redesign CanvasGraphRenderer's `onScreen` — the canvas's
   // own paint-time clip handles an edge whose far endpoint is merely off-field, so its on-screen
-  // portion still draws instead of the edge being dropped entirely. Always true in 2D (no
-  // perspective to fail).
+  // portion still draws instead of the edge being dropped entirely. NOT always true in 2D: `is2d`
+  // flips before the entering/leaving-2D morph finishes, and for that transition a mass's
+  // projection can cross the camera plane — measured driving `sy` past -100,000px, see
+  // `projectEntities()`'s own `projValid` guard comment, later in this file. Nothing relies on the
+  // false claim today; every 2D consumer checks `projValid` anyway.
   projValid: boolean;
 }
 interface EdgeView { a: NodeView; b: NodeView; kr: number }
@@ -275,16 +401,39 @@ interface EntityView {
   community: number;
   count: number;
   wx: number; wy: number; // members' 2D world centroid (same space as NodeView.p2)
+  // Members' 3D world centroid (same space as NodeView.p3), added for the 2D<->3D mode morph —
+  // `projectEntities()` blends this toward `[wx, wy, 0]` by the frame's flatten fraction, the same
+  // way `projectNodes()` blends a node's `p3` toward its `p2` (see modeMorph.ts's `blendPosition`).
+  // Computed once per structural build (`centroid3` over the entity's own `memberIds`), never per
+  // frame — LOD entities don't move between builds any more than a node's own p3/p2 do.
+  p3: Vec3;
+  sdx: number; sdy: number; // members' per-axis world spread about it (lod.ts LodCluster.sdx/sdy) —
+                          // how big the summarized thing IS, which the compact mass GLYPH's own
+                          // rowR/colR deliberately are not. Task 24b: no longer the bloom's PRIMARY
+                          // input (see `reps` below and emitBloom()) — kept as the fallback shape for
+                          // the (unreachable in practice) empty-`reps` case, so that path still emits
+                          // a cloud rather than degenerating to a point.
   color: number;          // ramp slot — the SAME key layoutClusterNames uses, so mass == name colour
   name: string;
   rowR: number; colR: number; // uncapped mass radii in cells (sqrt scaling — lod.ts massRadii)
   memberIds: string[];
+  // Task 24b: real weighted stand-ins for the cluster's members (lod.ts's LodCluster.reps — read its
+  // doc comment for the algorithm and the MASS-BLIND caveat). The bloom emits ONE point per rep,
+  // each carrying its own `weight` share of the cluster's light, instead of one synthesized ellipse
+  // — so a cluster with two well-separated sub-populations lights BOTH of them, not the empty gap
+  // between (see emitBloom()'s doc comment and densityField.ts's `pushCloud` header for why an
+  // ellipse invents mass a real cluster shape doesn't have). Same 2D world space as `wx`/`wy`.
+  reps: LodRepPoint[];
   // per-frame scratch
   sx: number; sy: number; col: number; row: number; onGrid: boolean;
   drawnRowR: number; drawnColR: number; // grid-capped radii for this frame
 }
 interface LabelDraw {
-  text: string; col: number; row: number; color: number; accent: boolean;
+  // A resolved CSS colour string, not a colorBuf slot — labels never blend (only alpha crossfades),
+  // and a cluster name's colour comes straight out of `buildColorSlots` (an already-final hex, no
+  // slot indirection needed), so callers resolve once at label-creation time via resolveFillColor()
+  // (fixed slots) or the raw buildColorSlots hex (community names) rather than at paint time.
+  text: string; col: number; row: number; color: string; accent: boolean;
   alpha: number;      // crossfade multiplier — forced file labels and cluster names ignore this differently (see paint())
   eyebrow?: boolean;  // cluster name: uppercase + tracked, drawn at full brightness × alpha
   // Real drawn width in cells (eyebrowWidthCells for a tracked cluster name, plain text.length for a
@@ -293,16 +442,12 @@ interface LabelDraw {
   widthCells: number;
 }
 
-/** A node's hierarchy path, coarsest → finest — `communityPath` when the backend sent one, else the
- *  single-element fallback `[community]` so a node/graph with no hierarchy data (legacy, or simply
- *  never rebuilt against the new detector) reads as exactly a 1-level graph, unchanged from before
- *  communityPath existed. `undefined` when the node carries no community at all. */
-function nodePath(n: GraphNode): number[] | undefined {
-  if (n.communityPath && n.communityPath.length) return n.communityPath;
-  return n.community != null ? [n.community] : undefined;
-}
+// A node's hierarchy path, coarsest → finest, is `pathOf` (clusterVisual.ts) — imported rather than
+// re-derived (see that function's docblock for the two edges it handles: `community: 0` is not
+// absent, and a per-level lookup must clamp `path[Math.min(L, path.length - 1)]`, never index past a
+// shallower node's own path).
 
-/** The exemplar name per level, mirroring `nodePath`'s fallback. */
+/** The exemplar name per level, mirroring `pathOf`'s fallback. */
 function nodePathLabels(n: GraphNode): string[] | undefined {
   if (n.communityPathLabels && n.communityPathLabels.length) return n.communityPathLabels;
   return n.community != null ? [n.communityLabel ?? `cluster ${n.community}`] : undefined;
@@ -333,6 +478,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private edges: EdgeView[] = [];
   private adjacency = new Map<string, Set<string>>();
   private sig = "";
+  // Per-structural-signature memo for scaleToSpacing (respace.ts) — a re-visited graph shape (a mode
+  // toggle back to one already settled this session) is a Map lookup, not an O(n²) remeasure. Separate
+  // caches per dimension: 2D (`position2d`) and 3D (`position`) are independent point clouds with their
+  // own median nearest-neighbour distance, so their rescale factors legitimately differ. `clone` is
+  // `cloneVec3Array`, never identity — see respace.ts's own header for why an identity clone on a
+  // reference type would silently reinstate the exact position-corruption hazard this cache exists to
+  // prevent (the 2D<->3D morph lerps p2/p3 in place every frame).
+  private p3SpacingCache: SpacingCache<RespaceVec3[]> = createSpacingCache(cloneVec3Array);
+  private p2SpacingCache: SpacingCache<RespaceVec3[]> = createSpacingCache(cloneVec3Array);
   private radius3 = 1; private radius2 = 1;
   // 2D-only bounding-BOX half-extents (see graphFit.ts boundingHalfExtents/fitScaleForBox) — the
   // fit-to-100% law for a rectangular field fills each AXIS to FIT_FILL_FRACTION independently,
@@ -345,18 +499,93 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private W = 1; private H = 1;
   private charBuf = new Uint16Array(1);
   private layerBuf = new Uint8Array(1);
-  private colorBuf = new Uint8Array(1);
+  // Uint16, not Uint8: colorBuf slots now range over the per-build community-colour space
+  // (BLEND_BASE..) and the per-frame blend memo (COMM_BLEND_BASE..) — see the COMMUNITY COLOUR
+  // SLOTS comment above RAMP/BLEND_BASE.
+  private colorBuf = new Uint16Array(1);
   private alphaBuf = new Uint8Array(1);
   private cellNode = new Int32Array(1);
   private noiseBuf = new Uint16Array(1);
   private labelOccupied = new Uint8Array(1);
   private labels: LabelDraw[] = [];
   private labelScratch: NodeView[] = [];
-  private clusterAgg = new Map<number, { colSum: number; rowSum: number; n: number }>();
+  // layoutClusterNames()'s per-frame candidate scratch: community → its VIEWPORT-VISIBLE members
+  // this frame (see clusterExtent()'s call-site contract — deliberately NOT the whole-graph
+  // membership `clusterHubByLevel` below uses).
+  private clusterAgg = new Map<number, NodeView[]>();
+  /** THE LOCALITY GATE's per-frame answer to "which clusters am I actually looking at" — the set of
+   *  cluster COLOUR SLOTS (`NodeView.colorByLevel` at the frame's dominant level, which is a globally
+   *  unique key per (level, community) — see rebuildCommunityColors()) that have at least ONE member
+   *  inside the padded viewport. Rebuilt every frame the leaf pass runs, from exactly the predicate
+   *  `layoutClusterNames` already aggregates `clusterAgg` with (`projValid && inViewport(…,
+   *  VIEWPORT_LABEL_PAD)`), so "on screen" means one thing in this renderer, not two.
+   *
+   *  **Why a member count of ONE and not a share.** The user's report was that at deep zoom their own
+   *  neighbourhood's structure was buried under long lines transiting from clusters they could not
+   *  see. The fix has to drop those without ever hiding a relationship whose two ends are both on
+   *  screen — this project's first rule is that the graph may not lie. With "has ≥1 visible member"
+   *  that second property is not a special case bolted on, it is a THEOREM: if both endpoints are in
+   *  the viewport then each one is itself a visible member of its own cluster, so both clusters are in
+   *  this set and the edge is kept. Any share-based bar (`clusterLabelThreshold`'s
+   *  `max(6, 1.5% of visible)`, say) breaks that — it would silently drop edges between two visible
+   *  glyphs whenever their communities are small, and a 4-note community can never clear an absolute
+   *  floor of 6 at all. `clusterLabelThreshold` is the bar for earning a NAME (a scarce, overlapping,
+   *  screen-space resource); "am I looking at this cluster" is a different question and takes a
+   *  different, weaker answer.
+   *
+   *  Keyed on the COLOUR slot rather than a raw community id so the gate and the intra-cluster mesh
+   *  read the one key: the mesh's `ca === cb` test at the same dominant level is the same "same
+   *  cluster right now" question, and computing it twice from two different derivations is how the
+   *  two silently drift apart. Slots below `BLEND_BASE` are the no-community fallbacks (self, daemon,
+   *  cron/process, community-less data) and never enter this set — see the gate itself for why such
+   *  an edge is exempt rather than dropped. */
+  private inViewClusters = new Set<number>();
   // Per-level community → its display name, resolved once per build() (communityPathLabels is
   // static graph data, not a per-frame thing) so layoutClusterNames() never has to search for a
   // representative member. Index = hierarchy level (0 = coarsest); length = levelCount.
   private communityNamesByLevel: Map<number, string>[] = [];
+  // Per-level community → its resolved display COLOUR (buildColorSlots' hex output — see
+  // rebuildCommunityColors()), and → its colorBuf SLOT (BLEND_BASE + a flat index into
+  // `commColors`/`commColorsRGB`). Rebuilt every restyle() (not just build()) because the palette —
+  // unlike community structure — changes on a theme switch.
+  private communityColorsByLevel: Map<number, string>[] = [];
+  private communitySlotByLevel: Map<number, number>[] = [];
+  private commColors: string[] = [];
+  private commColorsRGB: [number, number, number][] = [];
+  // Lazily-memoized LEVEL-DRIVEN COLOR blend results THIS FRAME (see blendColorSlot()) — cleared at
+  // the top of EVERY frame rasterize()'s `colorW1` gate finds a crossfade actually in progress, not
+  // just once when the crossfade begins: `w1` (the blend weight) changes every one of those frames,
+  // so a memo entry from a previous frame's `w1` is stale and must not survive into this one — caching
+  // across the whole crossfade instead of per-frame would freeze the animation partway through.
+  private blendColors: string[] = [];
+  private blendIndex = new Map<number, number>();
+  // Whole-graph, PRECOMPUTED per-level community → hub member id (pickHubAnchor) — built once per
+  // structural rebuild (build()), never per frame and never filtered to what's on screen. See
+  // clusterVisual.ts pickHubAnchor's call-site contract: this is what layoutClusterNames() anchors
+  // cluster names to, so a name and the mass it labels never disagree about where "the cluster" is,
+  // and the anchor doesn't jump as members pan in and out of frame.
+  private clusterHubByLevel: Map<number, string>[] = [];
+  /** Per hierarchy level, WHICH communities are allowed to put a name on the field — the roster
+   *  `buildLodIndex` admits as aggregate entities (`LOD_MIN_CLUSTER` members and up). Built once per
+   *  structural build(), from `lodLevels`, so the two name passes read the SAME roster:
+   *  `layoutEntityNames` iterates the entities themselves, `layoutClusterNames` filters against this.
+   *
+   *  **This is the fix for the 3D "text soup".** The zoom LADDER — which level owns the field, at
+   *  what alpha, and when file names take over — was already shared: both passes are driven from
+   *  `clusterLevelAlphas`/`clusterLabelAlpha` off the one `resolutionT`. What was NOT shared was the
+   *  ROSTER, and that is what the picture showed. The reference vault's coarsest level holds 171
+   *  communities of which only 15 clear `LOD_MIN_CLUSTER`; 2D named the 15 (it can only name what
+   *  `buildLodIndex` built), 3D named every community it found on screen, and the other 156 are
+   *  one-, two- and three-note communities whose exemplar name IS a note's own title. So at fit 3D
+   *  drew 56 "cluster" names — "LAGGY EYE FOLLOWING", "ON TRANSNISTRIA", "MIDTERM 2 PRACTICE" — over
+   *  the glyph field, which reads as file-name soup and was reported as one. (It peaked at 109
+   *  around the 80%/60% stops, not at fit.) A community under this threshold is not one the LAYOUT
+   *  placed either (core/src/layout.ts uses the same 4 to decide which cluster earns a grid cell —
+   *  see LOD_MIN_CLUSTER's doc), so naming it was never naming a cluster.
+   *
+   *  Deliberately fail-CLOSED: a level with no entry names nothing. The alternative (skip the filter
+   *  when the roster is missing) fails back into exactly the soup this exists to prevent, silently. */
+  private namableByLevel: Set<number>[] = [];
   // Deepest hierarchy depth any node carries (1..4 typically; see core/src/graph.ts communityPath).
   // 0 means no node carries a community at all (no cluster names to draw).
   private levelCount = 0;
@@ -369,14 +598,72 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private cellEntity = new Int32Array(1);  // cell → entityFlat index (-1 none), rebuilt per raster
   // Per-frame LOD state (written at the top of rasterize, read by the label + hit-test paths).
   private lodOn = false;
-  private leafAlpha = 1;
+  // THE THREE-BAND LADDER (backbone.ts `bandsForT`, via lod.ts `lodMix`) — deliberately TWO fields,
+  // not the one `leafAlpha` this used to be. In the mid band they take different values (glyphs on,
+  // real member edges off, the backbone standing in for them), so a single shared number cannot
+  // serve both: keyed off the glyph gate, `strokeEdges()` draws the full member hairball across the
+  // whole mid band; keyed off the member alpha, the leaf raster pass never runs and there are no
+  // glyphs at all. See backbone.ts's wiring recipe.
+  /** The leaf/glyph RASTER gate (`1 - massAlpha`): whether individual note glyphs rasterize at all
+   *  this frame, and at what alpha. Consumed by rasterize()'s leaf pass and layoutLabels()'s
+   *  file-name gate. NOT an edge alpha. */
+  private glyphAlpha = 1;
+  /** The REAL MEMBER EDGE alpha (`bandsForT`'s near band). Consumed by strokeEdges()'s member
+   *  passes only. NOT the glyph gate. */
+  private memberEdgeAlpha = 1;
+  /** Per-hierarchy-level MASS alpha this frame — `lodMix()`'s `levelAlphas` (`clusterLevelAlphas ×
+   *  massAlpha`) — or `NO_MASS_LEVELS` on any frame with no mass band in play (3D, "local" mode, a
+   *  community-less graph). `emitBloom()` is its ONLY consumer, and it needs its own field rather
+   *  than reading `glyphAlpha`: the bloom's two inputs (masses, glyphs) are nonzero in DIFFERENT
+   *  bands, so one number cannot tell it which pass has ink on the field this frame. An entry above
+   *  `LOD_ALPHA_EPS` also certifies that `projectEntities(L)` ran this frame (rasterize()'s far-band
+   *  loop skips a level only when its mass alpha is at-or-below that same epsilon AND its names are
+   *  gone), so the screen positions the bloom reads off that level are never stale. */
+  private massLevelAlphas: readonly number[] = NO_MASS_LEVELS;
+  /** The hierarchy level whose community colours the GLYPHS are drawn in this frame (rasterize()'s
+   *  LEVEL-DRIVEN COLOR block). Read by `nodeBloomRgb` only, so the near band's light carries the
+   *  same territory hue the glyphs emitting it are painted in. */
+  private frameColorL0 = 0;
   private hoverEntityIdx = -1;
 
   // Per-frame QA/debug counters (see computeStats/window.__asciiGraphStats) — reset + incremented in
   // rasterize()'s existing passes, never a separate loop.
   private entitiesDrawnFrame = 0;
   private notesOnScreenFrame = 0;
-  private edgesDrawnFrame = 0;
+  /** Real member edges that SURVIVED rasterize()'s classification loop (budget rank + projValid + the
+   *  LOCALITY GATE) and were sorted into a stroke bucket. NOT how many lines the frame drew: in the
+   *  mid band every one of these is bucketed and then the whole member tier is held at zero alpha by
+   *  `memberEdgeAlpha`, so this reads in the thousands on the reference vault while ~18 lines are
+   *  actually stroked. See `edgesStrokedFrame` for that number — the two are far apart by design, and
+   *  conflating them is how a QA metric ends up overclaiming. */
+  private edgesClassifiedFrame = 0;
+  /** The three-way split of what the LOCALITY GATE (see `inViewClusters`) did to the member edges
+   *  this frame: kept because both endpoints are in ONE in-view cluster, kept because they are in TWO
+   *  in-view clusters (or an endpoint has no community, which no backbone line could represent), and
+   *  DROPPED as merely transiting. `intra + cross === edgesClassifiedFrame` by construction — the
+   *  split is a partition of what was bucketed, not a second tally that could drift from it. */
+  private edgesIntraVisibleFrame = 0;
+  private edgesCrossVisibleFrame = 0;
+  private edgesTransitingDroppedFrame = 0;
+  /** Line segments actually issued to the canvas this paint, across all three tiers (group lines,
+   *  intra-cluster mesh, member edges). Counted where the `moveTo`/`lineTo` pair is emitted, so a
+   *  tier that early-returns on alpha contributes nothing. Reset by strokeEdges(), not rasterize():
+   *  it counts paint work, and paint() runs after rasterize(). */
+  private edgesStrokedFrame = 0;
+  /** Points handed to `buildBloom` this frame, and their total PRE-NORMALISATION weight (see
+   *  emitBloom). Both are deliberately measured on the INPUT, not the emitted field: `buildBloom`
+   *  normalises its peak cell to exactly 1, so an emitted field is equally "bright" whether it was
+   *  built from two thousand nodes or from one — a check on the output cannot tell a healthy
+   *  atmosphere from a nearly-empty one, which is exactly the failure mode this pair exists to make
+   *  visible. `bloomWeight` is the continuity number: it is ~conserved across the mass→glyph
+   *  handover by construction (a mass carries its members' weight), so a dip in it IS the dark
+   *  window. Written by emitBloom(), which runs after rasterize() in tick(). */
+  private bloomPointsFrame = 0;
+  private bloomWeightFrame = 0;
+  /** ...and their weighted per-axis spread, in screen fractions — see `AsciiGraphStats.bloomSdx`
+   *  for why the size of what the bloom emits is only measurable BEFORE `buildBloom`'s blur. */
+  private bloomSdxFrame = 0;
+  private bloomSdyFrame = 0;
 
   // Per-frame edge STROKE BUCKETS — rasterize() sorts surviving edges into these (by the alpha
   // they'll be stroked at), and paint()'s strokeEdges() issues one batched `stroke()` call per
@@ -386,6 +673,22 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private edgeDim: EdgeView[] = [];                                      // dimmed by an active focus/highlight set
   private edgeMain: EdgeView[] = [];                                     // 2D, no depth fade
   private edgeBands: EdgeView[][] = Array.from({ length: EDGE_DEPTH_BANDS }, () => []); // 3D, far→near
+  // The colour-tinted INTRA-CLUSTER MESH (CanvasGraphRenderer.ts:1271-1306): community colour SLOT →
+  // this frame's intra-community edges, so the pass is one batched stroke per colour rather than one
+  // per edge. The Map is kept across frames (the slot set is stable per build) and its arrays are
+  // emptied, not reallocated — the same reuse discipline as the buckets above.
+  private intraBuckets = new Map<number, EdgeView[]>();
+  private intraOn = false;
+  // GROUP LINES for this frame (far-band aggregate connectors + mid-band hub-to-hub backbone),
+  // batched by (quantized alpha, width) — see queueGroupLine()/strokeGroupLines(). `pts` is a flat
+  // [x0,y0,x1,y1,…] segment list; the Map persists across frames and the arrays are emptied.
+  private groupBatches = new Map<string, { alpha: number; width: number; pts: number[] }>();
+  // Per-level hub-to-hub backbone pairs (backbone.ts buildLevelEdges), resolved to NodeViews ONCE
+  // per structural build — hubs are highest-degree members and communities don't move, so this is
+  // build-time work, not per-frame. `levelPairsDropped[L]` is how many connected pairs level L's
+  // `MAX_LEVEL_PAIRS` cap threw away (surfaced through computeStats, per buildLevelEdges' contract).
+  private levelPairs: { a: NodeView; b: NodeView; count: number }[][] = [];
+  private levelPairsDropped: number[] = [];
 
   // camera — rx/ry orbit (3D), res = THE zoom (resolution), pan in px (2D)
   private rx = -0.5; private ry = 0;
@@ -413,6 +716,57 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private zoomPct = 100;
   private wheelAccum = 0;
   private userTook = false;
+  // INTRO FRAMING (ported from CanvasGraphRenderer.ts:418/522/524 — its only two off-seam camera
+  // knobs, used by the first-run Vault Intro and nothing else). `fitMargin` divides the 100% fit
+  // scale, so >1 is extra zoom-OUT; `frameOffsetY` slides the graph's screen ORIGIN down by that
+  // fraction of the host height, leaving the canvas itself full-bleed. Both are static per mount —
+  // they are framing, not camera state — so neither is touched by fit(resetCamera)/resetView().
+  private fitMargin = 1;
+  private frameOffsetY = 0;
+
+  // 2D<->3D MODE MORPH (modeMorph.ts) — what a `viewMode` flip now runs instead of the hard camera
+  // cut setConfig used to apply (see graphRenderer.ts's EPITAPH item 1). `null` when settled — no
+  // flip in flight.
+  //
+  // FROM/TO, not a fixed reference + a flatten-shaped decay (round 1's `unwindOrbit` design) —
+  // round-1 review caught that design jumping when a transition is INTERRUPTED (a second flip
+  // before the first finishes): `flatten` always restarted its sweep from a hardcoded far endpoint
+  // regardless of where the field currently was, and the captured orbit reference (`this.rx` at
+  // flip time) was read AFTER setConfig had already snapped it to the resting value, so it was
+  // never the orbit actually on screen. Both are fixed by capturing the LIVE state — wherever
+  // `this.morphFlatten`/`this.rx`/`this.ry` actually are the instant a NEW transition starts,
+  // whether that is a fresh flip or an interruption — as `from`, and lerping toward a fixed `to`
+  // (the resting state for the ARRIVAL mode) over `startT..startT+MODE_MORPH_MS`. This is only
+  // correct because `this.rx`/`this.ry` are now kept LIVE for the ENTIRE transition (tick() writes
+  // the interpolated value back every frame — see tick()'s own comment) rather than being written
+  // once at flip time and left stale.
+  //
+  // `startT` is null until the first tick() after the flip supplies a real rAF timestamp to
+  // measure elapsed time from — setConfig can run between frames, so "now" at flip time isn't
+  // necessarily a timestamp this renderer's clock (driven entirely by rAF, see `lastFrameT`) has
+  // any way to produce.
+  //
+  // TWO KNOWN, ACCEPTED GAPS a reader extending this should know about (neither fixed, both
+  // deliberate, see their own sites for the reasoning): (1) spin is effectively suppressed for the
+  // whole duration of an entering-3D transition — tick()'s modeMorph lerp overwrites `this.ry`
+  // fresh every frame, discarding whatever the spin block (which runs after it) added the frame
+  // before (see tick()'s own comment at the spin block). (2) a structural graph reload mid-morph
+  // (`fit(resetCamera=true)`, i.e. `shouldResetView`) discards an in-flight transition outright and
+  // snaps to the new mode's resting state rather than letting it finish or re-targeting it (see
+  // fit()'s own comment at its `resetCamera` branch).
+  private modeMorph: {
+    fromFlatten: number; toFlatten: number;
+    fromRx: number; fromRy: number; toRx: number; toRy: number;
+    startT: number | null;
+  } | null = null;
+  // Has setConfig() ever been called before, AND populated at least one node — see setConfig()'s
+  // `noViewYet` comment for why either condition alone means "there is no prior rendered view to
+  // morph FROM", so a flip under either one settles instantly instead of queueing a transition.
+  private hasConfigured = false;
+  // This frame's mode-morph flatten fraction (0 = full 3D, 1 = full flat 2D) — maintained by
+  // tick() while a transition is in flight, and settled instantly (in setConfig) whenever there is
+  // no prior view to animate from. Read by every projection pass via cameraFrame().
+  private morphFlatten = 0;
 
   // interaction
   private pressed = false; private dragging = false; private movedFar = false;
@@ -427,14 +781,6 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   // theme tokens
   private colors: string[] = [...COLOR_FALLBACK];
-  // RAMP slots (0..4) parsed to 0..255 RGB channels — the LEVEL-DRIVEN COLOR blend's lerp inputs
-  // (see rasterize()/buildBlendPalette). Re-derived from `this.colors` in readTokens(), so a theme
-  // switch keeps the blend consistent with everything else the tokens drive.
-  private rampRGB: [number, number, number][] = RAMP.map((_, i) => parseColorToRGB(COLOR_FALLBACK[i]) ?? [255, 255, 255]);
-  // Per-frame blend palette (RAMP.length² entries, `BLEND_BASE`-offset — see colorBuf's sentinel
-  // scheme), rebuilt only while a level crossfade is actually in progress (rasterize()'s `colorW1`
-  // gate) — most frames never touch this.
-  private blendColors: string[] = [];
   private groundColor = "#0b0c11";
   // Per-theme edge-stroke alpha (see deriveEdgeBaseAlpha()) — recomputed in readTokens() whenever the
   // theme's colour tokens are (re-)read, from THIS renderer's own resolved --text-muted/--graph-bg/
@@ -454,6 +800,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private onFps?: (fps: number) => void;
   private onPaint?: (nodeCount: number) => void;
   private onZoom?: (pct: number) => void;
+  private onBloom?: (field: DensityField) => void;
   onHighlightCleared?: () => void;
 
   // loop
@@ -464,7 +811,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   // ---- lifecycle -----------------------------------------------------------
 
-  mount(el: HTMLElement, onNodeClick: (id: string) => void, onHover?: (n: HoverNode | null) => void, _labelOverlay?: HTMLElement) {
+  mount(el: HTMLElement, onNodeClick: (id: string) => void, onHover?: (n: HoverNode | null) => void) {
     this.host = el;
     this.onNodeClick = onNodeClick;
     if (onHover) this.onHover = onHover;
@@ -476,6 +823,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.ctx = this.canvas.getContext("2d");
     this.viewport.append(this.canvas);
     el.appendChild(this.viewport);
+    this.applyGround();
 
     this.readTokens();
     this.measure();
@@ -517,12 +865,35 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
     this.host?.replaceChildren();
     this.nodes = []; this.edges = []; this.byId.clear();
+    this.onBloom = undefined; // detach — a torn-down renderer must not hold a stale bloom sink
   }
 
   setFpsCallback(cb: (fps: number) => void) { this.onFps = cb; }
   setPaintCallback(cb: (nodeCount: number) => void) { this.onPaint = cb; }
   setZoomCallback(cb: (pct: number) => void) { this.onZoom = cb; }
+  setBloomCallback(cb: ((field: DensityField) => void) | undefined) { this.onBloom = cb; }
   setVisible(visible: boolean) { this.visible = visible; if (visible) { this.dirty = true; this.start(); } else this.stop(); }
+
+  /** Extra fit zoom-OUT (see the `fitMargin` field). Refits immediately; the floor mirrors
+   *  CanvasGraphRenderer's own `Math.max(0.2, m)` so a 0 can never divide the fit scale away. */
+  setFitMargin(m: number) {
+    this.fitMargin = Number.isFinite(m) ? Math.max(0.2, m) : 1;
+    this.fit();
+  }
+
+  /** Slide the graph's screen origin down by `frac` of the host height (see the `frameOffsetY`
+   *  field). No refit — the fit SCALE is unchanged, only where the origin lands. */
+  setFrameOffsetY(frac: number) {
+    this.frameOffsetY = Number.isFinite(frac) ? frac : 0;
+    this.dirty = true;
+  }
+
+  /** The screen px the world origin projects to, before perspective: grid centre + pan + the
+   *  intro's vertical frame offset. A helper rather than three inlined copies so the node
+   *  projection, the entity projection and the cursor-anchored zoom can never disagree about where
+   *  the graph's centre is — they all have to invert each other exactly. */
+  private originX(panPx: number) { return this.m.padX + (this.m.cols / 2) * this.m.cellW + panPx; }
+  private originY(panPx: number) { return this.m.padY + (this.m.rows / 2) * this.m.cellH + panPx + this.frameOffsetY * this.H; }
 
   // ---- data ----------------------------------------------------------------
 
@@ -547,21 +918,55 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.link(e.from, e.to); this.link(e.to, e.from);
     }
 
-    // Centre on the CONTENT centroid excluding the injected "you" hub (which sits at the origin and
-    // would bias it) — same reasoning as CanvasGraphRenderer.build().
-    const c3 = centroid3(g.nodes.filter((n) => n.kind !== "self").map((n) => finiteVec3(n.position)));
-    const c2 = centroid3(g.nodes.filter((n) => n.kind !== "self").map((n) => {
-      const v = finiteVec3(n.position2d); return [v[0], v[1], 0] as Vec3;
-    }));
+    // Node-count-independent resting spacing (respace.ts `scaleToSpacing`, replaces the old client
+    // force-settle Canvas used to run on every mode switch). scaleToSpacing centers the cloud on its
+    // OWN centroid as part of the same rescale, so this REPLACES the old separate "centre on the
+    // content centroid" step above rather than stacking with it — running both would double-apply the
+    // translation (harmless numerically once the cloud is already centered, but two transforms doing
+    // one job is one too many to reason about, and the second would silently mask a bug in the first).
+    // No "self" filter: the old centroid excluded the injected "you" hub so it wouldn't bias the mean,
+    // but that hub no longer exists (a6687c0 removed the agents graph mode, and with it agentLayout.ts,
+    // the self node's only injector), and
+    // respace.ts is deliberately kind-agnostic (it never sees `node.kind` at all — see its header).
+    // Raw (unflipped, uncentered) positions, index-aligned with g.nodes/this.nodes so the respaced
+    // arrays below can be indexed straight back onto each node with no id bookkeeping.
+    const raw3: RespaceVec3[] = [];
+    const raw2: RespaceVec3[] = [];
+    for (const node of g.nodes) {
+      const p = finiteVec3(node.position);
+      raw3.push(p);
+      raw2.push(finiteVec3(node.position2d, [p[0], p[1], 0]));
+    }
+    // respace.ts's own header names a SECOND caller-side contract besides the self-pin (that one's
+    // moot — see above): "don't call scaleToSpacing at all for a graph that arrived pre-laid-out"
+    // (agents/daemon/cron/process — CanvasGraphRenderer.ts's hasIntentionalLayoutKind, `:667-668`).
+    // Honoured here by feeding a non-positive targetSpacing for those graphs instead of skipping the
+    // call outright: scaleToSpacing's own degenerate-target fallback ("falls back to scale=1 (recenter
+    // only)") already does exactly what Canvas's build() does unconditionally for EVERY graph, kind or
+    // not — center on the cloud's own centroid, no rescale — so this reuses one call site + one cache
+    // instead of forking a second code path. A rescale would still be LAW-safe (a uniform scale can't
+    // reorder anything — see respace.ts's header), but these graphs' absolute spacing is deliberately
+    // chosen by their own layout (a hub-and-spoke cron/process tree, sized to read at a specific
+    // zoom), not the backend's PivotMDS packing scaleToSpacing's target was calibrated against.
+    const intentionalLayout = g.nodes.some((n) =>
+      n.kind === "agent" || n.kind === "daemon" || n.kind === "cron" || n.kind === "process");
+    const targetSpacing = intentionalLayout ? 0 : RESPACE_TARGET_SPACING;
+    // Memoized per structural signature (`this.sig`, set by render() just before calling build()) —
+    // O(n²) measure runs at most once per distinct graph shape, not once per mode toggle.
+    const spaced3 = this.p3SpacingCache.getOrCompute(this.sig, () => scaleToSpacing(raw3, targetSpacing));
+    const spaced2 = this.p2SpacingCache.getOrCompute(this.sig, () => scaleToSpacing(raw2, targetSpacing));
 
     this.hoveredId = null; this.highlightSet = null;
-    this.nodes = g.nodes.map((node) => {
-      const p = finiteVec3(node.position);
-      const p2 = finiteVec3(node.position2d, [p[0], p[1], 0]);
+    this.nodes = g.nodes.map((node, i) => {
+      const p3 = spaced3[i], p2 = spaced2[i];
       return {
         node,
-        p3: [p[0] - c3[0], -(p[1] - c3[1]), p[2] - c3[2]] as Vec3,
-        p2: [p2[0] - c2[0], -(p2[1] - c2[1]), 0] as Vec3,
+        // Y negated for both — the backend layout is Y-down, this renderer's world/screen space is
+        // Y-up. Negation commutes with respace's centre-then-scale (both act per-axis with the same
+        // scalar for +y and -y), so it doesn't matter that it now runs AFTER the rescale rather than
+        // folded into the same expression the old centroid subtraction used.
+        p3: [p3[0], -p3[1], p3[2]] as Vec3,
+        p2: [p2[0], -p2[1], 0] as Vec3,
         deg: deg.get(node.id) ?? 0,
         color: C_FG, colorByLevel: [C_FG], dim: false,
         sx: 0, sy: 0, depth: 0, dr: 1, col: -1, row: -1, onGrid: false, projValid: false,
@@ -569,24 +974,65 @@ export class AsciiGraphRenderer implements GraphRenderer {
     });
     this.byId = new Map(this.nodes.map((nv) => [nv.node.id, nv]));
 
-    // Hierarchy depth + per-level exemplar names, resolved once here (not per-frame): `nodePath`
+    // Hierarchy depth + per-level exemplar names, resolved once here (not per-frame): `pathOf`
     // falls back to the single-element `[community]` for pre-hierarchy/legacy nodes, so a graph with
     // no communityPath at all still gets exactly the original one-tier cluster-name behaviour.
     this.levelCount = 0;
     for (const nv of this.nodes) {
-      const path = nodePath(nv.node);
+      const path = pathOf(nv.node);
       if (path && path.length > this.levelCount) this.levelCount = path.length;
     }
+    // Loops `L < this.levelCount` (the GRAPH's deepest level), not `L < path.length` (this NODE's
+    // own depth) — with the same `Math.min(L, path.length - 1)` clamp `rebuildCommunityColors()` and
+    // `clusterHubByLevel` use, so all three per-level tables agree on which community a shallow
+    // node belongs to at a level it doesn't itself reach. Without the clamp here specifically, a
+    // mixed-depth graph could tally/anchor a deeper level's community correctly (via the other two
+    // tables) while this one never learns that community's exemplar name, painting the literal
+    // `cluster ${id}` placeholder instead.
     this.communityNamesByLevel = Array.from({ length: this.levelCount }, () => new Map<number, string>());
     for (const nv of this.nodes) {
-      const path = nodePath(nv.node);
+      const path = pathOf(nv.node);
       if (!path) continue;
       const labels = nodePathLabels(nv.node);
-      for (let L = 0; L < path.length; L++) {
-        const id = path[L];
+      for (let L = 0; L < this.levelCount; L++) {
+        const li = Math.min(L, path.length - 1);
+        const id = path[li];
         const map = this.communityNamesByLevel[L];
         if (id == null || !map || map.has(id)) continue;
-        map.set(id, labels?.[L] ?? `cluster ${id}`);
+        map.set(id, labels?.[li] ?? `cluster ${id}`);
+      }
+    }
+
+    // Whole-graph, PRECOMPUTED per-level community → hub member id (pickHubAnchor — see the
+    // `clusterHubByLevel` field doc). Structural: depends only on communityPath + whole-graph degree,
+    // neither of which a theme switch touches, so this lives in build(), not restyle(). The clamp
+    // (`path[Math.min(L, path.length - 1)]`) is the same one buildColorSlots' community-size tally
+    // uses below (rebuildCommunityColors) — a node whose own path is shallower than L still counts
+    // toward L's hub race, under its own deepest known community.
+    //
+    // pickHubAnchor is generic over the id type; fed the real string `node.id` (not a synthetic
+    // numeric surrogate), its tie-break (lowest id) matches the ported source's own
+    // `nv.node.id < cur.node.id` comparison exactly, not just "some stable order".
+    this.clusterHubByLevel = Array.from({ length: this.levelCount }, () => new Map<number, string>());
+    if (this.levelCount > 0) {
+      const membersByLevel: Map<number, { id: string; degree: number }[]>[] =
+        Array.from({ length: this.levelCount }, () => new Map());
+      for (const nv of this.nodes) {
+        const path = pathOf(nv.node);
+        if (!path) continue;
+        for (let L = 0; L < this.levelCount; L++) {
+          const c = path[Math.min(L, path.length - 1)];
+          const map = membersByLevel[L];
+          let arr = map.get(c);
+          if (!arr) { arr = []; map.set(c, arr); }
+          arr.push({ id: nv.node.id, degree: nv.deg });
+        }
+      }
+      for (let L = 0; L < this.levelCount; L++) {
+        for (const [c, members] of membersByLevel[L]) {
+          const hubId = pickHubAnchor(members);
+          if (hubId != null) this.clusterHubByLevel[L].set(c, hubId);
+        }
       }
     }
 
@@ -594,6 +1040,36 @@ export class AsciiGraphRenderer implements GraphRenderer {
     for (const e of g.edges) {
       const a = this.byId.get(e.from), b = this.byId.get(e.to);
       if (a && b) this.edges.push({ a, b, kr: (hashKey(e.from + "\0" + e.to) % 1000) / 1000 });
+    }
+
+    // The mid band's HUB-TO-HUB BACKBONE (backbone.ts buildLevelEdges): per hierarchy level, one
+    // line per CONNECTED PAIR of that level's communities, drawn hub to hub with the number of real
+    // edges behind it as its weight. Static (hubs are highest-degree members; communities don't
+    // move), so it is resolved to NodeViews here, once per structural build, and the per-frame path
+    // only picks weights and strokes.
+    //
+    // NOT a filtered subset of the member edges: drawing the real node-to-node edges that happen to
+    // cross a community boundary still fans hundreds of lines into the middle of every blob, so it
+    // reads as "some edges are missing" rather than as a graph OF the clusters. See buildLevelEdges'
+    // own doc comment — that was the first attempt, and it is why the intended behaviour looked
+    // absent.
+    this.levelPairs = [];
+    this.levelPairsDropped = [];
+    if (this.levelCount > 0) {
+      const built = buildLevelEdges(
+        this.nodes.map((nv) => ({ id: nv.node.id, path: pathOf(nv.node), deg: nv.deg })),
+        g.edges.map((e) => ({ a: e.from, b: e.to })),
+        this.levelCount,
+      );
+      this.levelPairsDropped = built.truncated;
+      this.levelPairs = built.levelPairs.map((pairs) => {
+        const out: { a: NodeView; b: NodeView; count: number }[] = [];
+        for (const p of pairs) {
+          const a = this.byId.get(p.a.id), b = this.byId.get(p.b.id);
+          if (a && b) out.push({ a, b, count: p.count });
+        }
+        return out;
+      });
     }
 
     // Recentre 2D on the bounding-BOX centre (not the centroid computed above) so a lopsided cloud
@@ -620,26 +1096,42 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // never per frame. Cluster world centroids use the same centred/flipped p2 space the projector
     // consumes, so per-frame entity projection is the same two multiplies a node costs.
     this.lodLevels = buildLodIndex(
-      this.nodes.map((nv) => ({ id: nv.node.id, path: nodePath(nv.node), x: nv.p2[0], y: nv.p2[1] })),
+      this.nodes.map((nv) => ({ id: nv.node.id, path: pathOf(nv.node) ?? undefined, x: nv.p2[0], y: nv.p2[1] })),
       g.edges.map((e) => ({ from: e.from, to: e.to })),
     );
     this.entityFlat = [];
     this.entityLevels = this.lodLevels.map((lv, L) => lv.clusters.map((c) => {
-      const isFinest = L === this.lodLevels.length - 1;
-      const key = isFinest ? "community:" + c.community : `community:L${L}:${c.community}`;
       const { rowR, colR } = massRadii(c.count, this.cellW, this.cellH);
       const ev: EntityView = {
         flat: this.entityFlat.length, level: L, community: c.community, count: c.count,
         wx: c.wx, wy: c.wy,
-        color: RAMP[hashKey(key) % RAMP.length],
+        // The 3D-side reference `projectEntities()` blends FROM as the field enters 2D — see
+        // `EntityView.p3`'s own doc comment. `centroid3` already exists for exactly this shape of
+        // computation (`getCommunityCentroids()` below uses it the same way, over a different
+        // grouping); reusing it here is one function, not a second implementation of "average some
+        // p3s" to keep in sync.
+        p3: centroid3(c.memberIds.map((id) => this.byId.get(id)!.p3)),
+        sdx: c.sdx, sdy: c.sdy,
+        color: C_FAINT, // placeholder — restyle() (called at the end of build()) assigns the real
+                         // per-level community colour via rebuildEntityColors() before any paint runs
         name: this.communityNamesByLevel[L]?.get(c.community) ?? `cluster ${c.community}`,
-        rowR, colR, memberIds: c.memberIds,
+        rowR, colR, memberIds: c.memberIds, reps: c.reps,
         sx: 0, sy: 0, col: -1, row: -1, onGrid: false, drawnRowR: rowR, drawnColR: colR,
       };
       this.entityFlat.push(ev);
       return ev;
     }));
     this.hoverEntityIdx = -1;
+
+    // The shared NAME ROSTER (see `namableByLevel`) — derived from the structure just built, not a
+    // second, parallel tally, so the two name passes cannot drift apart. Length is `levelCount`
+    // rather than `lodLevels.length` so every level `layoutLabels` can ask for has an entry:
+    // buildLodIndex derives its own depth from the same `pathOf` paths, so the two agree, and a
+    // level the index somehow skipped names nothing instead of falling open.
+    this.namableByLevel = Array.from(
+      { length: this.levelCount },
+      (_, L) => new Set((this.lodLevels[L]?.clusters ?? []).map((c) => c.community)),
+    );
 
     this.radius3 = boundingRadius(this.nodes.map((nv) => nv.p3));
     this.radius2 = boundingRadius(this.nodes.map((nv) => nv.p2));
@@ -661,7 +1153,30 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   setConfig(cfg: GraphConfig) {
     const prevMode = this.cfg.viewMode;
+    // Whether there is a REAL prior view on screen for a mode-morph transition to animate FROM.
+    // FALSE in two cases, both meaning "nothing has actually been rendered under `prevMode` yet":
+    //  - `!this.hasConfigured` — `prevMode` is merely the constructor's hardcoded default ("3d"),
+    //    never a mode this renderer has been configured with before. Every caller (GraphView,
+    //    EmbeddedGraph, VaultIntro, and this file's own `mountRenderer`) calls setConfig() once
+    //    right after mount(), often with `viewMode: "2d"`, BEFORE render() has ever populated a
+    //    single node — that call's `cfg.viewMode !== prevMode` is true, but there is nothing on
+    //    screen to morph from.
+    //  - `this.nodes.length === 0` — hasConfigured can be true with an empty graph (a render() that
+    //    cleared everything, or a config change that races ahead of the first render()); same
+    //    conclusion, a different cause, which is why this is a SEPARATE check from hasConfigured
+    //    rather than folded into "was this the first call" — the two conditions happen to coincide
+    //    for today's callers, but they are different invariants, and only checking hasConfigured
+    //    would silently start an animate-from-nothing transition the day some caller's render()
+    //    order changes.
+    // Gating on either is what keeps setConfig's very first (or graph-less) call inert: without it,
+    // half the fixtures in this file — anything that mounts directly into 2D — would spend their
+    // first MODE_MORPH_MS animating in from a 3D layout nothing ever displayed, and every test that
+    // reads node screen position within a couple of frame()s of mounting would measure a
+    // still-morphing field instead of the settled one it asked for.
+    const noViewYet = !this.hasConfigured || this.nodes.length === 0;
+    this.hasConfigured = true;
     this.cfg = cfg;
+    this.applyGround();
     // A theme switch reaches us through setConfig (the palette/background change), so that is where
     // the CSS tokens are re-read — the same trigger point the old renderer used for applyHostVars().
     // Note the colour fields on GraphConfig (palette/edgeColor/backgroundColor/…) are IGNORED here:
@@ -674,7 +1189,33 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // 2D and 3D fit different layouts (radius2 vs radius3), so a dimension flip re-fits — and
     // returns the field to 0% so the flipped view opens on the whole graph, not a stale crop.
     if (cfg.viewMode !== prevMode) {
-      this.rx = -0.5; this.ry = 0;
+      // Start the 2D<->3D mode morph (modeMorph.ts) — but only on a GENUINE flip with something
+      // already on screen (see `noViewYet` above). `fromFlatten`/`fromRx`/`fromRy` are captured
+      // LIVE: `this.morphFlatten`/`this.rx`/`this.ry` are kept current for the ENTIRE duration of
+      // any in-flight transition (tick() writes the interpolated value back every frame — see
+      // tick()'s own comment), so reading them here is correct whether this flip is starting a
+      // fresh transition or INTERRUPTING one already in flight — round-1 review found the previous
+      // design reading a value already reset to the resting default in the interrupted case, which
+      // produced a visible jump. `this.rx`/`this.ry` are deliberately NOT reset here any more (the
+      // old hard-reset this comment used to describe): resetting them synchronously would both
+      // erase the live value just captured into `fromRx`/`fromRy` AND cut straight to the arrival
+      // orbit instead of easing to it. tick() carries every one of `morphFlatten`/`rx`/`ry` to
+      // their target over MODE_MORPH_MS; the end state is unchanged either way.
+      if (noViewYet) {
+        // Nothing to animate from — settle instantly, matching what today's callers actually see:
+        // a fresh 2D mount opens flat, a fresh 3D mount opens at the resting orbit.
+        this.morphFlatten = cfg.viewMode === "2d" ? 1 : 0;
+        this.rx = cfg.viewMode === "2d" ? 0 : -0.5;
+        this.ry = 0;
+        this.modeMorph = null;
+      } else {
+        this.modeMorph = {
+          fromFlatten: this.morphFlatten, toFlatten: cfg.viewMode === "2d" ? 1 : 0,
+          fromRx: this.rx, fromRy: this.ry,
+          toRx: cfg.viewMode === "2d" ? 0 : -0.5, toRy: 0,
+          startT: null,
+        };
+      }
       this.panX = 0; this.panY = 0;
       this.zoomPct = 100;
       this.res = 1; this.goalRes = 1;
@@ -686,6 +1227,26 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.dirty = true;
   }
 
+  /**
+   * The field's GROUND, per `GraphConfig.transparent`.
+   *
+   * `.asc-field` (ui.css) paints an opaque `--graph-bg` behind the canvas — right for a graph pane,
+   * wrong for the first-run Vault Intro, which cross-fades TWO full-bleed graph layers (opacity
+   * 0↔1) over the page's own `--bg`. An opaque ground there fades the entire page background
+   * between `--bg` and `--graph-bg` on every slide change, and those two tokens differ in three of
+   * the four themes (riso's pair is the widest gap). The canvas itself is already
+   * transparent — paint() clears it rather than filling — so suppressing this one background is the
+   * whole of it.
+   *
+   * An inline style, not a modifier class: the rule then lives in the same file as the config field
+   * that drives it, and it is directly observable from a headless test (happy-dom applies no
+   * stylesheets, so a class would assert nothing).
+   */
+  private applyGround() {
+    if (!this.viewport) return;
+    this.viewport.style.background = this.cfg.transparent ? "transparent" : "";
+  }
+
   private readTokens() {
     const h = this.host;
     if (!h || typeof getComputedStyle !== "function") return;
@@ -695,10 +1256,6 @@ export class AsciiGraphRenderer implements GraphRenderer {
       return v || fallback;
     };
     this.colors = COLOR_VARS.map((v, i) => read(v, COLOR_FALLBACK[i]));
-    // RAMP is C_G0..C_G4 (indices 0..4 of `this.colors`, coincidentally identical to the RAMP array's
-    // own values) — re-parse whenever the tokens are (re-)read so a theme switch keeps the LEVEL-
-    // DRIVEN COLOR blend (rasterize()/buildBlendPalette) in sync with the rest of the field.
-    this.rampRGB = RAMP.map((slot) => parseColorToRGB(this.colors[slot]) ?? [255, 255, 255]);
     // The label's cleared ground. --graph-bg may still be a gradient on a non-ASCII theme, and a
     // gradient string is not a valid fillStyle — fall back to the flat page background there.
     const gb = read("--graph-bg", "");
@@ -745,22 +1302,90 @@ export class AsciiGraphRenderer implements GraphRenderer {
   }
 
   private restyle() {
+    // Community colours first (rank-based, not hashed — buildColorSlots) — colorLevelsFor's
+    // community branch below reads `communitySlotByLevel`, so it must exist before that loop runs.
+    this.rebuildCommunityColors();
     for (const nv of this.nodes) {
       const levels = this.colorLevelsFor(nv.node);
       nv.colorByLevel = levels;
       nv.color = levels[levels.length - 1]; // finest/fixed slot — unchanged meaning for existing consumers
       nv.dim = this.isDimmed(nv.node);
     }
+    // LOD entity masses share the SAME per-level community colour a node would show at that level
+    // (see colorLevelsFor's doc) — recomputed here too since the palette (not just structure) may
+    // have changed.
+    this.rebuildEntityColors();
     this.dirty = true;
   }
 
-  /** Level-by-level RAMP colour for one node — hashed ONCE here (build()/restyle(), never per
-   *  frame; see rasterize()'s LEVEL-DRIVEN COLOR block for the per-frame lookup+lerp that consumes
-   *  it). `levels[L]` is the ramp slot (0..4, same numbering `this.colors` uses for C_G0..C_G4) the
-   *  node would show if hierarchy level `L` (coarsest → finest) were the ACTIVE one. Keys mirror the
-   *  ones `entityLevels`/`layoutClusterNames` hash for the SAME level+community, so a node's colour,
-   *  the mass that would summarize it (LOD masses, opt-in), and the cluster-name label naming it all
-   *  agree — "the cluster's ramp colour" is one hash, not three.
+  /**
+   * Rank every hierarchy level's communities by member count (buildColorSlots — clusterVisual.ts)
+   * against ASCII's own `--graph-0..4` CSS tokens as the palette, replacing the old
+   * `RAMP[hashKey(key) % 5]` scheme: hashing collided constantly once a real vault's coarsest level
+   * carried more than 5 substantial groups (see clusterVisual.ts's module doc for the measured
+   * failure). Flattens the per-level `Map<community, hex>` buildColorSlots returns into ONE dense
+   * array (`commColors`/`commColorsRGB`), addressed on `colorBuf` starting at `BLEND_BASE` — a
+   * community's SLOT (not just its colour) is what `colorByLevel`/`EntityView.color` store, since
+   * those still have to travel through the grid's per-cell integer buffers.
+   *
+   * Community SIZES are tallied with the same level clamp `pathOf`'s docblock requires
+   * (`path[Math.min(L, path.length - 1)]`, never a bare `path[L]`) — otherwise a node whose own
+   * hierarchy is shallower than level L silently drops out of L's tally instead of counting toward
+   * its own deepest known community.
+   *
+   * Runs every restyle() (build() AND setConfig()), not just build(): community STRUCTURE only
+   * changes on a rebuild, but the PALETTE (and therefore buildColorSlots' actual hex output) changes
+   * on every theme switch too.
+   */
+  private rebuildCommunityColors() {
+    const palette = [this.colors[C_G0], this.colors[C_G1], this.colors[C_G2], this.colors[C_G3], this.colors[C_G4]];
+    const sizesByLevel: Map<number, number>[] = Array.from({ length: this.levelCount }, () => new Map());
+    for (const nv of this.nodes) {
+      const path = pathOf(nv.node);
+      if (!path) continue;
+      for (let L = 0; L < this.levelCount; L++) {
+        const c = path[Math.min(L, path.length - 1)];
+        const sizes = sizesByLevel[L];
+        sizes.set(c, (sizes.get(c) ?? 0) + 1);
+      }
+    }
+    this.commColors = [];
+    this.commColorsRGB = [];
+    this.communityColorsByLevel = [];
+    this.communitySlotByLevel = [];
+    for (let L = 0; L < this.levelCount; L++) {
+      const hexByCommunity = buildColorSlots(sizesByLevel[L], palette);
+      this.communityColorsByLevel[L] = hexByCommunity;
+      const slotByCommunity = new Map<number, number>();
+      for (const [community, hex] of hexByCommunity) {
+        slotByCommunity.set(community, BLEND_BASE + this.commColors.length);
+        this.commColors.push(hex);
+        this.commColorsRGB.push(parseColorToRGB(hex) ?? [255, 255, 255]);
+      }
+      this.communitySlotByLevel[L] = slotByCommunity;
+    }
+    // The blend memo indexes INTO commColors by slot — any stale (a,b) pair from before this rebuild
+    // is meaningless once the slot space has been rebuilt from scratch.
+    this.blendColors.length = 0;
+    this.blendIndex.clear();
+  }
+
+  /** LOD entity masses' colours, kept in sync with `communitySlotByLevel` — see restyle()'s doc. */
+  private rebuildEntityColors() {
+    for (let L = 0; L < this.entityLevels.length; L++) {
+      const slotMap = this.communitySlotByLevel[L];
+      for (const ev of this.entityLevels[L]) ev.color = slotMap?.get(ev.community) ?? C_FAINT;
+    }
+  }
+
+  /** Level-by-level colour for one node — resolved ONCE here (build()/restyle(), never per frame;
+   *  see rasterize()'s LEVEL-DRIVEN COLOR block for the per-frame lookup+blend that consumes it).
+   *  `levels[L]` is the colorBuf SLOT the node would show if hierarchy level `L` (coarsest → finest)
+   *  were the ACTIVE one — a fixed RAMP int (0..4) for the non-community fallback cases below, or a
+   *  `communitySlotByLevel[L]` entry (rank-based, via buildColorSlots) for an actual community. Each
+   *  level's map is already level-scoped by construction (see rebuildCommunityColors — one `Map` per
+   *  level), so — unlike the old hash scheme — no separate "is this the node's own finest level" key
+   *  variant is needed to keep two different levels' same-numbered communities from colliding.
    *
    *  A node with no community at all (self/daemon/cron/process, or community-less legacy data) gets
    *  a length-1 `levels` array: every consumer treats that as "fixed colour, never blended" —
@@ -775,13 +1400,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
         return [vs.fill === "palette" || vs.border === "palette" ? RAMP[hashKey(n.id) % RAMP.length] : C_FAINT];
       }
       default: {
-        const path = nodePath(n);
+        const path = pathOf(n);
         if (path && path.length) {
-          return path.map((c, L) => {
-            const isFinest = L === path.length - 1;
-            const key = isFinest ? "community:" + c : `community:L${L}:${c}`;
-            return RAMP[hashKey(key) % RAMP.length];
-          });
+          return path.map((c, L) => this.communitySlotByLevel[L]?.get(c) ?? C_FAINT);
         }
         // No community at all (a community-less fixture, or a graph mode that never stamps one) —
         // the pre-hierarchy fixed colour: tags by their own label (so the same tag always reads the
@@ -823,7 +1444,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (m.cols !== this.m.cols || m.rows !== this.m.rows || this.charBuf.length !== cells) {
       this.charBuf = new Uint16Array(cells);
       this.layerBuf = new Uint8Array(cells);
-      this.colorBuf = new Uint8Array(cells);
+      this.colorBuf = new Uint16Array(cells);
       this.alphaBuf = new Uint8Array(cells);
       this.cellNode = new Int32Array(cells);
       this.cellEntity = new Int32Array(cells);
@@ -863,6 +1484,22 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.fit();
   }
 
+  /** The world→px fit SCALE for a given dimension (`fitScaleForBox`'s box-fill law for 2D, or
+   *  `fitPxPerWorld`'s radius-based fraction for 3D's orbiting camera), intro-margin applied.
+   *  Pulled out of fit() below so projectNodes() can ask for BOTH dimensions' fit regardless of
+   *  which one `this.pxPerWorld` currently holds — fit() only ever tracks the CURRENT mode's value
+   *  (its own doc comment), but the 2D<->3D mode morph needs both simultaneously to blend between
+   *  (see projectNodes()'s `s2d`/`s3d`). Pure given the renderer's own already-measured grid/radius
+   *  state (`half2`/`radius3` are computed unconditionally in build(), never gated on viewMode), so
+   *  calling this for the dimension NOT currently active reproduces exactly the value that
+   *  dimension held the last time it WAS active, not an approximation of it. */
+  private fitPxPerWorldFor(is2d: boolean): number {
+    const raw = is2d
+      ? fitScaleForBox(this.m.cols * this.m.cellW, this.m.rows * this.m.cellH, this.half2.hx, this.half2.hy)
+      : fitPxPerWorld(this.m.cols, this.m.rows, this.m, Math.max(1e-6, this.radius3));
+    return raw / this.fitMargin;
+  }
+
   /** Recompute the world→px fit ("res = 1 fits the whole graph on the grid", i.e. 100%) and the
    *  deepest-zoom ceiling (`maxRes`, i.e. 0% — see asciiGrid.ts maxResFor). The ceiling is
    *  graph/box-derived, so it can shift on every resize or rebuild; `zoomPct` (not `goalRes`) is the
@@ -879,21 +1516,34 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private fit(resetCamera = false) {
     if (!this.boxReady) return;
     const is2d = this.cfg.viewMode === "2d";
-    if (is2d) {
-      this.pxPerWorld = fitScaleForBox(
-        this.m.cols * this.m.cellW, this.m.rows * this.m.cellH, this.half2.hx, this.half2.hy,
-      );
-    } else {
-      const radius = Math.max(1e-6, this.radius3);
-      this.pxPerWorld = fitPxPerWorld(this.m.cols, this.m.rows, this.m, radius);
-    }
+    this.pxPerWorld = this.fitPxPerWorldFor(is2d);
     this.maxRes = maxResFor(this.pxPerWorld, this.cellW);
     if (resetCamera) {
       this.zoomPct = 100;
       this.res = 1; this.goalRes = 1;
       this.target = [0, 0, 0]; this.goalTarget = [0, 0, 0];
       this.panX = 0; this.panY = 0; this.userTook = false;
-      this.rx = -0.5; this.ry = 0;
+      // Mode-dependent, not a bare `-0.5` — a resetCamera fit is "snap to the whole-graph
+      // overview" (a genuinely new/very different graph — see render()'s shouldResetView), not a
+      // viewMode flip, so it settles the SAME way setConfig's `noViewYet` branch does rather than
+      // leaving a stale in-flight transition or an orbit left over from the other mode. Before the
+      // 2D<->3D mode morph this always wrote `-0.5` unconditionally, which was silently WRONG for
+      // 2D and only ever harmless because `projectNodes()` used to force `rx = is2d ? 0 :
+      // this.rx` regardless of what this field held — that force-override is gone now that `rx`/
+      // `ry` are read live (see `cameraFrame()`), so a 2D reset leaving `rx` at `-0.5` would
+      // otherwise rotate the "flat" field by a stale 3D tilt on every fresh 2D graph load.
+      //
+      // KNOWN, ACCEPTED GAP (documented, not fixed): if a viewMode-flip transition is still in
+      // flight when a resetCamera fit runs (a structural graph reload mid-morph — render()'s
+      // `shouldResetView` decides when this fires), it is discarded outright rather than let finish
+      // or re-target: `this.modeMorph = null` below drops it and the camera SNAPS straight to the
+      // new mode's resting state instead of continuing to ease. A resetCamera fit is "snap to the
+      // whole-graph overview" by design, and reconciling that with a transition already in flight
+      // (finish it first? re-target it? drop it silently, as now?) is a design decision outside this
+      // task's scope, not a one-line fix — flagged so it is not silently rediscovered as a bug.
+      this.modeMorph = null;
+      this.morphFlatten = is2d ? 1 : 0;
+      this.rx = is2d ? 0 : -0.5; this.ry = 0;
     } else {
       this.goalRes = resFromPercent(this.zoomPct, this.maxRes);
     }
@@ -921,6 +1571,38 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.lastFrameT = t;
 
     const is2d = this.cfg.viewMode === "2d";
+    // 2D<->3D MODE MORPH (modeMorph.ts) — advance the in-flight transition, if any, and write the
+    // interpolated flatten fraction/orbit back to LIVE state (`this.morphFlatten`/`this.rx`/
+    // `this.ry`) every frame, not just a transient local computed inside a projection pass. That
+    // "written back" property is exactly what round-1 review's interruption fix needs: a SECOND
+    // flip arriving mid-transition (setConfig) reads `this.morphFlatten`/`this.rx`/`this.ry` as its
+    // new `from*`, and that read is only correct because THIS block kept them current for every
+    // frame of the transition it might be interrupting, not merely at its start.
+    //
+    // `startT` is captured off THIS tick's own rAF timestamp, so elapsed time is measured from the
+    // first frame actually rendered after the flip, never from setConfig's call time. At rest (no
+    // `modeMorph` in flight) nothing here runs — `morphFlatten`/`rx`/`ry` already hold whatever
+    // setConfig's `noViewYet` settle or the previous transition's own completion last left them at,
+    // and (in 3D) a drag updates `rx`/`ry` directly elsewhere, same as before this task.
+    if (this.modeMorph) {
+      if (this.modeMorph.startT === null) this.modeMorph.startT = t;
+      const elapsed = t - this.modeMorph.startT;
+      const progress = morphProgress(elapsed, MODE_MORPH_MS);
+      const mm = this.modeMorph;
+      this.morphFlatten = lerp(mm.fromFlatten, mm.toFlatten, progress);
+      this.rx = lerp(mm.fromRx, mm.toRx, progress);
+      this.ry = lerp(mm.fromRy, mm.toRy, progress);
+      this.dirty = true;
+      if (elapsed >= MODE_MORPH_MS) this.modeMorph = null;
+    }
+    // KNOWN, ACCEPTED GAP (documented, not fixed): spin is effectively suppressed for the whole
+    // duration of an entering-3D transition. This block runs AFTER the modeMorph block above, so on
+    // the frame it fires, `this.ry` is `lerp(...) + spinSpeed` for that one paint — but the NEXT
+    // frame's modeMorph block (if the transition is still in flight) overwrites `this.ry` fresh from
+    // `mm.fromRy`/`mm.toRy` at the new progress, which has no memory of the nudge just added and so
+    // discards it rather than carrying it forward. Net visible effect over the 500ms: the orbit just
+    // traces the lerp curve as if spin were off, then resumes accumulating once the transition clears
+    // `this.modeMorph`. Entering 2D is unaffected (`!is2d` is false the instant the flip lands).
     if (!is2d && this.cfg.spin && this.nodes.length <= 350 && !this.userTook && !this.dragging) {
       this.ry += this.cfg.spinSpeed ?? 0.0015; this.dirty = true;
     }
@@ -945,6 +1627,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.rasterize(is2d);
       this.paint();
       this.emitZoom();
+      this.emitBloom();
       this.dirty = false;
     }
     this.raf = requestAnimationFrame(this.tick);
@@ -953,6 +1636,204 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private emitZoom() {
     const pct = resolutionPercent(this.res, this.maxRes);
     if (pct !== this.lastZoomPct) { this.lastZoomPct = pct; this.onZoom?.(pct); }
+  }
+
+  /**
+   * Emit the per-frame node-density field for the phosphor bloom (densityField.ts). This field had
+   * no atmosphere at all before — the flat --graph-bg ground drew alone.
+   *
+   * IT EMITS FROM WHICHEVER PASS ACTUALLY RAN. That is not a refinement, it is the whole point:
+   * the bloom is *node density* light, and which primitive carries the density on screen changes
+   * with the band (backbone.ts `bandsForT`). Reading only `this.nodes`, as this did originally, is
+   * a silent black screen across the entire far band — `rasterize()` gates `projectNodes()` on
+   * `glyphAlpha > LOD_ALPHA_EPS` (a real optimisation: it skips an O(n) projection over thousands
+   * of nodes in a band where none of them draw), so at fit every `nv.projValid` is false, the point
+   * list comes out empty, and the atmosphere goes dark in the app's DEFAULT 2D view. Neither the
+   * suite nor three reviews caught that, because the bloom is a different subsystem from the band
+   * ladder that broke it; a screenshot did. Do not re-key this off `this.nodes` alone, and do not
+   * "fix" a future version of that bug by hoisting the projection out of its gate.
+   *
+   *   far band  — the MASSES own the field: each aggregate entity emits ONE POINT PER REPRESENTATIVE
+   *               (lod.ts's `LodCluster.reps`, threaded onto `EntityView.reps` — Task 24b), each
+   *               positioned at that rep's own projected world location and weighted by its OWN
+   *               `rep.weight` share of the level's mass alpha, not by an equal split. Weights sum
+   *               to `count`, so — same as before — a mass standing in for `count` notes contributes
+   *               exactly the light those `count` glyphs contribute once they rasterize, and
+   *               `blur()` is mass-conserving, so the total does not jump when the bands swap. What
+   *               changed is WHERE that light lands: up to `LOD_REP_POINTS_K` real points spread
+   *               over the members' actual positions, not one synthesized ellipse centred on the
+   *               centroid. A cluster with two well-separated sub-populations now lights both of
+   *               them; the old ellipse (`densityField.ts`'s `pushCloud`, sized off `sdx`/`sdy`)
+   *               invented mass in the empty gap between — see `pushCloud`'s own header for the
+   *               measurement of that failure mode, and lod.ts's `reps` doc comment for why
+   *               representative points are the fix (real positions, not a statistical spread) and
+   *               for the MASS-BLIND caveat this emission inherits (rep DENSITY does not track
+   *               member density — weighting by `rep.weight` rather than by rep COUNT is what keeps
+   *               the actual light correct regardless). `pushCloud`/`sdx`/`sdy` survive only as the
+   *               fallback for the pathological empty-`reps` case (see the loop below) — an
+   *               aggregate is still never emitted as a bare point, even there.
+   *               `massLevelAlphas[L] > LOD_ALPHA_EPS` also certifies `projectEntities(L)` ran this
+   *               frame — see that field's doc comment.
+   *   mid/near  — the GLYPHS own it: the screen positions `projectNodes()` already wrote this frame
+   *               (nv.sx/nv.sy), never a re-projection (there is only ever one projection pass per
+   *               frame), dropping any node not in front of the camera (`nv.projValid`, the same
+   *               test drawn nodes/edges gate on). Weighted by depth — the same `depthAlpha` curve
+   *               the nodes themselves fade by, rather than a second invented one.
+   *   crossfade — BOTH contribute, each scaled by its own band weight (`massAlpha` distributed over
+   *               `levelAlphas`, and `glyphAlpha`), which sum to 1. No pop, no dark window.
+   *
+   * With no mass band in play (3D, "local" mode, community-less graphs) `massLevelAlphas` is empty
+   * and `glyphAlpha` is 1, so this reduces EXACTLY to the original glyph-only pass.
+   *
+   * EVERY point also carries the TERRITORY it belongs to — a mass its cluster's colour, a glyph its
+   * own community's at the frame's dominant level (`slotBloomRgb`/`nodeBloomRgb`) — so the field
+   * comes back with a per-cell mean colour and the ground reads as a map of territories rather than
+   * one flat haze. Same slots the mass glyphs and the note glyphs are already drawn in, which is
+   * what makes the band handover a change of shape and not of hue. Emitters with no community
+   * (self/daemon/cron/process, or a whole graph without communities) carry no colour and light the
+   * base phosphor hue, exactly as before.
+   *
+   * `buildBloom` itself drops anything that lands outside the 0..1 field once converted to a screen
+   * fraction, so neither loop needs its own viewport clip.
+   */
+  private emitBloom() {
+    if (!this.onBloom) return;
+    const pts: BloomPoint[] = [];
+    let weight = 0;
+    // The world→screen scale THIS frame's projectEntities() actually used: cameraFrame()'s blended
+    // `s`, not `this.pxPerWorld * this.res`. The two AGREE at rest (`this.pxPerWorld` is the live
+    // mode's fit, `this.res` the live resolution, and cameraFrame()'s `flatten` collapses to exactly
+    // `is2d ? 1 : 0` — see cameraFrame()'s own doc comment) but DIVERGE for the whole duration of a
+    // mode-morph transition, because `this.pxPerWorld` only ever tracks the ARRIVAL mode's fit
+    // (fit() runs synchronously on the flip, before any transition frame renders), while
+    // `projectEntities()` places every mass at the BLENDED scale between the two. Reading the stale
+    // product here would size the far band's cloud for where a mass is ABOUT TO BE, not where it
+    // actually sits: position (sx/sy) would be right and every rep's OFFSET from it (which this `s`
+    // scales — see the loop below) would be wrong for the whole transition. cameraFrame() is a cheap
+    // pure function of state nothing mutates between rasterize() and here (see tick()'s call order),
+    // so calling it again reproduces the exact value the mass positions were placed with this frame,
+    // not a second, independent one. (2D only, which is the only place a mass band exists.)
+    const s = this.cameraFrame().s;
+    for (let L = 0; L < this.entityLevels.length; L++) {
+      const a = this.massLevelAlphas[L] ?? 0;
+      if (a <= LOD_ALPHA_EPS) continue;
+      for (const ev of this.entityLevels[L]) {
+        if (!Number.isFinite(ev.sx) || !Number.isFinite(ev.sy)) continue;
+        const rgb = this.slotBloomRgb(ev.color);
+        // THE FIX (Task 24b): one BloomPoint per representative, each carrying its OWN `rep.weight`
+        // share of this frame's mass alpha (`a`), positioned at the mass's already-projected screen
+        // anchor (`ev.sx`/`ev.sy` — correct at rest AND mid mode-morph, full camera pipeline, see
+        // projectEntities()) plus that rep's own world-space offset from the cluster centroid, scaled
+        // by the SAME blended `s` above. The blended SCALE is correct for the whole transition (that
+        // is what `s` being `cameraFrame().s` rather than a stale product buys, per the comment
+        // above) — the OFFSET itself is not exact mid-morph: it is a flat `* s`, so it skips both the
+        // pitch foreshortening (`cos(rx)`, nonzero for the whole transition since `rx` only reaches 0
+        // at flatten = 1) and the per-mass perspective divide (`persp`) that `ev.sx`/`ev.sy` itself
+        // gets from the full projection. Inherited, not introduced here: the pre-24b ellipse scaled
+        // `sdx`/`sdy` by the exact same flat `s` with the exact same gap, and reps carry no per-rep 3D
+        // counterpart to project through the full pipeline with — closing it would be a larger change
+        // than this task's brief calls for, so it is left as an accepted, unchanged approximation
+        // rather than silently fixed here.
+        //
+        // Weighting by `rep.weight` (how many real members that point stands for) rather than
+        // by rep COUNT (an equal 1/reps.length split) is the deliberate choice: lod.ts's `reps` doc
+        // comment measures reps as MASS-BLIND (a dense sub-population can earn as few as 4 of 24
+        // reps while 20 lone strays each earn their own) — weighting equally by count would light a
+        // spread-out region far brighter than a dense one holding 17x its members, which is wrong
+        // for what this field claims to show (density). Weighting by `rep.weight` keeps the total
+        // light exactly where the real members are AND in true proportion to how many of them there
+        // are; summed over a cluster's reps it is exactly `a * count`, so nothing here changes the
+        // level's total contribution, only how it is distributed across the field.
+        if (ev.reps.length === 0) {
+          // Defensive only: buildLodIndex/representativePoints (lod.ts) never return an empty `reps`
+          // for a cluster that exists at all (LOD_MIN_CLUSTER guarantees count >= 4, and
+          // representativePoints only returns [] for n === 0 members). Falls back to the PRE-24b
+          // ellipse (pushCloud, sized off sdx/sdy) rather than a bare weighted point, so even this
+          // unreachable path still emits a cloud, never a point — see this method's own doc comment.
+          const x = ev.sx / this.W, y = ev.sy / this.H;
+          if (Number.isFinite(x) && Number.isFinite(y)) {
+            const w = ev.count * a;
+            pushCloud(pts, x, y, (ev.sdx * s) / this.W, (ev.sdy * s) / this.H, w, rgb);
+            weight += w;
+          }
+          continue;
+        }
+        for (const rep of ev.reps) {
+          const x = (ev.sx + (rep.x - ev.wx) * s) / this.W;
+          const y = (ev.sy + (rep.y - ev.wy) * s) / this.H;
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          const w = rep.weight * a;
+          pts.push({ x, y, weight: w, rgb });
+          weight += w;
+        }
+      }
+    }
+    if (this.glyphAlpha > LOD_ALPHA_EPS) {
+      for (const nv of this.nodes) {
+        if (!nv.projValid) continue;
+        const x = nv.sx / this.W, y = nv.sy / this.H;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        const w = depthAlpha(nv.dr) * this.glyphAlpha;
+        pts.push({ x, y, weight: w, rgb: this.nodeBloomRgb(nv) });
+        weight += w;
+      }
+    }
+    this.bloomPointsFrame = pts.length;
+    this.bloomWeightFrame = weight;
+    // Second moment of what we are about to emit. One extra pass over the list we just built (a
+    // handful of flops per point, against buildBloom's own ~128k-tap blur on the next line), and it
+    // is the ONLY place the emitted size is observable: `blur` adds a fixed variance that swamps
+    // per-axis scale errors of up to ~25% by the time the field reaches a consumer.
+    let mx = 0, my = 0, mxx = 0, myy = 0;
+    for (const p of pts) {
+      const pw = p.weight ?? 1;
+      mx += pw * p.x; my += pw * p.y;
+      mxx += pw * p.x * p.x; myy += pw * p.y * p.y;
+    }
+    if (weight > 0) {
+      const ex = mx / weight, ey = my / weight;
+      this.bloomSdxFrame = Math.sqrt(Math.max(0, mxx / weight - ex * ex));
+      this.bloomSdyFrame = Math.sqrt(Math.max(0, myy / weight - ey * ey));
+    } else {
+      this.bloomSdxFrame = 0; this.bloomSdyFrame = 0;
+    }
+    this.onBloom(buildBloom(pts));
+  }
+
+  /**
+   * The TERRITORY colour for a colorBuf slot, or `undefined` for "no community — paint this light
+   * in the base phosphor hue".
+   *
+   * Only the per-(level, community) range (`commColorsRGB`, i.e. `clusterVisual.buildColorSlots`'
+   * size-ranked output) carries one, which is deliberate on both ends: a node with no community at
+   * all (self/daemon/cron/process, or a mode that never stamps one) has no territory to belong to,
+   * and the per-frame BLEND range (`COMM_BLEND_BASE`..) is a string memo whose entries would have
+   * to be re-parsed per emitted point on the rAF path. Falling through to the base hue is not a
+   * degradation — it is the single-hue atmosphere this one is built on top of.
+   */
+  private slotBloomRgb(slot: number): readonly [number, number, number] | undefined {
+    if (slot < BLEND_BASE || slot >= COMM_BLEND_BASE) return undefined;
+    return this.commColorsRGB[slot - BLEND_BASE];
+  }
+
+  /**
+   * A GLYPH's territory colour: its community at the level that owns the frame (`frameColorL0`),
+   * clamped against the node's own path depth exactly as `nodeColorSlotForFrame` clamps it.
+   *
+   * That level choice is what makes the mass→glyph handover continuous. `lodMix`'s per-level mass
+   * alphas are `clusterLevelAlphas × massAlpha`, and `activeColorLevels` picks `L0` as the argmax
+   * of the same `clusterLevelAlphas` — so the mass emitting most of the far band's light and the
+   * glyphs replacing it are reading the SAME level's community colour, and the band swap changes
+   * how the light is shaped without changing what colour it is.
+   *
+   * Deliberately the dominant level rather than the two-level crossfade the glyph itself gets: the
+   * blend lives in a per-frame string memo (see `blendColorSlot`), and a half-crossfaded hue is not
+   * resolvable in a blurred field at v⁴ anyway.
+   */
+  private nodeBloomRgb(nv: NodeView): readonly [number, number, number] | undefined {
+    const cbl = nv.colorByLevel;
+    const slot = cbl.length > 1 ? cbl[Math.min(this.frameColorL0, cbl.length - 1)] : nv.color;
+    return this.slotBloomRgb(slot);
   }
 
   // ---- cursor-anchored zoom (2D) -------------------------------------------
@@ -973,9 +1854,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (this.cfg.viewMode !== "2d" || after === before) return;
     const sB = this.pxPerWorld * before, sA = this.pxPerWorld * after;
     if (!(sB > 0) || !(sA > 0)) return;
-    const m = this.m;
-    const ox = m.padX + (m.cols / 2) * m.cellW + this.panX;
-    const oy = m.padY + (m.rows / 2) * m.cellH + this.panY;
+    const ox = this.originX(this.panX);
+    const oy = this.originY(this.panY);
     // World point under the anchor px at the goal-before camera … stays put at the goal-after one.
     const wx = this.goalTarget[0] + (ax - ox) / sB;
     const wy = this.goalTarget[1] + (ay - oy) / sB;
@@ -990,37 +1870,24 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
   // ---- rasterization -------------------------------------------------------
 
-  // Scratch read by putEdge — the alternative was a closure per edge per frame. Real (leaf) edges no
-  // longer go through putEdge (see strokeEdges() — they're vector-stroked straight onto the canvas);
-  // this is now exercised only by the opt-in LOD AGGREGATE connectors (drawAggregateEdges), which
-  // still trace onto the character grid like every other aggregate-mode primitive.
-  private edgeColor = C_MUTED;
-  private edgeAlpha = 255;
-  private putEdge = (x: number, y: number, ch: string) => {
-    const m = this.m;
-    if (x < 0 || x >= m.cols || y < 0 || y >= m.rows) return;
-    const i = y * m.cols + x;
-    if (this.layerBuf[i] > LAYER_EDGE) return;                      // a node owns this cell
-    const wasEdge = this.layerBuf[i] === LAYER_EDGE;
-    // Code-level merge: `ch` is one of traceEdge's five interned literals, so charCodeAt costs
-    // nothing, and no string is materialised for the ~600k cells a dense frame touches.
-    this.charBuf[i] = mergeEdgeCode(this.charBuf[i], ch.charCodeAt(0), wasEdge);
-    this.layerBuf[i] = LAYER_EDGE;                                  // clears the noise underneath
-    this.colorBuf[i] = this.edgeColor;
-    if (!wasEdge || this.alphaBuf[i] < this.edgeAlpha) this.alphaBuf[i] = this.edgeAlpha;
-  };
+  // NO EDGE EVER OCCUPIES A GRID CELL any more. Real member edges have been vector strokes since the
+  // redesign; the LOD aggregate connectors were the last grid-traced primitive (a `putEdge` sink fed
+  // by `traceEdge`'s Bresenham walk, writing one of `-|/\+` per cell) and this task strokes them as
+  // vectors too — see the GROUP LINES block below for why. `layerBuf`'s `LAYER_EDGE` tier is
+  // therefore no longer written by anything; the cell layers are noise < node < label.
 
   /** Project every ACTIVE primitive onto the grid, then draw the layers into the cell buffers.
    *
-   *  LEVEL OF DETAIL (2D + a community hierarchy) — OPT-IN via GraphConfig.showLodMasses, off in
-   *  the shipped app (see the `lodOn` gate below). When enabled, the zoom ladder maps onto the
-   *  hierarchy: coarse stops rasterize the active level's AGGREGATE ENTITIES + AGGREGATE EDGES only
-   *  (a frame costs O(clusters + inter-cluster connectors)); the leaf passes below — per-node
+   *  LEVEL OF DETAIL (2D + a community hierarchy) — LIVE by default via GraphConfig.showLodMasses
+   *  (GraphView.tsx sets it whenever the ascii renderer is active outside "local" mode — see the
+   *  `lodOn` gate below). When enabled, the zoom ladder maps onto the hierarchy: coarse stops
+   *  rasterize the active level's AGGREGATE ENTITIES + AGGREGATE EDGES only (a frame costs
+   *  O(clusters + inter-cluster connectors)); the leaf passes below — per-node
    *  projection, the real edge loop, the real node loop — simply do not run until `lodMix`'s leaf
    *  alpha comes up near the deep stops. Crossfades between adjacent levels (and between the finest
    *  level and the leaves) reuse the exact alphas of the cluster-name/file-name label crossfade, so
    *  geometry and naming always move together. 3D keeps the original full-detail path untouched.
-   *  By default (flag off), every node rasterizes as a glyph at every zoom stop. */
+   *  With the flag off (e.g. local mode), every node rasterizes as a glyph at every zoom stop instead. */
   private rasterize(is2d: boolean) {
     const m = this.m;
     const cells = m.cols * m.rows;
@@ -1030,12 +1897,24 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // the hot loop pays for nothing extra beyond a few integer increments.
     this.entitiesDrawnFrame = 0;
     this.notesOnScreenFrame = 0;
-    this.edgesDrawnFrame = 0;
+    this.edgesClassifiedFrame = 0;
+    this.edgesIntraVisibleFrame = 0;
+    this.edgesCrossVisibleFrame = 0;
+    this.edgesTransitingDroppedFrame = 0;
+    this.edgesStrokedFrame = 0;
+    // THE LOCALITY GATE's roster (see `inViewClusters`) — cleared UNCONDITIONALLY, like the stroke
+    // buckets below, so a frame that returns early out of the leaf pass can never leave a previous
+    // frame's answer to "which clusters am I looking at" standing.
+    this.inViewClusters.clear();
     // Clear the vector-edge stroke buckets (see the field decls + strokeEdges()) UNCONDITIONALLY —
-    // not just inside the `leafA > LOD_ALPHA_EPS` gate below — so a frame where an opt-in coarse LOD
-    // stop's masses own the field instead doesn't leave last frame's edges stroked over it.
+    // not just inside the glyph gate below — so a frame where an opt-in coarse LOD stop's masses own
+    // the field instead doesn't leave last frame's edges stroked over it. Same for the intra-cluster
+    // mesh and the group-line batches, which are populated under their own independent gates.
     this.edgeAccent.length = 0; this.edgeDim.length = 0; this.edgeMain.length = 0;
     for (const band of this.edgeBands) band.length = 0;
+    for (const list of this.intraBuckets.values()) list.length = 0;
+    this.intraOn = false;
+    for (const b of this.groupBatches.values()) b.pts.length = 0;
     // WORLD-anchored pan (the jitter fix): split into a whole-cell part (fed into the projection
     // below, so the world→cell rounding phase never shifts) and a sub-cell residual (applied as a
     // paint-time canvas translate — see paint()). Recomputed once per rasterize(), not per node.
@@ -1065,16 +1944,26 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
     const t = resolutionT(this.res, this.maxRes);
 
-    // GraphConfig.showLodMasses opts IN to the LOD aggregate-entity/edge passes below — OFF by
-    // default. The shipped ASCII redesign renders every individual node as a glyph at every zoom
-    // stop; the hierarchy still reads through node COLOR (see the LEVEL-DRIVEN COLOR block below)
-    // + the existing cluster-name labels, never an aggregate mass. The mass/aggregate-edge code
-    // is retained but unreachable from the app — only AsciiGraphRenderer.test.ts sets this flag.
+    // GraphConfig.showLodMasses opts IN to the LOD aggregate-entity/edge passes below — LIVE by
+    // default (GraphView.tsx sets it whenever the ascii renderer is active outside "local" mode).
+    // With the flag off (e.g. local mode) every individual node rasterizes as a glyph at every zoom
+    // stop instead; the hierarchy then reads only through node COLOR (see the LEVEL-DRIVEN COLOR
+    // block below) + the cluster-name labels, never an aggregate mass.
     const lodOn = this.cfg.showLodMasses === true && is2d && this.levelCount > 0 && this.entityLevels.length > 0;
     this.lodOn = lodOn;
+    // THE THREE-BAND LADDER (backbone.ts §5.4, via lodMix): far = territory masses + aggregate
+    // connectors; mid = individual glyphs + the hub-to-hub backbone; near = individual glyphs + real
+    // member edges. With LOD off (3D, "local" mode, community-less graphs) there is no mass band to
+    // hand over FROM and no communities to connect hub-to-hub, so glyphs and real edges own every
+    // stop — exactly the pre-band behaviour, and exactly what `bandsForT(t, 0)` returns.
     const mix = lodOn ? lodMix(t, this.levelCount) : null;
-    const leafA = mix ? mix.leafAlpha : 1;
-    this.leafAlpha = leafA;
+    const glyphA = mix ? mix.glyphAlpha : 1;
+    this.glyphAlpha = glyphA;
+    this.memberEdgeAlpha = mix ? mix.memberAlpha : 1;
+    // The bloom's far-band input (see emitBloom). Assigned HERE, above the leaf gate, so it is
+    // always the CURRENT frame's mix — a frame that returns early out of any pass below still
+    // leaves the atmosphere reading this frame's bands, never the last one's.
+    this.massLevelAlphas = mix ? mix.levelAlphas : NO_MASS_LEVELS;
 
     // ---- LEVEL-DRIVEN COLOR: which (at most two, adjacent) hierarchy levels are "active" this ----
     // ---- frame, and the crossfade weight between them — off the SAME clusterLevelAlphas the -------
@@ -1088,24 +1977,69 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (clusterColorsOn && this.levelCount > 1) {
       const picked = this.activeColorLevels(clusterLevelAlphas(t, this.levelCount));
       colorL0 = picked.L0; colorL1 = picked.L1; colorW1 = picked.w1;
-      // Only build the (RAMP.length² entry) blend palette while an actual crossfade is in progress —
-      // most frames sit settled at one level (w1 ≈ 0) and skip this entirely; nodeColorSlotForFrame
-      // falls back to the plain per-level slot (an exact `this.colors` hex, not an rgb() string) then.
-      if (colorW1 > LOD_ALPHA_EPS) this.buildBlendPalette(colorW1);
+      // Reset the lazy blend memo only while an actual crossfade is in progress — most frames sit
+      // settled at one level (w1 ≈ 0) and skip this entirely; nodeColorSlotForFrame falls back to the
+      // plain per-level slot (an exact community hex, not a blended rgb() string) then. See
+      // blendColorSlot() — entries are computed on demand per (a,b) pair actually requested this
+      // frame, not a full precomputed cross product (the community space is too big for that now).
+      if (colorW1 > LOD_ALPHA_EPS) { this.blendColors.length = 0; this.blendIndex.clear(); }
     }
+    // Handed to emitBloom() so the near band's light carries the SAME hierarchy level's community
+    // colour the glyphs emitting it are drawn in. Assigned unconditionally (the `if` above only
+    // runs on a multi-level graph) so it can never be a stale level left over from a previous
+    // build — on a 0/1-level graph 0 is both the only level and what every consumer ignores.
+    this.frameColorL0 = colorL0;
 
-    // ---- LEAF passes (real notes + real edges) — DEFAULT: always on (see showLodMasses above); ---
-    // ---- skipped only while an OPT-IN coarse LOD stop's masses own the field instead. ------------
-    if (leafA > LOD_ALPHA_EPS) {
-      this.projectNodes(is2d);
+    // ---- LEAF passes (individual note GLYPHS + real member edges) — DEFAULT: always on. ----------
+    // Gated on `glyphAlpha` (= 1 - massAlpha), NOT on the member-edge alpha: glyphs rasterize across
+    // BOTH the mid and the near band. In the mid band this pass runs at full strength while the real
+    // member edges it classifies below are held at ~0 by `memberEdgeAlpha` in strokeEdges() — the
+    // backbone tells the between-group story there instead.
+    if (glyphA > LOD_ALPHA_EPS) {
+      this.projectNodes();
+
+      // ---- THE LOCALITY GATE, part 1: which clusters am I actually looking at? ------------------
+      // Scoped to `lodOn`, i.e. to the band ladder itself, and that scope is the whole justification
+      // for dropping anything: with masses and a real hierarchy in play a between-cluster connection
+      // the gate removes is the story the hub-to-hub BACKBONE tells instead. 3D, "local" mode and
+      // community-less graphs have no backbone to hand the story to, so they keep every edge —
+      // exactly the pre-gate behaviour, and the same scope `intraOn` below already uses.
+      //
+      // Deliberately NOT additionally gated on the near band. It does not need to be: the gate only
+      // ever removes REAL MEMBER EDGES, and `memberEdgeAlpha` holds those at ~0 across the whole mid
+      // band anyway, so the gate is invisible until the near band opens and is already fully applied
+      // on the first frame a member edge is visible. A band condition would buy nothing but a second
+      // threshold to keep in sync — and a pop at whatever `t` it fired.
+      if (lodOn) {
+        for (const nv of this.nodes) {
+          if (!nv.projValid || !inViewport(nv.sx, nv.sy, this.W, this.H, VIEWPORT_LABEL_PAD)) continue;
+          const slot = nv.colorByLevel[Math.min(colorL0, nv.colorByLevel.length - 1)];
+          if (slot >= BLEND_BASE) this.inViewClusters.add(slot);
+        }
+      }
 
       const focus = this.focusSet();
+      // INTRA-CLUSTER MESH gate (CanvasGraphRenderer.ts:1271-1306): a cluster's BODY is its internal
+      // edges, stroked in the cluster's own colour so density reads as mass rather than grey noise.
+      // Drawn at every zoom the GLYPHS are on (mid + near) — in the far band the cluster is a solid
+      // mass, not a dot cloud, so a mesh under it would be exactly the field-crossing noise this
+      // whole pass exists to avoid. Suppressed while a hover or a highlight set owns the colouring,
+      // as in the source: the mesh's tint would fight the dim/accent story.
+      //
+      // Scoped to `lodOn` — i.e. to the band ladder itself (2D, a real hierarchy, masses enabled),
+      // which is the app's default 2D view. 3D keeps its untouched full-detail path (its edges carry
+      // depth-band alpha the flat mesh alpha would fight), and "local" mode stays the deliberately
+      // flat, uncoloured neighbourhood view it already is.
+      this.intraOn = lodOn && this.hoveredId == null && !focus;
+      // Adopted from CanvasGraphRenderer.ts:1225 — per-dimension budget/floor (see the constants).
+      const budget = is2d ? EDGE_BUDGET_2D : EDGE_BUDGET_3D;
+      const floor = is2d ? EDGE_FLOOR_2D : EDGE_FLOOR_3D;
       // Layer 2 — edges. No longer grid characters: each surviving edge is bucketed by the alpha
       // it will be STROKED at (paint()'s strokeEdges() issues the actual `beginPath/moveTo/lineTo/
       // stroke` calls, one batched `stroke()` per bucket, real anti-aliased vector lines beneath the
       // glyph/label passes below). This loop only classifies — see the field decls for the four
       // reused bucket arrays.
-      const keepFrac = this.edges.length > EDGE_BUDGET ? Math.max(EDGE_FLOOR, EDGE_BUDGET / this.edges.length) : 1;
+      const keepFrac = this.edges.length > budget ? Math.max(floor, budget / this.edges.length) : 1;
       for (const e of this.edges) {
         if (e.kr >= keepFrac) continue;
         const { a, b } = e;
@@ -1115,21 +2049,73 @@ export class AsciiGraphRenderer implements GraphRenderer {
         // `onScreen`), so an edge whose far endpoint sits off the field still strokes its on-screen
         // portion instead of being dropped whole — the "edges vanish at deep zoom" fix, ported.
         if (!a.projValid || !b.projValid) continue;
-        this.edgesDrawnFrame++;
-        const hov = this.hoveredId;
-        if (hov != null) {
-          // hover = ONE degree: only edges directly incident to the hovered node light up — strict
-          // INCIDENCE, not `focus` (focusSet() also carries the hovered node's NEIGHBOURS, needed
-          // below for the node dimming/ring pass — using that broader set here spared every edge
-          // between two of the hovered node's neighbours from dimming, a past bug).
-          // CanvasGraphRenderer.ts:847-848.
-          if (a.node.id === hov || b.node.id === hov) { this.edgeAccent.push(e); continue; }
-          this.edgeDim.push(e); continue;
+        // The cluster key at THE DOMINANT COLOUR LEVEL, computed once and read by both the mesh and
+        // the locality gate below — one derivation, so the two cannot drift apart on what "the same
+        // cluster right now" means.
+        const ca = a.colorByLevel[Math.min(colorL0, a.colorByLevel.length - 1)];
+        const cb = b.colorByLevel[Math.min(colorL0, b.colorByLevel.length - 1)];
+        // The mesh's own bucketing, done in this same walk rather than a second pass over `edges`:
+        // an edge whose endpoints share a community AT THE DOMINANT COLOUR LEVEL is the cluster's
+        // own wiring. One that crosses groups is not — the group lines above tell that story.
+        // (CanvasGraphRenderer.ts:1285-1294.) An intra edge is bucketed here AND still classified
+        // below: in the near band it draws twice, tinted texture under the neutral member stroke,
+        // exactly as in the source. Bucketed BEFORE the gate on purpose: the mesh is a mid-AND-near
+        // band tier riding `glyphAlpha`, and the mid band is settled design this task must not touch.
+        if (this.intraOn && ca === cb) {
+          let arr = this.intraBuckets.get(ca);
+          if (!arr) { arr = []; this.intraBuckets.set(ca, arr); }
+          arr.push(e);
         }
+        const hov = this.hoveredId;
+        // hover = ONE degree: only edges directly incident to the hovered node light up — strict
+        // INCIDENCE, not `focus` (focusSet() also carries the hovered node's NEIGHBOURS, needed
+        // below for the node dimming/ring pass — using that broader set here spared every edge
+        // between two of the hovered node's neighbours from dimming, a past bug).
+        // CanvasGraphRenderer.ts:847-848.
+        const incident = hov != null && (a.node.id === hov || b.node.id === hov);
+        const focused = focus != null && (focus.has(a.node.id) || focus.has(b.node.id));
+
+        // ---- THE LOCALITY GATE, part 2: does this edge belong to what is on screen? --------------
+        // The user, at maximum zoom: "the amount of edges from other clusters crossing over is just
+        // too much". Every real edge that survived the budget used to be stroked, so a neighbourhood's
+        // own structure sat under long lines merely PASSING THROUGH from communities off both sides of
+        // the frame. Those lines say nothing a viewer can act on — neither of their ends is visible —
+        // and at this band the hierarchy is fully resolved, so the connection they stand for is the
+        // backbone's story, not theirs.
+        //
+        // An edge draws when BOTH its endpoints' clusters are in view (`inViewClusters`). For an
+        // intra-cluster edge that is one test applied twice, i.e. exactly "its cluster is in view";
+        // for a cross-cluster edge it is the stronger "both of them are". Note what this does NOT
+        // need: a special case for "both endpoints are visible, so never hide it". A visible endpoint
+        // IS a visible member of its own cluster, so that case is already inside the set — see
+        // `inViewClusters` for why that theorem is the reason the predicate is a member COUNT of one
+        // rather than a share.
+        //
+        // Three exemptions, each because nothing else would represent the edge:
+        //  - an endpoint with NO community (`slot < BLEND_BASE`: self, daemon, cron/process). The
+        //    backbone is built from community pairs (buildLevelEdges skips a null path outright), so a
+        //    dropped edge here vanishes with no stand-in anywhere on the field.
+        //  - a hovered-incident edge: hover is the user asking this exact node what it connects to.
+        //    STRICT incidence, not `focused` — `focusSet()` also carries the hovered node's
+        //    NEIGHBOURS, and exempting on that would spare every edge between two of them, which is
+        //    the same over-broad set this loop's dim/accent split already documents as a past bug.
+        //  - an edge touching a persistent HIGHLIGHT set with no hover in play (a search match, a
+        //    daemon-list selection): a deliberate selection the user is holding open, not an
+        //    expansion. `focus` IS `highlightSet` exactly when `hov == null` (see focusSet()).
+        if (lodOn && ca >= BLEND_BASE && cb >= BLEND_BASE && !incident && !(hov == null && focused)
+          && !(this.inViewClusters.has(ca) && this.inViewClusters.has(cb))) {
+          this.edgesTransitingDroppedFrame++;
+          continue;
+        }
+        this.edgesClassifiedFrame++;
+        if (ca === cb) this.edgesIntraVisibleFrame++; else this.edgesCrossVisibleFrame++;
+
+        if (incident) { this.edgeAccent.push(e); continue; }
+        if (hov != null) { this.edgeDim.push(e); continue; }
         if (focus) {
           // persistent cluster highlight (search matches / daemon-list focus, no hover in play): dim
           // only when NEITHER endpoint is in the highlighted set. CanvasGraphRenderer.ts:851.
-          if (!(focus.has(a.node.id) || focus.has(b.node.id))) { this.edgeDim.push(e); continue; }
+          if (!focused) { this.edgeDim.push(e); continue; }
         }
         if (is2d) { this.edgeMain.push(e); continue; }
         this.edgeBands[safeDepthBand((a.dr + b.dr) / 2, EDGE_DEPTH_BANDS)].push(e);
@@ -1137,18 +2123,38 @@ export class AsciiGraphRenderer implements GraphRenderer {
 
       // Layer 3 — nodes. Weight is the glyph (degree ramp, shifted by depth band in 3D), colour is
       // the cluster; the hovered / active node takes the accent.
+      //
+      // DEPTH ARBITRATION (Task 23 / EPITAPH item 2): a cell two 3D nodes collapse onto used to be
+      // owned by whichever was LATER in `this.nodes`' array order, with no regard for which was
+      // actually nearer the camera — so a far node could paint over a near one, and steal its click,
+      // purely by array-index luck. Canvas drew far->near into a `drawOrder` array so a near dot
+      // always painted last, over a far one; this field has no such second pass (every layer writes
+      // its cell buffers in one), so the ordering has to be enforced right here, at the write. `nv.dr`
+      // (0 far..1 near — see projectNodes()) is already known for every node this frame, so no second
+      // projection or sort is needed: just compare against whichever node currently owns the cell and
+      // skip the write when we are NOT at least as near. `>=`, not `>`, so a TIE keeps the existing
+      // (pre-fix) behaviour: in 2D — and any degenerate/flat 3D frame — `dr` is the SAME `1` for
+      // every node (projectNodes()'s `flat` branch), so every comparison ties and the later node in
+      // array order keeps winning, exactly as before this comparison existed; only a genuine depth
+      // DIFFERENCE ever changes the outcome. Cell aggregation itself is untouched — a losing node
+      // still collapses into the winner's ONE mark, it just no longer gets to be the mark. This also
+      // fixes the hit test for free: `pick()` resolves through this SAME `cellNode` buffer
+      // (asciiGrid.ts's `nearestCellNode`), so whichever node's glyph a cell shows is also the one a
+      // click there opens.
       for (let i = 0; i < this.nodes.length; i++) {
         const nv = this.nodes[i];
         if (!nv.onGrid) continue;
         this.notesOnScreenFrame++;
         const idx = nv.row * m.cols + nv.col;
+        const occupant = this.cellNode[idx];
+        if (occupant >= 0 && nv.dr < this.nodes[occupant].dr) continue; // a nearer node already owns this cell
         const id = nv.node.id;
         const hot = id === this.hoveredId || id === this.activeFile || this.searchMatches.has(id);
         let alpha = is2d ? 1 : depthAlpha(nv.dr);
         if (focus && !focus.has(id)) alpha *= DIM_ALPHA;
         if (nv.dim) alpha *= 0.45;
         if (hot) alpha = 1;
-        alpha *= leafA;
+        alpha *= glyphA;
         const glyph = nv.node.kind === "self" ? "@" : nodeGlyph(nv.deg, nv.dr, !is2d, DEPTH_BANDS);
         this.charBuf[idx] = glyph.charCodeAt(0);
         this.layerBuf[idx] = LAYER_NODE;
@@ -1158,14 +2164,44 @@ export class AsciiGraphRenderer implements GraphRenderer {
       }
     }
 
-    // ---- AGGREGATE passes (entities + inter-cluster connectors), active levels only. -----------
+    // ---- FAR band: aggregate entities + their connectors, active levels only. -------------------
     if (mix) {
+      // The cluster-NAME ladder is not the mass ladder: names ride `clusterLevelAlphas ×
+      // clusterLabelAlpha` (layoutLabels) and keep going through the mid band, long after the masses
+      // themselves have handed over. `layoutEntityNames` anchors on the entity's PROJECTED position,
+      // so a level whose name is still being drawn must still be projected even when its mass alpha
+      // is 0 — otherwise the name is placed from a stale screen position several frames old. The
+      // projection is O(clusters) for at most two active levels, so this costs nothing; only
+      // `drawAggregateEdges`/`drawEntityMasses` are gated on the mass weight.
+      const nameLevels = clusterLevelAlphas(t, this.levelCount);
       for (let L = 0; L < this.entityLevels.length; L++) {
         const a = mix.levelAlphas[L] ?? 0;
-        if (a <= LOD_ALPHA_EPS) continue;
+        // The name gate is layoutLabels' own `levelAlphas[L] * clusterLabelAlpha(t) > 0.01`, and
+        // `clusterLabelAlpha <= 1`, so testing the raw level alpha against the same 0.01 is a strict
+        // superset of it — no name can be laid out from an unprojected level.
+        if (a <= LOD_ALPHA_EPS && (nameLevels[L] ?? 0) <= 0.01) continue;
         this.projectEntities(L);
+        if (a <= LOD_ALPHA_EPS) continue;
         this.drawAggregateEdges(L, a);
         this.drawEntityMasses(L, a);
+      }
+    }
+
+    // ---- MID band: the hub-to-hub BACKBONE. ----------------------------------------------------
+    // Gated on the same `glyphA` the leaf pass is, not on `backboneAlpha` alone: the backbone is
+    // anchored on real node views, so it can only be stroked on a frame where projectNodes() ran.
+    // (`backboneAlpha <= glyphAlpha` always — they are two terms of one partition — so this only
+    // ever excludes the sub-epsilon tail, never a visible backbone.)
+    if (mix && glyphA > LOD_ALPHA_EPS && mix.backboneAlpha > LOD_ALPHA_EPS && this.levelPairs.length) {
+      // FILE_LABEL_REVEAL_T, not computeEdgeLevelWeights' own ported default (0.62, Canvas's
+      // constant): ASCII keys node colour, cluster names and the level ladder off 0.75. Left at the
+      // default, the backbone would rewire to the finer grouping about one wheel notch BEFORE
+      // colours and names do — see that function's doc comment.
+      const w = computeEdgeLevelWeights(t, this.levelCount, FILE_LABEL_REVEAL_T);
+      for (let L = 0; L < this.levelPairs.length; L++) {
+        const lw = (w[L] ?? 0) * mix.backboneAlpha;
+        if (lw <= 0.01) continue;
+        this.queueBackbone(L, lw);
       }
     }
 
@@ -1193,89 +2229,229 @@ export class AsciiGraphRenderer implements GraphRenderer {
     return { L0, L1, w1: total > 1e-6 ? a1 / total : 0 };
   }
 
-  /** Rebuild the `BLEND_BASE`-offset per-frame palette: every (L0 slot, L1 slot) pair's RGB, lerped
-   *  by `w1` — RAMP.length² = 25 entries, cheap to redo in full every time it's called (only while a
-   *  crossfade is actually in progress; see the `colorW1` gate in rasterize()). */
-  private buildBlendPalette(w1: number) {
-    const n = RAMP.length;
-    if (this.blendColors.length !== n * n) this.blendColors = new Array(n * n).fill("");
-    for (let a = 0; a < n; a++) {
-      const ca = this.rampRGB[a] ?? [255, 255, 255];
-      for (let b = 0; b < n; b++) {
-        const cb = this.rampRGB[b] ?? [255, 255, 255];
-        const r = Math.round(ca[0] + (cb[0] - ca[0]) * w1);
-        const g = Math.round(ca[1] + (cb[1] - ca[1]) * w1);
-        const bl = Math.round(ca[2] + (cb[2] - ca[2]) * w1);
-        this.blendColors[a * n + b] = `rgb(${r},${g},${bl})`;
-      }
-    }
-  }
-
   /** The colorBuf value for one on-grid node this frame: a node with no hierarchy
    *  (`colorByLevel.length <= 1`) keeps its one fixed slot; settled (non-crossfading, `w1 ≈ 0`)
-   *  frames resolve the plain L0 slot too (an exact `this.colors` hex — see BLEND_BASE's comment
-   *  for why that matters); only an in-progress crossfade actually indexes into the blend palette. */
+   *  frames resolve the plain L0 slot too (an exact community hex — see BLEND_BASE's comment for why
+   *  that matters); only an in-progress crossfade actually asks blendColorSlot() for a blend. `a`/`b`
+   *  here are always `commColors`-range slots (`>= BLEND_BASE`) — `colorByLevel.length > 1` only
+   *  ever comes from the community branch of colorLevelsFor(). */
   private nodeColorSlotForFrame(nv: NodeView, clusterColorsOn: boolean, L0: number, L1: number, w1: number): number {
     const cbl = nv.colorByLevel;
     if (!clusterColorsOn || cbl.length <= 1) return nv.color;
     const a = cbl[Math.min(L0, cbl.length - 1)];
     if (w1 <= LOD_ALPHA_EPS) return a;
     const b = cbl[Math.min(L1, cbl.length - 1)];
-    if (a === b) return a; // same community both sides (or a hash collision) — nothing to blend
-    return BLEND_BASE + a * RAMP.length + b;
+    if (a === b) return a; // same community both sides — nothing to blend
+    return this.blendColorSlot(a, b, w1);
   }
 
-  /** Project one level's entities (2D only — the flat pipeline with rx = ry = 0, i.e. two
-   *  multiplies per entity). O(clusters), allocation-free: scratch lives on the prebuilt views. */
+  /** Lazily-memoized LEVEL-DRIVEN COLOR blend: the RGB lerp between two community colours (`a`, `b`
+   *  — both `commColors`-range colorBuf slots) at crossfade weight `w1`, cached per (a,b) pair for
+   *  THIS FRAME ONLY — rasterize()'s `colorW1` gate clears `blendColors`/`blendIndex` at the top of
+   *  every frame a crossfade is in progress (`w1` itself changes every one of those frames, so a
+   *  memo entry computed against a stale `w1` would freeze the animation partway through if it
+   *  survived past one frame). Replaces the old RAMP.length²=25-entry full precompute: the community
+   *  colour space is no longer a small fixed 5, so this only ever materializes the (a,b) pairs a
+   *  frame actually asks for — bounded by distinct on-grid community transitions this frame, not the
+   *  full cross product. `MAX_BLEND_SLOTS` is a hard ceiling so a pathological community count can't
+   *  overrun `colorBuf`'s Uint16 range; past it, callers get a hard cut (`a`, no blend) instead of an
+   *  out-of-range slot. */
+  private blendColorSlot(a: number, b: number, w1: number): number {
+    const key = a * BLEND_KEY_MUL + b;
+    const cached = this.blendIndex.get(key);
+    if (cached !== undefined) return COMM_BLEND_BASE + cached;
+    if (this.blendColors.length >= MAX_BLEND_SLOTS) return a;
+    const ca = this.commColorsRGB[a - BLEND_BASE] ?? [255, 255, 255];
+    const cb = this.commColorsRGB[b - BLEND_BASE] ?? [255, 255, 255];
+    const r = Math.round(ca[0] + (cb[0] - ca[0]) * w1);
+    const g = Math.round(ca[1] + (cb[1] - ca[1]) * w1);
+    const bl = Math.round(ca[2] + (cb[2] - ca[2]) * w1);
+    const idx = this.blendColors.length;
+    this.blendColors.push(`rgb(${r},${g},${bl})`);
+    this.blendIndex.set(key, idx);
+    return COMM_BLEND_BASE + idx;
+  }
+
+  /**
+   * Project one level's entities — LOD masses only ever draw when `is2d` (`lodOn`'s own gate), so
+   * this was "2D only, rx=ry=0, two multiplies per entity" before the 2D<->3D mode morph. It still
+   * only ever RUNS when `is2d`, but it now shares `cameraFrame()` with `projectNodes()` and blends
+   * each entity's position from its `p3` centroid toward `[wx, wy, 0]` by the frame's flatten
+   * fraction, exactly like a node's `p3`->`p2` blend.
+   *
+   * THIS IS THE FIX for round-1 review's Critical 1: the far band's masses are the ONLY thing
+   * drawn for the entire 500ms of an entering-2D transition in the app's default configuration
+   * (`showLodMasses: true`) — `res` resets to 1 on every flip, so `resolutionT` is 0 the whole
+   * time, and `bandsForT(0, …)` gives `massAlpha = 1` (glyphs are gated OFF at `glyphAlpha <=
+   * LOD_ALPHA_EPS`, see rasterize()). Before this fix, this function read `this.pxPerWorld` /
+   * `this.res` / `ev.wx`/`wy` directly — all of them either mode-current-only or flat 2D
+   * world-space, none of them touched by the morph — so the masses sat at their final 2D position
+   * from the very first frame and the visible field never changed until the transition's internal
+   * state quietly finished underneath a frozen picture. Sharing `cameraFrame()` (rotation, dolly,
+   * blended scale) and blending `p3`->`[wx,wy,0]` the same way glyphs do makes the masses the field
+   * ACTUALLY shows move continuously too, entering AND leaving 2D.
+   *
+   * O(clusters), allocation-free: scratch lives on the prebuilt views (`blendPosition` allocates a
+   * 3-tuple per entity per frame, same as `projectNodes()` already does per node — not new cost of
+   * a different order, this pass was already O(clusters) per frame).
+   */
   private projectEntities(level: number) {
     const m = this.m;
-    const s = this.pxPerWorld * this.res;
-    const tx = this.target[0], ty = this.target[1];
-    // The QUANTIZED pan (see rasterize()/asciiGrid.ts quantizePan) — same world→cell phase the node
-    // projection below uses, so entity masses never wiggle relative to the notes they summarize.
-    const ox = m.padX + (m.cols / 2) * m.cellW + this.panXQ;
-    const oy = m.padY + (m.rows / 2) * m.cellH + this.panYQ;
+    const P = this.P;
+    const { flatten, s, dolly, cyr, syr, cxr, sxr, nearPlane, tx, ty, tz, ox, oy } = this.cameraFrame();
     const capRow = Math.max(1, (m.rows / 7) | 0);
     const capCol = Math.max(2, (m.cols / 7) | 0);
     for (const ev of this.entityLevels[level]) {
-      ev.sx = ox + (ev.wx - tx) * s;
-      ev.sy = oy + (ev.wy - ty) * s;
+      const p = blendPosition(ev.p3, [ev.wx, ev.wy, 0], flatten);
+      const x = (p[0] - tx) * s, y = (p[1] - ty) * s, z = (p[2] - tz) * s;
+      const x1 = x * cyr + z * syr, z1 = -x * syr + z * cyr;
+      const y2 = y * cxr - z1 * sxr, z2 = y * sxr + z1 * cxr;
+      const zc = z2 + dolly;
+      const persp = P / Math.max(1, P - zc);
+      ev.sx = ox + x1 * persp;
+      ev.sy = oy + y2 * persp;
+      // `projValid` — the same near/far guard `projectNodes()` computes as `nv.projValid`. This
+      // USED to be left out on the reasoning that "a transition's dolly is itself 0" (`res` pinned
+      // to 1 by the flip), so there was supposedly no near plane for a mass to approach outside an
+      // in-flight transition. That reasoning is false in general, and this file's own dolly-ramp
+      // test (above) proves it: `cameraFrame()`'s dolly is `cameraDolly(false) * (1 - flatten)`,
+      // which is nonzero and can be substantial for the WHOLE transition the instant a user zooms
+      // while it is running (an ordinary interaction, not a contrived one) — measured driving `sy`
+      // past -100,000px for a mass whose projection crosses the camera plane under that scenario.
+      // Nothing draws wrong TODAY without this guard — a projection that far gone already fails the
+      // plain grid-bounds check below by sheer magnitude, and `emitBloom`'s separate raw read of
+      // `sx`/`sy` is saved by `buildBloom`'s own 0..1 clip — but both of those are incidental
+      // properties of OTHER code, not something this method guarantees, so the guard is added for
+      // the same reason `projectNodes()` has one: correctness should not depend on two unrelated
+      // safety nets downstream happening to agree.
+      const projValid = persp > MIN_PERSP && zc < nearPlane;
       ev.col = Math.round((ev.sx - m.padX) / m.cellW);
       ev.row = Math.round((ev.sy - m.padY) / m.cellH);
       ev.drawnRowR = Math.min(ev.rowR, capRow);
       ev.drawnColR = Math.min(ev.colR, capCol);
       // A mass whose CENTRE is off-grid can still overlap the field by up to its radius.
-      ev.onGrid = ev.col >= -ev.drawnColR && ev.col < m.cols + ev.drawnColR
+      ev.onGrid = projValid && ev.col >= -ev.drawnColR && ev.col < m.cols + ev.drawnColR
         && ev.row >= -ev.drawnRowR && ev.row < m.rows + ev.drawnRowR;
     }
   }
 
-  /** Aggregate edges for one level: ONE connector per community pair summarizing every real link
-   *  between the two member sets. Visual weight = link count → alpha ramp, and the heaviest
-   *  connectors draw DOUBLED (a parallel Bresenham trace one cell off, perpendicular to the
-   *  dominant axis) — char density, never a wider glyph. Counts precomputed at build. */
+  // ---- GROUP LINES: the far band's aggregate connectors + the mid band's hub-to-hub backbone ----
+  // Both are "the lines between the groups at this zoom", so both go through one batched VECTOR
+  // path. They were characters until this task: `traceEdge`'s Bresenham walk wrote one of `-|/\+`
+  // into every cell along the line, and a character is an order of magnitude more ink than a
+  // hairline — at the default 2D view the ~25 connectors between the reference vault's 15 masses
+  // read as a stair-stepped grey scribble crossing the entire field rather than as structure. Same
+  // connectors, same weights, same anchors; anti-aliased 1px strokes beneath the glyph layer, the
+  // same treatment the real member edges already get (see strokeEdges()).
+
+  /** Fetch (or start) the group-line batch for a given alpha/width, so lines sharing a tier cost one
+   *  `stroke()` between them. Alpha is quantized to `GROUP_ALPHA_STEPS`; the key packs both. */
+  private groupBatch(alpha: number, width: number): { alpha: number; width: number; pts: number[] } {
+    // ALPHA is quantized (a continuous per-connector ramp would otherwise be one stroke per line);
+    // WIDTH is not. Width already comes from a tiny discrete set — three backbone weight buckets and
+    // the aggregate connectors' light/heavy pair — so rounding it buys no batching at all and only
+    // costs fidelity: at the mid plateau the buckets' 0.854 / 2.196 / 2.4 were landing on 0.875 /
+    // 2.25 / 2.375, i.e. the ported ramp arriving visibly wrong at every stop.
+    const aq = Math.max(1, Math.min(GROUP_ALPHA_STEPS, Math.round(alpha * GROUP_ALPHA_STEPS)));
+    const key = `${aq}|${width}`;
+    let b = this.groupBatches.get(key);
+    if (!b) { b = { alpha: aq / GROUP_ALPHA_STEPS, width, pts: [] }; this.groupBatches.set(key, b); }
+    return b;
+  }
+
+  /** Cell-centre screen x/y of a grid column/row — group lines terminate on the CELL LATTICE (where
+   *  a mass's or a glyph's ink actually sits), the same rule strokeEdges() uses for member edges. */
+  private cellCX(col: number) { return this.m.padX + col * this.m.cellW + this.m.cellW / 2; }
+  private cellCY(row: number) { return this.m.padY + row * this.m.cellH + this.m.cellH / 2; }
+
+  /** Queue one group-line segment between two CELLS, pulled back from both cell centres by the same
+   *  clearance `strokeEdges()` applies to member edges. Group lines end on ink exactly like member
+   *  edges do — a hub's `@` glyph, a mass's `@` core — and a thin fillText glyph covers almost none
+   *  of its cell, so an untrimmed line runs straight through the endpoint's interior and muddies it.
+   *  That the group tiers were skipping this was an oversight, not a decision. */
+  private pushGroupSeg(batch: { pts: number[] }, aCol: number, aRow: number, bCol: number, bRow: number) {
+    const [ax, ay, bx, by] = trimSegmentForClearance(
+      this.cellCX(aCol), this.cellCY(aRow), this.cellCX(bCol), this.cellCY(bRow), CLEARANCE_CELLS * this.m.cellW,
+    );
+    batch.pts.push(ax, ay, bx, by);
+  }
+
+  /** `zoomScale` for LINE WIDTHS — 1 at fit, rising to `EDGE_W_MAX / EDGE_W_GAIN` (4) at the deepest
+   *  stop. `CanvasGraphRenderer` scaled every line width by its camera's magnification; this field
+   *  has no such scalar (zoom is RESOLUTION — THE LAW: a mark's on-screen size never changes with
+   *  zoom, and vector lines are its one stated exception), so the equivalent is the member-edge width
+   *  ramp `strokeEdges()` already uses, normalized by its own value at fit. Every ported width
+   *  constant (`0.4` member, `0.3` mesh, `0.35 + 0.55·wb` group) then multiplies this and keeps the
+   *  source's exact relative weights at both ends of the ladder. */
+  private lineWidthScale(): number {
+    const t = resolutionT(this.res, this.maxRes);
+    return (EDGE_W_GAIN + (EDGE_W_MAX - EDGE_W_GAIN) * t) / EDGE_W_GAIN;
+  }
+
+  /** Aggregate connectors for one level (FAR band): ONE line per community pair summarizing every
+   *  real link between the two member sets, anchored on the two masses. Visual weight = link count →
+   *  alpha ramp (`aggEdgeWeight`'s log scale, precomputed at build), and the heaviest connectors
+   *  stroke at DOUBLE width — the vector analogue of the parallel Bresenham trace this replaced,
+   *  same intent (density reads as thickness), no longer a second row of characters.
+   *
+   *  No grid clipping: a vector line needs none (the canvas clips at paint time), which is also why
+   *  a connector between two masses whose centres are both off-frame still draws the part crossing
+   *  the field. `clipSegmentToGrid` existed only because `traceEdge`'s guard cap could truncate a
+   *  long Bresenham walk before it reached the visible cells. */
   private drawAggregateEdges(level: number, levelAlpha: number) {
     const lv = this.lodLevels[level];
     const evs = this.entityLevels[level];
     if (!lv) return;
-    const m = this.m;
-    this.edgeColor = C_MUTED;
+    const base = this.edgeBaseAlpha * levelAlpha;
+    const wScale = this.lineWidthScale();
     for (const e of lv.edges) {
       const a = evs[e.a], b = evs[e.b];
-      // Same clip as the real-edge pass (see rasterize()'s edge loop) rather than an all-or-nothing
-      // "at least one endpoint on-grid" gate: a connector between two coarse masses can span a huge
-      // world distance, so tracing its RAW (unclipped) endpoints risked the Bresenham guard-cap
-      // truncating the line before it ever reached the visible field.
-      const clipped = clipSegmentToGrid(a.col, a.row, b.col, b.row, m);
-      if (!clipped) continue;
-      const alpha = EDGE_ALPHA_2D * (AGG_EDGE_ALPHA_MIN + (1 - AGG_EDGE_ALPHA_MIN) * e.w) * levelAlpha;
-      this.edgeAlpha = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
-      traceEdge(clipped.x0, clipped.y0, clipped.x1, clipped.y1, this.putEdge);
-      this.edgesDrawnFrame++;
-      if (e.w >= AGG_EDGE_DOUBLE_W) {
-        if (Math.abs(clipped.x1 - clipped.x0) >= Math.abs(clipped.y1 - clipped.y0))
-          traceEdge(clipped.x0, clipped.y0 + 1, clipped.x1, clipped.y1 + 1, this.putEdge);
-        else traceEdge(clipped.x0 + 1, clipped.y0, clipped.x1 + 1, clipped.y1, this.putEdge);
+      if (!a || !b) continue;
+      // BOTH masses must have ink on the field — the same rule the backbone uses (see queueBackbone,
+      // and `CanvasGraphRenderer.ts:1266` for the group-line convention it comes from) and the same
+      // rule `drawEntityMasses`/`layoutEntityNames` already apply to the mass and its name. A
+      // connector to a mass that isn't drawn is a line to nowhere: it can only read as a stray
+      // diagonal leaving the frame. At fit — the app's default view — every mass is on the grid and
+      // this changes nothing; it matters once the field is panned or stepped in.
+      if (!a.onGrid || !b.onGrid) continue;
+      const alpha = base * (AGG_EDGE_ALPHA_MIN + (1 - AGG_EDGE_ALPHA_MIN) * e.w);
+      if (alpha <= 0.004) continue;
+      const width = (e.w >= AGG_EDGE_DOUBLE_W ? GROUP_W_BASE * 2 : GROUP_W_BASE) * wScale;
+      this.pushGroupSeg(this.groupBatch(alpha, width), a.col, a.row, b.col, b.row);
+    }
+  }
+
+  /** The MID band's hub-to-hub backbone for one hierarchy level: one line per connected pair of that
+   *  level's communities, drawn between the two communities' HUBS (highest-degree members — the same
+   *  anchor rule the cluster names use), with the number of real edges behind it as its weight.
+   *  Pairs come presorted heaviest-first from `buildLevelEdges`, so `pairs[0].count` is the level's
+   *  maximum and `edgeWeightBucketRange` slices the rest against it — heavier group links read
+   *  heavier, bucketed so a level stays a handful of batched strokes rather than one per pair. */
+  private queueBackbone(level: number, weight: number) {
+    const pairs = this.levelPairs[level];
+    if (!pairs || !pairs.length) return;
+    const maxCount = pairs[0].count;
+    const base = this.edgeBaseAlpha * weight;
+    const wScale = this.lineWidthScale();
+    for (let wb = 0; wb < EDGE_WEIGHT_BUCKETS; wb++) {
+      const alpha = base * (GROUP_EDGE_ALPHA_MIN
+        + (1 - GROUP_EDGE_ALPHA_MIN) * ((wb + 0.5) / EDGE_WEIGHT_BUCKETS));
+      if (alpha <= 0.004) continue;
+      const width = Math.max(GROUP_W_MIN, Math.min(GROUP_W_MAX, (GROUP_W_BASE + wb * GROUP_W_STEP) * wScale));
+      const { lo, hi } = edgeWeightBucketRange(wb, maxCount);
+      const batch = this.groupBatch(alpha, width);
+      for (const p of pairs) {
+        if (p.count < lo || p.count >= hi) continue;
+        // BOTH hubs must be ON THE GRID — `CanvasGraphRenderer.ts:1266`'s `if (!p.a.onScreen ||
+        // !p.b.onScreen) continue`, and a DELIBERATE difference from the real member edges a few
+        // lines down, which gate on `projValid` alone so an edge with one endpoint off-frame still
+        // strokes its visible part (the "edges vanish at deep zoom" fix). A member edge with one end
+        // off-screen is a real relationship you can still read; a GROUP line with one end off-screen
+        // is a line to nowhere, and the finest levels have hundreds of them — measured on the
+        // reference vault at 50%, dropping this rule drew ~620 lines fanning off every edge of the
+        // field, which is the field-crossing noise this whole band exists to remove.
+        if (!p.a.onGrid || !p.b.onGrid) continue;
+        this.pushGroupSeg(batch, p.a.col, p.a.row, p.b.col, p.b.row);
       }
     }
   }
@@ -1316,29 +2492,166 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
   }
 
-  /** The copied camera math (CanvasGraphRenderer.project/projectPositions), evaluated inline with
-   *  the per-frame constants hoisted. 2D is the same pipeline with rx = ry = 0 over the flat
-   *  layout, so perspective resolves to 1. No allocation. */
-  private projectNodes(is2d: boolean) {
-    const m = this.m;
-    const s = this.pxPerWorld * this.res;
-    const tx = this.target[0], ty = this.target[1], tz = this.target[2];
-    const rx = is2d ? 0 : this.rx, ry = is2d ? 0 : this.ry;
-    const cyr = Math.cos(ry), syr = Math.sin(ry), cxr = Math.cos(rx), sxr = Math.sin(rx);
+  /**
+   * The 3D camera dolly for the CURRENT resolution stop, in the same px units as `this.P`
+   * (`cameraModel.ts` `dollyForT`, and its header). 0 in 2D — a flat view has nothing to approach.
+   *
+   * ── THE THING THAT IS NOT OBVIOUS, AND THAT EVERYTHING ELSE HERE FOLLOWS FROM ────────────────
+   *
+   * Scaling the world by `k` ABOUT THE TARGET, with the camera held at focal distance `P`, is not
+   * merely "like" a dolly — it IS one, exactly, for every point:
+   *
+   *     k·X · P/(P − k·Z)  ≡  X · P/(P − Z − D)   for all X, Z   ⟺   D = P·(1 − 1/k)
+   *
+   * (cross-multiply: k(P − Z − D) = P − kZ ⟹ kP − kD = P). So `s = pxPerWorld · res` with `zc = z2`
+   * — the code that was here — has ALWAYS been a camera dolly of `P·(1 − 1/res)`, producing exactly
+   * the parallax, near/far separation and cloud-opening a pinned camera cannot produce.
+   * §6's "ASCII pins the camera distance, so it produces almost no parallax" is a reading of the
+   * source, not of the algebra, and it is wrong. Verified against this renderer's own projection:
+   * screen positions agree to the last bit at res 1, 2, 8 and 68.
+   *
+   * Two consequences, and they are the whole design:
+   *
+   *   1. `zc = z2 + dollyForT(t, P)` written NAIVELY on top of the existing world scale does not ADD
+   *      an approach — it applies the approach TWICE, `res × maxZs^t`. At t = 1 that is a ~17×
+   *      overshoot: `z2`'s extent (±3.4·P on the 800×600 fixture) is already many times the 0.985·P
+   *      of near-plane headroom, so the doubled camera pushes essentially everything in front of the
+   *      target through the near plane and the field goes blank. That is the hazard, and its cause
+   *      is double-counting, not an unbudgeted constant.
+   *   2. What ASCII actually lacks is not the dolly but its CEILING. `res` runs to `maxRes`, which is
+   *      graph- and box-derived and routinely exceeds `1/(1 − MAX_ZOOM_FRAC) ≈ 16.7` on a real vault
+   *      — at `res = 68` the implicit dolly is `0.985·P`, i.e. sitting ON the near plane Canvas's
+   *      `onWheel` clamp existed to stay off. That is the regime where the 3D field thins to a
+   *      handful of violently-magnified glyphs. `dollyForT` IS that clamp, carried over.
+   *
+   * ── SO: the dolly is made EXPLICIT and CAPPED ────────────────────────────────────────────────
+   *
+   * `projectNodes` drops `res` from the 3D world scale (`s = pxPerWorld`) and puts the camera back
+   * where the camera belongs: `zc = z2 + dolly`. The magnification the ladder gets is then
+   *
+   *     mag(t) = P/(P − dolly) = min( res , maxZsFor(P)^t )
+   *
+   * — `res` wherever the resolution ladder asks for less than the camera ceiling (in which case this
+   * is the SAME projection as before, term for term, by the identity above), and Canvas's
+   * `MAX_ZOOM_FRAC`-clamped ceiling wherever it asks for more. `P·(1 − 1/res)` below is literally
+   * "the dolly `res` alone would imply": budgeting `zc` against `res` is taking the smaller of the
+   * two, which is why a deep ladder now stops at ~16.7× instead of running onto the singularity.
+   *
+   * THE LAW is untouched — a dolly moves POSITIONS, never a glyph's size — and so is the semantic:
+   * LOD level, label ladder and colour level all key off `resolutionT(res, maxRes)`, which nothing
+   * here touches. The one accepted cost is that on a graph whose ladder is deeper than the camera
+   * ceiling, 3D's 0% stop no longer reaches `DEEPEST_WORLD_PER_CELL` (2D still does): a perspective
+   * camera cannot magnify 68× without standing on its own near plane, and a readable field that
+   * always renders beats an unreadable one that sometimes does not.
+   */
+  private cameraDolly(is2d: boolean): number {
+    if (is2d) return 0;
     const P = this.P;
+    const ceiling = dollyForT(resolutionT(this.res, this.maxRes), P);
+    const wanted = P * (1 - 1 / Math.max(1, this.res));
+    return Math.max(0, Math.min(ceiling, wanted));
+  }
+
+  /**
+   * This frame's BLENDED camera — flatten (0=full 3D, 1=full flat 2D, `this.morphFlatten`), the
+   * derived rotation/perspective terms, the blended world scale, and the blended dolly. Called once
+   * per projection PASS this frame, not memoized once for the whole frame — `projectNodes()` calls
+   * it once, `projectEntities()` once per active level, and `emitBloom()` once more (see its own
+   * comment for why re-deriving there is cheap and exact) — but it is a pure function of frame
+   * state, so every call within one frame returns identical values. THAT agreement across calls is
+   * the correctness requirement: round-1 review found that `projectEntities()` was reading
+   * `this.pxPerWorld`/`this.res` directly with no blend at all, so the LOD masses (the ONLY thing
+   * actually drawn for the entire 500ms of an entering-2D transition in the app's default
+   * configuration — `glyphAlpha` is pinned at 0 the
+   * whole time, since `res` resets to 1 on every flip and the far band owns t=0 outright; see
+   * rasterize()'s `lodOn`/`mix` gate) never moved, so the flip still read as a cut even though this
+   * task's glyph-level morph was correct. Both passes must read the SAME blended camera on a frame
+   * where one of them doesn't even run, so this cannot live inside `projectNodes()` alone.
+   *
+   * `rx`/`ry` are read straight off `this.rx`/`this.ry` — no separate capture or unwind needed here
+   * any more, because tick() now keeps them LIVE for the full duration of any transition (round-1
+   * fix; see tick()'s own comment and `modeMorph`'s field doc for the interruption bug this
+   * replaces). At rest (`this.modeMorph` null) `flatten` is exactly `is2d ? 1 : 0` (set either by
+   * setConfig's `noViewYet` settle or by a just-completed transition's exact final lerp), which
+   * collapses every blended quantity below to the ORIGINAL hard is2d branch, term for term.
+   *
+   * `cameraDolly(false)` is deliberately the "as if fully 3D" value regardless of the current mode:
+   * a flat view's own dolly is always 0, so blending TOWARD it by `flatten` needs no separate
+   * branch. Likewise the world scale blends the 2D box-fit (density, via `res`) and the 3D
+   * radius-fit — neither number is a glyph size, so blending it mid-transition does not touch THE
+   * LAW (font size never changes with zoom). BOTH fits are recomputed via `fitPxPerWorldFor` rather
+   * than read off `this.pxPerWorld` — that field only ever tracks the CURRENT mode's fit (fit()'s
+   * own doc comment), which by the time any frame renders is ALREADY the arrival mode's value
+   * (setConfig calls fit() synchronously on the flip), so reading it for the DEPARTING dimension
+   * here would silently substitute the wrong fit for the entire transition, not just its first
+   * frame.
+   */
+  private cameraFrame(): {
+    flatten: number; s: number; dolly: number;
+    cyr: number; syr: number; cxr: number; sxr: number;
+    camDist: number; nearPlane: number; tx: number; ty: number; tz: number; ox: number; oy: number;
+  } {
+    const P = this.P;
+    const flatten = this.morphFlatten;
+    const rx = this.rx, ry = this.ry;
+    const dolly = this.cameraDolly(false) * (1 - flatten);
+    const s2d = this.fitPxPerWorldFor(true) * this.res, s3d = this.fitPxPerWorldFor(false);
+    const s = lerp(s3d, s2d, flatten);
+    // Distance from the camera to the TARGET plane. The NEAR plane below is a fixed fraction of
+    // THIS, not of the focal length `P`: `persp` is uniformly `P/camDist`× larger once the camera has
+    // dollied in, so a threshold pinned to `P` would tighten by that same factor and start culling
+    // nodes whose screen positions are perfectly finite — silently thinning the field as you
+    // approach, which is the same blank-at-high-zoom failure by a slower route. Rebased this way the
+    // plane sits at the same WORLD distance in front of the target at every dolly, and reduces to the
+    // original `zc < P * 0.985` exactly when `dolly` is 0 (all of 2D, and 3D at fit).
+    //
+    // MIN_PERSP — the FAR cull — is deliberately NOT rebased. Against the code AS IT NOW STANDS it is
+    // a guard rather than a behaviour: it fires only for a node more than 20× the camera distance
+    // BEHIND the target, and a fitted graph's own depth extent is at most `0.42 * boxPx / 0.866 ≈
+    // 0.49 * P` from the centre (fitPxPerWorld's fraction over the FOV's own half-angle), i.e. under
+    // 1·P even with the target moved onto the rim by frameSubset. Un-rebased it needs 20·P and
+    // rebased it needs 20·camDist ≥ 1.2·P — both out of reach now, so rebasing it would be an
+    // untestable change to unreachable code. Left literal.
+    //
+    // BUT it is NOT a no-op against the code as it stood BEFORE the camera change, and the honest
+    // statement is that this is an accepted, unasserted behavioural delta rather than nothing at all.
+    // The old form scaled world Z by `res`, so the cull fired at `Z ≤ −19·P/res` — which is INSIDE a
+    // fitted cloud's ±0.49·P extent once `res > 39`, and this file cites `res = 68` as a realistic
+    // vault value. So on a deep ladder the new form KEEPS far-behind nodes the old form culled. The
+    // direction is more content rather than less, which is why it is accepted; the equivalence test
+    // is scoped to a shallow ladder and structurally cannot show it.
+    const camDist = Math.max(1, P - dolly);
+    const nearPlane = P - camDist * NEAR_PLANE_SLACK;
+    const tx = this.target[0], ty = this.target[1], tz = this.target[2];
+    const cyr = Math.cos(ry), syr = Math.sin(ry), cxr = Math.cos(rx), sxr = Math.sin(rx);
     // The QUANTIZED pan (see rasterize()/asciiGrid.ts quantizePan) — the pan-jitter fix: `panXQ`/
     // `panYQ` are always a whole multiple of the cell size, so the world→cell rounding PHASE below
     // never shifts mid-drag. The leftover sub-cell remainder (`panXFrac`/`panYFrac`) is applied only
-    // as a canvas translate at paint time, never here.
-    const ox = m.padX + (m.cols / 2) * m.cellW + this.panXQ;
-    const oy = m.padY + (m.rows / 2) * m.cellH + this.panYQ;
+    // as a canvas translate at paint time, never here. `originY` also folds in the intro's static
+    // vertical frame offset (see setFrameOffsetY) — a constant px shift, so unlike the drag pan it
+    // cannot re-phase the world→cell rounding mid-interaction and needs no quantization.
+    const ox = this.originX(this.panXQ);
+    const oy = this.originY(this.panYQ);
+    return { flatten, s, dolly, cyr, syr, cxr, sxr, camDist, nearPlane, tx, ty, tz, ox, oy };
+  }
+
+  /** The copied camera math (CanvasGraphRenderer.project/projectPositions), evaluated inline with
+   *  the per-frame constants hoisted. At rest, 2D collapses to rx = ry = 0 over the flat layout, so
+   *  perspective resolves to 1 — but NOT during an entering/leaving-2D morph: `is2d` flips before
+   *  `rx`/`ry` finish lerping to 0 (see cameraFrame()), so persp != 1 for the transition's duration.
+   *  Not allocation-free either — `blendPosition` allocates a 3-tuple per node per frame, same as
+   *  `projectEntities()`. */
+  private projectNodes() {
+    const m = this.m;
+    const P = this.P;
+    const { flatten, s, dolly, cyr, syr, cxr, sxr, nearPlane, tx, ty, tz, ox, oy } = this.cameraFrame();
     let minZ = Infinity, maxZ = -Infinity;
     for (const nv of this.nodes) {
-      const p = is2d ? nv.p2 : nv.p3;
+      const p = blendPosition(nv.p3, nv.p2, flatten);
       const x = (p[0] - tx) * s, y = (p[1] - ty) * s, z = (p[2] - tz) * s;
       const x1 = x * cyr + z * syr, z1 = -x * syr + z * cyr;
       const y2 = y * cxr - z1 * sxr, z2 = y * sxr + z1 * cxr;
-      const zc = z2;                                   // the perspective dolly is 0: zoom is resolution
+      const zc = z2 + dolly;                           // the derived camera approach — see cameraDolly()/cameraFrame()'s camDist
       const persp = P / Math.max(1, P - zc);
       nv.sx = ox + x1 * persp;
       nv.sy = oy + y2 * persp;
@@ -1350,8 +2663,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
       nv.col = col; nv.row = row;
       // `projValid`: the projection is meaningful at all (in front of the camera / past the near
       // clip) — independent of grid bounds, so edges can gate on it alone and then CLIP to the grid
-      // (see rasterize()'s edge loop) instead of requiring both endpoints already on-screen.
-      const projValid = persp > 0.05 && zc < P * 0.985;
+      // (see rasterize()'s edge loop) instead of requiring both endpoints already on-screen. Both
+      // near plane is dolly-relative (see `camDist` above), so it means the same WORLD distance in
+      // front of the target at every stop rather than tightening as the camera comes in.
+      const projValid = persp > MIN_PERSP && zc < nearPlane;
       nv.projValid = projValid;
       nv.onGrid = projValid && col >= 0 && col < m.cols && row >= 0 && row < m.rows;
       if (zc < minZ) minZ = zc;
@@ -1382,6 +2697,34 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *
    * Every tier crossfades (not switches) across its own span, via `alpha` on each LabelDraw.
    */
+  /**
+   * Claim `[col-1, col+span]` on `row` for a label — the ONE place a label takes screen cells.
+   *
+   * Two things happen here, and the second is Task 21's other half. `labelOccupied` keeps the next
+   * label off these cells (the "soup" rule). Blanking `charBuf` keeps the FIELD off them: the row
+   * loop in paint() draws only non-zero cells, so a name is never read through the glyphs behind it.
+   *
+   * That job used to be done at paint time, by filling an opaque ground rect over the label's band —
+   * which also erased every EDGE crossing that band, and is what the user saw as the field
+   * "splitting" (see paint()'s label loop). Suppressing the glyphs at the source instead means the
+   * plate is not needed for them at all, so the only thing left to separate a name from is the
+   * vector line work — and that is what the per-glyph halo does, without covering a band.
+   *
+   * Safe to do here because `layoutLabels` is the LAST pass in rasterize(): `charBuf` is final by the
+   * time a label claims anything, so a blanked cell can never be re-filled later in the same frame.
+   * The hit test reads `cellNode`, not `charBuf`, so a node under a name stays hoverable and
+   * clickable exactly as it was when the plate covered its glyph.
+   */
+  private reserveLabelCells(col: number, span: number, row: number) {
+    const m = this.m;
+    for (let c = col - 1; c <= col + span; c++) {
+      if (c < 0 || c >= m.cols) continue;
+      const i = row * m.cols + c;
+      this.labelOccupied[i] = 1;
+      this.charBuf[i] = 0;
+    }
+  }
+
   private layoutLabels(is2d: boolean) {
     this.labels.length = 0;
     if (this.cfg.showGraphLabels === false) return;
@@ -1401,16 +2744,32 @@ export class AsciiGraphRenderer implements GraphRenderer {
       }
     }
 
-    // At coarse LOD stops the leaf raster passes did not run — there are no note glyphs on the
-    // field for a file label (forced or not) to point at, so the file-label pass is skipped
-    // entirely (which is also what keeps a coarse frame O(clusters), not O(nodes log nodes)).
-    if (this.lodOn && this.leafAlpha <= LOD_ALPHA_EPS) return;
+    // In the FAR band the leaf raster pass did not run — there are no note glyphs on the field for a
+    // file label (forced or not) to point at, so the file-label pass is skipped entirely (which is
+    // also what keeps a far-band frame O(clusters), not O(nodes log nodes)). The gate is the GLYPH
+    // alpha, the same one rasterize()'s leaf pass uses — not the member-edge alpha, which is still 0
+    // through the whole mid band where glyphs (and therefore label anchors) very much exist.
+    if (this.lodOn && this.glyphAlpha <= LOD_ALPHA_EPS) return;
 
     // Reused scratch array — layoutLabels runs every frame, so it must not allocate one per frame.
+    // Candidate gate is `inViewport` (the actual box + 40px), not merely `onGrid`'s exact cell
+    // bounds — the label budget must be spent on what the user can actually see this frame, not
+    // ranked by a global (possibly off-frame) criterion first (see clusterVisual.ts inViewport's
+    // doc: "otherwise ... zooming in used to surface no new names"). `projValid` is ASCII's
+    // equivalent of the source's own on-screen/depth-cull flag, ANDed in per that function's contract.
     const ordered = this.labelScratch;
     ordered.length = 0;
-    for (const nv of this.nodes) if (nv.onGrid) ordered.push(nv);
-    const budget = fileLabelBudget(t, ordered.length);
+    for (const nv of this.nodes) {
+      if (nv.projValid && inViewport(nv.sx, nv.sy, this.W, this.H, VIEWPORT_LABEL_PAD)) ordered.push(nv);
+    }
+    // ALL-LABELS MODE (GraphConfig.labelEveryNode — see the seam's doc for why the old
+    // `graphLabelHubCount: 9999` sentinel never could work). Both zoom-driven gates come off: the
+    // BUDGET opens to every candidate, and the crossfade ALPHA is pinned to 1. Both are load-bearing
+    // and neither implies the other — `fileLabelBudget` and `fileLabelAlpha` are separate curves
+    // that are BOTH zero at/below FILE_LABEL_REVEAL_T (0.75), i.e. across the whole range a diagram
+    // opened at fit actually sits in, so dropping only one of them still shows nothing.
+    const everyNode = this.cfg.labelEveryNode === true;
+    const budget = everyNode ? ordered.length : fileLabelBudget(t, ordered.length);
 
     const forced = (nv: NodeView) => {
       const id = nv.node.id;
@@ -1420,6 +2779,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
     };
     const rank = (nv: NodeView) => (forced(nv) ? 1e9 : this.alwaysOn.has(nv.node.id) ? 1e6 + nv.deg : nv.deg + nv.dr);
     ordered.sort((a, b) => rank(b) - rank(a));
+
+    /** Is any cell of the [col-1, col+len] span on `row` already claimed by an earlier label? */
+    const taken = (col: number, len: number, row: number) => {
+      for (let c = col - 1; c <= col + len; c++) {
+        if (c < 0 || c >= m.cols) continue;
+        if (this.labelOccupied[row * m.cols + c]) return true;
+      }
+      return false;
+    };
 
     let drawn = 0;
     for (const nv of ordered) {
@@ -1432,56 +2800,115 @@ export class AsciiGraphRenderer implements GraphRenderer {
       if (col < 0) continue;
       const row = nv.row;
       if (row < 0 || row >= m.rows) continue;
-      let free = true;
-      for (let c = col - 1; c <= col + len && free; c++) {
-        if (c < 0 || c >= m.cols) continue;
-        if (this.labelOccupied[row * m.cols + c]) free = false;
+      let free = !taken(col, len, row);
+      // ALL-LABELS mode retries the OTHER side of the node before giving a label up — a diagram's
+      // names are its content, so "blocked on the right" should not silently unname a box while the
+      // space to its left is empty. The knowledge graph deliberately does NOT do this: there a
+      // dropped label is the budget doing its job, and a second placement attempt per candidate
+      // would spend the budget on whichever labels happen to be contested.
+      if (!free && everyNode) {
+        const alt = col === nv.col + 2 ? nv.col - 2 - len : nv.col + 2;
+        if (alt >= 0 && alt + len <= m.cols && !taken(alt, len, row)) { col = alt; free = true; }
       }
-      if (!free && !force) continue;
-      for (let c = col - 1; c <= col + len; c++) {
-        if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
-      }
+      if (!free && !force && !everyNode) continue;
+      this.reserveLabelCells(col, len, row);
       const accent = nv.node.id === this.activeFile || nv.node.id === this.hoveredId || this.searchMatches.has(nv.node.id);
+      const colorSlot = accent ? C_ACCENT : is2d ? C_MUTED : nv.dr > 0.55 ? C_MUTED : C_FAINT;
       this.labels.push({
-        text, col, row, color: accent ? C_ACCENT : is2d ? C_MUTED : nv.dr > 0.55 ? C_MUTED : C_FAINT,
-        accent, alpha: force ? 1 : fAlpha, widthCells: len,
+        text, col, row, color: this.resolveFillColor(colorSlot),
+        accent, alpha: force || everyNode ? 1 : fAlpha, widthCells: len,
       });
       drawn++;
     }
   }
 
   /** Cluster-name pass for ONE hierarchy `level` (0 = coarsest): one label per that level's
-   *  community, centred on the average grid cell of its currently-on-grid members (so it works in
-   *  2D and follows the 3D orbit alike), reserved first so file labels — and any OTHER level's
-   *  names drawn the same frame during a level-to-level crossfade — never draw over each other.
-   *  Larger communities (more on-grid members) claim contested cells first — same greedy-by-worth
-   *  idea as the file-label loop, just ranked by member count instead of renderedPx. Colour is the
-   *  level's own community ramp colour: at the FINEST level this is deliberately the exact same key
-   *  `colorSlot()` uses for the nodes themselves (so a cluster name matches the colour of the nodes
-   *  it names); coarser levels get a level-scoped key so a super-cluster's name doesn't just
-   *  coincidentally borrow one of its children's colours. */
+   *  community, ANCHORED ON ITS HUB (pickHubAnchor — clusterVisual.ts), never on a member centroid —
+   *  a vault's communities are hub-and-spoke and sprawling, so a centroid routinely lands in empty
+   *  space (the failure this replaces; see clusterVisual.ts's module doc). The hub comes from
+   *  `clusterHubByLevel`, precomputed ONCE per structural rebuild over the WHOLE community (not
+   *  filtered to what's on screen) — so the anchor never jumps as members pan in and out of frame.
+   *  There is exactly ONE anchor rule here, unconditionally: no second, screen-derived anchor to
+   *  switch to, because switching is the thing that cannot be made smooth (see below).
+   *
+   *  **The edge clamp is CONDITIONAL — this is the load-bearing subtlety.** The col clamp below
+   *  (`col < 0` / `col + wCells > m.cols`) exists for exactly one job: stop an ON-SCREEN label from
+   *  running off the grid. Applied unconditionally it also does something illegitimate — fed an
+   *  anchor that is itself off the grid, it PARKS the label at the edge column, a stationary name the
+   *  field visibly slides out from under while the user keeps panning, captioning whatever happens to
+   *  drift under it. So the clamp only fires while the ANCHOR's own column is on the grid; past that
+   *  the label is placed at its raw hub column and, once its cells are entirely outside the grid,
+   *  simply isn't drawn. That is what Canvas does (`drawClusterNames` draws at the hub's raw x with
+   *  no clamp, letting the canvas clip), and it matches how `row` is ALREADY handled six lines down —
+   *  an off-grid row `continue`s rather than clamping. Columns now behave the same way rows always
+   *  did.
+   *
+   *  **Accepted cost, stated plainly:** a community whose hub has panned off-frame loses its name
+   *  until the hub comes back, even while its members are still on screen. That is a real regression
+   *  against the pre-hub-anchor centroid behaviour. It is deliberate. The alternative — falling back
+   *  to the visible members' centroid while the hub is away — was measured and is worse: the hub and
+   *  the centroid are BY CONSTRUCTION far apart (that is the entire premise of hub-anchoring, and
+   *  AsciiGraphRenderer.test.ts's hub-anchor test asserts `|label − centroid| > 10` on purpose), so
+   *  the switch between them teleports the label ~99 columns of a 124-column field in one frame; and
+   *  while the hub is away the centroid itself jitters backwards against the pan as members cross the
+   *  viewport pad, which is precisely the per-frame instability hub-anchoring exists to eliminate. A
+   *  quiet, honest omission beats a teleport and beats a frozen label captioning the wrong region.
+   *  (The app's DEFAULT 2D view is unaffected either way — it uses `layoutEntityNames`, the LOD path
+   *  below, not this one. This path is 3D, "local" mode, and community-less graphs.)
+   *
+   *  Reserved first so file labels — and any OTHER level's names drawn the same frame during a
+   *  level-to-level crossfade — never draw over each other. Larger communities (more VISIBLE members
+   *  this frame) claim contested cells first — same greedy-by-worth idea as the file-label loop.
+   *
+   *  **Only communities on the level's NAME ROSTER are candidates at all** (`namableByLevel` — read
+   *  that field's doc; it is the whole of Task 15). Without it this pass named every community it
+   *  found on screen while the 2D pass could only name the ones `buildLodIndex` had built, so the
+   *  same graph at the same stop showed 15 cluster names in 2D and 56 in 3D — the extra 41 being
+   *  one- and two-note communities named after a single note, i.e. the "text soup". The gate is
+   *  applied during aggregation, before `clusterExtent`/hub lookup, so a filtered community costs
+   *  nothing per frame.
+   *
+   *  The name lifts above the hub's cell by `clusterLabelLift(clusterExtent(...))` — a constant
+   *  minimum plus the community's own on-screen reach, so a big mass's name clears the whole mass.
+   *  `clusterExtent` — UNLIKE the hub — takes only this frame's VIEWPORT-VISIBLE members: it measures
+   *  how far the label has to reach across what the user can actually see right now, which is a
+   *  different member set from the whole-graph one the hub uses on purpose (see clusterHubByLevel's
+   *  field doc and clusterVisual.ts pickHubAnchor's call-site contract — the two must NOT share one
+   *  materialized member array, or the anchor starts recomputing per frame and visibly drifts). */
   private layoutClusterNames(level: number, alpha: number) {
     const m = this.m;
     const names = this.communityNamesByLevel[level];
-    if (!names) return;
+    const hubs = this.clusterHubByLevel[level];
+    if (!names || !hubs) return;
+    // The level's NAME ROSTER — see this method's doc and `namableByLevel`. Fail-closed: a level
+    // with no roster names nothing, rather than falling back to naming everything.
+    const namable = this.namableByLevel[level] ?? EMPTY_COMMUNITY_SET;
     const agg = this.clusterAgg;
     agg.clear();
     for (const nv of this.nodes) {
-      if (!nv.onGrid) continue;
-      const c = nodePath(nv.node)?.[level];
-      if (c == null) continue;
-      let g = agg.get(c);
-      if (!g) { g = { colSum: 0, rowSum: 0, n: 0 }; agg.set(c, g); }
-      g.colSum += nv.col; g.rowSum += nv.row; g.n++;
+      if (!nv.projValid || !inViewport(nv.sx, nv.sy, this.W, this.H, VIEWPORT_LABEL_PAD)) continue;
+      const path = pathOf(nv.node);
+      if (!path) continue;
+      const c = path[Math.min(level, path.length - 1)];
+      if (!namable.has(c)) continue;
+      let arr = agg.get(c);
+      if (!arr) { arr = []; agg.set(c, arr); }
+      arr.push(nv);
     }
     if (agg.size === 0) return;
 
-    const isFinest = level === this.levelCount - 1;
-    const items = [...agg.entries()].sort((a, b) => b[1].n - a[1].n || a[0] - b[0]);
-    for (const [community, g] of items) {
-      const row = Math.round(g.rowSum / g.n);
+    const items = [...agg.entries()].sort((a, b) => b[1].length - a[1].length || a[0] - b[0]);
+    for (const [community, members] of items) {
+      const hubId = hubs.get(community);
+      const hub = hubId != null ? this.byId.get(hubId) : undefined;
+      if (!hub || !hub.projValid) continue; // no valid whole-graph anchor this frame
+      const col0 = Math.round((hub.sx - m.padX) / m.cellW);
+      const row0 = Math.round((hub.sy - m.padY) / m.cellH);
+      const extent = clusterExtent({ sx: hub.sx, sy: hub.sy }, members);
+      const liftRows = Math.round(clusterLabelLift(extent) / m.cellH);
+      const row = row0 - liftRows; // "up" = decreasing row, off the TOP of the hub's cell
       if (row < 0 || row >= m.rows) continue;
-      const text = clusterLabelText(names.get(community) ?? `cluster ${community}`);
+      const text = trimDanglingWord(clusterLabelText(names.get(community) ?? `cluster ${community}`));
       const len = text.length;
       // The tracked (ctx.letterSpacing) draw is wider on screen than `len` cells — reserve the REAL
       // drawn width (eyebrowWidthCells), not `len`, so a neighbouring label can never be painted
@@ -1489,21 +2916,30 @@ export class AsciiGraphRenderer implements GraphRenderer {
       // free-space check below share the exact same [col-1, col+wCells] bounds — that identity is
       // what makes overlap impossible, not just unlikely.
       const wCells = eyebrowWidthCells(len, CLUSTER_LABEL_TRACKING_EM, this.fontPx, this.cellW);
-      const col0 = Math.round(g.colSum / g.n);
       let col = col0 - Math.floor(wCells / 2); // centre by DRAWN width, not raw char count
-      if (col < 0) col = 0;
-      if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
+      // Keep an ON-SCREEN name inside the grid — but ONLY while the anchor's own column is on the
+      // grid. `col0` is the test, deliberately, NOT a pixel-space `inViewport(hub.sx, …)`: the clamp
+      // it guards is column-space arithmetic, and gating column-space arithmetic on a pixel-space
+      // predicate leaves a band (a padded viewport is WIDER than the grid) where the guard reads
+      // "on screen" while the clamp is already parking the label — the residual freeze that made the
+      // previous attempt at this fix fail review. One space, one test. Past the edge the label keeps
+      // its raw hub column and clips, exactly like Canvas. See this method's doc for the cost.
+      if (col0 >= 0 && col0 < m.cols) {
+        if (col < 0) col = 0;
+        if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
+      }
+      // Entirely outside the grid — don't draw it at all (and don't run the occupancy loops over a
+      // range with no on-grid cells in it). A partially-overlapping label still draws, clipped, so
+      // the name slides off the edge continuously instead of vanishing the instant it touches it.
+      if (col + wCells <= 0 || col >= m.cols) continue;
       let free = true;
       for (let c = col - 1; c <= col + wCells && free; c++) {
         if (c < 0 || c >= m.cols) continue;
         if (this.labelOccupied[row * m.cols + c]) free = false;
       }
       if (!free) continue;
-      for (let c = col - 1; c <= col + wCells; c++) {
-        if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
-      }
-      const key = isFinest ? "community:" + community : `community:L${level}:${community}`;
-      const color = RAMP[hashKey(key) % RAMP.length];
+      this.reserveLabelCells(col, wCells, row);
+      const color = this.communityColorsByLevel[level]?.get(community) ?? "#888";
       this.labels.push({ text, col, row, color, accent: false, alpha, eyebrow: true, widthCells: wCells });
     }
   }
@@ -1511,14 +2947,29 @@ export class AsciiGraphRenderer implements GraphRenderer {
   /** LOD variant of the cluster-name pass: one eyebrow label per ON-GRID entity of `level`,
    *  centred under its mass (falling back to above it at the bottom edge). Entities come presorted
    *  largest-first from buildLodIndex, so contested cells go to the biggest community — the same
-   *  greedy-by-worth rule as everywhere else. O(clusters), not O(nodes). */
+   *  greedy-by-worth rule as everywhere else. O(clusters), not O(nodes).
+   *
+   *  **The edge clamp is CONDITIONAL here for exactly the reason it is in `layoutClusterNames` —
+   *  and this is the path that matters most, because it is the one the app's DEFAULT 2D view uses.**
+   *  `ev.onGrid` (projectEntities) admits a mass whose CENTRE is up to `drawnColR` columns OFF the
+   *  grid, since a big mass can still overlap the field from out there. Clamped unconditionally, a
+   *  name anchored in that band parks at the edge column and sits there while the user keeps panning
+   *  — a stationary caption over whatever drifts under it, the same defect the hub-anchored path was
+   *  fixed for, just bounded by `drawnColR` instead of unbounded. So the clamp fires only while the
+   *  ANCHOR's own column is on the grid; past that the name keeps its raw centred column and clips,
+   *  and once its cells are entirely outside the grid it simply isn't drawn — which is how `row` a
+   *  few lines up has always behaved. */
   private layoutEntityNames(level: number, alpha: number) {
     const m = this.m;
     const evs = this.entityLevels[level];
     if (!evs) return;
     for (const ev of evs) {
       if (!ev.onGrid) continue;
-      const text = clusterLabelText(ev.name);
+      // Same treatment as the non-LOD cluster-name pass above. Canvas applies trimDanglingWord at
+      // its ONE name site; ASCII has TWO (that pass and this one), so applying it at only one of
+      // them would leave the LOD mass names — the ones the app's DEFAULT 2D view actually shows —
+      // keeping a trailing "and"/"of"/"the".
+      const text = trimDanglingWord(clusterLabelText(ev.name));
       const len = text.length;
       let row = ev.row + ev.drawnRowR + 1;
       if (row >= m.rows) row = ev.row - ev.drawnRowR - 1;
@@ -1527,39 +2978,56 @@ export class AsciiGraphRenderer implements GraphRenderer {
       // layoutClusterNames' comment. Reservation and the free-space check share identical bounds.
       const wCells = eyebrowWidthCells(len, CLUSTER_LABEL_TRACKING_EM, this.fontPx, this.cellW);
       let col = ev.col - Math.floor(wCells / 2); // centre by DRAWN width, not raw char count
-      if (col < 0) col = 0;
-      if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
+      // ON-GRID anchors only — see this method's doc. `ev.col` is the test, in column space, for the
+      // same reason `layoutClusterNames` tests `col0` rather than a pixel-space predicate: gating
+      // column-space arithmetic on anything else leaves a band where the guard reads "on screen"
+      // while the clamp is already parking the label.
+      if (ev.col >= 0 && ev.col < m.cols) {
+        if (col < 0) col = 0;
+        if (col + wCells > m.cols) col = Math.max(0, m.cols - wCells);
+      }
+      // Entirely outside the grid — don't draw it, and don't run the occupancy loops over a range
+      // with no on-grid cells. A partially-overlapping name still draws, clipped, so it slides off
+      // the edge continuously instead of vanishing the instant it touches it.
+      if (col + wCells <= 0 || col >= m.cols) continue;
       let free = true;
       for (let c = col - 1; c <= col + wCells && free; c++) {
         if (c < 0 || c >= m.cols) continue;
         if (this.labelOccupied[row * m.cols + c]) free = false;
       }
       if (!free) continue;
-      for (let c = col - 1; c <= col + wCells; c++) {
-        if (c >= 0 && c < m.cols) this.labelOccupied[row * m.cols + c] = 1;
-      }
-      this.labels.push({ text, col, row, color: ev.color, accent: false, alpha, eyebrow: true, widthCells: wCells });
+      this.reserveLabelCells(col, wCells, row);
+      this.labels.push({
+        text, col, row, color: this.resolveFillColor(ev.color), accent: false, alpha, eyebrow: true, widthCells: wCells,
+      });
     }
   }
 
   // ---- painting ------------------------------------------------------------
 
-  /** `colorBuf`'s sentinel scheme: a plain slot (0..8) resolves through `this.colors`/
-   *  COLOR_FALLBACK as always; `BLEND_BASE` and above indexes the per-frame LEVEL-DRIVEN COLOR
-   *  blend palette (buildBlendPalette) instead. */
+  /** `colorBuf`'s sentinel scheme: a plain slot (0..9) resolves through `this.colors`/
+   *  COLOR_FALLBACK as always; `BLEND_BASE..<COMM_BLEND_BASE` indexes a resolved per-(level,
+   *  community) colour (`commColors`, buildColorSlots); `COMM_BLEND_BASE` and above indexes the
+   *  per-frame, lazily-memoized LEVEL-DRIVEN COLOR blend cache (blendColorSlot) instead. */
   private resolveFillColor(slot: number): string {
-    if (slot >= BLEND_BASE) return this.blendColors[slot - BLEND_BASE] ?? "#888";
+    if (slot >= COMM_BLEND_BASE) return this.blendColors[slot - COMM_BLEND_BASE] ?? "#888";
+    if (slot >= BLEND_BASE) return this.commColors[slot - BLEND_BASE] ?? "#888";
     return this.colors[slot] ?? COLOR_FALLBACK[slot] ?? "#888";
   }
 
-  /** Vector-stroke every surviving edge BENEATH the glyph/label passes — real anti-aliased 1px
-   *  lines, the pre-redesign CanvasGraphRenderer's edge appearance (width/alpha falloff, colour
-   *  source, batching) ported onto this field's own camera/culling instead of rasterized as grid
-   *  characters. rasterize()'s edge loop already sorted survivors into the four bucket arrays below
-   *  (by the alpha they'll be stroked at); this only issues the batched `stroke()` calls — at most 9
-   *  a frame (dim + flat-2D + 6 depth bands + accent), each one `beginPath()` + its bucket's
-   *  `moveTo`/`lineTo` pairs + one `stroke()` — the same "one path per alpha tier" batching the old
-   *  renderer used to keep thousands of edges cheap.
+  /** Vector-stroke every LINE the field draws, BENEATH the glyph/label passes, in three tiers —
+   *  group lines (far-band aggregate connectors + mid-band backbone), then the colour-tinted
+   *  intra-cluster mesh, then the real member edges. Real anti-aliased 1px lines, the pre-redesign
+   *  CanvasGraphRenderer's edge appearance (width/alpha falloff, colour source, batching) ported onto
+   *  this field's own camera/culling instead of rasterized as grid characters. rasterize() already
+   *  sorted survivors into the bucket arrays below (by the alpha they'll be stroked at); this only
+   *  issues the batched `stroke()` calls — each one `beginPath()` + its bucket's `moveTo`/`lineTo`
+   *  pairs + one `stroke()` — the same "one path per alpha tier" batching the old renderer used to
+   *  keep thousands of edges cheap.
+   *
+   *  Each tier is independently gated, and the three gates are DIFFERENT numbers: group lines ride
+   *  their own per-level weights × `backboneAlpha`, the mesh rides the glyph gate, and the member
+   *  passes ride `memberEdgeAlpha`. See backbone.ts's wiring recipe for why they cannot be one.
    *
    *  Endpoints snap to the node's CELL CENTRE, not the raw sub-pixel projection (`nv.sx`/`nv.sy`):
    *  glyphs are drawn at the cell lattice (see the row loop below), so the cell centre is exactly
@@ -1569,11 +3037,62 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private strokeEdges() {
     const ctx = this.ctx;
     if (!ctx) return;
-    const base = this.edgeBaseAlpha * this.leafAlpha;
-    if (base <= 0.004) return;
     const m = this.m;
     const cx = (nv: NodeView) => m.padX + nv.col * m.cellW + m.cellW / 2;
     const cy = (nv: NodeView) => m.padY + nv.row * m.cellH + m.cellH / 2;
+    const edgeHexBase = this.colors[C_EDGE] ?? COLOR_FALLBACK[C_EDGE];
+    // 1. GROUP LINES — the far band's aggregate connectors and the mid band's hub-to-hub backbone,
+    //    already batched by (alpha, width) in rasterize(). Beneath everything else: they are the
+    //    coarse story, and a member edge or a glyph on top of one should win.
+    ctx.strokeStyle = edgeHexBase;
+    for (const b of this.groupBatches.values()) {
+      if (!b.pts.length) continue;
+      ctx.globalAlpha = Math.min(1, b.alpha);
+      ctx.lineWidth = b.width;
+      ctx.beginPath();
+      for (let i = 0; i + 3 < b.pts.length; i += 4) {
+        ctx.moveTo(b.pts[i], b.pts[i + 1]);
+        ctx.lineTo(b.pts[i + 2], b.pts[i + 3]);
+        this.edgesStrokedFrame++;
+      }
+      ctx.stroke();
+    }
+    // 2. INTRA-CLUSTER MESH — every intra-community edge in the CLUSTER'S OWN colour, one batched
+    //    stroke per colour. This is the cluster's body: without it a group of glyphs is a dot cloud,
+    //    with it the weave itself reads as mass. It draws wherever glyphs do — across BOTH the mid
+    //    and near bands, unlike the member edges below — and it FADES IN WITH THEM.
+    //
+    //    That `× glyphAlpha` is load-bearing, not polish. `intraOn` only asks whether the leaf pass
+    //    ran at all, and its threshold (LOD_ALPHA_EPS) is crossed at t ≈ 0.330, where massAlpha is
+    //    still 0.985. Stroked at a flat INTRA_EDGE_ALPHA from that instant, the mesh is a
+    //    full-strength colour-tinted web laid over near-solid territory masses with no visible
+    //    glyphs anywhere — a cobweb across the field, which is precisely the noise the far band
+    //    exists NOT to have, and it persists the whole way across [0.33, 0.46].
+    const meshA = INTRA_EDGE_ALPHA * this.edgeBaseAlpha * this.glyphAlpha;
+    if (this.intraOn && meshA > 0.004) {
+      // CanvasGraphRenderer.ts:1298 — `max(0.12, min(1.1, 0.3 * zoomScale))`: deliberately THINNER
+      // than a member edge (0.4) with a lower ceiling, so the weave reads as texture under the graph
+      // rather than competing with it.
+      const meshW = Math.max(MESH_W_MIN, Math.min(MESH_W_MAX, MESH_W_BASE * this.lineWidthScale()));
+      for (const [slot, list] of this.intraBuckets) {
+        if (!list.length) continue;
+        ctx.strokeStyle = this.resolveFillColor(slot);
+        ctx.globalAlpha = meshA;
+        ctx.lineWidth = meshW;
+        ctx.beginPath();
+        for (const e of list) {
+          const [ax, ay, bx, by] = trimSegmentForClearance(cx(e.a), cy(e.a), cx(e.b), cy(e.b), CLEARANCE_CELLS * m.cellW);
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
+          this.edgesStrokedFrame++;
+        }
+        ctx.stroke();
+      }
+    }
+    // 3. REAL MEMBER EDGES — `memberEdgeAlpha` (the NEAR band), never the glyph gate: across the mid
+    //    band glyphs are fully on while these are fully off, the backbone standing in for them.
+    const base = this.edgeBaseAlpha * this.memberEdgeAlpha;
+    if (base <= 0.004) { ctx.globalAlpha = 1; return; }
     // Width follows the RESOLUTION stop (0=fit .. 1=deepest), not `this.res` raw — `res` ranges
     // 1..maxRes and real vaults run maxRes into the teens/twenties, so gating on it directly saturated
     // the 1.6 ceiling almost immediately (a past bug: `EDGE_W_GAIN * this.res` clamped to 1.6 at
@@ -1584,7 +3103,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // (t=0), EDGE_W_MAX (1.6) at the deepest stop (t=1) — see AsciiGraphRenderer.test.ts "edge width".
     const t = resolutionT(this.res, this.maxRes);
     ctx.lineWidth = Math.max(EDGE_W_MIN, Math.min(EDGE_W_MAX, EDGE_W_GAIN + (EDGE_W_MAX - EDGE_W_GAIN) * t));
-    const edgeHex = this.colors[C_EDGE] ?? COLOR_FALLBACK[C_EDGE];
+    const edgeHex = edgeHexBase;
     // Hovered-incident edges stroke in --accent, not the original's neutral-at-2.2x-alpha
     // (CanvasGraphRenderer.ts:848) — an INTENTIONAL, user-chosen deviation (the user was asked and
     // chose to keep the accent tint for hover). Do not "restore fidelity" here.
@@ -1595,7 +3114,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // untrimmed line would muddy the glyph's interior/counters. Pull each endpoint back along the
     // segment instead. Segments shorter than twice the clearance are drawn UNTRIMMED rather than
     // inverted — trimming a near-coincident pair would flip the direction and draw backwards.
-    const CLEARANCE = 0.55 * m.cellW;
+    const CLEARANCE = CLEARANCE_CELLS * m.cellW;
     const pass = (list: EdgeView[], alpha: number, color: string) => {
       if (!list.length || alpha <= 0.004) return;
       ctx.strokeStyle = color;
@@ -1605,6 +3124,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         const [ax, ay, bx, by] = trimSegmentForClearance(cx(e.a), cy(e.a), cx(e.b), cy(e.b), CLEARANCE);
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
+        this.edgesStrokedFrame++;
       }
       ctx.stroke();
     };
@@ -1616,8 +3136,8 @@ export class AsciiGraphRenderer implements GraphRenderer {
       const fade = EDGE_DEPTH_MIN + (1 - EDGE_DEPTH_MIN) * Math.pow((bi + 0.5) / EDGE_DEPTH_BANDS, EDGE_DEPTH_CURVE);
       pass(this.edgeBands[bi], base * fade, edgeHex);
     }
-    // `base`, not the bare `leafAlpha` — see EDGE_BASE_ALPHA_FALLBACK's comment: base already folds in
-    // the per-theme edgeBaseAlpha, so every pass (including this one) stays keyed to the one knob.
+    // `base`, not the bare `memberEdgeAlpha` — see EDGE_BASE_ALPHA_FALLBACK's comment: base already
+    // folds in the per-theme edgeBaseAlpha, so every pass (including this one) stays on the one knob.
     pass(this.edgeAccent, base, accentHex);
     ctx.globalAlpha = 1; // leave clean for the row loop + label pass right after
   }
@@ -1684,25 +3204,61 @@ export class AsciiGraphRenderer implements GraphRenderer {
       flush();
     }
 
-    // Labels last, each on cleared ground (the design's opaque label plate) so a name is never
-    // read through the field behind it. Cluster (eyebrow) names borrow the pinned cell letterSpacing
-    // for real `--ls-eyebrow` tracking, then hand it back so the next frame's field glyphs (drawn at
-    // the top of THIS function, before labels) still land exactly on their cells.
+    // Labels last, each on a per-GLYPH ground halo — never an opaque plate. Cluster (eyebrow) names
+    // borrow the pinned cell letterSpacing for real `--ls-eyebrow` tracking, then hand it back so the
+    // next frame's field glyphs (drawn at the top of THIS function, before labels) still land exactly
+    // on their cells.
+    //
+    // WHY A HALO AND NOT A RECT ("it splits"). This used to be
+    //
+    //     ctx.fillStyle = this.groundColor;
+    //     ctx.fillRect(x - m.cellW * 0.5, y, (l.text.length + 1) * m.cellW, m.cellH);
+    //
+    // — an OPAQUE ground rect, painted after strokeEdges(), so every edge running behind a name was
+    // painted out. It is one cell TALL, which sounds harmless, and is why the defect went unread for
+    // so long; what matters is that it is as WIDE as the name. On the reference vault, zoomed onto a
+    // 69-degree hub, two labels sat on it — the hub's own file name (a 498x18 plate on the hub's own
+    // row) and the cluster eyebrow two rows up (82x18) — and between them they erased 44 of the 98
+    // hub-incident segments, ~2706px of line, across a 98-degree sector. At a convergence point every
+    // spoke is within a few pixels of every other, so an 18px band subtends a WIDE ANGLE close in:
+    // spokes vanished for their first 30-90px and the shallowest for 434px. The user read that as the
+    // field splitting, and they were right — the graph was lying about its own structure.
+    //
+    // The plate's job was legibility, so it is replaced rather than deleted, and the job is split in
+    // two along the two things that were behind a name:
+    //
+    //   FIELD GLYPHS are suppressed AT THE SOURCE — layoutLabels() blanks `charBuf` under a label's
+    //   reserved cells, so the row loop above never draws them (see reserveLabelCells). Same picture
+    //   the plate gave, minus the painting-over.
+    //
+    //   EDGES get this halo: `strokeText` in the ground colour under the fill, so the ground clears
+    //   only the letterforms' own outline (~1px each side) instead of their bounding band. A line
+    //   passing behind a name still reads as behind it, and still reads as a LINE — it is nicked at
+    //   each glyph, not severed for 500px.
+    //
+    // The halo carries the label's own alpha, so a crossfading name never leaves a dark ghost stroked
+    // at full strength over the field it is fading out of.
     ctx.globalAlpha = 1;
     const ctxLS = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
     const eyebrowLS = `${(this.fontPx * CLUSTER_LABEL_TRACKING_EM).toFixed(2)}px`;
+    const prevJoin = ctx.lineJoin, prevCap = ctx.lineCap, prevW = ctx.lineWidth;
+    // Round join+cap so the halo hugs the glyph instead of growing spikes off every corner.
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.lineWidth = Math.max(LABEL_HALO_MIN_PX, this.fontPx * LABEL_HALO_EM);
     for (const l of this.labels) {
-      if (l.alpha <= 0.01) continue; // fully crossfaded out — skip so its ground-clear box doesn't blank the field
+      if (l.alpha <= 0.01) continue; // fully crossfaded out — nothing to draw, and nothing to clear
       const x = m.padX + l.col * m.cellW;
       const y = m.padY + l.row * m.cellH;
-      ctx.fillStyle = this.groundColor;
-      ctx.fillRect(x - m.cellW * 0.5, y, (l.text.length + 1) * m.cellW, m.cellH);
-      ctx.fillStyle = this.colors[l.color] ?? "#888";
       ctx.globalAlpha = (l.eyebrow ? 1 : l.accent ? 1 : 0.9) * l.alpha;
       if (this.letterSpacingSupported) ctxLS.letterSpacing = l.eyebrow ? eyebrowLS : this.pinnedLetterSpacing;
+      ctx.strokeStyle = this.groundColor;
+      ctx.strokeText(l.text, x, y + m.cellH / 2);
+      ctx.fillStyle = l.color; // already a resolved CSS colour string — see LabelDraw's doc
       ctx.fillText(l.text, x, y + m.cellH / 2);
       ctx.globalAlpha = 1;
     }
+    ctx.lineJoin = prevJoin; ctx.lineCap = prevCap; ctx.lineWidth = prevW;
     if (this.letterSpacingSupported) ctxLS.letterSpacing = this.pinnedLetterSpacing;
     this.onPaint?.(drawnNodes);
   }
@@ -1887,8 +3443,25 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.frameSubset([id, ...(this.adjacency.get(id) ?? [])]);
   }
 
-  /** Frame a subset by RAISING THE RESOLUTION until it fills the grid (and re-centring on it) —
-   *  the ASCII equivalent of a dolly-in; no glyph is scaled. */
+  /**
+   * Frame a subset by RAISING THE RESOLUTION until it fills the grid (and re-centring on it) — the
+   * ASCII equivalent of a dolly-in; no glyph is scaled.
+   *
+   * `frameSubset` asks for a MAGNIFICATION ("make this subset fill ~55% of the field"), and the two
+   * view modes reach a magnification by different roads: 2D scales the world by `res`, 3D dollies
+   * the camera (see cameraDolly()). Both are still expressed as ONE durable state — the resolution
+   * stop — so this converts the wanted magnification into the stop that DELIVERS it, per mode, and
+   * every camera command (`focusNode` → here, `clickEntity`, `resetView`, the wheel) writes only
+   * `zoomPct`/`goalRes`. There is no second zoom axis to fall out of sync, which is exactly what the
+   * pre-merge pair had (Canvas's `goalZoom` in px vs ASCII's `goalRes`).
+   *
+   * The 3D conversion is `cameraModel.zoomT` — `dollyForT`'s exact inverse — taken against the dolly
+   * that WOULD produce the wanted magnification. Because the 3D camera's magnification is
+   * `min(res, maxZsFor(P)^t)`, reaching a magnification needs BOTH factors to be there, so the two
+   * progressions are combined with `max` rather than either one alone: use only the resolution
+   * ladder and a deep-ladder graph under-frames (the camera ceiling caps it short of the request);
+   * use only `zoomT` and a shallow-ladder graph under-frames instead (`res` runs out first).
+   */
   frameSubset(ids: string[]) {
     const views = ids.map((i) => this.byId.get(i)).filter(Boolean) as NodeView[];
     if (!views.length) return;
@@ -1898,8 +3471,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
     let r = 1e-6;
     for (const p of pts) r = Math.max(r, Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]));
     const whole = Math.max(1e-6, is2d ? this.radius2 : this.radius3);
+    const wantMag = (whole / r) * 0.55;
+    // resFromT(resolutionT(m, maxRes), maxRes) is m clamped to [1, maxRes] — the 2D road, unchanged.
+    let t = resolutionT(wantMag, this.maxRes);
+    if (!is2d) t = Math.max(t, zoomT(this.P * (1 - 1 / Math.max(1, wantMag)), this.P));
     this.goalTarget = c;
-    this.goalRes = Math.max(1, Math.min(this.maxRes, (whole / r) * 0.55));
+    this.goalRes = resFromT(t, this.maxRes);
     // Framing isn't a zoom STEP — it's a continuous camera command — but resync the durable percent
     // state to wherever it landed, so the next wheel notch / +- press steps from there.
     this.zoomPct = resolutionPercent(this.goalRes, this.maxRes);
@@ -1914,14 +3491,40 @@ export class AsciiGraphRenderer implements GraphRenderer {
    * geometry and naming always agree on where a level "owns" the field.
    *
    * Landing EXACTLY at `levelBoundaries()[childLevel]` (rather than somewhere deeper inside the
-   * child's segment) is deliberate: per `clusterLevelAlphas`, the child level's own alpha is
-   * already FULLY IN right at that boundary (its crossfade completes there, it doesn't start
-   * there) — so that boundary is the MINIMUM resolution increase that reveals it. Going deeper only
-   * shrinks the visible world window further, which can push the child's own members back OFF the
-   * grid on a widely-spread hierarchy without buying anything for the crossfade (already at full
-   * strength). The LEAF pseudo-level is the one exception: the file-label alpha — and the leaf
-   * raster pass, gated the same way — is exactly 0 AT `FILE_LABEL_REVEAL_T` and only rises past it,
-   * so landing there wouldn't reveal anything; nudge half the fade span in instead.
+   * child's segment) is deliberate, and it is now doing TWO jobs at once:
+   *
+   *   1. It is the MINIMUM resolution increase that reveals the child grouping. Per
+   *      `clusterLevelAlphas`, the child level's own alpha is already FULLY IN right at that
+   *      boundary (its crossfade completes there, it doesn't start there). Going deeper only shrinks
+   *      the visible world window further, which can push the child's own members back OFF the grid
+   *      on a widely-spread hierarchy without buying anything for the crossfade.
+   *   2. It is also the stop within the child's whole window `[bounds[c], bounds[c+1])` where the
+   *      child's MASSES are strongest, because `bandsForT`'s `massAlpha` is non-increasing in `t`.
+   *      So if the children can be drawn as territory masses at all, this is where.
+   *
+   * **WHAT THE USER ACTUALLY SEES THERE DEPENDS ON DEPTH, and on a real vault it is often not
+   * masses.** The mass band ends at `BACKBONE_START_T + BACKBONE_FADE_SPAN` (0.46) while the level
+   * ladder runs to `FILE_LABEL_REVEAL_T` (0.75), so a level whose window STARTS past 0.46 has no
+   * stop anywhere at which it renders as masses. On the reference vault's 5-level hierarchy
+   * (`levelBoundaries(5) = [0, .15, .30, .45, .60, .75]`):
+   *
+   * | clicked level | target t | child mass alpha | what the click produces                       |
+   * |---|---|---|---|
+   * | 0 | 0.150 | 1.000  | child masses, named                                             |
+   * | 1 | 0.300 | 1.000  | child masses, named                                             |
+   * | 2 | 0.450 | 0.0146 | effectively glyphs (the masses are there but invisible)          |
+   * | 3 | 0.600 | 0.0000 | glyphs + the child level's backbone and names; no masses at all  |
+   *
+   * That is not a bug and it is not worked around here: clicking a deep mass DISSOLVES it into its
+   * members, and the child grouping is still revealed — through node colour, the cluster-name ladder
+   * and the hub-to-hub backbone, all of which switch to the child level at exactly this `t`. What
+   * this comment must not do is keep claiming the click "reveals its child hierarchy level" as
+   * masses unconditionally, because for levels 2+ it does not. Re-stretching the bands to make it
+   * true was considered and rejected — see `backbone.ts`'s header and its constants.
+   *
+   * The LEAF pseudo-level is a separate exception: the file-label alpha — and the leaf raster pass,
+   * gated the same way — is exactly 0 AT `FILE_LABEL_REVEAL_T` and only rises past it, so landing
+   * there wouldn't reveal anything; nudge half the fade span in instead.
    *
    * Only sets the GOAL state (`goalTarget`/`zoomPct`/`goalRes`); the normal per-frame glide in
    * tick() carries the camera there. Never steps OUT: the target percent is clamped so a click
@@ -1933,6 +3536,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const bounds = levelBoundaries(this.levelCount); // length levelCount+1, coarsest→finest, ends at FILE_LABEL_REVEAL_T
     const childLevel = Math.min(ev.level + 1, this.levelCount);
     const isLeaf = childLevel >= this.levelCount;
+    // `bounds[childLevel]` is both the minimum resolution that reveals the child grouping AND the
+    // strongest its masses ever get (massAlpha is non-increasing) — see this method's doc for what
+    // that means when the child's window starts past the end of the mass band.
     const targetT = isLeaf ? FILE_LABEL_REVEAL_T + FILE_LABEL_FADE_SPAN * 0.5 : bounds[childLevel];
     const targetPct = snapZoomPercent(resolutionPercent(resFromT(targetT, this.maxRes), this.maxRes));
     this.zoomPct = Math.min(this.zoomPct, targetPct);
@@ -1941,6 +3547,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.dirty = true;
   }
 
+  /** Back to the whole-graph overview. Nothing here mentions the camera dolly because there is
+   *  nothing to reset: `goalRes = 1` is `t = 0`, and `cameraDolly()` is 0 there by construction
+   *  (`dollyForT(0, P) === 0`), so the 3D camera returns to the fit distance on the same glide as the
+   *  resolution — one state, one command. */
   resetView() {
     this.clearHighlight();
     this.zoomPct = 100;
@@ -1975,7 +3585,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       out.set(c, {
         label: members[0].node.communityLabel ?? `Cluster ${c}`,
         ids: members.map((mm) => mm.node.id),
-        color: this.colors[members[0].color] ?? COLOR_FALLBACK[members[0].color] ?? "#888",
+        color: this.resolveFillColor(members[0].color),
         centroid: centroid3(members.map((mm) => mm.p3)),
         count: members.length,
       });
@@ -2036,8 +3646,17 @@ export class AsciiGraphRenderer implements GraphRenderer {
       labelOverlaps,
       maxLabelChars,
       notesOnScreen: this.notesOnScreenFrame,
-      edgesDrawn: this.edgesDrawnFrame,
+      edgesClassified: this.edgesClassifiedFrame,
+      edgesIntraVisible: this.edgesIntraVisibleFrame,
+      edgesCrossVisible: this.edgesCrossVisibleFrame,
+      edgesTransitingDropped: this.edgesTransitingDroppedFrame,
+      edgesStroked: this.edgesStrokedFrame,
+      backbonePairsDropped: this.levelPairsDropped.reduce((a, b) => a + b, 0),
       inkCoverage,
+      bloomPoints: this.bloomPointsFrame,
+      bloomWeight: this.bloomWeightFrame,
+      bloomSdx: this.bloomSdxFrame,
+      bloomSdy: this.bloomSdyFrame,
     };
   }
 }

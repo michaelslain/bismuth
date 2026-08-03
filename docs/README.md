@@ -93,8 +93,8 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 
 ## Graph & terminal
 
-- [Graph](graph/overview.md) — node/edge kinds, the 5 modes, layout
-- [Terminal & relay](terminal/overview.md) — in-app terminals, the agents graph
+- [Graph](graph/overview.md) — node/edge kinds, the graph modes, layout
+- [Terminal & relay](terminal/overview.md) — in-app terminals, the relay registry
 
 ## Daemon (`@bismuth/daemon`)
 

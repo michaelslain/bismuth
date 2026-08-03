@@ -4,8 +4,10 @@ import { api, apiBase, summarizeSync } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { FileTree } from "./FileTree";
 import { Icon } from "./icons/Icon";
-// Lazy: GraphView pulls in three.js + d3-force-3d (their own chunk), so defer it off the
-// entry bundle even though the graph is the home tab. <Suspense> keeps boot smooth.
+// Lazy: GraphView pulls in the renderer and, through core/src/layout.ts, d3-force-3d (its own
+// chunk), so defer it off the entry bundle even though the graph is the home tab. <Suspense> keeps
+// boot smooth. (It no longer pulls three.js — nothing under app/src has imported `three` since the
+// pre-Canvas2D renderer; task 25 deleted both the package and vite.config.ts's chunk rule for it.)
 const GraphView = lazy(() => import("./GraphView").then((m) => ({ default: m.GraphView })));
 import { CommandPalette } from "./palette/CommandPalette";
 import { SwitcherBar } from "./palette/SwitcherBar";
@@ -46,7 +48,6 @@ const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.Te
 // hides the chat instead of unmounting it — unmount closes its WS with code 1000, which the
 // backend treats as an intentional tab-close and kills the whole `claude` session.
 const ChatView = lazy(() => import("./ChatView").then((m) => ({ default: m.ChatView })));
-import { agentGraphSig } from "./graph/agentGraphSig";
 import { selectDisplayGraph } from "./graph/displayGraph";
 import type { GraphData } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
@@ -87,7 +88,14 @@ import "./ui/popover/popover.css";
 // layout still loads; opened windows carry a distinct id via `?w=`. See windowId.ts.
 const TABS_STORAGE_KEY = tabsStorageKey(resolveWindowId());
 const SIDEBAR_STORAGE_KEY = "bismuth-sidebar-visible-v1";
-const GRAPH_CACHE_KEY = "bismuth-graph-cache-v1";
+// Bump this whenever core/src/layout-cache.ts's CACHE_VERSION changes in a way that moves
+// positions: this cache seeds the graph() signal directly from localStorage on boot (below),
+// and AsciiGraphRenderer early-returns on an unchanged structural signature
+// (graphStability.ts, which deliberately excludes positions) — so a stale-but-structurally-
+// identical cached layout silently survives a server-side CACHE_VERSION bump until the NEXT
+// launch. Bumping this key forces one cold boot (no instant-paint) that repaints with the
+// new positions immediately instead of self-healing a launch late.
+const GRAPH_CACHE_KEY = "bismuth-graph-cache-v2";
 // Mirrors the key the inline <head> script in index.html reads to apply the theme before
 // the bundle loads. Bump both together if the var map shape changes.
 const THEME_VARS_KEY = "bismuth-theme-vars-v1";
@@ -141,7 +149,6 @@ export default function App() {
   const [graph, setGraph] = createSignal<GraphData>(
     readCache<GraphData>(GRAPH_CACHE_KEY) ?? { nodes: [], edges: [] },
   );
-  const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [daemon, setDaemon] = createSignal<GraphData>({ nodes: [], edges: [] });
   // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd".
   const [mode, setMode] = createSignal<GraphMode>(settings.daemon.enabled ? "both" : "2nd");
@@ -568,16 +575,6 @@ export default function App() {
     }
   };
 
-  // A 2s poll that returns the same network is a no-op (see agentGraphSig) — without
-  // this, each poll would hand the renderer a fresh graph and re-settle the force layout.
-  let lastAgentsSig = "";
-  const refreshAgents = async () => {
-    const g = await api.agentGraph();
-    const sig = agentGraphSig(g);
-    if (sig === lastAgentsSig) return;
-    lastAgentsSig = sig;
-    setAgents(g);
-  };
   const refreshDaemon = async () => setDaemon(await api.daemonGraph());
 
   // The graph is a visualization, not the source of truth — it can update a beat
@@ -587,15 +584,13 @@ export default function App() {
   // flicker.
   const scheduleGraphRefresh = debounce(() => { refreshGraph(); }, () => settings.graph.refreshDebounceMs);
 
-  // No "you" hub in any mode except "agents" (see selectDisplayGraph in graph/displayGraph.ts) —
-  // it used to be frontend-injected here for 2nd/3rd/both too, but read as noise floating at the
-  // origin next to real vault/memory structure. The agents-mode hub is unaffected: it's a
-  // different construct (the literal root of the session tree), injected separately by
-  // GraphView/agentLayout.ts, not by this selection.
+  // No "you" hub in any mode (see selectDisplayGraph in graph/displayGraph.ts) — it used to be
+  // frontend-injected here for 2nd/3rd/both too, but read as noise floating at the origin next
+  // to real vault/memory structure.
   const displayGraph = createMemo<GraphData>(() =>
     // `activeId` feeds "local" mode only: the focused note's graph id (path minus ".md").
     selectDisplayGraph(mode(), {
-      graph: graph(), agents: agents(), daemon: daemon(),
+      graph: graph(), daemon: daemon(),
       activeId: focusedContent() ? focusedContent()!.replace(/\.md$/i, "") : null,
     }),
   );
@@ -1507,17 +1502,8 @@ export default function App() {
     }
   });
 
-  // Only poll the agent graph while the user is in agents mode — avoids 2s background
-  // fetches when nobody is looking at the network view.
-  createEffect(() => {
-    if (mode() !== "agents") return;
-    void refreshAgents();
-    const t = setInterval(refreshAgents, 2000);
-    onCleanup(() => clearInterval(t));
-  });
-
-  // Likewise, only poll the daemon graph while in daemon mode (~4s — cron/process state changes
-  // are coarse-grained). Mirrors the agents-mode poll above.
+  // Only poll the daemon graph while in daemon mode (~4s — cron/process state changes are
+  // coarse-grained) — avoids background fetches when nobody is looking at that view.
   createEffect(() => {
     if (mode() !== "daemon" || !settings.daemon.enabled) return;
     void refreshDaemon();
@@ -1525,7 +1511,7 @@ export default function App() {
     onCleanup(() => clearInterval(t));
   });
 
-  // Daemon inbox: unlike the agents/daemon graph-mode polls above, this one isn't gated on
+  // Daemon inbox: unlike the daemon graph-mode poll above, this one isn't gated on
   // which tab is showing — the toolbar inbox badge needs to stay live regardless (plan §3, §6).
   // 30s normally, tightened to ~5s while any page is mid-run so a just-approved action's
   // done/failed status shows up promptly. Reading anyWorking() here (tracked) re-arms the
@@ -2291,7 +2277,7 @@ export default function App() {
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
       <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() && !switcherOpen() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} />
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} communitySource={graph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} />
         </Suspense>
       </div>
       <Show when={palette() === "command"}>

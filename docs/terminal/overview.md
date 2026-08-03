@@ -1,6 +1,8 @@
-# Terminal & Agents Graph
+# Terminal & Relay Registry
 
-This document covers Bismuth's in-app terminal tabs (PTY sessions bridged over WebSocket), the relay plugin that auto-instruments every `claude` invocation inside those tabs, and the agents graph built live from the relay registry. Together these three components form a closed system: you → terminal tab session → subagents, visualised in the "agents" graph mode and scoped entirely to the running app instance.
+This document covers Bismuth's in-app terminal tabs (PTY sessions bridged over WebSocket) and the relay plugin that auto-instruments every `claude` invocation inside those tabs, reporting session + subagent lifecycle into an in-process registry (`core/src/relay.ts`). Together these form a closed system: you → terminal tab session → subagents, scoped entirely to the running app instance.
+
+There used to be a live "agents" graph mode rendering this registry (`core/src/agents.ts` + `app/src/graph/AgentsGraph.tsx`); it was removed (`GET /agent-graph` and its frontend are gone). The relay registry itself is still populated and still pruned on tab close — see _Core Server Relay Endpoints_ and _Scope and Constraints_ below — it currently just has no reader.
 
 ---
 
@@ -287,7 +289,7 @@ expect(buildPtyEnv({ ...ENV_BASE, base: {}, realClaude: "/usr/local/bin/claude" 
 
 The `relay/` workspace is a Claude Code plugin (`--plugin-dir`) loaded **per-session** inside every Bismuth app terminal tab. It has no global install, no daemon, and no slash commands — only four event hooks that POST registration/heartbeat/subagent events to the core server's relay registry.
 
-The relay powers the "agents" graph mode: `you → terminal-tab sessions → subagents`.
+The relay formerly powered the "agents" graph mode (`you → terminal-tab sessions → subagents`), which has been removed. The hooks and the registry still run; nothing currently reads the registry.
 
 ### How the plugin loads
 
@@ -498,10 +500,12 @@ Marks a subagent `done = true` and records `doneAt`. Unknown ids are silently ig
 
 **`prune(liveTerminalIds: Set<string>, now?)`**
 
-Called from `GET /agent-graph` with `new Set(listSessionIds())` — the live pty ids from `terminal.ts`. Drops:
-1. Sessions whose `terminalId` is not in `liveTerminalIds` (tab was closed — there is no terminal-close hook, so cleanup happens at read time).
+Called from `terminal.ts`'s `killSession`, with `new Set(listSessionIds())` — the live pty ids — on every tab close (there is no terminal-close hook of its own, so `killSession` calls this directly rather than a poller reading it lazily). Drops:
+1. Sessions whose `terminalId` is not in `liveTerminalIds` (tab was closed).
 2. Orphaned subagents whose parent session was dropped in step 1.
-3. Finished subagents past their TTL (60 seconds).
+3. Finished subagents past their TTL (`DONE_SUBAGENT_TTL_MS`, 8 seconds).
+
+`stopSubagent` also sweeps finished-and-expired subagents itself (as of this branch), so a long-lived tab that never closes doesn't accumulate done subagents indefinitely between tab closes.
 
 **`snapshot(now?)`**
 
@@ -518,7 +522,7 @@ const DONE_SUBAGENT_TTL_MS = 8_000;                 // brief linger once finishe
 const RUNNING_SUBAGENT_MAX_MS = 2 * 60 * 60 * 1000; // backstop for a never-reported stop
 ```
 
-A subagent that has been marked `done` lingers for 8 seconds before `snapshot`/`prune` removes it, so a subagent that starts and finishes between two 2 s agent-graph polls is still seen for a beat.
+A subagent that has been marked `done` lingers for 8 seconds before `snapshot`/`prune`/`stopSubagent`'s own eager sweep removes it, so a subagent that starts and finishes in quick succession is still visible in a snapshot taken during that window rather than vanishing instantly.
 
 A subagent has a **second** exit, because its normal one — `SubagentStop` → `stopSubagent` — is a single best-effort report (2 s timeout, errors swallowed, no retry) that Claude Code can itself fail to deliver (it logs `[runAgent] SubagentStop on interrupted query failed`). If that report is lost, `done` never flips, so the done-TTL never applies and the only other sweep (the orphan prune) needs the **parent session** to die — the node would render `awake` forever under a still-open tab. So a subagent that never reports a stop is presumed finished past `RUNNING_SUBAGENT_MAX_MS`.
 
@@ -538,59 +542,10 @@ These routes live in the **read table** in `server.ts` (not `mutatingRoutes`) �
 | `POST /relay/session/end` | `{ sessionId }` | `endSession` |
 | `POST /relay/subagent/start` | `{ parentSessionId, agentId, agentType? }` | `startSubagent` |
 | `POST /relay/subagent/stop` | `{ agentId, lastMessage? }` | `stopSubagent` |
-| `GET /agent-graph` | — | Prune registry, build + return `GraphData` |
 
 All 400 errors from relay endpoints are silently swallowed by the hooks (best-effort).
 
-`GET /agent-graph` is the only route that calls both `prune` (with the live pty set) and `buildAgentGraph`. The frontend polls it while agents mode is active.
-
----
-
-## Agents Graph (`core/src/agents.ts`)
-
-`buildAgentGraph` is a **pure function** over a `RelaySnapshot` and a set of live terminal ids. It returns a `GraphData` with only session and subagent nodes — the "you" hub and `you → session` edges are injected on the frontend (`app/src/graph/agentLayout.ts` `layoutAgentGraph`), which is also the ONLY place the self node is injected anywhere in the app (agents mode only; "2nd"/"3rd"/"both"/"daemon" show no self node).
-
-### Node ids
-
-| Node type | Id format |
-|-----------|-----------|
-| Session | `agent:sess:<sessionId>` |
-| Subagent | `agent:sub:<agentId>` |
-
-### Node fields
-
-- **`kind`**: always `"agent"`
-- **`label`**: for sessions, `basename(cwd)` or the `terminalId` if `cwd` is empty; for subagents, the `agentType` string
-- **`state`**: `"awake"` or `"idle"` (see below)
-- **`parent`**: set on subagent nodes to the parent session's node id; undefined on root session nodes
-
-### Awake/idle determination
-
-A session is `"awake"` if either:
-1. `now - lastSeen <= 10 * 60 * 1000` (10 minutes), **or**
-2. It has at least one running (not-done) subagent — a session past its heartbeat window stays awake while an Agent-tool call is executing (since `UserPromptSubmit` doesn't fire mid-turn)
-
-A subagent is `"awake"` if `done === false`, `"idle"` if `done === true`.
-
-### Edges
-
-Each subagent node gets one edge: `{ from: parentSessionNodeId, to: subagentNodeId, kind: "message" }`.
-
-Sessions whose terminal tab is closed (`terminalId` not in `liveTerminalIds`) are dropped. Their subagents are also dropped — no orphan nodes are emitted.
-
-### Example
-
-```ts
-const g = buildAgentGraph(
-  { sessions: [{ sessionId: "s1", terminalId: "tab-1", cwd: "/Users/m/dev/bismuth", lastSeen: TWO_MIN_AGO }],
-    subagents: [{ agentId: "a1", parentSessionId: "s1", agentType: "Explore", startedAt: TWO_MIN_AGO, done: false }] },
-  new Set(["tab-1"]),
-  NOW,
-);
-// g.nodes[0]: { id: "agent:sess:s1", label: "bismuth", kind: "agent", state: "awake" }
-// g.nodes[1]: { id: "agent:sub:a1", label: "Explore", kind: "agent", state: "awake", parent: "agent:sess:s1" }
-// g.edges[0]: { from: "agent:sess:s1", to: "agent:sub:a1", kind: "message" }
-```
+There is no longer an endpoint that reads the registry — `GET /agent-graph` (and the `buildAgentGraph` pure function it called, in `core/src/agents.ts`) was removed along with the "agents" graph mode. `core/src/agents.ts` itself remains and is **not** orphaned: it now holds only the `ChatAgentSubagent` / `ChatAgentSession` types, imported by `core/src/chat.ts` for visual-chat subagent tracking. The registry is still written to (by the routes above), and is pruned both on tab close (`terminal.ts`, see `prune` above) and eagerly on `stopSubagent`; it just currently has no reader.
 
 ---
 
@@ -629,33 +584,12 @@ The component renders a single `<div class="term-host" />` and stays mounted for
 
 ---
 
-## Agents Graph Frontend
-
-`GET /agent-graph` is polled by the frontend **only while agents mode is active**, using a change-signature dedup (`agentGraphSig`) to avoid re-settling the force layout when nothing has changed:
-
-```ts
-// agentGraphSig hashes node id+label+state+parent and edge endpoints
-function agentGraphSig(g: GraphData): string {
-  return (
-    g.nodes.map((n) => `${n.id}:${n.label}:${n.state ?? ""}:${n.parent ?? ""}`).join("|") +
-    "##" +
-    g.edges.map((e) => `${e.from}>${e.to}`).join("|")
-  );
-}
-```
-
-The "you" hub and `you → session` edges are injected on the frontend. The `AgentsGraph.tsx` overlay (rendered over the WebGL canvas in agents mode) shows:
-- Session count, subagent count, awake/idle breakdown
-- An "Organization" picker (Democracy / Republic / Dictatorship) that re-wires communication channels for the visualization — no backend effect
-
----
-
 ## Scope and Constraints
 
 - **App-local only**: the relay registry is in-process in the core server. No cross-machine agents, no persistence across restarts, no messaging between instances.
 - **Depth 1**: subagents cannot spawn their own subagents, so the tree is always exactly 2 levels deep (session → subagents).
-- **No terminal-close hook**: when a tab closes, sessions are pruned lazily at `GET /agent-graph` read time, not eagerly.
+- **No terminal-close hook of its own**: `terminal.ts`'s `killSession` calls `relay.prune` directly when a tab closes (no polling reader triggers it anymore — see _Core Server Relay Endpoints_ above).
 - **Multiple windows**: each Bismuth window runs its own backend (different port). In-tab `claude` sessions report to that window's backend only, because `CLAUDE_RELAY_URL` is set to `http://localhost:<server.port>` at session creation time.
 - **Sessions without `CLAUDE_TERMINAL_ID`**: if `claude` is run outside a Bismuth terminal (e.g. in a standalone shell), the relay hook is not loaded at all (requires `--plugin-dir`). Even if somehow loaded, the `CLAUDE_TERMINAL_ID` gate in `lib/report.ts` makes every hook a no-op.
 
-Source: `core/src/terminal.ts`, `app/src/Terminal.tsx`, `relay/hooks/hooks.json`, `relay/bin/session-start-hook.ts`, `relay/bin/recall-hook.ts`, `relay/bin/subagent-start-hook.ts`, `relay/bin/subagent-stop-hook.ts`, `relay/bin/wrap.ts`, `relay/lib/report.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `relay/shim/zdotdir/.zshrc`, `relay/shim/zdotdir/.zprofile`, `relay/shim/zdotdir/.zshenv`, `core/src/agentBackends/catalog.ts`, `core/src/relay.ts`, `core/src/agents.ts`, `core/src/server.ts`, `app/src/graph/agentGraphSig.ts`, `app/src/graph/AgentsGraph.tsx`, `core/test/terminal.test.ts`, `core/test/relay.test.ts`, `core/test/agents.test.ts`, `relay/test/wrap.test.ts`
+Source: `core/src/terminal.ts`, `app/src/Terminal.tsx`, `relay/hooks/hooks.json`, `relay/bin/session-start-hook.ts`, `relay/bin/recall-hook.ts`, `relay/bin/subagent-start-hook.ts`, `relay/bin/subagent-stop-hook.ts`, `relay/bin/wrap.ts`, `relay/lib/report.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `relay/shim/zdotdir/.zshrc`, `relay/shim/zdotdir/.zprofile`, `relay/shim/zdotdir/.zshenv`, `core/src/agentBackends/catalog.ts`, `core/src/relay.ts`, `core/src/server.ts`, `core/test/terminal.test.ts`, `core/test/relay.test.ts`, `relay/test/wrap.test.ts`
