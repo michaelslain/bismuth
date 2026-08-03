@@ -1,4 +1,4 @@
-import { test, expect, describe, afterEach } from "bun:test";
+import { test, expect, describe, afterEach, mock } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -429,6 +429,63 @@ describe("buildChatSandboxOption (the value spawnChatQuery's sandbox option is b
   });
   test("sandbox is omitted entirely (not merely allowUnsandboxedCommands:false) when nothing is restricted — an unrestricted vault must not risk failing on a machine with no sandbox support", () => {
     expect(buildChatSandboxOption([], "/vault")).toBeUndefined();
+  });
+});
+
+// The describe block above only proves buildChatSandboxOption's OWN output shape — it says nothing
+// about whether spawnChatQuery's call site actually passes that output to query(). A prior review
+// pass reverted spawnChatQuery's `sandbox` option to its pre-fix inline literal (no
+// `allowUnsandboxedCommands: false`) and every test in this file still passed, because nothing
+// exercised the real call site. This block closes that gap: it intercepts the SDK's query() via a
+// module mock and asserts what production actually hands it, for a real restricted vault, through
+// the real openSession()/createSession()/spawnChatQuery() path — no live `claude` turn (query()
+// never runs; it's replaced before spawnChatQuery can call the real one).
+describe("spawnChatQuery wiring (does the real call site actually use buildChatSandboxOption's output?)", () => {
+  test("query() receives sandbox.allowUnsandboxedCommands === false for a vault with a hidden note", async () => {
+    const sdk = await import("@anthropic-ai/claude-agent-sdk");
+    // Snapshot the ORIGINAL exports into a plain object BEFORE mocking. `mock.module` mutates the
+    // shared module-namespace object in place (that's what lets it retroactively intercept calls
+    // from chat.ts, which imported `query` long before this test ran) — so restoring by handing
+    // back a reference to `sdk` itself would hand back the now-mutated (mocked) object, not the
+    // original. A separately-spread snapshot is the only way to actually undo the mock afterward.
+    const originalExports = { ...sdk };
+
+    let captured: Record<string, unknown> | undefined;
+    mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+      ...originalExports,
+      query: (args: { options: Record<string, unknown> }) => {
+        captured = args.options;
+        async function* empty() {
+          /* no messages; the test never awaits the drain loop */
+        }
+        return Object.assign(empty(), {
+          supportedModels: async () => [],
+          initializationResult: async () => ({ commands: [] }),
+          mcpServerStatus: async () => [],
+          setModel: () => Promise.resolve(),
+          setPermissionMode: () => Promise.resolve(),
+          interrupt: () => Promise.resolve(),
+          close: () => {},
+        });
+      },
+    }));
+
+    const vault = await mkdtemp(join(tmpdir(), "bismuth-chat-wiring-"));
+    const chatId = newChatId();
+    try {
+      // A REAL hidden note — the same shape the reviewer's probe used — so buildDenyPaths(cwd,
+      // "chat") resolves a non-empty deny list and spawnChatQuery's sandbox/managedSettings branch
+      // actually builds (denyEntries.length > 0), exactly as a restricted vault would in production.
+      await writeFile(join(vault, "secret.md"), "---\nvisibility: hidden\n---\n# Secret\n");
+      await openSession(chatId, vault, () => {});
+      expect(captured).toBeDefined();
+      const sandbox = captured?.sandbox as { allowUnsandboxedCommands?: boolean } | undefined;
+      expect(sandbox?.allowUnsandboxedCommands).toBe(false);
+    } finally {
+      closeChat(chatId);
+      mock.module("@anthropic-ai/claude-agent-sdk", () => originalExports);
+      await rm(vault, { recursive: true, force: true });
+    }
   });
 });
 
