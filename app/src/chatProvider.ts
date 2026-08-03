@@ -98,11 +98,6 @@ export function providerInstallHint(provider: ChatProviderChoice): string {
   return backendOf(provider).installHint;
 }
 
-/** The backend's own interactive login command, when it has one worth surfacing. */
-export function providerLoginCommand(provider: ChatProviderChoice): string | undefined {
-  return backendOf(provider).loginCommand;
-}
-
 /** The model picker row's price badge (card #90: "show which one free and which one isnt").
  *  Tri-state: opencode models carry `free` off their cost metadata (`opencode models --verbose`);
  *  Claude models (and an opencode list fetched without metadata) carry none → no badge. */

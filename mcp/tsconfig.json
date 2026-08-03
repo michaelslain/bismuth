@@ -4,5 +4,5 @@
     "target": "ESNext",
     "module": "ESNext"
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }

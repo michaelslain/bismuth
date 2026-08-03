@@ -27,9 +27,9 @@ import { multiselectAvailable, multiselectCommitValue, multiselectValues, select
 import { numberEditValue, parseNumberEdit } from "./numberFormat";
 import styles from "./BaseView.module.css";
 
-/** Grow a textarea to fit its content (no scrollbar) — duplicated from KanbanCard.tsx's
- *  identical helper (not imported: that file is the caller, not a shared module, and this
- *  is a 3-line DOM tweak, matching the codebase's small-pure-duplication idiom elsewhere). */
+/** Grow a textarea to fit its content (no scrollbar). Local to this file: KanbanCard.tsx once
+ *  carried an identical copy, but its version was deleted along with the rest of the dead
+ *  `kbDesc*` markup, so there is no longer a second copy for this one to be "duplicated from". */
 function autoGrow(el: HTMLTextAreaElement): void {
   el.style.height = "auto";
   el.style.height = `${el.scrollHeight}px`;

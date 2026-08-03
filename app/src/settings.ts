@@ -407,8 +407,4 @@ if (typeof window !== "undefined") {
   });
 }
 
-export function resetSettings() {
-  setSettings(reconcile(structuredClone(_DEFAULTS)));
-}
-
 export { settings, setSettings };

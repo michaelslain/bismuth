@@ -76,7 +76,3 @@ export function zoomOut(): void {
 export function zoomReset(): void {
   setPct(DEFAULT_PCT);
 }
-
-export function currentZoomPercent(): number {
-  return currentPct;
-}

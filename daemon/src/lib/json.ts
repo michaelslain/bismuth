@@ -30,8 +30,15 @@ export function parseJsonResponse<T>(
 }
 
 /**
- * Get today's date as YYYY-MM-DD string.
+ * Get today's date as YYYY-MM-DD string, in LOCAL time.
+ *
+ * Local, not UTC: toISOString() would date a note by the UTC calendar day, so a dream/consolidation
+ * run any evening west of Greenwich (e.g. 6pm PST) stamps TOMORROW's date on the memory it writes.
+ * This matches the identical local-date today() in cli/src/args.ts, mcp/src/memory.ts and
+ * relay/lib/memory.ts — the daemon was the lone UTC outlier.
  */
 export function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }

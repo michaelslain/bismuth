@@ -245,8 +245,13 @@ export function edgeWeightBucketRange(
 // says nothing about which hierarchy LEVEL within the mass or backbone band is active; that is
 // still `clusterLevelAlphas`'s job (lod.ts's `lodMix`, and `computeEdgeLevelWeights` above).
 //
-// WIRING RECIPE FOR TASK 12 — this file only supplies the pure numbers; NONE of the below is
-// wired into `lod.ts`/`AsciiGraphRenderer.ts` yet, and that wiring is not optional polish:
+// WIRING RECIPE (TASK 12) — this file supplies the pure numbers; the recipe below is now WIRED, in
+// `lod.ts`'s `lodMix` (which derives massAlpha/glyphAlpha/backboneAlpha/memberAlpha from
+// `bandsForT`) and in `AsciiGraphRenderer.ts` (which consumes `mix.memberAlpha` for real member
+// edges, gates the glyph/leaf raster pass on `glyphAlpha`, and weights the backbone draw by
+// `computeEdgeLevelWeights(t, levelCount, FILE_LABEL_REVEAL_T)[L] × mix.backboneAlpha`). Kept as
+// the record of WHY the split exists — the three terms must stay separate, and this explains what
+// breaks if they are collapsed back into one:
 //
 // MARKS column (masses vs individual glyphs — this is the part a recipe naming only the edges
 // would silently miss):
