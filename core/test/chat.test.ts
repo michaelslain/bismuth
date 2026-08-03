@@ -31,10 +31,12 @@ import {
   extractAskUserQuestions,
   buildAskUserQuestionAnswer,
   ASK_USER_QUESTION_TOOL,
+  buildChatSandboxOption,
   type ChatFrame,
   type ChatSearchDoc,
 } from "../src/chat";
 import { whichClaude } from "../src/claudeWhich";
+import { sandboxFailIfUnavailable } from "../src/visibility";
 import { shouldRunLiveTests } from "./liveGate";
 
 // extractEditorContextPaths backs captureToMemory's visibility gate (skip capturing a session
@@ -392,6 +394,41 @@ describe("computerUseChange (BUG #87: live --chrome toggle → respawn decision)
   test("undefined request is treated as off (a client that omits the flag never enables it)", () => {
     expect(computerUseChange(true, undefined)).toEqual({ next: false, respawn: true });
     expect(computerUseChange(false, undefined)).toEqual({ next: false, respawn: false });
+  });
+});
+
+// 2026-07-30 measurement (docs/vault/visibility.md, visibility-acceptance.md): spawnChatQuery's
+// `sandbox` option used to hardcode `failIfUnavailable: false`, so a session whose OS sandbox
+// couldn't start ran anyway with only managedSettings standing guard — which restricts the
+// Read/Edit/Grep/Glob tool CALLING CONVENTION and does nothing to a raw Bash `cat`/`bismuth read`/
+// `python3 -c`. It now computes `failIfUnavailable` from the SAME `sandboxFailIfUnavailable`
+// helper session.ts uses, which is exactly what spawnChatQuery's `sandbox` option is built from
+// (see chat.ts's spawnChatQuery). This is a pure check — no live `claude` needed.
+describe("sandboxFailIfUnavailable (the value spawnChatQuery's sandbox option is built from)", () => {
+  test("true when the vault restricts something — a restricted vault must fail closed rather than run unprotected", () => {
+    expect(sandboxFailIfUnavailable([{ rel: "secret.md", abs: "/vault/secret.md" }])).toBe(true);
+  });
+  test("false when nothing is restricted — an unrestricted vault must keep working on a machine where the sandbox can't start at all", () => {
+    expect(sandboxFailIfUnavailable([])).toBe(false);
+  });
+});
+
+// Task 9: a live probe of the previous task found the model calling its OWN Bash tool with
+// `dangerouslyDisableSandbox: true` to skip the OS sandbox on its own initiative, TWICE, while
+// being asked to read a hidden note — not an adversarial bypass, just the app's own agent behaving
+// normally. `failIfUnavailable` alone only gates a sandbox that fails to START; it does nothing
+// about a sandbox the model itself asks to skip per-call. `allowUnsandboxedCommands: false` is what
+// makes the SDK ignore that parameter outright (sdk.d.ts's `Settings.sandbox.allowUnsandboxedCommands`
+// docstring — the only prose in the bundled types describing this field; see docs/vault/visibility.md
+// for the full citation). buildChatSandboxOption is extracted from spawnChatQuery so this is a pure
+// check — no live `claude` needed.
+describe("buildChatSandboxOption (the value spawnChatQuery's sandbox option is built from)", () => {
+  test("allowUnsandboxedCommands is false when the vault restricts something", () => {
+    const o = buildChatSandboxOption([{ rel: "secret.md", abs: "/vault/secret.md" }], "/vault");
+    expect(o?.allowUnsandboxedCommands).toBe(false);
+  });
+  test("sandbox is omitted entirely (not merely allowUnsandboxedCommands:false) when nothing is restricted — an unrestricted vault must not risk failing on a machine with no sandbox support", () => {
+    expect(buildChatSandboxOption([], "/vault")).toBeUndefined();
   });
 });
 

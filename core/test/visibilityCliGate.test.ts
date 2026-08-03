@@ -294,3 +294,117 @@ test("an EMPTY channel value is the owner, not an agent — found by the accepta
   expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "nonsense" })).toBe("daemon");
   expect(cliAgentChannel({ BISMUTH_AGENT_CHANNEL: "chat" })).toBe("chat");
 });
+
+// --- Path spelling in argv: the same three axes isDeniedPath resolves ---
+//
+// The gate's original match was a lowercased SUBSTRING test, which handles case but nothing else.
+// `bismuth read Private/../Private/secret.md` opens the hidden note (resolveInVault resolves the
+// segments), and `café.md` written composed opens a file stored decomposed — both slid through.
+
+describe("decideCliGate: path spellings", () => {
+  const restricted = [{ rel: "Private/secret.md", abs: "/vault/Private/secret.md" }];
+
+  test("refuses a `.` or `..` spelling of a restricted path", () => {
+    for (const spelling of [
+      "Private/secret.md",
+      "Private/./secret.md",
+      "Private/../Private/secret.md",
+      "./Private/secret.md",
+    ]) {
+      const d = decideCliGate(["read", spelling], restricted);
+      expect(d.allowed).toBe(false);
+      expect(d.reason).toContain("Private/secret.md");
+    }
+  });
+
+  test("refuses a `.`/`..` spelling carried in a --flag=value pair", () => {
+    expect(decideCliGate(["read", "--path=Private/../Private/secret.md"], restricted).allowed).toBe(false);
+  });
+
+  test("refuses an NFC spelling of a restricted path stored decomposed", () => {
+    const nfd = "Private/cafe\u0301.md"; // e + combining acute
+    const nfc = "Private/caf\u00e9.md"; // precomposed e-acute
+    expect(nfd).not.toBe(nfc);
+    const entries = [{ rel: nfd, abs: `/vault/${nfd}` }];
+    expect(decideCliGate(["read", nfd], entries).allowed).toBe(false);
+    expect(decideCliGate(["read", nfc], entries).allowed).toBe(false);
+  });
+
+  test("refuses a restricted path EMBEDDED in a longer token, in either unicode form", () => {
+    // The substring pass, not the per-token pass: an argv token that merely CONTAINS a restricted
+    // path (an export path derived from the hidden note) is not itself a path, so findDeniedEntry
+    // cannot resolve it — only the substring scan sees it, and that scan must fold unicode form the
+    // same way, or the composed spelling of a decomposed name walks straight through it.
+    const nfd = "Private/cafe\u0301.md"; // e + combining acute
+    const nfc = "Private/caf\u00e9.md"; // precomposed e-acute
+    const entries = [{ rel: nfd, abs: `/vault/${nfd}` }];
+    for (const form of [nfd, nfc]) {
+      const d = decideCliGate(["render", "--out", `exports/${form}.html`], entries);
+      expect(d.allowed).toBe(false);
+    }
+  });
+
+  test("refuses a restricted path embedded in a longer token under EVERY segment spelling", () => {
+    // The reported hole: `findDeniedEntry` cannot resolve a token whose path is only a substring,
+    // and an unnormalized substring scan cannot see through `/./` or `//`. The `..` spelling was
+    // caught by luck (the needle survives the detour verbatim), which is not coverage.
+    for (const spelling of [
+      "exports/Private/secret.md.html",
+      "exports/Private/./secret.md.html",
+      "exports/Private/../Private/secret.md.html",
+      "exports/Private//secret.md.html",
+      "exports/PRIVATE/./SECRET.md.html",
+    ]) {
+      const d = decideCliGate(["render", "--out", spelling], restricted);
+      expect(d.allowed).toBe(false);
+      expect(d.reason).toContain("Private/secret.md");
+    }
+  });
+
+  test("an innocent token that merely resembles a restricted path still runs", () => {
+    // Negative controls for the widening above: normalizing the whole token must not smear the
+    // deny across neighbouring names, sibling directories, or a `..` that lands somewhere visible.
+    for (const spelling of [
+      "exports/public.md.html",
+      "exports/Privateer/secretive.md.html",
+      "exports/Private/../public.md.html",
+    ]) {
+      expect(decideCliGate(["render", "--out", spelling], restricted).allowed).toBe(true);
+    }
+  });
+
+  test("the substring scan over-refuses a token that CONTAINS a restricted path as a prefix", () => {
+    // Not a regression and not introduced by segment normalization — both of these refuse on the
+    // unnormalized scan too, because the deny path is a literal substring of the token. Pinned
+    // rather than left undocumented: it is the deliberate direction of this gate (a false refusal
+    // costs one tool call; a false allow leaks a note), and someone reading the "over-inclusive on
+    // purpose" note above should be able to see exactly what that buys and costs.
+    for (const spelling of [
+      "exports/NotPrivate/secret.md.backup.html", // contains "Private/secret.md"
+      "exports/Private/secret.mdx.html", //          "secret.md" is a prefix of "secret.mdx"
+    ]) {
+      expect(decideCliGate(["render", "--out", spelling], restricted).allowed).toBe(false);
+    }
+  });
+
+  test("a token whose restricted segment is cancelled by `..` runs (a pinned loosening)", () => {
+    // Same behaviour change as isDeniedPath's, seen through the CLI gate: these refused before
+    // segment normalization, purely on the verbatim substring, and run now. They resolve to
+    // Private/other.md, other.md and Private/ respectively — never to the hidden note.
+    for (const spelling of [
+      "Private/secret.md/../other.md",
+      "Private/secret.md/../../other.md",
+      "Private/secret.md/..",
+    ]) {
+      expect(decideCliGate(["read", spelling], restricted).allowed).toBe(true);
+    }
+    // Control: a `..` that resolves back ONTO the restricted path must still refuse.
+    expect(decideCliGate(["read", "Private/sub/../secret.md"], restricted).allowed).toBe(false);
+  });
+
+  test("a path-scoped command naming only VISIBLE files still runs", () => {
+    // The widening must not swallow the whole tier: this is the case the gate exists to permit.
+    expect(decideCliGate(["read", "public.md"], restricted).allowed).toBe(true);
+    expect(decideCliGate(["read", "Private/../public.md"], restricted).allowed).toBe(true);
+  });
+});

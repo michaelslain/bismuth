@@ -76,6 +76,42 @@ test("buildQueryOptions exports BISMUTH_CLI only when the CLI binary is present"
   expect((withoutCli.env as Record<string, string>).BISMUTH_CLI).toBeUndefined()
 })
 
+// 2026-07-30 measurement (docs/vault/visibility.md, visibility-acceptance.md): buildQueryOptions
+// used to hardcode `sandbox.failIfUnavailable: false`, so a session whose OS sandbox couldn't
+// start ran anyway with only managedSettings standing guard — which restricts the Read/Edit/Grep/
+// Glob tool CALLING CONVENTION and does nothing to a raw Bash `cat`/`bismuth read`/`python3 -c`.
+// It's now derived from the deny list: a restricted vault fails closed, an unrestricted one is
+// unaffected (the whole sandbox block stays omitted, same as before this fix).
+test("buildQueryOptions: sandbox.failIfUnavailable is true when the vault restricts notes", () => {
+  const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" }, [
+    { rel: "secret.md", abs: "/vault/secret.md" },
+  ])
+  expect((o.sandbox as { failIfUnavailable?: boolean } | undefined)?.failIfUnavailable).toBe(true)
+})
+
+test("buildQueryOptions: sandbox is omitted entirely (not merely failIfUnavailable:false) when nothing is restricted — an unrestricted vault must not risk failing on a machine with no sandbox support", () => {
+  const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" }, [])
+  expect(o.sandbox).toBeUndefined()
+  expect(o.managedSettings).toBeUndefined()
+})
+
+// Task 9: a live probe of the previous task found the model calling its OWN Bash tool with
+// `dangerouslyDisableSandbox: true` to skip the OS sandbox on its own initiative, TWICE, while
+// being asked to read a hidden note — not an adversarial bypass, just the app's own agent behaving
+// normally. `failIfUnavailable` alone only gates a sandbox that fails to START; it does nothing
+// about a sandbox the model itself asks to skip per-call. `allowUnsandboxedCommands: false` is what
+// makes the SDK ignore that parameter outright (sdk.d.ts's `Settings.sandbox.allowUnsandboxedCommands`
+// docstring — the only prose in the bundled types describing this field; see docs/vault/visibility.md
+// for the full citation). Conditional on the same `denyEntries.length > 0` guard as every other gate
+// here — the negative case (unrestricted vault → sandbox omitted entirely) is already covered by the
+// test directly above.
+test("buildQueryOptions: sandbox.allowUnsandboxedCommands is false when the vault restricts notes", () => {
+  const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" }, [
+    { rel: "secret.md", abs: "/vault/secret.md" },
+  ])
+  expect((o.sandbox as { allowUnsandboxedCommands?: boolean } | undefined)?.allowUnsandboxedCommands).toBe(false)
+})
+
 test("buildQueryOptions resumes an existing session unless newSession is set", () => {
   expect(buildQueryOptions(ctx, undefined, "sess-1", { systemPrompt: "x" }).resume).toBe("sess-1")
   expect(buildQueryOptions(ctx, { newSession: true }, "sess-1", { systemPrompt: "x" }).resume).toBeUndefined()

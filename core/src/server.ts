@@ -62,7 +62,7 @@ import { writeRunRecord } from "./runRegistry";
 import { mintOwnerToken, resolveRequestChannel, type RequestChannel } from "./ownerToken";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, readMcpRegisterWith, type AppConfig, SETTINGS_FILE, setFolderIcon, setFolderVisibility, readDailyNotes } from "./settings";
-import { resolveVisibility, resolveFolderVisibility, buildDenyPaths, isDeniedPath, type Visibility, type DenyEntry } from "./visibility";
+import { resolveVisibility, resolveFolderVisibility, buildDenyPaths, isDeniedPath, type Visibility, type DenyEntry, type VisibilityChannel } from "./visibility";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 import { searchVault, invalidateSearchIndex, updateSearchIndex } from "./search";
@@ -529,14 +529,45 @@ export function createServer(cfg: CoreConfig) {
   }
 
   // The restricted-path list for a request's channel — [] for the owner (never filtered) or for
-  // an unrestricted vault (buildDenyPaths itself returns [] when nothing is marked). NOT cached:
-  // buildDenyPaths already resolves fresh on every call (see visibility.ts), so a visibility edit
-  // takes effect on the very next request — and only NON-owner traffic (agents, not the app's own
-  // high-frequency polling) ever pays for the walk, since the owner's requests short-circuit here.
+  // an unrestricted vault (buildDenyPaths itself returns [] when nothing is marked). Memoized
+  // PER VAULT VERSION (see `version`, bumped by the file watcher below): on the audited real
+  // vault, buildDenyPaths costs 114ms warm / 219ms cold and — with nothing hidden — walks the
+  // whole vault to discover exactly zero restricted entries, on every non-owner HTTP request AND
+  // every chat turn. `visibility.ts` stays deliberately uncached (its other callers — the daemon,
+  // the CLI, the MCP tools — are separate, short-lived, or minutes apart, so a per-call walk there
+  // is fine); the memo belongs here instead, where the invalidation signal already lives: a
+  // visibility edit writes `.settings`/frontmatter, the watcher classifies it, and `version` bumps
+  // (see the `version++` sites below) — so dropping the ENTIRE memo whenever the current version
+  // no longer matches the memo's stamped version reproduces the "next request sees the edit"
+  // contract exactly, just without re-walking on every OTHER request in between.
+  //
+  // The owner's requests short-circuit above this and never touch the memo at all. In-flight
+  // walks are memoized too (by promise, not just resolved value), so N concurrent non-owner
+  // requests during the same version share ONE walk instead of each starting their own. A
+  // rejected walk is evicted immediately rather than cached: fail-safe means the next request
+  // gets a fresh attempt (and, via the route dispatch's catch-all, a 500 — never a fallback to a
+  // permissive `[]`), not a walk permanently wedged in a failed state until the next edit.
+  let denyPathsMemoVersion = -1;
+  let denyPathsMemo = new Map<VisibilityChannel, Promise<DenyEntry[]>>();
+
   async function denyEntriesForRequest(req: Request): Promise<DenyEntry[]> {
     const channel = requestChannel(req);
     if (channel === "owner") return [];
-    return buildDenyPaths(cfg.vault, channel);
+
+    if (denyPathsMemoVersion !== version) {
+      denyPathsMemo = new Map();
+      denyPathsMemoVersion = version;
+    }
+
+    const cached = denyPathsMemo.get(channel);
+    if (cached) return cached;
+
+    const walk: Promise<DenyEntry[]> = buildDenyPaths(cfg.vault, channel).catch((err) => {
+      if (denyPathsMemo.get(channel) === walk) denyPathsMemo.delete(channel);
+      throw err;
+    });
+    denyPathsMemo.set(channel, walk);
+    return walk;
   }
 
   // The vault-relative path a graph node's content lives at, for the two node kinds that carry
