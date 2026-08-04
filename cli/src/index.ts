@@ -25,12 +25,16 @@ import { commands as pageCmds } from "./commands/page";
 import { commands as installCmds } from "./commands/install";
 import { commands as backendsCmds } from "./commands/backends";
 import { commands as checkpointCmds } from "./commands/checkpoint";
+import { commands as updateCmds } from "./commands/update";
+import { commands as gcalCmds } from "./commands/gcal";
+import { commands as relayCmds } from "./commands/relay";
 import { gateCliInvocation } from "../../core/src/visibilityCliGate";
 
 const registry: CommandMap = {
   ...fileCmds, ...noteCmds, ...searchCmds, ...graphCmds, ...taskCmds, ...baseCmds,
   ...calendarCmds, ...cardCmds, ...propCmds, ...settingsCmds, ...daemonCmds, ...drawCmds, ...serveCmds,
   ...exportCmds, ...apiCmds, ...appCmds, ...pageCmds, ...installCmds, ...backendsCmds, ...checkpointCmds,
+  ...updateCmds, ...gcalCmds, ...relayCmds,
 };
 
 function printHelp(): void {

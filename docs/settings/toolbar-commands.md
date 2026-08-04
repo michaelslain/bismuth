@@ -74,19 +74,27 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 27 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
 | 28 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
 | 29 | `graph-daemon` | Graph: Daemon | `Server` | `() => h.setMode("daemon")` |
-| 30 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
-| 31 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
-| 32 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 33 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
-| 34 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
-| 35 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
-| 36 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
-| 37 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
-| 38 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
-| 39 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
-| 40 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
-| 41 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
-| 42 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
+| 30 | `graph-local` | Graph: Local (open note) | `Pin` | `() => h.setMode("local")` |
+| 31 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
+| 32 | `split-right` | Split right | `PanelRight` | `h.splitPaneRight` (optional — see note below) |
+| 33 | `split-down` | Split down | `PanelBottom` | `h.splitPaneDown` (optional — see note below) |
+| 34 | `close-pane` | Close pane | `SquareX` | `h.closeFocusedPane` (optional — see note below) |
+| 35 | `focus-pane-left` | Focus pane left | `ArrowLeft` | `h.focusPaneLeft` (optional — see note below) |
+| 36 | `focus-pane-right` | Focus pane right | `ArrowRight` | `h.focusPaneRight` (optional — see note below) |
+| 37 | `focus-pane-up` | Focus pane up | `ArrowUp` | `h.focusPaneUp` (optional — see note below) |
+| 38 | `focus-pane-down` | Focus pane down | `ArrowDown` | `h.focusPaneDown` (optional — see note below) |
+| 39 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
+| 40 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
+| 41 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
+| 42 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
+| 43 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
+| 44 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
+| 45 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
+| 46 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
+| 47 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
+| 48 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
+| 49 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
+| 50 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
 
 Notes on individual commands:
 
@@ -99,7 +107,8 @@ Notes on individual commands:
 - **`detect-ai`**: estimates how AI-generated the active page reads and toasts the score. It runs a **local, offline** detector — see ["The `detect-ai` command"](#the-detect-ai-command).
 - **`emoji-library`**: opens the emoji grid picker (`h.openEmojiLibrary` → `openGallery({ source: emojiSource })`) and inserts the chosen glyph at the focused editor's caret (`insertIntoFocusedEditor`; toasts "Open a note to insert an emoji" when no note is focused). It is the **always-visible home** for the full library and ships in the **default sidebar toolbar** (beside `create-menu`). This is why the `:emoji` completion popup no longer carries an "Open emoji gallery" row — that buried the library and could outrank a real match like `:rocket` (#67; see `docs/editor/autocomplete.md`).
 - **`edit-dictionary`**: opens the modal to view/remove the user's custom spellcheck dictionary words (`h.openEditDictionary`).
-- **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-daemon`): each calls `h.setMode(...)` with the corresponding graph mode string.
+- **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-daemon`, `graph-local`): each calls `h.setMode(...)` with the corresponding graph mode string. `graph-local` switches to the open note's immediate neighborhood (`"local"` `GraphMode` — see `app/src/GraphView.tsx`), the same lens the graph's own LOCAL toggle button flips to.
+- **Pane commands** (`split-right`, `split-down`, `close-pane`, `focus-pane-left`, `focus-pane-right`, `focus-pane-up`, `focus-pane-down`): mirror the seven pane-arrangement keybindings in `core/src/keybindings.ts` (split/close/focus a pane), reusing `App.tsx`'s existing `splitPane`/`closeFocusedPane`/`focusNeighbor` logic rather than duplicating it. Their `CommandHandlers` fields are **optional** (`splitPaneRight?`, `splitPaneDown?`, `closeFocusedPane?`, `focusPaneLeft?`, `focusPaneRight?`, `focusPaneUp?`, `focusPaneDown?`) — when a handler isn't supplied, `bindCommands`'s defensive `if (!action) continue` just leaves that id unbound (present in the catalog and the `toolbar.command` enum, but `map.get(id)` returns `undefined` until `App.tsx` passes the handler in).
 - **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. See Daemon Integration in the project CLAUDE.md.
 - **`bismuth-install`**: opens the panel to install the `bismuth` CLI + MCP machine-wide (`h.openBismuthInstall`).
 - **`update-app`**: manually updates the Bismuth app (same pipeline as the `UpdateBanner` button) for when the banner was dismissed or missed; no-op-with-toast when already up to date / in dev (`h.updateApp`).
@@ -109,7 +118,6 @@ Notes on individual commands:
 
 ### Notable absences / gotchas
 
-- **There is no `graph-local` command** in the catalog, even though the renderer has a `"local"` graph mode. `setMode`'s type accepts `"2nd" | "3rd" | "both" | "daemon" | "local"`, but only the first four have catalog commands — `"local"` is a lens toggled from the graph's own UI (the LOCAL button), not a toolbar/palette command like the other graph modes.
 - **Several commands share an icon**: `Download` (`export`, `daemon-setup`, `bismuth-install`), `RefreshCw` (`daemon-update`, `update-app`, `gcal-sync`), and **`new-tab` shares `Plus` with `create-menu`**. That is intentional and allowed — icon uniqueness is not an invariant (only `id` uniqueness is).
 - Icons are **Lucide icon names** by convention (matched against the icon registry on the frontend), but toolbar/daily-note `icon` fields may also be a literal emoji (see "Button fields").
 
@@ -202,6 +210,17 @@ export interface CommandHandlers {
   setMode: (mode: GraphMode) => void;        // GraphMode = "2nd"|"3rd"|"both"|"daemon"|"local"
   openDailyNote: (id: string) => void;
   equalizePanes: () => void;
+  // Pane arrangement verbs — optional. App.tsx already implements each as a keybinding-only
+  // handler (splitPane/closeFocusedPane/focusNeighbor); these fields let bindCommands reuse
+  // that same logic once App.tsx passes it in. An omitted handler just leaves its command id
+  // unbound (see "Binding algorithm" below).
+  splitPaneRight?: () => void;
+  splitPaneDown?: () => void;
+  closeFocusedPane?: () => void;
+  focusPaneLeft?: () => void;
+  focusPaneRight?: () => void;
+  focusPaneUp?: () => void;
+  focusPaneDown?: () => void;
   toggleSidebar: () => void;
   newTab: () => void;
   closeActiveTab: () => void;
@@ -257,10 +276,10 @@ const commands = () => bindCommands({ openSettings, openTerminal, openSearch, ne
 
 ### Binding algorithm
 
-Inside `bindCommands` an internal `actions: Record<string, () => void | Promise<void>>` maps every catalog id to a closure over a handler. Then:
+Inside `bindCommands` an internal `actions: Record<string, ((e?: MouseEvent) => void | Promise<void>) | undefined>` maps every catalog id to a closure over a handler — the value type allows `undefined` so an unsupplied *optional* `CommandHandlers` field (the seven pane verbs above) can be plugged in directly. Then:
 
 1. For each `spec` in `COMMAND_CATALOG`, look up `actions[spec.id]`.
-2. If there is no action, **skip defensively** (a catalog entry with no binding is dropped silently).
+2. If there is no action (missing entirely, or an optional handler that's `undefined`), **skip defensively** (a catalog entry with no binding is dropped silently).
 3. Otherwise `map.set(spec.id, { id, label, icon, action })`, carrying the catalog's `label` and `icon`.
 
 This means the produced map keys are the catalog ids that have a binding, plus the dynamic daily-note ids (below).

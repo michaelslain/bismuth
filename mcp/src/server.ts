@@ -4,9 +4,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  type CallToolRequest,
+  type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import { listDocs, searchDocs, readDoc } from "./docs";
-import { runCli, cliHelp, formatCliResult } from "./cli";
+import { listSkills, readSkill } from "./skills";
+import { runCli, cliHelp, cliToolResult } from "./cli";
 import { memoryDir, remember, recall, forget } from "./memory";
 import { daemonTools, daemonEnabled, isDaemonTool, runDaemonTool } from "./daemon";
 
@@ -15,6 +18,9 @@ import { daemonTools, daemonEnabled, isDaemonTool, runDaemonTool } from "./daemo
 // docs) and BISMUTH_CLI (→ the compiled cli binary, consumed in cli.ts).
 const repoRoot = resolve(import.meta.dir, "..", "..");
 const docsRoot = process.env.BISMUTH_DOCS_DIR ?? repoRoot + "/docs";
+// Same pattern as docsRoot: a later machine-wide install stages skills/ alongside docs/ and sets
+// BISMUTH_SKILLS_DIR (→ core/src/bismuthInstall.ts, a parallel task) to point at the staged copy.
+const skillsRoot = process.env.BISMUTH_SKILLS_DIR ?? repoRoot + "/skills";
 
 const server = new Server(
   { name: "bismuth", version: "0.1.0" },
@@ -62,6 +68,25 @@ const tools = [
         },
       },
       required: ["path"],
+    },
+  },
+  {
+    name: "bismuth_skill",
+    description:
+      "Read a Bismuth skill (a how-to guide) by name — the same guidance Claude Code auto-loads from ~/.claude/skills, exposed here so every other agent backend (opencode, codex, cline, gemini, goose, openclaw, and the ACP backends) can reach it too, since none of them read that directory. Available: authoring-bismuth-bases (how to create a `type: base` note and choose among the 12 view kinds — read this BEFORE writing any base). Omit name to list all available skills with descriptions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Skill name, e.g. 'authoring-bismuth-bases'. Omit to list all skills.",
+        },
+        reference: {
+          type: "string",
+          description:
+            "Optional reference file within the skill's references/ dir (no path, no extension), e.g. 'kanban' for the kanban view-kind reference.",
+        },
+      },
     },
   },
   {
@@ -157,7 +182,10 @@ function asText(result: unknown): string {
   return JSON.stringify(result, null, 2);
 }
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+// Exported (rather than left as an inline callback) so tests can dispatch a fabricated
+// CallToolRequest straight through the real switch/case wiring — the thing that actually
+// determines isError — instead of only exercising the helpers (cliToolResult, cliHelp) it calls.
+export async function handleCallTool(request: CallToolRequest): Promise<CallToolResult> {
   const { name, arguments: rawArgs } = request.params;
   const args = (rawArgs ?? {}) as Record<string, unknown>;
   try {
@@ -183,18 +211,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ],
         };
       }
+      case "bismuth_skill": {
+        const skillName = typeof args.name === "string" ? args.name : undefined;
+        const reference = typeof args.reference === "string" ? args.reference : undefined;
+        const text =
+          skillName === undefined
+            ? asText(listSkills(skillsRoot))
+            : readSkill(skillsRoot, skillName, reference);
+        return { content: [{ type: "text", text }] };
+      }
       case "bismuth_cli": {
         const cliArgs = Array.isArray(args.args)
           ? (args.args as unknown[]).map(String)
           : [];
-        const r = await runCli(repoRoot, cliArgs);
-        return { content: [{ type: "text", text: formatCliResult(r) }] };
+        return cliToolResult(await runCli(repoRoot, cliArgs));
       }
       case "bismuth_cli_help": {
         const group = typeof args.group === "string" ? args.group : undefined;
-        return {
-          content: [{ type: "text", text: asText(await cliHelp(repoRoot, group)) }],
-        };
+        const { text, ok } = await cliHelp(repoRoot, group);
+        return { content: [{ type: "text", text }], isError: !ok };
       }
       case "remember":
       case "recall":
@@ -237,7 +272,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const msg = err instanceof Error ? err.message : String(err);
     return { content: [{ type: "text", text: msg }], isError: true };
   }
-});
+}
+
+server.setRequestHandler(CallToolRequestSchema, handleCallTool);
 
 async function main(): Promise<void> {
   const transport = new StdioServerTransport();

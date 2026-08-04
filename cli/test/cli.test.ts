@@ -1,4 +1,4 @@
-import { test, expect, beforeEach, afterEach } from "bun:test";
+import { test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -129,6 +129,95 @@ test("`bismuth app windows` fails cleanly (no crash) when no app is running", as
   expect(code).toBe(1); // fail() exits non-zero, doesn't throw an uncaught error
 });
 
+// --- `app rename`/`app pin`/`app reorder`: dispatch + arg validation --------------------------
+// A tiny in-test mock of POST /ui/command captures exactly what the CLI sent (action + args), so
+// these tests prove the argument-building logic in cli/src/commands/app.ts — not just "it didn't
+// crash" — without needing a real Bismuth window.
+
+/** Spin up a throwaway HTTP server that records every POST /ui/command body and answers it with
+ *  `reply`. Caller must `stop()` it. */
+function mockUiControlServer(reply: unknown = { ok: true }): { url: string; calls: any[]; stop: () => void } {
+  const calls: any[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (req) => {
+      if (req.method === "POST" && new URL(req.url).pathname === "/ui/command") {
+        calls.push(await req.json());
+        return new Response(JSON.stringify(reply), { headers: { "content-type": "application/json" } });
+      }
+      return new Response("not found", { status: 404 });
+    },
+  });
+  return { url: `http://localhost:${server.port}`, calls, stop: () => server.stop(true) };
+}
+
+test("`bismuth app rename <tabId> <name>` dispatches rename-tab with {tabId, name}", async () => {
+  const mock = mockUiControlServer({ ok: true });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "rename", "t1", "New Name", "--api", mock.url], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]).toMatchObject({ action: "rename-tab", args: { tabId: "t1", name: "New Name" } });
+  } finally {
+    mock.stop();
+  }
+});
+
+test("`bismuth app rename <tabId>` (missing name) fails before ever reaching the network", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "rename", "t1", "--api", "http://localhost:59999"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("usage: bismuth app rename");
+});
+
+test("`bismuth app pin <tabId>` dispatches pin-tab with pinned:true; `--off` sends pinned:false", async () => {
+  const mock = mockUiControlServer({ ok: true });
+  try {
+    const on = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "pin", "t1", "--api", mock.url], { stdout: "pipe", stderr: "pipe" });
+    expect(await on.exited).toBe(0);
+    const off = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "pin", "t1", "--off", "--api", mock.url], { stdout: "pipe", stderr: "pipe" });
+    expect(await off.exited).toBe(0);
+    expect(mock.calls).toHaveLength(2);
+    expect(mock.calls[0]).toMatchObject({ action: "pin-tab", args: { tabId: "t1", pinned: true } });
+    expect(mock.calls[1]).toMatchObject({ action: "pin-tab", args: { tabId: "t1", pinned: false } });
+  } finally {
+    mock.stop();
+  }
+});
+
+test("`bismuth app reorder <tabId> <index>` dispatches reorder-tab with a numeric index", async () => {
+  const mock = mockUiControlServer({ ok: true });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "reorder", "t1", "2", "--api", mock.url], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]).toMatchObject({ action: "reorder-tab", args: { tabId: "t1", index: 2 } });
+  } finally {
+    mock.stop();
+  }
+});
+
+test("`bismuth app reorder <tabId> <index>` rejects a non-integer index before ever reaching the network", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "reorder", "t1", "notanumber", "--api", "http://localhost:59999"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("invalid index");
+});
+
 // --- `calendar` group: headless calendar-base CRUD end-to-end --------------------------------
 
 /** Spawn `bismuth <args>` against a vault; returns { code, json } (json parsed from stdout). */
@@ -201,6 +290,61 @@ test("`bismuth calendar …` create → category → add → list/range/search �
   expect((await runCli(vault, "calendar", "list", cal)).json).toHaveLength(1);
 }, 60_000);
 
+// --- `card review` must honour settings.srs (not the hardcoded SM-2 defaults) ------------------
+
+test("`card review` honours settings.srs instead of the hardcoded defaults", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const { parseBaseFile } = await import("../../core/src/bases/parse");
+  const { applyReviewToRow } = await import("../../core/src/srs/reviewRow");
+  const { DEFAULT_SRS } = await import("../../core/src/srs/scheduler");
+  const { today } = await import("../src/args");
+
+  const deckPath = "Deck.md";
+  const vault = makeVault({
+    ".settings": "srs:\n  easyGraduatingInterval: 9\n",
+    [deckPath]: "---\ntype: base\nview: flashcards\n---\n\n| front | back | due | ease | interval |\n| --- | --- | --- | --- | --- |\n| a | b |  |  |  |\n",
+  });
+
+  // Capture the pre-review row so the expectation is computed from the SAME input the CLI sees.
+  const before = parseBaseFile(await readNote(vault, deckPath), { name: "Deck", path: deckPath });
+  const expected = applyReviewToRow(before.rows[0].note, "easy", today(), { ...DEFAULT_SRS, easyGraduatingInterval: 9 }, undefined);
+
+  const result = await runCli(vault, "card", "review", "--file", deckPath, "--index", "0", "--response", "easy");
+  expect(result.code).toBe(0);
+
+  const after = parseBaseFile(await readNote(vault, deckPath), { name: "Deck", path: deckPath });
+  expect(after.rows[0].note.interval).toBe(expected.interval);
+  // Sanity: the configured value actually diverges from what the hardcoded default would produce.
+  expect(expected.interval).not.toBe(DEFAULT_SRS.easyGraduatingInterval);
+});
+
+test("`card review` (legacy inline note card) honours settings.srs instead of the hardcoded defaults", async () => {
+  const { noteCards } = await import("../../core/src/srs/cards");
+  const { schedule, DEFAULT_SRS } = await import("../../core/src/srs/scheduler");
+  const { today } = await import("../src/args");
+
+  const notePath = "Card.md";
+  const vault = makeVault({
+    ".settings": "srs:\n  easyGraduatingInterval: 9\n",
+    [notePath]: "Q1::A1\n",
+  });
+  const cardId = `${notePath}::0::0`;
+
+  // Independent expectation: the scheduler itself, given the explicit configured value. Only
+  // `interval` is asserted below (not `due`) — `due` is derived from "today", and bun's test
+  // runner forces its own process clock to UTC while the spawned CLI subprocess uses the real
+  // system timezone, so comparing ISO due-dates across that boundary is flaky near midnight UTC.
+  const expected = schedule(null, "easy", today(), { ...DEFAULT_SRS, easyGraduatingInterval: 9 });
+  // Sanity: the configured value actually diverges from what the hardcoded default would produce.
+  expect(expected.interval).not.toBe(DEFAULT_SRS.easyGraduatingInterval);
+
+  const result = await runCli(vault, "card", "review", cardId, "easy");
+  expect(result.code).toBe(0);
+
+  const reviewed = (await noteCards(vault, notePath)).find((c) => c.id === cardId);
+  expect(reviewed?.interval).toBe(expected.interval);
+});
+
 test("`bismuth page create` + `page list` author and read back a page headlessly", async () => {
   const { vault } = await makeSampleVault();
   const create = Bun.spawn(
@@ -220,4 +364,878 @@ test("`bismuth page create` + `page list` author and read back a page headlessly
   await list.exited;
   const pages = JSON.parse(listOut);
   expect(pages.some((p: any) => p.slug === "cli-page" && p.title === "From CLI")).toBe(true);
+});
+
+// --- `replace` scoping + snapshot (cli/src/commands/search.ts) --------------------------------
+
+test("`replace --scope <path>` only rewrites the named note", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({ "A.md": "target here\n", "B.md": "target here\n" });
+
+  const result = await runCli(vault, "replace", "target", "changed", "--scope", "A.md");
+  expect(result.code).toBe(0);
+
+  expect(await readNote(vault, "A.md")).toContain("changed");
+  expect(await readNote(vault, "B.md")).toContain("target");
+});
+
+test("a vault-wide replace leaves a git snapshot to undo from", async () => {
+  const vault = makeVault({ "A.md": "target here\n" });
+
+  const result = await runCli(vault, "replace", "target", "changed");
+  expect(result.code).toBe(0);
+
+  const log = await Bun.spawn(["git", "-C", vault, "log", "--oneline"], { stdout: "pipe" });
+  const logOut = await new Response(log.stdout).text();
+  await log.exited;
+  expect(logOut.trim()).not.toBe("");
+});
+
+test("a snapshot failure warns on stderr but the replace still proceeds", async () => {
+  const { mkdirSync, writeFileSync, chmodSync } = await import("node:fs");
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({ "A.md": "target here\n" });
+
+  // First replace git-inits the vault and commits the pre-replace state, then rewrites A.md —
+  // leaving an uncommitted change behind for the NEXT snapshot attempt to actually have to commit.
+  const first = await runCli(vault, "replace", "target", "changed1");
+  expect(first.code).toBe(0);
+
+  // Install a pre-commit hook that always fails, the way the reviewer reproduced the silent bug.
+  const hookDir = join(vault, ".git", "hooks");
+  mkdirSync(hookDir, { recursive: true });
+  const hookPath = join(hookDir, "pre-commit");
+  writeFileSync(hookPath, "#!/bin/sh\nexit 1\n");
+  chmodSync(hookPath, 0o755);
+
+  const before = await Bun.spawn(["git", "-C", vault, "log", "--oneline"], { stdout: "pipe" });
+  const commitsBefore = (await new Response(before.stdout).text()).trim().split("\n").length;
+
+  const result = await runCli(vault, "replace", "changed1", "changed2");
+  expect(result.code).toBe(0); // best-effort: the replace still proceeds
+  expect(result.err).toContain("warning: snapshot failed");
+  expect(await readNote(vault, "A.md")).toContain("changed2"); // the replace itself wasn't blocked
+
+  const after = await Bun.spawn(["git", "-C", vault, "log", "--oneline"], { stdout: "pipe" });
+  const commitsAfter = (await new Response(after.stdout).text()).trim().split("\n").length;
+  expect(commitsAfter).toBe(commitsBefore); // the failed snapshot really didn't commit anything
+});
+
+// --- `daily --id <n>` selects a configured daily-note type by index (note.ts) -----------------
+
+test("`daily --id <n>` selects a configured daily-note type by index; out-of-range fails naming the count", async () => {
+  const vault = makeVault({
+    ".settings":
+      "dailyNotes:\n" +
+      '  - id: journal\n    label: Journal\n    icon: BookOpen\n    folder: Journal\n    fileName: "{{date}} journal"\n    template: ""\n' +
+      '  - id: work\n    label: Work\n    icon: Briefcase\n    folder: Work\n    fileName: "{{date}} work"\n    template: ""\n',
+  });
+
+  // --id 1 picks the SECOND configured type (Work/), not the first (Journal/). A date-derived
+  // filename can't be asserted exactly (bun test forces UTC, the spawned CLI uses local time —
+  // see the module docstring on the daily-note filename/timezone caveat), so assert on the
+  // stable part: which folder the path landed under.
+  const second = await runCli(vault, "daily", "--id", "1");
+  expect(second.code).toBe(0);
+  expect(second.json.path.startsWith("Work/")).toBe(true);
+
+  // Out of range fails, naming how many types the vault configures.
+  const outOfRange = await runCli(vault, "daily", "--id", "5");
+  expect(outOfRange.code).toBe(1);
+  expect(outOfRange.err).toContain("2");
+});
+
+test("`daily --id <n>` against a vault with `dailyNotes: []` (explicit empty): --id 0 falls back to the built-in default, --id 1 fails naming 0 configured types", async () => {
+  const vault = makeVault({ ".settings": "dailyNotes: []\n" });
+
+  const zero = await runCli(vault, "daily", "--id", "0");
+  expect(zero.code).toBe(0);
+  // The built-in default is { folder: "", fileName: "{{date}}" } → a root-level "<date>.md", no
+  // folder prefix. Exact date not asserted (bun test forces UTC; the spawned CLI uses local
+  // time — see the earlier daily-note test's note on that mismatch).
+  expect(zero.json.path).toMatch(/^\d{4}-\d{2}-\d{2}\.md$/);
+
+  const outOfRange = await runCli(vault, "daily", "--id", "1");
+  expect(outOfRange.code).toBe(1);
+  expect(outOfRange.err).toContain("0 daily-note type");
+});
+
+// --- `task toggle --status <char>` sets an explicit status instead of the binary toggle -------
+
+test("`task toggle --status <char>` sets an explicit status char; without it, the binary toggle is unchanged", async () => {
+  const vault = makeVault({ "Todo.md": "- [ ] buy milk\n" });
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "task", "toggle", "Todo.md", "1", "--status", "/");
+  expect(result.code).toBe(0);
+  expect(await readNote(vault, "Todo.md")).toContain("- [/] buy milk");
+});
+
+test("`task toggle --status <multi-char>` is rejected", async () => {
+  const vault = makeVault({ "Todo.md": "- [ ] buy milk\n" });
+  const result = await runCli(vault, "task", "toggle", "Todo.md", "1", "--status", "ab");
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("--status");
+});
+
+test("`task toggle --status <newline>` is rejected — a control char would silently corrupt the file", async () => {
+  const vault = makeVault({ "Todo.md": "- [ ] buy milk\n" });
+  const { readNote } = await import("../../core/src/files");
+  const before = await readNote(vault, "Todo.md");
+
+  const result = await runCli(vault, "task", "toggle", "Todo.md", "1", "--status", "\n");
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("--status");
+  expect(await readNote(vault, "Todo.md")).toBe(before); // the file must be untouched, not half-written
+});
+
+test("`task toggle --status <tab>` still round-trips (tab isn't destructive — TASK_LINE's `.` matches it)", async () => {
+  const vault = makeVault({ "Todo.md": "- [ ] buy milk\n" });
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "task", "toggle", "Todo.md", "1", "--status", "\t");
+  expect(result.code).toBe(0);
+  expect(await readNote(vault, "Todo.md")).toContain("- [\t] buy milk");
+});
+
+// --- `render --theme` / `export --theme` (draw.ts / export.ts) --------------------------------
+
+test("`render --theme light` produces bytes that differ from the default dark theme", async () => {
+  const { readFileSync, writeFileSync } = await import("node:fs");
+  const { emptyDoc } = await import("../../core/src/drawing/model");
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-draw-render-"));
+  const drawPath = join(dir, "Sketch.draw");
+  writeFileSync(drawPath, JSON.stringify(emptyDoc()));
+  const darkOut = join(dir, "dark.png");
+  const lightOut = join(dir, "light.png");
+
+  const dark = Bun.spawn(["bun", "run", "cli/src/index.ts", "render", drawPath, "--out", darkOut], { stdout: "pipe", stderr: "pipe" });
+  expect((await dark.exited)).toBe(0);
+  const light = Bun.spawn(["bun", "run", "cli/src/index.ts", "render", drawPath, "--out", lightOut, "--theme", "light"], { stdout: "pipe", stderr: "pipe" });
+  expect((await light.exited)).toBe(0);
+
+  expect(Buffer.compare(readFileSync(darkOut), readFileSync(lightOut))).not.toBe(0);
+});
+
+test("`render --theme purple` is rejected", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const { emptyDoc } = await import("../../core/src/drawing/model");
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-draw-render-bad-"));
+  const drawPath = join(dir, "Sketch.draw");
+  writeFileSync(drawPath, JSON.stringify(emptyDoc()));
+
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "render", drawPath, "--theme", "purple"], { stdout: "pipe", stderr: "pipe" });
+  const [, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("--theme");
+});
+
+test("`export <file.draw> --theme light` produces bytes that differ from the default dark theme", async () => {
+  const { readFileSync, writeFileSync } = await import("node:fs");
+  const { emptyDoc } = await import("../../core/src/drawing/model");
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-draw-export-"));
+  const drawPath = join(dir, "Sketch.draw");
+  writeFileSync(drawPath, JSON.stringify(emptyDoc()));
+  const darkOut = join(dir, "dark.png");
+  const lightOut = join(dir, "light.png");
+
+  const dark = Bun.spawn(["bun", "run", "cli/src/index.ts", "export", drawPath, "--out", darkOut], { stdout: "pipe", stderr: "pipe" });
+  expect((await dark.exited)).toBe(0);
+  const light = Bun.spawn(["bun", "run", "cli/src/index.ts", "export", drawPath, "--out", lightOut, "--theme", "light"], { stdout: "pipe", stderr: "pipe" });
+  expect((await light.exited)).toBe(0);
+
+  expect(Buffer.compare(readFileSync(darkOut), readFileSync(lightOut))).not.toBe(0);
+});
+
+// --- `note new` applies the vault's configured default template (note.ts) ---------------------
+
+test("`note new` applies the vault's configured default template when --template is omitted", async () => {
+  const vault = makeVault({
+    ".settings": "templates:\n  folder: Templates\n  newNote: Templates/Default.md\n",
+    "Templates/Default.md": "# {{title}}\n\nDefault body.\n",
+  });
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "note", "new", "Quick.md");
+  expect(result.code).toBe(0);
+  expect(await readNote(vault, "Quick.md")).toBe("# Quick\n\nDefault body.\n");
+});
+
+test("`note new --no-template` skips the vault's configured default template", async () => {
+  const vault = makeVault({
+    ".settings": "templates:\n  folder: Templates\n  newNote: Templates/Default.md\n",
+    "Templates/Default.md": "# {{title}}\n\nDefault body.\n",
+  });
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "note", "new", "Quick.md", "--no-template");
+  expect(result.code).toBe(0);
+  expect(await readNote(vault, "Quick.md")).toBe("");
+});
+
+// --- `base create` (base.ts) -------------------------------------------------------------------
+
+test("`base create --view kanban --group-by ...` writes a file that parses back with the kanban view + defaults", async () => {
+  const vault = makeVault({});
+  const { parseBaseFile } = await import("../../core/src/bases/parse");
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "base", "create", "Board.md", "--view", "kanban", "--group-by", "note.status");
+  expect(result.code).toBe(0);
+  expect(result.json).toMatchObject({ ok: true, path: "Board.md", view: "kanban", source: "notes", title: "Board" });
+  expect(result.json.missing).toBeUndefined(); // groupBy was supplied — nothing left to fill in
+
+  const text = await readNote(vault, "Board.md");
+  const { config } = parseBaseFile(text, { name: "Board", path: "Board.md" });
+  expect(config.views).toHaveLength(1);
+  expect(config.views[0].type).toBe("kanban");
+  expect(config.views[0].groupBy).toEqual({ property: "note.status", direction: "ASC" });
+  expect(config.source).toEqual({ kind: "notes" }); // --source omitted -> defaults to "notes"
+});
+
+test("`base create --view gantt` (not a real view kind) fails and names the valid kinds", async () => {
+  const vault = makeVault({});
+  const { VIEW_TYPES } = await import("../../core/src/bases/types");
+
+  const result = await runCli(vault, "base", "create", "Board.md", "--view", "gantt");
+  expect(result.code).toBe(1);
+  for (const kind of VIEW_TYPES) expect(result.err).toContain(kind);
+});
+
+test("`base create --view kanban` without --group-by still writes the file, but reports the missing key", async () => {
+  const vault = makeVault({});
+  const { parseBaseFile } = await import("../../core/src/bases/parse");
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "base", "create", "Board.md", "--view", "kanban");
+  expect(result.code).toBe(0);
+  expect(result.json.missing).toEqual(["groupBy"]);
+  expect(result.json.note).toContain("groupBy");
+
+  // The view still parses — groupBy is present with a blank property, not omitted entirely
+  // (an omitted groupBy would make the board silently render a hint message instead of data).
+  const text = await readNote(vault, "Board.md");
+  const { config } = parseBaseFile(text, { name: "Board", path: "Board.md" });
+  expect(config.views[0].groupBy).toEqual({ property: "", direction: "ASC" });
+});
+
+test("`base create` reports missing config for map (lat/lng) and chart (x) views too, cleared once supplied", async () => {
+  const vault = makeVault({});
+
+  const map = await runCli(vault, "base", "create", "Atlas.md", "--view", "map");
+  expect(map.code).toBe(0);
+  expect(map.json.missing).toEqual(["lat", "lng"]);
+
+  const bar = await runCli(vault, "base", "create", "Chart.md", "--view", "bar");
+  expect(bar.code).toBe(0);
+  expect(bar.json.missing).toEqual(["x"]);
+
+  const mapFilled = await runCli(vault, "base", "create", "Atlas2.md", "--view", "map", "--lat", "latitude", "--lng", "longitude");
+  expect(mapFilled.code).toBe(0);
+  expect(mapFilled.json.missing).toBeUndefined();
+});
+
+test("`base create` refuses to clobber an existing file", async () => {
+  const vault = makeVault({});
+  expect((await runCli(vault, "base", "create", "Board.md", "--view", "table")).code).toBe(0);
+  expect((await runCli(vault, "base", "create", "Board.md", "--view", "table")).code).toBe(1);
+});
+
+// --- `base validate` (base.ts) -------------------------------------------------------------------
+
+test("`base validate` on a base with an unknown view type reports it AND exits non-zero", async () => {
+  const vault = makeVault({
+    "Bad.md": "---\ntype: base\nviews:\n  - type: gantt\n    name: Bad\n---\n",
+  });
+  const result = await runCli(vault, "base", "validate", "Bad.md");
+  expect(result.code).toBe(1);
+  expect(result.json.ok).toBe(false);
+  expect(result.json.errors.some((e: string) => e.includes("gantt"))).toBe(true);
+  expect(result.json.errors.some((e: string) => e.includes("not a valid view type"))).toBe(true);
+});
+
+test("`base validate` on a well-formed base returns ok: true, exit 0", async () => {
+  const vault = makeVault({
+    "Good.md": "---\ntype: base\nsource: notes\nviews:\n  - type: table\n    name: Table\n---\n",
+  });
+  const result = await runCli(vault, "base", "validate", "Good.md");
+  expect(result.code).toBe(0);
+  expect(result.json).toEqual({ ok: true, errors: [] });
+});
+
+test("`base validate` flags a declared property default that fails its own type", async () => {
+  const vault = makeVault({
+    "Typed.md":
+      "---\ntype: base\nproperties:\n  - name: age\n    type: number\n    default: not-a-number\nviews:\n  - type: table\n    name: Table\n---\n",
+  });
+  const result = await runCli(vault, "base", "validate", "Typed.md");
+  expect(result.code).toBe(1);
+  expect(result.json.ok).toBe(false);
+  expect(result.json.errors.some((e: string) => e.includes("properties.age.default"))).toBe(true);
+});
+
+test("`base validate` flags a source ref that doesn't resolve to a file in the vault", async () => {
+  const vault = makeVault({
+    "Composed.md": "---\ntype: base\nsource:\n  kind: base\n  ref: '[[Nonexistent]]'\nviews:\n  - type: table\n    name: Table\n---\n",
+  });
+  const result = await runCli(vault, "base", "validate", "Composed.md");
+  expect(result.code).toBe(1);
+  expect(result.json.ok).toBe(false);
+  expect(result.json.errors.some((e: string) => e.includes("Nonexistent"))).toBe(true);
+});
+
+// --- `base render` (base.ts) ---------------------------------------------------------------------
+
+test("`base render` on a kanban base returns GROUPED output, not raw rows", async () => {
+  const vault = makeVault({
+    "Board.md":
+      "---\ntype: base\nsource: notes where status\nviews:\n  - type: kanban\n    name: Board\n    groupBy: { property: note.status }\n---\n",
+    "Task1.md": "---\nstatus: todo\n---\nfirst\n",
+    "Task2.md": "---\nstatus: done\n---\nsecond\n",
+    "Task3.md": "---\nstatus: todo\n---\nthird\n",
+  });
+  const result = await runCli(vault, "base", "render", "Board.md");
+  expect(result.code).toBe(0);
+  expect(Array.isArray(result.json.groups)).toBe(true);
+  const keys = result.json.groups.map((g: any) => g.key).sort();
+  expect(keys).toEqual(["done", "todo"]);
+  const todoGroup = result.json.groups.find((g: any) => g.key === "todo");
+  expect(todoGroup.rows).toHaveLength(2);
+});
+
+test("`base render` on a stat base returns a computed aggregate, not the row list", async () => {
+  const vault = makeVault({
+    "Chart.md": "---\ntype: base\nsource: notes where amount\nviews:\n  - type: stat\n    name: Stat\n    x: category\n---\n",
+    "Sale1.md": "---\ncategory: A\namount: 10\n---\n",
+    "Sale2.md": "---\ncategory: A\namount: 20\n---\n",
+    "Sale3.md": "---\ncategory: B\namount: 5\n---\n",
+  });
+  const result = await runCli(vault, "base", "render", "Chart.md");
+  expect(result.code).toBe(0);
+  expect(result.json.groups).toBeUndefined(); // aggregate series, not raw grouped rows
+  expect(Array.isArray(result.json.chart.points)).toBe(true);
+  const byKey = Object.fromEntries(result.json.chart.points.map((p: any) => [p.key, p.value]));
+  expect(byKey.A).toBe(30); // sum of the two "A" rows' amount
+  expect(byKey.B).toBe(5);
+});
+
+test("`base render --view <n>` picks a non-default view", async () => {
+  const vault = makeVault({
+    "Multi.md":
+      "---\ntype: base\nsource: notes\nviews:\n  - type: table\n    name: Table\n  - type: list\n    name: List\n---\n",
+  });
+  const result = await runCli(vault, "base", "render", "Multi.md", "--view", "1");
+  expect(result.code).toBe(0);
+  expect(result.json.view.type).toBe("list");
+});
+
+// --- `daemon stop` / `daemon restart` (daemon.ts) — wiring to the platform module ---------------
+// unloadDaemon/restartDaemon drive REAL launchctl/systemctl, so a round-trip isn't testable in
+// CI (and must never run against this machine's real daemon — see the hard constraint in the
+// task brief). These assert the WIRING instead: the command calls the platform function with the
+// right args, forwards its result through `out()`, and exits non-zero when `ok` is false.
+//
+// The platform module is mocked BEFORE daemon.ts is ever imported in this process, so
+// daemonConfigPath/unloadDaemon/restartDaemon are stubbed and any real spawnSync of
+// launchctl/systemctl is never invoked here. Each test reconfigures `platformMock`'s fields
+// rather than re-registering the mock, since mock.module's replacement module object is shared
+// (live ES-module bindings) across every already-resolved import of the specifier. The
+// replacement spreads the REAL module's other exports (notify, planEnsureInstalled, …) first —
+// mock.module swaps the module out for every consumer process-wide (not just this file), so a
+// bare `{ daemonConfigPath, unloadDaemon, restartDaemon }` would erase those exports for any
+// daemon-workspace test that imports platform.ts later in the same `bun test` run.
+const realPlatform = await import("../../daemon/src/lib/platform");
+const platformMock: {
+  configPath: string;
+  unload: (configPath: string) => { ok: boolean; error?: string };
+  restart: () => { ok: boolean; error?: string };
+} = {
+  configPath: "/fake/.bismuth-test/config.plist",
+  unload: () => ({ ok: true }),
+  restart: () => ({ ok: true }),
+};
+mock.module("../../daemon/src/lib/platform", () => ({
+  ...realPlatform,
+  daemonConfigPath: () => platformMock.configPath,
+  unloadDaemon: (configPath: string) => platformMock.unload(configPath),
+  restartDaemon: () => platformMock.restart(),
+}));
+const { commands: daemonCommands } = await import("../src/commands/daemon");
+
+/** Capture console.log output AND process.exit's code around `fn()`, restoring both afterward.
+ *  process.exit is stubbed to record the code and abort via throw (a real exit would kill the
+ *  test runner) — that throw is swallowed here so callers get a plain `{ logs, code }` back
+ *  whether or not `fn()`'s command called process.exit. A single combined helper (rather than
+ *  nesting a logs-capture inside an exit-capture) matters: if `fn()` throws to unwind the stubbed
+ *  exit, an *outer* capture's `return` after `await fn()` never runs, silently discarding
+ *  whatever the inner capture collected. */
+async function captureLogsAndExit(fn: () => void | Promise<void>): Promise<{ logs: string[]; code: number | undefined }> {
+  const logs: string[] = [];
+  const originalLog = console.log;
+  const originalExit = process.exit;
+  let code: number | undefined;
+  console.log = (s: unknown) => { logs.push(String(s)); };
+  process.exit = ((c?: number) => {
+    code = c;
+    throw new Error("__test_process_exit__");
+  }) as never;
+  try {
+    await fn();
+  } catch (e) {
+    if (!(e instanceof Error) || e.message !== "__test_process_exit__") throw e;
+  } finally {
+    console.log = originalLog;
+    process.exit = originalExit;
+  }
+  return { logs, code };
+}
+
+test("`daemon stop`/`daemon restart` are registered, take no positionals, and accept --pretty", () => {
+  expect(daemonCommands["daemon stop"]).toBeDefined();
+  expect(daemonCommands["daemon restart"]).toBeDefined();
+  expect(daemonCommands["daemon stop"].usage).toBe("[--pretty]");
+  expect(daemonCommands["daemon restart"].usage).toBe("[--pretty]");
+});
+
+test("`daemon stop` calls unloadDaemon(daemonConfigPath()) and reports {ok:true} on success", async () => {
+  let calledWith: string | undefined;
+  platformMock.unload = (configPath) => { calledWith = configPath; return { ok: true }; };
+
+  const { logs, code } = await captureLogsAndExit(() => daemonCommands["daemon stop"].run([]));
+
+  expect(calledWith).toBe(platformMock.configPath);
+  expect(JSON.parse(logs[0])).toEqual({ ok: true });
+  expect(code).toBeUndefined(); // success never calls process.exit
+});
+
+test("`daemon stop` exits non-zero and reports {ok:false,error} when unloadDaemon reports failure", async () => {
+  platformMock.unload = () => ({ ok: false, error: "launchctl unload failed: boom" });
+
+  const { logs, code } = await captureLogsAndExit(() => daemonCommands["daemon stop"].run([]));
+
+  expect(code).toBe(1);
+  expect(JSON.parse(logs[0])).toEqual({ ok: false, error: "launchctl unload failed: boom" });
+});
+
+test("`daemon restart` calls restartDaemon() and forwards {ok:true}, exit 0", async () => {
+  let restartCalled = false;
+  platformMock.restart = () => { restartCalled = true; return { ok: true }; };
+
+  const { logs, code } = await captureLogsAndExit(() => daemonCommands["daemon restart"].run([]));
+
+  expect(restartCalled).toBe(true);
+  expect(JSON.parse(logs[0])).toEqual({ ok: true });
+  expect(code).toBeUndefined(); // success never calls process.exit
+});
+
+test("`daemon restart` exits non-zero when restartDaemon() reports {ok:false,error}", async () => {
+  platformMock.restart = () => ({ ok: false, error: "launchctl kickstart failed: boom" });
+
+  const { logs, code } = await captureLogsAndExit(() => daemonCommands["daemon restart"].run([]));
+
+  expect(code).toBe(1);
+  expect(JSON.parse(logs[0])).toEqual({ ok: false, error: "launchctl kickstart failed: boom" });
+});
+
+test("`daemon restart --pretty` pretty-prints the JSON result (argument parsing works)", async () => {
+  platformMock.restart = () => ({ ok: true });
+
+  const { logs } = await captureLogsAndExit(() => daemonCommands["daemon restart"].run(["--pretty"]));
+
+  expect(logs[0]).toBe(JSON.stringify({ ok: true }, null, 2));
+});
+
+// --- `update status` / `update apply` (commands/update.ts) — dispatch + route JSON passthrough --
+
+/** Spin up a throwaway HTTP server that records every request and answers GET /update/status /
+ *  POST /update/apply with the given payloads. Caller must `stop()` it. */
+function mockUpdateServer(replies: { status?: unknown; apply?: unknown } = {}): {
+  url: string;
+  calls: { method: string; path: string }[];
+  stop: () => void;
+} {
+  const calls: { method: string; path: string }[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req) => {
+      const { pathname } = new URL(req.url);
+      calls.push({ method: req.method, path: pathname });
+      if (req.method === "GET" && pathname === "/update/status") {
+        return new Response(JSON.stringify(replies.status ?? { available: false, behind: 0 }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (req.method === "POST" && pathname === "/update/apply") {
+        return new Response(JSON.stringify(replies.apply ?? { phase: "idle" }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    },
+  });
+  return { url: `http://localhost:${server.port}`, calls, stop: () => server.stop(true) };
+}
+
+test("`bismuth update status` GETs /update/status and prints the route's JSON", async () => {
+  const mockSrv = mockUpdateServer({
+    status: { available: true, behind: 3, localSha: "abc123", remoteSha: "def456", builtSha: "abc123", dirty: false },
+  });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "update", "status", "--api", mockSrv.url], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls).toEqual([{ method: "GET", path: "/update/status" }]);
+    expect(JSON.parse(outText)).toEqual({
+      available: true,
+      behind: 3,
+      localSha: "abc123",
+      remoteSha: "def456",
+      builtSha: "abc123",
+      dirty: false,
+    });
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`bismuth update apply` POSTs /update/apply and prints the route's JSON", async () => {
+  const mockSrv = mockUpdateServer({ apply: { phase: "pulling", message: "pulling latest…" } });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "update", "apply", "--api", mockSrv.url], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls).toEqual([{ method: "POST", path: "/update/apply" }]);
+    expect(JSON.parse(outText)).toEqual({ phase: "pulling", message: "pulling latest…" });
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`bismuth update status` fails cleanly (no crash) when no server is running", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "update", "status", "--api", "http://localhost:59998"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+});
+
+// --- `gcal targets` / `gcal health` (commands/gcal.ts) — headless, no server needed ------------
+// Both had NO caller reachable from the CLI/an agent before this: `listGcalSyncTargets` was only
+// called by the internal 60s auto-sync ticker; `readManifest`/`baseSyncOf` read a file OUTSIDE
+// the vault that no vault-scoped command could reach either.
+
+test("`gcal targets` lists calendar bases with Google sync enabled — ignores sync-off bases and non-base notes", async () => {
+  const vault = makeVault({
+    "Work.md": "---\ntype: base\nviews:\n  - type: calendar\n    googleCalendarSync: true\n    googleCalendarId: work-cal\ncategories: []\n---\n",
+    "Off.md": "---\ntype: base\nviews:\n  - type: calendar\n    googleCalendarSync: false\ncategories: []\n---\n",
+    "Note.md": "# Just a note, not a base\n",
+  });
+  const result = await runCli(vault, "gcal", "targets");
+  expect(result.code).toBe(0);
+  expect(result.json).toEqual([{ basePath: "Work.md", calendarId: "work-cal" }]);
+});
+
+test("`gcal health` reads the manifest at BISMUTH_GCAL_DIR (outside the vault) — per-base and whole-manifest shapes", async () => {
+  const { mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+  const gcalDir = mkdtempSync(join(tmpdir(), "bismuth-gcal-health-"));
+  mkdirSync(gcalDir, { recursive: true });
+  writeFileSync(
+    join(gcalDir, "sync.json"),
+    JSON.stringify({
+      bases: {
+        "Work.md": {
+          lastSyncAt: "2026-01-01T00:00:00.000Z",
+          syncToken: "tok1",
+          calendarId: "work-cal",
+          links: { ev1: { bismuthId: "b1" }, ev2: { bismuthId: "b2" } },
+        },
+        "Home.md": { calendarId: "home-cal", links: {} },
+      },
+    }),
+  );
+  try {
+    const all = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "health"], {
+      stdout: "pipe",
+      env: { ...process.env, BISMUTH_GCAL_DIR: gcalDir },
+    });
+    const allOut = await new Response(all.stdout).text();
+    expect(await all.exited).toBe(0);
+    const parsed = JSON.parse(allOut);
+    expect(parsed).toContainEqual({ basePath: "Work.md", calendarId: "work-cal", lastSyncAt: "2026-01-01T00:00:00.000Z", linkedEvents: 2, hasSyncToken: true });
+    expect(parsed).toContainEqual({ basePath: "Home.md", calendarId: "home-cal", linkedEvents: 0, hasSyncToken: false }); // no lastSyncAt key — never synced
+
+    const single = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "health", "Work.md"], {
+      stdout: "pipe",
+      env: { ...process.env, BISMUTH_GCAL_DIR: gcalDir },
+    });
+    const singleOut = await new Response(single.stdout).text();
+    expect(await single.exited).toBe(0);
+    expect(JSON.parse(singleOut)).toEqual({ basePath: "Work.md", calendarId: "work-cal", lastSyncAt: "2026-01-01T00:00:00.000Z", linkedEvents: 2, hasSyncToken: true });
+  } finally {
+    rmSync(gcalDir, { recursive: true, force: true });
+  }
+});
+
+// --- `gcal status/connect/sync/disconnect` (commands/gcal.ts) — server-backed, fake server ------
+// Per the hard constraint (never touch the user's real Google account), these hit a throwaway
+// in-test HTTP server that mimics the real `/gcal/*` route contracts, never core/src/gcal/index.ts
+// itself — proving the CLI's dispatch/argument-building/output-passthrough, not live OAuth/sync.
+
+function mockGcalServer(replies: { status?: unknown; authStart?: unknown; sync?: unknown } = {}): {
+  url: string;
+  calls: { method: string; path: string; body: unknown }[];
+  stop: () => void;
+} {
+  const calls: { method: string; path: string; body: unknown }[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (req) => {
+      const { pathname } = new URL(req.url);
+      let body: unknown;
+      if (req.method !== "GET") {
+        try {
+          body = await req.json();
+        } catch {
+          body = undefined;
+        }
+      }
+      calls.push({ method: req.method, path: pathname, body });
+      if (req.method === "GET" && pathname === "/gcal/status") return Response.json(replies.status ?? { connected: false, needsCredentials: true });
+      if (req.method === "POST" && pathname === "/gcal/credentials") return Response.json({ ok: true });
+      if (req.method === "POST" && pathname === "/gcal/auth/start") return Response.json(replies.authStart ?? { url: "https://accounts.google.com/o/oauth2/v2/auth?fake=1" });
+      if (req.method === "POST" && pathname === "/gcal/sync") {
+        return Response.json(
+          replies.sync ?? { total: 0, pulledNew: 0, pulledUpdate: 0, pushedNew: 0, pushedUpdate: 0, deletedLocal: 0, deletedRemote: 0, conflicts: 0, skipped: 0, failed: 0, relinked: 0 },
+        );
+      }
+      if (req.method === "POST" && pathname === "/gcal/disconnect") return Response.json({ ok: true });
+      return new Response("not found", { status: 404 });
+    },
+  });
+  return { url: `http://localhost:${server.port}`, calls, stop: () => server.stop(true) };
+}
+
+test("`gcal status` GETs /gcal/status and prints the route's JSON", async () => {
+  const mockSrv = mockGcalServer({ status: { connected: true, needsCredentials: false, account: "me@example.com", timeZone: "UTC", connectedAt: "2026-01-01T00:00:00Z" } });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "status", "--api", mockSrv.url], { stdout: "pipe", stderr: "pipe" });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls).toEqual([{ method: "GET", path: "/gcal/status", body: undefined }]);
+    expect(JSON.parse(outText)).toEqual({ connected: true, needsCredentials: false, account: "me@example.com", timeZone: "UTC", connectedAt: "2026-01-01T00:00:00Z" });
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`gcal connect --client-id --client-secret` POSTs credentials then auth/start, prints the consent URL + a browser note (never claims the flow completed)", async () => {
+  const mockSrv = mockGcalServer({ authStart: { url: "https://accounts.google.com/fake-consent" } });
+  try {
+    const proc = Bun.spawn(
+      ["bun", "run", "cli/src/index.ts", "gcal", "connect", "--client-id", "cid", "--client-secret", "csecret", "--api", mockSrv.url],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls.map((c) => ({ method: c.method, path: c.path }))).toEqual([
+      { method: "POST", path: "/gcal/credentials" },
+      { method: "POST", path: "/gcal/auth/start" },
+    ]);
+    expect(mockSrv.calls[0].body).toEqual({ clientId: "cid", clientSecret: "csecret" });
+    const parsed = JSON.parse(outText);
+    expect(parsed.url).toBe("https://accounts.google.com/fake-consent");
+    expect(String(parsed.note).toLowerCase()).toContain("browser"); // must say a PERSON finishes this, never imply it already did
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`gcal connect --client-id` without --client-secret fails before ever reaching the network", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "connect", "--client-id", "cid", "--api", "http://localhost:59999"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("usage: gcal connect");
+});
+
+test("`gcal sync <basePath>` POSTs {basePath} to /gcal/sync and prints the SyncResult", async () => {
+  const mockSrv = mockGcalServer({ sync: { total: 3, pulledNew: 1, pulledUpdate: 0, pushedNew: 2, pushedUpdate: 0, deletedLocal: 0, deletedRemote: 0, conflicts: 1, skipped: 0, failed: 0, relinked: 0 } });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "sync", "Bases/Team.md", "--api", mockSrv.url], { stdout: "pipe", stderr: "pipe" });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls).toHaveLength(1);
+    expect(mockSrv.calls[0]).toMatchObject({ method: "POST", path: "/gcal/sync", body: { basePath: "Bases/Team.md" } });
+    expect(JSON.parse(outText).conflicts).toBe(1);
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`gcal sync` without <basePath> fails before ever reaching the network", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "sync", "--api", "http://localhost:59999"], { stdout: "pipe", stderr: "pipe" });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("usage: gcal sync");
+});
+
+test("`gcal disconnect` POSTs /gcal/disconnect and prints {ok:true}", async () => {
+  const mockSrv = mockGcalServer();
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "disconnect", "--api", mockSrv.url], { stdout: "pipe", stderr: "pipe" });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls).toEqual([{ method: "POST", path: "/gcal/disconnect", body: undefined }]);
+    expect(JSON.parse(outText)).toEqual({ ok: true });
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`gcal status` fails cleanly (no crash) when no server is running", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "status", "--api", "http://localhost:59997"], { stdout: "pipe", stderr: "pipe" });
+  const [, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+});
+
+// --- `relay list` (commands/relay.ts) — contract test against a FAKE server -------------------
+// core/src/relay.ts's `snapshot()` had ZERO callers before this command. IMPORTANT, stated here
+// too (not just in the source header): core/src/server.ts does not expose `GET /relay/snapshot`
+// yet, so this command will fail with a normal 404 against a REAL running `bismuth serve`/app
+// today. This test proves the CLI's own dispatch/URL/passthrough logic is correct against the
+// intended contract — it is not a claim that the real server currently serves this route.
+
+test("`relay list` GETs /relay/snapshot and passes the route's JSON straight through", async () => {
+  const calls: { method: string; path: string }[] = [];
+  const snapshot = {
+    sessions: [{ sessionId: "s1", terminalId: "t1", cwd: "/vault", backend: "claude", lastSeen: 1000 }],
+    subagents: [{ agentId: "a1", parentSessionId: "s1", agentType: "general-purpose", startedAt: 900, done: false }],
+  };
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req) => {
+      const { pathname } = new URL(req.url);
+      calls.push({ method: req.method, path: pathname });
+      if (req.method === "GET" && pathname === "/relay/snapshot") return Response.json(snapshot);
+      return new Response("not found", { status: 404 });
+    },
+  });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "relay", "list", "--api", `http://localhost:${server.port}`], { stdout: "pipe", stderr: "pipe" });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(calls).toEqual([{ method: "GET", path: "/relay/snapshot" }]);
+    expect(JSON.parse(outText)).toEqual(snapshot);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("`relay list` fails cleanly (no crash) when no server is running", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "relay", "list", "--api", "http://localhost:59996"], { stdout: "pipe", stderr: "pipe" });
+  const [, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+});
+
+// --- `task archive` (commands/task.ts) — mirrors POST /tasks/archive, headlessly ----------------
+
+test("`task archive <file>` removes only resolved (done/cancelled) tasks from that note; open/in-progress tasks + other files stay", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({
+    "Todo.md": "- [ ] open task\n- [x] done task\n- [-] cancelled task\n- [/] in progress\n",
+    "Other.md": "- [x] should stay (different file)\n",
+  });
+  const result = await runCli(vault, "task", "archive", "Todo.md");
+  expect(result.code).toBe(0);
+  expect(result.json).toEqual({ removed: 2, files: 1 });
+  const after = await readNote(vault, "Todo.md");
+  expect(after).toContain("open task");
+  expect(after).toContain("in progress");
+  expect(after).not.toContain("done task");
+  expect(after).not.toContain("cancelled task");
+  expect(await readNote(vault, "Other.md")).toContain("should stay"); // untouched — no <file> given, but this call was scoped
+});
+
+test("`task archive` (no file) sweeps the whole vault and reports files touched", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({
+    "A.md": "- [x] done in A\n- [ ] open in A\n",
+    "B.md": "- [-] cancelled in B\n",
+    "C.md": "- [ ] nothing resolved here\n",
+  });
+  const result = await runCli(vault, "task", "archive");
+  expect(result.code).toBe(0);
+  expect(result.json).toEqual({ removed: 2, files: 2 });
+  expect(await readNote(vault, "A.md")).not.toContain("done in A");
+  expect(await readNote(vault, "A.md")).toContain("open in A");
+  expect(await readNote(vault, "B.md")).not.toContain("cancelled in B");
+  expect(await readNote(vault, "C.md")).toContain("nothing resolved here"); // untouched — nothing resolved
+});
+
+test("`task archive <file>` with nothing to archive reports {removed:0, files:0} and doesn't touch the file", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({ "Clean.md": "- [ ] still open\n" });
+  const before = await readNote(vault, "Clean.md");
+  const result = await runCli(vault, "task", "archive", "Clean.md");
+  expect(result.code).toBe(0);
+  expect(result.json).toEqual({ removed: 0, files: 0 });
+  expect(await readNote(vault, "Clean.md")).toBe(before);
+});
+
+// --- `settings deny-list` (commands/settings.ts) — the visibility preflight, gated correctly ---
+// MANDATORY per the task brief: a restricted (agent-channel) caller must get a COUNT, never a
+// path list — otherwise the command becomes an enumeration oracle for exactly what it exists to
+// protect. `settings` is Tier A ("always-safe") in core/src/visibilityCliGate.ts's command
+// classification (by its `settings`-prefixed group, unchanged by this task), so the command
+// always RUNS even under a restricted vault + agent channel — the count-only behavior below is
+// what actually protects it, not the outer gate refusing the command wholesale.
+
+test("`settings deny-list` — the OWNER (BISMUTH_AGENT_CHANNEL unset) gets the full path list", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nsecret body\n", "Public.md": "# public\n" });
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "settings", "deny-list", "--vault", vault], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, BISMUTH_AGENT_CHANNEL: undefined },
+  });
+  const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(0);
+  expect(JSON.parse(outText)).toEqual({ channel: "daemon", determined: true, count: 1, entries: ["Private/secret.md"] });
+});
+
+test("`settings deny-list` — a RESTRICTED (agent-channel) caller gets a COUNT ONLY, never a path — mandatory security assertion", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nsecret body\n", "Public.md": "# public\n" });
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "settings", "deny-list", "--vault", vault], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, BISMUTH_AGENT_CHANNEL: "daemon" },
+  });
+  const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(0); // NOT refused wholesale — Tier A runs; the internal count-only branch is the real protection
+  expect(JSON.parse(outText)).toEqual({ channel: "daemon", determined: true, count: 1 }); // no `entries` key at all
+  expect(outText).not.toContain("secret.md"); // belt-and-suspenders: the path never appears anywhere in the raw output
+  expect(outText).not.toContain("Private");
+});
+
+test("`settings deny-list --channel chat` vs the default `daemon` channel: a chat-only note is visible to chat but restricted for daemon", async () => {
+  const vault = makeVault({ "Draft.md": "---\nvisibility: chat-only\n---\nwork in progress\n" });
+  const daemonView = await runCli(vault, "settings", "deny-list"); // default channel = daemon (stricter)
+  expect(daemonView.json).toMatchObject({ channel: "daemon", count: 1 });
+  const chatView = await runCli(vault, "settings", "deny-list", "--channel", "chat");
+  expect(chatView.json).toMatchObject({ channel: "chat", count: 0 });
+});
+
+test("`settings deny-list --channel bogus` is rejected before touching the vault", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nx\n" });
+  const result = await runCli(vault, "settings", "deny-list", "--channel", "bogus");
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("usage: settings deny-list");
 });

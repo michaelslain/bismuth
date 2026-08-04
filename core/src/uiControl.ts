@@ -1,10 +1,10 @@
 // In-process registry of the app's OPEN WINDOWS and a request/reply command channel to each of
 // them. This is the core→frontend control channel that powers the `app` CLI group (bismuth app …)
 // and, through it, MCP app-control — the ONE surface that can drive a running window's tabs from
-// outside the webview (list/open/close/focus tabs, run a safe command). SSE hard-drops any
-// non-version frame and `bismuth-open` is a same-realm DOM event, so neither can carry a command;
-// this is a dedicated per-window WebSocket, modeled on relay.ts's Map idiom + chat.ts's
-// pending-reply idiom.
+// outside the webview (list/open/close/focus/rename/pin/reorder tabs, run a safe command). SSE
+// hard-drops any non-version frame and `bismuth-open` is a same-realm DOM event, so neither can
+// carry a command; this is a dedicated per-window WebSocket, modeled on relay.ts's Map idiom +
+// chat.ts's pending-reply idiom.
 //
 // Pure over injectable `send` functions (the WebSocket is wired in server.ts's `case "ui"`), so the
 // whole registry + reply round-trip is unit-testable like relay.test.ts. Lives in core (not a
@@ -44,16 +44,39 @@ export interface UiWindowInfo {
   tabCount: number;
 }
 
+/**
+ * Extra structured fields a `run-command` reply carries, nested in `UiReply.result`. Ordinary
+ * commands report nothing extra (`result` stays undefined). An INTERACTIVE command — one whose
+ * `CommandSpec.interactive` is true because its action only opens a modal and then waits on a
+ * person (core/src/commands.ts) — sets `interactive: true` plus a human-readable `note`, so a caller
+ * can tell "the action ran to completion" apart from "a dialog is now waiting on a person in the
+ * app". `label` echoes the command's catalog label for a friendlier note without a second lookup.
+ */
+export interface RunCommandResult {
+  interactive?: boolean;
+  label?: string;
+  note?: string;
+}
+
 /** The outcome of a command dispatched to a window. NEVER rejects — a timeout / vanished window
  *  resolves `{ok:false, error}` so the caller (and the daemon) treats "no response" as data, not a
- *  thrown exception to retry-loop on. */
+ *  thrown exception to retry-loop on. For `run-command`, `result` (when present) is a
+ *  `RunCommandResult`. */
 export interface UiReply {
   ok: boolean;
   result?: unknown;
   error?: string;
 }
 
-/** The command frame pushed down the socket to a window; it answers with a matching `reply`. */
+/** The command frame pushed down the socket to a window; it answers with a matching `reply`.
+ *  `action` is one of `list-tabs` | `open-tab` | `close-tab` | `focus-tab` | `run-command` |
+ *  `rename-tab` | `pin-tab` | `reorder-tab` — kept as a plain `string` (not a literal union) since
+ *  server.ts's `/ui/command` reads it out of an untyped JSON body and relays it opaquely; the
+ *  client (`app/src/uiControlClient.ts`) is where each action's `args` shape is actually enforced.
+ *  `rename-tab` takes `{tabId, name}`, `pin-tab` takes `{tabId, pinned}`, `reorder-tab` takes
+ *  `{tabId, index}` — all three delegate to the pure `app/src/panes.ts` helpers and reply
+ *  `{ok:true}` or `{ok:false, error}` (an unknown `tabId` is the one failure mode), same shape as
+ *  `close-tab`/`focus-tab`. */
 export interface UiCommandFrame {
   type: "command";
   reqId: string;

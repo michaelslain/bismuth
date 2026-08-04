@@ -7,6 +7,7 @@ import {
   snapshot,
   prune,
   resetRelay,
+  redactSnapshot,
   DONE_SUBAGENT_TTL_MS,
 } from "../src/relay";
 
@@ -185,4 +186,61 @@ test("re-running a DIFFERENT CLI in the same tab replaces the session (one sessi
   const s = snapshot(2000);
   expect(s.sessions).toHaveLength(1);
   expect(s.sessions[0]).toMatchObject({ sessionId: "s2", backend: "codex" });
+});
+
+// --- redactSnapshot: the non-owner projection powering GET /relay/snapshot -----------------------
+// RelaySubagent.lastMessage is the ONE content field in the whole registry (free-text final
+// output that can quote vault notes); everything else on RelaySession/RelaySubagent is
+// bookkeeping (ids, types, timestamps, cwd, backend, workflow key) and must survive redaction
+// untouched, field-by-field, not as a loose "shape" match.
+
+test("redactSnapshot drops lastMessage from a subagent that has one", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", backend: "codex" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Explore", workflowId: "wf-1" }, 1100);
+  stopSubagent({ agentId: "a1", lastMessage: "quotes secret-note.md content here" }, 1200);
+
+  const raw = snapshot(1200);
+  expect(raw.subagents[0].lastMessage).toBe("quotes secret-note.md content here");
+
+  const redacted = redactSnapshot(raw);
+  const sub = redacted.subagents[0];
+  // Content field: gone, not blanked to "".
+  expect("lastMessage" in sub).toBe(false);
+  // Every bookkeeping field on the subagent: preserved exactly, one assertion per field.
+  expect(sub.agentId).toBe("a1");
+  expect(sub.parentSessionId).toBe("s1");
+  expect(sub.agentType).toBe("Explore");
+  expect(sub.workflowId).toBe("wf-1");
+  expect(sub.startedAt).toBe(1100);
+  expect(sub.done).toBe(true);
+  expect(sub.doneAt).toBe(1200);
+});
+
+test("redactSnapshot preserves every RelaySession bookkeeping field untouched", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x/my-proj", backend: "codex" }, 1000);
+  const redacted = redactSnapshot(snapshot(1000));
+  const s = redacted.sessions[0];
+  expect(s.sessionId).toBe("s1");
+  expect(s.terminalId).toBe("tab-1");
+  expect(s.cwd).toBe("/x/my-proj");
+  expect(s.backend).toBe("codex");
+  expect(s.lastSeen).toBe(1000);
+});
+
+test("redactSnapshot leaves a subagent with no lastMessage (still running) unchanged", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Plan" }, 1100);
+  const redacted = redactSnapshot(snapshot(1100));
+  const sub = redacted.subagents[0];
+  expect("lastMessage" in sub).toBe(false);
+  expect(sub.done).toBe(false);
+});
+
+test("redactSnapshot does not mutate the input snapshot", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Explore" }, 1100);
+  stopSubagent({ agentId: "a1", lastMessage: "original output" }, 1200);
+  const raw = snapshot(1200);
+  redactSnapshot(raw);
+  expect(raw.subagents[0].lastMessage).toBe("original output");
 });

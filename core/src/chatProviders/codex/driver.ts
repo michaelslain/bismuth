@@ -177,6 +177,21 @@ function buildCodexExecArgs(a: CodexExecArgsInput): string[] {
 }
 
 /**
+ * The content Codex's AGENTS.md-managed block carries (see ../../agentBackends/agentsMd.ts) —
+ * exported so core/test/agentBackends/agentsMd.test.ts can assert on it directly rather than
+ * re-deriving it. Codex has no skills mechanism of its own, so this managed block is the channel
+ * it actually reads; the pointer below is how it learns about skills/authoring-bismuth-bases/.
+ */
+export const CODEX_AGENTS_MD_CONTENT = [
+  "This is a Bismuth-managed vault: a personal knowledge base of markdown notes linked with",
+  "[[wikilinks]] and #tags. Treat it as the user's second brain — read existing notes before",
+  "creating new ones, and prefer linking to an existing note over duplicating its content.",
+  "",
+  "**Authoring a Bismuth base?** Read the skill first: call the `bismuth_skill` MCP tool with",
+  '`{name: "authoring-bismuth-bases"}`, then `{name: "authoring-bismuth-bases", reference: "<view kind>"}`.',
+].join("\n");
+
+/**
  * Best-effort, opt-in refresh of Codex's memory channel (AGENTS.md) + agents-graph hooks. Reads
  * `settings.codex.*` fresh on every session open (so a toggle takes effect on the NEXT new chat,
  * not a live one) and never throws or blocks a turn on failure — mirrors how chat.ts's
@@ -186,14 +201,7 @@ async function applyCodexOptIns(cwd: string): Promise<void> {
   try {
     const optIns = await readCodexOptIns(cwd);
     if (optIns.writeAgentsMd) {
-      writeAgentsMdBlock(
-        cwd,
-        [
-          "This is a Bismuth-managed vault: a personal knowledge base of markdown notes linked with",
-          "[[wikilinks]] and #tags. Treat it as the user's second brain — read existing notes before",
-          "creating new ones, and prefer linking to an existing note over duplicating its content.",
-        ].join("\n"),
-      );
+      writeAgentsMdBlock(cwd, CODEX_AGENTS_MD_CONTENT);
     }
     if (optIns.installRelayHooks) writeCodexHooksFiles(cwd);
   } catch {

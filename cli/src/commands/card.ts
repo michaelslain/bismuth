@@ -12,6 +12,7 @@ import { parseBaseFile } from "../../../core/src/bases/parse";
 import { upsertRow } from "../../../core/src/bases/rowOps";
 import { fileBasename } from "../../../core/src/pathUtils";
 import { readNote, writeNote } from "../../../core/src/files";
+import { loadAppConfig } from "../../../core/src/settings";
 
 const RESPONSES: ReviewResponse[] = ["hard", "good", "easy"];
 
@@ -65,6 +66,7 @@ export const commands: CommandMap = {
       const vault = requireVault(args);
       const file = flag(args, "file");
       const indexRaw = flag(args, "index");
+      const srs = (await loadAppConfig(vault)).srs;
 
       // Row-based review (flashcard base): advance scheduling columns on the row.
       if (file != null && indexRaw != null) {
@@ -83,7 +85,7 @@ export const commands: CommandMap = {
           dueField && easeField && intervalField
             ? { due: dueField, ease: easeField, interval: intervalField }
             : undefined;
-        const note = applyReviewToRow(row.note, response, today(), undefined, fields);
+        const note = applyReviewToRow(row.note, response, today(), srs, fields);
         const next = upsertRow(text, { name, path: file }, index, note);
         await writeNote(vault, file, next);
         out({ ok: true }, args);
@@ -94,7 +96,7 @@ export const commands: CommandMap = {
       const [id, responseRaw] = positionals(args);
       if (!id) fail("usage: card review <id> <response> | --file <base> --index <n> --response <r>");
       const response = asResponse(responseRaw);
-      await applyReview(vault, id, response, today());
+      await applyReview(vault, id, response, today(), undefined, srs);
       out({ ok: true }, args);
     },
   },

@@ -37,11 +37,19 @@ const HOME = homedir();
 export const BISMUTH_HOME = join(HOME, ".bismuth");
 const BIN_DIR = join(BISMUTH_HOME, "bin");
 const DOCS_DIR = join(BISMUTH_HOME, "docs");
+const SKILLS_DIR = join(BISMUTH_HOME, "skills");
 const MARKER = join(BISMUTH_HOME, ".version");
 const CLI_DEST = join(BIN_DIR, "bismuth");
 const MCP_DEST = join(BIN_DIR, "bismuth-mcp");
 // Candidate PATH dirs for the CLI symlink, preferred first (machine-wide before per-user).
 const LINK_DIRS = ["/usr/local/bin", join(HOME, ".local", "bin")];
+// The one skill this build ships (skills/authoring-bismuth-bases/ in the repo). Staged into
+// ~/.bismuth/skills/ alongside docs, then exposed to Claude Code's native skills surface —
+// the third of three delivery adapters (MCP bismuth_skill tool + AGENTS.md pointer are the
+// other two) so every backend that speaks MCP, reads AGENTS.md, or auto-loads Claude skills
+// finds the same base-authoring reference.
+export const SKILL_ID = "authoring-bismuth-bases";
+const CLAUDE_SKILLS_DIR = join(HOME, ".claude", "skills");
 
 /** Per-registrar detect/register status for the "other CLIs" surface (core/src/agentBackends/
  *  mcpRegistrars.ts) — every non-Claude agent CLI Bismuth knows how to register its MCP with. */
@@ -59,6 +67,9 @@ export interface BismuthStatus {
   /** Our CLI symlink on PATH, or null. */
   cliPath: string | null;
   cliLinked: boolean;
+  /** Our skill symlink present at ~/.claude/skills/authoring-bismuth-bases, pointing into
+   *  ~/.bismuth? False if missing OR if something else (not created by Bismuth) is there. */
+  skillLinked: boolean;
   mcpRegistered: boolean;
   /** Detected/registered status for every OTHER agent CLI (opt-in — see `mcp.registerWith` in
    *  settingsSchema.ts and `bismuth install --mcp`). Undefined only if the injected IO doesn't
@@ -88,11 +99,17 @@ export interface InstallIO {
   writeMarker(hash: string): void;
   /** Our CLI symlink present on PATH (pointing into ~/.bismuth)? */
   cliLinked(): { linked: boolean; path: string | null };
+  /** Our skill symlink present at ~/.claude/skills/authoring-bismuth-bases (pointing into
+   *  ~/.bismuth)? False if missing or if it's a foreign entry we must not touch. */
+  skillLinked(): boolean;
   mcpRegistered(): Promise<boolean>;
-  /** Copy bin/ + docs/ from src into ~/.bismuth and chmod the binaries. */
+  /** Copy bin/ + docs/ + skills/ from src into ~/.bismuth and chmod the binaries. */
   installFiles(src: string): void;
   /** Symlink ~/.bismuth/bin/bismuth onto PATH (never clobbering a foreign file). */
   linkCli(): { ok: boolean; path: string | null; warning?: string };
+  /** Symlink the staged skill into Claude Code's native ~/.claude/skills/ (never clobbering a
+   *  pre-existing entry Bismuth didn't create — same discipline as linkCli() above). */
+  linkClaudeSkill(): { ok: boolean; warning?: string };
   /** Register the MCP in the user's global Claude config (idempotent remove+add). */
   registerMcp(): Promise<{ ok: boolean; warning?: string }>;
   /**
@@ -171,6 +188,98 @@ function findOurLink(): string | null {
   return null;
 }
 
+/**
+ * Where `<claudeSkillsDir>/<SKILL_ID>` stands: absent, ours (a symlink pointing into
+ * `bismuthHome`), or foreign (something else — a real dir/file, or a symlink elsewhere — that
+ * Bismuth must never touch). Parameterized on both home dirs (rather than reading the module-level
+ * BISMUTH_HOME/CLAUDE_SKILLS_DIR constants) so tests can exercise the real fs check against
+ * throwaway temp dirs, never the developer's actual ~/.claude.
+ */
+function statSkillLink(claudeSkillsDir: string, bismuthHome: string): { exists: boolean; ours: boolean; path: string } {
+  const path = join(claudeSkillsDir, SKILL_ID);
+  try {
+    const st = lstatSync(path, { throwIfNoEntry: false });
+    if (!st) return { exists: false, ours: false, path };
+    const ours = st.isSymbolicLink() && resolve(readlinkSync(path)).startsWith(bismuthHome);
+    return { exists: true, ours, path };
+  } catch {
+    return { exists: false, ours: false, path };
+  }
+}
+
+/** Is our Claude Code skill symlink present? For status reporting (mirrors findOurLink() above). */
+export function isSkillLinkedToClaudeCode(bismuthHome: string, claudeSkillsDir: string): boolean {
+  return statSkillLink(claudeSkillsDir, bismuthHome).ours;
+}
+
+/**
+ * Stage `src/skills` into `<bismuthHome>/skills`, mirroring installFiles()'s docs handling
+ * (wipe the dest, then copy-if-present) — with ONE deliberate difference: unlike a missing
+ * `src/docs`, a missing `src/skills` is NOT a silent no-op. A build that forgot to stage
+ * skills/ (see app/scripts/build-bismuth-tools.ts) would otherwise install "successfully"
+ * while leaving the MCP `bismuth_skill` tool and the Claude Code skill symlink with nothing to
+ * serve — exactly the silent-success-on-nothing shape this exists to avoid. Still non-fatal:
+ * we console.warn AND return the warning so a caller that surfaces InstallResult.warnings can
+ * show it too. Parameterized on `bismuthHome` (not the module-level BISMUTH_HOME) so tests can
+ * exercise the real copy against a throwaway temp dir.
+ */
+export function stageSkills(src: string, bismuthHome: string): { warning?: string } {
+  const dest = join(bismuthHome, "skills");
+  rmSync(dest, { recursive: true, force: true });
+  const skillsSrc = join(src, "skills");
+  if (!existsSync(skillsSrc)) {
+    const warning = `no skills/ found at ${src} — this build didn't stage it, so the bismuth_skill MCP tool and the Claude Code skill have nothing to serve`;
+    console.warn(`[bismuthInstall] ${warning}`);
+    return { warning };
+  }
+  cpSync(skillsSrc, dest, { recursive: true });
+  return {};
+}
+
+/**
+ * Expose the staged skill (`<bismuthHome>/skills/<SKILL_ID>`) to Claude Code's native
+ * `~/.claude/skills/` surface via a symlink. Same "never clobber a foreign entry" discipline as
+ * linkCli() above and the mcpRegistrars.ts registrars' isOurs() checks (core/src/agentBackends/
+ * mcpRegistrars.ts): a pre-existing `authoring-bismuth-bases` entry that ISN'T our own symlink is
+ * left completely untouched and reported as a warning, never overwritten. Parameterized on both
+ * home dirs so tests can exercise the real symlink against throwaway temp dirs, never the
+ * developer's actual ~/.claude.
+ */
+export function linkSkillToClaudeCode(bismuthHome: string, claudeSkillsDir: string): { ok: boolean; warning?: string } {
+  try {
+    mkdirSync(claudeSkillsDir, { recursive: true });
+  } catch (e) {
+    return { ok: false, warning: `could not create ${claudeSkillsDir}: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  const { exists, ours, path } = statSkillLink(claudeSkillsDir, bismuthHome);
+  if (exists && !ours) {
+    return { ok: false, warning: `~/.claude/skills/${SKILL_ID} already exists and wasn't created by Bismuth — skipped` };
+  }
+  try {
+    if (exists) unlinkSync(path); // ours — relink cleanly (also handles a stale/broken symlink)
+    symlinkSync(join(bismuthHome, "skills", SKILL_ID), path, "dir");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, warning: `failed to link the skill into Claude Code: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/**
+ * Args for `claude mcp add -s user bismuth …`, extracted as a pure function so registerMcp()'s
+ * env wiring — in particular BISMUTH_SKILLS_DIR, pointing at the INSTALLED skills path
+ * (~/.bismuth/skills) rather than a repo-relative one, since a machine-wide install has no repo
+ * root — is unit-testable without spawning the real `claude` binary.
+ */
+export function claudeMcpAddArgs(): string[] {
+  return [
+    "mcp", "add", "-s", "user", "bismuth",
+    "-e", `BISMUTH_DOCS_DIR=${DOCS_DIR}`,
+    "-e", `BISMUTH_CLI=${CLI_DEST}`,
+    "-e", `BISMUTH_SKILLS_DIR=${SKILLS_DIR}`,
+    "--", MCP_DEST,
+  ];
+}
+
 /** The real, default IO — does the actual fs + claude work. */
 export const defaultIO: InstallIO = {
   async hashSrc(src) {
@@ -194,6 +303,9 @@ export const defaultIO: InstallIO = {
     const path = findOurLink();
     return { linked: path != null && existsSync(CLI_DEST), path };
   },
+  skillLinked() {
+    return isSkillLinkedToClaudeCode(BISMUTH_HOME, CLAUDE_SKILLS_DIR);
+  },
   async mcpRegistered() {
     const claude = whichClaude();
     if (!claude) return false;
@@ -207,6 +319,7 @@ export const defaultIO: InstallIO = {
     rmSync(DOCS_DIR, { recursive: true, force: true });
     const docsSrc = join(src, "docs");
     if (existsSync(docsSrc)) cpSync(docsSrc, DOCS_DIR, { recursive: true });
+    stageSkills(src, BISMUTH_HOME);
   },
   linkCli() {
     for (const dir of LINK_DIRS) {
@@ -227,16 +340,14 @@ export const defaultIO: InstallIO = {
     }
     return { ok: false, path: null, warning: "no writable PATH dir for the bismuth CLI symlink" };
   },
+  linkClaudeSkill() {
+    return linkSkillToClaudeCode(BISMUTH_HOME, CLAUDE_SKILLS_DIR);
+  },
   async registerMcp() {
     const claude = whichClaude();
     if (!claude) return { ok: false, warning: "claude not found on PATH — skipped MCP registration" };
     await runClaude(claude, ["mcp", "remove", "-s", "user", "bismuth"]); // ignore if absent
-    const add = await runClaude(claude, [
-      "mcp", "add", "-s", "user", "bismuth",
-      "-e", `BISMUTH_DOCS_DIR=${DOCS_DIR}`,
-      "-e", `BISMUTH_CLI=${CLI_DEST}`,
-      "--", MCP_DEST,
-    ]);
+    const add = await runClaude(claude, claudeMcpAddArgs());
     if (add.code !== 0) return { ok: false, warning: `claude mcp add failed: ${add.stderr.trim() || add.stdout.trim()}` };
     return { ok: true };
   },
@@ -264,6 +375,7 @@ export const defaultIO: InstallIO = {
 export async function getBismuthStatus(io: InstallIO = defaultIO): Promise<BismuthStatus> {
   const version = io.readMarker();
   const { linked, path } = io.cliLinked();
+  const skillLinked = io.skillLinked();
   let mcpRegistered = false;
   try {
     mcpRegistered = await io.mcpRegistered();
@@ -271,7 +383,7 @@ export async function getBismuthStatus(io: InstallIO = defaultIO): Promise<Bismu
     mcpRegistered = false;
   }
   const additionalMcp = io.additionalMcpStatus ? await io.additionalMcpStatus() : undefined;
-  return { installed: version != null, version, cliPath: path, cliLinked: linked, mcpRegistered, additionalMcp };
+  return { installed: version != null, version, cliPath: path, cliLinked: linked, skillLinked, mcpRegistered, additionalMcp };
 }
 
 /**
@@ -316,7 +428,7 @@ export async function ensureBismuthInstalled(
   if (!hash) return { action: "skipped-no-src", status: status0, warnings: [] };
 
   const wasInstalled = status0.version != null;
-  if (status0.version === hash && status0.cliLinked && status0.mcpRegistered) {
+  if (status0.version === hash && status0.cliLinked && status0.mcpRegistered && status0.skillLinked) {
     return { action: "up-to-date", status: status0, warnings: [] };
   }
   if (opts.dryRun) {
@@ -327,6 +439,8 @@ export async function ensureBismuthInstalled(
   io.installFiles(src);
   const link = io.linkCli();
   if (link.warning) warnings.push(link.warning);
+  const skillLink = io.linkClaudeSkill();
+  if (skillLink.warning) warnings.push(skillLink.warning);
   const mcp = await io.registerMcp();
   if (mcp.warning) warnings.push(mcp.warning);
   // Other CLIs the user LISTED in `mcp.registerWith`. Naming a CLI there is the explicit opt-in —
@@ -353,6 +467,16 @@ export async function uninstallBismuth(): Promise<{ removed: boolean; warnings: 
     if (link) unlinkSync(link);
   } catch (e) {
     warnings.push(`failed to remove CLI symlink: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  try {
+    // Same reasoning as the "other CLI" registrars below: don't leave a dangling
+    // ~/.claude/skills/authoring-bismuth-bases symlink pointing at a ~/.bismuth/skills dir
+    // that's about to be deleted. Only removes OUR symlink — a foreign entry was never touched
+    // on install, and stays untouched here too.
+    const { exists, ours, path } = statSkillLink(CLAUDE_SKILLS_DIR, BISMUTH_HOME);
+    if (exists && ours) unlinkSync(path);
+  } catch (e) {
+    warnings.push(`failed to remove Claude Code skill link: ${e instanceof Error ? e.message : String(e)}`);
   }
   try {
     const claude = whichClaude();

@@ -203,6 +203,8 @@ These are wired into core's HTTP API (read-table, never `mutatingHandler`): `GET
 
 `generateDaemonConfig(opts)` renders the plist or unit; `installDaemon` / `reloadDaemon` / `unloadDaemon` drive `launchctl` (`load`/`unload`) or `systemctl --user` (`daemon-reload`/`enable --now`/`restart`/`stop`/`disable`). `restartDaemon()` bounces the service in place without rewriting config (`launchctl kickstart -k gui/<uid>/<label>` or `systemctl --user restart`).
 
+**`unloadDaemon`/`restartDaemon` are called directly by the CLI**, not by core's HTTP API: `bismuth daemon stop` → `unloadDaemon(daemonConfigPath())`, `bismuth daemon restart` → `restartDaemon()` (`cli/src/commands/daemon.ts`, importing straight from `daemon/src/lib/platform.ts` — no server needed). Before this wiring, both functions were complete but had **zero callers** in the repo: an agent (or a human) could `daemon setup`/`daemon install` a service but never stop or restart one from the CLI. Both `unloadDaemon` and `restartDaemon()` return `{ ok, error? }` — on Linux, `unloadDaemon`'s `ok` is `true` only when both the `stop` and `disable` commands succeed — and the CLI forwards the result, exiting non-zero on `ok: false`. Full command reference: [../cli/reference.md](../cli/reference.md#daemon-commands-commandsdaemonts).
+
 ### How Bismuth detects a running daemon
 
 Bismuth core reads `MACHINE_DIR/daemon.pid` and does a `process.kill(pid, 0)` liveness check (`core/src/daemon.ts`) to power the "daemon" graph mode + sidebar. The pid file is created by `writePid()` and removed only on graceful shutdown, so the liveness check (not file presence) is authoritative. See [storage.md](storage.md) and [overview.md](overview.md).

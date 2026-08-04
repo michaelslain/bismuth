@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { upsertAgentsMdBlock, writeAgentsMdBlock } from "../../src/agentBackends/agentsMd";
+import { CODEX_AGENTS_MD_CONTENT } from "../../src/chatProviders/codex/driver";
 
 describe("upsertAgentsMdBlock (pure)", () => {
   test("creates a fresh block when the file doesn't exist yet", () => {
@@ -55,6 +56,43 @@ describe("upsertAgentsMdBlock (pure)", () => {
     let doc: string | null = "# Doc\n";
     for (const c of ["one", "two", "three"]) doc = upsertAgentsMdBlock(doc, c);
     expect(doc).not.toMatch(/\n{3,}$/);
+  });
+});
+
+describe("Codex's composed AGENTS.md content points at the base-authoring skill", () => {
+  test("contains the skill name and the bismuth_skill tool", () => {
+    expect(CODEX_AGENTS_MD_CONTENT).toContain("authoring-bismuth-bases");
+    expect(CODEX_AGENTS_MD_CONTENT).toContain("bismuth_skill");
+  });
+
+  test("upsertAgentsMdBlock is idempotent on this real content, and the user's own prose survives both applications", () => {
+    const user = "# My Vault\n\nHand-written notes I care about.\n";
+    const once = upsertAgentsMdBlock(user, CODEX_AGENTS_MD_CONTENT);
+    const twice = upsertAgentsMdBlock(once, CODEX_AGENTS_MD_CONTENT);
+    expect(twice).toBe(once);
+    expect(twice).toContain("# My Vault");
+    expect(twice).toContain("Hand-written notes I care about.");
+    expect(twice).toContain("authoring-bismuth-bases");
+  });
+
+  test("a file with no markers gets the block appended without destroying existing content", () => {
+    const user = "# My Vault\n\nHand-written notes I care about.\n";
+    const out = upsertAgentsMdBlock(user, CODEX_AGENTS_MD_CONTENT);
+    expect(out).toContain("# My Vault");
+    expect(out).toContain("Hand-written notes I care about.");
+    expect(out).toContain("bismuth:managed:start");
+    expect(out).toContain("authoring-bismuth-bases");
+  });
+});
+
+describe("upsertAgentsMdBlock generic idempotence (per-task shape)", () => {
+  test("upsertAgentsMdBlock(upsertAgentsMdBlock(user, BLOCK), BLOCK) equals the single application", () => {
+    const user = "# Notes\n\nSome prose the user wrote by hand.\n";
+    const once = upsertAgentsMdBlock(user, "BLOCK");
+    const twice = upsertAgentsMdBlock(once, "BLOCK");
+    expect(twice).toBe(once);
+    expect(twice).toContain("# Notes");
+    expect(twice).toContain("Some prose the user wrote by hand.");
   });
 });
 

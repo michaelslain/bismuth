@@ -87,13 +87,20 @@ export async function installDaemon(configPath: string, config: string): Promise
   return { ok: true }
 }
 
-export function unloadDaemon(configPath: string): void {
+/** Stop (and on Linux, disable) the installed service. On Linux `ok` is true only when BOTH
+ *  `stop` and `disable` succeed — a partial result (e.g. stopped but still enabled to restart on
+ *  login) is reported as failure, naming whichever command failed, rather than a false {ok:true}. */
+export function unloadDaemon(configPath: string): { ok: boolean; error?: string } {
   if (IS_LINUX) {
-    spawnSync("systemctl", ["--user", "stop", SYSTEMD_SERVICE_NAME])
-    spawnSync("systemctl", ["--user", "disable", SYSTEMD_SERVICE_NAME])
-  } else {
-    spawnSync("launchctl", ["unload", configPath])
+    const stop = spawnSync("systemctl", ["--user", "stop", SYSTEMD_SERVICE_NAME])
+    if (stop.status !== 0) return { ok: false, error: `stop failed: ${stop.stderr?.toString()}` }
+    const disable = spawnSync("systemctl", ["--user", "disable", SYSTEMD_SERVICE_NAME])
+    if (disable.status !== 0) return { ok: false, error: `disable failed: ${disable.stderr?.toString()}` }
+    return { ok: true }
   }
+  const unload = spawnSync("launchctl", ["unload", configPath])
+  if (unload.status !== 0) return { ok: false, error: `launchctl unload failed: ${unload.stderr?.toString()}` }
+  return { ok: true }
 }
 
 // ── Deciding whether `--ensure-installed` may bounce the service ─────────────
