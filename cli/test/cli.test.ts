@@ -301,3 +301,33 @@ test("a vault-wide replace leaves a git snapshot to undo from", async () => {
   await log.exited;
   expect(logOut.trim()).not.toBe("");
 });
+
+test("a snapshot failure warns on stderr but the replace still proceeds", async () => {
+  const { mkdirSync, writeFileSync, chmodSync } = await import("node:fs");
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({ "A.md": "target here\n" });
+
+  // First replace git-inits the vault and commits the pre-replace state, then rewrites A.md —
+  // leaving an uncommitted change behind for the NEXT snapshot attempt to actually have to commit.
+  const first = await runCli(vault, "replace", "target", "changed1");
+  expect(first.code).toBe(0);
+
+  // Install a pre-commit hook that always fails, the way the reviewer reproduced the silent bug.
+  const hookDir = join(vault, ".git", "hooks");
+  mkdirSync(hookDir, { recursive: true });
+  const hookPath = join(hookDir, "pre-commit");
+  writeFileSync(hookPath, "#!/bin/sh\nexit 1\n");
+  chmodSync(hookPath, 0o755);
+
+  const before = await Bun.spawn(["git", "-C", vault, "log", "--oneline"], { stdout: "pipe" });
+  const commitsBefore = (await new Response(before.stdout).text()).trim().split("\n").length;
+
+  const result = await runCli(vault, "replace", "changed1", "changed2");
+  expect(result.code).toBe(0); // best-effort: the replace still proceeds
+  expect(result.err).toContain("warning: snapshot failed");
+  expect(await readNote(vault, "A.md")).toContain("changed2"); // the replace itself wasn't blocked
+
+  const after = await Bun.spawn(["git", "-C", vault, "log", "--oneline"], { stdout: "pipe" });
+  const commitsAfter = (await new Response(after.stdout).text()).trim().split("\n").length;
+  expect(commitsAfter).toBe(commitsBefore); // the failed snapshot really didn't commit anything
+});

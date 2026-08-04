@@ -171,7 +171,7 @@ bismuth search "TODO\(\w+\)" --regex --case --vault ~/vault
 ```
 
 ### `replace <query> <replacement> [--scope <path>] [--no-snapshot] [--regex] [--case] [--word]`
-Find-and-replace across the whole vault, or a single note with `--scope <path>` (default scope is `"vault"`). Both query and replacement default to `""` if missing. Takes a git snapshot of the vault (via `commitVault`/`snapshotMessage`, matching `POST /replace`) *before* replacing, so the change can be undone; the snapshot is best-effort (a non-repo vault is git-initialized rather than blocking the replace) and can be skipped with `--no-snapshot` for scripted use. Prints the result object.
+Find-and-replace across the whole vault, or a single note with `--scope <path>` (default scope is `"vault"`). Both query and replacement default to `""` if missing. Takes a git snapshot of the vault (via `commitVault`/`snapshotMessage`, matching `POST /replace`'s ordering — snapshot *before* replacing, so the change can be undone) and can be skipped with `--no-snapshot` for scripted use. Unlike the HTTP route, which returns 400 and blocks the replace if the commit fails, the CLI's snapshot is best-effort: a non-repo vault is git-initialized rather than blocking, and any other snapshot failure prints a `warning:` to stderr but still lets the replace proceed. Prints the result object.
 ```bash
 bismuth replace "colour" "color" --word --vault ~/vault --pretty
 bismuth replace "TODO" "DONE" --scope notes/todo.md --vault ~/vault

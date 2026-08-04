@@ -40,7 +40,9 @@ export const commands: CommandMap = {
         // repo yet (or any other git failure) must not block the replace itself.
         try {
           await commitVault(vault, snapshotMessage());
-        } catch { /* best-effort snapshot */ }
+        } catch (e) {
+          console.error(`warning: snapshot failed, proceeding without an undo point: ${(e as Error).message}`);
+        }
       }
       const result = await replaceInVault(vault, query ?? "", replacement ?? "", buildOpts(args), scope);
       out(result, args);
