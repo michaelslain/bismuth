@@ -124,43 +124,53 @@ describe("chipSummary (the label-echo rule)", () => {
 });
 
 // ── The WIRING, and an honest note about how strong this is ─────────────────────────────────────
-// Everything above tests the rule in isolation. The rule is worthless if ChatView never feeds it
-// `kind`, and nothing in this repo mounts ChatView.tsx in a test — so without the two assertions
-// below, deleting the ChatView half of this change would break the feature and fail NOTHING.
+// Everything above tests the rule in isolation. The rule is worthless if the chat surface never
+// feeds it `kind`, and nothing in this repo mounts ChatView.tsx in a test — so without the
+// assertions below, deleting the ChatView half of this change would break the feature and fail
+// NOTHING.
 //
 // These are SOURCE-TEXT assertions (the same technique as PaneContent.settings.test.ts and
 // Terminal.cleanup.test.ts), and their limit should be stated rather than glossed: they prove the
-// two call sites are written as intended, NOT that a rendered chip shows the right icon. A
-// behavioral test would have to mount a Solid component, which nothing here does. Treat this as a
-// structural guard against the wiring being silently removed, and nothing more.
+// call sites are written as intended, NOT that a rendered chip shows the right icon. A behavioral
+// test would have to mount a Solid component, which nothing here does. Treat this as a structural
+// guard against the wiring being silently removed, and nothing more.
+//
+// ONE of the three is now stronger than that. `toolKind: frame.kind` moved out of ChatView.tsx into
+// the pure reducer chatTranscript.ts, where chatTranscript.test.ts asserts BEHAVIOURALLY that a
+// `tool-use` frame's `kind` lands on the part as `toolKind` (and that it's undefined for a backend
+// that sends none). The source-text guard is kept anyway — it costs nothing and pins the exact
+// spelling the other two assertions here depend on — but it is no longer the only thing standing
+// between that field and silent breakage.
 describe("ChatView wiring (source-text guard — see the note above for what this does and does not prove)", () => {
   const chatView = readFileSync(join(import.meta.dir, "ChatView.tsx"), "utf8");
+  const chatTranscript = readFileSync(join(import.meta.dir, "chatTranscript.ts"), "utf8");
 
-  /** Every source line containing `needle`, joined — never the whole file. Asserting against
-   *  `chatView` directly works, but a FAILURE then dumps all ~143 KB of ChatView.tsx into the test
-   *  output and buries the actual diff. Narrowing to the matching lines keeps the guard and loses
-   *  the noise; an unmatched needle yields "", which fails just as loudly. */
-  const linesWith = (needle: string): string =>
-    chatView
+  /** Every source line of `source` containing `needle`, joined — never the whole file. Asserting
+   *  against the file text directly works, but a FAILURE then dumps all ~135 KB of ChatView.tsx into
+   *  the test output and buries the actual diff. Narrowing to the matching lines keeps the guard and
+   *  loses the noise; an unmatched needle yields "", which fails just as loudly. */
+  const linesWith = (source: string, needle: string): string =>
+    source
       .split("\n")
       .filter((l) => l.includes(needle))
       .join("\n");
 
   test("the chip's icon is chosen from the part's kind AND name, not the name alone", () => {
-    expect(linesWith("pickToolIcon(")).toContain("pickToolIcon(p.part.toolKind, p.part.name)");
+    expect(linesWith(chatView, "pickToolIcon(")).toContain("pickToolIcon(p.part.toolKind, p.part.name)");
   });
 
   test("the tool part carries the frame's `kind` through as `toolKind`", () => {
     // Without this line pickToolIcon would always receive undefined and the icon rule would be
-    // permanently inert — the exact failure mode a rule-only test cannot see.
-    expect(linesWith("toolKind:")).toContain("toolKind: frame.kind");
+    // permanently inert — the exact failure mode a rule-only test cannot see. Lives in the pure
+    // reducer now (chatTranscript.ts), which is where every frame → transcript rule went.
+    expect(linesWith(chatTranscript, "toolKind:")).toContain("toolKind: frame.kind");
   });
 
   test("both summary surfaces dedup against their own label, with their own cap", () => {
     // The tool chip (120) and the permission card (160). The second is a PRE-EXISTING echo rather
     // than one this change introduced — driver.ts already named permissions by `title` — but it is
     // the same rule, so it is pinned the same way.
-    const calls = linesWith("chipSummary(");
+    const calls = linesWith(chatView, "chipSummary(");
     expect(calls).toContain("chipSummary(summarizeInput(p.part.input), p.part.name, 120)");
     expect(calls).toContain("chipSummary(summarizeInput(p.part.input), p.part.toolName, 160)");
   });
