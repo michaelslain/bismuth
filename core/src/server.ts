@@ -53,7 +53,7 @@ import {
   parseChatScope,
   invalidateChatVisibility,
 } from "./chat";
-import { registerSession, endSession, startSubagent, stopSubagent } from "./relay";
+import { registerSession, endSession, startSubagent, stopSubagent, snapshot as relaySnapshot } from "./relay";
 import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarget, sendCommand, resolveReply, type UiTabsSnapshot } from "./uiControl";
 import { isUiControlAllowed } from "./commands";
 import { writeRunRecord } from "./runRegistry";
@@ -1028,6 +1028,16 @@ export function createServer(cfg: CoreConfig) {
       if (!agentId) return error("missing agentId", 400);
       stopSubagent({ agentId, lastMessage });
       return ok({ ok: true });
+    },
+
+    // Read side of the registry above, for `bismuth relay list`. Owner-token gate: a subagent's
+    // RelaySubagent carries `lastMessage` (its SubagentStop last_assistant_message) — free-text
+    // output that can quote vault content the same way a chat transcript snippet can — so this
+    // gets the same blanket owner-only treatment as GET /chat/sessions above, not a per-path
+    // filter (there's no note path to filter a session/subagent list against).
+    "GET /relay/snapshot": async (req) => {
+      if (requestChannel(req) !== "owner") return error("forbidden", 403);
+      return ok(relaySnapshot());
     },
 
     // App-control read surface (see core/src/uiControl.ts) — the ONLY channel that drives a running

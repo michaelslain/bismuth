@@ -7,6 +7,7 @@ import { writeNote, readNote } from "../src/files";
 import { readSettings } from "../src/settings";
 import { resetUiControl } from "../src/uiControl";
 import { resetRelay, snapshot as relaySnapshot } from "../src/relay";
+import { readRunRecords } from "../src/runRegistry";
 import { searchPromptDeps } from "../src/searchPrompt";
 import { makeSampleVault } from "./helpers";
 import * as visibility from "../src/visibility";
@@ -189,6 +190,49 @@ test("POST /relay/session + /relay/subagent/start reach the relay registry", asy
   } finally {
     resetRelay();
     server.stop(true);
+  }
+});
+
+// GET /relay/snapshot is the read side of the registry above, powering `bismuth relay list`.
+// Owner-token gate: a RelaySubagent can carry `lastMessage` (its SubagentStop last_assistant_message,
+// free-text output that may quote vault content) — the same reason GET /chat/sessions et al. are
+// blanket owner-only (see ownerToken.test.ts) rather than per-path filtered.
+test("GET /relay/snapshot returns the registry snapshot for the owner, and 403s everyone else", async () => {
+  resetRelay();
+  const { vault, memory } = await makeSampleVault();
+  // readRunRecords() below scans the WHOLE run registry dir; isolate it to a fresh tmp dir for
+  // this test so it doesn't pay the real ~/.bismuth/run's accumulated-records cost (readRunRecords
+  // documents this as measured multi-second on a large real directory).
+  const prevRunDir = process.env.BISMUTH_RUN_DIR;
+  process.env.BISMUTH_RUN_DIR = mkdtempSync(join(tmpdir(), "bismuth-relay-run-"));
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const post = (path: string, body: unknown) =>
+    fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    await post("/relay/session", { sessionId: "sess-1", terminalId: "tab-1", cwd: "/x/my-proj" });
+    await post("/relay/subagent/start", { parentSessionId: "sess-1", agentId: "ag-1", agentType: "Explore" });
+    await post("/relay/subagent/stop", { agentId: "ag-1", lastMessage: "done" });
+
+    const noToken = await fetch(`${base}/relay/snapshot`);
+    expect(noToken.status).toBe(403);
+
+    const token = readRunRecords().find((r) => r.vault === vault)?.token;
+    expect(token).toBeTruthy();
+    const withToken = await fetch(`${base}/relay/snapshot`, { headers: { "X-Bismuth-Token": token! } });
+    expect(withToken.status).toBe(200);
+    const body = await withToken.json();
+    expect(body.sessions).toContainEqual(
+      expect.objectContaining({ sessionId: "sess-1", terminalId: "tab-1", cwd: "/x/my-proj" }),
+    );
+    expect(body.subagents).toContainEqual(
+      expect.objectContaining({ agentId: "ag-1", parentSessionId: "sess-1", agentType: "Explore", lastMessage: "done" }),
+    );
+  } finally {
+    resetRelay();
+    server.stop(true);
+    if (prevRunDir === undefined) delete process.env.BISMUTH_RUN_DIR;
+    else process.env.BISMUTH_RUN_DIR = prevRunDir;
   }
 });
 

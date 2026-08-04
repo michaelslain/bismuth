@@ -87,7 +87,7 @@ Three enforcement shapes appear across the route tables:
 |---|---|---|
 | **A — list-filtering** | A restricted item is silently dropped from the response array — `200`, with no indication anything was hidden, indistinguishable from "there were none" (`GET /graph`'s `filterGraph` drops the node AND every edge touching it) | `GET /graph`, `GET /vault-data`, `GET /tasks`, `POST /rows`, `POST /search`, `POST /search-prompt`, `GET /cards/decks`, `GET /cards/all`, `GET /cards/due` |
 | **B — single-path refusal** | The whole request is refused with `403 "forbidden"` when the requested path (or, for filename-first routes, its resolved path) is restricted | `GET /base` (`?file=`), `GET /file` (`?path=`), `GET /meta` (`?path=`), `GET /cards/note` (`?path=`), `GET /abs-path` (`?path=`, checked against the resolved path — see below), `GET /asset` (`?path=`, checked against BOTH the resolved absolute path and the raw query, only once `resolveAsset` has found a match) |
-| **C — blanket owner-only** | No per-path filtering is possible (a past chat transcript can quote any number of notes, hidden or not, across its whole history), so the ENTIRE route refuses any non-owner request outright, regardless of query params | `GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search` |
+| **C — blanket owner-only** | No per-path filtering is possible (a past chat transcript can quote any number of notes, hidden or not, across its whole history), so the ENTIRE route refuses any non-owner request outright, regardless of query params | `GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search`, `GET /relay/snapshot` (a `RelaySubagent`'s `lastMessage` is free-text final output that can quote vault content the same way) |
 | **Not gated at all** | `GET /tree` resolves and annotates each entry's effective `visibility` (feeding the sidebar's hidden/chat-only badge) but does **not** filter or hide any entry for a non-owner request — every path and filename is returned to any caller, by design (existence/naming isn't treated as secret; see `docs/vault/visibility.md`) | `GET /tree` |
 
 Writes (`mutatingRoutes`) are unaffected — this layer governs reads only.
@@ -349,6 +349,11 @@ Posted by the relay plugin's hooks loaded per-session inside app terminals. They
 - **`POST /relay/session/end`** — body `{ sessionId? }`. `endSession(sessionId)`. `400 "missing sessionId"` if absent.
 - **`POST /relay/subagent/start`** — body `{ parentSessionId?, agentId?, agentType? }`. `startSubagent(...)`; `agentType` defaults to `"agent"`. `400 "missing parentSessionId/agentId"` if either is absent.
 - **`POST /relay/subagent/stop`** — body `{ agentId?, lastMessage? }`. `stopSubagent(...)`. `400 "missing agentId"` if absent.
+
+### `GET /relay/snapshot`
+The read side of the registry above, powering the `bismuth relay list` CLI command. Also lives in the read table (no cache invalidation).
+- **Response:** `{ sessions: RelaySession[], subagents: RelaySubagent[] }` — `snapshot()` from `core/src/relay.ts`.
+- **Visibility:** blanket owner-only — `403 "forbidden"` for any non-owner request. A `RelaySubagent`'s `lastMessage` (its `SubagentStop` final output) is free-text that can quote vault content, the same reason `GET /chat/sessions` is blanket-gated rather than per-path filtered. See [Visibility gating](#visibility-gating).
 
 ### App control (`/ui/*`, read table)
 The core→frontend command channel (`core/src/uiControl.ts`). Both live in the read table (no vault-cache invalidation): `/ui/command` relays a request over the target window's `/ui` WebSocket and returns its reply; any vault mutation the window then performs runs its own invalidation. See [../mcp/app-control.md](../mcp/app-control.md).
@@ -664,6 +669,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/relay/session/end` | read | no |
 | POST | `/relay/subagent/start` | read | no |
 | POST | `/relay/subagent/stop` | read | no |
+| GET | `/relay/snapshot` | read | no |
 | GET | `/ui/windows` | read | no |
 | POST | `/ui/command` | read | no |
 | GET | `/tasks` | read | no |
