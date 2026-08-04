@@ -12,6 +12,12 @@ import { events, categories } from "../../state";
 import { addDays, toDateStr } from "../../dates";
 import "../../Calendar.css";
 
+// Fixed px, NOT a vh unit: Storybook's preview iframe is only ~315px tall with the Controls
+// panel open, so 80vh resolved to 252px — which clipped the month grid's last two week rows and
+// cut event chips mid-text. These views need a flex ancestor with real height; the app gives them
+// the window, so a story has to state one.
+const STORY_H = "760px";
+
 const meta = {
   title: "Calendar/TimeGrid",
   component: TimeGrid,
@@ -30,7 +36,7 @@ export const Default: Story = {
     seedCalendarState({ date: anchor });
     const dates = Array.from({ length: 5 }, (_, i) => addDays(anchor, i));
     return (
-      <div class="calendar-app" style={{ height: "80vh" }}>
+      <div class="calendar-app" style={{ height: STORY_H }}>
         <TimeGrid dates={dates} events={events.value} categories={categories.value} store={new EventStore(new MemoryBackend())} />
       </div>
     );
@@ -57,7 +63,7 @@ export const OverlappingEvents: Story = {
       ],
     });
     return (
-      <div class="calendar-app" style={{ height: "80vh" }}>
+      <div class="calendar-app" style={{ height: STORY_H }}>
         <TimeGrid dates={[anchor]} events={events.value} categories={categories.value} store={new EventStore(new MemoryBackend())} />
       </div>
     );
