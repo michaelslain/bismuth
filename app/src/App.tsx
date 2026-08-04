@@ -2052,7 +2052,7 @@ export default function App() {
       classList={{ "top-strip--mac": isTauri() && IS_MAC_PLATFORM }}
       data-tauri-drag-region={isTauri() ? "deep" : undefined}
     >
-      <span class="asc-wordmark">bismuth</span>
+      <span class="asc-wordmark" aria-label="Bismuth">,;']--]';,</span>
       <div class="top-strip-spacer" />
       <Show when={isTauri() && !IS_MAC_PLATFORM}>
         <div class="win-controls">

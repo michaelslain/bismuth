@@ -174,8 +174,18 @@ body { background: var(--bg); color: var(--fg); }
 /* Wordmark: the system's ONE decorative flourish (design/ascii/README.md "App shell" + ui.css's
    reserved-for-App.css note above the ASCII primitives section). A slow iridescent sheen across
    the accent ramp — --grad is derived per-theme in settingsCssVars.ts from the graph ramp. */
+/* The mark is ASCII art (`,;']--]';,` — a hopper-crystal silhouette), not a word, so it wants
+   NEGATIVE tracking: the glyphs have to close up into one shape. `.08em` is right for lettering
+   and wrong here — it breaks the form into ten loose punctuation marks. But tracking has a FLOOR:
+   past about -0.06em the `]--]` fuses and the mark becomes an illegible smear (verified in the
+   Wordmark story's tracking ladder, which renders .08em → -0.12em side by side). -0.03em closes
+   the form up while keeping the strokes distinct. Tunable via --wordmark-tracking. */
+/* Sized ABOVE the 13px UI scale on purpose: the mark is 10 punctuation glyphs where the old
+   wordmark was 7 letterforms, so at 13px it measured 32px against the word's 53px and read as a
+   faint speck rather than a mark. 16px restores the presence the corner had. Line-height is
+   pinned so the taller glyphs cannot grow the top strip. */
 .asc-wordmark {
-  font-size: 13px; font-weight: var(--fw-bold, 600); letter-spacing: .08em;
+  font-size: 16px; line-height: 1; font-weight: var(--fw-bold, 600); letter-spacing: var(--wordmark-tracking, -0.03em);
   background: var(--grad); background-size: 200% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent;
   animation: asc-sheen var(--sheen, 8s) linear infinite;
