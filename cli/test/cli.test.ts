@@ -229,6 +229,33 @@ test("`card review` honours settings.srs instead of the hardcoded defaults", asy
   expect(expected.interval).not.toBe(DEFAULT_SRS.easyGraduatingInterval);
 });
 
+test("`card review` (legacy inline note card) honours settings.srs instead of the hardcoded defaults", async () => {
+  const { noteCards } = await import("../../core/src/srs/cards");
+  const { schedule, DEFAULT_SRS } = await import("../../core/src/srs/scheduler");
+  const { today } = await import("../src/args");
+
+  const notePath = "Card.md";
+  const vault = makeVault({
+    ".settings": "srs:\n  easyGraduatingInterval: 9\n",
+    [notePath]: "Q1::A1\n",
+  });
+  const cardId = `${notePath}::0::0`;
+
+  // Independent expectation: the scheduler itself, given the explicit configured value. Only
+  // `interval` is asserted below (not `due`) — `due` is derived from "today", and bun's test
+  // runner forces its own process clock to UTC while the spawned CLI subprocess uses the real
+  // system timezone, so comparing ISO due-dates across that boundary is flaky near midnight UTC.
+  const expected = schedule(null, "easy", today(), { ...DEFAULT_SRS, easyGraduatingInterval: 9 });
+  // Sanity: the configured value actually diverges from what the hardcoded default would produce.
+  expect(expected.interval).not.toBe(DEFAULT_SRS.easyGraduatingInterval);
+
+  const result = await runCli(vault, "card", "review", cardId, "easy");
+  expect(result.code).toBe(0);
+
+  const reviewed = (await noteCards(vault, notePath)).find((c) => c.id === cardId);
+  expect(reviewed?.interval).toBe(expected.interval);
+});
+
 test("`bismuth page create` + `page list` author and read back a page headlessly", async () => {
   const { vault } = await makeSampleVault();
   const create = Bun.spawn(
