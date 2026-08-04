@@ -356,6 +356,21 @@ test("`daily --id <n>` selects a configured daily-note type by index; out-of-ran
   expect(outOfRange.err).toContain("2");
 });
 
+test("`daily --id <n>` against a vault with `dailyNotes: []` (explicit empty): --id 0 falls back to the built-in default, --id 1 fails naming 0 configured types", async () => {
+  const vault = makeVault({ ".settings": "dailyNotes: []\n" });
+
+  const zero = await runCli(vault, "daily", "--id", "0");
+  expect(zero.code).toBe(0);
+  // The built-in default is { folder: "", fileName: "{{date}}" } → a root-level "<date>.md", no
+  // folder prefix. Exact date not asserted (bun test forces UTC; the spawned CLI uses local
+  // time — see the earlier daily-note test's note on that mismatch).
+  expect(zero.json.path).toMatch(/^\d{4}-\d{2}-\d{2}\.md$/);
+
+  const outOfRange = await runCli(vault, "daily", "--id", "1");
+  expect(outOfRange.code).toBe(1);
+  expect(outOfRange.err).toContain("0 daily-note type");
+});
+
 // --- `task toggle --status <char>` sets an explicit status instead of the binary toggle -------
 
 test("`task toggle --status <char>` sets an explicit status char; without it, the binary toggle is unchanged", async () => {
@@ -372,6 +387,26 @@ test("`task toggle --status <multi-char>` is rejected", async () => {
   const result = await runCli(vault, "task", "toggle", "Todo.md", "1", "--status", "ab");
   expect(result.code).toBe(1);
   expect(result.err).toContain("--status");
+});
+
+test("`task toggle --status <newline>` is rejected — a control char would silently corrupt the file", async () => {
+  const vault = makeVault({ "Todo.md": "- [ ] buy milk\n" });
+  const { readNote } = await import("../../core/src/files");
+  const before = await readNote(vault, "Todo.md");
+
+  const result = await runCli(vault, "task", "toggle", "Todo.md", "1", "--status", "\n");
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("--status");
+  expect(await readNote(vault, "Todo.md")).toBe(before); // the file must be untouched, not half-written
+});
+
+test("`task toggle --status <tab>` still round-trips (tab isn't destructive — TASK_LINE's `.` matches it)", async () => {
+  const vault = makeVault({ "Todo.md": "- [ ] buy milk\n" });
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "task", "toggle", "Todo.md", "1", "--status", "\t");
+  expect(result.code).toBe(0);
+  expect(await readNote(vault, "Todo.md")).toContain("- [\t] buy milk");
 });
 
 // --- `render --theme` / `export --theme` (draw.ts / export.ts) --------------------------------

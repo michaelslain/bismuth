@@ -35,7 +35,15 @@ export const commands: CommandMap = {
       const line = Number(lineStr);
       if (!Number.isInteger(line) || line < 1) fail(`invalid line number: ${lineStr}`);
       const status = flag(args, "status");
-      if (status !== undefined && status.length !== 1) fail(`--status must be a single character: ${status}`);
+      if (status !== undefined) {
+        if (status.length !== 1) fail(`--status must be a single character: ${status}`);
+        const code = status.charCodeAt(0);
+        // Reject C0 controls + DEL (they either desync TASK_LINE's parse or, for \n/\r, physically
+        // split the file) — except tab, which TASK_LINE's `.` happily matches and round-trips fine.
+        if ((code < 0x20 && code !== 0x09) || code === 0x7f) {
+          fail(`--status must be a printable character (letters, digits, space, tab, punctuation) — got a control character (code ${code})`);
+        }
+      }
       const content = await readNote(vault, file);
       // Mirror POST /tasks/toggle: split on "\n", toggle/set the target line in place.
       // toggleTaskLine/setTaskLineStatus may return TWO lines (recurrence inserts the next
