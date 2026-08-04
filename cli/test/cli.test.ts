@@ -276,3 +276,28 @@ test("`bismuth page create` + `page list` author and read back a page headlessly
   const pages = JSON.parse(listOut);
   expect(pages.some((p: any) => p.slug === "cli-page" && p.title === "From CLI")).toBe(true);
 });
+
+// --- `replace` scoping + snapshot (cli/src/commands/search.ts) --------------------------------
+
+test("`replace --scope <path>` only rewrites the named note", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({ "A.md": "target here\n", "B.md": "target here\n" });
+
+  const result = await runCli(vault, "replace", "target", "changed", "--scope", "A.md");
+  expect(result.code).toBe(0);
+
+  expect(await readNote(vault, "A.md")).toContain("changed");
+  expect(await readNote(vault, "B.md")).toContain("target");
+});
+
+test("a vault-wide replace leaves a git snapshot to undo from", async () => {
+  const vault = makeVault({ "A.md": "target here\n" });
+
+  const result = await runCli(vault, "replace", "target", "changed");
+  expect(result.code).toBe(0);
+
+  const log = await Bun.spawn(["git", "-C", vault, "log", "--oneline"], { stdout: "pipe" });
+  const logOut = await new Response(log.stdout).text();
+  await log.exited;
+  expect(logOut.trim()).not.toBe("");
+});
