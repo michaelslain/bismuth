@@ -5,11 +5,13 @@
 // renders the same span + class the shell does. Kept here anyway because the mark is a brand
 // decision that needs to be LOOKED at, and the shell has no other visual surface.
 //
-// WHY THE WRAPPER SETS --grad: `.asc-wordmark` paints via `background-clip: text` with
-// `color: transparent`, and `--grad` is derived per-theme at runtime by `settingsCssVars.ts`.
-// Storybook never runs that, so without a local `--grad` the mark renders INVISIBLE — transparent
-// text over no background. The wrapper supplies the ink/paper-theme ramp so the story shows the
-// real thing rather than an empty strip.
+// The mark paints via `background-clip: text` with `color: transparent`, so it needs `--grad`.
+// It does NOT need one here: `.storybook/preview.ts` already runs
+// `setCssVars(settingsToCssVars(DEFAULTS))` at module scope — the same projection App.tsx performs
+// at runtime — so every theme token, `--grad` included, is live on :root for every story.
+// An earlier draft of this file hardcoded its own rainbow. That was worse than redundant: it meant
+// these stories displayed an INVENTED gradient, so anyone judging the mark's colour here was
+// grading a fabrication. Never stand in for a design token; take the real one.
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
 import { Label } from "./_storyKit";
 import "../App.css";
@@ -17,15 +19,10 @@ import "../App.css";
 /** The mark itself — a hopper-crystal silhouette in punctuation. */
 const MARK = ",;']--]';,";
 
-/** The runtime `--grad` ramp, inlined so the sheen renders outside the app. */
-const GRAD =
-  "linear-gradient(100deg, #ff6ec7 0%, #a06bff 18%, #4d8bff 36%, #22d3d6 52%, #5ff0a8 68%, #ffd36e 84%, #ff6ec7 100%)";
-
 function Strip(props: { tracking?: string; children?: string }) {
   return (
     <div
       style={{
-        "--grad": GRAD,
         ...(props.tracking ? { "--wordmark-tracking": props.tracking } : {}),
         background: "var(--bg, #0d0d0f)",
         padding: "10px 14px",
