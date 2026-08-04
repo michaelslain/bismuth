@@ -51,11 +51,19 @@ Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flag
 | `--memory <dir>` | Memory (3rd-brain) directory. **Optional.** Resolution: `--memory` flag → `BISMUTH_MEMORY` env. Used only by `graph` and `serve`. |
 | `BISMUTH_MEMORY` | Env fallback for the memory dir. |
 | `--pretty` | Boolean. Pretty-prints JSON output with 2-space indentation. Accepted by every command (it is only consulted by the shared `out()` helper). |
-| `--api <url>` | (api/app only) Base URL of a running server. `api`: `--api` → `BISMUTH_API` → `:4321`. The `app` group adds two more fallbacks: `--api` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry (`~/.bismuth/run`) → `:4321`. |
+| `--api <url>` | (server-talking commands only: `api`, `app`, `gcal status/connect/sync/disconnect`, `relay list`, `chat list/read/search`) Base URL of a running server. `api`: `--api` → `BISMUTH_API` → `:4321`. `app`/`gcal`/`relay`/`chat` share `resolveCore()`'s wider precedence: `--api` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry (`~/.bismuth/run`) → `:4321`. Every one of these routes through the SAME `call()` helper, which auto-attaches the owner token when it can — see [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) below. |
 | `--off` | (daemon toggles only) boolean — disable instead of enable. |
 | `--clear` | (folder-icon only) boolean — clear the icon instead of setting one. |
 | `--regex` / `--case` / `--word` | (search/replace only) booleans — regex mode, case-sensitive, whole-word. |
 | `BISMUTH_DAEMON_DIR` | (daemon only, read by `core/src/daemon.ts`) overrides the daemon's **machine-level** identity dir (default `~/.bismuth/daemon` — device-id, devices.json, owner.json, daemon.pid). Not a CLI flag; an env var. Per-vault crons/processes live under `<vault>/.daemon` and are addressed via `--vault`, not this var. |
+
+### Owner identity for server-talking commands (`cli/src/http.ts`)
+
+Every command that reaches a running server (`api`, `app`, `gcal status/connect/sync/disconnect`, `relay list`, and the [`chat` group](#chat-commands-commandschatts) below) goes through the same `call()` helper. `call()` attaches `X-Bismuth-Token` — the vault owner's per-boot secret (`core/src/ownerToken.ts`) — whenever the target `base` names a **local** core (`localhost` / `127.0.0.1` / `::1`) that this machine's run registry (`~/.bismuth/run`, `core/src/runRegistry.ts`) has a token for. The server treats a matching token as `requestChannel(req) === "owner"` — the SAME identity the app's own frontend carries via `window.__BISMUTH_OWNER_TOKEN__` — unlocking owner-only routes (`GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search`) and un-redacting others (`GET /relay/snapshot`'s `lastMessage` field) that were previously unreachable or redacted from every CLI invocation, agent or not.
+
+**Fails safe, never fabricates a token.** A missing run record, an unreadable one, a live core whose record predates this feature (no `token` field), or a `--api`/`BISMUTH_API` target that isn't a loopback host all send **no** token header — the server's ordinary non-owner 403/redaction applies exactly as before this feature existed.
+
+**This is NOT the agent/owner boundary — read this before assuming it is.** The token is attached by matching the target PORT against the run registry; it does not consult `BISMUTH_AGENT_CHANNEL` (the separate signal `core/src/visibilityCliGate.ts` uses to decide whether the CLI even *runs* a given command — see [visibility docs](../vault/visibility.md)). A process that can still read `~/.bismuth/run/<vault>.json` (mode `0600` — this stops other machine **users**, not necessarily the owner's own unsandboxed processes) gets the same owner identity over HTTP that the owner's interactive shell does. The real stop for a Bismuth-spawned agent is the **OS-sandbox deny-read** on that exact file (`core/src/ownerToken.ts`'s `ownerTokenDenyPath`, wired with `failIfUnavailable: true` into every agent spawn) — not this header-attach logic, and not `BISMUTH_AGENT_CHANNEL`. For content the vault's visibility settings can express (a hidden/chat-only note), the CLI's own Tier-C gate still refuses `chat`/`search`/`api`/`export`/… under a restricted vault + agent channel — but a vault that restricts *nothing* gives that gate nothing to refuse, and an agent process outside Bismuth's own sandbox that can still read the run record is not stopped by anything documented on this page.
 
 ### Argument-parsing semantics (gotchas)
 
@@ -629,6 +637,8 @@ bismuth api GET /version --api http://localhost:4322
 ```
 This is the escape hatch for any endpoint without a dedicated CLI command (see the full route list in the project's server documentation).
 
+**Owner-gated routes are reachable, not blocked by construction.** `api` shares `cli/src/http.ts`'s `call()` with every other server-talking group, so it now carries the same owner-token attach described in [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) above: `bismuth api GET /chat/sessions` (or any other owner-only route) succeeds exactly when a matching local run record's token is available — the same condition that gates the dedicated [`chat` group](#chat-commands-commandschatts). It is not the case that an owner-gated route is structurally unreachable from this command; it 403s only when no token can be attached (no running core discovered at `base`, or a run record with no `token` field). Prefer the dedicated `chat`/`app`/`gcal`/`relay` commands where one exists — `api` remains the fallback for routes without one.
+
 ---
 
 ## Self-update commands (`commands/update.ts`)
@@ -914,9 +924,36 @@ Read Bismuth's in-process registry of Claude Code work happening inside THIS vau
 ### `relay list [--api <url>]`
 `GET /relay/snapshot` → `{ sessions: RelaySession[], subagents: RelaySubagent[] }` (see `core/src/relay.ts` for both shapes), same `resolveCore` discovery precedence as `app`/`gcal`.
 
-**Works today, but content-redacted.** `resolveCore`/`call` (`cli/src/http.ts`) never attach an `X-Bismuth-Token` header, so a plain shell invocation of `relay list` always resolves to a non-owner request. `GET /relay/snapshot` used to be blanket owner-only for exactly the reason that made it unreachable from here — a `RelaySubagent.lastMessage` is free-text final output that can quote vault content, the same reason `GET /chat/sessions` is gated — but that field is now the ONLY thing withheld from a non-owner request (see [../api/http-reference.md](../api/http-reference.md#visibility-gating), shape D, and `redactSnapshot()` in `core/src/relay.ts`). `relay list` therefore returns every session and every subagent with their bookkeeping fields intact (ids, types, timestamps, `cwd`, `backend`) — only each subagent's `lastMessage` is missing.
+**Redaction now depends on the owner-token attach.** `GET /relay/snapshot` used to be blanket owner-only for the same reason `GET /chat/sessions` is gated — a `RelaySubagent.lastMessage` is free-text final output that can quote vault content — but a `lastMessage`-redacted response is served to any non-owner request instead of a 403 (see [../api/http-reference.md](../api/http-reference.md#visibility-gating), shape D, and `redactSnapshot()` in `core/src/relay.ts`). `cli/src/http.ts`'s `call()` (see [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) above) now attaches `X-Bismuth-Token` whenever a matching local run record has one — so a plain shell invocation of `relay list`, run as the vault owner against their own running core, gets the FULL unredacted snapshot (`lastMessage` included), the same as the app's own UI. It falls back to the redacted view (bookkeeping fields only — ids, types, timestamps, `cwd`, `backend`) only when no token can be attached: no running core discovered at `base`, or a run record predating this feature.
 ```bash
 bismuth relay list --pretty
+```
+
+---
+
+## Chat commands (`commands/chat.ts`)
+
+Read the vault owner's own past chat history (terminal *and* in-app sessions) from the shell — wraps three **owner-gated** server routes (`core/src/server.ts`'s `GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search`; see [chat overview § Unification with terminal sessions](../chat/overview.md#unification-with-terminal-sessions)). All three blanket-refuse (403) any request that isn't `requestChannel(req) === "owner"` — a past transcript has no single vault path to filter visibility against, so unlike a row/search-hit list there is no "safe partial" response to fall back to for a non-owner caller. Before this group existed, `cli/src/http.ts` never attached the owner token (see [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) above), so this content was unreachable from any shell invocation — only the app's own History picker UI could read it. Same `resolveCore` discovery precedence as `app`/`gcal`/`relay`: `--api <url>` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry (matched by `--vault`/`BISMUTH_VAULT`) → `:4321`.
+
+**The agent path stays gated.** `chat` is deliberately unclassified in `core/src/visibilityCliGate.ts` (not in `ALWAYS_SAFE_COMMANDS` or `PATH_SCOPED_COMMANDS`), so it falls into the refuse-when-restricted tail alongside `search`/`rows`/`base`/`export`/`api` — an agent channel (`BISMUTH_AGENT_CHANNEL=chat|daemon`) is refused before ever reaching the network **whenever the vault restricts anything** (pinned by `core/test/visibilityCliGate.test.ts` and end-to-end by `cli/test/cli.test.ts`). See the owner-identity caveat above: in a vault that restricts *nothing*, that gate has nothing to refuse, and the real stop for a Bismuth-spawned agent is the OS-sandbox deny-read on the run record — not this CLI-level command classification, and not `BISMUTH_AGENT_CHANNEL` itself.
+
+### `chat list [--scope user|daemon|all] [--api <url>]`
+`GET /chat/sessions?scope=<scope>` → `{ sessions: ChatSessionInfo[] }`, newest first. `scope` defaults to `user` (excludes the daemon's own cron-fired sessions) — see the [chat overview](../chat/overview.md#unification-with-terminal-sessions) for exactly what each scope returns.
+```bash
+bismuth chat list --pretty
+bismuth chat list --scope daemon --pretty
+```
+
+### `chat read <id> [--provider <p>] [--api <url>]`
+`GET /chat/session-messages?id=<id>&provider=<p>` → `{ frames: ChatFrame[] }` — replays one past session in order, through the same translator the live chat uses. `<id>` required (`usage: bismuth chat read <id> [--provider <p>]`). `--provider` selects a non-default chat backend's session store (e.g. `opencode`); omitted, the Claude Code SDK's own store is used.
+```bash
+bismuth chat read 8f2e1c40-1234-4a5b-9c1d-abcdef012345 --pretty
+```
+
+### `chat search <query> [--scope user|daemon|all] [--api <url>]`
+`POST /chat/search {query, scope}` → `{ hits: ChatSearchHit[] }` — content search over past sessions (title + message text), same `scope` semantics as `chat list`. `<query>` required (`usage: bismuth chat search <query> [--scope user|daemon|all]`).
+```bash
+bismuth chat search "vault schema" --pretty
 ```
 
 ---
@@ -949,6 +986,7 @@ bismuth relay list --pretty
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 | `gcal status/connect/sync/disconnect` | gcal.ts | **no** (needs a running server) | JSON |
 | `gcal targets` `gcal health` | gcal.ts | `targets`: **yes**; `health`: **no** (machine-wide `~/.bismuth/gcal`) | JSON |
-| `relay list` | relay.ts | **no** (needs a running server; content-redacted for the CLI's non-owner request — see the section above) | JSON |
+| `relay list` | relay.ts | **no** (needs a running server; full snapshot for the owner, `lastMessage`-redacted otherwise — see the section above) | JSON |
+| `chat list` `chat read` `chat search` | chat.ts | **no** (needs a running server + the owner token; refuse-when-restricted under an agent channel — see the section above) | JSON |
 
-Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/src/relay.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`
+Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`
