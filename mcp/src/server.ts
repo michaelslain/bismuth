@@ -8,6 +8,7 @@ import {
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import { listDocs, searchDocs, readDoc } from "./docs";
+import { listSkills, readSkill } from "./skills";
 import { runCli, cliHelp, cliToolResult } from "./cli";
 import { memoryDir, remember, recall, forget } from "./memory";
 import { daemonTools, daemonEnabled, isDaemonTool, runDaemonTool } from "./daemon";
@@ -17,6 +18,9 @@ import { daemonTools, daemonEnabled, isDaemonTool, runDaemonTool } from "./daemo
 // docs) and BISMUTH_CLI (→ the compiled cli binary, consumed in cli.ts).
 const repoRoot = resolve(import.meta.dir, "..", "..");
 const docsRoot = process.env.BISMUTH_DOCS_DIR ?? repoRoot + "/docs";
+// Same pattern as docsRoot: a later machine-wide install stages skills/ alongside docs/ and sets
+// BISMUTH_SKILLS_DIR (→ core/src/bismuthInstall.ts, a parallel task) to point at the staged copy.
+const skillsRoot = process.env.BISMUTH_SKILLS_DIR ?? repoRoot + "/skills";
 
 const server = new Server(
   { name: "bismuth", version: "0.1.0" },
@@ -64,6 +68,25 @@ const tools = [
         },
       },
       required: ["path"],
+    },
+  },
+  {
+    name: "bismuth_skill",
+    description:
+      "Read a Bismuth skill (a how-to guide) by name — the same guidance Claude Code auto-loads from ~/.claude/skills, exposed here so every other agent backend (opencode, codex, cline, gemini, goose, openclaw, and the ACP backends) can reach it too, since none of them read that directory. Available: authoring-bismuth-bases (how to create a `type: base` note and choose among the 12 view kinds — read this BEFORE writing any base). Omit name to list all available skills with descriptions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Skill name, e.g. 'authoring-bismuth-bases'. Omit to list all skills.",
+        },
+        reference: {
+          type: "string",
+          description:
+            "Optional reference file within the skill's references/ dir (no path, no extension), e.g. 'kanban' for the kanban view-kind reference.",
+        },
+      },
     },
   },
   {
@@ -187,6 +210,15 @@ export async function handleCallTool(request: CallToolRequest): Promise<CallTool
             { type: "text", text: asText(await readDoc(docsRoot, path, section)) },
           ],
         };
+      }
+      case "bismuth_skill": {
+        const skillName = typeof args.name === "string" ? args.name : undefined;
+        const reference = typeof args.reference === "string" ? args.reference : undefined;
+        const text =
+          skillName === undefined
+            ? asText(listSkills(skillsRoot))
+            : readSkill(skillsRoot, skillName, reference);
+        return { content: [{ type: "text", text }] };
       }
       case "bismuth_cli": {
         const cliArgs = Array.isArray(args.args)
