@@ -251,6 +251,39 @@ Parse a `type: base` note and print `{ config, rows }` (`parseBaseFile(text, { n
 bismuth base read "Bases/Reading.md" --vault ~/vault --pretty
 ```
 
+### `base validate <path>`
+Check a `type: base` note for structural problems before an agent (or the app) renders it. Prints `{ ok, errors }` — **the process exits non-zero when `ok` is false**, so a broken base fails loudly in a script or through the MCP layer (a non-zero exit there maps to `isError`) instead of silently degrading to an empty table.
+
+Checks performed:
+- **Unknown view types** — `views[].type` (or the `view: <type>` shorthand) checked against `VIEW_TYPES`. Read from the raw frontmatter directly, because `parseBaseFile`'s normalizer is malformed-YAML-tolerant and silently downgrades an invalid type to `table` instead of throwing.
+- **Declared property defaults** — every `properties:` entry's `default` value validated against its declared `type` via `validatePropertyValue` (`core/src/bases/properties.ts` — present since #99/#104 but, per its own comment, "not yet wired into write paths" until this command).
+- **Unresolvable sources** — the base-level `source:` and any per-view `source:` override, when their `ref`/`from` names a base that isn't an actual file in the vault. `resolveSource`/`resolveBaseRows` are deliberately tolerant of this (an unresolvable ref just resolves to zero rows, no throw) — `base validate` surfaces the failure that path hides.
+- **Unparseable filter/formula expressions** — global + per-view `filters`, every source `where`, and every formula (including a declared `{type: formula}` property's `expr`) run through `parseExpr`; `passesFilter`/`computeFormulas` normally swallow a parse failure silently (treating it as `false`/`undefined`).
+
+```bash
+bismuth base validate "Bases/Board.md" --vault ~/vault --pretty
+# { "ok": true, "errors": [] }
+
+bismuth base validate "Bases/Broken.md" --vault ~/vault --pretty; echo "exit: $?"
+# { "ok": false, "errors": ["views[0].type: \"gantt\" is not a valid view type — must be one of: table, cards, list, ..."] }
+# exit: 1
+```
+
+### `base render <path> [--view <n>]`
+Resolve a base's rows (`resolveBaseRows` — the same own-table-or-declared-source resolution the app uses to open this exact file) and run them through the pipeline a view actually applies at render time — `runView` (filter → sort → group → summaries), for `--view <n>` (default `0`; out of range fails naming the valid range). This is `bismuth rows` plus the grouping/sorting/summary logic `runView` (`core/src/bases/query.ts`) layers on top — `rows` alone can't show what a kanban board's columns or a table's sort order actually look like.
+
+Non-chart view kinds (`table`, `cards`, `list`, `bullets`, `kanban`, `map`, `calendar`, `flashcards`) print the `ViewResult` verbatim: `{ view, columns, groups, summaries }`, where `groups` is `[{ key, rows }]` (a single `key: ""` group when the view has no `groupBy`).
+
+Chart kinds (`bar`, `line`, `stat`, `heatmap`) route their view's filtered rows (groups flattened back out first — grouping doesn't apply to a chart) through `buildChartData` (`core/src/bases/chart.ts`) instead, printing `{ view, chart }` — `chart.points` is the computed `{ key, label, value, date? }` series, not raw rows. A `heatmap` view additionally gets `heatmapWeeks` (`buildHeatmapWeeks`'s week-grid).
+
+```bash
+bismuth base render "Bases/Board.md" --vault ~/vault --pretty
+# { "view": {...}, "columns": [...], "groups": [{ "key": "todo", "rows": [...] }, { "key": "done", "rows": [...] }], "summaries": {} }
+
+bismuth base render "Bases/Sales.md" --view 1 --vault ~/vault --pretty
+# { "view": { "type": "stat", ... }, "chart": { "points": [{ "key": "A", "label": "A", "value": 30 }], "min": 30, "max": 30, "isDate": false, "valueLabel": "amount" } }
+```
+
 ### `rows [--of '[[Base]]' | --where EXPR | --tasks DSL]`
 Resolve a `SourceSpec` to a uniform `Row[]`, following base composition. Exactly one selector builds the spec (checked in this order):
 - `--of '[[Base]]'` → `{ kind: "base", ref }` (render/compose another base, resolving *its* source recursively).
@@ -776,7 +809,7 @@ bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault
 | `search` `replace` | search.ts | yes | JSON |
 | `graph` | graph.ts | yes (+optional memory) | JSON |
 | `task list` `task toggle` | task.ts | yes | JSON / `ok` |
-| `base read` `rows` `row add` `row update` `row delete` `row reorder` | base.ts | yes | JSON / `{ok:true}` |
+| `base create` `base read` `base validate` `base render` `rows` `row add` `row update` `row delete` `row reorder` | base.ts | yes | JSON / `{ok:true}` |
 | `card decks` `card all` `card due` `card note` `card review` | card.ts | yes | JSON / `{ok:true}` |
 | `prop set` `prop delete` | prop.ts | yes | `{ok:true}` |
 | `settings get` `settings set` `settings schema` `folder-icon` | settings.ts | yes | JSON / `{ok:true}` |

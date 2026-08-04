@@ -551,3 +551,91 @@ test("`base create` refuses to clobber an existing file", async () => {
   expect((await runCli(vault, "base", "create", "Board.md", "--view", "table")).code).toBe(0);
   expect((await runCli(vault, "base", "create", "Board.md", "--view", "table")).code).toBe(1);
 });
+
+// --- `base validate` (base.ts) -------------------------------------------------------------------
+
+test("`base validate` on a base with an unknown view type reports it AND exits non-zero", async () => {
+  const vault = makeVault({
+    "Bad.md": "---\ntype: base\nviews:\n  - type: gantt\n    name: Bad\n---\n",
+  });
+  const result = await runCli(vault, "base", "validate", "Bad.md");
+  expect(result.code).toBe(1);
+  expect(result.json.ok).toBe(false);
+  expect(result.json.errors.some((e: string) => e.includes("gantt"))).toBe(true);
+  expect(result.json.errors.some((e: string) => e.includes("not a valid view type"))).toBe(true);
+});
+
+test("`base validate` on a well-formed base returns ok: true, exit 0", async () => {
+  const vault = makeVault({
+    "Good.md": "---\ntype: base\nsource: notes\nviews:\n  - type: table\n    name: Table\n---\n",
+  });
+  const result = await runCli(vault, "base", "validate", "Good.md");
+  expect(result.code).toBe(0);
+  expect(result.json).toEqual({ ok: true, errors: [] });
+});
+
+test("`base validate` flags a declared property default that fails its own type", async () => {
+  const vault = makeVault({
+    "Typed.md":
+      "---\ntype: base\nproperties:\n  - name: age\n    type: number\n    default: not-a-number\nviews:\n  - type: table\n    name: Table\n---\n",
+  });
+  const result = await runCli(vault, "base", "validate", "Typed.md");
+  expect(result.code).toBe(1);
+  expect(result.json.ok).toBe(false);
+  expect(result.json.errors.some((e: string) => e.includes("properties.age.default"))).toBe(true);
+});
+
+test("`base validate` flags a source ref that doesn't resolve to a file in the vault", async () => {
+  const vault = makeVault({
+    "Composed.md": "---\ntype: base\nsource:\n  kind: base\n  ref: '[[Nonexistent]]'\nviews:\n  - type: table\n    name: Table\n---\n",
+  });
+  const result = await runCli(vault, "base", "validate", "Composed.md");
+  expect(result.code).toBe(1);
+  expect(result.json.ok).toBe(false);
+  expect(result.json.errors.some((e: string) => e.includes("Nonexistent"))).toBe(true);
+});
+
+// --- `base render` (base.ts) ---------------------------------------------------------------------
+
+test("`base render` on a kanban base returns GROUPED output, not raw rows", async () => {
+  const vault = makeVault({
+    "Board.md":
+      "---\ntype: base\nsource: notes where status\nviews:\n  - type: kanban\n    name: Board\n    groupBy: { property: note.status }\n---\n",
+    "Task1.md": "---\nstatus: todo\n---\nfirst\n",
+    "Task2.md": "---\nstatus: done\n---\nsecond\n",
+    "Task3.md": "---\nstatus: todo\n---\nthird\n",
+  });
+  const result = await runCli(vault, "base", "render", "Board.md");
+  expect(result.code).toBe(0);
+  expect(Array.isArray(result.json.groups)).toBe(true);
+  const keys = result.json.groups.map((g: any) => g.key).sort();
+  expect(keys).toEqual(["done", "todo"]);
+  const todoGroup = result.json.groups.find((g: any) => g.key === "todo");
+  expect(todoGroup.rows).toHaveLength(2);
+});
+
+test("`base render` on a stat base returns a computed aggregate, not the row list", async () => {
+  const vault = makeVault({
+    "Chart.md": "---\ntype: base\nsource: notes where amount\nviews:\n  - type: stat\n    name: Stat\n    x: category\n---\n",
+    "Sale1.md": "---\ncategory: A\namount: 10\n---\n",
+    "Sale2.md": "---\ncategory: A\namount: 20\n---\n",
+    "Sale3.md": "---\ncategory: B\namount: 5\n---\n",
+  });
+  const result = await runCli(vault, "base", "render", "Chart.md");
+  expect(result.code).toBe(0);
+  expect(result.json.groups).toBeUndefined(); // aggregate series, not raw grouped rows
+  expect(Array.isArray(result.json.chart.points)).toBe(true);
+  const byKey = Object.fromEntries(result.json.chart.points.map((p: any) => [p.key, p.value]));
+  expect(byKey.A).toBe(30); // sum of the two "A" rows' amount
+  expect(byKey.B).toBe(5);
+});
+
+test("`base render --view <n>` picks a non-default view", async () => {
+  const vault = makeVault({
+    "Multi.md":
+      "---\ntype: base\nsource: notes\nviews:\n  - type: table\n    name: Table\n  - type: list\n    name: List\n---\n",
+  });
+  const result = await runCli(vault, "base", "render", "Multi.md", "--view", "1");
+  expect(result.code).toBe(0);
+  expect(result.json.view.type).toBe("list");
+});
