@@ -78,9 +78,10 @@ export const NoIcons: Story = {
   render: () => (
     <PopoverList
       items={[
-        { label: "Oxide Duotone" },
-        { label: "Gunmetal Teal" },
-        { label: "Rose Gold" },
+        { label: "Ink" },
+        { label: "Paper" },
+        { label: "Cathode" },
+        { label: "Riso" },
       ]}
       active={0}
       onActivate={() => {}}

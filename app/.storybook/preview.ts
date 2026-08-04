@@ -38,7 +38,7 @@ import "../src/ui/popover/popover.css";
 // App.css only defines as dark first-paint *fallbacks*. In the real app, App.tsx
 // projects the SELECTED theme's palette onto :root at runtime via
 // settingsToCssVars(settings). We replicate that here with the schema DEFAULTS so the
-// catalog renders in the real default theme (Oxide Duotone) — identical to a fresh app.
+// catalog renders in the real default theme (ink) — identical to a fresh app.
 import { settingsToCssVars, setCssVars } from "../src/settingsCssVars";
 import { DEFAULTS } from "../../core/src/schema/settingsSchema";
 import type { Settings } from "../src/settings";

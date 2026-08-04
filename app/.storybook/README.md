@@ -44,7 +44,7 @@ real app takes **three layers**, all wired in `preview.ts` + `preview-head.html`
    dark *fallbacks*. In the real app, `App.tsx` projects the **selected theme's** palette
    onto `:root` at runtime via `settingsToCssVars(settings)`. `preview.ts` replicates that
    with the schema `DEFAULTS`, so the catalog renders in the real default theme
-   (**Oxide Duotone**), identical to a fresh vault:
+   (**ink**), identical to a fresh vault:
 
    ```ts
    import { settingsToCssVars, setCssVars } from "../src/settingsCssVars";
