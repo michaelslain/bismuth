@@ -6,6 +6,7 @@ import { getFileAccess } from "./fileAccess";
 import { addDaysISO } from "./dates";
 import { reorderTaskBlocks, isResolvedStatus, collectBlock } from "./taskReorder";
 import { INLINE_TAG_REGEX } from "./tags";
+import { AppError } from "./error";
 
 export type TaskStatus = "todo" | "done" | "in-progress" | "cancelled" | "other";
 export type Priority = "highest" | "high" | "medium" | "low" | "lowest" | "none";
@@ -247,6 +248,14 @@ export function toggleTaskLine(line: string, today: string): string {
  * The bullet is normalized to `-`. Throws if the line is not a task.
  */
 export function setTaskLineStatus(line: string, status: string, today: string): string {
+  // TASK_LINE's `.` never matches a line terminator, so a control character (other than
+  // tab, which it matches fine) written into the checkbox makes the line unparseable —
+  // the task silently vanishes from task list / collectVaultTasks. Reject at the source
+  // so every caller (CLI, POST /tasks/toggle) inherits the guard.
+  const code = status.length === 1 ? status.charCodeAt(0) : -1;
+  if (code < 0 || (code < 0x20 && code !== 0x09) || code === 0x7f) {
+    throw new AppError("EINVAL", `invalid task status: ${JSON.stringify(status)}`);
+  }
   const cr = line.endsWith("\r") ? "\r" : "";
   const bare = cr ? line.slice(0, -1) : line;
   const m = TASK_LINE.exec(bare);
