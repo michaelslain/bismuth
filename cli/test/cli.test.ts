@@ -1146,6 +1146,209 @@ test("`relay list` fails cleanly (no crash) when no server is running", async ()
   expect(code).toBe(1);
 });
 
+// --- `chat` group (commands/chat.ts) — owner-token attach (http.ts) + route contracts + the ----
+// --- mandatory proof that a restricted agent channel still can't reach it -----------------------
+// `chat` wraps three owner-gated server routes (GET /chat/sessions, GET /chat/session-messages,
+// POST /chat/search) that were completely unreachable from any CLI invocation before this task:
+// cli/src/http.ts's call() never sent X-Bismuth-Token, so every CLI request looked like a
+// non-owner request no matter who ran it. Covered below: (1) http.ts's token attach/omit logic
+// directly, (2) each chat subcommand's dispatch against a fake server, and (3) — the mandatory
+// security assertion — that a RESTRICTED agent channel is refused before ever reaching the
+// network, so the CLI's new owner identity stays confined to the owner's own hand.
+
+test("http.ts call() attaches X-Bismuth-Token when the run registry has a token for the target port", async () => {
+  const { call } = await import("../src/http");
+  const { writeRunRecord } = await import("../../core/src/runRegistry");
+  const seenTokens: (string | null)[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req) => {
+      seenTokens.push(req.headers.get("x-bismuth-token"));
+      return Response.json({ ok: true });
+    },
+  });
+  try {
+    writeRunRecord({ port: server.port!, vault: "/v/chat-owner-token-test", pid: process.pid, token: "TEST-OWNER-TOKEN-1" });
+    await call(`http://localhost:${server.port}`, "GET", "/whatever");
+    expect(seenTokens).toEqual(["TEST-OWNER-TOKEN-1"]);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("http.ts call() sends NO token header when the run record is missing or tokenless — never crashes, never fabricates", async () => {
+  const { call } = await import("../src/http");
+  const { writeRunRecord } = await import("../../core/src/runRegistry");
+  const seenTokens: (string | null)[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req) => {
+      seenTokens.push(req.headers.get("x-bismuth-token"));
+      return Response.json({ ok: true });
+    },
+  });
+  try {
+    // No run record at all for this port.
+    await call(`http://localhost:${server.port}`, "GET", "/whatever");
+    // A record exists for this port but carries no token (an older core build, predating the
+    // owner-token gate).
+    writeRunRecord({ port: server.port!, vault: "/v/chat-tokenless-test", pid: process.pid });
+    await call(`http://localhost:${server.port}`, "GET", "/whatever");
+    expect(seenTokens).toEqual([null, null]);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("`chat list [--scope]` GETs /chat/sessions and passes the route's JSON straight through", async () => {
+  const calls: { method: string; path: string; search: string }[] = [];
+  const sessions = [{ sessionId: "s1", summary: "hello", lastModified: 1000, origin: "user" }];
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req) => {
+      const u = new URL(req.url);
+      calls.push({ method: req.method, path: u.pathname, search: u.search });
+      if (req.method === "GET" && u.pathname === "/chat/sessions") return Response.json({ sessions });
+      return new Response("not found", { status: 404 });
+    },
+  });
+  try {
+    const proc = Bun.spawn(
+      ["bun", "run", "cli/src/index.ts", "chat", "list", "--scope", "daemon", "--api", `http://localhost:${server.port}`],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(calls).toEqual([{ method: "GET", path: "/chat/sessions", search: "?scope=daemon" }]);
+    expect(JSON.parse(outText)).toEqual({ sessions });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("`chat read <id> [--provider]` GETs /chat/session-messages and passes frames straight through", async () => {
+  const frames = [{ type: "assistant-text", text: "hi" }];
+  const seen: { path: string; id: string | null; provider: string | null }[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req) => {
+      const u = new URL(req.url);
+      seen.push({ path: u.pathname, id: u.searchParams.get("id"), provider: u.searchParams.get("provider") });
+      if (req.method === "GET" && u.pathname === "/chat/session-messages") return Response.json({ frames });
+      return new Response("not found", { status: 404 });
+    },
+  });
+  try {
+    const proc = Bun.spawn(
+      ["bun", "run", "cli/src/index.ts", "chat", "read", "sess-1", "--provider", "opencode", "--api", `http://localhost:${server.port}`],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(seen).toEqual([{ path: "/chat/session-messages", id: "sess-1", provider: "opencode" }]);
+    expect(JSON.parse(outText)).toEqual({ frames });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("`chat read` (missing id) fails before ever reaching the network", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "chat", "read", "--api", "http://localhost:59995"], { stdout: "pipe", stderr: "pipe" });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("usage: bismuth chat read");
+});
+
+test("`chat search <query> [--scope]` POSTs /chat/search with {query, scope} and passes hits straight through", async () => {
+  const calls: any[] = [];
+  const hits = [{ sessionId: "s1", summary: "hi", lastModified: 1000, origin: "user", snippet: "…hello…" }];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (req) => {
+      const u = new URL(req.url);
+      if (req.method === "POST" && u.pathname === "/chat/search") {
+        calls.push(await req.json());
+        return Response.json({ hits });
+      }
+      return new Response("not found", { status: 404 });
+    },
+  });
+  try {
+    const proc = Bun.spawn(
+      ["bun", "run", "cli/src/index.ts", "chat", "search", "hello", "--scope", "all", "--api", `http://localhost:${server.port}`],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(calls).toEqual([{ query: "hello", scope: "all" }]);
+    expect(JSON.parse(outText)).toEqual({ hits });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("`chat list` fails cleanly (no crash) when no server is running", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "chat", "list", "--api", "http://localhost:59994"], { stdout: "pipe", stderr: "pipe" });
+  const [, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+});
+
+// SECURITY (MANDATORY per this task's brief): a RESTRICTED agent channel must refuse `chat`
+// before it ever reaches the network — otherwise the CLI's new owner-token identity would leak
+// past chat transcripts to exactly the caller the owner-token gate exists to keep them from. The
+// fake server below would happily serve a session containing a seeded secret string if the CLI
+// ever called it; asserting on RAW STDOUT (not just exit code) proves the secret never reached
+// the process's own output, and asserting zero server calls proves the gate fired BEFORE any
+// network attempt — not that the server merely declined to answer.
+test("SECURITY: a RESTRICTED agent channel refuses `chat list` before ever reaching the network — the seeded transcript never appears in stdout", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nirrelevant body\n" });
+  const calls: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req) => {
+      calls.push(new URL(req.url).pathname);
+      return Response.json({ sessions: [{ sessionId: "s1", summary: "SEEDED-TRANSCRIPT-SECRET-99" }] });
+    },
+  });
+  try {
+    const proc = Bun.spawn(
+      ["bun", "run", "cli/src/index.ts", "chat", "list", "--vault", vault, "--api", `http://localhost:${server.port}`],
+      { stdout: "pipe", stderr: "pipe", env: { ...process.env, BISMUTH_AGENT_CHANNEL: "daemon" } },
+    );
+    const [outText, err, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expect(code).toBe(1);
+    expect(err).toContain("chat");
+    expect(outText).not.toContain("SEEDED-TRANSCRIPT-SECRET-99");
+    expect(calls).toHaveLength(0); // the gate refused before ever touching the network
+  } finally {
+    server.stop(true);
+  }
+});
+
+// Same restricted vault, same command — the owner's own hand (BISMUTH_AGENT_CHANNEL unset) is
+// NOT refused. Only the channel differs, proving the block above is about identity, not the vault.
+test("the SAME restricted vault does NOT refuse `chat list` for the owner (BISMUTH_AGENT_CHANNEL unset)", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nirrelevant body\n" });
+  const server = Bun.serve({
+    port: 0,
+    fetch: () => Response.json({ sessions: [] }),
+  });
+  try {
+    const proc = Bun.spawn(
+      ["bun", "run", "cli/src/index.ts", "chat", "list", "--vault", vault, "--api", `http://localhost:${server.port}`],
+      { stdout: "pipe", stderr: "pipe", env: { ...process.env, BISMUTH_AGENT_CHANNEL: undefined } },
+    );
+    const code = await proc.exited;
+    expect(code).toBe(0);
+  } finally {
+    server.stop(true);
+  }
+});
+
 // --- `task archive` (commands/task.ts) — mirrors POST /tasks/archive, headlessly ----------------
 
 test("`task archive <file>` removes only resolved (done/cancelled) tasks from that note; open/in-progress tasks + other files stay", async () => {

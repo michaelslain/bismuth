@@ -117,6 +117,21 @@ describe("decideCliGate", () => {
     expect(decideCliGate(["some-new-command", "x"], RESTRICTED).allowed).toBe(false);
     expect(commandTier(["some-new-command"])).toBe("refuse-when-restricted");
   });
+  test("`chat` (cli/src/commands/chat.ts) falls through to refuse-when-restricted by default — no entry needed in ALWAYS_SAFE_COMMANDS/PATH_SCOPED_COMMANDS", () => {
+    // `chat list/read/search` wrap the owner-gated GET /chat/sessions, GET /chat/session-messages,
+    // POST /chat/search routes (cli/src/http.ts now attaches the owner token, making these
+    // reachable from a shell for the first time). It is deliberately absent from both allowlists
+    // above, so it lands in the same refuse-by-default tail as `search`/`api`/`export` — this
+    // pins that classification so a future refactor can't silently move it into a safe tier.
+    expect(commandTier(["chat", "list"])).toBe("refuse-when-restricted");
+    expect(commandTier(["chat", "read"])).toBe("refuse-when-restricted");
+    expect(commandTier(["chat", "search"])).toBe("refuse-when-restricted");
+    expect(decideCliGate(["chat", "list"], RESTRICTED).allowed).toBe(false);
+    expect(decideCliGate(["chat", "search", "x"], RESTRICTED).allowed).toBe(false);
+    // Nothing restricted in the vault → the gate has nothing to refuse, same as every other
+    // Tier-C command (see "allows those same commands when nothing is restricted" above).
+    expect(decideCliGate(["chat", "list"], []).allowed).toBe(true);
+  });
   test("an UNKNOWN checkpoint subcommand refuses too — only advance/ref are overridden", () => {
     expect(decideCliGate(["checkpoint", "some-future-subcommand"], RESTRICTED).allowed).toBe(false);
   });
