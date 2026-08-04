@@ -735,21 +735,27 @@ test("`base render --view <n>` picks a non-default view", async () => {
 // task brief). These assert the WIRING instead: the command calls the platform function with the
 // right args, forwards its result through `out()`, and exits non-zero when `ok` is false.
 //
-// The platform module is mocked BEFORE daemon.ts is ever imported in this process, so the real
-// daemon/src/lib/platform.ts (and therefore any real spawnSync of launchctl/systemctl) is never
-// loaded here. Each test reconfigures `platformMock`'s fields rather than re-registering the
-// mock, since mock.module's replacement module object is shared (live ES-module bindings) across
-// every already-resolved import of the specifier.
+// The platform module is mocked BEFORE daemon.ts is ever imported in this process, so
+// daemonConfigPath/unloadDaemon/restartDaemon are stubbed and any real spawnSync of
+// launchctl/systemctl is never invoked here. Each test reconfigures `platformMock`'s fields
+// rather than re-registering the mock, since mock.module's replacement module object is shared
+// (live ES-module bindings) across every already-resolved import of the specifier. The
+// replacement spreads the REAL module's other exports (notify, planEnsureInstalled, …) first —
+// mock.module swaps the module out for every consumer process-wide (not just this file), so a
+// bare `{ daemonConfigPath, unloadDaemon, restartDaemon }` would erase those exports for any
+// daemon-workspace test that imports platform.ts later in the same `bun test` run.
+const realPlatform = await import("../../daemon/src/lib/platform");
 const platformMock: {
   configPath: string;
-  unload: (configPath: string) => void;
+  unload: (configPath: string) => { ok: boolean; error?: string };
   restart: () => { ok: boolean; error?: string };
 } = {
   configPath: "/fake/.bismuth-test/config.plist",
-  unload: () => {},
+  unload: () => ({ ok: true }),
   restart: () => ({ ok: true }),
 };
 mock.module("../../daemon/src/lib/platform", () => ({
+  ...realPlatform,
   daemonConfigPath: () => platformMock.configPath,
   unloadDaemon: (configPath: string) => platformMock.unload(configPath),
   restartDaemon: () => platformMock.restart(),
@@ -793,7 +799,7 @@ test("`daemon stop`/`daemon restart` are registered, take no positionals, and ac
 
 test("`daemon stop` calls unloadDaemon(daemonConfigPath()) and reports {ok:true} on success", async () => {
   let calledWith: string | undefined;
-  platformMock.unload = (configPath) => { calledWith = configPath; };
+  platformMock.unload = (configPath) => { calledWith = configPath; return { ok: true }; };
 
   const { logs, code } = await captureLogsAndExit(() => daemonCommands["daemon stop"].run([]));
 
@@ -802,13 +808,13 @@ test("`daemon stop` calls unloadDaemon(daemonConfigPath()) and reports {ok:true}
   expect(code).toBeUndefined(); // success never calls process.exit
 });
 
-test("`daemon stop` exits non-zero and reports {ok:false,error} when unloadDaemon throws", async () => {
-  platformMock.unload = () => { throw new Error("launchctl exploded"); };
+test("`daemon stop` exits non-zero and reports {ok:false,error} when unloadDaemon reports failure", async () => {
+  platformMock.unload = () => ({ ok: false, error: "launchctl unload failed: boom" });
 
   const { logs, code } = await captureLogsAndExit(() => daemonCommands["daemon stop"].run([]));
 
   expect(code).toBe(1);
-  expect(JSON.parse(logs[0])).toEqual({ ok: false, error: "launchctl exploded" });
+  expect(JSON.parse(logs[0])).toEqual({ ok: false, error: "launchctl unload failed: boom" });
 });
 
 test("`daemon restart` calls restartDaemon() and forwards {ok:true}, exit 0", async () => {

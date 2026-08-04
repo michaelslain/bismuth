@@ -78,17 +78,9 @@ export const commands: CommandMap = {
     summary: "Stop the installed daemon service (launchctl unload / systemctl stop+disable) — it won't restart on its own",
     usage: "[--pretty]",
     run: (args) => {
-      // unloadDaemon is void — it never reports launchctl/systemctl failure (see platform.ts).
-      // Only a thrown error (e.g. the config path is unwritable) surfaces as {ok:false}; any
-      // other failure mode is opaque at the source, so a bare {ok:true} here is best-effort, not
-      // a guarantee the service actually stopped. Re-run `daemon install` to check liveness.
-      try {
-        unloadDaemon(daemonConfigPath());
-        out({ ok: true }, args);
-      } catch (e) {
-        out({ ok: false, error: e instanceof Error ? e.message : String(e) }, args);
-        process.exit(1);
-      }
+      const result = unloadDaemon(daemonConfigPath());
+      out(result, args);
+      if (!result.ok) process.exit(1);
     },
   },
   "daemon restart": {

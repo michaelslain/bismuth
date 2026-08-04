@@ -479,7 +479,7 @@ bismuth daemon update --pretty
 ```
 
 ### `daemon stop`
-Stop the installed daemon service — `launchctl unload <plist>` on macOS, `systemctl --user stop` + `disable` on Linux (`unloadDaemon(daemonConfigPath())`, `daemon/src/lib/platform.ts`) — so it stops running in the background and does **not** come back on its own (unlike `daemon restart`, this does not re-arm `KeepAlive`/`Restart=always`; a stopped service stays stopped until `daemon setup`/`daemon install` re-registers it). `daemonConfigPath()` is the same zero-arg plist/unit path `--ensure-installed` resolves — no vault or binary path needed. `unloadDaemon` itself is `void` (launchctl/systemctl failures aren't surfaced by the function) so a printed `{ok:true}` means "the unload command was issued," not "the process is confirmed dead" — check with `daemon install` afterward. Only a thrown error (e.g. an unwritable config path) prints `{ ok: false, error }` and exits non-zero.
+Stop the installed daemon service — `launchctl unload <plist>` on macOS, `systemctl --user stop` + `disable` on Linux (`unloadDaemon(daemonConfigPath())`, `daemon/src/lib/platform.ts`) — so it stops running in the background and does **not** come back on its own (unlike `daemon restart`, this does not re-arm `KeepAlive`/`Restart=always`; a stopped service stays stopped until `daemon setup`/`daemon install` re-registers it). `daemonConfigPath()` is the same zero-arg plist/unit path `--ensure-installed` resolves — no vault or binary path needed. On Linux, `ok` is `true` only when BOTH `stop` and `disable` succeed; if either fails, `ok` is `false` and `error` names which one. Result: `{ ok, error? }`; exits non-zero when `ok` is `false`.
 ```bash
 bismuth daemon stop --pretty
 ```
