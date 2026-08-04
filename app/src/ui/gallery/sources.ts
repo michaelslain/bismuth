@@ -7,8 +7,9 @@ import { allIcons } from "../../icons/registry";
 import { searchEmoji } from "../../editor/emoji";
 import type { GallerySource, GalleryItem } from "./types";
 
-// Cap rendered cells: there are ~112 icons; rendering all SVGs at once janks.
-// Search narrows the set, so the cap only bites on the unfiltered view.
+// Cap rendered cells so a large source can't jank the grid by painting every item at once.
+// The icon set is ~112 and so never reaches this; the emoji source does. (The cap was sized for
+// the ~1,700-icon Lucide set this used to import — kept because emoji still needs it.)
 const MAX_CELLS = 300;
 
 /** Every icon (Lucide-style name), prefix-matches first then substring — value = icon name. */
