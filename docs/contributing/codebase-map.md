@@ -6,8 +6,10 @@ This document is a module-by-module navigation guide for the Bismuth monorepo, f
 - **Workspace Layout** — the seven Bun workspaces and how they depend on each other
 - **`core/`** — the backend/pure-logic library, grouped by responsibility: HTTP server, graph construction, layout, file system, knowledge parsing, settings, search, Bases, SRS, tasks, daemon integration, relay registry, terminal, plus the `drawing/` subsystem and `core/test/`
 - **`app/src/`** — the Solid.js frontend, grouped by feature area: shell/panes, graph rendering, editor, file tree, Bases views, calendar, drawing, sheets, export, palette, terminal, icons, drag-and-drop, UI primitives, and mobile
+- **`app/.storybook/`** — the Storybook 9 component catalog for `app/src/`: config, the runtime theme/transport seams in `preview.ts`, and the shared fixture files
 - **`cli/src/`** — the `bismuth` binary's command groups
 - **`relay/`** — the terminal-tab session relay plugin
+- **`skills/`** — agent-facing skill guides shipped outside any workspace
 - **Where to Add Things** — a lookup table for common changes, at the bottom
 
 ---
@@ -28,6 +30,8 @@ bismuth/               root (private, no src; devDeps: emojilib, unicode-emoji-j
 ```
 
 `core` is the library that `app`, `cli`, and `mcp` import as `@bismuth/core`. `relay` is not imported by anyone; it runs as a standalone plugin inside terminal tabs, and its `.mcp.json` auto-starts the `mcp` server in those sessions. Root-level `dependencies` (`@napi-rs/canvas`, `pdf-lib`, `perfect-freehand`) are hoisted and consumed by `core/src/drawing/`.
+
+Two top-level directories sit outside this workspace list entirely — no `package.json`, nothing to `bun install` or import: `skills/` (agent-facing skill guides) and `app/.storybook/` (the Storybook component catalog for `app/src/`). Each gets its own section below.
 
 Add a dep: `cd <workspace> && bun add <package>` then `bun install` at the root.
 
@@ -975,6 +979,35 @@ Dialog for picking a vault folder (used by "Open folder" flow).
 
 ---
 
+## `app/.storybook/` — Component Development
+
+Storybook 9 (`storybook-solidjs-vite`) mounts individual `app/src/` components outside the full Tauri+Solid app shell, for building and visually verifying them in isolation. `bun run storybook` (from `app/`) starts it on port `6006`; `bun run build-storybook` produces a static build. Story files are colocated with the components they document (`<Component>.stories.tsx`, matched by the glob `../src/**/*.stories.@(ts|tsx)` in `main.ts`) rather than living in a separate tree.
+
+#### `main.ts`
+Storybook config: framework `storybook-solidjs-vite`, the colocated stories glob, no addons (SB9 bakes controls/actions/viewport/backgrounds/docs into core, and `storybook-solidjs-vite` has no SB8 build, so the catalog runs on SB9 from the start).
+
+#### `preview.ts`
+Global setup every story gets, without which components render wrong or not at all:
+- Loads the same Monaspace font faces `app/src/index.tsx` loads, plus `App.css`, `ui/ui.css`, and `ui/popover/popover.css` for the primitives' own chrome.
+- **Runtime theme tokens**: calls `setCssVars(settingsToCssVars(DEFAULTS))` (`app/src/settingsCssVars.ts` + `core/src/schema/settingsSchema.ts`'s `DEFAULTS`) — the exact projection `App.tsx` performs at runtime — so the catalog renders in the real default ("ink") theme instead of `App.css`'s dark first-paint fallbacks.
+- **Backend seam**: calls `setTransport(fakeTransport({...}))` (`app/src/api.ts`'s swappable `Transport`, the same seam `app/src/mobile/inProcessTransport.ts` uses to run the whole app with no HTTP server) seeded from `_baseFixtures.ts`'s `SAMPLE_ROWS`, so a component that fetches on mount (e.g. a card's `api.read()`, a query builder's `resolveRows`/`tree`, daemon/gcal status panels) reads back real content instead of sitting in a loading state forever — a story that renders only a spinner verifies nothing while looking like it passed.
+- Disables Storybook's own background-color toolbar (the page already paints from `--bg` via `App.css`'s `body` rule).
+
+#### Shared fixtures (`app/src/ui/_*`)
+Underscore-prefixed by convention, and excluded from the catalog because they don't match the `*.stories.*` glob:
+- `_storyKit.tsx` — shared layout helpers (`Label`, `labelStyle`) for the `ui/` primitives' own stories.
+- `_baseFixtures.tsx` — sample Bases rows/config; `sampleViewResult` runs the REAL `core/src/bases/query.ts` `runView` over them, so a view story's `result`/`config` matches exactly what the production pipeline would hand it. Also the source of `preview.ts`'s seeded file content (`SAMPLE_ROWS`).
+- `_fakeTransport.ts` — the in-memory `Transport` implementation `preview.ts` installs; covers `GET /tree`, `GET /file`, `PUT /file`, `POST /rows` with per-route logic, everything else with a generic 200 ack.
+- `_calendarFixtures.ts` — sample events/categories plus a `seedCalendarState()` helper: the calendar views read `events`/`categories`/`currentDate` from `calendar/state.ts`'s module-level signals, not props, so a story must seed state before mounting one.
+- `_graphFixtures.ts` — sample `GraphData`, laid out with the real `core/src/layout.ts` `computeLayout` (never hand-placed positions).
+- `_daemonFixtures.ts` — sample `DaemonPage`s covering every `PageStatus` (pending/working/done/failed/dismissed) for the inbox stories.
+- `_cmHarness.tsx` — mounts a minimal CodeMirror 6 `EditorView` (history + selection drawing + default/history keymap + line wrapping, nothing note-specific) for components that take a live `EditorView` as a prop (e.g. `editor/ink/InkOverlay.tsx`) without pulling in the full `Editor.tsx` note-editing stack.
+
+#### Coverage
+237 stories across 81 component story files, spanning the `ui/` primitives, all 12 Bases view renderers (`bases/BarView.stories.tsx` through `bases/TableView.stories.tsx`), the calendar views, app-root chrome and modals (`ContextMenu`, `Toast`, `NoteTitle`, the daemon/gcal modals, `InboxView`/`InboxPageView`, …), drawing, graph (`GraphView`, `graph/EmbeddedGraph`), editor surfaces, and `ChatView`.
+
+---
+
 ## `cli/src/` — CLI Binary
 
 The `bismuth` binary (entry: `cli/src/index.ts`). Longest-match dispatch: tries two-word phrases first (`"task toggle"`), then single words (`"graph"`). Each command group is a thin wrapper over `@bismuth/core` functions — no running server required for file-based operations.
@@ -1085,6 +1118,24 @@ zsh init dir (`.zshenv`, `.zshrc`). `ZDOTDIR` is set to this dir so `.zshrc` def
 
 ---
 
+## `skills/` — Agent Skill Guides
+
+Not a Bun workspace — no `package.json`, nothing to `bun install` or import. A plain directory of markdown guides an AI agent reads before doing a specific task, in the Claude Code skill shape (a `SKILL.md` with YAML `name`/`description` frontmatter, plus optional `references/*.md`), but reachable by every agent backend Bismuth supports, not just Claude Code.
+
+### `authoring-bismuth-bases/SKILL.md`
+The one skill this repo ships. Frontmatter `description` is what an agent's skill-discovery step matches against ("Use when creating, editing, or debugging a Bismuth base..."). Body: the base/`type: base` model, a lookup table mapping "what you want to show" to one of the 12 view kinds, a 4-step workflow (pick a kind → read `references/<kind>.md` → create the note → verify by reading it back), and cross-cutting gotchas that apply to every kind (`source:` string-vs-object coercion and its silent-fallback-to-whole-vault footgun, `from:` composing an upstream base's own `source` recursively rather than intersecting static rows, and that the only embedded block is ` ```query ` — never ` ```base `/` ```view `/` ```tasks `).
+
+### `authoring-bismuth-bases/references/<kind>.md`
+One file per Bases view kind — `bar.md`, `bullets.md`, `calendar.md`, `cards.md`, `flashcards.md`, `heatmap.md`, `kanban.md`, `line.md`, `list.md`, `map.md`, `stat.md`, `table.md` (12 total, matching `ViewType` in `core/src/bases/types.ts`). `SKILL.md` tells the agent to read the matching one — its exact config keys, a working frontmatter example, its specific failure modes — before writing frontmatter for that kind, rather than guessing a key name from memory or from another kind's shape.
+
+### How agents reach it — three adapters, one skill
+Bismuth ships nine chat/agent backends (`docs/chat/backends.md`), and only Claude Code has a native skills mechanism (`~/.claude/skills/`, auto-discovered). Three separate delivery paths make the same guide reachable from all of them:
+- **`bismuth_skill` MCP tool** — `mcp/src/skills.ts`'s `listSkills(root)`/`readSkill(root, name, reference?)`, registered as the `bismuth_skill` tool in `mcp/src/server.ts`. The one surface all nine backends share, since every backend that speaks MCP can call it. Omit `name` to list skills with descriptions; pass `{name, reference?}` to read `SKILL.md` or one `references/<kind>.md` file. Path-traversal-rejecting (`resolveWithin`), mirroring `mcp/src/docs.ts`'s `readDoc` on purpose — same repo, same pattern.
+- **`~/.claude/skills/` symlink at install** — `core/src/bismuthInstall.ts`. `stageSkills(src, bismuthHome)` copies the repo's `skills/` into `~/.bismuth/skills` (alongside `docs/` and the `bin/` binaries) during `ensureBismuthInstalled()`; `linkSkillToClaudeCode(bismuthHome, claudeSkillsDir)` then symlinks `~/.claude/skills/authoring-bismuth-bases` → `~/.bismuth/skills/authoring-bismuth-bases` (never clobbering a foreign entry already at that path) so Claude Code's own skill auto-loading picks it up with no MCP round-trip. `SKILL_ID = "authoring-bismuth-bases"` names the one skill this install step knows about.
+- **Codex's `AGENTS.md` managed block** — `core/src/chatProviders/codex/driver.ts`'s `CODEX_AGENTS_MD_CONTENT`, written via `core/src/agentBackends/agentsMd.ts`'s `writeAgentsMdBlock(cwd, content)`, opt-in per `core/src/settings.ts`'s `readCodexOptIns()` (`settings.codex.writeAgentsMd`). Codex has no skills mechanism of its own and instead reads a project-root `AGENTS.md` as its persistent-context channel; the managed block (delimited by `<!-- bismuth:managed:start -->`/`...:end -->` markers so a user's own `AGENTS.md` content is preserved) carries a one-line pointer telling Codex to call the `bismuth_skill` MCP tool before authoring a base.
+
+---
+
 ## Where to Add Things
 
 | What you're adding | Where |
@@ -1100,5 +1151,6 @@ zsh init dir (`.zshenv`, `.zshrc`). `ZDOTDIR` is set to this dir so `.zshrc` def
 | New Bases function | `core/src/bases/functions.ts` dispatch, `query.ts` aggregation, test in `core/test/bases/query.test.ts` |
 | New graph source type | Use `buildGraphFromNotes` from `core/src/graphBuilder.ts` |
 | New file type supported in panes | `app/src/tabIds.ts` (label/icon), `app/src/PaneContent.tsx` (routing) |
+| New/changed `app/src/` component | Add or update its colocated `<Name>.stories.tsx`; shared fixtures in `app/src/ui/_*` (see `app/.storybook/`) |
 
-Source: `CLAUDE.md`, `core/src/server.ts`, `core/src/graph.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/agents.ts`, `core/src/graphBuilder.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/sse.ts`, `core/src/asyncCache.ts`, `core/src/changeClassifier.ts`, `core/src/relay.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `core/src/daemonState.ts`, `core/src/daemonInstall.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/files.ts`, `core/src/fileAccess.ts`, `core/src/error.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/community.ts`, `core/src/basesData.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `core/src/bases/types.ts`, `core/src/bases/sourceSpec.ts`, `core/src/srs/scheduler.ts`, `core/src/drawing/model.ts`, `app/src/App.tsx`, `app/src/panes.ts`, `app/src/tabIds.ts`, `app/src/api.ts`, `app/src/serverVersion.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/themes.ts`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/export/formats.ts`, `app/src/export/exporters.ts`, `app/src/mobile/bootMobile.ts`, `relay/CLAUDE.md`, `relay/lib/report.ts`, `relay/hooks/hooks.json`, `relay/bin/session-end-hook.ts`, `relay/bin/wrap.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `cli/src/index.ts`, `cli/src/commands/note.ts`, `cli/src/commands/api.ts`, `package.json`, `core/package.json`, `app/package.json`, `cli/package.json`
+Source: `CLAUDE.md`, `core/src/server.ts`, `core/src/graph.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/agents.ts`, `core/src/graphBuilder.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/sse.ts`, `core/src/asyncCache.ts`, `core/src/changeClassifier.ts`, `core/src/relay.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `core/src/daemonState.ts`, `core/src/daemonInstall.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/files.ts`, `core/src/fileAccess.ts`, `core/src/error.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/community.ts`, `core/src/basesData.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `core/src/bases/types.ts`, `core/src/bases/sourceSpec.ts`, `core/src/srs/scheduler.ts`, `core/src/drawing/model.ts`, `app/src/App.tsx`, `app/src/panes.ts`, `app/src/tabIds.ts`, `app/src/api.ts`, `app/src/serverVersion.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/themes.ts`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/export/formats.ts`, `app/src/export/exporters.ts`, `app/src/mobile/bootMobile.ts`, `relay/CLAUDE.md`, `relay/lib/report.ts`, `relay/hooks/hooks.json`, `relay/bin/session-end-hook.ts`, `relay/bin/wrap.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `cli/src/index.ts`, `cli/src/commands/note.ts`, `cli/src/commands/api.ts`, `package.json`, `core/package.json`, `app/package.json`, `cli/package.json`, `skills/authoring-bismuth-bases/SKILL.md`, `mcp/src/skills.ts`, `mcp/src/server.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/chatProviders/codex/driver.ts`, `app/.storybook/main.ts`, `app/.storybook/preview.ts`, `app/src/ui/_baseFixtures.tsx`, `app/src/ui/_fakeTransport.ts`, `app/src/ui/_calendarFixtures.ts`, `app/src/ui/_graphFixtures.ts`, `app/src/ui/_daemonFixtures.ts`, `app/src/ui/_cmHarness.tsx`, `app/src/ui/_storyKit.tsx`

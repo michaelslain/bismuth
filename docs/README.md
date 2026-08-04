@@ -25,7 +25,7 @@ structure rather than two disconnected tools.
 - **Bases** — a `type: base` note is a query over your vault, rendered through any of 12 view kinds (table, cards, kanban, calendar, map, charts, flashcards, …)
 - **Tasks** (Obsidian-Tasks compatible) and **flashcards** (SM-2 spaced repetition) that read straight out of your notes
 - **Calendar** with two-way Google Calendar sync · **drawing** (`.draw`) · **spreadsheets** (`.sheet`) · **export** to md/html/png/pdf
-- **AI, on your terms** — in-app terminals, a visual chat that runs on any of **nine** agent backends (Claude Code, opencode, Codex, and six more), and per-file/folder **visibility controls** that fence agents out of what you don't want read
+- **AI, on your terms** — in-app terminals, a visual chat that runs on any of **nine** agent backends (Claude Code, opencode, Codex, and six more), a **skill** (`skills/`) that teaches any of them how to author a Bases view correctly, and per-file/folder **visibility controls** that fence agents out of what you don't want read
 - **A daemon** — an optional background brain per vault: crons, processes, a memory graph, and an inbox of work awaiting your approval
 - **Drive it from anywhere** — the `bismuth` CLI, an MCP server, and an iPad build that runs the whole backend in-process
 
@@ -36,8 +36,11 @@ Everything is local-first and file-based: no account, no sync service, no databa
 ## About this documentation
 
 Bismuth is a Bun monorepo of **seven workspaces** — `core` (backend), `app` (Solid + Tauri),
-`cli`, `relay`, `mcp`, `memory`, and `daemon`. This is the full reference: every page is
-code-anchored, with copy-pasteable examples drawn from the real implementation.
+`cli`, `relay`, `mcp`, `memory`, and `daemon` — plus two top-level directories that are **not**
+workspaces: `skills/` (agent-facing skill guides) and `app/.storybook/` (the Storybook 9
+component catalog for `app/src/`, `bun run storybook`, port `6006`). This is the full
+reference: every page is code-anchored, with copy-pasteable examples drawn from the real
+implementation.
 
 ## Get started (macOS)
 
