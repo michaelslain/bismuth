@@ -37,6 +37,7 @@ import {
 } from "../src/chat";
 import { whichClaude } from "../src/claudeWhich";
 import { sandboxFailIfUnavailable } from "../src/visibility";
+import { ownerTokenDenyPath } from "../src/ownerToken";
 import { shouldRunLiveTests } from "./liveGate";
 
 // extractEditorContextPaths backs captureToMemory's visibility gate (skip capturing a session
@@ -429,6 +430,15 @@ describe("buildChatSandboxOption (the value spawnChatQuery's sandbox option is b
   });
   test("sandbox is omitted entirely (not merely allowUnsandboxedCommands:false) when nothing is restricted — an unrestricted vault must not risk failing on a machine with no sandbox support", () => {
     expect(buildChatSandboxOption([], "/vault")).toBeUndefined();
+  });
+  // The owner token (ownerToken.ts) makes an HTTP request unfiltered. It lives in the run record
+  // OUTSIDE the vault, so no vault-relative deny reaches it: a chat session that can read that file
+  // can present X-Bismuth-Token to GET /file and read back every note this sandbox exists to hide.
+  // The deny list is therefore only as strong as its coverage of that one path.
+  test("denyRead covers the owner-token run record — the file whose contents defeat every other filter", () => {
+    const o = buildChatSandboxOption([{ rel: "secret.md", abs: "/vault/secret.md" }], "/vault");
+    const denyRead = (o?.filesystem as { denyRead?: string[] } | undefined)?.denyRead ?? [];
+    expect(denyRead).toContain(ownerTokenDenyPath("/vault"));
   });
 });
 

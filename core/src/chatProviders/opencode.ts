@@ -60,10 +60,9 @@ import { recallMemory } from "@bismuth/memory";
 import { detachSessionSink, emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "./sessionSink";
 import { claudeLookupPath, claudeSpawnEnv } from "../claudeWhich";
 import { ensureOpencodeServer, registerOpencodeServerListener, type OpencodeServerHandle } from "./opencodeServer";
-import { buildDenyPaths, type DenyEntry } from "../visibility";
+import { buildDenyPaths, buildSandboxDenyPaths, type DenyEntry } from "../visibility";
 import { can } from "../agentBackends/catalog";
 import {
-  buildSandboxDenyPaths,
   checkSandboxWrapperAvailability,
   describeSandboxWrapperUnavailable,
   isSandboxApplyFailure,

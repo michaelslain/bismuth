@@ -1,5 +1,5 @@
 // core/test/visibility.test.ts
-import { test, expect } from "bun:test";
+import { test, expect, describe } from "bun:test";
 import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { realpath } from "node:fs/promises";
@@ -20,7 +20,10 @@ import {
   MAX_WALK_ENTRIES,
   sandboxDenyRead,
   sandboxFailIfUnavailable,
+  buildSandboxDenyPaths,
 } from "../src/visibility";
+import { ownerTokenDenyPath } from "../src/ownerToken";
+import { runRecordPath } from "../src/runRegistry";
 import { setFolderVisibility, readFolderVisibility } from "../src/settings";
 import { readNote } from "../src/files";
 import { resolveVisibilityGate } from "../src/agentBackends/visibilityGate";
@@ -234,6 +237,29 @@ test("sandboxFailIfUnavailable: true when the vault restricts something", () => 
 
 test("sandboxFailIfUnavailable: false when nothing is restricted — an unrestricted vault must not start failing chats just because sandboxing is unavailable on this machine", () => {
   expect(sandboxFailIfUnavailable([])).toBe(false);
+});
+
+// buildSandboxDenyPaths — the ONE list every agent spawn's read-deny is resolved from (chat.ts,
+// the daemon's buildQueryOptions, the Seatbelt wrapper for non-Claude backends). It exists so the
+// owner-token file cannot be covered on one path and missed on another; see its doc comment for
+// why that file defeats every other layer at once.
+describe("buildSandboxDenyPaths", () => {
+  test("non-empty entries: restricted files + .git + the owner-token run record, all present", () => {
+    const entries: DenyEntry[] = [{ rel: "secret.md", abs: "/vault/secret.md" }];
+    const out = buildSandboxDenyPaths(entries, "/vault");
+    expect(out).toContain("/vault/secret.md");
+    expect(out).toContain(join("/vault", ".git"));
+    expect(out).toContain(ownerTokenDenyPath("/vault"));
+  });
+
+  test("empty entries -> empty result: an unrestricted vault spawns with no sandbox at all, so there is no profile for a token deny to ride in on and nothing for it to protect", () => {
+    expect(buildSandboxDenyPaths([], "/vault")).toEqual([]);
+  });
+
+  test("the token path is the run record's, not a second spelling of it", () => {
+    const out = buildSandboxDenyPaths([{ rel: "s.md", abs: "/vault/s.md" }], "/vault");
+    expect(out).toContain(runRecordPath("/vault"));
+  });
 });
 
 // --- review-fix regressions: non-md files, trailing-slash keys, memory-note cascade ---

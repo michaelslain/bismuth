@@ -24,6 +24,7 @@ import { open, readdir, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parseFrontmatter } from "./frontmatter";
 import { readFolderVisibilityResult } from "./settings";
+import { ownerTokenDenyPaths } from "./ownerToken";
 
 export type Visibility = "all" | "chat-only" | "hidden";
 /** A file's own explicit frontmatter value; `undefined` = absent = inherit. */
@@ -577,6 +578,35 @@ export function absDenyPaths(entries: DenyEntry[]): string[] {
 export function sandboxDenyRead(entries: DenyEntry[], vaultRoot: string): string[] {
   if (entries.length === 0) return [];
   return [...absDenyPaths(entries), join(vaultRoot, ".git")];
+}
+
+/**
+ * THE deny-read list every agent spawn uses: {@link sandboxDenyRead} plus the owner-token run
+ * record (`ownerToken.ts`'s {@link ownerTokenDenyPath}).
+ *
+ * The token is the one file whose contents defeat every other layer at once. It grants an HTTP
+ * caller the `"owner"` channel — no visibility filter at all — and it lives OUTSIDE the vault
+ * (`~/.bismuth/run/<vault>.json`), so nothing derived from the vault walk can reach it. Its mode is
+ * 0600, which stops another user and not the agent: a chat/daemon session runs as the same uid that
+ * wrote it. An agent that reads that file and replays it in `X-Bismuth-Token` gets back exactly the
+ * notes the rest of this module exists to withhold.
+ *
+ * Single composition point on purpose. Every spawn that carries a read-deny list — chat.ts's
+ * `buildChatSandboxOption`, the daemon's `buildQueryOptions`, the Seatbelt wrapper for non-Claude
+ * backends — resolves it here, so the token cannot be covered on one path and missed on another.
+ * (The daemon workspace cannot import `@bismuth/core`; its ported copy of this module holds the
+ * mirror, pinned to this one by a parity test in `core/test/ownerToken.test.ts`.)
+ *
+ * Gated on `entries.length > 0`, like everything else here. That gate is not a weakening: an
+ * unrestricted vault is spawned with NO sandbox at all (both `buildChatSandboxOption` and
+ * `buildQueryOptions` omit the option entirely), so there is no profile a token deny could ride in
+ * on, and nothing for it to protect — the vault hides nothing, and the HTTP surface serves that
+ * same nothing unfiltered to a tokenless caller already.
+ */
+export function buildSandboxDenyPaths(entries: DenyEntry[], vaultRoot: string): string[] {
+  const base = sandboxDenyRead(entries, vaultRoot);
+  if (base.length === 0) return [];
+  return [...base, ...ownerTokenDenyPaths(vaultRoot)];
 }
 
 /**
