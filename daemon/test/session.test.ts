@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test"
 import { buildQueryOptions, DEFAULT_DAEMON_IDENTITY, resolveDaemonBackend } from "../src/daemon/session.ts"
 import type { VaultContext } from "../src/lib/config.ts"
+import { ownerTokenDenyPath } from "../src/lib/bismuthPaths.ts"
 
 const ctx = {
   root: "/vault",
@@ -110,6 +111,22 @@ test("buildQueryOptions: sandbox.allowUnsandboxedCommands is false when the vaul
     { rel: "secret.md", abs: "/vault/secret.md" },
   ])
   expect((o.sandbox as { allowUnsandboxedCommands?: boolean } | undefined)?.allowUnsandboxedCommands).toBe(false)
+})
+
+// The owner token (core/src/ownerToken.ts) makes an HTTP request the OWNER — unfiltered. It lives
+// in the run record OUTSIDE the vault, so no vault-derived deny reaches it, and its 0600 mode stops
+// another user rather than this session, which runs as the uid that wrote it. A daemon session that
+// can read that file can present X-Bismuth-Token to GET /file and read back every note this sandbox
+// exists to hide, which makes a deny list that omits it self-defeating.
+test("buildQueryOptions: sandbox.filesystem.denyRead covers the owner-token run record", () => {
+  const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" }, [
+    { rel: "secret.md", abs: "/vault/secret.md" },
+  ])
+  const denyRead = (o.sandbox as { filesystem?: { denyRead?: string[] } } | undefined)?.filesystem?.denyRead ?? []
+  expect(denyRead).toContain(ownerTokenDenyPath("/vault"))
+  // and it still covers what it always covered
+  expect(denyRead).toContain("/vault/secret.md")
+  expect(denyRead).toContain("/vault/.git")
 })
 
 test("buildQueryOptions resumes an existing session unless newSession is set", () => {

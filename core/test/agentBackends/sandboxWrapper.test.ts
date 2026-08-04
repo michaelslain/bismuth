@@ -5,7 +5,6 @@ import { join } from "node:path";
 import {
   buildSeatbeltProfile,
   wrapArgv,
-  buildSandboxDenyPaths,
   materializeSandboxProfile,
   checkSandboxWrapperAvailability,
   sandboxWrapperAvailable,
@@ -13,8 +12,6 @@ import {
   isSandboxApplyFailure,
   SANDBOX_APPLY_FAILURE_EXIT_CODE,
 } from "../../src/agentBackends/sandboxWrapper";
-import { ownerTokenDenyPath } from "../../src/ownerToken";
-import type { DenyEntry } from "../../src/visibility";
 
 describe("buildSeatbeltProfile", () => {
   test("permissive-except header, one subpath deny per path", () => {
@@ -120,20 +117,6 @@ describe("isSandboxApplyFailure", () => {
     expect(isSandboxApplyFailure(1)).toBe(false);
     expect(isSandboxApplyFailure(null)).toBe(false);
     expect(isSandboxApplyFailure(undefined)).toBe(false);
-  });
-});
-
-describe("buildSandboxDenyPaths", () => {
-  test("empty entries -> empty result, even though .git/token would otherwise apply (nothing to protect)", () => {
-    expect(buildSandboxDenyPaths([], "/vault")).toEqual([]);
-  });
-
-  test("non-empty entries: restricted files + .git + the owner-token file, all present", () => {
-    const entries: DenyEntry[] = [{ rel: "secret.md", abs: "/vault/secret.md" }];
-    const out = buildSandboxDenyPaths(entries, "/vault");
-    expect(out).toContain("/vault/secret.md");
-    expect(out).toContain(join("/vault", ".git"));
-    expect(out).toContain(ownerTokenDenyPath("/vault"));
   });
 });
 
