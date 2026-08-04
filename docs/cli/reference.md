@@ -221,6 +221,30 @@ bismuth task toggle "Projects/Todo.md" 12 --status "/" --vault ~/vault   # mark 
 
 Mirrors core's `POST /rows` and `/row/*` handlers — see the [bases overview](../bases/overview.md). A base is a `type: base` markdown note; its rows live in a GFM table. All require a vault. The `today()` value is threaded into source resolution. Reads use `parseBaseFile` / `resolveSource`; row mutations use `rowOps` (`upsertRow`/`deleteRow`/`reorderRow`).
 
+### `base create <path> --view <kind> [--source <spec>] [--title <t>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]`
+Create a new `type: base` note with a single view — the only path to a new base that isn't hand-authoring nested YAML through `file write`. `.md` is appended to `<path>` if missing; the path is reserved via `createEntry` first, so this **fails (EEXIST) rather than clobbering** an existing file.
+
+`--view` is required and validated against `VIEW_TYPES` (`core/src/bases/types.ts`) — the single source of truth for the 12 valid kinds (`table`, `cards`, `list`, `bullets`, `kanban`, `map`, `calendar`, `flashcards`, `bar`, `line`, `stat`, `heatmap`). An invalid kind fails with a message enumerating every valid kind. `--source` defaults to `notes`; `--title` defaults to the file's basename.
+
+Three view kinds render nothing (or a hint message) without extra config — rather than silently produce an empty view, `base create` always writes the key (blank if not supplied) **and** reports it under `missing` in the result, so a caller knows exactly what still needs filling in:
+
+| View kind | Required key(s) | Flag(s) | Doc |
+|---|---|---|---|
+| `kanban` | `groupBy.property` | `--group-by <property>` | [kanban view](../bases/views/kanban.md#required-configuration) |
+| `map` | `lat`, `lng` | `--lat <property>`, `--lng <property>` | [map view](../bases/views/map.md#configuring-a-map-view) |
+| `bar` / `line` / `stat` / `heatmap` | `x` | `--x <property>` | [chart views](../bases/views/charts.md#view-config-fields-summary-in-a-base-frontmatter) |
+
+```bash
+bismuth base create "Bases/Board.md" --view kanban --group-by note.status --vault ~/vault --pretty
+# { "ok": true, "path": "Bases/Board.md", "view": "kanban", "source": "notes", "title": "Board" }
+
+bismuth base create "Bases/Board.md" --view kanban --vault ~/vault --pretty
+# { "ok": true, ..., "missing": ["groupBy"], "note": "This kanban view needs groupBy set before it renders anything — edit Bases/Board.md or run `bismuth prop set`." }
+
+bismuth base create "Bases/Atlas.md" --view map --lat latitude --lng longitude --vault ~/vault
+bismuth base create "Bases/Reading.md" --view table --vault ~/vault   # no required config for table
+```
+
 ### `base read <path>`
 Parse a `type: base` note and print `{ config, rows }` (`parseBaseFile(text, { name, path })`, name from `fileBasename`).
 ```bash

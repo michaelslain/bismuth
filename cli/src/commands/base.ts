@@ -5,12 +5,13 @@
 // writes live, no HTTP server required.
 import type { CommandMap } from "../types";
 import { fail, flag, out, positionals, requireVault, today } from "../args";
-import { readNote, writeNote } from "../../../core/src/files";
+import { createEntry, readNote, writeNote } from "../../../core/src/files";
+import { setFrontmatterKey } from "../../../core/src/frontmatter";
 import { parseBaseFile } from "../../../core/src/bases/parse";
 import { resolveSource } from "../../../core/src/bases/source";
 import { upsertRow, deleteRow, reorderRow } from "../../../core/src/bases/rowOps";
 import { fileBasename } from "../../../core/src/pathUtils";
-import type { SourceSpec } from "../../../core/src/bases/types";
+import { VIEW_TYPES, isValidType, type SourceSpec } from "../../../core/src/bases/types";
 
 /** Read a base file's note text + metadata (name, path) the way core does. */
 async function readBase(vault: string, file: string): Promise<{ text: string; name: string }> {
@@ -42,6 +43,66 @@ function intArg(raw: string | undefined, label: string): number {
 }
 
 export const commands: CommandMap = {
+  "base create": {
+    summary: "Create a new type:base note with a single view",
+    usage: "<path> --view <kind> [--source <spec>] [--title <t>] [--group-by <property>] [--lat <property>] [--lng <property>] [--x <property>]",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [path] = positionals(args);
+      if (!path) fail("<path> required");
+      const rel = path.endsWith(".md") ? path : `${path}.md`;
+
+      const view = flag(args, "view");
+      if (!view) fail(`--view <kind> required — one of: ${VIEW_TYPES.join(", ")}`);
+      if (!isValidType(view)) fail(`invalid --view "${view}" — must be one of: ${VIEW_TYPES.join(", ")}`);
+
+      const source = flag(args, "source") ?? "notes";
+      const title = flag(args, "title") ?? fileBasename(rel);
+
+      // Some view kinds render nothing (or a hint message) without their key config —
+      // rather than silently omit it, write the key with a blank value AND report it
+      // as `missing` in the result, so an agent creating a base sees exactly what it
+      // still has to fill in.
+      const viewConfig: Record<string, unknown> = { type: view, name: title };
+      const missing: string[] = [];
+
+      if (view === "kanban") {
+        const groupBy = flag(args, "group-by");
+        viewConfig.groupBy = { property: groupBy ?? "" };
+        if (!groupBy) missing.push("groupBy");
+      } else if (view === "map") {
+        const lat = flag(args, "lat");
+        const lng = flag(args, "lng");
+        viewConfig.lat = lat ?? "";
+        viewConfig.lng = lng ?? "";
+        if (!lat) missing.push("lat");
+        if (!lng) missing.push("lng");
+      } else if (view === "bar" || view === "line" || view === "stat" || view === "heatmap") {
+        const x = flag(args, "x");
+        viewConfig.x = x ?? "";
+        if (!x) missing.push("x");
+      }
+
+      // Build the frontmatter via the same yaml-preserving helper `prop set`/`row add`
+      // use, one key at a time, rather than hand-rolling YAML serialization here.
+      let text = setFrontmatterKey("", "type", "base");
+      text = setFrontmatterKey(text, "source", source);
+      text = setFrontmatterKey(text, "views", [viewConfig]);
+
+      // Reserve the path first (throws EEXIST if a file is already there — no clobbering
+      // an existing note), then write the real config.
+      createEntry(vault, rel, "file");
+      await writeNote(vault, rel, text);
+
+      const result: Record<string, unknown> = { ok: true, path: rel, view, source, title };
+      if (missing.length) {
+        result.missing = missing;
+        result.note = `This ${view} view needs ${missing.join(" and ")} set before it renders anything — edit ${rel} or run \`bismuth prop set\`.`;
+      }
+      out(result, args);
+    },
+  },
+
   "base read": {
     summary: "Parse a type:base note and print its config + table rows",
     usage: "<path>",

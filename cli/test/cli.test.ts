@@ -483,3 +483,71 @@ test("`note new --no-template` skips the vault's configured default template", a
   expect(result.code).toBe(0);
   expect(await readNote(vault, "Quick.md")).toBe("");
 });
+
+// --- `base create` (base.ts) -------------------------------------------------------------------
+
+test("`base create --view kanban --group-by ...` writes a file that parses back with the kanban view + defaults", async () => {
+  const vault = makeVault({});
+  const { parseBaseFile } = await import("../../core/src/bases/parse");
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "base", "create", "Board.md", "--view", "kanban", "--group-by", "note.status");
+  expect(result.code).toBe(0);
+  expect(result.json).toMatchObject({ ok: true, path: "Board.md", view: "kanban", source: "notes", title: "Board" });
+  expect(result.json.missing).toBeUndefined(); // groupBy was supplied — nothing left to fill in
+
+  const text = await readNote(vault, "Board.md");
+  const { config } = parseBaseFile(text, { name: "Board", path: "Board.md" });
+  expect(config.views).toHaveLength(1);
+  expect(config.views[0].type).toBe("kanban");
+  expect(config.views[0].groupBy).toEqual({ property: "note.status", direction: "ASC" });
+  expect(config.source).toEqual({ kind: "notes" }); // --source omitted -> defaults to "notes"
+});
+
+test("`base create --view gantt` (not a real view kind) fails and names the valid kinds", async () => {
+  const vault = makeVault({});
+  const { VIEW_TYPES } = await import("../../core/src/bases/types");
+
+  const result = await runCli(vault, "base", "create", "Board.md", "--view", "gantt");
+  expect(result.code).toBe(1);
+  for (const kind of VIEW_TYPES) expect(result.err).toContain(kind);
+});
+
+test("`base create --view kanban` without --group-by still writes the file, but reports the missing key", async () => {
+  const vault = makeVault({});
+  const { parseBaseFile } = await import("../../core/src/bases/parse");
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "base", "create", "Board.md", "--view", "kanban");
+  expect(result.code).toBe(0);
+  expect(result.json.missing).toEqual(["groupBy"]);
+  expect(result.json.note).toContain("groupBy");
+
+  // The view still parses — groupBy is present with a blank property, not omitted entirely
+  // (an omitted groupBy would make the board silently render a hint message instead of data).
+  const text = await readNote(vault, "Board.md");
+  const { config } = parseBaseFile(text, { name: "Board", path: "Board.md" });
+  expect(config.views[0].groupBy).toEqual({ property: "", direction: "ASC" });
+});
+
+test("`base create` reports missing config for map (lat/lng) and chart (x) views too, cleared once supplied", async () => {
+  const vault = makeVault({});
+
+  const map = await runCli(vault, "base", "create", "Atlas.md", "--view", "map");
+  expect(map.code).toBe(0);
+  expect(map.json.missing).toEqual(["lat", "lng"]);
+
+  const bar = await runCli(vault, "base", "create", "Chart.md", "--view", "bar");
+  expect(bar.code).toBe(0);
+  expect(bar.json.missing).toEqual(["x"]);
+
+  const mapFilled = await runCli(vault, "base", "create", "Atlas2.md", "--view", "map", "--lat", "latitude", "--lng", "longitude");
+  expect(mapFilled.code).toBe(0);
+  expect(mapFilled.json.missing).toBeUndefined();
+});
+
+test("`base create` refuses to clobber an existing file", async () => {
+  const vault = makeVault({});
+  expect((await runCli(vault, "base", "create", "Board.md", "--view", "table")).code).toBe(0);
+  expect((await runCli(vault, "base", "create", "Board.md", "--view", "table")).code).toBe(1);
+});
