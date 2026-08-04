@@ -15,7 +15,7 @@ removed when it merged into Bismuth). The relay registry now lives **in core**
    `claude` runs `claude --plugin-dir <this dir>`, plus env: `CLAUDE_TERMINAL_ID` (the tab's
    pty id) and `CLAUDE_RELAY_URL` (this app's core server). So the plugin loads
    **per-session, only inside Bismuth terminals** — nothing is installed in `~/.claude`.
-   Other agent-CLI backends (`core/src/agentBackends/catalog.ts`) whose `agentsGraph`
+   Other agent-CLI backends (`core/src/agentBackends/catalog.ts`) whose `relayReporting`
    capability is `"wrapper"` — no hook system of their own — are, when enabled
    (`WRAPPER_REPORTING_ENABLED` in `core/src/terminal.ts`, default OFF), routed through
    `bin/wrap.ts` instead: it runs the real binary with inherited stdio, forwards

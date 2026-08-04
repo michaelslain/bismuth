@@ -2,7 +2,17 @@
 
 This document covers Bismuth's in-app terminal tabs (PTY sessions bridged over WebSocket) and the relay plugin that auto-instruments every `claude` invocation inside those tabs, reporting session + subagent lifecycle into an in-process registry (`core/src/relay.ts`). Together these form a closed system: you → terminal tab session → subagents, scoped entirely to the running app instance.
 
-There used to be a live "agents" graph mode rendering this registry (`core/src/agents.ts` + `app/src/graph/AgentsGraph.tsx`); it was removed (`GET /agent-graph` and its frontend are gone). The relay registry itself is still populated and still pruned on tab close — see _Core Server Relay Endpoints_ and _Scope and Constraints_ below — it currently just has no reader.
+There used to be a live "agents" graph mode rendering this registry (a `buildAgentGraph` in `core/src/agents.ts`, plus `app/src/graph/AgentsGraph.tsx`); it was removed (`GET /agent-graph` and its frontend are gone, and `agents.ts` is now just the `ChatAgentSession`/`ChatAgentSubagent` types). The relay registry itself is still populated and still pruned on tab close — see _Core Server Relay Endpoints_ and _Scope and Constraints_ below — it currently just has no reader.
+
+## What's in here
+
+- **In-App Terminal Tabs** — the PTY/WebSocket architecture, the wire protocol, session lifecycle and reattach, the warm pool, and the origin policy.
+- **`buildPtyEnv`** — how the PTY's environment is built: the always-set variables, the relay shim activation, and the `shimSpecsFor` mechanism that generalizes shimming beyond `claude` to other agent backends.
+- **The Relay Plugin** — how the plugin loads into a `claude` session (zsh function vs. PATH shim), its hook configuration, and the hook scripts themselves.
+- **Relay Registry** — the in-memory session/subagent store the hooks report into, and its pruning/TTL rules.
+- **Core Server Relay Endpoints** — the `/relay/*` routes.
+- **Frontend Terminal Component** — `Terminal.tsx`'s font/color/cursor/resize/reconnect behavior.
+- **Scope and Constraints** — what this system deliberately does not do.
 
 ---
 
@@ -209,7 +219,7 @@ The `claude`-only mechanism above generalizes to any agent-CLI backend (`core/sr
 export interface BackendShimCandidate {
   id: string;                                        // backend id, e.g. "claude", "opencode"
   binary: string;                                     // binary/function name to resolve + wrap
-  agentsGraph: "hooks" | "wrapper" | "none";           // BackendCapabilities.agentsGraph
+  relayReporting: "hooks" | "wrapper" | "none";        // BackendCapabilities.relayReporting
   terminal: boolean;                                   // BackendCapabilities.terminal
 }
 
@@ -238,7 +248,7 @@ export function serializeShimSpecs(specs: readonly ShimSpec[]): string
 
 **Delimiter choice**: `BISMUTH_SHIM_SPECS` is a flat string, `SHIM_RECORD_SEP` (`\x1e`, ASCII Record Separator) between records and `SHIM_FIELD_SEP` (`\x1f`, ASCII Unit Separator) between fields (`id`, `binary`, `realPath`-or-empty, `mode`) within a record. Both are reserved by the ASCII standard for exactly this — delimiting fields/records in plain text — and, for that reason, never legitimately appear in a filesystem path. zsh splits on them with the `(ps:\x1e:)`/`(ps:\x1f:)` parameter-expansion flags (the `p` flag makes zsh recognize the `\x1e`/`\x1f` escapes in the delimiter literal); the non-zsh shim script (`relay/shim/agent-shim`) parses the same format with plain `IFS` word-splitting. No `jq`/`python` dependency either way.
 
-**`WRAPPER_REPORTING_ENABLED`** (`core/src/terminal.ts`, currently `false`): wrapping an interactive TUI in an extra process risks signal handling, tty ownership, and exit-code fidelity for the payoff of one agents-graph node. It defaults OFF until a human has verified, by hand, that a wrapped backend's signals and exit codes survive under a **real** PTY — `relay/test/wrap.test.ts` verifies the mechanism itself (signal forwarding, exit-code relay, the never-wrap-claude guard) against a stub binary + a mock relay server, which is not the same as a real agent CLI's own tty/signal semantics. Flip the constant once that's been checked; every consumer (`shimSpecsFor`, `wrap.ts`, the zsh init, `agent-shim`) already reacts correctly the moment it does. The catalog's per-backend `agentsGraph: "wrapper"` flag remains the OTHER gate — both must agree before a given backend is actually wrapped.
+**`WRAPPER_REPORTING_ENABLED`** (`core/src/terminal.ts`, currently `false`): wrapping an interactive TUI in an extra process risks signal handling, tty ownership, and exit-code fidelity for the payoff of one agents-graph node. It defaults OFF until a human has verified, by hand, that a wrapped backend's signals and exit codes survive under a **real** PTY — `relay/test/wrap.test.ts` verifies the mechanism itself (signal forwarding, exit-code relay, the never-wrap-claude guard) against a stub binary + a mock relay server, which is not the same as a real agent CLI's own tty/signal semantics. Flip the constant once that's been checked; every consumer (`shimSpecsFor`, `wrap.ts`, the zsh init, `agent-shim`) already reacts correctly the moment it does. The catalog's per-backend `relayReporting: "wrapper"` flag remains the OTHER gate — both must agree before a given backend is actually wrapped.
 
 ### `relay/bin/wrap.ts` — the generic session reporter
 
@@ -565,7 +575,7 @@ The `TerminalTab` Solid component mounts an xterm.js emulator and bridges it to 
 
 ### Font stack
 
-```
+```css
 'Monaspace Xenon', 'FiraCode Nerd Font', 'Symbols Nerd Font',
 'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace
 ```

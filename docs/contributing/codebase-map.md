@@ -1,6 +1,14 @@
 # Codebase Map
 
-This document is a module-by-module navigation guide for the Bismuth monorepo. It covers every workspace, every `core/src` and `app/src` module (including subdirectories), the `cli/src` command layer, and the `relay` plugin. For each module it explains what the module does, what it exports, what it depends on, and where to make changes when adding new features. Use this alongside the architecture overview in `CLAUDE.md`.
+This document is a module-by-module navigation guide for the Bismuth monorepo, for anyone implementing a feature, tracking down where a piece of behavior lives, or getting oriented in an unfamiliar part of the code. It covers every workspace, every `core/src` and `app/src` module (including subdirectories), the `cli/src` command layer, and the `relay` plugin. For each module it explains what the module does, what it exports, what it depends on, and where to make changes when adding new features. Use this alongside the architecture overview in `CLAUDE.md`.
+
+**What's in here**, in reading order:
+- **Workspace Layout** — the seven Bun workspaces and how they depend on each other
+- **`core/`** — the backend/pure-logic library, grouped by responsibility: HTTP server, graph construction, layout, file system, knowledge parsing, settings, search, Bases, SRS, tasks, daemon integration, relay registry, terminal, plus the `drawing/` subsystem and `core/test/`
+- **`app/src/`** — the Solid.js frontend, grouped by feature area: shell/panes, graph rendering, editor, file tree, Bases views, calendar, drawing, sheets, export, palette, terminal, icons, drag-and-drop, UI primitives, and mobile
+- **`cli/src/`** — the `bismuth` binary's command groups
+- **`relay/`** — the terminal-tab session relay plugin
+- **Where to Add Things** — a lookup table for common changes, at the bottom
 
 ---
 
@@ -13,7 +21,7 @@ bismuth/               root (private, no src; devDeps: emojilib, unicode-emoji-j
   core/                @bismuth/core — backend server, all pure logic
   app/                 app — Tauri + Solid.js desktop UI
   cli/                 @bismuth/cli — `bismuth` binary wrapping @bismuth/core
-  relay/               @bismuth/relay — Claude Code plugin for the agent graph
+  relay/               @bismuth/relay — Claude Code plugin reporting terminal-tab sessions + subagents into core's relay registry
   mcp/                 @bismuth/mcp — stdio MCP server (docs + CLI) for app-terminal Claude sessions
   memory/              @bismuth/memory — the pure 3rd-brain memory graph (note CRUD + frontmatter + backlinks, keyword search, query DSL), used by the daemon, relay hooks, and MCP memory tools
   daemon/              @bismuth/daemon — per-vault daemon runtime; one machine process multiplexing every enabled vault's memory + crons + processes + conversation session
@@ -52,7 +60,15 @@ Minimal SSE registry. `createSseRegistry()` returns `{ subscribe, unsubscribe, p
 `createChangeTracker()` → `{ classify(paths, read): Promise<Dirty> }`. Fingerprints each changed file's wikilinks + tags + `icon` frontmatter field (`extractFingerprint`), compares against last-known state, and returns `{ graph: boolean; tree: boolean }`. Content-only edits that don't touch links/tags/icon return `{ graph: false, tree: false }` — the server stays silent toward graph and tree consumers. `isSettingsPath(path)` checks if a path is the vault settings file — `.settings`, plus the legacy `settings.yaml` and interim `.settings/settings.yaml` (matched during the one-time migration window).
 
 #### `error.ts`
-`AppError` class and `createError(code, message?)` factory. Error codes and their HTTP status: `ENOENT`/`*_NOT_FOUND` → 404, `EACCES` → 403, `EEXIST`/`*_CONTENT_CHANGED` → 409, `EINVAL`/`PARSE_ERROR`/`SCHEMA_ERROR`/`*_FORMAT_ERROR`/`BASE_CYCLE` → 400, `INTERNAL_ERROR` → 500. `mutatingHandler` in `server.ts` catches `AppError` and maps `statusCode` to the HTTP response.
+`AppError` class and `createError(code, message?)` factory. `mutatingHandler` in `server.ts` catches `AppError` and maps `statusCode` to the HTTP response. Error codes and their HTTP status:
+
+| Code(s) | HTTP status |
+|---|---|
+| `ENOENT`, `*_NOT_FOUND` | 404 |
+| `EACCES` | 403 |
+| `EEXIST`, `*_CONTENT_CHANGED` | 409 |
+| `EINVAL`, `PARSE_ERROR`, `SCHEMA_ERROR`, `*_FORMAT_ERROR`, `BASE_CYCLE` | 400 |
+| `INTERNAL_ERROR` | 500 |
 
 #### `openFolder.ts`
 `spawnVaultBackend(vault, port)` — spawns a sibling Bun process running `core/src/server.ts` pointed at a different vault. Returns `{ url }`. Called by `POST /open-folder`; the frontend opens a new window with `?api=<url>`. Mirrors the `cli/src/commands/serve.ts` approach.
@@ -88,7 +104,7 @@ Also exports: `pathParts(rel)` (decompose a vault-relative path into name/ext/fo
 `buildMemoryGraph(root)` — builds the memory graph from memory notes in a separate directory. Node ids are prefixed `mem:`. Returns `{ nodes, edges, links: Map<base, targets[]> }` where `links` carries which vault filenames each memory note references (used by `engine.ts` to create "about" edges).
 
 #### `agents.ts`
-`buildAgentGraph(snapshot, liveTerminalIds, now?)` — pure function. Builds the "agents" graph from a `RelaySnapshot` (from `relay.ts`) and the live pty id set (from `terminal.ts`). Sessions with closed terminal tabs are dropped. A session with a live (non-done) subagent stays "awake" even without a recent heartbeat. Returns `{ nodes, edges }` — no "you" hub (frontend injects it via `layoutAgentGraph` in `agentLayout.ts`, agents mode only — no other mode has a self node). Session node id: `agent:sess:<sessionId>`, subagent node id: `agent:sub:<agentId>`.
+Pure type-only module now — the "agents" graph mode and its former `buildAgentGraph` builder were removed in commit `a6687c0`; there is no more live graph-building logic here. What remains: `ChatAgentSubagent` (a visual-chat session's SDK Task-tool subagent — `agentId`, `agentType`, `done`) and `ChatAgentSession` (one live `ChatView` chat — `chatId`, `label`, `active`, `lastActivityAt`, `subagents`). Both types are imported only by `chat.ts`, which reports its own chat sessions/subagents in this shape via `chatAgentSnapshot()` — a separate bookkeeping path from the terminal-tab relay registry below, though the two shapes mirror each other by design.
 
 #### `graphBuilder.ts`
 `buildGraphFromNotes(root, nodeBuilder, edgeExtractor)` — shared graph construction skeleton. Lists `.md` files, builds node index maps (`byBase`, `byPath`), reads all contents in parallel, then calls `edgeExtractor` for each file. Used by both `vault.ts` and `memory.ts`. When adding a new graph source, use this function rather than reimplementing the file walk + parallel read pattern.
@@ -302,7 +318,13 @@ Reads (and minimally writes) the daemon's shared on-disk state. Never throws. Ke
 `daemonSnapshot(home?)` → `DaemonSnapshot { daemon, crons, processes }`. Reads `crons/*.md`, `.last-fired.json`, `.running.json`, `processes/*.md`. `buildDaemonGraph(snap)` → `GraphData` with daemon hub node + cron/process children connected by `supervises` edges. `daemonGraph(home?)` — convenience wrapper. `DAEMON_NODE_ID = "::daemon"`.
 
 #### `daemonViz.ts`
-`nodeVisualState(state, now?)` → `DaemonVisual { fill, border, opacity }`. Pure visual encoder for daemon/cron/process nodes. Three states: disabled (fill=`"base"`, border=`"none"`, opacity=0.15), running (fill=`"palette"`, border=`"none"`, opacity=1), enabled-idle (fill=`"bg"`, border=`"palette"`, opacity=1). Tokens are abstract; the renderer resolves them against the live theme.
+`nodeVisualState(state, now?)` → `DaemonVisual { fill, border, opacity }`. Pure visual encoder for daemon/cron/process nodes. Tokens are abstract; the renderer resolves them against the live theme.
+
+| State | fill | border | opacity |
+|---|---|---|---|
+| disabled | `"base"` | `"none"` | 0.15 |
+| running | `"palette"` | `"none"` | 1 |
+| enabled-idle | `"bg"` | `"palette"` | 1 |
 
 #### `daemonState.ts`
 Shared low-level helpers: `pidAlive(pid)`, `readJsonObj(path)`, `readFrontmatter(path)`, `isEnabled(data)`. Used by `daemon.ts` and `daemonGraph.ts` to read state files.
@@ -319,12 +341,12 @@ Installs the bundled `@bismuth/daemon` runtime as a launchd/systemd **service** 
 ### Relay Registry
 
 #### `relay.ts`
-In-process registry of Claude Code sessions running in Bismuth terminal tabs. Populated by `POST /relay/*` routes (from the relay plugin hooks). Key exports:
-- `registerSession(s)` — register or heartbeat a session; drops any previous session for the same `terminalId`.
+In-process registry of Claude Code sessions running in Bismuth terminal tabs. Populated by `POST /relay/*` routes (from the relay plugin hooks). The "agents" graph that used to render this registry (you → session → subagent) was removed in commit `a6687c0`, along with `GET /agent-graph`; the registry and its hooks stay because `chat.ts` reuses `DONE_SUBAGENT_TTL_MS`/`RUNNING_SUBAGENT_MAX_MS` for its own, separate per-chat subagent bookkeeping (see `agents.ts` above), and because `terminal.ts` still calls `prune()` on tab close so the registry doesn't leak forever. Key exports:
+- `registerSession(s)` — register or heartbeat a session; drops any previous session for the same `terminalId`. Takes an optional `backend` (which agent CLI is running — `"claude"`, `"codex"`, …); an omitted value falls back to the previous session's backend, or `"claude"` for a brand-new one, so pre-multi-backend reporters keep working.
 - `endSession(sessionId)` — drop session + subagents.
 - `startSubagent(s)` / `stopSubagent(s)` — add/mark-done a subagent.
-- `prune(liveTerminalIds)` — drop sessions whose terminal is closed, orphaned subagents, done subagents past `DONE_SUBAGENT_TTL_MS` (8 s), and never-stopped subagents past `RUNNING_SUBAGENT_MAX_MS` (2 h — a lost `SubagentStop` must not pin a node forever). Called at GET /agent-graph time.
-- `snapshot(now?)` → `RelaySnapshot { sessions, subagents }`.
+- `prune(liveTerminalIds)` — drop sessions whose terminal is closed, orphaned subagents, done subagents past `DONE_SUBAGENT_TTL_MS` (8 s), and never-stopped subagents past `RUNNING_SUBAGENT_MAX_MS` (2 h — a lost `SubagentStop` must not pin a node forever). Called by `terminal.ts`'s `killSession` (imported there as `relayPrune`) — the only production caller now that `GET /agent-graph` is gone.
+- `snapshot(now?)` → `RelaySnapshot { sessions, subagents }`. No production caller today; used by `core/test/server.test.ts` and `core/test/terminal.test.ts` to assert on registry state.
 - `resetRelay()` — test-only cleanup.
 
 ---
@@ -364,6 +386,8 @@ Type stubs for the `d3-force-3d` library (no upstream `@types` package).
 
 Pure, headless (no DOM, no Bun). All modules are importable from Node/browser Workers.
 
+### Drawing Modules
+
 #### `model.ts`
 Schema and serialization for `.draw` files. `DrawingDoc { v: 1; kind: "drawing"; paper: Paper; pages: Page[] }`. `Stroke { t: Tool; c: string; w: number; straight?: boolean; pts: number[] }` — pts are flat `[x, y, pressure, x, y, pressure, ...]` triples, pressure 0..255. `emptyDoc()`, `parseDoc(text)`, `serializeDoc(doc)`, `roundDoc(doc)` (rounds pts to integer/byte precision).
 
@@ -384,60 +408,6 @@ Schema and serialization for `.draw` files. `DrawingDoc { v: 1; kind: "drawing";
 
 #### `export.ts`
 `renderDocToPng(doc, theme, page?, scale?)` / `renderDocToPdf(doc, theme)` — headless PNG/PDF export via `@napi-rs/canvas` + `pdf-lib`. Called by `POST /export` (or the CLI `export` command) for server-side rendering.
-
----
-
-## `core/src/schema/` — Schema Engine
-
-Four modules backing the shared settings/property schema:
-
-| Module | Responsibility |
-|--------|---------------|
-| `types.ts` | `Schema`, `SchemaEntry`, `PropertyType` type definitions |
-| `settingsSchema.ts` | `SETTINGS_SCHEMA` + `DEFAULTS` — single source of truth for all settings |
-| `registry.ts` | `loadRegistry(raw)` — parses `properties:` YAML into a Schema; `BUILTIN_PROPERTIES` |
-| `validate.ts` | `validateDocument(doc, schema)` — YAML lint diagnostics for the editor |
-| `coerce.ts` | `coerceValue(value, type)` — raw YAML → typed value |
-| `suggest.ts` | `suggestCompletions(prefix, schema, path)` — autocomplete candidates |
-
----
-
-## `core/src/srs/` — Spaced Repetition
-
-| Module | Responsibility |
-|--------|---------------|
-| `types.ts` | `Card`, `ReviewResponse`, `SchedulingInfo` |
-| `scheduler.ts` | `schedule(prev, response, today, cfg?)` — SM-2 scheduling, `SrsConfig` |
-| `parser.ts` | `parseCards(content, path)` — markdown `?`/`??` card extraction |
-| `cards.ts` | `collectDecks`, `dueCards`, `applyReview` — vault-wide card CRUD |
-| `reviewRow.ts` | `applyReviewToRow` — SM-2 applied to base-row flashcards |
-
----
-
-## `core/src/bases/` — Bases Expression Engine
-
-| Module | Responsibility |
-|--------|---------------|
-| `types.ts` | All shared types (`Row`, `ViewType`, `SourceSpec`, etc.) |
-| `ast.ts` | AST node types |
-| `lexer.ts` | `tokenize(expr)` |
-| `parser.ts` | `parseExpr(tokens)` |
-| `parse.ts` | `parseBase`, `parseBaseFile`, `parseQueryBlock` |
-| `evaluate.ts` | `evaluateExpr(ast, ctx)` |
-| `filters.ts` | `applyFilter(filter, ctx)` |
-| `functions.ts` | Built-in function/method dispatch tables |
-| `query.ts` | `runView(config, rows)` — filters + formulas + grouping |
-| `queryBlock.ts` | `parseQueryBlock(text)` — flat ` ```query ` block parser |
-| `source.ts` | `resolveSource(spec, vault, rows, tasks)` — server-side SourceSpec resolver |
-| `sourceSpec.ts` | `normalizeSource(raw, fm)`, `refToPath(ref?)` |
-| `rows.ts` | Row utilities and aggregation |
-| `table.ts` | GFM pipe-table parse/serialize |
-| `rowOps.ts` | `upsertRow`, `deleteRow`, `reorderRow` — markdown table rewrite |
-| `taskRow.ts` | `taskToRow`, `filterTaskRows` |
-| `tasksData.ts` | `buildTaskRows(vault, from?)` |
-| `values.ts` | Value coercion and display |
-| `recurrence.ts` | Calendar recurrence rule parsing and expansion |
-| `chart.ts` | Chart data aggregation for bar/line/stat/heatmap |
 
 ---
 
@@ -464,7 +434,7 @@ Solid.js + TypeScript + CodeMirror 6. Styled with CSS Modules colocated with com
 Entry point. Mounts `<App />` into `#root`. Desktop entry — does not import `mobile/bootMobile.ts`.
 
 #### `App.tsx`
-Root component. Owns: tab + pane tree state (via `panes.ts` model), active file routing, graph mode (`GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon"`), sidebar visibility, settings persistence, global keyboard handling (reads `settings.keybindings`), command binding (via `bindCommands`), toast/gallery hosts, all modal triggers. Lazily imports `GraphView` and `TerminalTab` to keep the entry bundle small. Seeds a `::graph` tab on first boot and reopens one if all tabs close.
+Root component. Owns: tab + pane tree state (via `panes.ts` model), active file routing, graph mode (`GraphMode = "2nd" | "3rd" | "both" | "daemon" | "local"`), sidebar visibility, settings persistence, global keyboard handling (reads `settings.keybindings`), command binding (via `bindCommands`), toast/gallery hosts, all modal triggers. Lazily imports `GraphView` and `TerminalTab` to keep the entry bundle small. Seeds a `::graph` tab on first boot and reopens one if all tabs close.
 
 Key logic: `applyView(graph, view)` overwrites node positions with a brain-view's precomputed layout for 2nd/3rd modes. Storage keys: `"bismuth-tabs-v1"`, `"bismuth-sidebar-visible-v1"`, `"bismuth-graph-cache-v1"`, `"bismuth-theme-vars-v1"`.
 
@@ -774,7 +744,15 @@ Dynamic `import('@univerjs/presets')` wrapper. Creates/destroys the Univer workb
 ### Export
 
 #### `export/formats.ts`
-`formatsFor(path)` / `isExportable(path)` — determines valid export formats by file extension. Matrix: `.md` → `["html", "pdf", "png", "md"]`; `.sheet` → `["html", "pdf", "png"]`; `.draw` → `["pdf", "png"]`. `ext(path)` — the pure lowercase extension helper (kept here so `App.tsx`'s render-time gating doesn't drag in the export stack). `formatsForOptions(path, isBase, mode)` — contents-aware refinement for the export UI: a base (a `.md`) yields the data forms (`md`/`csv` added) in `"data"` mode and only the rendered forms (`html`/`pdf`/`png`) in `"visual"` mode.
+`formatsFor(path)` / `isExportable(path)` — determines valid export formats by file extension:
+
+| Extension | Formats |
+|---|---|
+| `.md` | `html`, `pdf`, `png`, `md` |
+| `.sheet` | `html`, `pdf`, `png` |
+| `.draw` | `pdf`, `png` |
+
+`ext(path)` — the pure lowercase extension helper (kept here so `App.tsx`'s render-time gating doesn't drag in the export stack). `formatsForOptions(path, isBase, mode)` — contents-aware refinement for the export UI: a base (a `.md`) yields the data forms (`md`/`csv` added) in `"data"` mode and only the rendered forms (`html`/`pdf`/`png`) in `"visual"` mode.
 
 #### `export/exporters.ts`
 `renderPreview(path, format, deps, theme?, opts?)` — computes ONLY what the export tab displays (no bytes, no html→pdf) so flipping formats/options is instant. `renderExport(path, format, deps, theme?, opts?)` → `ExportResult` — the impure path that produces downloadable bytes, dispatching per format (md/csv text, html/pdf/png from the rendered body, drawings rasterized directly). A `type: base` md renders as its chosen view (`"visual"` → the view as its kind, `"data"` → a flat table); csv is base-only. Tested.
@@ -1047,7 +1025,7 @@ The `bismuth` binary (entry: `cli/src/index.ts`). Longest-match dispatch: tries 
 `export` — export a note/base/sheet/drawing to `md|html|png|pdf` (pdf of notes/bases/sheets is browser-only).
 
 ### `commands/api.ts`
-`agent-graph` (fetch the live agents graph from a running server), `api <GET|POST|PUT> <path>` — raw HTTP call to any core API endpoint (for in-memory things like the relay registry).
+`api <GET|POST|PUT> <path>` — raw HTTP call to any core API endpoint on a running server, for capabilities that live only in server memory (e.g. `bismuth api POST /relay/session` against the relay registry). The standalone `agent-graph` command (and the `GET /agent-graph` route it called) was removed along with the agents graph in commit `a6687c0`.
 
 ### `commands/install.ts`
 `install` (machine-wide CLI + MCP install, idempotent + version-gated), `uninstall` — remove the symlink, global MCP registration, and `~/.bismuth`.
@@ -1057,40 +1035,53 @@ The `bismuth` binary (entry: `cli/src/index.ts`). Longest-match dispatch: tries 
 
 ---
 
-## `relay/` — Agent Graph Plugin
+## `relay/` — Session Relay Plugin
 
-A Claude Code plugin loaded per-session inside Bismuth terminal tabs. Not installed globally. No cross-machine functionality.
+A Claude Code plugin loaded per-session inside Bismuth terminal tabs. Not installed globally. No cross-machine functionality. Feeds the in-process registry in `core/src/relay.ts`; the "agents" graph that used to render that registry (you → session → subagent) was removed in commit `a6687c0`. The plugin and registry stay because `core/src/chat.ts` reuses their TTL constants and `core/src/agents.ts`'s `ChatAgentSession` shape for its own, separate per-chat subagent tracking, and because the registry remains directly inspectable via `bismuth api POST /relay/...`.
 
 ### `.claude-plugin/plugin.json`
 Plugin manifest. No `commands` — the plugin exposes no slash commands; it only uses hooks.
 
+### `.mcp.json`
+Declares the `bismuth` MCP server so it auto-attaches alongside the plugin, per-session, inside every app terminal (dev repo only — see `docs/mcp/overview.md`).
+
 ### `hooks/hooks.json`
 Hook definitions:
-- `SessionStart` → `bin/session-start-hook.ts` (matcher includes `resume` for `--resume`/`--continue`)
+- `SessionStart` → `bin/session-start-hook.ts` (matcher `startup|resume|clear|compact` — `--resume`/`--continue` sessions and post-`/clear`/`/compact` sessions all register)
 - `UserPromptSubmit` → `bin/recall-hook.ts` (heartbeat)
 - `SubagentStart` → `bin/subagent-start-hook.ts`
 - `SubagentStop` → `bin/subagent-stop-hook.ts`
+- `SessionEnd` → `bin/session-end-hook.ts` (drops the session node on a real exit; skips `clear`/`compact`, which keep this terminal's Claude process running)
 
 ### `lib/report.ts`
-`readHookInput()` — parses stdin JSON; `{}` on empty/invalid. `postRelay(path, body)` — best-effort `POST` to `CLAUDE_RELAY_URL` with 2 s timeout. `runHook(fn)` — wraps any hook body: always exits 0, never throws. `terminalId()` — reads `CLAUDE_TERMINAL_ID` env. `relayUrl()` — reads `CLAUDE_RELAY_URL` env (default `http://localhost:4321`).
+`readHookInput()` — parses stdin JSON; `{}` on empty/invalid. `postRelay(path, body)` — best-effort `POST` to `CLAUDE_RELAY_URL` with a 2 s timeout. `runHook(fn)` — wraps any hook body: always exits 0, never throws. `terminalId()` — reads `CLAUDE_TERMINAL_ID` env. `relayUrl()` — reads `CLAUDE_RELAY_URL` env (default `http://localhost:4321`). `workflowId()` — reads `CLAUDE_WORKFLOW_ID`, falling back to the basename of `CLAUDE_JOB_DIR`, so subagents spawned by the same workflow orchestration share one key; `undefined` for an ordinary subagent. `memoryDir()` — reads `BISMUTH_MEMORY_DIR` (set only when the daemon is enabled; gates the recall/collect memory hooks in `recall-hook.ts`/`session-end-hook.ts`). `reportSession()` — the shared register-this-session POST used by both `session-start-hook.ts` and `recall-hook.ts`.
 
 ### `bin/session-start-hook.ts`
-`POST /relay/session` with `{ sessionId, terminalId, cwd }`.
+Calls `reportSession()` → `POST /relay/session` with `{ sessionId, terminalId, cwd }`.
 
 ### `bin/recall-hook.ts`
-`POST /relay/session` (heartbeat — same endpoint, bumps `lastSeen`).
+Heartbeats via `reportSession()` (same endpoint, bumps `lastSeen`) and, when the daemon is enabled, recalls memory relevant to the submitted prompt and returns it as `additionalContext`.
 
 ### `bin/subagent-start-hook.ts`
-`POST /relay/subagent/start` with `{ parentSessionId, agentId, agentType }`.
+`POST /relay/subagent/start` with `{ parentSessionId, agentId, agentType, workflowId }` — `workflowId` from `lib/report.ts`'s `workflowId()`, omitted for an ordinary (non-workflow) subagent.
 
 ### `bin/subagent-stop-hook.ts`
 `POST /relay/subagent/stop` with `{ agentId, lastMessage }`.
 
+### `bin/session-end-hook.ts`
+On a real exit (not `clear`/`compact`): `POST /relay/session/end` to drop the session node immediately rather than waiting for the terminal pane to close, and, when the daemon is enabled, collects the session transcript into memory as an auto note.
+
+### `bin/wrap.ts`
+Generic session reporter for "wrapper"-mode agent-CLI backends (`core/src/agentBackends/catalog.ts` entries with no hook system of their own) — never used for `claude`, which reports itself via real hooks instead. Runs the real binary with inherited stdio, forwards `SIGINT`/`SIGTERM` to it, posts `POST /relay/session` / `POST /relay/session/end` around the child process, and relays the child's real exit code.
+
 ### `shim/claude`
 Shell script placed on `PATH` inside each terminal tab. Executes `$BISMUTH_REAL_CLAUDE --plugin-dir $BISMUTH_RELAY_PLUGIN "$@"`. Transparent — all flags and arguments pass through.
 
+### `shim/agent-shim`
+Multi-call PATH shim for non-zsh shells and any "wrapper"-mode backend beyond `claude`: `core/src/terminal.ts` symlinks one copy per resolvable backend, named after that backend's binary. The script reads its own invoked name, looks it up in the `BISMUTH_SHIM_SPECS` env var, and either execs the real binary directly (`"hooks"` mode) or routes through `bin/wrap.ts` (`"wrapper"` mode).
+
 ### `shim/zdotdir/`
-zsh init dir (`.zshenv`, `.zshrc`). `ZDOTDIR` is set to this dir so the `claude` function is defined AFTER the user's `.zshrc` loads, making it immune to `.zshrc` that re-prepend `PATH`.
+zsh init dir (`.zshenv`, `.zshrc`). `ZDOTDIR` is set to this dir so `.zshrc` defines one shell function per `BISMUTH_SHIM_SPECS` entry (`claude` plus any other resolvable backend) AFTER the user's own `.zshrc` loads, making them immune to a `.zshrc` that re-prepends `PATH`.
 
 ---
 
@@ -1110,4 +1101,4 @@ zsh init dir (`.zshenv`, `.zshrc`). `ZDOTDIR` is set to this dir so the `claude`
 | New graph source type | Use `buildGraphFromNotes` from `core/src/graphBuilder.ts` |
 | New file type supported in panes | `app/src/tabIds.ts` (label/icon), `app/src/PaneContent.tsx` (routing) |
 
-Source: `CLAUDE.md`, `core/src/server.ts`, `core/src/graph.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/agents.ts`, `core/src/graphBuilder.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/sse.ts`, `core/src/asyncCache.ts`, `core/src/changeClassifier.ts`, `core/src/relay.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `core/src/daemonState.ts`, `core/src/daemonInstall.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/files.ts`, `core/src/fileAccess.ts`, `core/src/error.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/community.ts`, `core/src/basesData.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `core/src/bases/types.ts`, `core/src/bases/sourceSpec.ts`, `core/src/srs/scheduler.ts`, `core/src/drawing/model.ts`, `app/src/App.tsx`, `app/src/panes.ts`, `app/src/tabIds.ts`, `app/src/api.ts`, `app/src/serverVersion.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/themes.ts`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/export/formats.ts`, `app/src/export/exporters.ts`, `app/src/mobile/bootMobile.ts`, `relay/CLAUDE.md`, `relay/lib/report.ts`, `cli/src/index.ts`, `cli/src/commands/note.ts`, `package.json`, `core/package.json`, `app/package.json`, `cli/package.json`
+Source: `CLAUDE.md`, `core/src/server.ts`, `core/src/graph.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/agents.ts`, `core/src/graphBuilder.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/sse.ts`, `core/src/asyncCache.ts`, `core/src/changeClassifier.ts`, `core/src/relay.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `core/src/daemonState.ts`, `core/src/daemonInstall.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/files.ts`, `core/src/fileAccess.ts`, `core/src/error.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/community.ts`, `core/src/basesData.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `core/src/bases/types.ts`, `core/src/bases/sourceSpec.ts`, `core/src/srs/scheduler.ts`, `core/src/drawing/model.ts`, `app/src/App.tsx`, `app/src/panes.ts`, `app/src/tabIds.ts`, `app/src/api.ts`, `app/src/serverVersion.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/themes.ts`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/export/formats.ts`, `app/src/export/exporters.ts`, `app/src/mobile/bootMobile.ts`, `relay/CLAUDE.md`, `relay/lib/report.ts`, `relay/hooks/hooks.json`, `relay/bin/session-end-hook.ts`, `relay/bin/wrap.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `cli/src/index.ts`, `cli/src/commands/note.ts`, `cli/src/commands/api.ts`, `package.json`, `core/package.json`, `app/package.json`, `cli/package.json`

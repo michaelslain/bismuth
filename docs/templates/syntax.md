@@ -1,6 +1,8 @@
 # Template Token Syntax
 
-This document is the canonical reference for Bismuth's template token syntax — the `{{...}}` tokens that get expanded when you insert a template (via the template palette / Option+T) or create a daily note. It covers every recognised token (`{{date}}`, `{{time}}`, `{{title}}`, `{{cursor}}`), their optional date/time **offset** modifiers (`+1d`, `-30m`, …) and moment-style **format** modifiers (`:YYYY-MM`, `:h:mm A`, …), the exact `expandTemplate` algorithm (including how unknown/malformed tokens are handled and how the cursor offset is computed), the moment-style format token vocabulary, and the daily-note configuration (`folder`/`fileName`/`template`) that drives `dailyNotePath` and `dailyNoteContent`. Everything here is verified against `core/src/templates.ts`, `core/src/dailyNote.ts`, `core/src/files.ts` and their tests.
+This document is the canonical reference for Bismuth's template token syntax — the `{{...}}` tokens that get expanded when you insert a template (via the template palette / Option+T) or create a daily note. Read it if you're writing a template, adding a new token, or debugging why a token expanded to the wrong thing (or didn't expand at all).
+
+It covers every recognised token (`{{date}}`, `{{time}}`, `{{title}}`, `{{cursor}}`), their optional date/time **offset** modifiers (`+1d`, `-30m`, …) and moment-style **format** modifiers (`:YYYY-MM`, `:h:mm A`, …), the exact `expandTemplate` algorithm (including how unknown/malformed tokens are handled and how the cursor offset is computed), the moment-style format token vocabulary, and the daily-note configuration (`folder`/`fileName`/`template`) that drives `dailyNotePath` and `dailyNoteContent`. Everything here is verified against `core/src/templates.ts`, `core/src/dailyNote.ts`, `core/src/files.ts` and their tests.
 
 ## Where templates are used
 
@@ -328,7 +330,7 @@ So a missing/blank `template`, or a `template` path that doesn't exist, yields a
 
 ## Related docs
 
-- [Daily notes configuration](#daily-notes) (if present) — the `dailyNotes:` settings list and toolbar wiring.
+- [Daily notes](#daily-notes) above — the `dailyNotes:` settings list and toolbar wiring.
 - [Settings schema](../settings/reference.md) — the `templates.folder` and `dailyNotes` schema entries.
 - [Commands & toolbar](../settings/toolbar-commands.md) — how `daily-note:<id>` commands surface on the toolbar.
 

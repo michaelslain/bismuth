@@ -69,7 +69,6 @@ Claude-specific surfaces are **hidden, not broken**, for opencode sessions (`pro
 - **`--chrome` (browser/computer-use) toggle** and the `/chrome` slash suggestion.
 - **Session history picker** — it lists the Claude Code SDK store; opencode conversations still resume per tab (see above), they just don't appear in the cross-session picker.
 - **Claude's own slash commands** — the manifest instead carries **opencode's** command registry (see above); the provider-agnostic client-side commands (`/rename`, `/color`) are offered on both.
-- **The agents-graph chat node** — an opencode session still doesn't appear in the agents graph. Server mode's `GET /session/{id}/children` and session-lifecycle events could feed this, but wiring it into `core/src/relay.ts`'s registry is a separate integration surface, not built yet.
 - **Context-window usage pill** — not surfaced; the server does report per-message token counts and each model's context limit, but turning that into an honest occupancy percentage (prompt caching skews raw input-token counts) wasn't done here to avoid shipping a misleading number.
 
 Everything else — streamed markdown prose, tool chips with results, thinking sections, editor-context preambles (`<editor-context>`), queued mid-turn messages, Stop, reconnect buffering with the 30s grace window, per-tab titles, and now image attachments and per-turn memory recall — works identically on both providers when opencode is running in server mode.

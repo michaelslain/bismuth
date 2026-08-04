@@ -4,6 +4,16 @@
 
 Bismuth ships an in-app **chat** tab that is a visual front-end onto the user's own `claude` binary. Each chat is one long-lived [Claude Agent SDK](https://modelcontextprotocol.io) `query()` session, driven over a WebSocket at `/chat`, that runs the locally-installed Claude Code with the user's **machine-login auth** — there is **no API key by design**. The backend (`core/src/chat.ts`) translates the SDK's streaming message feed into a small `ChatFrame` wire union; the frontend (`app/src/ChatView.tsx`) renders those frames as a live transcript that mirrors the Claude Code TUI: streamed assistant prose (markdown), collapsible extended-thinking, labeled tool-call chips with their results, inline permission prompts, and a per-turn manifest (model / permission mode / slash commands / tools / MCP servers). Everything is data-driven off the SDK, so new Claude Code features light up with zero code changes here.
 
+## What's in here
+
+This page follows one chat session end-to-end, for anyone touching `core/src/chat.ts` or `app/src/ChatView.tsx`:
+
+- **Spawning a session** — auth (no API key), the long-lived `query()` process, optional browser/computer-use, and how chat sessions share a store with terminal sessions.
+- **The wire protocol** — the `ChatFrame` union over `/chat`, inline permission prompts, and AskUserQuestion.
+- **The header** — the per-turn manifest, model/effort persistence, and the session history picker.
+- **The composer** — editor-context injection, image attachments, message rendering, and client-side slash commands.
+- **Supporting code** — the pure frontend modules behind the composer/header, and how a chat tab is routed, commanded, and keybound.
+
 ## No API key by design
 
 The driver never makes an API call. `createSession()` (`core/src/chat.ts`) resolves the user's CLI with `whichClaude()` and passes it to the SDK as `pathToClaudeCodeExecutable`:
@@ -225,7 +235,18 @@ session.sink({
 });
 ```
 
-In the header `ViewBar`, `ChatView` shows the model (a live picker once the `models` frame arrives, read-only before), an optional reasoning-**Effort** picker (shown only when the selected model reports >1 `effortLevels`; FEATURE #63), a tools count (`Wrench N`), a connected/total MCP count (`Server X/Y`, where "connected" matches `/connect|ready|ok/i` on each server's status), a context-usage pill (`Gauge N%`, danger-tinted past 80%), and a permission-mode `Select` (Default / Plan / Accept edits / Bypass — the fixed protocol values). The manifest's `slashCommands` drives the composer's `/`-prefix autocomplete: type `/` and the popover filters `manifest().slashCommands` by prefix (single-token only; a space turns it into an argument). Picking a command inserts `"/cmd "` into the draft so the user can add arguments before pressing Enter to send.
+In the header `ViewBar`, `ChatView` renders:
+
+| Header element | Shows |
+| --- | --- |
+| Model | A live picker once the `models` frame arrives; read-only before that. |
+| Effort | An optional reasoning-**Effort** picker, shown only when the selected model reports >1 `effortLevels` (FEATURE #63). |
+| Tools count | `Wrench N`. |
+| MCP count | `Server X/Y` — connected/total, where "connected" matches `/connect\|ready\|ok/i` on each server's status. |
+| Context-usage pill | `Gauge N%`, danger-tinted past 80%. |
+| Permission mode | A `Select` over the fixed protocol values: Default / Plan / Accept edits / Bypass. |
+
+The manifest's `slashCommands` drives the composer's `/`-prefix autocomplete: type `/` and the popover filters `manifest().slashCommands` by prefix (single-token only; a space turns it into an argument). Picking a command inserts `"/cmd "` into the draft so the user can add arguments before pressing Enter to send.
 
 > The model is switchable live from the header: the `models` frame (from `Query.supportedModels()`) populates a `Select` that sends `{type:"set_model"}`; before the list arrives (or for a single-model login) the active model shows read-only.
 

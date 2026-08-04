@@ -1,6 +1,6 @@
 # Data Flow: Reactive Loop, Caching, and Layouts
 
-This document covers the complete reactive pipeline that keeps the Bismuth frontend synchronized with the vault on disk: the file-watch → debounce → change classification → cache invalidation → version bump → SSE broadcast path, the `/version` poll fallback, the server-side cache architecture (`cachedGraph` / `cachedTree` / `cachedRows`), and the backend-precomputed layout system that ships precomputed node positions to the browser. Every claim is grounded in the actual implementation files listed at the bottom.
+This document covers the complete reactive pipeline that keeps the Bismuth frontend synchronized with the vault on disk: the file-watch → debounce → change classification → cache invalidation → version bump → SSE broadcast path, the `/version` poll fallback, the server-side cache architecture (`graphCache` / `treeCache` / `rowsCache` / `tasksCache`), and the backend-precomputed layout system that ships precomputed node positions to the browser. Every claim is grounded in the actual implementation files listed at the bottom.
 
 ---
 
@@ -14,8 +14,8 @@ fs.watch(vault)
                  └─ applyDirty(paths, dirty)
                       ├─ graphCache.invalidate()   [if dirty.graph]
                       ├─ treeCache.invalidate()    [if dirty.tree]
-                      ├─ cachedRows = null
-                      ├─ cachedTasks = null
+                      ├─ rowsCache.invalidate() (or patched in place)
+                      ├─ tasksCache.invalidate()
                       ├─ version++
                       └─ sse.publish({ version, paths, dirty })
                            └─ EventSource /events → frontend fireChange()
@@ -33,12 +33,19 @@ The frontend also runs a `/version` poll (5 s normal, 1 s when disconnected) as 
 
 ```ts
 watch(cfg.vault, { recursive: true }, (_event, filename) => {
-  if (filename && isHidden(filename)) return;
+  // Ignore churn in .git (backup commits), .trash, and the daemon's DAEMON.md status
+  // heartbeat — none feed the graph or tree. A null filename means "something changed,
+  // extent unknown". System folders (.settings/.daemon) are dot-hidden but meaningful,
+  // so they bypass the hidden-drop (classifyVault routes them to tree/graph).
+  if (filename && isDaemonRuntimeNoise(filename)) return; // drop daemon runtime churn early
+  // .ink/** is dot-hidden but must pass: classifyVault marks it dirty-to-nothing while the
+  // SSE publish keeps split panes' ink in sync (see the isInkSidecarPath branch there).
+  if (filename && !isSystemFolderPath(filename) && !isSettingsPath(filename) && !isInkSidecarPath(filename) && isWatchIgnored(filename)) return;
   scheduleVault(filename ?? undefined);
 });
 ```
 
-Hidden paths (any segment starting with `.`) are dropped immediately — this suppresses `.git/` churn from backup commits, `.trash/` moves, and `.obsidian/` updates, none of which feed the graph or file tree.
+The filter is **layered, not a single hidden-path drop**. Daemon runtime churn (`isDaemonRuntimeNoise` — the `DAEMON.md` status heartbeat and friends) is discarded first, before anything else looks at the path. Only then does the hidden/ignored check run (`isWatchIgnored`), suppressing `.git/` churn from backup commits, `.trash/` moves, and similar — and it is deliberately bypassed for three classes of dot-path that *are* meaningful: system folders (`.settings`/`.daemon`), the settings file itself, and `.ink/**` sidecars (which mark nothing dirty but must still reach the SSE publish so split panes keep their ink in sync). A `null` filename means "something changed, extent unknown" and is always scheduled.
 
 Memory-directory changes schedule only a graph rebuild, never a tree rebuild:
 
@@ -116,12 +123,17 @@ The server's `classifyVault` wraps the tracker with additional logic:
 After classification, `applyDirty(paths, dirty)` selectively clears caches:
 
 ```ts
-function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }) {
+async function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }, vaultTouched = true) {
   if (dirty.graph) graphCache.invalidate();
   if (dirty.tree)  treeCache.invalidate();
-  invalidateSearchIndex(cfg.vault);   // always — any content change affects search
-  cachedRows  = null;                 // always — frontmatter/body feeds rows
-  cachedTasks = null;                 // always
+  // Search, rows and tasks are built purely from vault notes, so a batch that touched only the
+  // memory dir (3rd brain) has nothing for them to react to — skip them entirely.
+  if (vaultTouched) {
+    // Known paths → patch just those docs/rows in place; unknown extent → drop and rebuild.
+    if (paths.length > 0) await patchVaultRows(cfg.vault, paths, rowsCache).catch(() => rowsCache.invalidate());
+    else rowsCache.invalidate();
+    tasksCache.invalidate();
+  }
   version++;
   sse.publish({ version, paths, dirty });
 }
@@ -129,9 +141,9 @@ function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }) {
 
 Key observations:
 
-- **`cachedRows` and `cachedTasks` are always nulled** even when `dirty.graph` and `dirty.tree` are both `false`. This is intentional: a content-only edit (new prose, updated task status) changes search results and row data even though it doesn't affect graph structure.
+- **Rows and tasks are invalidated on any *vault* change**, even when `dirty.graph` and `dirty.tree` are both `false` — a content-only edit (new prose, a toggled task) changes row and search results without touching graph structure. But this is gated on `vaultTouched`: a batch that touched only the memory dir skips the rows/tasks/search work entirely, so a daemon memory write doesn't make the next `/rows` pay for a full vault re-walk.
+- **Rows are patched incrementally when the changed paths are known** — `patchVaultRows` re-reads just those files rather than rebuilding the whole feed, falling back to a full `invalidate()` if the patch throws. Only an unknown-extent change (`paths` empty) drops the whole cache.
 - **`version` always increments** — even a pure content edit must bump it so an open editor can detect that the file changed externally and optionally reconcile.
-- The **search index is always invalidated** for the same reason.
 
 ---
 
@@ -160,7 +172,15 @@ Concurrent `get()` calls while the value is being built share **one** build prom
 
 ### Plain lazy caches for rows and tasks
 
-`cachedRows` and `cachedTasks` are plain `Row[] | null` variables (not `AsyncCache` instances). They are rebuilt lazily on the next read after being nulled by `applyDirty`. There is no in-flight deduplication for these — concurrent readers each trigger an independent rebuild — but row builds are fast enough that this is acceptable.
+`rowsCache` and `tasksCache` are `createAsyncCache<Row[]>` instances, exactly like `graphCache`/`treeCache` — not plain nullable variables:
+
+```ts
+// The unscoped vault feeds, shared by /vault-data, /rows, and the source resolver.
+const rowsCache = createAsyncCache<Row[]>(() => buildVaultRows(cfg.vault));
+const tasksCache = createAsyncCache<Row[]>(() => buildTaskRows(cfg.vault, undefined));
+```
+
+So they get the same three guarantees described above, including **in-flight deduplication**: concurrent readers arriving during a rebuild join the pending build rather than each starting their own.
 
 ---
 
@@ -340,8 +360,8 @@ Returns `{ version: number }`. The frontend poll uses only this value; the respo
 |-------|------|----------------|---------|
 | `graphCache` | `AsyncCache<GraphData>` | `dirty.graph === true` | `GET /graph`, `GET /graph/views`, `GET /daemon/graph` |
 | `treeCache` | `AsyncCache<TreeEntry[]>` | `dirty.tree === true` | `GET /tree` |
-| `cachedRows` | `Row[] \| null` | Every vault change | `GET /vault-data`, `POST /rows`, `GET /base` |
-| `cachedTasks` | `Row[] \| null` | Every vault change | `POST /rows` (tasks source) |
+| `rowsCache` | `AsyncCache<Row[]>` | Every vault change | `GET /vault-data`, `POST /rows`, `GET /base` |
+| `tasksCache` | `AsyncCache<Row[]>` | Every vault change | `POST /rows` (tasks source) |
 | Search index | external (invalidated via `invalidateSearchIndex`) | Every vault change | `POST /search` |
 
 ### `GET /graph` vs `GET /graph/views`

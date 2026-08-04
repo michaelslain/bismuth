@@ -1,6 +1,10 @@
 # Export
 
-Bismuth can turn any vault document — a prose note, a base, a spreadsheet, or a drawing — into a downloadable file: Markdown, HTML, PNG, PDF, or (bases only) CSV. The system has two faces that share one renderer: a **dedicated export pane** inside the app (`ExportView.tsx`, opened via the `::export:<path>` sentinel) and the **`bismuth export` CLI command**, which calls the *exact same* `renderExport()` function with headless dependencies injected. Bases get a "visual vs data" choice — render the chosen view as its kind (a calendar grid, cards, kanban, list) or flatten it to a table — and calendars additionally pick a grid span and anchor day. Most paths are fully headless; the only browser-only step is rasterizing a note/base's HTML to PNG/PDF (which needs `html2canvas`), while drawings rasterize through the headless core renderer.
+Bismuth can turn any vault document — a prose note, a base, a spreadsheet, or a drawing — into a downloadable file: Markdown, HTML, PNG, PDF, or (bases only) CSV. This is the reference for anyone building an export format, adding a new exportable file kind, or debugging a mismatch between what the export pane shows and what actually gets written to disk.
+
+The system has two faces that share one renderer: a **dedicated export pane** inside the app (`ExportView.tsx`, opened via the `::export:<path>` sentinel) and the **`bismuth export` CLI command**, which calls the *exact same* `renderExport()` function with headless dependencies injected. Bases get a "visual vs data" choice — render the chosen view as its kind (a calendar grid, cards, kanban, list) or flatten it to a table — and calendars additionally pick a grid span and anchor day. Most paths are fully headless; the only browser-only step is rasterizing a note/base's HTML to PNG/PDF (which needs `html2canvas`), while drawings rasterize through the headless core renderer.
+
+**What's in here**: the pane's controls and how a source file is classified as a base ([The export pane](#the-export-pane-exportviewtsx)); which formats each file kind supports ([Targets × formats](#targets--formats)); the visual-vs-data render mode for bases ([Visual vs data render mode](#visual-vs-data-render-mode-bases)); the frontmatter toggle and page-break splitting ([Include/exclude frontmatter](#includeexclude-frontmatter), [Page breaks](#page-breaks)); the shared renderer internals ([The renderer: exporters.ts](#the-renderer-exportersts)); what runs headlessly vs. browser-only ([Headless vs browser-only paths](#headless-vs-browser-only-paths)); the CLI ([The CLI: bismuth export](#the-cli-bismuth-export)); and how a completed export actually reaches disk ([Download flow](#download-flow)).
 
 ## The export pane (`ExportView.tsx`)
 
@@ -175,7 +179,7 @@ Because `renderDocToPdf` doesn't stack while the app's PDF path does, a multi-pa
 
 `cli/src/commands/export.ts` reuses the **same** `renderExport` so CLI output matches the in-app export exactly. Usage:
 
-```
+```text
 bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE]
   [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day]
   [--no-frontmatter] [--vault <dir>]

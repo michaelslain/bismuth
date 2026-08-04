@@ -1,6 +1,10 @@
 # Bismuth CLI Reference
 
-The `bismuth` CLI ("control every aspect of a Bismuth vault from the shell") is the `@bismuth/cli` workspace. It is a thin shell wrapper over the `@bismuth/core` library: nearly every command calls a core function directly against the vault's files on disk, with **no running HTTP server required** — the running app's file watcher picks up writes live. The exceptions all need a live server: `api` (reads the server process's in-memory state / any route), the **`app`-control commands** (`app windows/tabs/open/close/focus/run/commands`, which drive a *running* Bismuth window over `/ui/*` — see the App-control commands section below for their own discovery precedence), and the `serve` command which *starts* the server. This page documents every command (one per `cli/src/commands/*.ts`), every flag, the global flags + environment variables, output conventions, and the dispatch model.
+The `bismuth` CLI ("control every aspect of a Bismuth vault from the shell") is the `@bismuth/cli` workspace — the reference for anyone scripting a vault, wiring it into an agent, or driving it from a terminal instead of the app. It is a thin shell wrapper over the `@bismuth/core` library: nearly every command calls a core function directly against the vault's files on disk, with **no running HTTP server required** — the running app's file watcher picks up writes live.
+
+A few commands need a live server instead: `api` (reads the server process's in-memory state / any route), the **`app`-control commands** (`app windows/tabs/open/close/focus/run/commands`, which drive a *running* Bismuth window over `/ui/*` — see the [App-control commands](#app-control-commands-commandsappts) section for their own discovery precedence), and `serve` itself, which *starts* the server.
+
+This page documents every command (one per `cli/src/commands/*.ts`), every flag, the global flags + environment variables, output conventions, and the dispatch model — jump to the [Command index](#command-index-by-domain) for a table of every command grouped by domain, vault requirement, and output shape.
 
 ## Invocation & Binary
 
@@ -66,9 +70,11 @@ From `cli/src/args.ts`:
 
 Every command prints through the shared `out(data, args)`:
 
-- `undefined` / `null` → prints nothing (e.g. `read`, `move`, `mkdir`, `write` print nothing on success — they return void from core).
-- `string` → printed as-is (e.g. `task toggle` → `ok`; `daemon cron toggle` → `ok`).
-- objects / arrays → `JSON.stringify`, single-line by default, **2-space indented when `--pretty` is passed** (the helper checks `bool(args, "pretty")`).
+| Return type | Output |
+|---|---|
+| `undefined` / `null` | Prints nothing (e.g. `read`, `move`, `mkdir`, `write` print nothing on success — they return void from core). |
+| `string` | Printed as-is (e.g. `task toggle` → `ok`; `daemon cron toggle` → `ok`). |
+| objects / arrays | `JSON.stringify`, single-line by default, **2-space indented when `--pretty` is passed** (the helper checks `bool(args, "pretty")`). |
 
 This makes the CLI uniformly machine-parseable: anything that returns structured data emits JSON.
 
@@ -468,28 +474,39 @@ bismuth backup --vault ~/vault
 
 ## Universal export command (`commands/export.ts`)
 
-### `export <file> [--format md|html|png|pdf] [--out FILE] [--no-frontmatter]`
-Export a note / base / sheet / drawing to `md | html | png | pdf`, reusing the app's own exporter (`app/src/export/exporters.ts` `renderExport`) with headless deps so CLI output matches in-app export exactly. The target file is the first non-flag arg.
+### `export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter]`
+Export a note / base / sheet / drawing to `md | html | png | pdf | csv`, reusing the app's own exporter (`app/src/export/exporters.ts` `renderExport`) with headless deps so CLI output matches in-app export exactly. The target file is the first non-flag arg.
 
 Format defaulting: `--format` if given, else `png` for `.draw` files, else `md`.
+
+Base-specific options (`optionsFrom()`; no-ops for non-base files):
+- `--view N` — which of the base's `views` to export, by index (`o.viewIndex = Math.max(0, parseInt(N, 10) || 0)`); default `0`, the first view.
+- `--mode data|visual` — flat-table (`data`) vs the view rendered as its own kind — calendar grid / cards / kanban / list (`visual`).
+- `--cal-start YYYY-MM-DD` — calendar visual export only: the grid's anchor date.
+- `--cal-span month|week|3day|day` — calendar visual export only: the grid span.
 
 `--no-frontmatter` strips a plain note's leading YAML frontmatter block from the output (`ExportOptions.includeFrontmatter: false` — applies to `md` and `html` headlessly; ignored for bases/sheets/drawings, whose frontmatter is config, not content). Omit it for the default (frontmatter included, the historical behavior). See [export overview](../export/overview.md) "Include/exclude frontmatter".
 
 Two paths:
 - **`.draw` files** — rendered straight through the headless core renderer (`parseDoc` + `renderDocToPng`/`renderDocToPdf`, `"dark"` theme). Only `png` or `pdf` are valid (`a .draw file exports to png or pdf` otherwise). **No `--vault` needed** for drawings (file read with `node:fs`). This is the *only* file kind that rasterizes to `png` (or `pdf`) headlessly from the CLI.
-- **Notes / bases / sheets** — `requireVault`, then `renderExport(file, fmt, deps, "dark")` with deps wiring `read` → `readNote`, `resolveRows` → `resolveSource`, and `drawingToPng` → the core renderer (so an embedded `.draw` inside a note still rasterizes). Only `md`/`html` are headless. **Both `png` AND `pdf` of notes/bases/sheets are browser-only** (the `htmlToPng`/`htmlToPdf` deps both `throw`, since both rely on `html2canvas`/`jsPDF` which need a DOM). The CLI raises a clear "open in the app" error:
+- **Notes / bases / sheets** — `requireVault`, then `renderExport(file, fmt, deps, "dark", optionsFrom(args))` with deps wiring `read` → `readNote`, `resolveRows` → `resolveSource`, and `drawingToPng` → the core renderer (so an embedded `.draw` inside a note still rasterizes). Only `md`/`html`/`csv` are headless. **Both `png` AND `pdf` of notes/bases/sheets are browser-only** (the `htmlToPng`/`htmlToPdf` deps both `throw`, since both rely on `html2canvas`/`jsPDF` which need a DOM). The CLI raises a clear "open in the app" error:
   - `pdf` → *"pdf export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md"*
   - `png` → *"png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md"*
+  - `csv` is base-only — a flat-table format with no sensible non-base form (`CSV export is only available for bases` if the target file isn't a `type: base` note).
 
 Output path defaults to the exporter's chosen filename (or `<file>.<fmt>` for drawings); override with `--out`. Prints `wrote <outPath>`.
 ```bash
 bismuth export "Notes/Essay.md" --format html --vault ~/vault
 bismuth export "Notes/Essay.md" --format md --out essay.md --vault ~/vault
 bismuth export "Notes/Essay.md" --format md --no-frontmatter --vault ~/vault   # body only, YAML stripped
+bismuth export "Bases/Reading.md" --format csv --vault ~/vault                # flat table, view 0
+bismuth export "Bases/Reading.md" --format csv --view 1 --vault ~/vault       # a different view's table
+bismuth export "Bases/Team Cal" --format html --mode visual --cal-span week --cal-start 2026-07-06 --vault ~/vault
 bismuth export Sketch.draw                 # → Sketch.draw.png (no vault)
 bismuth export Sketch.draw --format pdf --out sketch.pdf
 bismuth export "Bases/Reading.md" --format png --vault ~/vault   # ERRORS — png is app-only
 bismuth export "Notes/Essay.md" --format pdf --vault ~/vault     # ERRORS — pdf is app-only
+bismuth export "Notes/Essay.md" --format csv --vault ~/vault     # ERRORS — csv is base-only
 ```
 
 ---

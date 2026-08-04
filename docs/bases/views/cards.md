@@ -36,7 +36,15 @@ Body cards take their natural height; the CSS masonry keeps short notes short ra
 
 ## Config Fields
 
-All fields live inside a `views:` entry in the base's YAML frontmatter.
+All fields live inside a `views:` entry in the base's YAML frontmatter. Summary, then detail for each field below:
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `type` | `"cards"` | — (required) | Selects the cards renderer. |
+| `cardContent` | `properties` \| `body` \| `tasks` | `properties` | Which of the three [sub-modes](#two-sub-modes) to render. |
+| `image` | string (property id) | — | Property whose value supplies the cover image, in properties mode. |
+| `imageFit` | `cover` \| `contain` | `cover` | Maps to the CSS `object-fit` of the cover `<img>`. |
+| `imageAspectRatio` | number | `0.667` | Width ÷ height ratio applied to the cover container's `aspect-ratio`. |
 
 ### `type`
 

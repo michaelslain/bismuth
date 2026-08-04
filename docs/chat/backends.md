@@ -57,7 +57,7 @@ could not express.
 | --- | --- | --- |
 | 1 | **Chat** | A non-interactive turn with machine-readable streaming output, a resumable session id, cwd control |
 | 2 | **Terminal** | An interactive TUI that survives in a plain PTY |
-| 3 | **Agents graph** | Session-lifecycle telemetry — hooks, a plugin API, or a wrapper that reports |
+| 3 | **Relay reporting** | Session-lifecycle telemetry — hooks, a plugin API, or a wrapper that reports |
 | 4 | **Daemon** | Headless unattended turns, per-call cwd/env, a resumable session, a persona override |
 | 5 | **MCP injection** | A way to register Bismuth's MCP server — ideally per session, else a config file |
 | 6 | **Memory injection** | A system-prompt flag, a context-file convention, a pre-prompt hook, or MCP tools |
@@ -72,7 +72,7 @@ Run **`bismuth backends`** for the live version of this table, including which b
 installed on your machine and their versions. The catalog is a claim about each CLI; that command
 tells you what is true here.
 
-| Backend | Chat | Terminal | Agents graph | Daemon | MCP | Memory |
+| Backend | Chat | Terminal | Relay | Daemon | MCP | Memory |
 | --- | --- | --- | --- | --- | --- | --- |
 | `claude` | ✓ delta | ✓ | hooks (+ subagents) | ✓ | `mcp add` | hooks |
 | `codex` | ✓ part | ✓ | hooks (+ subagents) | ✓ | `mcp add` | AGENTS.md block |
@@ -121,7 +121,7 @@ Rather than N bespoke integrations, two cross-agent standards carry most of the 
 
 ACP explicitly does **not** cover surface 3. There is no session-lifecycle notification, and a
 subagent invocation is indistinguishable from a slow tool call — confirmed by reading the
-`claude-code-acp` adapter's source. The agents graph therefore stays per-backend: native hooks where
+`claude-code-acp` adapter's source. Relay reporting therefore stays per-backend: native hooks where
 a CLI has them, a reporting wrapper where it doesn't.
 
 ACP also has real version skew to absorb: the SDK is at 1.3.0 while currently-shipping adapters pin
@@ -129,7 +129,19 @@ ACP also has real version skew to absorb: the SDK is at 1.3.0 while currently-sh
 `session/set_config_option` in between. A client must detect which shape a `session/new` response
 returned and branch.
 
-## Surface 3: how a session reaches the agents graph
+The next three sections go deeper on the surfaces whose mechanism is least obvious: 3 (agents
+graph), then 5 (MCP registration), then 4 (the daemon's constraint) — surface 4 leads straight into
+the visibility-gate discussion that follows it. Surfaces 1, 2, and 6 are covered by the pages linked
+at the top of this doc and by the ACP/AGENTS.md standards above.
+
+## Surface 3: how a session reaches the relay registry
+
+> **The "agents" graph mode this surface once fed was removed** in `a6687c0` — there is no
+> `GET /agent-graph` and no graph renders these sessions. The reporting itself is still
+> load-bearing and still ranked the same way: `core/src/terminal.ts`'s `shimSpecsFor` reads each
+> backend's `relayReporting` capability to decide whether its binary gets wrapped by the PTY shim,
+> and `chat.ts` consumes the registry for per-chat subagent tracking. Read "reaches the registry",
+> not "reaches a graph", throughout this section.
 
 Ranked by fidelity. Prefer the highest tier a backend supports:
 

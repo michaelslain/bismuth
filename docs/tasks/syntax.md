@@ -15,6 +15,14 @@ and `app/src/editor/taskComplete.ts`.
 Related docs: [tasks query DSL](./query-dsl.md), [bases overview](../bases/overview.md)
 (tasks are a base source — `source: tasks`).
 
+**What's in here**: the exact [task line](#the-task-line) shape and [checkbox status
+characters](#checkbox-status-characters); every [date](#date-fields),
+[priority](#priority), and [recurrence](#recurrence) signifier, plus how
+[tags](#tags) and the [description](#description) are derived; how
+[toggling a task](#toggling-tasks-completion) works, including recurrence
+rollover; how resolved items [sink, fold, and archive](#task-blocks-sinking-folding-archiving)
+within a block; and the full [`Task` object shape](#the-task-object-shape).
+
 ## The task line
 
 A task line is matched by this regex (`core/src/tasks.ts`):

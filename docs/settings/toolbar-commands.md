@@ -1,10 +1,10 @@
 # Toolbar & Commands
 
+This document is the canonical reference for Bismuth's command system: the pure command catalog (`COMMAND_CATALOG`), how each command id binds to a runnable action, the `toolbar:` settings configuration that places command buttons in the sidebar header bar, and the dynamic `daily-note:<id>` commands. It covers every command id, label, default icon, the `command`/`commands`/`icon`/`tooltip` button fields, button resolution precedence, and the edge cases found in the source. Read this if you're rebinding a toolbar button, wiring up a new command, or tracking down why a button is disabled.
+
 > The same item shape drives BOTH bars: `toolbar:` (the sidebar header bar) and `tabBar:`
 > (the buttons right of the tab strip — defaults: `new-tab`, `terminal`, `new-claude-chat`).
 > Everything below applies to either key.
-
-This document is the canonical reference for Bismuth's command system: the pure command catalog (`COMMAND_CATALOG`), how each command id binds to a runnable action, the `toolbar:` settings configuration that places command buttons in the sidebar header bar, and the dynamic `daily-note:<id>` commands. It covers every command id, label, default icon, the `command`/`commands`/`icon`/`tooltip` button fields, button resolution precedence, and the edge cases found in the source.
 
 ## Overview
 
@@ -51,44 +51,47 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 4 | `history-back` | Back | `ArrowLeft` | `h.historyBack` |
 | 5 | `history-forward` | Forward | `ArrowRight` | `h.historyForward` |
 | 6 | `open-graph` | Open graph view | `Share2` | `h.openGraph` |
-| 7 | `open-folder` | Open folder… | `FolderOpen` | `h.openFolder` |
-| 8 | `new-window` | New window | `AppWindow` | `h.newWindow` |
-| 9 | `create-menu` | Create new… | `Plus` | `h.openCreateMenu` |
-| 10 | `new-note` | New note | `FilePlus` | `h.newNote` |
-| 11 | `new-folder` | New folder | `FolderPlus` | `h.newFolder` |
-| 12 | `new-base` | New base | `Database` | `h.newBase` |
-| 13 | `new-spreadsheet` | New spreadsheet | `Table` | `h.newSpreadsheet` |
-| 14 | `new-drawing` | New drawing | `PenTool` | `h.newDrawing` |
-| 15 | `new-claude-chat` | New Claude Chat | `MessageSquare` | `h.newClaudeChat` |
-| 16 | `export` | Export current file… | `Download` | `h.exportActive` |
-| 17 | `archive-tasks` | Archive completed tasks (this note) | `Archive` | `h.archiveTasks` |
-| 18 | `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` | `h.archiveAllTasks` |
-| 19 | `detect-ai` | Detect AI text | `Bot` | `h.detectAiActive` |
-| 20 | `emoji-library` | Emoji library… | `Smile` | `h.openEmojiLibrary` |
-| 21 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
-| 22 | `search` | Search | `Search` | `h.openSearch` |
-| 23 | `settings` | Open Settings | `Settings` | `h.openSettings` |
-| 24 | `edit-dictionary` | Edit custom dictionary… | `BookOpen` | `h.openEditDictionary` |
-| 25 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
-| 26 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
-| 27 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
-| 28 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
-| 29 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
-| 30 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 31 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
-| 32 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
-| 33 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
-| 34 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
-| 35 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
-| 36 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
-| 37 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
-| 38 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
-| 39 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
-| 40 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
+| 7 | `open-inbox` | Open daemon inbox | `Inbox` | `h.openInbox` |
+| 8 | `open-folder` | Open folder… | `FolderOpen` | `h.openFolder` |
+| 9 | `new-window` | New window | `AppWindow` | `h.newWindow` |
+| 10 | `create-menu` | Create new… | `Plus` | `h.openCreateMenu` |
+| 11 | `new-note` | New note | `FilePlus` | `h.newNote` |
+| 12 | `new-folder` | New folder | `FolderPlus` | `h.newFolder` |
+| 13 | `new-base` | New base | `Database` | `h.newBase` |
+| 14 | `new-spreadsheet` | New spreadsheet | `Table` | `h.newSpreadsheet` |
+| 15 | `new-drawing` | New drawing | `PenTool` | `h.newDrawing` |
+| 16 | `new-claude-chat` | New Claude Chat | `MessageSquare` | `h.newClaudeChat` |
+| 17 | `export` | Export current file… | `Download` | `h.exportActive` |
+| 18 | `archive-tasks` | Archive completed tasks (this note) | `Archive` | `h.archiveTasks` |
+| 19 | `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` | `h.archiveAllTasks` |
+| 20 | `detect-ai` | Detect AI text | `Bot` | `h.detectAiActive` |
+| 21 | `emoji-library` | Emoji library… | `Smile` | `h.openEmojiLibrary` |
+| 22 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
+| 23 | `search` | Search | `Search` | `h.openSearch` |
+| 24 | `settings` | Open Settings | `Settings` | `h.openSettings` |
+| 25 | `edit-dictionary` | Edit custom dictionary… | `BookOpen` | `h.openEditDictionary` |
+| 26 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
+| 27 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
+| 28 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
+| 29 | `graph-daemon` | Graph: Daemon | `Server` | `() => h.setMode("daemon")` |
+| 30 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
+| 31 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
+| 32 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
+| 33 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
+| 34 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
+| 35 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
+| 36 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
+| 37 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
+| 38 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
+| 39 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
+| 40 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
+| 41 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
+| 42 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
 
 Notes on individual commands:
 
 - **`new-tab` vs `open-graph`**: `new-tab` always spawns a fresh graph home tab; `open-graph` focuses an existing graph tab if one is open (else opens one). (Comment in `app/src/commands.ts`.)
+- **`open-inbox`**: opens the daemon inbox — pages awaiting approval/dismissal (`core/src/daemonPages.ts`) — as its own tab (`h.openInbox`). It ships in the **default sidebar toolbar** (see ["The `toolbar:` Setting"](#the-toolbar-setting) below).
 - **`create-menu`** is the **`+Create` chooser** — a single button that opens a context menu of all the "create" commands instead of running one. See ["The `create-menu` chooser"](#the-create-menu-chooser) below.
 - **File-menu commands** (`open-folder`, `new-window`, `export`): `open-folder` opens a chosen folder as its own brain in a new window (a sibling backend); `new-window` reopens the current folder in a new window; `export` acts on the active file.
 - **`new-base`** creates a `type: base` markdown file. As a plain command (palette / toolbar `command: new-base`) it calls `h.newBase` directly; as the `create-menu` "New base ▸" submenu it offers one entry per Bases view kind (see the chooser section).
@@ -193,6 +196,9 @@ export interface CommandHandlers {
   // when invoked without an event (e.g. from the command palette).
   openCreateMenu: (e?: MouseEvent) => void;
   openGraph: () => void;
+  // Open the daemon inbox (pages awaiting approval/dismissal — core/src/daemonPages.ts) as its
+  // own tab.
+  openInbox: () => void;
   setMode: (mode: GraphMode) => void;        // GraphMode = "2nd"|"3rd"|"both"|"daemon"|"local"
   openDailyNote: (id: string) => void;
   equalizePanes: () => void;
@@ -234,24 +240,19 @@ export interface CommandHandlers {
   openEmojiLibrary: () => void | Promise<void>;
   // Open a fresh Claude Code chat session in its own tab.
   newClaudeChat: () => void;
+  // Whole-app UI zoom (see app/src/zoom.ts) — step in/out or reset to 100%.
+  zoomIn: () => void;
+  zoomOut: () => void;
+  zoomReset: () => void;
 }
 ```
 
 Because actions may anchor a popover or run async, `BoundCommand.action` is `(e?: MouseEvent) => void` (most actions ignore the event; `create-menu` uses it to anchor its chooser to the clicked button).
 
-`App.tsx` (around line 793) constructs the bound map reactively:
+`App.tsx` (around line 998) constructs the bound map reactively:
 
 ```ts
-const commands = () => bindCommands(
-  { openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet,
-    newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes,
-    toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab,
-    closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner,
-    openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary,
-    archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect,
-    newClaudeChat, openEmojiLibrary },
-  settings.dailyNotes,
-);
+const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
 ```
 
 ### Binding algorithm
@@ -315,16 +316,17 @@ toolbar: {
                 doc: "Optional hover text (defaults to the command's label)." },
   } } },
   default: [
-    { command: "create-menu",   icon: "Plus" },
-    { command: "emoji-library",  icon: "Smile" },   // always-visible home for the emoji library (#67)
-    { command: "search",         icon: "Search" },
-    { command: "open-inbox",     icon: "Inbox" },
+    { command: "create-menu", icon: "Plus" },
+    { command: "search", icon: "Search" },
+    // The daemon inbox lives here by default (hidden while the daemon is off; carries a
+    // due-count badge — see App.tsx's toolbar render). Removable/movable like any button.
+    { command: "open-inbox", icon: "Inbox" },
   ],
   doc: "Buttons in the sidebar header bar, in order. Each runs a command-palette command.",
 }
 ```
 
-`toolbar:` is a **list of button objects**, rendered left-to-right in declared order. The default (seeded on a fresh install) is three buttons: **New note**, **New folder**, **Search** — chosen so a fresh install is unchanged from before the toolbar was configurable.
+`toolbar:` is a **list of button objects**, rendered left-to-right in declared order. The default (seeded on a fresh install) is three buttons: **Create new…** (`create-menu`), **Search**, and **Open daemon inbox** (`open-inbox`, hidden in the UI while the daemon is off — see the note in the schema comment above).
 
 ### Button fields
 

@@ -4,29 +4,33 @@ This is the canonical, exhaustive reference for Bismuth's vault `.settings` file
 
 There is **no settings GUI** in Bismuth — the "settings page" is literally `.settings` opened in the editor, with schema-aware autocomplete (each key's doc + valid range) and lint. To change a setting, edit the YAML; the backend is the single writer and merges one key in place via `POST /set-setting` (preserving comments and key order). Editing `.settings` does not require a server restart — it is re-read per request. (A legacy vault-root `settings.yaml` — or the interim `.settings/settings.yaml` folder from an earlier build — is migrated into the `.settings` file automatically on first open; see `migrateSettingsLocation` in `core/src/settings.ts`.)
 
+For how this machinery actually works under the hood — file lifecycle, the frontend store, the CSS projection — see the [Settings Overview](overview.md). This page is the flat reference: every section, every key.
+
 ## Schema overview
 
 The schema is a nested object. Top-level keys, in canonical alphabetical-set membership (the test asserts exactly this set):
 
-`appearance`, `attachments`, `calendar`, `chat`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `googleCalendar`, `graph`, `keybindings`, `properties`, `server`, `srs`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
+`appearance`, `attachments`, `calendar`, `chat`, `codex`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `folderVisibility`, `googleCalendar`, `graph`, `keybindings`, `mcp`, `properties`, `server`, `srs`, `tabBar`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
 
-The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `chat`, `srs`, `templates`, `properties`, `folderIcons`, `toolbar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
+The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `chat`, `mcp`, `codex`, `srs`, `templates`, `properties`, `folderIcons`, `folderVisibility`, `toolbar`, `tabBar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
 
 ### Property types
 
 Every key's `type` is one of the `PropertyType` kinds (`core/src/schema/types.ts`):
 
-- `"string"` — free-form text.
-- `"number"` — numeric; usually carries `min`/`max` slider-style bounds.
-- `"boolean"` — `true`/`false`.
-- `"date"`, `"datetime"` — date / date-time strings (used in frontmatter, not in the settings sections below).
-- `"file"` — a file reference.
-- `"icon"` — a Lucide icon name (e.g. `"FilePlus"`) **or** an emoji.
-- `"keybind"` — a keyboard combo string (drives order-free shortcut autocomplete + a "record shortcut" option).
-- `{ kind: "path"; only?: "dir" | "file"; scope?: "templates" | "fs" }` — a path. `only` narrows completion to directories or files. `scope` selects the completion root: omitted = the vault tree; `"templates"` = the configured templates folder (files only); `"fs"` = the **real filesystem** (absolute or `~`-relative), for paths outside the vault (no current settings key uses `scope: "fs"`, but the kind is supported for filesystem paths). Validated leniently (any string) — the path need not exist yet.
-- `{ kind: "enum"; values: string[]; caseInsensitive?; allowPrefixes? }` — one of a fixed value list. `allowPrefixes` lets values beginning with a listed prefix (e.g. `daily-note:`) also pass.
-- `{ kind: "list"; item?: PropertyType }` — an array of items.
-- `{ kind: "object"; fields: Schema }` — a nested object (a section, or a free-form map when `fields` is empty `{}`).
+| Type | Description |
+|------|-------------|
+| `"string"` | Free-form text. |
+| `"number"` | Numeric; usually carries `min`/`max` slider-style bounds. |
+| `"boolean"` | `true`/`false`. |
+| `"date"`, `"datetime"` | Date / date-time strings (used in frontmatter, not in the settings sections below). |
+| `"file"` | A file reference. |
+| `"icon"` | A Lucide icon name (e.g. `"FilePlus"`) **or** an emoji. |
+| `"keybind"` | A keyboard combo string (drives order-free shortcut autocomplete + a "record shortcut" option). |
+| `{ kind: "path"; only?: "dir" \| "file"; scope?: "templates" \| "fs" }` | A path. `only` narrows completion to directories or files. `scope` selects the completion root: omitted = the vault tree; `"templates"` = the configured templates folder (files only); `"fs"` = the **real filesystem** (absolute or `~`-relative), for paths outside the vault (no current settings key uses `scope: "fs"`, but the kind is supported for filesystem paths). Validated leniently (any string) — the path need not exist yet. |
+| `{ kind: "enum"; values: string[]; caseInsensitive?; allowPrefixes? }` | One of a fixed value list. `allowPrefixes` lets values beginning with a listed prefix (e.g. `daily-note:`) also pass. |
+| `{ kind: "list"; item?: PropertyType }` | An array of items. |
+| `{ kind: "object"; fields: Schema }` | A nested object (a section, or a free-form map when `fields` is empty `{}`). |
 
 > **Gotcha — number bounds are lenient hints, not hard clamps.** `min`/`max` drive the autocomplete hint and lint range, but the value is your edited YAML; out-of-range numbers are flagged by lint, not silently clamped here.
 
@@ -34,28 +38,30 @@ Every key's `type` is one of the `PropertyType` kinds (`core/src/schema/types.ts
 
 ## `appearance`
 
-Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-color keys** (`background`, `foreground`, `neutral`, `accent`, `accentPalette` are intentionally absent) — the theme is the single source of color. `core/src/theme/tokens.ts` holds the token values (re-exported by `app/src/themes.ts`), and `settingsCssVars.ts` projects them to CSS vars. The app is dark-by-default but ships matching `-light` themes.
+Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-color keys** (`background`, `foreground`, `neutral`, `accent`, `accentPalette` are intentionally absent) — the theme is the single source of color. `core/src/theme/tokens.ts` holds the token values (re-exported by `app/src/themes.ts`), and `settingsCssVars.ts` projects them to CSS vars. There are exactly four themes (`THEME_NAMES`, `core/src/theme/tokens.ts`): `ink` and `cathode` are dark, `paper` and `riso` are light.
+
+> **Gotcha — the pre-redesign 12-theme system is gone.** The old `oxide-duotone` / `gunmetal-teal` / `rose-gold` / `indigo-oxide` / `forest-oxide` / `full-sheen` names (and their `-light` variants) are no longer valid `theme` values — `resolveTheme()` silently falls back to `ink` for any unknown name. They survive only as migration INPUTS: `migrateLegacyAppearance` (`core/src/settings.ts`) rewrites a saved legacy dark name to `ink` and a `-light` one to `paper` the first time such a `.settings` file is reconciled, also resetting the redesign's type-scale keys (`editorFontSize`, `uiFontSize`, `tabFontSize`, `sidebarWidth`, …) since those numbers stayed schema-valid across the redesign and would otherwise keep winning over the new defaults forever.
 
 | Key | Type | Default | Bounds / Values | Doc |
 |-----|------|---------|-----------------|-----|
-| `theme` | enum | `oxide-duotone` | `oxide-duotone`, `gunmetal-teal`, `rose-gold`, `indigo-oxide`, `forest-oxide`, `full-sheen`, `oxide-duotone-light`, `gunmetal-teal-light`, `rose-gold-light`, `indigo-oxide-light`, `forest-oxide-light`, `full-sheen-light` | Bismuth color theme: oxide-duotone (default) · gunmetal-teal · rose-gold · indigo-oxide · forest-oxide · full-sheen. Selects EVERY color in the app + graph (background, surfaces, border, text, muted, accent, and the graph node palette). |
+| `theme` | enum | `ink` | `ink`, `paper`, `cathode`, `riso` | Bismuth color theme: ink (default) · paper · cathode · riso. |
 | `icon` | enum | `hopper-crystal` | `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings` | App logo mark (favicon + sidebar logo). One of the 14 Bismuth marks. |
 | `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor prose font — a Monaspace variant; the whole app is one monospace grid. |
 | `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus. |
-| `editorFontSize` | number | `11.5` | min `11`, max `28` | Editor font size (px). Unified with the sidebar tree's `--fs-ui` workhorse size. |
+| `editorFontSize` | number | `13.5` | min `11`, max `28` | Note prose font size (px) — the design system's own prose size (`--fs-body-lg`), the one thing NOT at the 11.5px `--fs-ui` chrome size, because chrome is scanned and prose is read. |
 | `sidebarWidth` | number | `266` | min `200`, max `600` | Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css). |
 | `sidebarGraphHeight` | number | `305` | min `200`, max `500` | Height of the mini graph panel in the sidebar (px). |
 | `uiFontSize` | number | `11.5` | min `11`, max `16` | Base UI font size — sidebar, tabs, menus (px) (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | min `11`, max `14` | Editor tab label font size (px). |
-| `sidebarIconFontSize` | number | `11.5` | min `11`, max `20` | Sidebar header icon button size (px). Unified with the sidebar tree's `--fs-ui` workhorse size. |
+| `sidebarIconFontSize` | number | `12` | min `11`, max `20` | Sidebar header icon button size (px). 12, not the 11.5px `--fs-ui` text size: the pixel icons are drawn on a 24x24 grid, so 12 is an exact half-scale and every stem lands on whole device pixels. |
 | `paletteInputFontSize` | number | `15` | min `13`, max `18` | Command palette search-input font size (px). |
 
 Example:
 
 ```yaml
 appearance:
-  theme: forest-oxide
+  theme: cathode
   icon: lattice
   editorFont: Monaspace Xenon
   editorFontSize: 18
@@ -246,9 +252,10 @@ googleCalendarId: primary        # or another calendar's ID
 
 Miscellaneous layout sizing for panes, palettes, and Bases views.
 
+> **Gotcha — there is no `ui.verticalTabs` key.** The horizontal top tab strip (and its opt-out toggle) was removed; tabs are now always the vertical icon rail on the right edge of the app (`app/src/ui/ascii/TabRail.tsx`), which expands to reveal full names on hover. This is not a settable behavior any more.
+
 | Key | Type | Default | Bounds | Doc |
 |-----|------|---------|--------|-----|
-| `verticalTabs` | boolean | `false` | — | Show tabs as a vertical rail on the right edge of the app instead of the classic horizontal strip. Collapsed the rail shows just each tab's icon; hovering it expands to reveal the full tab names. |
 | `paletteTopOffset` | string | `12vh` | — | How far down the screen the command palette appears (CSS length, e.g. `12vh`). |
 | `paneDividerWidth` | number | `5` | min `3`, max `12` | Thickness of the draggable divider between split panes (px). |
 | `cardGridMinWidth` | number | `220` | min `150`, max `360` | Minimum card width in the Bases cards view (px). |
@@ -295,15 +302,21 @@ Machine-level identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, l
 
 > **Note** — the owner device is the single source of truth in `owner.json`, **not** a setting here. The daemon's NAME lives in its identity file (`<vault>/.daemon/identity.md` frontmatter), not in settings. See the Daemon Integration section of `CLAUDE.md`.
 
-| Key | Type | Default | Doc |
-|-----|------|---------|-----|
-| `enabled` | boolean | `false` | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
+| Key | Type | Default | Bounds / Values | Doc |
+|-----|------|---------|-----------------|-----|
+| `enabled` | boolean | `false` | — | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
+| `inboxRetentionDays` | number | `7` | min `1`, max `90` | How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker. |
+| `backend` | enum | `claude` | `claude`, `codex` | Which agent CLI runs this vault's daemon brain (unattended, resumable, headless): `claude` (default) or `codex`. This is a REQUEST, not a guarantee — `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) refuses any non-Claude backend for a vault with even one hidden/chat-only note (only Claude Code can enforce the visibility gate) and degrades to `claude` instead, logging why. Clear the vault's hidden notes to actually run another backend. |
+
+The `backend` enum (`DAEMON_BACKEND_IDS`, `core/src/schema/settingsSchema.ts`) is derived from the agent-backend catalog, filtered to backends whose `capabilities.daemon` is true — today just `claude` and `codex` — so it never drifts from `BackendCapabilities.daemon`.
 
 Example:
 
 ```yaml
 daemon:
   enabled: true
+  inboxRetentionDays: 14
+  backend: claude
 ```
 
 ---
@@ -354,20 +367,58 @@ Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior.
 
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
+| `provider` | enum | `claude` | Which agent backend a chat runs on by default: `claude`, `opencode`, `codex`, `cline`, `gemini`, `goose`, `openclaw`, `claude-code-acp`, `codex-acp`. This is the default for a chat tab that hasn't chosen for itself — the header's backend picker overrides it per tab, and that choice persists (localStorage, keyed by the chat tab id). Each backend's controls render per declared capability, so a backend without permission modes or effort simply hides them. See [agent backends](../chat/backends.md). |
 | `computerUse` | boolean | `false` | Enable Claude's browser/computer-use capability (`--chrome`) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave). This is the **default for a chat that hasn't chosen for itself** — a chat overrides it with `/chrome` / `/chrome off` or the header Globe pill, and that per-chat choice persists (localStorage, keyed by the chat tab id). |
 
 Example:
 
 ```yaml
 chat:
+  provider: opencode
   computerUse: true
+```
+
+---
+
+## `mcp`
+
+Multi-CLI MCP registration (`core/src/agentBackends/mcpRegistrars.ts`): which OTHER agent CLIs, besides Claude Code (which always auto-registers on boot via `bismuthInstall.ts`), also get Bismuth's stdio MCP server (docs + `bismuth` CLI + memory tools) written into their own global config. Deliberately opt-in and empty by default — writing into a user's Codex/Cline/OpenClaw/Gemini/Qwen/Copilot/Amp/Droid/Crush/Goose config uninvited is intrusive in a way `claude mcp add` isn't for a Claude-first app.
+
+| Key | Type | Default | Doc |
+|-----|------|---------|-----|
+| `registerWith` | list (string) | `[]` | Additional agent CLIs (besides Claude Code, which always auto-registers) to register Bismuth's MCP server with, e.g. `["codex", "gemini"]` — so those CLIs get Bismuth's docs/CLI/memory tools. Registrar ids: `codex`, `cline`, `openclaw`, `gemini`, `qwen`, `copilot`, `amp`, `droid`, `crush`, `goose`. Listing a CLI here IS the opt-in: registration runs on the next app start (and on demand via `bismuth install --mcp <cli>` / `--mcp all`). Empty by default, so Bismuth never writes into another CLI's config uninvited. Registration is idempotent and never clobbers an entry it didn't write. |
+
+Example:
+
+```yaml
+mcp:
+  registerWith: [codex, gemini]
+```
+
+---
+
+## `codex`
+
+OpenAI Codex-specific opt-ins (`core/src/agentBackends/agentsMd.ts` + `codexHooks.ts`). Codex has no system-prompt flag and no PATH-shim hook mechanism — `AGENTS.md` and a project-scoped `.codex/hooks.json` are its own designed channels for memory + session telemetry, but both mean writing into files the user may hand-edit, so — same precedent as `mcp.registerWith` — both default off and are opt-in.
+
+| Key | Type | Default | Doc |
+|-----|------|---------|-----|
+| `writeAgentsMd` | boolean | `false` | Let Bismuth write/refresh a managed block in this vault's `AGENTS.md` with a short persona/memory note for the Codex CLI (its chat + daemon sessions have no system-prompt flag — `AGENTS.md` is Codex's own designed channel for this, and Cursor/Amp/Droid share the same convention). The block is delimited by markers and never touches surrounding prose; off by default because writing into a file you may hand-edit is opt-in. |
+| `installRelayHooks` | boolean | `false` | Let Bismuth write a project-scoped `.codex/hooks.json` (+ its small reporting script) into this vault so a Codex session run in a Bismuth terminal tab or chat reports its lifecycle into Bismuth's in-process relay registry — the same role Claude Code's relay plugin plays. Off by default: writing into the vault is opt-in. |
+
+Example:
+
+```yaml
+codex:
+  writeAgentsMd: true
+  installRelayHooks: true
 ```
 
 ---
 
 ## `srs`
 
-Spaced-repetition (SM-2-style) scheduling parameters. Consumed by `core/src/srs/scheduler.ts` and shared by markdown and row-based flashcards. See [flashcards / SRS](../flashcards/srs.md) (if present).
+Spaced-repetition (SM-2-style) scheduling parameters. Consumed by `core/src/srs/scheduler.ts` and shared by markdown and row-based flashcards. See [flashcards / SRS](../flashcards/srs.md).
 
 | Key | Type | Default | Bounds | Doc |
 |-----|------|---------|--------|-----|
@@ -459,9 +510,30 @@ folderIcons:
 
 ---
 
+## `folderVisibility`
+
+Per-folder AI visibility — a free-form map `{folderPath: "chat-only"|"hidden"}` (folders have no frontmatter to hang a `visibility:` key on, unlike notes). Seeded **empty**; normally written via `POST /folder-visibility` rather than hand-edited. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — an HONESTY boundary, not a security boundary — and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Nearest-ancestor-wins resolution and the full threat model live in `core/src/visibility.ts` / `docs/vault/visibility.md`. A note's OWN visibility is set via its `visibility:` frontmatter key, not here.
+
+- **Type:** `{ kind: "object", fields: {} }` (a test asserts exactly this).
+- **Default:** `{}`.
+
+| Key | Type | Default | Doc |
+|-----|------|---------|-----|
+| `folderVisibility` | object (free-form map) | `{}` | Per-folder AI visibility: map a folder path to "chat-only" or "hidden" (restricts the daemon + in-app chat, not you). |
+
+Example:
+
+```yaml
+folderVisibility:
+  private: hidden
+  drafts: chat-only
+```
+
+---
+
 ## `toolbar`
 
-The sidebar header bar buttons, **in order**. Each button runs a command-palette command. Seeded with **two** built-ins so a fresh install is unchanged.
+The sidebar header bar buttons, **in order**. Each button runs a command-palette command. Seeded with **three** built-ins so a fresh install is unchanged.
 
 - **Type:** `{ kind: "list", item: { kind: "object", fields: {...} } }` — a list of button objects.
 - **Default:**
@@ -471,9 +543,11 @@ The sidebar header bar buttons, **in order**. Each button runs a command-palette
       icon: Plus
     - command: search
       icon: Search
+    - command: open-inbox
+      icon: Inbox
   ```
 
-  The first button is `create-menu` — the "+Create" chooser (new note / folder / spreadsheet / drawing / base submenu) — followed by `search`. The older three-button seed (`new-note` / `new-folder` / `search`) was replaced by this `create-menu` + `search` pair.
+  The first button is `create-menu` — the "+Create" chooser (new note / folder / spreadsheet / drawing / base submenu) — followed by `search`, then `open-inbox` — the daemon inbox button, hidden while the daemon is off and carrying a due-count badge (see `App.tsx`'s toolbar render). The older three-button seed (`new-note` / `new-folder` / `search`) was replaced by this `create-menu` + `search` + `open-inbox` set.
 
 ### Toolbar item fields
 
@@ -498,6 +572,7 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `history-back` | Back | `ArrowLeft` |
 | `history-forward` | Forward | `ArrowRight` |
 | `open-graph` | Open graph view | `Share2` |
+| `open-inbox` | Open daemon inbox | `Inbox` |
 | `open-folder` | Open folder… | `FolderOpen` |
 | `new-window` | New window | `AppWindow` |
 | `create-menu` | Create new… | `Plus` |
@@ -511,6 +586,7 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `archive-tasks` | Archive completed tasks (this note) | `Archive` |
 | `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` |
 | `detect-ai` | Detect AI text | `Bot` |
+| `emoji-library` | Emoji library… | `Smile` |
 | `terminal` | Open Terminal | `SquareTerminal` |
 | `search` | Search | `Search` |
 | `settings` | Open Settings | `Settings` |
@@ -518,6 +594,7 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` |
 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` |
 | `graph-both` | Graph: Both Brains | `Network` |
+| `graph-daemon` | Graph: Daemon | `Server` |
 | `equalize-panes` | Equalize panes | `Columns3` |
 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` |
 | `daemon-owner` | Set daemon owner device… | `Server` |
@@ -528,6 +605,9 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `gcal-connect` | Connect Google Calendar… | `Calendar` |
 | `gcal-sync` | Sync Google Calendar | `RefreshCw` |
 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` |
+| `zoom-in` | Zoom In | `ZoomIn` |
+| `zoom-out` | Zoom Out | `ZoomOut` |
+| `zoom-reset` | Reset Zoom | `RotateCcw` |
 
 Example — a custom toolbar with a multi-command button, an emoji icon, and a daily-note button:
 
@@ -543,6 +623,36 @@ toolbar:
     tooltip: New graph tab
   - command: daily-note:journal
     icon: BookOpen
+```
+
+---
+
+## `tabBar`
+
+The TAB-BAR action buttons (right of the tab strip) — **same item shape and rendering as `toolbar`**, so both bars are configured the same way (`command`/`commands`, `icon`, `tooltip`; see the "Toolbar item fields" table in the `toolbar` section above). Defaults match what used to be hardcoded (new tab + terminal) plus the new-chat button.
+
+- **Type:** `{ kind: "list", item: { kind: "object", fields: {...} } }` — a list of button objects.
+- **Default:**
+  ```yaml
+  tabBar:
+    - command: new-tab
+      icon: SquarePlus
+    - command: terminal
+      icon: SquareTerminal
+    - command: new-claude-chat
+      icon: MessageSquare
+  ```
+
+Example — swap in a graph-open button:
+
+```yaml
+tabBar:
+  - command: new-tab
+    icon: SquarePlus
+  - command: open-graph
+    icon: Share2
+  - command: new-claude-chat
+    icon: MessageSquare
 ```
 
 ---
@@ -620,6 +730,7 @@ Each key's value is a `keybind`; the default equals the previously hardcoded com
 | `command-palette` | `Mod+P` | Open/close the command palette. |
 | `quick-switcher` | `Mod+O` | Open/close the quick file switcher. |
 | `terminal` | `Mod+\`, Mod+J` | Open a terminal tab (comma-separated alternatives allowed). |
+| `toggle-draw-mode` | `Mod+Shift+I` | Toggle ink/draw mode in the focused note editor — draw freehand over the note (Escape also exits). Mnemonic: Ink. On Linux/Windows Ctrl+Shift+I collides with browser devtools — rebind if needed. |
 | `split-right` | `Mod+D` | Split the focused pane into a new pane to the right. |
 | `split-down` | `Mod+Shift+D` | Split the focused pane into a new pane below. |
 | `equalize-panes` | `Mod+Alt+=` | Reset all split panes to equal sizes. |
@@ -635,6 +746,9 @@ Each key's value is a `keybind`; the default equals the previously hardcoded com
 | `new-claude-chat` | `Mod+Shift+C` | Open a new Claude Code chat session in its own tab. |
 | `insert-template` | `Alt+T` | Open the template-insertion palette (ignored while typing in a form field). |
 | `toggle-sidebar` | `Alt+S` | Show/hide the left sidebar (ignored while typing in a form field). |
+| `zoom-in` | `Mod+=, Mod+Shift+=` | Increase the whole app's UI zoom one step. `Mod+Shift+=` covers keyboards where the labeled "+" requires Shift. |
+| `zoom-out` | `Mod+-` | Decrease the whole app's UI zoom one step. |
+| `zoom-reset` | `Mod+0` | Reset the whole app's UI zoom to 100%. |
 
 Example — rebind the command palette and add an alternative for the terminal:
 
@@ -665,4 +779,4 @@ The schema is the single source of truth and defaults must equal the current har
 
 See also: [bases overview](../bases/overview.md), [commands & toolbar](../settings/toolbar-commands.md), [keybindings](../settings/keybindings.md).
 
-Source: `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/keybindings.ts`, `core/src/commands.ts`, `core/test/schema/settingsSchema.test.ts`
+Source: `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/theme/tokens.ts`, `core/src/keybindings.ts`, `core/src/commands.ts`, `core/src/agentBackends/catalog.ts`, `core/src/visibility.ts`, `core/src/settings.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/fixtures/upgrade/settings-schema-snapshot.json`

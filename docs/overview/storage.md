@@ -397,6 +397,7 @@ All `localStorage` access is guarded against unavailability and quota errors; fa
 | `bismuth-folds:<vault-relative-path>` | `app/src/editor/foldBlocks.ts` | Set of locked-open fold block ids per note; absent = no locks |
 | `three-brains.harper` | `app/src/editor/harperStore.ts` | Harper spell-checker personal dictionary and ignored lints (`{ words, ignoredLints }`) |
 
+
 > **Removed: the client-side graph position cache.** `bismuth-graphpos:v5:2d`/`v5:3d` (formerly written by a since-deleted renderer, `app/src/graph/WebGLRenderer.ts`) and its `evictOtherPositionCaches` quota-eviction helper no longer exist — `app/src/intro/VaultIntro.tsx` (`SMALL_GRAPH`/`BIG_GRAPH`) notes they were removed because nothing reads or writes them: layout is backend-precomputed and attached to each `GraphData` response (see `docs/graph/overview.md`'s Backend-Precomputed 2D/3D Layout section — `core/src/layout-cache.ts` is the durable cache today, under `~/.bismuth/layout-cache/`, not `localStorage`), and the current renderer (`AsciiGraphRenderer.ts`) rescales those positions rather than settling and persisting its own.
 
 ### Notes on the row cache
@@ -426,7 +427,7 @@ $BISMUTH_MEMORY/                          # 3rd-brain memory dir (required; may 
   *.md                               # 3rd-brain memory notes (mem: namespace in graph)
 
 ~/.bismuth/layout-cache/      # backend layout cache (durable; outside vault to avoid watcher loop)
-  v5-<16hex>.json                    # precomputed pos3d + pos2d per graph signature
+  v20-<16hex>.json                   # precomputed pos3d + pos2d per graph signature
 
 ~/.bismuth/daemon/  (or $BISMUTH_DAEMON_DIR)   # daemon MACHINE home (identity only)
   device-id                          # this machine's UUID
@@ -458,8 +459,6 @@ Browser localStorage:
   bismuth-theme-vars-v1                   # CSS variable map for pre-bundle theme apply
   bismuth-settings-cache-v1               # last Settings object for instant boot seed
   oa:graph:viewMode                  # "2d" or "3d" toggle (not in .settings)
-  bismuth-graphpos:v5:2d                  # settled 2D node positions
-  bismuth-graphpos:v5:3d                  # settled 3D node positions
   bismuth-folds:<path>                    # per-note locked fold block ids
   three-brains.harper                # Harper spell-checker state
   three-brains.settings              # legacy key (imported once, then deleted)

@@ -1,6 +1,11 @@
 # Frontmatter: Parsing, Mutation, Property Registry, and Bases Integration
 
-This document covers everything Bismuth does with YAML frontmatter: how it is parsed (tolerantly) from markdown files, how individual keys are set or deleted while preserving formatting, how the property registry in `.settings` maps frontmatter keys to typed schemas, and how parsed frontmatter flows into the Bases query engine as the `note` namespace of every `Row`.
+This document covers everything Bismuth does with YAML frontmatter — for anyone editing note metadata, building editor autocomplete/lint, or querying notes through Bases. It covers:
+
+- How frontmatter is parsed (tolerantly) from markdown files
+- How individual keys are set or deleted while preserving formatting
+- How the property registry in `.settings` maps frontmatter keys to typed schemas
+- How parsed frontmatter flows into the Bases query engine as the `note` namespace of every `Row`
 
 ---
 
@@ -21,7 +26,7 @@ export function parseFrontmatter(md: string): Frontmatter
 
 The parser matches the opening `---` block via:
 
-```
+```text
 /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/
 ```
 

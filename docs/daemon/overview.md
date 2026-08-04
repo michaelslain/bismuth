@@ -20,7 +20,7 @@ Each per-call operation is fully vault-scoped so concurrent vault sessions never
 - **appended system prompt** = that vault's `identity.md` (name + personality),
 - **mcpServers** = the machine-wide bismuth MCP wired **explicitly** — `{ bismuth: { command: <~/.bismuth/bin/bismuth-mcp>, env: { BISMUTH_VAULT, BISMUTH_MEMORY_DIR, BISMUTH_DOCS_DIR, BISMUTH_CLI } } }` — with `settingSources: []`.
 
-The MCP wiring (last bullet) is what gives a daemon session the `bismuth` docs/CLI + `remember`/`recall`/`forget` tools. It's **explicit**, not inherited: unlike an interactive session (which gets the MCP from the machine-wide `claude mcp add -s user` registration), the daemon is a launchd/systemd process, so `buildQueryOptions` sets `mcpServers` per call and `settingSources: []` so it never picks up a human's ambient config. `BISMUTH_VAULT` in the MCP server's own env closes the vault-targeting gap for `bismuth_cli` regardless of cwd. The absolute `~/.bismuth/bin/bismuth-mcp` path (resolved by `daemon/src/lib/bismuthPaths.ts`, `existsSync`-gated so a machine without the installed tools degrades to no-MCP) works under launchd's minimal PATH. See [mcp/overview.md](../mcp/overview.md). (Note the SDK version skew — core resolves `@anthropic-ai/claude-agent-sdk` 0.3.186, the daemon 0.2.141 — both expose `mcpServers`/`settingSources`/`McpStdioServerConfig.env`.)
+The MCP wiring (last bullet) is what gives a daemon session the `bismuth` docs/CLI + `remember`/`recall`/`forget` tools. It's **explicit**, not inherited: unlike an interactive session (which gets the MCP from the machine-wide `claude mcp add -s user` registration), the daemon is a launchd/systemd process, so `buildQueryOptions` sets `mcpServers` per call and `settingSources: []` so it never picks up a human's ambient config. `BISMUTH_VAULT` in the MCP server's own env closes the vault-targeting gap for `bismuth_cli` regardless of cwd. The absolute `~/.bismuth/bin/bismuth-mcp` path (resolved by `daemon/src/lib/bismuthPaths.ts`, `existsSync`-gated so a machine without the installed tools degrades to no-MCP) works under launchd's minimal PATH. See [mcp/overview.md](../mcp/overview.md). (Core and the daemon both depend on `@anthropic-ai/claude-agent-sdk` `^0.3.186` and resolve to the same install. They previously drifted — core on 0.3.186, the daemon on 0.2.141 — which was accidental, not load-bearing: both versions exposed `mcpServers`/`settingSources`/`McpStdioServerConfig.env` identically, and the ranges were unified once that was confirmed.)
 
 Entry points converge on `sendMessage()` per vault: a cron firing (`daemon/src/daemon/cron.ts`), a background process loop (`daemon/src/daemon/process.ts`), and a daemon page. Each mints its OWN session (`newSession: true`) — there is no persistent always-on daemon chat. The default model is `haiku`, pointed at the user's own installed `claude` binary (machine-login auth, no API key).
 
@@ -65,11 +65,13 @@ Disabling a vault's daemon **pauses** its brain — it never deletes on-disk sta
 
 ---
 
-## The `daemon.enabled` master switch
+## The `settings.daemon` keys
 
-`settings.daemon` has exactly **one** key — `enabled` (`core/src/schema/settingsSchema.ts`). There is **no** `daemon.name`, `daemon.home`, or `daemon.autoUpdate` (all removed); the daemon updates *with* the app, not via git-pull.
+`settings.daemon` (`core/src/schema/settingsSchema.ts`) has **three** keys: `enabled`, `backend`, and `inboxRetentionDays`. There is **no** `daemon.name`, `daemon.home`, or `daemon.autoUpdate` (all removed); the daemon updates *with* the app, not via git-pull.
 
 - **`daemon.enabled`** (default `false`) — the master switch for this vault's whole 3rd-brain/assistant surface: the background crons/processes, this vault's memory injection into Claude sessions, the `.daemon` folder's visibility, and the **3rd-brain + daemon** graph modes. Off = dormant: state is preserved on disk and `.daemon` is hidden. Set automatically from the first-run intro; toggle anytime.
+- **`daemon.backend`** (enum of the agent CLIs whose backend catalog entry declares `capabilities.daemon: true` — today `"claude"` (default, `DEFAULT_BACKEND`) or `"codex"`) — which agent CLI runs this vault's daemon brain. This is a **request, not a guarantee**: see [Backend: Claude vs. Codex](#backend-claude-vs-codex) below for the hard constraint that can silently downgrade it to `"claude"`.
+- **`daemon.inboxRetentionDays`** (default `7`, range `1`–`90`) — how long a resolved daemon-inbox page (`sent`/`discarded`/`failed`) stays listed before it's garbage-collected. GC runs opportunistically whenever the inbox is read (`listDaemonPages`, `core/src/daemonPages.ts`) — no separate cron or ticker. See [pages.md](pages.md#cleanup--no-cron-no-ticker).
 
 The daemon's **name** does NOT live in settings — it is the `name:` frontmatter of `<vault>/.daemon/identity.md` (see below).
 
@@ -96,6 +98,23 @@ A persistent personal-assistant daemon for this Bismuth vault…
 - **`vault-review`** — every 4 hours (`0 */4 * * *`); reviews the vault to keep a living model of the user in memory.
 
 Both ship `incremental: true`: before firing, the daemon diffs a git checkpoint ref (`refs/bismuth/cron-<name>`) against the cron's repo and **skips the session entirely** when nothing relevant changed since the last successful run, instead of re-reading an unchanged vault/memory graph every tick. See [crons-and-processes.md](crons-and-processes.md#incremental-crons) for the full mechanism.
+
+---
+
+## Backend: Claude vs. Codex
+
+`settings.daemon.backend` picks which agent CLI runs a vault's brain. Two backends declare `capabilities.daemon: true` in the agent-backend catalog (`core/src/agentBackends/catalog.ts`) and are therefore selectable: `"claude"` (the default) and `"codex"`. Every other cataloged backend (opencode, the ACP adapters, …) has `capabilities.daemon: false` and cannot run a vault's brain at all.
+
+**The hard constraint.** `resolveDaemonBackend(requested, hiddenNoteCount)` (`daemon/src/daemon/session.ts`) is the pure chokepoint every backend choice must pass through, called fresh on every `sendMessage`. Only Claude can enforce the vault's visibility gate on the daemon channel — `managedSettings.permissions.deny` + `sandbox.filesystem.denyRead` + `disallowedTools`, set together by `buildQueryOptions`. No other CLI has that triple (`DAEMON_BACKENDS_WITH_VISIBILITY_GATE = new Set(["claude"])`). So for a vault with **any** hidden/chat-only note, a requested `"codex"` backend is refused and silently degraded to `"claude"` — logged as a `refusal`, never thrown, because the daemon is always-on and its crons must keep firing. Clearing the vault's hidden notes is the only way to actually run Codex. See [docs/chat/backends.md#surface-4-the-daemons-hard-constraint](../chat/backends.md#surface-4-the-daemons-hard-constraint) for the same constraint as it applies to the wider backend catalog, and [docs/vault/visibility.md](../vault/visibility.md) for the gate itself.
+
+**How the Codex backend runs** (`daemon/src/daemon/codexSession.ts`, `sendCodexMessage`), once selected:
+
+- **Spawned directly** — `codex exec <jsonFlag> [--model <m>] --sandbox workspace-write --cd <vault root> --skip-git-repo-check [--config model_reasoning_effort="<effort>"] --config approval_policy="never" [resume <threadId>]` as a subprocess (`Bun.spawn`), piping its NDJSON stdout by hand. No `@openai/codex-sdk` dependency — the daemon resolves the user's own `codex` via `whichBinary("codex")`, the same PATH-resolution helper `claudeWhich.ts` uses for `claude`.
+- **`--json` vs. `--experimental-json`** — both are real spellings of the same protocol; the working one is learned once per vault root (`jsonFlagByRoot`) and reused, with one automatic retry under the other spelling if zero JSON lines parse and the process exits non-zero.
+- **Continuity** — a durable Codex thread id lives at `<vault>/.daemon/codex-session-id`, a file separate from Claude's own `session-id` so flipping `daemon.backend` back and forth never corrupts either backend's continuity.
+- **Isolation** — `CODEX_HOME` is scoped to `<vault>/.daemon/codex`, so this vault's Codex session state never collides with another enabled vault's or the operator's own `~/.codex`.
+- **No system prompt** — `codex exec` has no system-prompt flag, so there is no Codex equivalent of `buildSystemPrompt`. Instead, `refreshIdentityAgentsMd` writes a managed block into the vault's `AGENTS.md` with the same `identity.md`-derived text, gated on `settings.codex.writeAgentsMd` (`VaultContext.codexWriteAgentsMd`). That setting is off by default, so a vault with `daemon.backend: "codex"` and `codex.writeAgentsMd: false` runs with **no persona/memory context at all** — an honest, logged degrade, not a silent one.
+- **Model + effort** — `opts.model`/`opts.effort` pass through as `--model`/`--config model_reasoning_effort="<effort>"`; effort is one of `minimal`/`low`/`medium`/`high`/`xhigh` (`ModelReasoningEffort`).
 
 ---
 
@@ -156,4 +175,4 @@ See also [the docs index](../README.md).
 
 ---
 
-Source: `daemon/src/index.ts`, `daemon/src/daemon/{index`, `cron`, `process`, `session`, `seeds`, `defaultCrons}.ts`, `daemon/src/lib/{config`, `owner`, `device`, `platform}.ts`, `daemon/src/memory/dream.ts`, `core/src/{daemon`, `daemonState`, `daemonInstall`, `daemonGraph`, `daemonViz`, `fsPaths}.ts`, `core/src/schema/settingsSchema.ts`, `memory/src/{index`, `graph`, `query`, `search}.ts`, `mcp/src/{server`, `memory}.ts`, `relay/bin/{recall-hook`, `session-end-hook}.ts`, `relay/lib/memory.ts`
+Source: `daemon/src/index.ts`, `daemon/src/daemon/{index`, `cron`, `process`, `session`, `codexSession`, `seeds`, `defaultCrons}.ts`, `daemon/src/lib/{config`, `owner`, `device`, `platform}.ts`, `daemon/src/memory/dream.ts`, `core/src/{daemon`, `daemonState`, `daemonInstall`, `daemonGraph`, `daemonViz`, `fsPaths}.ts`, `core/src/schema/settingsSchema.ts`, `core/src/agentBackends/catalog.ts`, `memory/src/{index`, `graph`, `query`, `search}.ts`, `mcp/src/{server`, `memory}.ts`, `relay/bin/{recall-hook`, `session-end-hook}.ts`, `relay/lib/memory.ts`

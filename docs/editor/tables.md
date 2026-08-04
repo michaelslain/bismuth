@@ -1,6 +1,35 @@
 # GFM Pipe Tables — Interactive Widget
 
-This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation (Enter is row-aware — line break except a new row on the last row, #42), Shift+Enter multi-line cells, drag-to-resize **column widths only** (row height is auto, #52; persisted in localStorage), add/delete row and column affordances, a right-click context menu (that shows *only* the menu — WebKit-safe, no word-select, #43), inline-markdown rendering in the display face (including `#tag` chips, #41), `<br>`-carried bullet/number lists inside a cell that survive WebKit's contenteditable read-back (#15), in-cell `:emoji:` autocomplete (#49), no center alignment (#53), in-place Cmd+F match highlighting (never flips to source, #31), and image/media drop straight into a cell — including the packaged-Tauri native-drop path (#30). Focusing a cell never scrolls the viewport (#50). The modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), the nested in-cell CodeMirror EDIT editor (`cellEditor.ts` + its shared stack `cellEditorExtensions.ts`), the pure column-resize-drag lifecycle (`tableResizeDrag.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), and the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`). The edit face is a real nested CodeMirror running the SAME live-preview + markdown + autocomplete stack the note body does — so in-cell `:emoji:` completion is no longer a separate module (the old `cellEmoji.ts`) but the shared `vaultCompletion` source, one code path.
+This document covers how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor: every GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells. Read this if you're touching table editing, cell rendering, or diagnosing a table-widget bug.
+
+### Widget features at a glance
+
+- Tab/Enter navigation (Enter is row-aware — line break except a new row on the last row, #42)
+- Shift+Enter multi-line cells
+- Drag-to-resize **column widths only** (row height is auto, #52; persisted in localStorage)
+- Add/delete row and column affordances
+- A right-click context menu (that shows *only* the menu — WebKit-safe, no word-select, #43)
+- Inline-markdown rendering in the display face (including `#tag` chips, #41)
+- `<br>`-carried bullet/number lists inside a cell that survive WebKit's contenteditable read-back (#15)
+- In-cell `:emoji:` autocomplete (#49)
+- No center alignment (#53)
+- In-place Cmd+F match highlighting (never flips to source, #31)
+- Image/media drop straight into a cell — including the packaged-Tauri native-drop path (#30)
+- Focusing a cell never scrolls the viewport (#50)
+
+### Modules involved
+
+| Module | Role |
+| :----- | :--- |
+| `tableModel.ts` | The pure markdown↔grid model |
+| `tableState.ts` | Shared CodeMirror state |
+| `tableWidget.ts` | The widget itself |
+| `cellEditor.ts` + `cellEditorExtensions.ts` | The nested in-cell CodeMirror EDIT editor + its shared stack |
+| `tableResizeDrag.ts` | The pure column-resize-drag lifecycle |
+| `inlineMarkdown.ts` | Inline-markdown rendering for display cells |
+| `cellList.ts` | The cell-list convention, shared with the note reader `bases/markdown.ts` |
+
+The edit face is a real nested CodeMirror running the SAME live-preview + markdown + autocomplete stack the note body does — so in-cell `:emoji:` completion is no longer a separate module (the old `cellEmoji.ts`) but the shared `vaultCompletion` source, one code path.
 
 ---
 
@@ -240,7 +269,13 @@ Each `<th>` or `<td>` has **two faces** keyed by `data-editing`:
 | Display (idle)      | `""` / unset   | **Full block render** — `renderCellBlockHtml(data-src)` (#15) |
 | Edit (focused)      | `"1"`          | A **nested CodeMirror `EditorView`** (`cellEditor.ts`, mounted on the cell as `_cellCM`) running the note editor's live-preview + markdown + autocomplete stack — see [The Nested In-Cell Editor](#the-nested-in-cell-editor-celleditorts) |
 
-**The display face renders through the note-reading BLOCK engine (#15, "the block thing").** `editor/cellBlockRender.ts` converts the cell's stored `<br>` markers to real newlines and runs `bases/markdown.ts renderNoteBody` — the exact engine reading mode / cards / transclusion use (marked with `breaks:true`, KaTeX with progressive self-upgrade, `[[wikilink]]` → `a.bismuth-wikilink[data-href]` anchors, `#tag` → `span.bismuth-tag`, code masking, DOMPurify sanitize). So `- a<br>- b<br>- c` renders a **real `<ul><li>`** exactly like a note body would, ordered/nested lists included; `line one<br>line two` keeps its soft break (`breaks:true`). This **supersedes the `<br>`-marker cellList rendering for the widget's display face** (`cellList.ts` remains the note-reader's own table-cell convention in `bases/markdown.ts`). **Embeds** (`![[img]]` / `![alt](url)`) are cut out *before* the block render into sanitize-surviving `span.cm-cell-embed-slot` placeholders and swapped for the real media DOM (`renderEmbedHtml`: img / pdf iframe / audio / video / note chip with GET /asset URLs) *after* `innerHTML` assignment (`upgradeCellEmbeds`) — DOMPurify would otherwise strip a PDF `<iframe>`. Cell-scoped CSS in `Editor.css` (`.cm-td p/ul/ol/...`) zeroes block margins so row height never explodes (still auto, #52); the reader's chips are styled there to match the editor's `.cm-wikilink`/`.cm-tag` marks, and the cell click handler opens **both** chip shapes (#33). The EDIT face and the read-back (`cellSourceFromDom`) are untouched.
+**The display face renders through the note-reading BLOCK engine (#15, "the block thing").** `editor/cellBlockRender.ts` converts the cell's stored `<br>` markers to real newlines and runs `bases/markdown.ts renderNoteBody` — the exact engine reading mode / cards / transclusion use (marked with `breaks:true`, KaTeX with progressive self-upgrade, `[[wikilink]]` → `a.bismuth-wikilink[data-href]` anchors, `#tag` → `span.bismuth-tag`, code masking, DOMPurify sanitize).
+
+So `- a<br>- b<br>- c` renders a **real `<ul><li>`** exactly like a note body would, ordered/nested lists included; `line one<br>line two` keeps its soft break (`breaks:true`). This **supersedes the `<br>`-marker cellList rendering for the widget's display face** (`cellList.ts` remains the note-reader's own table-cell convention in `bases/markdown.ts`).
+
+**Embeds** (`![[img]]` / `![alt](url)`) are cut out *before* the block render into sanitize-surviving `span.cm-cell-embed-slot` placeholders and swapped for the real media DOM (`renderEmbedHtml`: img / pdf iframe / audio / video / note chip with GET /asset URLs) *after* `innerHTML` assignment (`upgradeCellEmbeds`) — DOMPurify would otherwise strip a PDF `<iframe>`.
+
+Cell-scoped CSS in `Editor.css` (`.cm-td p/ul/ol/...`) zeroes block margins so row height never explodes (still auto, #52); the reader's chips are styled there to match the editor's `.cm-wikilink`/`.cm-tag` marks, and the cell click handler opens **both** chip shapes (#33). The EDIT face and the read-back (`cellSourceFromDom`) are untouched.
 
 The canonical cell source is stored in `data-src`. On the cell's `mousedown` (or a Tab/Enter cell hop) the widget calls `enterEdit`, which clears the display face and mounts the nested `cellEditor.ts` editor seeded from `data-src` (`<br>`→`\n` via `cellSourceToBlockMarkdown`). On `focusout` the widget calls `leaveEdit`, which reads the nested editor's doc back (`cmDocToCellSource`, `<br>`-joined), stores it in `data-src`, destroys the view, and re-renders the display face. The `readGrid` commit path reads the currently-edited cell from its live `_cellCM.state.doc`, every other cell from `data-src`.
 
@@ -259,7 +294,9 @@ Walks the cell's DOM **recursively** into logical lines (`cellDomLines`), then j
 | a **block wrapper per line** — `<div>` / `<p>` / … | **WebKit/Safari** contenteditable (its default block), Chromium continuation lines | `<br>` between blocks |
 | — inline element (`<span>`/`<b>`/…) | rich paste | **no** break (text stays on its line) |
 
-**The block-wrapper case is the reopened #15 in the packaged WebKit (Tauri WKWebView) app.** Safari wraps each continuation line in a `<div>`; the old direct-child-only `<br>` walk concatenated those with **no** separator, so a typed list `- a`⏎`- b`⏎`- c` read back glued (`- a- b- c`) — re-splittable by `splitCellItems` *only* when the previous item ends in a non-space char, and **lost entirely** for a trailing-space item (`- a `⏎`- b` → `- a - b`, which is deliberately not re-split — a space before the dash reads as prose) or a plain two-line cell (`line one`⏎`line two` → `line oneline two`, words merged). Emitting a `<br>` at each block boundary makes the read-back uniform across engines, so the cell re-renders as the list/lines the user typed. A block whose content already ended with a `<br>` doesn't double-count, and an **empty** block adds no spurious line (a trailing Shift+Enter break stays exactly one `<br>`). `.trim()` strips only surrounding whitespace, never the `<br>` markers. This is the inverse of `srcToEditHtml`.
+**The block-wrapper case is the reopened #15 in the packaged WebKit (Tauri WKWebView) app.** Safari wraps each continuation line in a `<div>`; the old direct-child-only `<br>` walk concatenated those with **no** separator, so a typed list `- a`⏎`- b`⏎`- c` read back glued (`- a- b- c`) — re-splittable by `splitCellItems` *only* when the previous item ends in a non-space char, and **lost entirely** for a trailing-space item (`- a `⏎`- b` → `- a - b`, which is deliberately not re-split — a space before the dash reads as prose) or a plain two-line cell (`line one`⏎`line two` → `line oneline two`, words merged).
+
+Emitting a `<br>` at each block boundary makes the read-back uniform across engines, so the cell re-renders as the list/lines the user typed. A block whose content already ended with a `<br>` doesn't double-count, and an **empty** block adds no spurious line (a trailing Shift+Enter break stays exactly one `<br>`). `.trim()` strips only surrounding whitespace, never the `<br>` markers. This is the inverse of `srcToEditHtml`.
 
 **Why not `innerText`?** A trailing `<br>` followed by nothing is silently dropped by `innerText`, causing Shift+Enter line breaks at the end of a cell to not save. `cellSourceFromDom`'s explicit node walk captures them correctly.
 
@@ -521,7 +558,7 @@ A cell renders as a real list when **both** hold:
 
 The marker (and the whitespace after it) is stripped and each item's remaining text is rendered as inline markdown (so `**bold**`, `[[wikilinks]]`, `$math$` work inside items). A cell whose segments are **not all** markers — a mix of bullets and prose, or a plain `a<br>b` two-line cell — is left as plain `<br>`-separated inline content (no list). A marker needs a space after it, so `*italic*` and `-5` are **not** bullets.
 
-```
+```text
 | Task     | Notes                        |
 | -------- | ---------------------------- |
 | Shopping | - milk<br>- eggs<br>- bread  |   →  a <ul> of three items

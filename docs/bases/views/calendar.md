@@ -1,6 +1,8 @@
 # Calendar View
 
-The calendar view is a full-featured event calendar (month / week / 3-day / day modes, drag-to-create, drag-to-move, recurrence, and category colours) that runs entirely inside a `type: base` markdown file. There is no standalone calendar page and no separate file extension: any base can become a calendar by declaring `view: calendar` (shorthand) or `views: [{ type: calendar }]` in its YAML frontmatter. Events are stored as rows in a GFM pipe table in the base file body; categories are stored as a YAML list under the `categories` key in frontmatter. All calendar settings (default view, week-start, time format) live in the unified `.settings` under the `calendar` section.
+The calendar view is a full-featured event calendar (month / week / 3-day / day modes, drag-to-create, drag-to-move, recurrence, and category colors) that runs entirely inside a `type: base` markdown file. There is no standalone calendar page and no separate file extension: any base can become a calendar by declaring `view: calendar` (shorthand) or `views: [{ type: calendar }]` in its YAML frontmatter. Events are stored as rows in the base file body using the same canonical row format every base uses — a YAML list of row objects (a legacy GFM pipe table is still read back-compat); categories are stored as a YAML list under the `categories` key in frontmatter. All calendar settings (default view, week-start, time format) live in the unified `.settings` under the `calendar` section.
+
+**In this doc:** declaring a calendar base and its on-disk event/recurrence format → the four view modes and navigation → event chips and the event modal → category colors → global calendar settings vs. per-base column mapping → the storage backend and Google Calendar sync → reactive state, range calculation, and keyboard shortcuts → gotchas.
 
 ---
 
@@ -54,41 +56,61 @@ categories:
 ---
 ```
 
-`categories` is a YAML list of `{name, color}` objects. The `color` field accepts either a CSS hex string (`"#b00020"`) or a theme token (one of `accent`, `teal`, `blue`, `violet`, `green`, `gold`, `rose`) — see [Category Colours](#category-colours) below.
+`categories` is a YAML list of `{name, color}` objects. The `color` field accepts either a CSS hex string (`"#b00020"`) or a theme token (one of `accent`, `teal`, `blue`, `violet`, `green`, `gold`, `rose`) — see [Category Colors](#category-colors) below.
 
 ---
 
 ## On-Disk Event Format
 
-Events are stored as rows in a GFM pipe table appended after the frontmatter block. The column order is fixed by the serialiser (`calendarSerialize.ts`):
+Events are stored as rows in the base file body using the **same canonical row format every base uses** — there is no calendar-specific serialisation. `parseCalendarFile` (`calendarSerialize.ts`) calls `parseRows(body, meta)` (`core/src/bases/rows.ts`) directly, and `serializeCalendarFile` calls `serializeRows(events.map(eventToRow))` with **no `columnOrder` argument**.
 
-```
-| id | title | date | startTime | endTime | location | link | description | category | recurrence |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a1 | Standup | 2026-05-30 | 09:00 |  |  |  |  | Work |  |
-| b2 | Weekly sync | 2026-05-25 | 14:00 | 15:00 |  |  |  | Work | {"type":"weekly","daysOfWeek":[1],"startDate":"2026-05-25","seriesId":"s1"} |
+- **Canonical form: a YAML list of row objects**, one per event. `serializeRows` with no `columnOrder` falls back to `Object.entries(r.note)` — i.e. each object's own key **insertion order** — and drops any key whose value is `undefined` (so an absent field never serializes as `key: null`). `eventToRow` always builds the object in the same field order (`id, title, date, startTime, endTime, location, link, description, category, categories, recurrence, localUpdated`), so the emitted key order is stable in practice, but it is a byproduct of that insertion order, not a column schema enforced by the serialiser.
+- **Back-compat: a GFM pipe table.** `parseRows` still reads an older-style pipe table (a header line with a pipe followed by a `|---|---|` separator, detected by `looksLikeTable`) via `parseMarkdownTable`, so a calendar base saved before the YAML-list format shipped still loads. `serializeCalendarFile` never writes a table — the next save of any calendar base rewrites its body as the canonical YAML list.
+
+```yaml
+---
+type: base
+view: calendar
+categories:
+  - name: Work
+    color: "#b00020"
+---
+
+- id: a1
+  title: Standup
+  date: 2026-05-30
+  startTime: "09:00"
+  category: Work
+- id: b2
+  title: Weekly sync
+  date: 2026-05-25
+  startTime: "14:00"
+  endTime: "15:00"
+  category: Work
+  recurrence: '{"type":"weekly","daysOfWeek":[1],"startDate":"2026-05-25","seriesId":"s1"}'
 ```
 
 ### Event row fields
 
-| Column | Type | Notes |
+| Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | UUID, auto-generated on create |
 | `title` | `string` | Event title |
 | `date` | `"YYYY-MM-DD"` | The event's primary date |
-| `startTime` | `"HH:MM"` or empty | Omit for all-day events |
-| `endTime` | `"HH:MM"` or empty | Sets block height in time-grid views |
+| `startTime` | `"HH:MM"` or absent | Omit for all-day events |
+| `endTime` | `"HH:MM"` or absent | Sets block height in time-grid views |
 | `location` | `string` | Free-text location |
 | `link` | `string` | URL opened by the chip link button |
 | `description` | `string` | Markdown — rendered with marked in the modal |
 | `category` | `string` | Must match a name in `frontmatter.categories`; uncategorised events render as a ghost (outline-only) chip |
-| `recurrence` | JSON string or empty | A `Recurrence` object serialised as JSON — see [Recurrence](#recurrence) |
+| `categories` | JSON array string, or absent | Multiple categories per event. `eventToRow` serialises `event.categories` (a `string[]`) as `JSON.stringify(e.categories)`, and only when it has at least one entry; `rowToEvent` reads it back, tolerating an already-parsed array or a bare single string. |
+| `recurrence` | JSON string or absent | A `Recurrence` object serialised as JSON — see [Recurrence](#recurrence) |
 
-All fields except `id`, `title`, and `date` are optional. Absent values are stored as empty cells (`| |`).
+All fields except `id`, `title`, and `date` are optional. Absent values are simply omitted from the row object (`serializeRows` drops `undefined` values rather than writing them as `null`).
 
 ### Recurrence storage
 
-Recurrence is stored as a JSON string inside the table cell:
+Recurrence is stored as a JSON string value in the row's `recurrence` field (not as a nested YAML structure):
 
 ```json
 {"type":"weekly","daysOfWeek":[1],"startDate":"2026-05-25","endDate":"2026-06-30","seriesId":"s1"}
@@ -110,7 +132,11 @@ interface CalendarEvent {
   location?: string
   link?: string
   description?: string
+  // Single category (legacy + backward-compatible). When an event belongs to multiple
+  // categories, `categories` holds the full ordered list and `category` mirrors the first
+  // (so single-category events, Google Calendar color mapping, etc. keep round-tripping).
   category?: string
+  categories?: string[]
   recurrence?: Recurrence
   localUpdated?: string // ISO timestamp stamped on every local create/edit (EventStore);
                         // the Google Calendar last-write-wins tiebreaker against the remote `updated`
@@ -210,9 +236,9 @@ The header crumb shows:
 
 ## Event Chips
 
-`EventChip` renders each event as a coloured chip. Behaviour:
+`EventChip` renders each event as a colored chip. Behaviour:
 
-- **Background colour**: `color-mix(in srgb, <category-color> 85%, transparent)`. Events with no matching category render without a background (`ghost` CSS class — outline only).
+- **Background color**: `color-mix(in srgb, <category-color> 85%, transparent)`. Events with no matching category render without a background (`ghost` CSS class — outline only).
 - **Time display**: If `startTime` is set, rendered as `HH:MM — HH:MM` (12h) or `HH:MM` (24h) per `militaryTime` setting. The `formatTime` function strips the leading zero: `"13:05"` → `"1:05"` in 12h mode.
 - **Meta row**: `location` and/or `link` shown below the title. The meta row is hidden via `ResizeObserver` if it overflows the chip height.
 - **Click**: Opens `EventModal` in edit mode.
@@ -256,16 +282,16 @@ For `weekly` and `biweekly`, a day-of-week picker is shown: Mon–Sun mapped to 
 
 ---
 
-## Category Colours
+## Category Colors
 
-Categories are named event groups with associated colours. The `CategoryPanel` modal manages them.
+Categories are named event groups with associated colors. The `CategoryPanel` modal manages them.
 
-### Colour storage
+### Color storage
 
-Colours are stored as either:
+Colors are stored as either:
 
-1. A **theme token** string: one of `accent`, `teal`, `blue`, `violet`, `green`, `gold`, `rose`. These map to `var(--<token>)` CSS variables, so the category automatically recolours when the user changes the app theme.
-2. A **CSS hex string**: e.g. `"#b00020"`. These are literal hex values from the native colour picker.
+1. A **theme token** string: one of `accent`, `teal`, `blue`, `violet`, `green`, `gold`, `rose`. These map to `var(--<token>)` CSS variables, so the category automatically recolors when the user changes the app theme.
+2. A **CSS hex string**: e.g. `"#b00020"`. These are literal hex values from the native color picker.
 
 ```ts
 export const THEME_SWATCHES = ["accent", "teal", "blue", "violet", "green", "gold", "rose"] as const;
@@ -293,7 +319,7 @@ When deleting, the UI looks for a stable fallback: the first category named `"Un
 
 ## Calendar Settings
 
-Global calendar display settings live in `.settings` under `calendar:`. They are edited by clicking "Settings" in the toolbar, which opens `CalendarSettings.tsx` — a modal specific to the per-base field mapping — or changed directly in `.settings`.
+Global calendar display settings live in `.settings` under `calendar:`. Like every other setting, they are edited in `.settings` itself — there is no GUI for them (see [settings overview](../../settings/overview.md)). The "Settings" button in the calendar toolbar opens `CalendarSettings.tsx`, which is a different thing: the PER-BASE field-mapping modal (which note column backs each calendar field) plus the Google Calendar sync panel.
 
 ### `settings.calendar` keys
 
@@ -302,7 +328,7 @@ Global calendar display settings live in `.settings` under `calendar:`. They are
 | `defaultView` | `"month" \| "week" \| "3day" \| "day"` | `"week"` | The view selected when the calendar first opens |
 | `weekStartsOnMonday` | `boolean` | `true` | Whether the week begins on Monday (ISO standard) or Sunday |
 | `militaryTime` | `boolean` | `false` | Use 24-hour time in chips and the time grid gutter |
-| `defaultCategoryColor` | `string` | `"#4a90e2"` | Default hex colour pre-filled when creating a new category |
+| `defaultCategoryColor` | `string` | `"#4a90e2"` | Default hex color pre-filled when creating a new category |
 
 ### Default view hydration
 
@@ -327,7 +353,7 @@ The "Settings" button in the toolbar opens a field-mapping dialog (`CalendarSett
 | `startTimeField` | `startTime` | No | Column for start time (week/day views) |
 | `endTimeField` | `endTime` | No | Column for end time (block height) |
 | `recurrenceField` | `recurrence` | No | Column holding the JSON repeat rule |
-| `categoryField` | `category` | No | Column driving the chip colour |
+| `categoryField` | `category` | No | Column driving the chip color |
 
 These keys configure the first view in the `views` array (via `parseBaseFile` in `parse.ts` — top-level field binding keys are automatically applied to `config.views[0]`). If a field mapping key is absent, the default column name is used.
 
@@ -359,7 +385,7 @@ A vault can have several calendar bases, each synced with a different Google cal
 
 1. `init()` — reads the base file via `api.read`, parses frontmatter + events with `parseCalendarFile`.
 2. `load()` — returns the in-memory `EventsFile` snapshot (synchronous, called right after `init()`).
-3. `save(data)` — writes back to disk with `api.write`. Fire-and-forget: saves preserve all original frontmatter keys (schema, source, etc.) and rewrite only the `categories` key and the event table. No full cache invalidation — the version poll reflects truth on next read.
+3. `save(data)` — writes back to disk with `api.write`. Fire-and-forget: saves preserve all original frontmatter keys (schema, source, etc.) and rewrite only the `categories` key and the event rows (the YAML list body). No full cache invalidation — the version poll reflects truth on next read.
 
 ---
 
@@ -426,11 +452,11 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 ## Gotchas and Edge Cases
 
 - **Single-calendar constraint**: global Solid signals mean only one `CalendarView` renders correctly at a time. Mounting two would share `currentView`/`currentDate`.
-- **Recurrence stored as JSON in a table cell**: the `recurrence` column holds a JSON string, not a YAML value. Do not hand-edit it as YAML structure inside the table.
+- **Recurrence stored as JSON inside a string field**: the `recurrence` field holds a JSON string, not a nested YAML structure. Do not hand-edit it as a YAML object — edit the JSON text itself.
 - **All-day vs timed events**: omitting `startTime` (empty cell) makes the event all-day. In time-grid views, all-day events appear in a fixed header row, not in the scrollable 24-hour grid.
 - **Monthly recurrence clamping**: a series starting on the 31st will fire on Feb 28/29 and on the 30th for 30-day months, not be silently skipped.
-- **Category colour theme tokens**: storing `"teal"` (not `"#008080"`) means the colour follows the app theme. When exporting or reading the file outside Bismuth, `teal` must be resolved manually.
-- **Frontmatter preservation**: `BaseBackend.save` preserves all original frontmatter keys. Only `categories` and the event table body are overwritten. A `schema:` key in frontmatter will not be lost.
+- **Category color theme tokens**: storing `"teal"` (not `"#008080"`) means the color follows the app theme. When exporting or reading the file outside Bismuth, `teal` must be resolved manually.
+- **Frontmatter preservation**: `BaseBackend.save` preserves all original frontmatter keys. Only `categories` and the event rows body are overwritten. A `schema:` key in frontmatter will not be lost.
 - **`userSwitchedView` is module-level**: once the user clicks a view button in any calendar session, `userSwitchedView` is permanently `true` for the lifetime of the page. The defaultView hydration effect becomes a no-op for the rest of the session.
 - **`view: calendar` shorthand vs `views:`**: use `view: calendar` (singular) for a single-view calendar base. Adding a `views:` array overrides the shorthand.
 
@@ -441,4 +467,4 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 - [Bases overview](../overview.md)
 - [Base file format](../../calendar/overview.md)
 
-Source: `app/src/bases/CalendarView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/EventChip.tsx`, `core/src/bases/parse.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`
+Source: `app/src/bases/CalendarView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/EventChip.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/table.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`

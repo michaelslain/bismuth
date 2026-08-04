@@ -2,6 +2,8 @@
 
 Bismuth provides four chart view types — `bar`, `line`, `stat`, and `heatmap` — all of which are rendered from the same data-shaping pipeline in `core/src/bases/chart.ts`. Each view type is declared inside the `views:` array of a `type: base` markdown file by setting `type:` to the corresponding string. All four share the same axis/aggregation configuration fields (`x`, `y`, `aggregate`, `bin`) defined on `ViewConfig` in `core/src/bases/types.ts`; the heatmap overrides `bin` to `"day"` unconditionally. Rows flow through `buildChartData()` which buckets them, aggregates numeric values, and returns sorted `ChartPoint[]` consumed by each renderer.
 
+**In this doc:** the shared bucketing/aggregation pipeline every chart view runs through → the config fields all four share → per-view-type visual details and a minimal example each (bar, line, stat, heatmap) → edge cases and gotchas.
+
 ---
 
 ## Shared pipeline: `buildChartData`

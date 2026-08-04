@@ -1,6 +1,43 @@
-# Bismuth Documentation
+# Bismuth
 
-Bismuth is an Obsidian-style knowledge vault, built as a Bun monorepo: a `core` backend, a Solid/Tauri `app`, the `bismuth` CLI, and a `relay` plugin. This is the full reference — every page is code-anchored with copy-pasteable examples.
+**A knowledge vault that thinks with you.** Bismuth keeps your notes as plain markdown on your own
+disk — wikilinks, tags, YAML frontmatter, no lock-in — and builds a live knowledge graph on top of
+them. Around that it adds the things a vault usually makes you leave: queryable database views,
+tasks, spaced repetition, a calendar, drawing, spreadsheets, terminals, and AI that can actually
+read your vault.
+
+### The three-brain model
+
+The idea the whole app is organised around:
+
+| | what it is | where it lives |
+|---|---|---|
+| **You** | the person at the centre | — |
+| **2nd brain** | your vault — markdown notes, links, tags | your chosen folder |
+| **3rd brain** | the daemon's memory — what the assistant has learned about your work, linked back into your notes | `<vault>/.daemon/memory` |
+
+The graph merges all three, so a note and the thing an agent remembered about it are one connected
+structure rather than two disconnected tools.
+
+### What's in the box
+
+- **Knowledge graph** — 2D/3D, rendered as a character grid; five modes including a *local* view of one note's neighbourhood
+- **Bases** — a `type: base` note is a query over your vault, rendered through any of 12 view kinds (table, cards, kanban, calendar, map, charts, flashcards, …)
+- **Tasks** (Obsidian-Tasks compatible) and **flashcards** (SM-2 spaced repetition) that read straight out of your notes
+- **Calendar** with two-way Google Calendar sync · **drawing** (`.draw`) · **spreadsheets** (`.sheet`) · **export** to md/html/png/pdf
+- **AI, on your terms** — in-app terminals, a visual chat that runs on any of **nine** agent backends (Claude Code, opencode, Codex, and six more), and per-file/folder **visibility controls** that fence agents out of what you don't want read
+- **A daemon** — an optional background brain per vault: crons, processes, a memory graph, and an inbox of work awaiting your approval
+- **Drive it from anywhere** — the `bismuth` CLI, an MCP server, and an iPad build that runs the whole backend in-process
+
+Everything is local-first and file-based: no account, no sync service, no database.
+
+---
+
+## About this documentation
+
+Bismuth is a Bun monorepo of **seven workspaces** — `core` (backend), `app` (Solid + Tauri),
+`cli`, `relay`, `mcp`, `memory`, and `daemon`. This is the full reference: every page is
+code-anchored, with copy-pasteable examples drawn from the real implementation.
 
 ## Get started (macOS)
 
@@ -76,7 +113,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Calendar](calendar/overview.md) — events, recurrence, categories
 - [Google Calendar sync](gcal/overview.md) — OAuth/PKCE two-way sync, conflict policies, recurrence, manifest
 - [Visual Claude chat](chat/overview.md) — in-app Claude Code chat (`/chat` WS, Agent-SDK sessions, unified with terminals)
-- [Chat providers](chat/providers.md) — run a chat on Claude Code or opencode: the provider seam, opencode driver, graceful degradation
+- [Chat providers](chat/providers.md) — the provider seam behind all nine backends: routing, the opencode/codex drivers, per-capability graceful degradation
 - [Agent backends](chat/backends.md) — the backend catalog + capability model, the six integration surfaces, ACP, the MCP-registration policy, the daemon's visibility constraint
 - [Export](export/overview.md) — note/base/sheet/drawing → md|html|png|pdf, visual/data modes
 - [Drawing](drawing/overview.md) — the `.draw` vector format + export
@@ -113,6 +150,7 @@ The in-repo background runtime — **one machine process that multiplexes per-va
 - [CLI reference](cli/reference.md) — every `bismuth` command
 - [HTTP API reference](api/http-reference.md) — every core server route
 - [MCP server](mcp/overview.md) — auto-attaches to app-terminal Claude sessions; serves docs + CLI + (daemon-gated) memory tools
+- [Daemon MCP tools](mcp/daemon-tools.md) — the ten daemon-gated tools: crons, background processes, the inbox, status + device ownership
 - [App control](mcp/app-control.md) — driving a running window's tabs from a Claude session / the shell (`bismuth app …`), via the CLI (zero new MCP tools)
 - [Mobile (iPad/iOS)](mobile/overview.md) — the no-HTTP in-process backend + `FileAccess`/`Transport` seams that run the vault on-device
 

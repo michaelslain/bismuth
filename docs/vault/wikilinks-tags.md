@@ -20,7 +20,7 @@ The supported wikilink forms mirror Obsidian syntax. All three can be combined:
 
 Embeds (`![[file]]`) use the same double-bracket notation but are **not wikilinks** — they are render-only transclusion directives (images, PDFs, audio, video, note transclusion) and **never produce a graph edge**. The negative lookbehind `(?<!!)` in the extractor regex ensures a `!` immediately before `[[` is excluded.
 
-```
+```text
 ![[Diagram.png]]   → skipped (embed, not a link)
 [[Diagram.png]]    → extracted (link)
 ![[Other Note]]    → skipped (embed)
@@ -72,7 +72,7 @@ Replaces code regions with same-length runs of spaces (newlines preserved), so c
 - **Fenced code blocks**: ` ``` ` or `~~~` openers (with optional info string) through the matching closer (or end of document if unterminated). Supports indented fences. An unterminated block is treated as extending to end of file — all content after the opener is hidden.
 - **Inline code spans**: one or more backticks, then the shortest matching run on the same line.
 
-```
+```text
 "Real [[Outside]]\n```\n[[Inside]]\n```\nmore [[Also Outside]]"
 → extracts: ["Outside", "Also Outside"]
 
@@ -144,7 +144,7 @@ resolveNotePath("reading/quotes/My Note", notes)  // exact path wins
 - A path-qualified link `[[reading/Note]]` always wins over a basename collision.
 - **Links to non-existent notes are silently dropped** — no edge is created, no error is raised. The note node for the target simply doesn't exist, so `resolveLinkTarget` returns `undefined` and the edge is skipped.
 
-```
+```text
 // vault.test.ts examples:
 "internship.md" linking to [[housing]] and [[ghost]]
 → edge internship→housing created  (housing.md exists)
@@ -161,7 +161,7 @@ resolveNotePath("reading/quotes/My Note", notes)  // exact path wins
 
 Circular links are allowed and both directions create edges:
 
-```
+```text
 a.md: [[b]]
 b.md: [[a]]
 → edges: a→b and b→a both present
@@ -212,7 +212,7 @@ Rules:
 - Subsequent characters: `A-Za-z0-9_`, `/` (for nested tags), `-`.
 - Tags are **case-sensitive**: `#MyTag`, `#myTag`, `#MYTAG` are three distinct tags.
 
-```
+```text
 #body-tag         → "body-tag"        (hyphen allowed)
 #my_tag           → "my_tag"          (underscore allowed)
 #parent/child     → "parent/child"    (slash for nesting)
@@ -272,7 +272,7 @@ interface GraphNode {
 ```
 
 Examples:
-```
+```text
 tag "foo"            → { id: "tag:foo",            label: "#foo",            kind: "tag" }
 tag "science fiction" → { id: "tag:science fiction", label: "#science fiction", kind: "tag" }
 tag "parent/child"   → { id: "tag:parent/child",   label: "#parent/child",   kind: "tag" }
@@ -290,7 +290,7 @@ interface GraphEdge {
 
 One edge per note-tag pair; duplicates within a note are deduped by `extractTags` before edges are created. Two notes using the same tag each get their own edge to the single shared tag node.
 
-```
+```text
 // vault.test.ts examples:
 note.md with frontmatter tags: [foo] and body #bar
 → nodes: tag:foo (#foo), tag:bar (#bar)
@@ -494,7 +494,7 @@ matchTagListItem("status: do")          // → null  (non-tags key)
 
 ## Data Flow Summary
 
-```
+```text
 vault .md files
     ↓ parseFrontmatter(content)
   { data (YAML), body (markdown) }

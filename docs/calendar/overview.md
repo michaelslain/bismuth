@@ -1,6 +1,6 @@
 # Calendar Subsystem Overview
 
-The calendar in Bismuth is not a standalone page or feature — it is a **Bases view kind** rendered when a `type: base` markdown file declares `views: [{ type: calendar }]`. This document covers the full calendar subsystem: the event and category data model, how events are stored and serialized, the recurrence rule engine, the category-to-color mapping, reactive global state, view components, and user-facing settings. For how to configure a calendar base file and wire up column mappings, see [bases/views/calendar.md](../bases/views/calendar.md) (to be created).
+The calendar in Bismuth is not a standalone page or feature — it is a **Bases view kind** rendered when a `type: base` markdown file declares `views: [{ type: calendar }]`. This document covers the full calendar subsystem end to end — the reference for anyone working on the calendar feature itself, building on its headless/CLI surface, or debugging event and recurrence behavior: the event and category data model, how events are stored and serialized, the recurrence rule engine, the category-to-color mapping, reactive global state, view components, and user-facing settings. For how to configure a calendar base file and wire up column mappings, see [bases/views/calendar.md](../bases/views/calendar.md) (to be created).
 
 There are **two write paths** to the same on-disk calendar file:
 

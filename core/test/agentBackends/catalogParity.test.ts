@@ -107,7 +107,7 @@ describe("agent backend catalog <-> CHAT_BACKENDS parity", () => {
   //
   // Also not asserted, for the same reason (no OPTIONAL ChatBackend member gated by the flag):
   // `resume`, `historyReplay`, `models`, `auth`, `cost`, `contextUsage`, `computerUse`,
-  // `slashCommands`, `sessionPicker`, `chat`, `streaming`, `terminal`, `agentsGraph`, `subagents`,
+  // `slashCommands`, `sessionPicker`, `chat`, `streaming`, `terminal`, `relayReporting`, `subagents`,
   // `daemon`, `visibilityGate`, `selfSandboxes`. Several of these have a SIMILARLY named REQUIRED
   // ChatBackend member (`resumeSession`, `sessionHistoryFrames`, `setModel`, ...), but those exist
   // on every backend unconditionally regardless of the flag's value — sessionHistoryFrames is

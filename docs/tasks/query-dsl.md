@@ -206,6 +206,8 @@ cancelled after 2025-01-01
 | `YYYY-MM-DD` | that literal date | must match `/^\d{4}-\d{2}-\d{2}$/` exactly |
 | `in N days` / `in N day` | `addDaysISO(today, N)` | `N` is one or more digits; both `day` and `days` accepted |
 | `N days ago` / `N day ago` | `addDaysISO(today, -N)` | both `day` and `days` accepted |
+| `<weekday>` (e.g. `friday`, `fri`) | `nextWeekdayISO(today, weekday)` | the coming occurrence of that weekday — see [Weekday expressions](#weekday-expressions) below |
+| `next <weekday>` (e.g. `next monday`) | same as `<weekday>` | the leading `next ` is stripped before resolving, so `next monday` and `monday` resolve identically |
 | anything else | `null` → leaf unrecognized | |
 
 `addDaysISO(iso, n)` (from `core/src/dates.ts`) constructs `new Date(iso + "T00:00:00")`, adds `n` days, and re-serializes to ISO — i.e. local-time day arithmetic.
@@ -219,10 +221,29 @@ const tasks = [
 runTaskQuery(tasks, "due before in 7 days", TODAY).tasks.map(t => t.description); // ["within"]
 ```
 
+### Weekday expressions
+
+`resolveDateExpr` also matches day-of-week words. If the expression isn't `today`/`tomorrow`/`yesterday`/an ISO date/an `in N days`/`N days ago` form, it strips a leading `next ` and passes what's left to `nextWeekdayISO(today, name)` (`core/src/dates.ts`):
+
+- `name` may be a full weekday name (`sunday`…`saturday`) or its 3-letter abbreviation (`sun`…`sat`), matched case-insensitively via `weekdayIndex`. Anything else makes `nextWeekdayISO` return `null`, so the leaf falls through to unrecognized.
+- The resolved date is always the **coming** occurrence **strictly after** `today` — 1 to 7 days out, never today itself. If today already falls on that weekday, it resolves a full week ahead (`offset = ((target - cur + 6) % 7) + 1`, which is always in `1..7`).
+- The optional `next ` prefix is cosmetic — `resolveDateExpr` strips it unconditionally before matching, so `friday` and `next friday` are the exact same expression to the parser. There's no distinct "two Fridays from now" meaning.
+
+```ts
+// TODAY = "2026-05-27" (a Wednesday)
+const tasks = [
+  task({ due: "2026-05-29", description: "fri" }),  // the coming Friday
+  task({ due: "2026-06-01", description: "mon" }),  // the coming Monday
+];
+runTaskQuery(tasks, "due friday", TODAY).tasks.map(t => t.description);       // ["fri"]
+runTaskQuery(tasks, "due next monday", TODAY).tasks.map(t => t.description);  // ["mon"]
+runTaskQuery(tasks, "due before friday", TODAY).tasks.map(t => t.description); // []  (strict <, resolved date itself excluded)
+```
+
 Notes / gotchas:
 - The number in `in N days` / `N days ago` must be a non-negative integer (digits only). `in 7 days` works; `in seven days` does not (→ `null` → unrecognized).
 - `in 1 day` and `in 1 days` both parse (the `s?` is optional). Same for `1 day ago` / `1 days ago`.
-- There is **no** `next week`, `last week`, `start of month`, weekday names, etc. Only the forms in the table above.
+- There is **no** `last week`, `start of month`, `end of month`, or any other relative-period phrase — only the forms in the table above (including single weekday names/abbreviations, optionally prefixed `next `).
 - A bare numeric like `7 days` (without `in`/`ago`) is **not** recognized.
 
 ## Boolean expressions (AND / OR / parentheses)
@@ -423,6 +444,7 @@ done 3 days ago
 
 # ── date expressions ──
 today | tomorrow | yesterday | YYYY-MM-DD | in N days | N days ago
+friday | fri | next monday   # coming occurrence, strictly after today
 
 # ── booleans (single line; AND tighter than OR; parens override) ──
 (priority is high) OR (due before today)

@@ -27,7 +27,7 @@ function formatTable(reports: BackendReport[]): string {
     const surfaces = [
       r.surfaces.chat ? "chat" : null,
       r.surfaces.terminal ? "terminal" : null,
-      r.surfaces.agentsGraph !== "none" ? `agents:${r.surfaces.agentsGraph}` : null,
+      r.surfaces.relayReporting !== "none" ? `relay:${r.surfaces.relayReporting}` : null,
       r.surfaces.daemon ? "daemon" : null,
       r.surfaces.mcp !== "none" ? `mcp:${r.surfaces.mcp}` : null,
       `memory:${r.surfaces.memory}`,

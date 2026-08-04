@@ -1,6 +1,12 @@
 # Bismuth Architecture Overview
 
-Bismuth is a personal knowledge management system built as a Bun monorepo with seven workspaces. The central concept is the **three-brain model**: a "you" self-node at the center, a "2nd brain" (vault of markdown files), and a "3rd brain" (the per-vault daemon's memory notes, living under `<vault>/.daemon/memory` and present only when `daemon.enabled`). These data sources are merged by the core backend into a single knowledge graph, precomputed with 2D and 3D layouts, served over HTTP to a Tauri + Solid.js desktop app. The relay plugin powers a live "agents" graph by reporting Claude Code sessions running inside the app's own terminal tabs back to the core server, and the mcp workspace is a stdio MCP server that auto-attaches to those same sessions to serve the docs + CLI.
+Bismuth is a personal knowledge management system built as a Bun monorepo with seven workspaces. This page maps that monorepo — what each workspace does, how the three-brain model becomes one merged knowledge graph, and how that graph reaches the frontend — and is the place to start when orienting yourself in the codebase.
+
+The central concept is the **three-brain model**: a "2nd brain" (vault of markdown files) and a "3rd brain" (the per-vault daemon's memory notes, living under `<vault>/.daemon/memory` and present only when `daemon.enabled`). These data sources are merged by the core backend into a single knowledge graph, precomputed with 2D and 3D layouts, served over HTTP to a Tauri + Solid.js desktop app.
+
+The relay plugin reports Claude Code sessions and subagents running inside the app's own terminal tabs into an in-process registry on the core server — it no longer powers a graph mode (the "agents" graph was removed in `a6687c0`), but the registry still backs `chat.ts`'s subagent lifetime tracking and `terminal.ts`'s tab-close pruning. The mcp workspace is a stdio MCP server that auto-attaches to those same sessions to serve the docs + CLI.
+
+**What's in this doc:** monorepo layout and workspace roles → the three-brain model → graph composition and types → graph modes (2nd/3rd/both/daemon/local) → vault-change data flow → HTTP API summary → settings architecture → caching strategy.
 
 ---
 
@@ -44,11 +50,13 @@ The entry point `app/src/index.tsx` code-splits two roots. On **first run** the 
 
 ### `cli/` — the `bismuth` binary
 
-A thin dispatcher over `@bismuth/core`. Most file-based operations (list notes, read/write, tasks, bases, drawing export) run **headlessly** with no running server. Operations that require the in-memory relay registry (e.g., `agent-graph`) go through the generic `api <METHOD> <path>` passthrough that hits a running server. Vault is specified via `--vault` flag or `BISMUTH_VAULT` env var.
+A thin dispatcher over `@bismuth/core`. Most file-based operations (list notes, read/write, tasks, bases, drawing export) run **headlessly** with no running server — e.g. `bismuth graph` (`cli/src/commands/graph.ts`) calls `buildGraph()` directly and prints the result, no server involved. Operations with no dedicated command group go through the generic `api <METHOD> <path>` passthrough (`cli/src/commands/api.ts`: "Call any server route directly, for in-memory/server-only capabilities"), which hits a running server. Vault is specified via `--vault` flag or `BISMUTH_VAULT` env var.
 
-### `relay/` — the agent-graph plugin
+### `relay/` — the session registry plugin
 
 A collection of Claude Code hook scripts. It is **not** a daemon and installs nothing in `~/.claude`. It is loaded per-session, only inside Bismuth's terminal tabs, via a PATH shim (`relay/shim/claude`) that injects `--plugin-dir <relay>` when a bare `claude` is invoked.
+
+> **Note**: the relay-fed "agents" graph mode was removed in commit `a6687c0` ("ephemeral tooling state, not knowledge"). `relay.ts`, its four ingest routes below, terminal provenance, and the chat agent-session plumbing all survive — only the graph mode, `agentLayout.ts`, `AgentsGraph.tsx`, and `GET /agent-graph` were deleted.
 
 Hook wiring (declared in `relay/hooks/hooks.json`):
 
@@ -59,7 +67,7 @@ Hook wiring (declared in `relay/hooks/hooks.json`):
 | `SubagentStart` | `bin/subagent-start-hook.ts` | `POST /relay/subagent/start` | Add child node under spawning session |
 | `SubagentStop` | `bin/subagent-stop-hook.ts` | `POST /relay/subagent/stop` | Mark child finished |
 
-All hooks are **best-effort**: they exit 0 within a 2-second budget and swallow all errors so they never block the user's Claude session. The hooks no-op if `CLAUDE_TERMINAL_ID` is absent (i.e., outside Bismuth terminals). The relay registry lives entirely in-process inside core (`core/src/relay.ts`); it does not persist across server restarts.
+All hooks are **best-effort**: they exit 0 within a 2-second budget and swallow all errors so they never block the user's Claude session. The hooks no-op if `CLAUDE_TERMINAL_ID` is absent (i.e., outside Bismuth terminals). The relay registry lives entirely in-process inside core (`core/src/relay.ts`); it does not persist across server restarts. Nothing renders this registry as a graph any more — its two consumers are `chat.ts` (which imports `DONE_SUBAGENT_TTL_MS`/`RUNNING_SUBAGENT_MAX_MS` to mirror the same finished/abandoned-subagent lifetimes for its own agent-session view) and `terminal.ts` (which calls `relay.prune()` against the live pty set on tab close).
 
 ### `mcp/` — the docs + CLI MCP server
 
@@ -70,12 +78,6 @@ A stdio [MCP](https://modelcontextprotocol.io) server (`@bismuth/mcp`) that ride
 ## The Three-Brain Model
 
 Bismuth treats knowledge as three layers, each producing a graph:
-
-### Self node ("you")
-
-Node kind: `"self"`, id: `"::you"`.
-
-The self node is **not** produced by the backend graph builders, and today it only appears in **"agents" mode** — `app/src/graph/agentLayout.ts`'s `layoutAgentGraph()` manufactures it as a synthetic hub on the **frontend** and connects it to every root agent session (top-level terminal-tab sessions that have no parent). It is deliberately absent from "2nd", "3rd", "both", and "daemon" mode (a prior `withYouNode()` helper injected it into those three brain views too; it was removed as visual noise). The `::` prefix is a sentinel that can never collide with a vault note id (a vault-relative path minus `.md`).
 
 ### 2nd Brain (vault)
 
@@ -114,7 +116,23 @@ Steps:
 3. If `memoryDir` is provided, `buildMemoryGraph(memoryDir)` returns `{ nodes, edges, links }` where `links` is a map from memory node base name to the wikilink targets it references.
 4. **"About" edges** are created for each memory→vault cross-reference: for each entry in `memory.links`, `resolveLinkTarget(target, vaultByBase, vaultByPath)` is called — it tries path-qualified resolution first (`vaultByPath`), then falls back to basename resolution (`vaultByBase`). A successful resolution produces an `{ from: "mem:<base>", to: <vaultNodeId>, kind: "about" }` edge.
 5. `mergeGraphs([vault, { nodes: memory.nodes, edges: [...memory.edges, ...about] }])` deduplicates nodes by id (first-seen wins) and concatenates edges.
-6. `stampCommunities(merged)` runs Louvain community detection using only edges whose both endpoints are present, then stamps `community` (numeric id) and `communityLabel` (highest-degree member's label in that community) onto each node.
+6. `stampCommunities(merged)` calls `detectCommunityHierarchy()` (`core/src/community.ts`) — deterministic, non-random **hierarchical** Louvain community detection using only edges whose both endpoints are present — and stamps four fields onto each node: `community` (the finest level's numeric id) and `communityLabel` (that level's exemplar label), which mirror the pre-hierarchy flat contract every existing consumer reads, plus `communityPath` (community id per level, COARSEST → FINEST) and `communityPathLabels` (the matching exemplar label per level).
+
+**How many levels a vault gets** — `communityLevelsFor(nodeCount)`:
+
+| Node count | Levels |
+|---|---|
+| < 360 | 1 |
+| < 1620 | 2 |
+| < 7290 | 3 |
+| ≥ 7290 | 4 |
+
+So a small vault gets one flat level exactly as before, and a large one gets clusters nested up to 4 deep. Levels are built bottom-up and strictly nested — two nodes sharing a finest community always share every coarser one.
+
+**How each level picks its exemplar name** — `pickExemplar()`:
+- Members within `EXEMPLAR_DEGREE_FRAC` (0.5) of the community's top degree form a pool, capped at `EXEMPLAR_POOL` (8).
+- A `kind: "tag"` member in that pool wins outright over notes.
+- Among the survivors, the shortest label that still fits `EXEMPLAR_FIT_CHARS` (20 characters) is picked — the field is a monospace ASCII grid with no room for a full note-title sentence as a cluster name.
 
 The result is a `GraphData`:
 
@@ -126,9 +144,9 @@ interface GraphData {
 }
 ```
 
-Layout positions (`position3d`, `position2d`) are attached by `attachLayout()` in `core/src/layout-cache.ts` before the graph is stored in the server's `graphCache`. The frontend receives nodes already stamped with positions and morphs between them in the Three.js renderer — it does not run any force simulation.
+Layout positions (`position3d`, `position2d`) are attached by `attachLayout()` in `core/src/layout-cache.ts` before the graph is stored in the server's `graphCache`. The frontend receives nodes already stamped with positions and morphs between them in `app/src/graph/AsciiGraphRenderer.ts` — a Canvas2D (not WebGL/Three.js) renderer that draws the graph as a monospace character field (glyphs for nodes, real vector strokes for edges) — it does not run any force simulation for "2nd"/"3rd"/"both"/"daemon" mode. ("local" mode is the one exception — see Graph Modes below.)
 
-Over the renderer's canvas sits a shared **`GraphAtmosphere`** overlay (`app/src/graph/GraphAtmosphere.tsx`): the iridescent cluster-glow lobes (driven by the renderer's per-frame `setGlowCallback`, which projects the biggest clusters to screen space) plus a depth vignette. It is rendered as a sibling after the canvas by both `GraphView` and the first-run intro graph, so the two share one source instead of duplicating the glow-wiring.
+Over the renderer's canvas sits a shared **`GraphAtmosphere`** overlay (`app/src/graph/GraphAtmosphere.tsx`): the iridescent cluster-glow lobes (driven by the renderer's per-frame `setBloomCallback`, which projects the biggest clusters to screen space as a density field) plus a depth vignette. It is rendered as a sibling after the canvas by both `GraphView` and the first-run intro graph, so the two share one source instead of duplicating the glow-wiring.
 
 ---
 
@@ -141,8 +159,8 @@ Over the renderer's canvas sits a shared **`GraphAtmosphere`** overlay (`app/src
 | `"note"` | 2nd | `vault.ts` | A vault markdown file |
 | `"tag"` | 2nd | `vault.ts` | A `#tag` extracted from notes |
 | `"memory"` | 3rd | `memory.ts` | A daemon memory note (from `<vault>/.daemon/memory`) |
-| `"self"` | All | Frontend only | The "you" hub; id always `"::you"` |
-| `"agent"` | agents | `agents.ts` | A Claude Code session or subagent in an app terminal |
+| `"self"` | — | Vestigial | Not produced by any graph mode — no mode has carried a self/"you" hub since `a6687c0` removed "agents" mode (a prior `withYouNode()` helper injected one into "2nd"/"3rd"/"both" too; also removed, as visual noise). The type and `SELF_NODE_ID = "::you"` still exist, and `AsciiGraphRenderer.ts` still special-cases `kind: "self"` with an `"@"` glyph, only because the first-run Vault Intro's synthetic demo graph (`app/src/intro/vaultIntroGraph.ts`) decorates its point cloud with one — no real vault/memory/daemon data ever produces this kind |
+| `"agent"` | — | Vestigial | Declared in `NodeKind` but nothing builds one any more: the graph builder and `GET /agent-graph` were deleted in `a6687c0` along with the "agents" graph mode. `core/src/agents.ts` itself still exists, reduced to the `ChatAgentSession`/`ChatAgentSubagent` types that `chat.ts` uses for per-chat subagent tracking |
 | `"daemon"` | daemon | `daemonGraph.ts` | The daemon hub node (id `"::daemon"`, label defaults to `"daemon"`) |
 | `"cron"` | daemon | `daemonGraph.ts` | A daemon-supervised cron job |
 | `"process"` | daemon | `daemonGraph.ts` | A daemon-supervised process |
@@ -155,7 +173,7 @@ Over the renderer's canvas sits a shared **`GraphAtmosphere`** overlay (`app/src
 | `"tag"` | note → tag | Note has this tag |
 | `"message"` | memory → memory | Memory-internal links |
 | `"about"` | memory → note | Cross-brain link: memory references vault note |
-| `"open"` | self → note | Frontend-only: you have this note open in a pane |
+| `"open"` | self → note | Vestigial: unused since no mode carries a self node any more (see `"self"` above) |
 | `"supervises"` | daemon → cron/process | Daemon hub to its supervised jobs |
 
 ### `GraphNode` fields
@@ -166,13 +184,15 @@ interface GraphNode {
   label: string;
   kind: NodeKind;
   state?: "idle" | "awake";
-  folder?: string;           // top-level folder segment, e.g. "reading"
-  parent?: string;           // agent nodes only: parent session id
-  position?: [x, y, z];     // 3D precomputed layout (attached by layout-cache.ts)
-  position2d?: [x, y];      // 2D precomputed layout
-  community?: number;        // Louvain community id
-  communityLabel?: string;   // highest-degree member's label in the community
-  daemon?: DaemonVizState;   // cron/process nodes only: enabled/running viz state
+  folder?: string;                 // top-level folder segment, e.g. "reading"
+  parent?: string;                 // agent nodes only — vestigial, see Node kinds above
+  position?: [x, y, z];           // 3D precomputed layout (attached by layout-cache.ts)
+  position2d?: [x, y];            // 2D precomputed layout
+  community?: number;              // Louvain community id, finest hierarchy level
+  communityLabel?: string;         // finest level's exemplar label
+  communityPath?: number[];        // community id per level, COARSEST → FINEST (length 1-4); last element === community
+  communityPathLabels?: string[];  // exemplar label per level, same length as communityPath; last element === communityLabel
+  daemon?: DaemonVizState;         // cron/process nodes only: enabled/running viz state
 }
 ```
 
@@ -192,17 +212,25 @@ interface DaemonVizState {
 
 ## Graph Modes
 
-The frontend switches between five graph modes. Each mode determines which node/edge kinds to render and which backend endpoint to query:
+`GraphMode` (`app/src/commands.ts`) is exactly:
+
+```typescript
+export type GraphMode = "2nd" | "3rd" | "both" | "daemon" | "local";
+```
+
+The frontend switches between these five graph modes. Each mode determines which node/edge kinds to render and which backend endpoint (if any) to query. Node/edge selection per mode is pure: `app/src/graph/displayGraph.ts`'s `selectDisplayGraph()` picks and shapes the graph — and **never adds a "you"/self node** (see `"self"` in [Node kinds](#node-kinds) above for why):
 
 | Mode | Backend source | Node kinds included |
 |------|---------------|---------------------|
-| `"2nd"` | `GET /graph` (subset) | `self`, `note`, `tag` |
-| `"3rd"` | `GET /graph` (subset) | `self`, `memory` |
+| `"2nd"` | `GET /graph`, filtered client-side via `subgraphByKinds()` | `note`, `tag` |
+| `"3rd"` | `GET /graph`, filtered client-side via `subgraphByKinds()` | `memory` |
 | `"both"` | `GET /graph` (full) | All of 2nd + 3rd |
-| `"agents"` | `GET /agent-graph` | `self`, `agent` |
 | `"daemon"` | `GET /daemon/graph` | `daemon`, `cron`, `process` (hub built by `daemonGraph.ts` from `<vault>/.daemon`; liveness read machine-level) |
+| `"local"` | No dedicated endpoint — client-side only, over the already-fetched "both" graph | The open note's neighbourhood: the note itself plus every node within 1 hop in **either** direction (outbound links and backlinks alike), restricted to `note`/`tag` kinds, via `core/src/graph.ts`'s `localSubgraph()` |
 
 For `"2nd"` and `"3rd"` modes the frontend requests `GET /graph/views` on first mode switch to obtain per-brain precomputed layouts (`ViewLayout`). These are computed lazily by `computeViewLayouts()` and cached on the live `GraphData` object in memory. Subsequent `GET /graph` calls return the cached graph with `.views` populated.
+
+`"local"` mode is the one exception to "layouts come from the backend, not the browser": the whole-vault positions on `localSubgraph()`'s output are meaningless at neighbourhood scale (a dozen notes scattered across a world sized for thousands), so `GraphView.tsx` re-lays the subgraph out itself with core's pure, synchronous `computeLayout()` (`LOCAL_REFINE_TICKS = 120`, 3D first then 2D seeded from it) — no backend round-trip, no cache, settling in a few ms. `localSubgraph()` also strips `community`/`communityPath`/`communityPathLabels` from its output (colouring a dozen notes by the whole vault's cluster structure said nothing at that scale), but `app/src/graph/localLayoutInput.ts`'s `localLayoutInput()` looks those fields back up from the full, un-stripped graph (`GraphView`'s `communitySource` prop) and feeds them to `computeLayout()` anyway — so a neighbour sharing the focused note's community still settles closer, without the renderer ever drawing the fields.
 
 The 2D/3D toggle is a transient `localStorage` value, not a `.settings` key — it persists across sessions but does not appear in the settings file.
 
@@ -262,7 +290,6 @@ All routes are served by `core/src/server.ts`. Mutating routes go through `mutat
 | `GET /settings` | Parsed app settings (`.settings` merged over defaults) |
 | `GET /schema` | Property registry from `.settings` |
 | `GET /templates` | List template files |
-| `GET /agent-graph` | Live Claude Code agent tree (agents mode) |
 | `GET /tasks` | All vault tasks |
 | `GET /cards/decks` | SRS deck list |
 | `GET /cards/all` | All flashcards |
@@ -342,9 +369,9 @@ The `asyncCache` abstraction (`core/src/asyncCache.ts`) ensures concurrent first
 
 - [Core graph types](../graph/overview.md)
 - [Bases query system](../bases/overview.md)
-- [Relay / agents graph](../terminal/overview.md)
+- [Terminal / relay session registry](../terminal/overview.md)
 - [Daemon integration](../daemon/overview.md)
 - [Settings schema](../settings/reference.md)
 - [HTTP API reference](../api/http-reference.md)
 
-Source: `CLAUDE.md`, `package.json`, `core/src/engine.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/graph.ts`, `relay/package.json`, `relay/hooks/hooks.json`, `relay/lib/report.ts`, `core/package.json`, `cli/package.json`, `app/src/index.tsx`, `app/src/intro/VaultIntro.tsx`, `app/src/graph/GraphAtmosphere.tsx`, `app/src-tauri/src/lib.rs`
+Source: `CLAUDE.md`, `package.json`, `core/src/engine.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/graph.ts`, `core/src/community.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/terminal.ts`, `relay/package.json`, `relay/hooks/hooks.json`, `relay/lib/report.ts`, `core/package.json`, `cli/package.json`, `cli/src/commands/graph.ts`, `cli/src/commands/api.ts`, `app/src/index.tsx`, `app/src/intro/VaultIntro.tsx`, `app/src/intro/vaultIntroGraph.ts`, `app/src/commands.ts`, `app/src/graph/displayGraph.ts`, `app/src/graph/localLayoutInput.ts`, `app/src/GraphView.tsx`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src-tauri/src/lib.rs`
