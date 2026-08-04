@@ -47,5 +47,3 @@ relay/shim/zdotdir/.zsh_history
 # visual-regression screenshots (bench/visual.ts)
 shots/
 
-# graphify code-graph output (regenerable index, never commit)
-graphify-out/
