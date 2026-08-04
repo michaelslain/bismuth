@@ -995,7 +995,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, splitPaneRight, splitPaneDown, closeFocusedPane, focusPaneLeft, focusPaneRight, focusPaneUp, focusPaneDown, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -1160,11 +1160,20 @@ export default function App() {
         setActiveTabId(tabId);
         return { ok: true };
       },
-      runCommand: ({ id }) => {
+      runCommand: async ({ id }) => {
         if (UI_CONTROL_BLOCKLIST.includes(id)) return { ok: false, error: `command "${id}" is not allowed via app control` };
         const cmd = commands().get(id);
         if (!cmd) return { ok: false, error: `unknown command "${id}"` };
-        cmd.action();
+        // Await before reporting ok:true — cmd.action() may be async (detect-ai, gcal-sync,
+        // archive-tasks…), and a synchronous `ok:true` would tell the caller the task finished
+        // before it had even started. An INTERACTIVE command (cmd.interactive — see
+        // core/src/commands.ts's CommandSpec) only opens a modal for a person to finish; it stays
+        // runnable (an agent opening it to show a user how is the point) but the reply says so
+        // instead of implying the underlying task itself completed.
+        await cmd.action();
+        if (cmd.interactive) {
+          return { ok: true, interactive: true, label: cmd.label, note: `Opened "${cmd.label}" — this needs a person to finish it in the app.` };
+        }
         return { ok: true };
       },
     });
@@ -1215,6 +1224,26 @@ export default function App() {
       return { ...t, root, focusId: newLeafId };
     });
   };
+  // No-arg wrappers over splitPane/focusNeighbor for the currently focused pane — shared by the
+  // split-right/split-down/focus-pane-* keybindings (handleGlobalKeydown, below) and the
+  // command-catalog ids of the same name (bindCommands, via the `commands` binding above), which
+  // is how `bismuth app run split-right` etc. reach a running window.
+  const splitFocusedPane = (dir: "row" | "col") => {
+    const at = activeTab();
+    if (at) splitPane(at.focusId, dir);
+  };
+  const splitPaneRight = () => splitFocusedPane("row");
+  const splitPaneDown = () => splitFocusedPane("col");
+  const focusPaneDir = (dir: Dir) => {
+    const at = activeTab();
+    if (!at) return;
+    const next = focusNeighbor(at.root, at.focusId, dir);
+    if (next) updateActiveTab((t) => ({ ...t, focusId: next }));
+  };
+  const focusPaneLeft = () => focusPaneDir("left");
+  const focusPaneRight = () => focusPaneDir("right");
+  const focusPaneUp = () => focusPaneDir("up");
+  const focusPaneDown = () => focusPaneDir("down");
 
   // Drop a file from the tree onto a pane: split the pane along the dropped edge and show
   // the file in the half nearest the drop point. left/up put it on the original side; the

@@ -44,9 +44,24 @@ export interface UiWindowInfo {
   tabCount: number;
 }
 
+/**
+ * Extra structured fields a `run-command` reply carries, nested in `UiReply.result`. Ordinary
+ * commands report nothing extra (`result` stays undefined). An INTERACTIVE command — one whose
+ * `CommandSpec.interactive` is true because its action only opens a modal and then waits on a
+ * person (core/src/commands.ts) — sets `interactive: true` plus a human-readable `note`, so a caller
+ * can tell "the action ran to completion" apart from "a dialog is now waiting on a person in the
+ * app". `label` echoes the command's catalog label for a friendlier note without a second lookup.
+ */
+export interface RunCommandResult {
+  interactive?: boolean;
+  label?: string;
+  note?: string;
+}
+
 /** The outcome of a command dispatched to a window. NEVER rejects — a timeout / vanished window
  *  resolves `{ok:false, error}` so the caller (and the daemon) treats "no response" as data, not a
- *  thrown exception to retry-loop on. */
+ *  thrown exception to retry-loop on. For `run-command`, `result` (when present) is a
+ *  `RunCommandResult`. */
 export interface UiReply {
   ok: boolean;
   result?: unknown;

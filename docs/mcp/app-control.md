@@ -34,9 +34,21 @@ bismuth app <verb>  ──HTTP──▶  core /ui/command  ──WebSocket──
 | `open-tab` | `{content, newTab?}` | Open a note path or sentinel; `newTab` opens its own tab vs. the focused pane |
 | `close-tab` | `{tabId}` | Close a tab (whole pane tree) |
 | `focus-tab` | `{tabId}` | Activate a tab |
-| `run-command` | `{id}` | Run a command-catalog id (`core/src/commands.ts`) — allowlist-gated |
+| `run-command` | `{id}` | Run a command-catalog id (`core/src/commands.ts`) — allowlist-gated; the window awaits the action before replying, and an interactive command's `result` says so (see below) |
 
 `content` is a vault path (`reading/x.md`) or a sentinel: `::graph`, `::inbox`, `.settings`, `::term:<uuid>`. (There is no `::search` sentinel — search is the in-window Cmd+O switcher, not a tab.) **`::chat:*` is refused** — opening a live recursive Agent-SDK chat is a deliberately different trust boundary.
+
+## `run-command`'s result: completed vs. waiting on a person
+
+The window doesn't reply `ok:true` the instant it fires the command — it **awaits** the action first, so `detect-ai`, `gcal-sync`, and `archive-tasks` (all async) only report success once they've actually run.
+
+A handful of commands — `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `gcal-connect` — don't *complete* a task at all: their action just **opens a modal** and hands off to a person (a picker, a connect/setup/install dialog). These stay runnable via app control **by design** — an agent opening the Google Calendar connect dialog in answer to "how do I connect gcal?" is showing the user how, which is the point. What changes is the reply: `core/src/commands.ts`'s `CommandSpec.interactive` marks these seven, and `run-command`'s `result` reflects it —
+
+```json
+{ "ok": true, "result": { "interactive": true, "label": "Connect Google Calendar…", "note": "Opened \"Connect Google Calendar…\" — this needs a person to finish it in the app." } }
+```
+
+— versus an ordinary command's plain `{ "ok": true }`. An agent (or `bismuth app run`'s caller) can branch on `result.interactive`: present, the task isn't done — a dialog is now open and waiting on someone at the keyboard.
 
 ## `bismuth app` (needs a running app)
 

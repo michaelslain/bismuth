@@ -106,3 +106,49 @@ describe("ui control gate", () => {
     expect(isUiControlAllowed("new-note")).toBe(true);
   });
 });
+
+describe("interactive commands", () => {
+  // These seven commands only OPEN A MODAL and then wait on a person to finish it — the action
+  // never completes the underlying task by itself (create/connect/setup/install dialogs, or a
+  // picker like the emoji library / create menu). They stay runnable via app control BY DESIGN
+  // (an agent opening the dialog to show a user how is the point); what changes is the
+  // `run-command` reply (App.tsx's runCommand handler), which reports `interactive:true` + a note
+  // instead of implying the underlying task itself completed.
+  const interactiveIds = [
+    "create-menu",
+    "emoji-library",
+    "edit-dictionary",
+    "daemon-owner",
+    "daemon-setup",
+    "bismuth-install",
+    "gcal-connect",
+  ];
+
+  it("marks exactly the seven modal-opening commands interactive", () => {
+    for (const id of interactiveIds) {
+      const spec = COMMAND_CATALOG.find((c) => c.id === id);
+      expect(spec).toBeDefined();
+      expect(spec?.interactive).toBe(true);
+    }
+  });
+
+  it("leaves ordinary commands non-interactive", () => {
+    for (const id of ["new-note", "terminal", "graph-both", "zoom-in", "split-right", "settings"]) {
+      const spec = COMMAND_CATALOG.find((c) => c.id === id);
+      expect(spec?.interactive).toBeFalsy();
+    }
+  });
+
+  // A drift guard, same shape as the blocklist/pane-keybinding guards above: catches both an
+  // accidentally-unset flag on one of the seven AND an accidentally-set flag on an eighth id.
+  it("has no interactive ids beyond this exact set", () => {
+    const actual = COMMAND_CATALOG.filter((c) => c.interactive).map((c) => c.id).sort();
+    expect(actual).toEqual([...interactiveIds].sort());
+  });
+
+  it("still allows every interactive command via app control (opening it to show a person how is the point)", () => {
+    for (const id of interactiveIds) {
+      expect(isUiControlAllowed(id)).toBe(true);
+    }
+  });
+});

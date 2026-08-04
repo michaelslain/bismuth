@@ -30,17 +30,19 @@ export interface CommandHandlers {
   setMode: (mode: GraphMode) => void;
   openDailyNote: (id: string) => void;
   equalizePanes: () => void;
-  // Pane arrangement verbs. App.tsx already implements every one of these as a keybinding-only
-  // handler (splitPane/closeFocusedPane/focusNeighbor) — optional here because wiring the actual
-  // App.tsx functions through is a separate task; until that lands, an omitted handler just
-  // leaves its command id unbound (see bindCommands's defensive `if (!action) continue`).
-  splitPaneRight?: () => void;
-  splitPaneDown?: () => void;
-  closeFocusedPane?: () => void;
-  focusPaneLeft?: () => void;
-  focusPaneRight?: () => void;
-  focusPaneUp?: () => void;
-  focusPaneDown?: () => void;
+  // Pane arrangement verbs, wired to the same splitPane/closeFocusedPane/focusNeighbor logic the
+  // keybinding path uses (App.tsx). REQUIRED (not optional): these were briefly optional while
+  // App.tsx's wiring was pending, which let the catalog list all seven as runnable via app control
+  // while every one of them actually failed with "unknown command" — an agent told a capability
+  // exists and then handed a failure. Required means bindCommands's one call site (App.tsx) won't
+  // typecheck if a pane handler is ever dropped again.
+  splitPaneRight: () => void;
+  splitPaneDown: () => void;
+  closeFocusedPane: () => void;
+  focusPaneLeft: () => void;
+  focusPaneRight: () => void;
+  focusPaneUp: () => void;
+  focusPaneDown: () => void;
   toggleSidebar: () => void;
   // Tab lifecycle + per-pane navigation history.
   newTab: () => void;
@@ -96,17 +98,23 @@ export interface BoundCommand {
   id: string;
   label: string;
   icon: string;
-  // Most actions ignore the event; the create-menu command uses it to anchor its
-  // chooser to the button that was clicked (see CommandHandlers.openCreateMenu).
-  action: (e?: MouseEvent) => void;
+  // True for a command whose action only opens a modal and waits on a person to finish it (see
+  // core/src/commands.ts's CommandSpec.interactive) — App.tsx's run-command handler reads this to
+  // report `{interactive:true, note:…}` instead of implying the underlying task itself completed.
+  interactive?: boolean;
+  // Most actions ignore the event; the create-menu command uses it to anchor its chooser to the
+  // button that was clicked (see CommandHandlers.openCreateMenu). May return a value and/or be
+  // async — App.tsx's run-command handler awaits it before reporting `ok:true` so an agent can't
+  // observe success before the action has actually resolved (detect-ai, gcal-sync, archive-tasks…).
+  // Other callers (palette, toolbar) fire-and-forget and ignore the return value.
+  action: (e?: MouseEvent) => unknown;
 }
 
 /** Map each catalog command id to a runnable {id,label,icon,action}. */
 export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] = []): Map<string, BoundCommand> {
-  // Value type allows `undefined` so the optional pane-arrangement handlers (see
-  // CommandHandlers) can be plugged in directly below — the loop's `if (!action) continue`
-  // already treats a missing handler as "catalog entry, not yet bound".
-  const actions: Record<string, ((e?: MouseEvent) => void | Promise<void>) | undefined> = {
+  // Value type allows `undefined` so a catalog id with no entry below is skipped defensively by
+  // the loop's `if (!action) continue` (e.g. a new COMMAND_CATALOG id landing before its binding).
+  const actions: Record<string, ((e?: MouseEvent) => unknown) | undefined> = {
     // "New tab" always spawns a fresh graph home tab; "Open graph view" focuses an
     // existing graph tab if one is open (else opens one).
     "new-tab": h.newTab,
@@ -164,7 +172,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
   for (const spec of COMMAND_CATALOG) {
     const action = actions[spec.id];
     if (!action) continue; // catalog entry without a binding — skip defensively
-    map.set(spec.id, { id: spec.id, label: spec.label, icon: spec.icon, action });
+    map.set(spec.id, { id: spec.id, label: spec.label, icon: spec.icon, interactive: spec.interactive, action });
   }
   // Dynamic, user-defined daily-note commands. NOT in the static catalog; the toolbar
   // references them by id (daily-note:<id>) and the palette lists them.
