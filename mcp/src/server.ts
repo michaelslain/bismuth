@@ -6,7 +6,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { listDocs, searchDocs, readDoc } from "./docs";
-import { runCli, cliHelp, formatCliResult } from "./cli";
+import { runCli, cliHelp, cliToolResult } from "./cli";
 import { memoryDir, remember, recall, forget } from "./memory";
 import { daemonTools, daemonEnabled, isDaemonTool, runDaemonTool } from "./daemon";
 
@@ -187,14 +187,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const cliArgs = Array.isArray(args.args)
           ? (args.args as unknown[]).map(String)
           : [];
-        const r = await runCli(repoRoot, cliArgs);
-        return { content: [{ type: "text", text: formatCliResult(r) }] };
+        return cliToolResult(await runCli(repoRoot, cliArgs));
       }
       case "bismuth_cli_help": {
         const group = typeof args.group === "string" ? args.group : undefined;
-        return {
-          content: [{ type: "text", text: asText(await cliHelp(repoRoot, group)) }],
-        };
+        const text = asText(await cliHelp(repoRoot, group));
+        return { content: [{ type: "text", text }], isError: text.trim().length === 0 };
       }
       case "remember":
       case "recall":

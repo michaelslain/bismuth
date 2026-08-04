@@ -95,6 +95,18 @@ export function formatCliResult(r: CliResult): string {
 }
 
 /**
+ * Wrap a CLI result as an MCP tool result. `isError` is what an agent's control flow reads — a
+ * non-zero exit (including a visibility refusal, which exits 1) MUST set it, or the agent treats
+ * a refusal as a successful no-op. Mirrors runDaemonTool's contract in daemon.ts.
+ */
+export function cliToolResult(r: CliResult): {
+  content: { type: "text"; text: string }[];
+  isError: boolean;
+} {
+  return { content: [{ type: "text", text: formatCliResult(r) }], isError: r.code !== 0 };
+}
+
+/**
  * Fetch the CLI's own help text. For a group, tries `<group> --help`; if that
  * exits non-zero or yields nothing, falls back to the global `--help` (which the
  * CLI prints on `--help`/`-h`/`help`/no args). Returns trimmed stdout, or a
