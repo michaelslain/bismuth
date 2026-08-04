@@ -1,6 +1,13 @@
 # Vault Structure
 
-This document covers how Bismuth models a vault: the markdown file tree that constitutes the "2nd brain," how notes are discovered and turned into graph nodes and edges (the two-pass algorithm in `buildVaultGraph`), the shared `buildGraphFromNotes` helper, the file types recognized in the sidebar tree, path-traversal safety, every public function exported by `files.ts`, `vault.ts`, and `graphBuilder.ts`, and the frontend sidebar (`app/src/FileTree.tsx` + `app/src/fileTreeOps.ts`) that renders and edits that tree.
+This document covers how Bismuth models a vault — the markdown file tree that constitutes the "2nd brain" — from graph construction to file I/O to the sidebar UI that renders and edits it. It's the reference for anyone working on any of those three layers. Specifically, it covers:
+
+- How notes are discovered and turned into graph nodes and edges (the two-pass algorithm in `buildVaultGraph`)
+- The shared `buildGraphFromNotes` helper
+- The file types recognized in the sidebar tree
+- Path-traversal safety
+- Every public function exported by `files.ts`, `vault.ts`, and `graphBuilder.ts`
+- The frontend sidebar (`app/src/FileTree.tsx` + `app/src/fileTreeOps.ts`) that renders and edits that tree
 
 ---
 
@@ -191,7 +198,7 @@ Resolution order (mirrors the editor's `resolveNotePath`):
 
 ### Resolution examples (from test suite)
 
-```
+```text
 [[My Note]]          → resolves via byBase → "reading/My Note"
 [[reading/My Note]]  → resolves via byPath → "reading/My Note"  (wins over basename collision)
 [[ghost]]            → undefined (no node)  → no edge
@@ -453,6 +460,20 @@ All public functions that accept a `rel` argument — `readNote`, `writeNote`, `
 ---
 
 ## File Operation Functions
+
+All of these live in `core/src/files.ts` and route through `resolveInVault` (see above). At a glance:
+
+| Function | Purpose | Throws / returns |
+|---|---|---|
+| `readNote(root, rel)` | Read a vault file as UTF-8 text | `EINVAL` if `rel` escapes the vault |
+| `writeNote(root, rel, contents)` | Write UTF-8 text, creating parent dirs; overwrites existing files | path-traversal guarded |
+| `createEntry(root, path, kind)` | Create an empty file or directory | `EEXIST` (409) if the path already exists |
+| `deleteEntry(root, path)` | Move a file/folder into `.trash/<timestamp>-<basename>` | `ENOENT` (404) if the path does not exist |
+| `moveEntry(root, from, to)` | Rename/move a file or directory atomically | `EINVAL`, `ENOENT` (404), or `EEXIST` (409) — see below |
+| `resolveAsset(root, target)` | Resolve an embed target (`![[target]]`) to an absolute file path | returns `null` if nothing matches |
+| `writeBinary(root, rel, bytes)` | Write raw bytes (attachment upload) | path-traversal guarded |
+| `uniqueAssetPath(root, rel)` | Find a non-colliding path by appending a numeric suffix | — |
+| `listTemplates(root, folder)` | List `.md` files under a folder, recursively | returns `[]` if the folder does not exist |
 
 ### `readNote(root, rel): Promise<string>`
 

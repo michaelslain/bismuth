@@ -1,6 +1,8 @@
 # Keybindings
 
-Bismuth's global keyboard shortcuts are configured entirely from the `keybindings:` section of `.settings` — **nothing is hardcoded in the app**. Every action id, its default combo, and its doc string come from a single source of truth (`core/src/keybindings.ts` `KEYBINDING_CATALOG`); the settings schema derives one `keybind`-typed YAML key per action from it, and `App.tsx`'s global `keydown` handler matches each `KeyboardEvent` against the configured combo via the pure matcher in `app/src/keybindings.ts`. This file documents the combo syntax (`"Mod"`, exact modifier matching, key aliases, comma-separated alternatives, `event.code` physical-key matching), the full catalog of every action id + default, and the `keybind` PropertyType (autocomplete + the "Record shortcut…" recorder).
+Bismuth's global keyboard shortcuts are configured entirely from the `keybindings:` section of `.settings` — **nothing is hardcoded in the app**. This is the reference for anyone rebinding a shortcut, debugging why a combo won't fire, or wiring up a new keyboard-triggered action: it documents the combo syntax (`"Mod"`, exact modifier matching, key aliases, comma-separated alternatives, `event.code` physical-key matching), the full catalog of every action id + default, and the `keybind` PropertyType (autocomplete + the "Record shortcut…" recorder).
+
+Every action id, its default combo, and its doc string come from a single source of truth (`core/src/keybindings.ts`'s `KEYBINDING_CATALOG`); the settings schema derives one `keybind`-typed YAML key per action from it, and `App.tsx`'s global `keydown` handler matches each `KeyboardEvent` against the configured combo via the pure matcher in `app/src/keybindings.ts`.
 
 ## The `keybindings:` section
 
@@ -12,6 +14,7 @@ keybindings:
   command-palette: Mod+P
   quick-switcher: Mod+O
   terminal: Mod+`, Mod+J
+  toggle-draw-mode: Mod+Shift+I
   split-right: Mod+D
   split-down: Mod+Shift+D
   equalize-panes: Mod+Alt+=
@@ -199,6 +202,7 @@ Every action id, its human label, default combo, and what it does. Ids are the Y
 | `command-palette` | `Mod+P` | Toggle command palette — open/close the command palette. |
 | `quick-switcher` | `Mod+O` | Toggle quick switcher — open/close the quick file switcher. |
 | `terminal` | `` Mod+`, Mod+J `` | Open terminal — open a terminal tab (comma-separated alternatives allowed). |
+| `toggle-draw-mode` | `Mod+Shift+I` | Toggle draw mode — toggle ink/draw mode in the focused note editor — draw freehand over the note (Escape also exits). Mnemonic: Ink. On Linux/Windows Ctrl+Shift+I collides with browser devtools — rebind if needed. |
 | `split-right` | `Mod+D` | Split pane right — split the focused pane into a new (empty) pane to the right. |
 | `split-down` | `Mod+Shift+D` | Split pane down — split the focused pane into a new (empty) pane below. |
 | `equalize-panes` | `Mod+Alt+=` | Equalize panes — reset all split panes to equal sizes. |
@@ -230,6 +234,7 @@ The global `keydown` handler reads `settings.keybindings` (reactive) and tests e
 - `command-palette`/`quick-switcher` **toggle** (open if closed, close if already showing that palette).
 - `split-down` is checked before `split-right` because `Mod+Shift+D` is a superset of `Mod+D`'s modifiers; the exact-match rule keeps them distinct (`Mod+D` won't fire when Shift is held). The new pane is empty (`EMPTY_PANE`).
 - Pane-focus directions are matched from a `[id, dir]` table: `focus-pane-left|right|up|down` → move focus to the neighbor in that direction (no-op if no neighbor).
+- **`toggle-draw-mode` is NOT matched by `App.tsx`'s global handler** — it has its own capture-phase `keydown` listener scoped to each note editor's wrapper (`app/src/Editor.tsx` `onDrawKey`), gated on the note being "inkable" (`path.endsWith(".md")` and not the settings buffer). This keeps the toggle (and Escape-to-exit) local to the focused editor pane rather than firing globally.
 
 ## The `keybind` PropertyType
 
@@ -336,4 +341,4 @@ Because both the catalog (ids + defaults) and the matcher are pure, both are uni
 - [Settings overview](./overview.md) — `.settings` lifecycle, schema, `POST /set-setting`.
 - [Commands & toolbar](./toolbar-commands.md) — the parallel split-data pattern for commands (`COMMAND_CATALOG` + `bindCommands`).
 
-Source: `core/src/keybindings.ts`, `app/src/keybindings.ts`, `app/src/keybindings.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `app/src/editor/settingsComplete.ts`, `app/src/App.tsx`
+Source: `core/src/keybindings.ts`, `app/src/keybindings.ts`, `app/src/keybindings.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `app/src/editor/settingsComplete.ts`, `app/src/App.tsx`, `app/src/Editor.tsx`

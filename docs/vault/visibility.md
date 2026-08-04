@@ -236,8 +236,9 @@ sandbox mechanism at all, by refusing it outright before a session ever opens.
 
 **The hole this measurement found and closed**: `chat.ts` and `daemon/session.ts` both passed
 `sandbox: { enabled: true, failIfUnavailable: false, … }`. The SDK's own bundled type declarations
-(`@anthropic-ai/claude-agent-sdk`'s `sdk.d.ts`, checked directly in both the 0.3.186 core resolves
-and the 0.2.141 daemon resolves) actually contain **two different `sandbox.failIfUnavailable`
+(`@anthropic-ai/claude-agent-sdk`'s `sdk.d.ts`, checked directly in both versions the monorepo
+resolved at the time of this measurement — 0.3.186 for core, 0.2.141 for the daemon; the two have
+since been unified on `^0.3.186`, and the text below was word-for-word identical in both) actually contain **two different `sandbox.failIfUnavailable`
 fields on two unrelated types, with contradicting doc comments about the default**:
 
 - `Options.sandbox: SandboxSettings` — the type that governs `query({ prompt, options })`, i.e. the
@@ -306,7 +307,9 @@ is still omitted entirely when nothing is restricted, exactly as before this cha
 `failIfUnavailable` miscitation above — quoting the wrong one of two structurally-similar types is
 exactly the mistake to avoid here too): `allowUnsandboxedCommands` is a field of the zod-derived
 `SandboxSettings` type that backs `Options.sandbox` — confirmed present at
-`sdk.d.ts` line 2596 (0.3.186, core) / line 2411 (0.2.141, daemon) — but neither declaration site
+`sdk.d.ts` line 2596 (0.3.186, core) / line 2411 (0.2.141, the daemon's version at the time; both
+workspaces now resolve 0.3.186, and the line citations below are kept as the record of what was
+actually read) — but neither declaration site
 carries a doc comment of its own (the zod-schema-derived type has no per-field JSDoc at all). The
 **only** prose anywhere in either bundled `sdk.d.ts` describing what this field does or defaults to
 lives on the structurally-identical, same-named field of the separate, on-disk `Settings.sandbox`

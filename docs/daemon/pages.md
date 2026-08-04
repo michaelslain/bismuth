@@ -101,10 +101,12 @@ The frontend evaluates this at two points: a cold-launch check (`App.tsx`'s `onM
 
 ## Failure states
 
-- **Authoritative:** the daemon writes `failed` on any timeout/throw. The UI is never the source of truth for completion.
-- **Client-side escape hatch:** if a page reads `working` for longer than ~10 minutes (the daemon process itself may have died mid-run, with no writer left to ever settle it), the action bar offers **Mark failed** → `POST /daemon/pages/mark-failed { path }`, which force-writes `{status:"failed"}` with no daemon involvement.
-- **Retry:** a `failed` page keeps its action buttons live — pressing again re-runs the round-trip (flush → resolve → trigger).
-- **Owner-device gate:** on a non-owner device, the trigger is consumed without firing (same semantics as cron/process triggers). The action bar surfaces this via `GET /daemon/status`'s owner data.
+| Aspect | Behavior |
+| --- | --- |
+| Authoritative | the daemon writes `failed` on any timeout/throw. The UI is never the source of truth for completion. |
+| Client-side escape hatch | if a page reads `working` for longer than ~10 minutes (the daemon process itself may have died mid-run, with no writer left to ever settle it), the action bar offers **Mark failed** → `POST /daemon/pages/mark-failed { path }`, which force-writes `{status:"failed"}` with no daemon involvement. |
+| Retry | a `failed` page keeps its action buttons live — pressing again re-runs the round-trip (flush → resolve → trigger). |
+| Owner-device gate | on a non-owner device, the trigger is consumed without firing (same semantics as cron/process triggers). The action bar surfaces this via `GET /daemon/status`'s owner data. |
 
 ## Frontend surfaces
 

@@ -1,6 +1,20 @@
 # Drawing: `.draw` Format, Tools, and Export
 
-This document is the canonical reference for Bismuth's vector drawing system: the on-disk `.draw` JSON format, the smoothing pipeline, the drawing tools and color palette, paper background options, placed/markup images, rendering architecture, and PNG/PDF export (both headless and browser-side). The drawing subsystem is deliberately split between a headless backend (`core/src/drawing/`) and a browser frontend (`app/src/drawing/`); all rendering primitives are pure and tested independently of the DOM. A `.draw` file also backs **image and PDF markup** — opening a raster image or a PDF auto-creates a `.draw` sidecar so it can be annotated with the same pen/highlighter tools (see **Images**).
+This document is the canonical reference for Bismuth's vector drawing system: the on-disk `.draw` JSON format, the smoothing pipeline, the drawing tools and color palette, paper background options, placed/markup images, rendering architecture, and PNG/PDF export (both headless and browser-side). Read this if you're touching the drawing model, wiring up a new export path, or debugging why a stroke or image renders incorrectly.
+
+The drawing subsystem is deliberately split between a headless backend (`core/src/drawing/`) and a browser frontend (`app/src/drawing/`); all rendering primitives are pure and tested independently of the DOM. A `.draw` file also backs **image and PDF markup** — opening a raster image or a PDF auto-creates a `.draw` sidecar so it can be annotated with the same pen/highlighter tools (see **Images**).
+
+### What's in here
+
+- **[On-Disk Format](#on-disk-format)** — the `.draw` JSON schema (paper, pages, strokes, images), serialization rounding, minimal examples
+- **[Tools](#tools)**, **[Color Palette](#color-palette)**, **[Size Levels](#size-levels)** — the pen/highlighter/eraser toolset and its fixed color/width choices
+- **[Smoothing Modes](#smoothing-modes)** and **[Smoothing Pipeline](#smoothing-pipeline)** — sharp vs. smooth strokes and the four-stage post-processor behind "smooth"
+- **[Pressure and Velocity Width Model](#pressure-and-velocity-width-model)** — how stroke width is derived from stylus pressure or pointer speed
+- **[Paper Backgrounds](#paper-backgrounds)** and **[Images](#images)** — background grids/dots and placed/markup raster images (incl. PDF rasterization)
+- **[Rendering Architecture](#rendering-architecture)** and **[Store and Undo/Redo](#store-and-undoredo)** — the dual-canvas renderer and the mutation/undo model
+- **[Headless Export](#headless-export)** — PNG/PDF export without a browser, plus the separate browser-side rasterizer
+- **[Toolbar Layout](#toolbar-layout)**, **[Persistence](#persistence)** — UI layout and how `.draw` files are saved
+- **[Edge Cases and Gotchas](#edge-cases-and-gotchas)** — the sharp edges worth knowing before you change this code
 
 ---
 
@@ -166,7 +180,7 @@ The toolbar exposes a fixed 7-color palette. The first entry is `"fg"` (theme in
 
 | Index | Token | Hex displayed | Description |
 |-------|-------|---------------|-------------|
-| 0 | `"fg"` | `#E7E8F2` (swatch preview) | Theme default ink — resolves to `#1b1b1f` (light) or `#e8e8ea` (dark) at render time |
+| 0 | `"fg"` | `#E7E8F2` (swatch preview) | Theme default ink — resolves via `themeColors()` to the active theme's `foreground` token: `#2E2C29` for the light bucket (`paper` theme) or `#E8E3D6` for the dark bucket (`ink` theme, the default) — see **Theme colors** below |
 | 1 | `"#22C6D6"` | cyan | — |
 | 2 | `"#5C7BEE"` | cornflower blue | — |
 | 3 | `"#8B6CF0"` | violet | — |
@@ -187,14 +201,26 @@ This means a stroke drawn with the default ink color adapts to theme changes wit
 
 ### Theme colors
 
+`themeColors(theme: "dark" | "light")` (`core/src/drawing/theme.ts`) does not hardcode hex literals — it reads the active `ThemeColors` from the centralized token map in `core/src/theme/tokens.ts` (`THEMES`), the single source of truth for Bismuth's whole color system (also used by gcal, the settings theme picker, and `app/src/themes.ts`):
+
 ```ts
-// light theme
-{ bg: "#fbfbfa", fg: "#1b1b1f" }
-// dark theme
-{ bg: "#0e0e11", fg: "#e8e8ea" }
+// core/src/drawing/theme.ts
+const LIGHT_THEME = "paper";
+
+export function themeColors(theme: "dark" | "light"): ThemeColors {
+  const t = theme === "light" ? THEMES[LIGHT_THEME] : THEMES[DEFAULT_THEME];
+  return { bg: t.background, fg: t.foreground, border: t.border, borderSoft: t.borderSoft ?? t.border };
+}
 ```
 
-The `bg` color is used as the canvas fill; `fg` is what `"fg"` resolves to. Grid/line backgrounds are rendered at `rgba(fg, 0.14)`.
+The drawing surface only distinguishes two coarse buckets — `"dark"` and `"light"` — not all four named app themes (`ink`/`paper`/`cathode`/`riso`, `core/src/theme/tokens.ts` `THEME_NAMES`). `"light"` resolves to the `paper` theme's tokens; `"dark"` (and any other value) resolves to `THEMES[DEFAULT_THEME]`, i.e. `ink`:
+
+| Bucket | Source theme | `bg` (`background`) | `fg` (`foreground`) | `border` | `borderSoft` |
+|--------|--------------|----------------------|----------------------|----------|--------------|
+| `"light"` | `paper` | `#E9E6E0` | `#2E2C29` | `#C4BEB3` | `#D8D3C9` |
+| `"dark"` | `ink` (`DEFAULT_THEME`) | `#15161A` | `#E8E3D6` | `#3A3E4A` | `#282B34` |
+
+The `bg` color is used as the canvas fill; `fg` is what the `"fg"` color token resolves to (see **Color Palette** above). `border`/`borderSoft` feed the paper ground: `paperLineColor(t)` returns `t.borderSoft` and `paperDotColor(t)` returns `t.border` — see **Paper Backgrounds** below — replacing an earlier flat `rgba(fg, 0.14)` wash.
 
 ---
 
@@ -350,16 +376,19 @@ Strokes with fewer than 3 points are returned unchanged (a dot or 2-point line c
 | Value | Description |
 |-------|-------------|
 | `"blank"` | Solid background fill, no markings |
-| `"lines"` | Horizontal ruled lines at 28 px intervals |
-| `"grid"` | Horizontal + vertical lines at 28 px intervals |
-| `"dots"` | Dot grid at 28 px intervals (dots rendered as filled circles, radius 1.3 px) |
+| `"lines"` | Horizontal ruled lines at 14 px intervals |
+| `"grid"` | Horizontal + vertical lines at 14 px intervals |
+| `"dots"` | Dot grid at 14 px intervals (dots rendered as filled circles, radius 1.3 px) |
 
 The gap constant:
 ```ts
-const GRID_GAP = 28;  // px between grid/line/dot marks
+// core/src/drawing/paper.ts
+export const GRID_GAP = 14;  // px between grid/line/dot marks
 ```
 
-Lines and grid marks are rendered at `rgba(fg, 0.14)` — the foreground color at 14% opacity, so they are always a low-contrast wash of the ink color.
+`GRID_GAP` matches the ASCII redesign's 14px grid/dot/ruled spacing (`design/ascii-extended/PORTING.md` §2c) so the drawing paper ground aligns with the rest of the app's paper grounds.
+
+Lines and grid marks are stroked with `paperLineColor(t)` — the active theme's `borderSoft` token (`--border-soft`) — and dots are filled with `paperDotColor(t)` — the theme's `border` token (`--border`). Both come from `core/src/drawing/theme.ts` and track the app theme instead of a derived alpha wash of `fg`; grid/ruled lines deliberately use the softer hairline while dots use the stronger one. See **Theme colors** above for how `t` is resolved.
 
 `paperLines(bg, w, h)` returns `Line[]` structs `{x1, y1, x2, y2}` for the "lines" and "grid" modes; returns `[]` for "blank" and "dots". `paperDots(bg, w, h)` returns `Dot[]` structs `{x, y}` for the "dots" mode; returns `[]` for all others.
 
@@ -539,12 +568,14 @@ const pdf = await renderDocToPdf(doc, "light");
 // pdf is Uint8Array; String.fromCharCode(...pdf.slice(0,5)) === "%PDF-"
 ```
 
-### Theme color constants for export
+### Theme colors used for export
 
-| Theme | bg | fg |
-|-------|----|----|
-| `"light"` | `#fbfbfa` | `#1b1b1f` |
-| `"dark"` | `#0e0e11` | `#e8e8ea` |
+`renderDocToPng`/`renderDocToPdf` resolve `bg`/`fg` via the same `themeColors()` described in **Theme colors** above — sourced from `core/src/theme/tokens.ts`'s `THEMES` map, not a hardcoded literal:
+
+| Theme bucket | bg | fg |
+|--------------|----|----|
+| `"light"` (`paper`) | `#E9E6E0` | `#2E2C29` |
+| `"dark"` (`ink`, `DEFAULT_THEME`) | `#15161A` | `#E8E3D6` |
 
 ### Browser-side export (`app/src/export/drawingRaster.ts`)
 
@@ -596,11 +627,11 @@ Saves are triggered immediately on every mutation (no debounce), since `DrawingC
 - **`streamline: 0` rationale**: The `getStroke` `streamline` parameter applies a trailing exponential moving average to the input, which introduces display lag proportional to its value. Since the live path is raw (no smoothing), and the committed path is already preprocessed by `smoothStrokePoints`, `streamline` is set to 0 to avoid any lag.
 - **Page dimensions are fixed**: `PAGE_W = 816` and `PAGE_H = 1056` are compile-time constants. There is no per-document or per-page size setting.
 - **DPR cap**: `DrawingCanvas` caps DPR at 2 (`Math.min(window.devicePixelRatio || 1, 2)`) to prevent excessively large canvas buffers on 3× displays.
-- **Export uses theme colors, not CSS vars**: The headless export cannot read CSS custom properties. It uses the hardcoded `themeColors()` function from `theme.ts`. Pass the correct theme (`"dark"` or `"light"`) to get the right background and ink color.
+- **Export uses theme tokens, not CSS vars**: The headless export cannot read CSS custom properties. It resolves colors via `themeColors()` (`core/src/drawing/theme.ts`), which reads the active bucket's tokens from the centralized `THEMES` map in `core/src/theme/tokens.ts` (light bucket → `paper` theme, dark bucket → `DEFAULT_THEME`/`ink`) rather than a hand-copied literal. Pass the correct theme (`"dark"` or `"light"`) to get the right background and ink color.
 - **Two rasterizers, one renderer**: `core/src/drawing/export.ts` (headless, `@napi-rs/canvas`, for the CLI/server) and `app/src/export/drawingRaster.ts` (browser, DOM `<canvas>`, for the instant export-pane preview) both delegate to the same pure `render2d.ts`/`renderDocStacked`, so their output is pixel-equivalent modulo canvas-backend rounding — only image decoding and the canvas host differ.
 - **`.draw` sidecars are opaque siblings**: `ImageMarkupPage` names a sidecar by simple suffix (`<file>.draw`), so annotating `report.pdf` produces `report.pdf.draw` and annotating `photo.png` produces `photo.png.draw` — both sort next to their source in the file tree. `PaneContent`'s `.draw` route is matched before its `.pdf` route specifically so a `<name>.draw.pdf` (a drawing exported to PDF) isn't mistaken for a still-markup-eligible PDF.
 - **Image markup never overwrites an existing sidecar**: `ImageMarkupPage` only seeds when the sidecar's `GET /file` body is empty/whitespace (never on parse failure, HTTP error, or network failure) — reopening a previously-annotated image/PDF always preserves prior strokes, even if the sidecar is corrupt (it's still mounted as-is and only rewritten on the next actual edit).
 - **PDF rasterization is JPEG, not PNG**: `rasterizePdf()` encodes each page as a JPEG (`quality` default 0.85) rather than a lossless PNG, trading a little fidelity for a much smaller `.draw` sidecar (a multi-page PDF embeds one raster per page as a base64 data URL in the JSON).
 - **Image cache is module-level, not per-canvas**: `DrawingCanvas.tsx`'s `imageCache` is shared across every mounted canvas in the process, so decoding a given image src is a one-time cost no matter how many pages/panes reference it — but it also means the cache is never evicted (an in-session memory tradeoff, not a per-session-persisted one).
 
-Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/drawing/export.ts`, `core/src/drawing/render2d.ts`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/pdfRaster.ts`, `app/src/drawing/input.ts`, `app/src/drawing/store.ts`, `app/src/export/drawingRaster.ts`, `app/src/PaneContent.tsx`, `core/test/drawing/model.test.ts`, `core/test/drawing/smooth.test.ts`, `core/test/drawing/geometry.test.ts`, `core/test/drawing/export.test.ts`
+Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/theme/tokens.ts`, `core/src/drawing/export.ts`, `core/src/drawing/render2d.ts`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/pdfRaster.ts`, `app/src/drawing/input.ts`, `app/src/drawing/store.ts`, `app/src/export/drawingRaster.ts`, `app/src/PaneContent.tsx`, `core/test/drawing/model.test.ts`, `core/test/drawing/smooth.test.ts`, `core/test/drawing/geometry.test.ts`, `core/test/drawing/export.test.ts`

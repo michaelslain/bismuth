@@ -48,12 +48,17 @@ export const DEFAULT_BACKEND: BackendId = "claude";
  */
 export type StreamingGranularity = "delta" | "part" | "final";
 
-/** Which mechanism reports a backend's sessions into the "agents" graph (core/src/relay.ts):
+/** Which mechanism reports a backend's sessions into the relay registry (core/src/relay.ts):
  *  - "hooks":   the CLI has a real hook/plugin system, so we get sessions AND subagent depth.
  *  - "wrapper": no hook system — the PTY shim wraps the binary and reports session start/end
- *               itself. Correct session nodes, flat tree (no subagents).
- *  - "none":    not represented in the agents graph. */
-export type AgentsGraphMode = "hooks" | "wrapper" | "none";
+ *               itself. Correct sessions, flat (no subagents).
+ *  - "none":    not reported at all.
+ *
+ *  Named `relayReporting`, not `agentsGraph`: the "agents" graph mode this originally fed was
+ *  removed in `a6687c0`, but the reporting itself is still load-bearing — `terminal.ts`'s
+ *  `shimSpecsFor` reads it to decide whether a backend's binary gets wrapped by the PTY shim, and
+ *  `chat.ts` consumes the registry for per-chat subagent tracking. */
+export type RelayReportingMode = "hooks" | "wrapper" | "none";
 
 /** How Bismuth registers its MCP server with a backend:
  *  - "cli":    the CLI owns its config format and exposes `<bin> mcp add …` — always preferred.
@@ -158,7 +163,7 @@ export interface BackendCapabilities {
   // --- the other surfaces -----------------------------------------------------------------
   /** Has an interactive TUI worth hosting in a terminal tab. */
   terminal: boolean;
-  agentsGraph: AgentsGraphMode;
+  relayReporting: RelayReportingMode;
   /** Reports subagents, so the agents graph gets depth-1 children. */
   subagents: boolean;
   /** Can run a vault's daemon brain (unattended, resumable, headless). */
@@ -242,7 +247,7 @@ const CLAUDE: BackendDescriptor = {
     cost: true,
     contextUsage: true,
     terminal: true,
-    agentsGraph: "hooks",
+    relayReporting: "hooks",
     subagents: true,
     daemon: true,
     // "native" on both channels: chat.ts and daemon/session.ts each set
@@ -330,7 +335,7 @@ const OPENCODE: BackendDescriptor = {
     // core/src/relay.ts's registry is a separate surface that isn't built yet — raising this flag
     // without that wiring would claim a capability the backend doesn't actually have, so it stays
     // false until that integration exists.
-    agentsGraph: "none",
+    relayReporting: "none",
     subagents: false,
     daemon: false,
     // chat: "none" — DOWNGRADED from "wrapper-macos" (task-3 of the visibility-hardening plan,
@@ -421,7 +426,7 @@ const OPENCODE: BackendDescriptor = {
  *    confirmed (the `~/.codex/sessions` rollout JSONL could in principle be tailed, but its exact
  *    shape was only medium-confidence-verified — see chatProviders/codex/driver.ts — so this stays
  *    honest at false rather than populating a picker/replay from an unverified format).
- *  - agentsGraph: "hooks", subagents: true — Codex's hook system is (per the research) nearly
+ *  - relayReporting: "hooks", subagents: true — Codex's hook system is (per the research) nearly
  *    isomorphic to Claude Code's, including SubagentStart/SubagentStop with real agent_id/agent_type
  *    — see agentBackends/codexHooks.ts's project-scoped `.codex/hooks.json` generator.
  *  - daemon: true, visibilityGate: FALSE — a Codex daemon backend exists
@@ -459,7 +464,7 @@ const CODEX: BackendDescriptor = {
     cost: false,
     contextUsage: false,
     terminal: true,
-    agentsGraph: "hooks",
+    relayReporting: "hooks",
     subagents: true,
     daemon: true,
     // "none" on both channels: `codex exec`'s per-path deny lives in a self-described BETA
@@ -500,7 +505,7 @@ const CODEX: BackendDescriptor = {
  *    cost/contextUsage there would be a guess this driver cannot back — false across the board is
  *    the honest default until a specific agent is verified to emit it.
  *  - computerUse: false — no `--chrome`-equivalent capability exists in the verified ACP surface.
- *  - agentsGraph/subagents/daemon: false — Surface 3/4 dead ends (no session-lifecycle telemetry, no
+ *  - relayReporting/subagents/daemon: false — Surface 3/4 dead ends (no session-lifecycle telemetry, no
  *    systemPrompt field for the daemon's persona injection).
  *  - visibilityGate: {chat:"none", daemon:"none"} for EVERY agent sharing this profile. None
  *    exposes Claude Code's own managedSettings/sandbox/disallowedTools trio, and none has been
@@ -541,7 +546,7 @@ const ACP_SHARED_CAPABILITIES: BackendCapabilities = {
   cost: false,
   contextUsage: false,
   terminal: true,
-  agentsGraph: "none",
+  relayReporting: "none",
   subagents: false,
   daemon: false,
   visibilityGate: { chat: "none", daemon: "none" },

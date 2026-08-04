@@ -1,8 +1,19 @@
 # Bases: Overview
 
-A **base** in Bismuth is an ordinary markdown note whose YAML frontmatter contains `type: base`. There is **no `.base` file extension** — a base is just a `.md` file. Its frontmatter declares a *source* (where rows come from), optional *filters*, *formulas*, per-property metadata, and one or more *views* (table, cards, kanban, calendar, …). At render time, [`FileView`](../../app/src/FileView.tsx) detects `type: base` and routes the file to [`BaseView`](../../app/src/bases/BaseView.tsx) instead of the text editor; `BaseView` resolves the source to a uniform list of rows and renders the active view. This document covers what a base *is*, how it is detected and routed, the complete frontmatter shape, the views array, and a tour of the 12 view types (each has its own doc under [`views/`](./views/)).
+A **base** in Bismuth is an ordinary markdown note whose YAML frontmatter contains `type: base`. There is **no `.base` file extension** — a base is just a `.md` file. Its frontmatter declares a *source* (where rows come from), optional *filters*, *formulas*, per-property metadata, and one or more *views* (table, cards, kanban, calendar, …). At render time, [`FileView`](../../app/src/FileView.tsx) detects `type: base` and routes the file to [`BaseView`](../../app/src/bases/BaseView.tsx) instead of the text editor; `BaseView` resolves the source to a uniform list of rows and renders the active view.
+
+This document is the reference for anyone writing or debugging a base file: what a base *is*, how it is detected and routed, the complete frontmatter shape, the views array, and a tour of the 12 view types (each has its own doc under [`views/`](./views/)).
 
 For the closely-related embedded ` ```query ` block (a *view into* a base inside a regular note), see the [query block doc](./query-block.md). For sources and composition, see the [sources doc](./sources.md).
+
+**What's in here, in order:**
+
+- **What a base is**, and how `FileView`/`BaseView` route and resolve it — the routing/caching subsections are implementation detail; skip ahead if you just want to write one.
+- **The frontmatter reference** — `filters`, `formulas`, `properties`, `views`, `source`, `schema`.
+- **The views array** — common fields, then per-type fields (table/cards/map/calendar/flashcards/charts).
+- **Rows in the body** — how an own-rows base stores its data.
+- **The 12 view types** — one row per type, linking out to its own doc.
+- A **worked example**, then a **gotchas** cheat sheet.
 
 ---
 
@@ -209,12 +220,7 @@ See the [sources & composition doc](./sources.md) for full semantics (compositio
 
 ### Default source resolution
 
-When `config.source` is absent (`normalizeSource` returned undefined), `BaseView.loadConfig()` picks the default:
-
-- Body has rows → `{ kind: "base" }` (own inline rows).
-- Body has no rows → `{ kind: "notes" }` (whole-vault query base).
-
-A flat ` ```query ` block (`props.source` path) defaults to `{ kind: "notes" }`; a `QueryBlock` (`props.view` path) carries its own `source` which is `undefined` when neither `of:` nor `tasks:` is present (→ empty state).
+For a `type: base` file this is the same rule covered above under BaseView's three entry modes: body has rows → `{ kind: "base" }` (own inline rows), no rows → `{ kind: "notes" }` (whole-vault query base) — both apply when `config.source` is absent (`normalizeSource` returned undefined). The other two entry modes default differently: a flat ` ```query ` block (`props.source` path) defaults to `{ kind: "notes" }`; a `QueryBlock` (`props.view` path) carries its own `source`, which is `undefined` when neither `of:` nor `tasks:` is present (→ empty state).
 
 ### `schema` — column types for the row editor
 

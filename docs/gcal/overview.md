@@ -1,6 +1,6 @@
 # Google Calendar Two-Way Sync
 
-This document covers Bismuth's **two-way Google Calendar sync** — a subsystem that reconciles the events in a Bismuth calendar base (a `type: base` note with a `view: calendar`) against a Google calendar in both directions, so an edit made in the app's calendar lands in Google and an edit made in Google flows back into the vault. It connects via Google's OAuth 2.0 "Authorization Code + PKCE" flow over a loopback redirect, requesting the single `calendar.events` scope (events read+write only — no Gmail, Drive, contacts, or calendar-ACL access). All secrets and sync bookkeeping live **outside the vault** under `~/.bismuth/gcal/` so nothing sensitive is ever committed to git, and the vault's `.settings` carries only non-secret operational config. Reconciliation runs on demand ("Sync now") and on a background ticker; both serialize through an in-process chain and a cross-process file lock so two syncs can never race the shared manifest.
+This document covers Bismuth's **two-way Google Calendar sync** — the reference for anyone building or debugging the sync integration itself (OAuth, the reconciliation engine, conflict resolution, the manifest), not a user-facing setup guide. It's a subsystem that reconciles the events in a Bismuth calendar base (a `type: base` note with a `view: calendar`) against a Google calendar in both directions, so an edit made in the app's calendar lands in Google and an edit made in Google flows back into the vault. It connects via Google's OAuth 2.0 "Authorization Code + PKCE" flow over a loopback redirect, requesting the single `calendar.events` scope (events read+write only — no Gmail, Drive, contacts, or calendar-ACL access). All secrets and sync bookkeeping live **outside the vault** under `~/.bismuth/gcal/` so nothing sensitive is ever committed to git, and the vault's `.settings` carries only non-secret operational config. Reconciliation runs on demand ("Sync now") and on a background ticker; both serialize through an in-process chain and a cross-process file lock so two syncs can never race the shared manifest.
 
 **Sync is PER-CALENDAR.** A vault can hold several calendar bases, each two-way-synced with a *different* Google calendar. Which Google calendar a base syncs with, and whether sync is on, are declared on **that base's own frontmatter** — `googleCalendarId` (default `primary`) and `googleCalendarSync` (a boolean), folded into the calendar view config like `dateField` (see `core/src/gcal/config.ts` `resolveGcalConfig`). The connection-level bits shared by every calendar (conflict policy, cadence, naive-event timezone) still live in the global `googleCalendar` settings. The old **global** `googleCalendar.{enabled,calendarId,basePath}` keys are now **legacy**: they're honored only as a migration fallback for the single base the old one-mapping named (so an existing vault keeps syncing unchanged), and re-toggling sync in that calendar's settings writes the per-base keys and takes over.
 
@@ -74,11 +74,13 @@ Before reconciling, the engine **selects this base's own sub-manifest** (`baseSy
 
 For each remote event:
 
-- **Cancelled** (`status === "cancelled"`): if it's linked, mark the local row for deletion (`deletedLocal++`) and drop the link; otherwise ignore.
-- **Unmappable** (`fromGoogle` returns null — see Mapping): `skipped++`.
-- **Self-heal**: an *unlinked* event that still carries a `bismuthId` extended property matching an existing local row is a recovered link (manifest lost / crashed mid-sync). It is re-attached at the current state rather than pulled back as a duplicate (`relinked++`).
-- **New** (no link, no recoverable `bismuthId`): a fresh local row is created with a `randomUUID()` id (`pulledNew++`); the event is queued to be **stamped** with that id on Google (`toStamp`), so the self-heal can re-link it after a lost manifest.
-- **Existing link**: change is detected timestamp-free where possible — `remoteChanged = ev.updated !== link.updated`, `localChanged = sigOfNote(note) !== link.sig`. Only a *genuine conflict* (both changed) consults the policy (`conflicts++`); pure remote changes apply via `applyRemoteToNote` (`pulledUpdate++`); pure local changes are left to Phase B.
+| Case | Behavior |
+|---|---|
+| **Cancelled** (`status === "cancelled"`) | If it's linked, mark the local row for deletion (`deletedLocal++`) and drop the link; otherwise ignore. |
+| **Unmappable** (`fromGoogle` returns null — see Mapping) | `skipped++`. |
+| **Self-heal** | An *unlinked* event that still carries a `bismuthId` extended property matching an existing local row is a recovered link (manifest lost / crashed mid-sync). It is re-attached at the current state rather than pulled back as a duplicate (`relinked++`). |
+| **New** (no link, no recoverable `bismuthId`) | A fresh local row is created with a `randomUUID()` id (`pulledNew++`); the event is queued to be **stamped** with that id on Google (`toStamp`), so the self-heal can re-link it after a lost manifest. |
+| **Existing link** | Change is detected timestamp-free where possible — `remoteChanged = ev.updated !== link.updated`, `localChanged = sigOfNote(note) !== link.sig`. Only a *genuine conflict* (both changed) consults the policy (`conflicts++`); pure remote changes apply via `applyRemoteToNote` (`pulledUpdate++`); pure local changes are left to Phase B. |
 
 `applyRemoteToNote` writes **all** signature-covered fields (title/date/times/location/description/recurrence) and stamps `localUpdated = ev.updated`. `category` is intentionally preserved — Google carries no Bismuth category, so a pull must not blank it — and the stored sig is recomputed from the *written* note so the next sync doesn't mis-read the preserved category or applied recurrence as a fresh local edit.
 
@@ -86,9 +88,11 @@ For each remote event:
 
 For each local row (skipping rows already marked for deletion in Phase A):
 
-- **No link** → `insertEvent` with a **deterministic** Google event id (`googleEventId(bid)`) and a `bismuthId` stamp. If the event already exists on Google (lost link / crash), Google answers `409` → `DuplicateId`, which the engine turns into a re-link (`getEvent` + relink, `relinked++`) instead of a duplicate. Otherwise `pushedNew++`.
-- **Linked + unchanged** (`sigOfNote === entry.sig`) → skip.
-- **Linked + changed** → `patchEvent` guarded by the stored etag (`If-Match`). On `412` (`PreconditionFailed`, remote moved under us) it re-reads with `getEvent`, runs the conflict policy, and either re-patches (local wins → `pushedUpdate++`) or applies the remote (`applyRemoteToNote` → `pulledUpdate++`).
+| Case | Behavior |
+|---|---|
+| **No link** | `insertEvent` with a **deterministic** Google event id (`googleEventId(bid)`) and a `bismuthId` stamp. If the event already exists on Google (lost link / crash), Google answers `409` → `DuplicateId`, which the engine turns into a re-link (`getEvent` + relink, `relinked++`) instead of a duplicate. Otherwise `pushedNew++`. |
+| **Linked + unchanged** (`sigOfNote === entry.sig`) | Skip. |
+| **Linked + changed** | `patchEvent` guarded by the stored etag (`If-Match`). On `412` (`PreconditionFailed`, remote moved under us) it re-reads with `getEvent`, runs the conflict policy, and either re-patches (local wins → `pushedUpdate++`) or applies the remote (`applyRemoteToNote` → `pulledUpdate++`). |
 
 Per-event push errors are caught individually: one malformed event (e.g. a bad recurrence Google rejects) is counted (`failed++`, logged) and the batch continues — the base file and the remaining events still sync.
 
@@ -106,15 +110,26 @@ Pulled (Google-created) events queued in `toStamp` are patched with their `bismu
 
 `resolveConflict(policy, localUpdated, remoteUpdated)` in `sync.ts` (type `ConflictPolicy = "lastWriteWins" | "googleWins" | "bismuthWins"`):
 
-- **`googleWins`** → always `"remote"`.
-- **`bismuthWins`** → always `"local"`.
-- **`lastWriteWins`** (default) → compares the row's `localUpdated` ISO stamp against the remote `updated` time; the **newer** wins (ISO/UTC strings sort chronologically). If the local row has no `localUpdated` stamp, it keeps **local** rather than silently discarding it.
+| Policy | Winner |
+|---|---|
+| `googleWins` | Always `"remote"`. |
+| `bismuthWins` | Always `"local"`. |
+| `lastWriteWins` (default) | Compares the row's `localUpdated` ISO stamp against the remote `updated` time; the **newer** wins (ISO/UTC strings sort chronologically). If the local row has no `localUpdated` stamp, it keeps **local** rather than silently discarding it. |
 
 ---
 
 ## Mapping a Google Event ↔ a Bismuth Row (`map.ts`)
 
-`fromGoogle(ev)` maps a Google event to row fields or returns **null to skip**. It skips: cancelled events; modified per-instance exceptions of a series (`recurringEventId` set — only clean masters are kept); recurring masters whose RRULE can't be represented; undated events; multi-day all-day events (exclusive `end.date` beyond the day after start, which Bismuth's single-`date` model can't hold); and overnight timed events (end on a later calendar day). There is **no timezone math** on a timed event — the `dateTime` string already carries the wall-clock time Google displays, so the date + `HH:MM` parts are taken verbatim, matching Bismuth's naive-local model.
+`fromGoogle(ev)` maps a Google event to row fields or returns **null to skip**. It skips:
+
+- cancelled events;
+- modified per-instance exceptions of a series (`recurringEventId` set — only clean masters are kept);
+- recurring masters whose RRULE can't be represented;
+- undated events;
+- multi-day all-day events (exclusive `end.date` beyond the day after start, which Bismuth's single-`date` model can't hold); and
+- overnight timed events (end on a later calendar day).
+
+There is **no timezone math** on a timed event — the `dateTime` string already carries the wall-clock time Google displays, so the date + `HH:MM` parts are taken verbatim, matching Bismuth's naive-local model.
 
 `toGoogle(fields, timeZone, colorMap)` builds the insert/patch body (`summary`, `location`, `description`, `start`/`end`, optional `recurrence`, optional `colorId`). For a recurring event the start is anchored on `firstOccurrence` (the first valid weekday on/after the start) so Google's DTSTART can't surface the event on the wrong weekday. All-day events use `start.date` + an **exclusive** `end.date` of `nextDay()`.
 

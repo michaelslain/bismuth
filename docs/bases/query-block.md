@@ -369,6 +369,92 @@ views:
 
 ---
 
+## The Visual Query Builder (no-code)
+
+Besides hand-writing either body form above, Bismuth ships a **no-code visual query builder** — a modal that edits a `BuilderState` (source picker, filter rows, view/sort/group/limit controls, and a live preview) and generates the block body for you on confirm. All codegen/parse is pure and DOM-free: `app/src/bases/queryGen.ts` builds/reverses a `BuilderState` ⇄ block-body text with no Solid or `api.ts` dependency (it runs under `bun test` like `blockModel.ts`); the modal itself, `app/src/bases/QueryBuilder.tsx`, is a thin reactive form + live preview mounted over it.
+
+### Where it's wired in
+
+The builder is wired into the **Milkdown/BlockEditor** WYSIWYG surface only (`app/src/BlockEditor.tsx`):
+
+- Typing `/query` in the slash menu opens the builder fresh (`item.id === "query"`) instead of inserting an empty fence; the triggering block is rewritten as a ` ```query ` fence only on confirm — cancelling leaves it untouched.
+- A rendered ` ```query ` block shows a pencil ("Edit query") icon that reopens the builder seeded from the parsed body (`parseQueryBlockBody(body())`). The pencil is hidden whenever `isBuilderRepresentable(body())` is `false` (see below), so a hand-authored block the builder can't losslessly model can only be edited as raw source.
+
+The CodeMirror `Editor.tsx` / `editor/queryBlock.ts` surface has **no builder entry point** — there you can only reveal/edit the raw fence text via the SOURCE toggle (see [below](#source-toggle-and-inline-editing)).
+
+### Three source modes → the two body forms
+
+The builder's `SegmentedToggle` picks one of three unrelated `BuilderSource`s (`state.source: "notes" | "tasks" | "base"`), and each generates a **different** one of the two body forms documented above:
+
+| Builder source | Generated body form | Shape |
+|---|---|---|
+| **Notes** | Full inline config (Form 2) | `source: notes where <Bases-expr>` + a one-entry `views: [{ type, name, sort, groupBy, limit }]`. This is the ONLY inline way to iterate notes-with-filters, since a flat block can't. |
+| **Tasks** | Flat spec (Form 1) | `tasks: <Obsidian-Tasks DSL>` (+ optional `from:`, `view:`, `group:`, `limit:`). |
+| **Base** | Flat spec (Form 1) | `of: [[Base]]` (+ optional `where:`, `view:`, `group:`, `limit:`). |
+
+`buildQueryBlockBody()`/`parseQueryBlockBody()` are not required to be byte-identical (YAML key order can differ) — the contract is that `build(parse(body))` is *semantically* equivalent, and any expression the reverse-parser can't model survives verbatim in a raw field (`notes.rawWhere` / `tasks.rawWhere`) so a hand-edited query is never silently dropped when reopened in the builder.
+
+### Notes filters: property discovery + operators
+
+Properties are discovered the same way `BaseSettings` discovers base columns — `columnsOf(await api.resolveRows({ kind: "notes" }))` (every key seen across the sampled rows, plus `file.name` first if any row has one) — augmented with fixed `FILE_PSEUDO` pseudo-properties (`tags`, `file.folder`, `file.ext`, `file.path`, `file.ctime`, `file.mtime`) and any property already referenced by a seeded filter row (so editing an existing block never drops its own column from the dropdown).
+
+`inferType(prop, rows)` samples the first non-null value of `prop` across the resolved rows to pick a coarse `PropType` — `file.*` pseudo-props use their fixed table; numbers/booleans/arrays are typed by `typeof`/`Array.isArray`; a string is typed `"date"` if it matches `/^\d{4}-\d{2}-\d{2}([T ]|$)/`, else `"string"` — and falls back to `"string"` if no row has a value for the property.
+
+Each `PropType` gets its own operator set (`OPS_BY_TYPE`):
+
+| `PropType` | Operators |
+|---|---|
+| `string` | equals, does not equal, contains, starts with, ends with, matches regex, is set, is empty |
+| `number` | `=`, `≠`, `>`, `≥`, `<`, `≤`, is set, is empty |
+| `date` | is before, is on or after, is within N days, is empty |
+| `boolean` | is checked, is unchecked |
+| `tag` | has tag, does not have tag |
+| `list` | contains, is set, is empty |
+| `link` | links to, is set |
+
+`compileNotesRow(row)` (`queryGen.ts`) compiles one `{prop, op, val, type}` row to a single Bases-expression leaf:
+
+| Operator | Compiles to |
+| --- | --- |
+| `equals` (string) | `prop == "val"` (JSON-quoted; a number-typed row emits a bare numeric literal via `numOrStr`) |
+| `has_tag` | `file.hasTag("val")` |
+| `in_folder` | `file.inFolder("val")` |
+| `date_before` | `date(prop) < <rhs>` |
+| `date_after` | `date(prop) >= <rhs>` |
+| `date_within` (N days) | one leaf joining two comparisons with `&&`: `date(prop) >= today() && date(prop) < today() + "Nd"` |
+
+For `date_before`/`date_after`, `<rhs>` resolves a date preset (`today`, `today+Nd`, `today-Nd`, or a literal `YYYY-MM-DD`) to `today()` / `today() ± "Nd"` / `date("YYYY-MM-DD")`.
+
+Multiple rows join with `&&` or `||` per the "Match All/Any of these" toggle (`compileNotesWhere`), each leaf parenthesized when there's more than one row.
+
+### Tasks filters → DSL leaves
+
+`compileTaskLeaves(tf)` (`queryGen.ts`) turns the Task-filters form (Status: Open/Done/All, Priority, Due, Recurring, an optional "Scope to a base") into Tasks-DSL leaves joined with ` AND ` on one line. Notable mappings:
+
+| Form field | Value | Compiles to |
+| --- | --- | --- |
+| Status | `Open` | `not done` |
+| Due | `Overdue` | `due before today` |
+| Due | `Due this week` | `due before in 7 days` |
+| Due | `Has a due date` | `due after 1900-01-01` (per the code's own comment, "has a due date = a date after the dawn of time" — an always-true-if-dated trick, since the DSL has no direct `has due date` leaf) |
+
+A chosen sort is **not** folded into that `AND`-joined line — it's emitted on its own line as a YAML block scalar (`tasks: |-` followed by the filters line, then the `sort by <key>[ reverse]` line), because `runTaskQuery` only honors a `sort by …` that occupies a whole line by itself (see [sorting](../tasks/query-dsl.md#sorting)).
+
+### Round-trip fidelity: `isBuilderRepresentable`
+
+Because the builder only models a bounded subset of each form, `isBuilderRepresentable(body)` (`queryGen.ts`) decides whether opening `body` in the visual builder and clicking Save is guaranteed lossless:
+
+- Any **flat** tasks/base spec round-trips losslessly (`true`) — the builder always regenerates an equivalent flat spec, even when some DSL leaves fall through to the advanced/raw field.
+- A **full inline config** is representable only if all of the following hold:
+  - it has **no top-level key other than `source`/`views`** (a config with `filters:`/`formulas:`/`properties:`/`schema:` is NOT representable — those would be silently dropped on save);
+  - its `source` is exactly `notes` or `notes where <expr>` (a `tasks`/`base` **config**-form source isn't representable, since the builder always emits those two flat);
+  - the `where` expression fully reverses into filter rows (`reverseWhere` didn't have to fall back to `rawWhere`);
+  - there is **at most one** view; and
+  - that view has no keys beyond `type`/`name`/`sort`/`groupBy`/`limit`.
+- `QueryBlockBlock` (in `BlockEditor.tsx`) hides its pencil-edit affordance whenever this returns `false`, so a richer hand-authored block can only be edited as raw source, never silently clobbered by the visual form.
+
+---
+
 ## SOURCE toggle and inline editing
 
 Because the fence is **replaced** by the rendered view, the raw query is normally hidden. The rendered view exposes a **SOURCE** icon (the `Code`/`X` button in `BaseView`'s `ViewBar`). The behavior differs for embedded blocks vs base files:
@@ -433,4 +519,4 @@ Key-skeleton inserts (from `KEY_SPECS`):
 
 See also: [bases overview](./overview.md), [sources & composition](./sources.md), [views](./overview.md), [tasks](../tasks/syntax.md).
 
-Source: `app/src/editor/queryBlock.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/queryComplete.test.ts`, `core/src/bases/queryBlock.ts`, `core/test/bases/queryBlock.test.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/types.ts`, `app/src/bases/BaseView.tsx`
+Source: `app/src/editor/queryBlock.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/queryComplete.test.ts`, `core/src/bases/queryBlock.ts`, `core/test/bases/queryBlock.test.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/types.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/QueryBuilder.tsx`, `app/src/bases/queryGen.ts`

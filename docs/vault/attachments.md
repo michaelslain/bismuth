@@ -1,6 +1,13 @@
 # Vault Attachments & Embeds
 
-This document covers everything about embedding and serving vault media in Bismuth: the two embed syntaxes (`![[file]]` and `![](url)`), how each media kind is rendered (image, PDF, audio, video, live HTML artifact, `.md` transclusion), the drag-resize mechanism and how the persisted `|WxH` size works, how the backend resolves asset filenames via `resolveAsset`, the `POST /asset` upload endpoint including size cap and collision-avoidance, and the `attachments` settings section that controls where new files land.
+This document covers how Bismuth embeds and serves vault media — for anyone working on the editor's embed renderer, the asset upload pipeline, or the `attachments:` settings that control where new files land. It covers:
+
+- The two embed syntaxes, `![[file]]` and `![](url)`
+- How each media kind is rendered: image, PDF, audio, video, live HTML artifact, `.md` transclusion
+- The drag-resize mechanism and how the persisted `|WxH` size works
+- How the backend resolves asset filenames via `resolveAsset`
+- The `POST /asset` upload endpoint, including its size cap and collision-avoidance
+- The `attachments` settings section that controls where new files land
 
 ---
 
@@ -8,7 +15,7 @@ This document covers everything about embedding and serving vault media in Bismu
 
 The editor supports two embed patterns, both parsed by `embedBlock.ts`:
 
-```
+```text
 EMBED_RE = /!\[\[([^\]\n]+?)\]\]|!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
 ```
 
@@ -27,7 +34,7 @@ EMBED_RE = /!\[\[([^\]\n]+?)\]\]|!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
 
 The `#fragment` and `|size` parts are parsed by `parseWikilink` and `parseSize`:
 
-```
+```text
 parseSize("300")    → { width: 300 }
 parseSize("300x200") → { width: 300, height: 200 }
 parseSize("text")   → {}           // non-numeric alias, ignored for sizing
@@ -80,7 +87,7 @@ Inline images use `img.style.width/height` directly; block images use the wrappe
 
 Block PDFs only (no inline PDF). An `<iframe>` is rendered with browser viewer controls suppressed:
 
-```
+```ts
 frame.src = `${assetUrl}#${[page, "toolbar=0", "navpanes=0", "view=FitH"].filter(Boolean).join("&")}`
 ```
 
@@ -95,7 +102,7 @@ Default size: `100%` wide, `520px` tall. If `|WxH` is set: `W`px wide, `H`px tal
 1. **`sandbox="allow-scripts"` on the iframe, WITHOUT `allow-same-origin`.** The artifact's document gets an *opaque* origin, so it cannot script-read the app's DOM / `localStorage` / cookies. Adding `allow-same-origin` would hand it the app's real origin and full same-origin access — never do it.
 2. **A locked-down CSP on the served file.** Sandbox alone does **not** protect the vault: relative URLs inside the artifact resolve against the core server (its document URL), and the API is unauthenticated with `Access-Control-Allow-Origin: *` (`withCors`), so `fetch('/file?path=private.md')` from the artifact would succeed (`ACAO: *` matches the frame's null origin). `GET /asset` therefore stamps every `.html`/`.htm` response with:
 
-   ```
+   ```http
    Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'
    ```
 
@@ -186,7 +193,7 @@ Key properties:
 
 ## `GET /asset` Endpoint
 
-```
+```http
 GET /asset?path=<target>
 ```
 
@@ -208,7 +215,7 @@ This is used as the `src` of `<img>`, `<iframe>`, `<audio>`, and `<video>` eleme
 
 ## `POST /asset` Upload Endpoint
 
-```
+```http
 POST /asset?path=<desired-vault-relative-path>
 Content-Type: application/octet-stream
 <raw bytes>
@@ -253,7 +260,7 @@ After safety validation, `uniqueAssetPath(root, target)` is called to find a fre
 3. Attempts `"stem 1.ext"`, `"stem 2.ext"`, …, `"stem 9999.ext"` until a free path is found.
 4. Pathological fallback (> 9999 tries): `"stem <Date.now()>.ext"`.
 
-```
+```text
 "attachments/photo.png" already exists
 → tries "attachments/photo 1.png"   (free) → returned
 ```

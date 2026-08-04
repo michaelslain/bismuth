@@ -19,21 +19,12 @@ views:
 
 All map-specific fields live on the `ViewConfig` object alongside the standard fields (`name`, `limit`, `filters`, `sort`, `source`, etc.). See [bases overview](../overview.md) for shared fields.
 
-### `lat` (string, optional)
-
-The property id whose value is the latitude in decimal degrees. Defaults to `"lat"` when omitted, which resolves to the bare `lat` frontmatter key. Any property namespace is valid: `"note.latitude"`, `"formula.computed_lat"`, etc.
-
-### `lng` (string, optional)
-
-The property id whose value is the longitude in decimal degrees. Defaults to `"lng"` when omitted. Same namespacing rules as `lat`.
-
-### `zoom` (number, optional)
-
-Seed zoom level for the initial framing. Range 1–18 (enforced at interaction time, not parse time). Only used when `center` is also provided; if only `zoom` is set without `center` it is ignored and auto-fit runs instead.
-
-### `center` (object, optional)
-
-Seed map center for the initial framing. Must be `{ lat: <number>, lng: <number> }`. Only active when `zoom` is also provided. Together `center` + `zoom` bypass the auto-fit logic entirely.
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `lat` | string, optional | `"lat"` | Property id whose value is the latitude in decimal degrees. Defaults to the bare `lat` frontmatter key. Any property namespace is valid: `"note.latitude"`, `"formula.computed_lat"`, etc. |
+| `lng` | string, optional | `"lng"` | Property id whose value is the longitude in decimal degrees. Same namespacing rules as `lat`. |
+| `zoom` | number, optional | — | Seed zoom level for the initial framing. Range 1–18 (enforced at interaction time, not parse time). Only used when `center` is also provided — set alone, it's ignored and auto-fit runs instead. |
+| `center` | object, optional | — | Seed map center for the initial framing. Must be `{ lat: <number>, lng: <number> }`. Only active when `zoom` is also provided. Together, `center` + `zoom` bypass the auto-fit logic entirely. |
 
 ```yaml
 views:

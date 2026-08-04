@@ -163,7 +163,8 @@ would require removing/hiding a system binary or running on an unsupported platf
 bounds for this task.
 
 So Step 3's decision (below) rests on: (a) the SDK's own bundled type declarations, read directly
-in `sdk.d.ts` for both versions this monorepo resolves (0.3.186 for core, 0.2.141 for daemon) —
+in `sdk.d.ts` for both versions this monorepo resolved when the check was made (0.3.186 for core,
+0.2.141 for the daemon; since unified on `^0.3.186` — the declarations quoted were identical in both) —
 which turn out to contain TWO different, contradicting doc strings for `failIfUnavailable`, on two
 different types. `Options.sandbox: SandboxSettings` — the type that actually governs
 `query({ prompt, options })`, i.e. what `chat.ts`/`session.ts` call — says *"When `enabled: true` is

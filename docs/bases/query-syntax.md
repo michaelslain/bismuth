@@ -2,7 +2,7 @@
 
 This document is the canonical, end-to-end reference for the **Bases expression language** — the small expression grammar used everywhere a Bases query needs a value or a boolean test: `filters:`, per-view `filters:`, `formulas:` definitions, `groupBy`/`sort` property strings, and the `where:` clause of an inline ` ```query ` block. It covers tokenization (the lexer), the parse grammar and operator precedence (the parser → AST), and evaluation semantics (how each construct produces a runtime value). Every rule here is verified against `core/src/bases/lexer.ts`, `parser.ts`, `ast.ts`, `evaluate.ts`, `functions.ts`, `values.ts`, and `parse.ts`, with concrete examples drawn from the test suite in `core/test/bases/`.
 
-For the surrounding system — how an expression slots into a base file, the available functions/methods, and how rows are sourced — see [bases overview](./overview.md), [functions reference](./functions.md), and [views](./overview.md). Where those siblings don't exist yet, this file is self-contained for the grammar itself and includes the built-in functions/methods inline.
+For the surrounding system — how an expression slots into a base file, the available functions/methods, and how rows are sourced — see [bases overview](./overview.md), [functions reference](./functions.md), [filters](./filters.md), and the per-kind [view pages](./views/table.md). This file is self-contained for the grammar itself and includes the built-in functions/methods inline.
 
 ---
 

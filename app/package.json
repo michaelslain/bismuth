@@ -1,7 +1,7 @@
 {
   "name": "@bismuth/app",
   "version": "0.1.0",
-  "description": "Bismuth — a personal knowledge management desktop app",
+  "description": "Bismuth \u2014 a personal knowledge management desktop app",
   "type": "module",
   "scripts": {
     "start": "vite",
@@ -81,7 +81,6 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "katex": "^0.17.0",
-    "lucide-solid": "^1.17.0",
     "marked": "^18.0.4",
     "nanoid": "^5.1.15",
     "pdfjs-dist": "^6.1.200",

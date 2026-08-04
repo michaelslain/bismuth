@@ -41,7 +41,7 @@ export interface BackendReport {
   surfaces: {
     chat: boolean;
     terminal: boolean;
-    agentsGraph: BackendCapabilities["agentsGraph"];
+    relayReporting: BackendCapabilities["relayReporting"];
     daemon: boolean;
     mcp: BackendCapabilities["mcp"];
     memory: BackendCapabilities["memory"];
@@ -55,7 +55,7 @@ export function surfaceSummary(d: BackendDescriptor): BackendReport["surfaces"] 
   return {
     chat: c.chat,
     terminal: c.terminal,
-    agentsGraph: c.agentsGraph,
+    relayReporting: c.relayReporting,
     daemon: c.daemon,
     mcp: c.mcp,
     memory: c.memory,

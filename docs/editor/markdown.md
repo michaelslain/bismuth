@@ -1,6 +1,25 @@
 # Editor Live-Preview Rendering
 
-This document covers every block and inline rendering transformation that Bismuth's CodeMirror editor applies to markdown source text, including the exact trigger conditions, the block kinds supported, how math, raw HTML, and code are processed, and the sanitization pipeline. The live-preview is implemented as a set of CodeMirror extensions in `app/src/editor/livePreview.ts`, `htmlPreview.ts`, `mathBlock.ts`, `codeHighlight.ts`, and `codeLineNumbers.ts`, backed by `sanitizeHtml.ts` and `katexLoader.ts`.
+This document covers every block and inline rendering transformation that Bismuth's CodeMirror editor applies to markdown source text, including the exact trigger conditions, the block kinds supported, how math, raw HTML, and code are processed, and the sanitization pipeline. Read this if you're working on the live-preview extensions, or debugging why a markdown construct renders (or fails to render) as expected. The live-preview is implemented as a set of CodeMirror extensions in `app/src/editor/livePreview.ts`, `htmlPreview.ts`, `mathBlock.ts`, `codeHighlight.ts`, and `codeLineNumbers.ts`, backed by `sanitizeHtml.ts` and `katexLoader.ts`.
+
+---
+
+## What's in This Document
+
+| Section | Covers |
+| :------ | :----- |
+| [Reveal Rule](#reveal-rule-render-when) | The per-token/per-line rule for when hidden markdown syntax reappears |
+| [Block Regions Pre-Scan](#block-regions-pre-scan) | The single full-document scan that locates every block |
+| [YAML Frontmatter](#yaml-frontmatter) · [Fenced Code Blocks](#fenced-code-blocks) · [GFM Pipe Tables](#gfm-pipe-tables) · [Raw HTML](#raw-html-rendering) | The four block-level widgets that replace their source range |
+| [Code Syntax Highlighting](#code-syntax-highlighting) · [Code Line Numbers](#code-line-numbers-in-block-line-numbers) | Styling and gutter numbers inside code/frontmatter blocks |
+| [Headings](#headings) · [Blockquotes](#blockquotes) · [Bullet Lists](#bullet-lists) · [Ordered Lists](#ordered-lists) · [Task Lists](#task-lists-checkboxes) | Line-prefix constructs and their hanging-indent/reveal rules |
+| [Inline Formatting](#inline-formatting) · [Markdown Links](#markdown-links) · [Bare URLs](#bare-urls) · [Wikilinks](#wikilinks) · [Hashtags](#hashtags) | Inline token rendering and reveal |
+| [Math (KaTeX)](#math-katex) | Inline, single-line, and multi-line `$…$`/`$$…$$` rendering, plus macros |
+| [Sanitization](#sanitization) | The DOMPurify config every rendered HTML string passes through |
+| [In-Note Find Bar](#in-note-find-bar) | The Cmd+F search panel |
+| [Summary Tables](#summary-table-all-block-kinds) | All block kinds and all inline kinds, side by side |
+| [Extension Composition](#extension-composition) | How the pieces assemble into the exported `livePreview` array |
+| [Date / Time Property Picker](#date-time-property-picker) | The frontmatter date-value popover |
 
 ---
 
@@ -191,7 +210,7 @@ Regex: `/^(\s*)([-*+])(\s+)/` — captures indent, marker, and trailing whitespa
 **Bullet glyphs by depth (parity rule)**: the glyph alternates by depth parity, only two variants — even depth → `•` (filled), odd depth → `◦` (hollow): `const glyph = this.depth % 2 === 0 ? "•" : "◦";` in `BulletWidget.toDOM()`. So depth 0 → `•`, depth 1 → `◦`, depth 2 → `•`, depth 3 → `◦`, and so on. The earlier three-variant scheme (`•` / `◦` / `▪` with a `▪` square at depth 2+) no longer exists.
 
 **Hanging indent**: `indentLine("cm-li", depth)` applies a line decoration with:
-```
+```text
 padding-left: (depth + 1) * 1.6em
 text-indent: -1.6em
 line-height: 1.55
@@ -260,7 +279,7 @@ Table detection is done by `groupTableBlocks` from `tableModel.ts`, which finds 
 **Block-level widget (StateField)**: `tableWidgetField` (a `StateField`) replaces each non-active table block with a `TableWidget` spanning its entire source range (`block:true`). Block decorations cannot come from a `ViewPlugin`.
 
 **Rendered table** (cursor outside the block):
-- The table lines are replaced by the `TableWidget` (an editable `<table>` element with `contenteditable` cells). See `tableWidget.ts` (not covered in detail here).
+- The table lines are replaced by the `TableWidget` (an editable `<table>` element with `contenteditable` cells). See `tableWidget.ts` and the dedicated [GFM Pipe Tables — Interactive Widget](tables.md) reference — not covered in detail here.
 - The `cm-table-wrap` div has `position:relative; width:fit-content` so the hover toolbar aligns to the table's top-right corner.
 
 **Raw mode** (cursor inside the block):

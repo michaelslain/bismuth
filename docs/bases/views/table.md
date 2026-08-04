@@ -288,9 +288,7 @@ views:
 ---
 ```
 
-- `displayName`: overrides the column header label.
-- `hidden: true`: excludes the column from auto-derived column lists. Does NOT affect a view's explicit `order` — a hidden column can still be shown by including it in `order`.
-- Both bare (`internal_id`) and namespaced (`note.internal_id`) forms of the key work for `hidden`.
+`displayName` and `hidden` behave exactly as described under [Column Header Labels](#column-header-labels) and [Auto-Derived Columns](#auto-derived-columns) above (including that `hidden` only suppresses auto-derivation — an explicit `order` always wins, and both bare and namespaced keys work). This section is simply where those settings live in the frontmatter, shown here with both forms in one example.
 
 ---
 

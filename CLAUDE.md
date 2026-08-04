@@ -42,13 +42,11 @@ The system treats knowledge as a "three-brain" model: **You** (self node, the us
 - `bun run core/src/server.ts --vault <v> --memory <m>` — backend standalone (both flags required)
 
 ### Testing
-- `bun test core` — Run all tests in core workspace (uses Bun's test runner)
-- `bun test core/test/wikilinks.test.ts` (or `bun test wikilinks`) — Run a single test file. **`bun test core -- <pattern>` does NOT filter** — Bun's positional args are OR'd substring matches against the file path, and `core` is itself one of them here; since every file under `core/test/` already contains `core` in its own path, the pattern list still matches the full suite no matter what you append. Pass an exact path, or a bare pattern with no `core`/`app` argument alongside it — see `docs/contributing/testing.md`.
-- `bun run typecheck` (repo root) — `tsc --noEmit` per workspace, each workspace pinning its own local `typescript` devDependency so the gate resolves offline instead of `bunx` hitting the registry: `core`/`cli`/`mcp`/`memory`/`daemon` pin `7.0.2`, `app`/`relay` pin `~5.6.2` (5.6.3) — a pre-existing version split (not introduced by the pin, previously an unpinned float), left unresolved on purpose; unifying it is its own task. The build/test gate does NOT type-check — run this to catch type regressions.
-- Tests are located in `core/test/`
-- **Tests are REQUIRED to commit.** `.githooks/pre-commit` runs `scripts/gate.ts` (typecheck across all workspaces + *fast* tests for the workspaces your staged files touch, ~30s); `.githooks/pre-push` runs the docs check + the *full* suite including slow suites. Hooks are on via `core.hooksPath`; a fresh clone runs `bun run hooks:install`. Bypass deliberately with `BISMUTH_SKIP_GATE=1` or `--no-verify`. Run it by hand with `bun run gate`.
-- `BISMUTH_FAST_TESTS=1` (`bun run test:fast`) skips the SLOW suites — real agent binaries, PTY/websocket integration, the layout benchmark (`core/test/slowGate.ts`, the opt-OUT sibling of `liveGate.ts`'s opt-IN). Unset (plain `bun test`, CI) runs everything, so a suite can't be lost by forgetting a flag.
-- **`core/test/upgrade/`** — what happens to an existing user's data on update (`bun run test:upgrade`): all three historical settings layouts migrate without losing values, comments, or unknown keys; and `schemaSnapshot.test.ts` pins every schema default/type/bound to a committed snapshot so a silent default change (which alters behavior for everyone who never set that key) can't land unreviewed. Re-bless intentional schema changes with `bun run test:bless-schema`.
+- `bun test core` — the whole core workspace. `bun test core/test/wikilinks.test.ts` — one file. **`bun test core -- <pattern>` does NOT filter**: Bun's positional args are OR'd substring matches on the path, and `core` matches every file under `core/test/`, so the pattern is ignored. Pass an exact path instead.
+- `bun run typecheck` (root) — `tsc --noEmit` per workspace, each pinning its own local `typescript` so the gate resolves offline. `core`/`cli`/`mcp`/`memory`/`daemon` pin `7.0.2`; `app`/`relay` pin `~5.6.2` — a pre-existing split left unresolved on purpose (unifying it is its own task).
+- **Tests are REQUIRED to commit.** `.githooks/pre-commit` → `scripts/gate.ts`: typecheck (all workspaces) + *fast* tests for the workspaces your staged files touch (~30s). `.githooks/pre-push`: docs check + the *full* suite. Hooks ride `core.hooksPath`; a fresh clone runs `bun run hooks:install`. Bypass with `BISMUTH_SKIP_GATE=1` or `--no-verify`; run by hand with `bun run gate`.
+- `BISMUTH_FAST_TESTS=1` (`bun run test:fast`) skips the SLOW suites — real agent binaries, PTY/WS integration, the layout benchmark (`core/test/slowGate.ts`, the opt-OUT sibling of `liveGate.ts`'s opt-IN). Unset (plain `bun test`, CI) runs everything, so no suite is lost to a forgotten flag.
+- **`core/test/upgrade/`** (`bun run test:upgrade`) — what an existing user's data survives on update: all three historical `.settings` layouts migrate without losing values, comments or unknown keys, and `schemaSnapshot.test.ts` pins every schema default/type/bound to a committed snapshot so a silent default change can't land unreviewed (re-bless: `bun run test:bless-schema`).
 
 ### Building
 - `bun run build` (in `app/`) — Build Vite app for production
@@ -69,47 +67,38 @@ Default ports `:4321`/`:1420` serve one instance. For more, override: `PORT=4322
 **Purpose**: manages the vault filesystem, builds knowledge graphs, watches for changes, serves the HTTP API.
 
 **Key modules**:
-- `server.ts` — HTTP server (Bun.serve): caching, file watching, SSE broadcast, three WS upgrades (`/terminal` PTY, `/chat` visual Claude chat, `/ui` per-window app-control). Three route tables: **GET reads**, **POST mutations** (`mutatingHandler` → invalidate + SSE), **read-table POST/PUT** (no invalidate: `/rows`, `/search`, `PUT /file`, `/relay/*`, `/ui/*`, daemon writes). Also drives `/gcal/*` + a 60s auto-sync ticker; writes a run-registry record on boot. **Full reference: `docs/api/http-reference.md`.**
-- `sse.ts` — SSE registry (`formatEvent`, `createSseRegistry`): pushes `{version, paths, dirty:{graph,tree}}` on file changes — consumers use the `dirty` flag to skip refetch when no structural change occurred
-- `engine.ts` — graph composition: merges vault + memory + self node, creates "about" edges (memory→vault). `vault.ts` — builds vault graph from markdown (two-pass: note nodes, then wikilink/tag/frontmatter edges)
-- `graph.ts` — Graph types. Node kinds: note/memory/agent/tag/self (the "you" hub; previously injected frontend-side for the now-removed agents graph mode — no mode injects a self node any more) + daemon/cron/process. Edge kinds: link, message, about, tag, open, supervises
-- `layout.ts` — pure layout (pivot-MDS + force sim) → 2D + 3D `Positions`. `layout-cache.ts` — `attachLayout()` writes precomputed `position2d`/`position3d` onto nodes; frontend morphs between them (no client force sim)
-- `files.ts` — file I/O + path-traversal rejection. `frontmatter.ts` — YAML parse (tolerates malformed). `wikilinks.ts`/`tags.ts` — extract `[[WikiLink]]` / `#tag`. `memory.ts` — memory graph (`mem:` namespace)
-- `agents.ts` — the `ChatAgentSession`/`ChatAgentSubagent` types shared with `chat.ts`'s per-chat subagent tracking. `relay.ts` — in-process registry of terminal-tab Claude Code sessions + their subagents, populated by the relay plugin's hooks (`POST /relay/*`); pruned against the live pty set when a terminal tab closes (`terminal.ts`'s `killSession`)
-- `uiControl.ts` — registry of OPEN app WINDOWS + request/reply command channel (`/ui` WS): powers the `app` CLI + MCP app control. `runRegistry.ts` — `~/.bismuth/run/<vault>.json` so out-of-app callers discover which port serves which vault
-- `daemon.ts`/`daemonGraph.ts`/`daemonViz.ts` — daemon shared-state reader (never throws) + "daemon" graph builder (hub → cron/process, `supervises` edges) + pure `nodeVisualState()` (enabled/running → visual tokens). See Daemon Integration
-- `backup.ts` — git snapshot of vault. `tasks.ts`/`tasks-query.ts` — Tasks extraction + query DSL (Obsidian-compatible). `dates.ts` — date math (tasks/SRS/calendar). `calendar.ts` — headless calendar-file logic (behind the `bismuth calendar` CLI). `basesData.ts` — vault feed for Bases
-- `terminal.ts` — PTY manager (`bun-pty`); injects relay provenance + a PATH shim so a bare `claude` auto-loads the relay plugin (`buildPtyEnv`, pure + tested)
-- `chat.ts` — visual Claude chat (`/chat` WS): one long-lived Agent-SDK `query()` per chat over the user's own `claude` binary (see `docs/chat/overview.md`). `chatProviders/` — the provider seam: a chat can instead run on **opencode** (same ChatFrame protocol, `settings.chat.provider`; router + pure event translation; see `docs/chat/providers.md`)
-- `gcal/` — Google Calendar two-way sync (OAuth+PKCE, pull/push/delete, RRULE, colors). See `docs/gcal/overview.md`. `bases/`/`srs/` — see sections below
-- `fileAccess.ts`/`localBackend.ts` — mobile IO seam + in-process backend (see Mobile / iPad)
+- `server.ts` — HTTP server (Bun.serve): caching, file watching, SSE broadcast, three WS upgrades (`/terminal` PTY, `/chat` chat, `/ui` per-window app-control). Three route tables: **GET reads**, **POST mutations** (`mutatingHandler` → invalidate + SSE), **read-table POST/PUT** (no invalidate: `/rows`, `/search`, `PUT /file`, `/relay/*`, `/ui/*`, daemon writes). Also drives `/gcal/*` + a 60s auto-sync ticker; writes a run-registry record on boot. **Full reference: `docs/api/http-reference.md`.**
+- `sse.ts` — SSE registry: pushes `{version, paths, dirty:{graph,tree}}` on file changes; consumers use `dirty` to skip refetch when nothing structural moved.
+- `engine.ts` — graph composition: merges the vault + memory graphs and creates "about" edges (memory→vault). `vault.ts` — builds the vault graph from markdown (two-pass: note nodes, then wikilink/tag/frontmatter edges). `memory.ts` — the memory graph (`mem:` namespace).
+- `graph.ts` — Graph types. Node kinds note/memory/tag/self/daemon/cron/process (+ a vestigial `agent`, emitted by nothing since the agents mode was removed); edge kinds link/message/about/tag/open/supervises.
+- `layout.ts` — pure layout (pivot-MDS + force sim) → 2D + 3D `Positions`; `layout-cache.ts`'s `attachLayout()` writes `position2d`/`position3d` onto nodes and the frontend morphs between them (no client force sim). `community.ts` — hierarchical community detection (`communityPath`/`communityPathLabels`).
+- `files.ts` — file I/O + path-traversal rejection. `frontmatter.ts` — YAML parse (tolerates malformed). `wikilinks.ts`/`tags.ts` — extract `[[WikiLink]]`/`#tag`.
+- `visibility.ts`/`visibilityCliGate.ts` — the AI-visibility layer: per-channel deny lists gating most read routes, plus the gate on CLI dispatch. Ref: `docs/vault/visibility.md`.
+- `relay.ts` — in-process registry of terminal-tab Claude Code sessions + subagents, fed by the relay plugin's `POST /relay/*` hooks and pruned against the live pty set; consumed by `chat.ts` (subagent TTLs) + `terminal.ts`. `agents.ts` — the `ChatAgentSession`/`ChatAgentSubagent` types it shares with `chat.ts`.
+- `uiControl.ts` — registry of OPEN app windows + request/reply channel (`/ui` WS), powering the `app` CLI + MCP app control. `runRegistry.ts` — `~/.bismuth/run/<vault>.json` so out-of-app callers find which port serves which vault.
+- `daemon.ts`/`daemonGraph.ts`/`daemonViz.ts` — daemon state reader (never throws) + the "daemon" graph builder + pure `nodeVisualState()`. See Daemon Integration.
+- `chat.ts` — the visual chat (`/chat` WS): one long-lived Agent-SDK `query()` per chat over the user's own binary. `chatProviders/` + `agentBackends/` — the provider seam and shared capability catalog behind **nine** backends (claude, opencode, codex, and the ACP-based cline/gemini/goose/openclaw/claude-code-acp/codex-acp); each control renders per declared capability. Refs: `docs/chat/overview.md`, `docs/chat/backends.md`.
+- `terminal.ts` — PTY manager (`bun-pty`); injects relay provenance + a PATH shim so a bare `claude` auto-loads the relay plugin (`buildPtyEnv`, pure + tested).
+- `backup.ts` (git snapshot) · `tasks.ts`/`tasks-query.ts` (Obsidian-compatible tasks + DSL) · `dates.ts` · `calendar.ts` (headless, behind the `bismuth calendar` CLI) · `basesData.ts` (vault feed for Bases) · `gcal/` (two-way Google Calendar sync) · `fileAccess.ts`/`localBackend.ts` (mobile seam + in-process backend).
 
-**Caching + data flow**: `cachedGraph`/`cachedTree` persist until vault/memory files change. A change → 250ms debounce → `changeClassifier.ts` marks caches dirty (content-only edits stay silent), bumps `version`, pushes SSE `{version, paths, dirty}` on `/events`. Frontend opens one `EventSource("/events")` (`serverVersion.ts`), re-fetching `/graph` (or `/file`) per event, with a low-freq `/version` poll as fallback. Positions are backend-precomputed, not force-simulated in the browser.
+**Caching + data flow**: `cachedGraph`/`cachedTree` persist until vault/memory files change; `rowsCache`/`tasksCache` are `createAsyncCache` instances (in-flight dedup). A change → 250ms debounce → `changeClassifier.ts` marks caches dirty (content-only edits stay silent), bumps `version`, pushes SSE `{version, paths, dirty}` on `/events`. The frontend keeps one `EventSource("/events")` and re-fetches per event, with a low-frequency `/version` poll as fallback. Positions are backend-precomputed, never force-simulated in the browser.
 
 ### Frontend App (`app/`)
 
 **Framework**: Solid.js (reactive primitives) + TypeScript, CSS modules.
 
 **Key components**:
-- `App.tsx` — root: owns the tab + pane tree, active file routing, graph mode, settings persistence, global keyboard handling
-- `panes.ts` — pure binary-tree model for split panes (Leaf/Split nodes), unit-tested in `panes.test.ts`
-- `PaneTree.tsx`/`PaneContent.tsx` — render the pane tree; each Leaf hosts a note, Bases view, spreadsheet (`.sheet`), drawing (`.draw`), calendar, tasks, flashcards, terminal, visual Claude chat (`ChatView`), or export view (`export/`)
-- `tabIds.ts` — sentinel ids for non-file pane contents (`::graph`, `::empty`, prefixed `::flashcards:`/`::term:`/`::export:`/`::chat:`). Notes/bases/sheets/drawings/settings route by file path; no `::calendar`/`::search` sentinel — search is the unified Cmd+O switcher takeover (`palette/SwitcherBar.tsx`: fuzzy file + content matches + Bismuth AI escalation).
-- `Editor.tsx` (CodeMirror) + `BlockEditor.tsx` (Milkdown WYSIWYG) — two note surfaces; `editor.defaultMode` picks which a note opens in (reactive live swap). Block-model detail in `docs/editor/blocks.md` (`blocks/`: `blockModel` lossless md↔blocks, `milkdownEditor`, `inlineNodes`, `FormatBar`).
-- `editor/` — CodeMirror extensions (detail in `docs/editor/`): live-preview (per-token reveal, focus-gated, incl. `callout.ts` + `mathBlock.ts`), `enterKeymap.ts`, bold/italic toggles, lists, wikilink/tag/slash/`:emoji:` autocomplete (+ `emojiQuickAction.ts` — the emoji-library rail on the right-click context menu, shared by note + table-cell menus, #67), ` ```query ` block, embeds, editable GFM tables (`tableModel`/`tableWidget`/`cellEditor`/`tableResizeDrag`), find bar, KaTeX+LaTeX, Harper spell+grammar, completed-task fold, `settingsComplete`/`yamlSchema`. `editorRegistry.ts` tracks live views + flushes autosaves before renames.
-- `FileTree.tsx` — left sidebar: drag-drop moves, rename/move retargets active tab, delete undo (toast+Cmd+Z), multi-select, icon picker, system-folder protection (`.settings`/`.daemon`). `ContextMenu.tsx` — right-click menu. `GraphView.tsx` — mounts the Canvas2D renderer
-- Settings have **no GUI page** — the "settings page" is `.settings` (a hidden extensionless file per vault; `SETTINGS_FILE` in `core/src/settings.ts`) opened in the editor like any note, with schema-aware autocomplete (`editor/settingsComplete.ts`) + lint (`editor/yamlSchema.ts`). Schema (`core/src/schema/settingsSchema.ts`) = single source of truth.
-- `palette/` — `CommandPalette`, shared `PaletteModal`, `SwitcherBar` + `switcherAi`/`switcherModel` (the unified Cmd+O search takeover — the app's ONE search surface). `Flashcards.tsx` — top-level SRS review view. `Terminal.tsx` — xterm.js tab (WS via `core/src/terminal.ts`). `Toast.tsx`/`telemetry.ts` — toasts + telemetry. `serverVersion.ts` — single `EventSource` to `/events` + fallback `/version` poll
-- `bases/` — 12 view renderers (Table/Cards/Kanban/List/Map/Calendar/Flashcards/Bar/Line/Stat/Heatmap + `renderValue`) plus `markdown.ts` — the shared markdown→HTML engine (KaTeX, callouts, wikilinks, tags, PDF page-break markers) used by notes/cards/transclusion/export. `calendar/` — calendar state + components. `api.ts` — backend client over a swappable `Transport` (`setTransport()` → in-process on mobile — see Mobile / iPad)
-- `settings.ts` — settings store: seeded from `DEFAULTS`, hydrated from `GET /settings`, persisted by PATCHing only changed leaves via `POST /set-setting` (`settingsDiff.ts`, no comment clobbering). `Settings` mirrors the schema (`settings.parity.test.ts`).
-- `settingsCssVars.ts` — projects appearance/ui/calendar/terminal settings + the resolved theme tokens into `:root` CSS custom properties (colors, `--graph-0..4`, `--danger/--success/--warning`, `--shadow-*`); stylesheets reference via `var(--name, fallback)`. Color tokens come from `core/src/theme/tokens.ts` (the single source of truth, re-exported by `app/src/themes.ts`).
+- `App.tsx` — root: tab + pane tree, active-file routing, graph mode, settings persistence, global keys. `panes.ts` — pure binary-tree model for splits (Leaf/Split), unit-tested. `PaneTree.tsx`/`PaneContent.tsx` route a Leaf to a note, Bases view, `.sheet`, `.draw`, calendar, tasks, flashcards, terminal, chat, or export view.
+- `tabIds.ts` — sentinel ids for non-file panes (`::graph`, `::empty`, prefixed `::flashcards:`/`::term:`/`::export:`/`::chat:`). Notes/bases/sheets/drawings/settings route by path. There is no `::search` — search is the Cmd+O switcher takeover (`palette/SwitcherBar.tsx`), the app's ONE search surface.
+- `Editor.tsx` (CodeMirror) + `BlockEditor.tsx` (Milkdown WYSIWYG) — two note surfaces; `editor.defaultMode` picks which one a note opens in (reactive live swap). Detail: `docs/editor/`.
+- `editor/` — the CodeMirror extension set: live-preview, autocomplete (wikilink/tag/slash/`:emoji:`), ` ```query ` blocks, embeds, editable GFM tables, find bar, KaTeX, Harper spell+grammar, `settingsComplete`/`yamlSchema`. `editorRegistry.ts` flushes autosaves before renames. Per-extension detail: `docs/editor/`.
+- **Settings have no GUI page** — the "settings page" IS `.settings` (a hidden extensionless file per vault) opened in the editor like any note, with schema-aware autocomplete + lint. `core/src/schema/settingsSchema.ts` is the single source of truth.
+- `FileTree.tsx` — drag-drop moves, rename retargets the active tab, delete undo (toast + Cmd+Z), multi-select, icon picker, `.settings`/`.daemon` protection. `bases/` — the 12 view renderers + `markdown.ts`, the shared markdown→HTML engine used by notes/cards/transclusion/export. `api.ts` — backend client over a swappable `Transport` (in-process on mobile).
+- `settings.ts` — store seeded from `DEFAULTS`, hydrated from `GET /settings`, persisted by PATCHing only changed leaves (`settingsDiff.ts`, no comment clobbering); mirrors the schema (`settings.parity.test.ts`). `settingsCssVars.ts` projects settings + theme tokens into `:root` CSS custom properties.
 
-**Graph rendering**:
-- `graph/AsciiGraphRenderer.ts` — **the** renderer (there is no renderer choice): a Canvas-2D *character grid* (NOT WebGL) for 2D + 3D. Nodes and labels rasterize as monospace glyphs snapped to cells; edges are real vector strokes underneath. 3D camera math + hit-test/hover/drag-orbit/pan/zoom in one pass per frame; only rescales the backend's precomputed layouts. **Zoom is RESOLUTION, not scale** — a mark's size never changes; a wheel notch re-rasterizes at a finer grid and steps the three-band ladder (far = cluster masses, mid = glyphs + hub-to-hub backbone, near = glyphs + member edges).
-- `graph/graphRenderer.ts` — the `GraphRenderer` seam + `GraphConfig`/`HoverNode`. Its header carries the EPITAPH for the deleted second renderer (`CanvasGraphRenderer.ts`) and the four capabilities that did not survive the merge.
-- Pure modules the merge extracted, each unit-tested: `graph/respace.ts` (node-count-independent spacing), `graph/backbone.ts` (group-level hub edges + the band handover), `graph/clusterVisual.ts` (size-ranked colours, hub-anchored names), `graph/cameraModel.ts` (the 3D dolly derived from the resolution ladder), `graph/lod.ts` (aggregate masses), `graph/asciiGrid.ts` (the cell buffers + zoom ladder), `graph/labelSelection.ts` (the label ladder + `computeAlwaysOnSet`).
+**Graph rendering**: `graph/AsciiGraphRenderer.ts` is **the** renderer (no renderer choice) — a Canvas-2D *character grid*, not WebGL, for both 2D and 3D. Nodes and labels rasterize as monospace glyphs snapped to cells; edges are vector strokes underneath. It only rescales the backend's precomputed layouts. **Zoom is RESOLUTION, not scale**: a mark's size never changes; a wheel notch re-rasterizes at a finer grid and steps the three-band ladder (far = cluster masses, mid = glyphs + hub backbone, near = glyphs + member edges). `graph/graphRenderer.ts` is the seam (`GraphConfig`/`HoverNode`). Pure, unit-tested modules: `respace`, `backbone`, `clusterVisual`, `cameraModel`, `lod`, `asciiGrid`, `labelSelection`. Ref: `docs/graph/overview.md`.
 
-**Styling**: `App.css` = global styles + CSS vars for theme/accent/fonts; component styles colocated with components. The color system is centralized in **`core/src/theme/tokens.ts`** (12 themes, semantic + shadow tokens, category swatches — in `core` so gcal/drawing/export/schema can import it; `app/src/themes.ts` re-exports it). Ref: `docs/settings/themes.md`.
+**Styling**: `App.css` = global styles + CSS vars; component styles colocated. Colour is centralized in **`core/src/theme/tokens.ts`** (the 4 themes ink/paper/cathode/riso + semantic/shadow tokens + category swatches — in `core` so gcal/drawing/export/schema can import it; `app/src/themes.ts` re-exports it). Ref: `docs/settings/themes.md`.
 
 ### CLI (`cli/`)
 
@@ -182,49 +171,39 @@ Workspaces are linked via Bun's `workspaces` in the root `package.json`: `core` 
 
 ## Module Organization
 
-Purposes are in **Architecture** above; this is the layout.
+Purposes are in **Architecture** above; this is the layout. **Exhaustive per-file map: `docs/contributing/codebase-map.md`.**
 
 ```
 core/src/
-  server.ts sse.ts                    # HTTP + SSE + WS, mutating-route abstraction
-  engine.ts vault.ts memory.ts agents.ts relay.ts uiControl.ts runRegistry.ts graphBuilder.ts   # graph composition + builders (relay = terminal-tab session/subagent registry; uiControl = app-control window channel; runRegistry = port discovery)
-  daemon.ts daemonGraph.ts daemonViz.ts daemonState.ts   # daemon: state reader + daemon-mode graph + node-visual encoder + shared file-read helpers
-  drawing/   # .draw vector docs (model/geometry/smooth/render2d/paper/theme/export — pure, headless)
-  graph.ts layout.ts layout-cache.ts community.ts          # types, layout, community detection
-  files.ts frontmatter.ts wikilinks.ts tags.ts pathUtils.ts backup.ts
-  asyncCache.ts changeClassifier.ts   # dedup cache + selective-invalidation classifier
-  search.ts replace.ts templates.ts dailyNote.ts openFolder.ts   # back POST /search,/replace,/daily-note,/open-folder
-  settings.ts                          # .settings lifecycle (reconcile, per-vault write mutex, property registry)
-  theme/tokens.ts                      # THE single source of truth for the color system (12 themes + semantic/shadow tokens + category swatches); re-exported by app/src/themes.ts, imported by gcal/drawing/export/settingsSchema
-  commands.ts keybindings.ts error.ts dates.ts basesData.ts tasks.ts tasks-query.ts taskReorder.ts terminal.ts chat.ts chatModelStore.ts calendar.ts bismuthInstall.ts claudeWhich.ts selfUpdate.ts fsPaths.ts   # calendar.ts = headless pure calendar-file logic behind the `bismuth calendar` CLI group; chatModelStore.ts = durable per-session chat model (~/.bismuth/chat/models.json, Bug #89)
-  fileAccess.ts localBackend.ts   # mobile (iPad/iOS): FileAccess IO seam + in-process no-HTTP backend (dispatch) — see Mobile / iPad
-  bases/   # Bases DSL (lexer/parser/evaluate/filters/functions/query)
-  srs/     # SRS (cards/parser/scheduler)
-  gcal/    # Google Calendar two-way sync (oauth/pkce/client/sync/recurrence/colors/map/lock/manifest/state)
-core/test/  # one *.test.ts per module; helpers.ts → makeSampleVault()
+  server.ts sse.ts                     # HTTP + SSE + WS, mutating-route abstraction
+  engine.ts vault.ts memory.ts graphBuilder.ts graph.ts layout.ts layout-cache.ts community.ts
+  agents.ts relay.ts uiControl.ts runRegistry.ts   # chat-subagent types; relay registry; /ui channel; port discovery
+  daemon.ts daemonGraph.ts daemonViz.ts daemonState.ts
+  files.ts frontmatter.ts wikilinks.ts tags.ts pathUtils.ts backup.ts asyncCache.ts changeClassifier.ts
+  search.ts replace.ts templates.ts dailyNote.ts openFolder.ts
+  settings.ts schema/                  # .settings lifecycle + THE settings schema (24 top-level sections)
+  theme/tokens.ts                      # single source of truth for colour: 4 themes (ink/paper/cathode/riso)
+  visibility.ts visibilityCliGate.ts   # AI-visibility deny lists + the CLI-dispatch gate
+  chat.ts chatProviders/ agentBackends/  # visual chat + the nine backends and their capability catalog
+  commands.ts keybindings.ts error.ts dates.ts basesData.ts tasks*.ts terminal.ts calendar.ts …
+  fileAccess.ts localBackend.ts        # mobile IO seam + in-process no-HTTP backend
+  bases/ srs/ gcal/ drawing/           # Bases DSL · SRS · Google Calendar sync · .draw vector docs
+core/test/  # one *.test.ts per module; helpers.ts → makeSampleVault(); upgrade/ = cross-version safety
 
 app/src/
   App.tsx panes.ts PaneTree.tsx PaneContent.tsx tabIds.ts   # root, pure pane-tree model, routing
-  Editor.tsx editor/   # CodeMirror wrapper + extensions (livePreview, autocomplete, foldBlocks, queryBlock, wikilink, tag, markdownFormat, settingsComplete…)
-  BlockEditor.tsx blocks/   # Milkdown WYSIWYG surface (blockModel, milkdownEditor, inlineNodes, FormatBar); closedSession.ts/navType.ts (app-wide tab-restore)
-  ChatView.tsx ChatComposer.tsx chat*.ts   # visual Claude chat (NOT in blocks/): ChatView + ChatComposer + ~13 pure unit-tested modules (chatContext/chatEditorContext, chatHistory, chatModelResolution, chatEffort, chatPermissionMode, chatSlashCommands, chatQueueRestore, chatSessionStore, chatTitles, chatOrigin = daemon-vs-user icon, chatColors, chatComposerKeys)
-  mobile/   # iPad/iOS boot: bootMobile.ts (swaps FileAccess+Transport before App import), inProcessTransport.ts (dispatch→Response, optimistic read-compare-write), tauriFileAccess.ts (tauri-plugin-fs IO) — see Mobile / iPad
-  FileTree.tsx fileTreeOps.ts ContextMenu.tsx nativeMenu.ts FolderPrompt.tsx EmptyPane.tsx
-  GraphView.tsx GraphSearch.tsx graph/   # graph shell + the ONE renderer (AsciiGraphRenderer, character grid) behind the graphRenderer seam, GraphAtmosphere, EmbeddedGraph, + the pure modules: asciiGrid, lod, backbone, clusterVisual, cameraModel, respace, labelSelection, graphFit, graphStability, densityField
-  FileView.tsx NoteTitle.tsx Flashcards.tsx Terminal.tsx SheetView.tsx sheet/ ExportView.tsx export/
-  intro/ ai/   # intro/ = first-run Vault Intro takeover (VaultIntro + marks; theme picker + power-ups; see Desktop app & core sidecar); ai/ = local offline "Detect AI text" (aiDetect.ts, transformers.js, no network)
-  bases/ calendar/ palette/ drawing/   # feature view-sets (bases/: + CardEditor inline-editable cards, CardEditModal, reconcileRows, changeRelevance; kanban card image-drop: cardImageDrop/kanbanImageDrop → embed dropped images in a card's markdown description, #67)
-  noteCache.ts windowId.ts baseViews.ts taskStatusMenu.tsx   # LRU note cache, per-window tab-storage keys, 12 base-view kinds, task-status context menu
-  ui/      # shared primitives (Button family, Chip, Stars, StatusDot, ViewBar, SearchBar, SegmentedToggle, TextInput, Select, Field, EmptyState, Modal, gallery/, popover/)
-  icons/ dnd/   # Lucide Icon+registry+picker; drag-drop geometry + viewDrag
-  api.ts serverVersion.ts uiControlClient.ts settings.ts settingsCssVars.ts settingsDiff.ts keybindings.ts themes.ts appWindow.ts nativeAppMenu.ts   # uiControlClient = the /ui app-control socket; themes.ts = byte-identical re-export of core/src/theme/tokens.ts
-  Toast.tsx telemetry.ts App.css   # toasts, client telemetry, global styles + CSS vars
-app/src-tauri/   # Tauri shell (Rust): lib.rs spawns the core sidecar + first-run vault picker (see Desktop app & core sidecar)
+  Editor.tsx editor/ · BlockEditor.tsx blocks/              # CodeMirror surface · Milkdown WYSIWYG surface
+  ChatView.tsx ChatComposer.tsx chat*.ts                    # visual chat + ~13 pure unit-tested modules
+  GraphView.tsx graph/                 # the ONE renderer (AsciiGraphRenderer) behind the graphRenderer seam
+  FileTree.tsx ContextMenu.tsx FileView.tsx Terminal.tsx SheetView.tsx sheet/ ExportView.tsx export/
+  bases/ calendar/ palette/ drawing/ intro/ ai/ mobile/ ui/ icons/ dnd/   # icons/ = pixel icon set + registry
+  api.ts serverVersion.ts settings.ts settingsCssVars.ts keybindings.ts themes.ts …
+app/src-tauri/   # Tauri shell (Rust): spawns the core sidecar + first-run vault picker
 
-mcp/src/
-  docs.ts cli.ts memory.ts server.ts   # stdio MCP server: docs index/search/read + CLI bridge + memory tools = 5 always-on + 3 daemon-gated (see MCP Integration). App control adds ZERO tools — it rides bismuth_cli (the `app`/`page` CLI groups)
-relay/   # Claude Code plugin: hooks/ (→ POST /relay/*) + shim/ (zsh claude wrapper) + .mcp.json (declares the bismuth MCP, dev); see Relay Integration
-daemon/src/lib/bismuthPaths.ts   # existsSync-gated ~/.bismuth/bin paths (mcp/cli/docs) — the daemon session's explicit MCP wiring (literal dup of bismuthInstall.ts, like claudeWhich.ts)
+cli/src/    # `bismuth` binary: index.ts dispatcher + args.ts seam + commands/<group>.ts
+mcp/src/    # stdio MCP server: 5 always-on tools + 3 daemon-gated (app control adds ZERO tools)
+relay/      # Claude Code plugin: hooks/ (→ POST /relay/*) + shim/ + .mcp.json
+daemon/src/ # per-vault brain: daemon/ (session, cron, process, seeds) + lib/
 ```
 
 ## Development Workflow
@@ -265,6 +244,9 @@ Memory notes live in a separate dir; the memory graph is built separately with n
 ### Graph Modes
 - **"2nd" brain**: self + vault notes + tags (excludes memory). **"3rd" brain**: self + memory. **"both"**: full brain + cross-edges.
 - **"daemon"**: the daemon's supervised work — daemon hub → its crons + processes (`supervises` edges), node fill/border encoding enabled/running state. See Daemon Integration.
+- **"local"**: the open note's immediate neighborhood only (`localSubgraph`, `app/src/graph/displayGraph.ts` + `localLayoutInput.ts`) — a focused read of one note's links rather than the whole vault.
+
+`GraphMode` (`app/src/commands.ts`) is exactly `"2nd" | "3rd" | "both" | "daemon" | "local"`. The old **"agents"** mode was removed (`a6687c0`): no `GET /agent-graph`, no `agentLayout.ts`/`AgentsGraph.tsx`, nothing emits `kind:"agent"`. `relay.ts` and its `POST /relay/*` ingest routes survive — they now feed chat's subagent tracking + terminal pruning, not a graph.
 
 **2D/3D toggle**: a **transient localStorage toggle** (not a `.settings` key) — persists across sessions but not user-facing in the settings file. Toggle via the graph toolbar or `GraphView` mode control.
 
@@ -299,7 +281,9 @@ Deep reference: `docs/daemon/`. Key points:
 
 ## Testing
 
-Bun's native runner (`bun test core` for the whole workspace, `bun test core/test/<file>.test.ts` to scope to one file — see Key Commands; `bun test core -- <pattern>` does NOT filter, it silently runs everything). Each module has a colocated `*.test.ts`. Notable: `core/test/{vault,engine,server,sse,layout,tasks,tasks-query,daemon,daemonViz}.test.ts`, `core/test/{bases,srs,drawing}/`, frontend `app/src/{panes,settings}.test.ts`, `app/src/graph/*.test.ts`, `app/src/calendar/*.test.ts`, `app/src/editor/*.test.ts`.
+Bun's native runner; each module has a colocated `*.test.ts`. Commands, the commit/push gates, the
+fast-suite opt-out, and `core/test/upgrade/` are all covered under **Key Commands → Testing** above.
+Full reference: `docs/contributing/testing.md`.
 
 ## Gotchas & Edge Cases
 

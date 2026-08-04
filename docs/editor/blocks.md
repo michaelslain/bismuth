@@ -1,6 +1,12 @@
 # Block Editor (true-WYSIWYG)
 
-The **Block Editor** is Bismuth's second editor surface, alongside the CodeMirror `Editor`. It is a Notion-like, true-WYSIWYG note surface built on per-block [Milkdown](https://milkdown.dev) (ProseMirror) instances: headings render large, `**bold**` renders bold, `[[wikilinks]]`/`#tags`/`$math$`/embeds become live chips with **no markdown symbols shown**, and the whole note is a vertical stack of draggable blocks with a `/` slash menu, a selection-anchored format bar, and inline wikilink/tag autocomplete. A note opens in this surface (versus the raw-markdown CodeMirror editor) controlled **entirely** by the single `editor.defaultMode` setting — there is no per-note UI toggle. Critically, the surface replicates `Editor.tsx`'s anti-clobber autosave contract byte-for-byte: a note's source of truth is the **raw markdown string**, parsed into a *lossless* block model whose serialize is just the verbatim frontmatter plus every block's verbatim source, so a whole-file write never corrupts unmodelled content.
+This is the deep reference for Bismuth's Block Editor — read it when working on `BlockEditor.tsx`, the block model, or the Milkdown bridge underneath it.
+
+The **Block Editor** is Bismuth's second editor surface, alongside the CodeMirror `Editor`. It is a Notion-like, true-WYSIWYG note surface built on per-block [Milkdown](https://milkdown.dev) (ProseMirror) instances: headings render large, `**bold**` renders bold, `[[wikilinks]]`/`#tags`/`$math$`/embeds become live chips with **no markdown symbols shown**, and the whole note is a vertical stack of draggable blocks with a `/` slash menu, a selection-anchored format bar, and inline wikilink/tag autocomplete.
+
+A note opens in this surface (versus the raw-markdown CodeMirror editor) controlled **entirely** by the single `editor.defaultMode` setting — there is no per-note UI toggle.
+
+Critically, the surface replicates `Editor.tsx`'s anti-clobber autosave contract byte-for-byte: a note's source of truth is the **raw markdown string**, parsed into a *lossless* block model whose serialize is just the verbatim frontmatter plus every block's verbatim source, so a whole-file write never corrupts unmodelled content.
 
 The implementation is three layers:
 
@@ -14,7 +20,7 @@ The implementation is three layers:
 
 The model's release gate is one equation, asserted for *any* markdown `md`:
 
-```
+```ts
 serializeBlocksToMarkdown(parseMarkdownToBlocks(md)) === md
 ```
 

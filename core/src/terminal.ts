@@ -102,8 +102,8 @@ export interface BackendShimCandidate {
   id: string;
   /** Binary/function name to resolve + wrap (BackendDescriptor.binary). */
   binary: string;
-  /** BackendCapabilities.agentsGraph — the sole input for whether/how this backend gets wrapped. */
-  agentsGraph: "hooks" | "wrapper" | "none";
+  /** BackendCapabilities.relayReporting — the sole input for whether/how this backend gets wrapped. */
+  relayReporting: "hooks" | "wrapper" | "none";
   /** BackendCapabilities.terminal — a chat-only backend with no terminal surface gets no shim. */
   terminal: boolean;
 }
@@ -133,7 +133,7 @@ export interface ShimSpec {
 }
 
 /**
- * Whether a "wrapper"-mode backend (BackendCapabilities.agentsGraph === "wrapper" — a CLI with no
+ * Whether a "wrapper"-mode backend (BackendCapabilities.relayReporting === "wrapper" — a CLI with no
  * hook system of its own) gets wrapped through relay/bin/wrap.ts for agents-graph session
  * telemetry. DEFAULT OFF.
  *
@@ -150,14 +150,14 @@ export interface ShimSpec {
  *
  * Flip to `true` here once that hand-verification has happened — shimSpecsFor, wrap.ts, and both
  * consumers (the zsh init + relay/shim/agent-shim) already react correctly the moment this flips.
- * The catalog's per-backend `agentsGraph: "wrapper"` flag remains the OTHER gate: both must agree
+ * The catalog's per-backend `relayReporting: "wrapper"` flag remains the OTHER gate: both must agree
  * before a given backend is actually wrapped.
  */
 const WRAPPER_REPORTING_ENABLED = false;
 
 /**
  * Pure: which backends get a shim (a shell function in zsh; a PATH-shim entry elsewhere) and how.
- * The sole input for intent is each backend's `agentsGraph`:
+ * The sole input for intent is each backend's `relayReporting`:
  *  - "hooks"   → inject the relay plugin directly (claude today).
  *  - "wrapper" → route through relay/bin/wrap.ts — but ONLY when `wrapperReportingEnabled`; when
  *    false, a "wrapper" backend is treated exactly like "none" (no spec, no function, no PATH
@@ -179,9 +179,9 @@ export function shimSpecsFor(
   const specs: ShimSpec[] = [];
   for (const b of backends) {
     if (!b.terminal) continue;
-    if (b.agentsGraph === "none") continue;
-    if (b.agentsGraph === "wrapper" && (!opts.wrapperReportingEnabled || b.id === "claude")) continue;
-    specs.push({ id: b.id, binary: b.binary, realPath: resolve(b.binary), mode: b.agentsGraph });
+    if (b.relayReporting === "none") continue;
+    if (b.relayReporting === "wrapper" && (!opts.wrapperReportingEnabled || b.id === "claude")) continue;
+    specs.push({ id: b.id, binary: b.binary, realPath: resolve(b.binary), mode: b.relayReporting });
   }
   return specs;
 }
@@ -209,7 +209,7 @@ export function serializeShimSpecs(specs: readonly ShimSpec[]): string {
 const BACKEND_SHIM_CANDIDATES: BackendShimCandidate[] = BACKEND_LIST.map((b) => ({
   id: b.id,
   binary: b.binary,
-  agentsGraph: b.capabilities.agentsGraph,
+  relayReporting: b.capabilities.relayReporting,
   terminal: b.capabilities.terminal,
 }));
 

@@ -1,6 +1,8 @@
 # Testing
 
-This document is the canonical reference for how tests work in Bismuth, covering the test runner, file conventions, the full suite across `core/` and `app/`, how to run and filter tests, how to add new tests, the `bun run typecheck` TypeScript gate, and a tour of every key test file and the patterns they establish.
+This is the canonical reference for how tests work in Bismuth — read it before writing a test, running the suite, or touching the commit/push gates. It covers the test runner, file conventions, the full suite across `core/` and `app/`, how to run and filter tests, how to add new tests, the `bun run typecheck` TypeScript gate, and a tour of every key test file and the patterns they establish.
+
+**In this doc:** the commit/push gate and what it runs · upgrade-safety tests · running and filtering tests · the TypeScript gate · offline agent-CLI integration tests (mocked LLM) · file layout · the shared vault test helper · a tour of key test files · how to add a new test · what Bun does not test.
 
 ---
 
@@ -12,7 +14,9 @@ Bismuth uses **Bun's built-in test runner** (`bun:test`) for all tests — both 
 import { test, expect, describe, it, beforeEach, afterEach } from "bun:test";
 ```
 
-The full suite (~2031 tests across the `core/` and `app/` workspaces) runs in roughly 80-90 seconds on a modern laptop with every mocked-CLI binary installed and reachable. (This is an ~8x increase from an earlier ~930-tests/~10s figure this file used to quote — mostly the offline-testing branch's own mocked agent-CLI integration tests below, several of which spawn a REAL CLI subprocess and wait for a real turn to complete rather than exercising pure in-process logic, which costs real wall-clock seconds per test even though it costs zero API calls/dollars. A machine missing some of those CLI binaries runs fewer tests, faster, via the missing-binary skip described below.)
+The full suite (~2031 tests across the `core/` and `app/` workspaces) runs in roughly 80-90 seconds on a modern laptop with every mocked-CLI binary installed and reachable.
+
+This is an ~8x increase from an earlier ~930-tests/~10s figure this file used to quote. The growth is mostly the offline-testing branch's own mocked agent-CLI integration tests (below): several of them spawn a REAL CLI subprocess and wait for a real turn to complete, rather than exercising pure in-process logic, which costs real wall-clock seconds per test even though it costs zero API calls/dollars. A machine missing some of those CLI binaries runs fewer tests, faster, via the missing-binary skip described below.
 
 ---
 

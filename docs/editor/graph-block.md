@@ -63,6 +63,8 @@ out of the block; it collapses back to a working graph. (Covered end to end by
   in every state, including a block with parse errors (see **Recovering from a parse
   error** above).
 
+### Layout
+
 Layout is **computed, not stored**: node positions come from the same deterministic
 layout as the knowledge graph (`core/src/layout.ts`), so the same markdown always draws
 the same picture and positions are not part of the DSL. Node drag-repositioning is

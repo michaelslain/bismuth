@@ -1,8 +1,8 @@
 # Kanban View
 
-The kanban view renders a base's rows as a board of swim-lane columns, one column per group value. It requires a `groupBy` property in the view config; without one, the view renders a hint message instead of a board.
+The kanban view renders a base's rows as a Trello-style board of columns, one column per group value. It requires a `groupBy` property in the view config; without one, the view renders a hint message instead of a board.
 
-Each card is a note. On a board backed by a real base file (`props.basePath` set — i.e. not an embedded ```query block) the board is fully editable:
+Each card is a note. On a board backed by a real base file (`props.basePath` set — i.e. not an embedded ```` ```query ```` block), the board is fully editable:
 
 - **Drag cards** between/within columns — writes the new group value + a within-column sort index to the note's frontmatter (`POST /set-property`).
 - **Drag column headers** to reorder columns — persists the new order to the view's `columns` (`groupOrder`).
@@ -11,6 +11,8 @@ Each card is a note. On a board backed by a real base file (`props.basePath` set
 - **Add a card** — a compact "+" button (Lucide `Plus`) at the bottom of each column opens a composer that creates a note in the board's folder with that column's value set.
 
 The card face shows the note's **title**, then every other property the view's `order:` lists, rendered as **read-only meta chips** — tapping the card opens the [edit modal](#editable-cards). `description` is NOT special-cased (#103) — a board that declares it (or lists it in `order:`) shows it exactly like any other property: rendered through its type (a `type: markdown` property renders block markdown; see [`order`](#order) below for the default when it's left undeclared). The card deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it.
+
+**In this doc:** required config and the per-field reference → the card face and column colors → drag-and-drop for cards, then columns → the card edit modal and delete → image drop → adding cards → within-column sort order → the backing `POST /set-property` endpoint → CSS sizing → a complete example → edge cases.
 
 ---
 
@@ -120,7 +122,14 @@ descriptionField?: string   // deprecated (#103); ignored
 
 ### `order`
 
-`order` selects which properties (besides the title, `file.name`) appear on each card as editable meta chips (see [Card Face](#card-face)). Each property renders through its type-aware kind — text/number/date/select/multiselect/tags/markdown/boolean — resolved by `propertyEditKind` (`app/src/bases/propertyEdit.ts`): a base-declared `type:` wins outright; otherwise the vault-wide property registry (`.settings`) is consulted; otherwise **a property literally named `description`** (bare or `note.description`) defaults to **markdown** — the least-surprising choice, since every pre-#103 board treated it as a multiline markdown field — and everything else falls back to a runtime-value/known-values heuristic. Properties that are empty on a given note render nothing on that card (no `—` placeholder). The internal `order` sort-index key remains hidden unless explicitly listed.
+`order` selects which properties (besides the title, `file.name`) appear on each card as editable meta chips (see [Card Face](#card-face)). Each property renders through its type-aware kind — text/number/date/select/multiselect/tags/markdown/boolean — resolved by `propertyEditKind` (`app/src/bases/propertyEdit.ts`) in this priority order:
+
+1. A base-declared `type:` wins outright.
+2. Otherwise, the vault-wide property registry (`.settings`) is consulted.
+3. Otherwise, **a property literally named `description`** (bare or `note.description`) defaults to **markdown** — the least-surprising choice, since every pre-#103 board treated it as a multiline markdown field.
+4. Otherwise, it falls back to a runtime-value/known-values heuristic.
+
+Properties that are empty on a given note render nothing on that card (no `—` placeholder). The internal `order` sort-index key remains hidden unless explicitly listed.
 
 Without an `order:`, a base that **declares its own properties** (list-form `properties:` — see the [properties doc](../properties.md)) shows the declared set as the card meta instead (same title/empties exclusions, plus the `groupBy` property is dropped — the column already conveys it), and its add-card composer seeds each declared `default` onto the new note. A base with neither `order:` nor a declaration shows no meta, as before.
 

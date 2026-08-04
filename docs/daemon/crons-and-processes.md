@@ -2,6 +2,8 @@
 
 The daemon runs two kinds of recurring work off the same on-disk pattern: **crons** (markdown files that fire a Claude session, either on a time schedule or when a watched vault file changes — see [File-change crons](#file-change-crons)) and **background processes** (markdown files that supervise a long-lived child process). Both are plain `.md` files under `<vault>/.daemon` — crons in `.daemon/crons`, processes in `.daemon/processes` — parsed by the same frontmatter reader, driven through the same UNLINK-FIRST trigger discipline, but with deliberately different runtime semantics (a cron trigger *fires a run*; a process trigger *reconciles runtime to disk*).
 
+This page covers both models end to end: the shared frontmatter parser and filesystem layout, the cron model (schedule vs. file-change triggers, incremental skip-gating, firing, catch-up, recovery, run-now triggers, and the two shipped defaults), and the background-process model (spawn/restart, PID tracking, enable/disable, triggers) — closing with a keying summary that ties both together. Bismuth's own enable/disable/run-now controls for these files are covered in [overview.md](overview.md) and [storage.md](storage.md).
+
 The big structural fact: there is **ONE machine runtime that multiplexes every enabled vault's brain**. The cron scheduler is a single tick loop that fans out across `loadEnabledVaults()` each tick; process supervision keeps one machine-global `managed` map. Every function takes a `VaultContext` (`loadCronJobs(ctx)`, `fireJob(ctx, job, lastFired)`, `requestCronRun(name, ctx)`, `processTriggers(ctx)`, `startProcess(name, ctx)`, …), and all paths come off that ctx (`ctx.cronsDir`, `ctx.processesDir`, `ctx.logsDir`, `ctx.lastFiredFile`, `ctx.runningFile`, `ctx.triggerDir`, `ctx.processTriggerDir` — all under `<vault>/.daemon`). In-memory runtime state is keyed `${ctx.root}::${name}` so two vaults can each own a cron or process of the same name without colliding.
 
 Bismuth core reads and minimally writes these same files to power the "daemon" graph and `DaemonList` controls — see [overview.md](overview.md) and [storage.md](storage.md). Boot/shutdown order is in [lifecycle.md](lifecycle.md); the dream cycle's memory mechanics are in [memory.md](memory.md).
@@ -196,12 +198,14 @@ In-memory runtime state — the `runningJobs` Set and the `jobAbortControllers` 
 
 ### Enable / disable
 
-`enabled` defaults true (`!== "false"`). Disabled jobs are skipped at:
+`enabled` defaults true (`!== "false"`). Disabled jobs are skipped at four checkpoints:
 
-- the scheduler tick (`if (!job.enabled || runningJobs.has(jobKey(ctx, name))) continue`) — schedule crons only; the tick also skips every `on: "file-change"` job outright (they never fire off the tick),
-- the file watcher's per-batch fan-out (`fileWatch.ts`'s `flush` skips any `job.on !== "file-change" || !job.enabled`) — since `loadCronJobs(ctx)` is re-read fresh on every debounced batch, a file-change cron's enable/disable takes effect on the very next matching change, faster than a schedule cron's next-tick-or-so window,
-- catch-up on start (only enabled jobs are considered; file-change jobs never catch up regardless — see above),
-- recovery (only enabled jobs are re-fired; a disabled job recorded as running is cleaned up via `markDone`).
+| Checkpoint | Behavior |
+| --- | --- |
+| Scheduler tick | `if (!job.enabled || runningJobs.has(jobKey(ctx, name))) continue` — schedule crons only; the tick also skips every `on: "file-change"` job outright (they never fire off the tick) |
+| File watcher's per-batch fan-out | `fileWatch.ts`'s `flush` skips any `job.on !== "file-change" || !job.enabled` — since `loadCronJobs(ctx)` is re-read fresh on every debounced batch, a file-change cron's enable/disable takes effect on the very next matching change, faster than a schedule cron's next-tick-or-so window |
+| Catch-up on start | only enabled jobs are considered; file-change jobs never catch up regardless — see above |
+| Recovery | only enabled jobs are re-fired; a disabled job recorded as running is cleaned up via `markDone` |
 
 `updateCronJob(name, updates, ctx)` flips `enabled` by setting `frontmatter.enabled = String(enabled)` then rewriting the file with `buildCronFile`. There is **no live kill on disable** — a job already running keeps running; it just will not fire again.
 
@@ -223,13 +227,15 @@ In-memory runtime state — the `runningJobs` Set and the `jobAbortControllers` 
 
 ### Catch-up
 
-`getIntervalMs(cron)` estimates the schedule's period from its shape. `shouldCatchUp(job, lastFired)`:
+`getIntervalMs(cron)` estimates the schedule's period from its shape. `shouldCatchUp(job, lastFired)` evaluates, in order:
 
-- `job.on === "file-change"` → `false`, always (checked first — file-change crons have no schedule to be overdue against; see [File-change crons](#file-change-crons)).
-- `!catchup` → `false`.
-- never fired → `true`.
-- result `"killed"`/`"failed"` → catch up if `elapsed > retryCooldownMs(interval)`, where `retryCooldownMs = max(5min, floor(interval/12))` (daily ≈ 2 h, weekly ≈ 14 h, hourly → 5-min floor).
-- result `"success"`/`"unknown"`/`"skipped"` → catch up if `elapsed > interval * 1.01` (tight multiplier so a daily cron fires on wake from sleep rather than waiting hours). A `"skipped"` run is treated exactly like a completed run here, not a failure — the pre-fire check DID run, it just found nothing to do, so there's nothing to retry sooner for.
+| Condition | Result |
+| --- | --- |
+| `job.on === "file-change"` | `false`, always (checked first — file-change crons have no schedule to be overdue against; see [File-change crons](#file-change-crons)) |
+| `!catchup` | `false` |
+| never fired | `true` |
+| result `"killed"`/`"failed"` | catch up if `elapsed > retryCooldownMs(interval)`, where `retryCooldownMs = max(5min, floor(interval/12))` (daily ≈ 2 h, weekly ≈ 14 h, hourly → 5-min floor) |
+| result `"success"`/`"unknown"`/`"skipped"` | catch up if `elapsed > interval * 1.01` (tight multiplier so a daily cron fires on wake from sleep rather than waiting hours). A `"skipped"` run is treated exactly like a completed run here, not a failure — the pre-fire check DID run, it just found nothing to do, so there's nothing to retry sooner for |
 
 ### Scheduler lifecycle — the multiplex
 

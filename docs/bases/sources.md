@@ -4,13 +4,14 @@ Every Bismuth base and every view ultimately resolves a **`SourceSpec`** into a
 uniform `Row[]`. A `SourceSpec` is one of three kinds — `base`, `notes`, or
 `tasks` — and the resolver in `core/src/bases/source.ts` turns it into rows by
 reading vault notes, extracting checkbox tasks, or recursively rendering another
-base (composition). This document covers the `SourceSpec` shape, how a
-frontmatter `source:` string/object is normalized into one (`normalizeSource`),
-the `from: [[Base]]` scoping mechanism, recursive base composition with
-cycle-guarding (including symlink cycles), the canonical row body parser
-(`rows.ts`), and the server-side `POST /rows` endpoint with its caching and
-in-flight dedup. Worked examples (incl. scoped tasks) are drawn from the actual
-unit tests.
+base (composition). Read this if you're writing a `source:` in frontmatter,
+composing one base from another, or scoping tasks with `from:` — it covers the
+`SourceSpec` shape, how a frontmatter `source:` string/object is normalized into
+one (`normalizeSource`), the `from: [[Base]]` scoping mechanism, recursive base
+composition with cycle-guarding (including symlink cycles), the canonical row
+body parser (`rows.ts`), and the server-side `POST /rows` endpoint with its
+caching and in-flight dedup. Worked examples (incl. scoped tasks) are drawn from
+the actual unit tests.
 
 See also: [bases overview](./overview.md), [the `query` block & flat view specs](./query-block.md), [tasks](../tasks/syntax.md).
 

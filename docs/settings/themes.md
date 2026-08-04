@@ -1,6 +1,8 @@
 # Themes & Palette System
 
-This document covers every named Bismuth theme, how the `appearance` settings section maps to CSS custom properties on `:root`, the graph accent palette, and the editor font choices. The theme system is the **single source of color** for the entire app: selecting a theme recolors the canvas, surfaces, border, text, accent, graph nodes, terminal, and category swatches from one place, with no per-color overrides. The **single source of truth** is `core/src/theme/tokens.ts` (token definitions). It lives in `core` — not `app` — because the dependency runs app → core: core consumers (gcal event-color mapping, drawing paper/ink, the settings-schema theme enum) must be able to `import` the tokens, and core cannot import app. `app/src/themes.ts` is a **thin, byte-identical re-export** of that module so the frontend keeps its `"./themes"` import path. `app/src/settingsCssVars.ts` still does the CSS projection.
+This document covers every named Bismuth theme, how the `appearance` settings section maps to CSS custom properties on `:root`, the graph accent palette, and the editor font choices. Read it if you're picking exact color values, wiring a new themed component, debugging a color mismatch, or adding a fifth theme (see [Adding a New Theme](#adding-a-new-theme)). For the `appearance` section's non-color keys (sizing, fonts by name) alongside every other setting, see the [Settings Reference](reference.md).
+
+The theme system is the **single source of color** for the entire app: selecting a theme recolors the canvas, surfaces, border, text, accent, graph nodes, terminal, and category swatches from one place, with no per-color overrides. The **single source of truth** is `core/src/theme/tokens.ts` (token definitions). It lives in `core` — not `app` — because the dependency runs app → core: core consumers (gcal event-color mapping, drawing paper/ink, the settings-schema theme enum) must be able to `import` the tokens, and core cannot import app. `app/src/themes.ts` is a **thin, byte-identical re-export** of that module so the frontend keeps its `"./themes"` import path. `app/src/settingsCssVars.ts` still does the CSS projection.
 
 The four themes are the **ASCII redesign's** four scopes (`design/ascii/design-system/tokens/colors.css`): `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), `riso` (cream + indigo, light).
 
@@ -74,7 +76,7 @@ Values are transcribed verbatim from `design/ascii/design-system/tokens/colors.c
 
 ### ink (dark, default)
 
-```
+```text
 background:    #15161A        accent:        #93BDB0
 foreground:    #E8E3D6        border:        #3A3E4A
 neutral:       #9C998E        surface:       #20222A
@@ -96,7 +98,7 @@ danger:        #C87F72        success:       #A3BE8C        warning: #CBB27E
 
 ### paper (light)
 
-```
+```text
 background:    #E9E6E0        accent:        #4E7F73
 foreground:    #2E2C29        border:        #C4BEB3
 neutral:       #6E6A63        surface:       #EFEDE8
@@ -119,7 +121,7 @@ danger:        #A8503F        success:       #5E7F4B        warning: #B54708
 
 ### cathode (dark)
 
-```
+```text
 background:    #05070A        accent:        #35F0E0
 foreground:    #DDF3EA        border:        #1B3A38
 neutral:       #6FA69A        surface:       #0C1116
@@ -143,7 +145,7 @@ Cathode is the **one theme with bloom** — `glowAccent`/`glowText` carry real g
 
 ### riso (light)
 
-```
+```text
 background:    #EAE4D4        accent:        #2E36A8
 foreground:    #22285E        border:        #B9AE92
 neutral:       #5E628C        surface:       #E3DCC8
@@ -441,7 +443,7 @@ In practice every theme provides its own palette, so this fallback is defensive 
 
 The `appearance.icon` setting selects the per-vault logo mark (favicon + sidebar logo). This is independent of the theme. Valid values:
 
-```
+```text
 hopper-crystal (default) · node-b · square-funnel · nested-diamonds ·
 pinwheel · node-crystal · lattice · diamond-bloom · node-diamond ·
 octagon-bloom · spin-cross · tri-bloom · radial-graph · node-rings

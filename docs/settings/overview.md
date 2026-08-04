@@ -1,5 +1,7 @@
 # Settings Overview
 
+This page explains how Bismuth's settings *system* works end to end: the `.settings` file's lifecycle, the schema that drives it, the frontend store that mirrors it, and the wiring in between. Read it if you're adding a new setting, debugging why a value isn't taking effect, or just want to understand the plumbing. For the exhaustive list of every section and key with its default, see the [Settings Reference](reference.md); for the theme/color system specifically, see [Themes & Palette](themes.md).
+
 Bismuth's settings system is entirely schema-driven: there is no settings GUI page. The file `.settings` — a single hidden, extensionless YAML file at the root of every vault — IS the settings page — it is opened as a normal note in the editor, where schema-aware autocomplete (Ctrl-Space) and inline lint provide discovery and validation. All settings changes go through the backend as the single writer, ensuring the YAML document structure (comments, unknown keys, the `properties:` registry) is never clobbered by a frontend toggle. The schema (`core/src/schema/settingsSchema.ts`) is the single source of truth for field names, types, defaults, numeric bounds, and documentation strings; the frontend `Settings` interface (`app/src/settings.ts`) and the CSS custom-property projection (`app/src/settingsCssVars.ts`) are kept in lockstep with it by parity tests.
 
 > **Historical note**: the vault settings file used to be named `settings.yaml` at the vault root. It is now `.settings` (still YAML, just hidden and extensionless) — see [Filename History and Migration](#filename-history-and-migration) below. This doc uses `.settings` throughout; older docs/discussions may still say `settings.yaml`.
@@ -49,7 +51,7 @@ appearance:
   theme: ink
   icon: hopper-crystal
   editorFont: Monaspace Xenon
-  editorFontSize: 11.5
+  editorFontSize: 13.5
   ...
 graph:
   spin: true
@@ -83,7 +85,7 @@ Key properties of `reconcileSettings`:
 ```typescript
 // Real test demonstrating preservation:
 await writeNote(vault, SETTINGS_FILE, // ".settings"
-  "# my notes\nappearance:\n  theme: oxide-duotone # inline\n");
+  "# my notes\nappearance:\n  theme: ink # inline\n");
 await reconcileSettings(vault);
 // Raw file still contains "# my notes" and "# inline"
 // Missing keys (graph, editor, …) are added with defaults
@@ -103,12 +105,12 @@ This is guarded by a **per-vault mutex** (`settingsMutexes` — a `Map<vault, Pr
 
 ```typescript
 // Setting a value:
-await setSettingInFile(vault, ["appearance", "theme"], "indigo-oxide");
+await setSettingInFile(vault, ["appearance", "theme"], "paper");
 await setSettingInFile(vault, ["graph", "nodeSize"], 12);
 
 // Unknown keys and siblings are preserved:
-// Before: appearance:\n  theme: oxide-duotone\n  myCustom: 1\n# hdr
-// After:  appearance:\n  theme: indigo-oxide\n  myCustom: 1\n# hdr
+// Before: appearance:\n  theme: ink\n  myCustom: 1\n# hdr
+// After:  appearance:\n  theme: paper\n  myCustom: 1\n# hdr
 ```
 
 ### Serving Settings to the Frontend: `serializeSettingsForFrontend`
@@ -168,17 +170,17 @@ interface SchemaEntry {
 
 | Key | Type | Default | Range | Description |
 |---|---|---|---|---|
-| `theme` | enum | `oxide-duotone` | 12 values | Bismuth color theme; selects all colors in the app and graph. Dark themes: `oxide-duotone`, `gunmetal-teal`, `rose-gold`, `indigo-oxide`, `forest-oxide`, `full-sheen`. Light: same names suffixed `-light`. |
+| `theme` | enum | `ink` | 4 values | Bismuth color theme; selects all colors in the app and graph. Values: `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), `riso` (cream+indigo, light). |
 | `icon` | enum | `hopper-crystal` | 14 values | App logo mark (favicon + sidebar). Values: `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings`. |
 | `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor prose font — a Monaspace variant; the whole app is one monospace grid. |
 | `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus. |
-| `editorFontSize` | number | `11.5` | 11–28 | Editor font size in px. Unified with the sidebar tree's `--fs-ui` workhorse size. |
+| `editorFontSize` | number | `13.5` | 11–28 | Note prose font size in px — the design system's own prose size (`--fs-body-lg`), the one thing NOT at the 11.5px `--fs-ui` chrome size. |
 | `sidebarWidth` | number | `266` | 200–600 | Left sidebar width in px (the ASCII design's 266px vault rail). |
 | `sidebarGraphHeight` | number | `305` | 200–500 | Mini graph panel height in the sidebar in px. |
 | `uiFontSize` | number | `11.5` | 11–16 | Base UI font size (sidebar, tabs, menus) in px (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | 0.6–1.0 | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | 11–14 | Editor tab label font size in px. |
-| `sidebarIconFontSize` | number | `11.5` | 11–20 | Sidebar header icon button size in px. Unified with the sidebar tree's `--fs-ui` workhorse size. |
+| `sidebarIconFontSize` | number | `12` | 11–20 | Sidebar header icon button size in px. 12, not the 11.5px `--fs-ui` text size: the pixel icons are drawn on a 24x24 grid, so 12 is an exact half-scale landing every stem on whole device pixels. |
 | `paletteInputFontSize` | number | `15` | 13–18 | Command palette search-input font size in px. |
 
 There are **no per-color override keys** in `appearance` — the theme is the single source of color. Flat keys like `background`, `foreground`, `accent`, or `accentPalette` do not exist in the schema and are stripped by the type check in `serializeSettingsForFrontend`.
@@ -201,6 +203,7 @@ There are **no per-color override keys** in `appearance` — the theme is the si
 | `nodeSizeMaxMult` | number | `6` | 2–12 | No effect currently (see note below) — was ceiling on node size (largest hub vs leaf). |
 | `mapDefaultZoom` | number | `2` | 1–18 | Default zoom for the Bases map view when it can't fit all markers. |
 | `refreshDebounceMs` | number | `300` | 100–1000 | Delay before rebuilding the graph after an edit burst in ms. |
+| `backgroundNoise` | boolean | `false` | — | The faint ASCII noise texture under the graph field. Off by default. |
 
 The graph's 2D/3D view mode is **intentionally absent** from this section. It is a transient `localStorage` toggle in `GraphView.tsx` and never writes `.settings`.
 
@@ -283,11 +286,13 @@ Two-way Google Calendar sync. **Non-secret operational config only** — the OAu
 
 ### `daemon`
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `enabled` | boolean | `false` | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
+| Key | Type | Default | Range | Description |
+|---|---|---|---|---|
+| `enabled` | boolean | `false` | — | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
+| `inboxRetentionDays` | number | `7` | 1–90 | How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker. |
+| `backend` | enum | `claude` | `claude`, `codex` | Which agent CLI runs this vault's daemon brain (unattended, resumable, headless). A REQUEST, not a guarantee — `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) refuses any non-Claude backend for a vault with even one hidden/chat-only note and degrades to `claude` instead, logging why. |
 
-The daemon is **one machine process** (the in-repo `@bismuth/daemon` workspace, `daemon/src/**`) that multiplexes per-vault "brains". Machine identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, logs, `vaults.json`) lives at `~/.bismuth/daemon` (`daemonMachineDir()` = `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`); each enabled vault's brain — crons, processes, memory, session-id, `identity.md` — lives under `<vault>/.daemon`. There is no `daemon.home` or `daemon.autoUpdate` setting (`enabled` is the only key); the daemon updates WITH the app (no git-pull self-update). Install/setup is `core/src/daemonInstall.ts` (`installDaemonFromBundle()` copies the bundled `bismuth-daemon` binary to `~/.bismuth/bin`, then runs `<bin> --ensure-installed`); the service ids are launchd `com.bismuth.daemon` / systemd `bismuth-daemon`.
+The daemon is **one machine process** (the in-repo `@bismuth/daemon` workspace, `daemon/src/**`) that multiplexes per-vault "brains". Machine identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, logs, `vaults.json`) lives at `~/.bismuth/daemon` (`daemonMachineDir()` = `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`); each enabled vault's brain — crons, processes, memory, session-id, `identity.md` — lives under `<vault>/.daemon`. There is no `daemon.home` or `daemon.autoUpdate` setting; the daemon updates WITH the app (no git-pull self-update). Install/setup is `core/src/daemonInstall.ts` (`installDaemonFromBundle()` copies the bundled `bismuth-daemon` binary to `~/.bismuth/bin`, then runs `<bin> --ensure-installed`); the service ids are launchd `com.bismuth.daemon` / systemd `bismuth-daemon`.
 
 ### `update`
 
@@ -304,6 +309,34 @@ The daemon is **one machine process** (the in-repo `@bismuth/daemon` workspace, 
 | `cursorWidth` | number | `2` | 1–4 | Terminal cursor bar width in px. |
 | `cursorGlideMs` | number | `70` | 20–200 | Cursor glide animation duration in ms. |
 | `cursorBlinkSeconds` | number | `1.2` | 0.6–2.0 | Cursor blink cycle duration in seconds. |
+
+### `chat`
+
+Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior.
+
+| Key | Type | Default | Range | Description |
+|---|---|---|---|---|
+| `computerUse` | boolean | `false` | — | Enable Claude's browser/computer-use capability (`--chrome`) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser (Chrome/Edge/Brave). Claude Code provider only. |
+| `provider` | enum | `claude` | 9 values | Default chat provider for NEW chat tabs: `claude` runs Claude Code, `opencode` runs opencode, `codex` runs OpenAI Codex, `cline` runs Cline, `gemini` runs Gemini CLI, `goose` runs Goose, `openclaw` runs OpenClaw, `claude-code-acp` runs Claude Code (ACP), `codex-acp` runs Codex (ACP). Each chat can still pick its own provider in the header. |
+
+The enum is sourced from `BACKEND_IDS` (`core/src/agentBackends/catalog.ts`), so adding a backend never needs a schema edit.
+
+### `mcp`
+
+Multi-CLI MCP registration (`core/src/agentBackends/mcpRegistrars.ts`): which OTHER agent CLIs, besides Claude Code (which always auto-registers on boot via `bismuthInstall.ts`), also get Bismuth's stdio MCP server (docs + `bismuth` CLI + memory tools) written into their own global config.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `registerWith` | list (string) | `[]` | Additional agent CLIs to register Bismuth's MCP server with, e.g. `["codex", "gemini"]`. Registrar ids: `codex`, `cline`, `openclaw`, `gemini`, `qwen`, `copilot`, `amp`, `droid`, `crush`, `goose`. Listing a CLI here IS the opt-in — registration runs on the next app start (and on demand via `bismuth install --mcp <cli>` / `--mcp all`). Empty by default, so Bismuth never writes into another CLI's config uninvited; registration is idempotent and never clobbers an entry it didn't write. |
+
+### `codex`
+
+OpenAI Codex-specific opt-ins (`core/src/agentBackends/agentsMd.ts` + `codexHooks.ts`). Codex has no system-prompt flag and no PATH-shim hook mechanism — `AGENTS.md` and a project-scoped `.codex/hooks.json` are its own designed channels for memory + session telemetry, but both mean writing into files the user may hand-edit, so both keys default off (same opt-in precedent as `mcp.registerWith`).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `writeAgentsMd` | boolean | `false` | Let Bismuth write/refresh a managed block in this vault's `AGENTS.md` with a short persona/memory note for the Codex CLI. The block is delimited by markers and never touches surrounding prose. |
+| `installRelayHooks` | boolean | `false` | Let Bismuth write a project-scoped `.codex/hooks.json` (+ its small reporting script) into this vault so a Codex session run in a Bismuth terminal tab or chat reports its lifecycle into Bismuth's in-process relay registry — the same role Claude Code's relay plugin plays. |
 
 ### `srs` (Spaced-Repetition)
 
@@ -322,6 +355,7 @@ The daemon is **one machine process** (the in-repo `@bismuth/daemon` workspace, 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `folder` | path (dir) | `Templates` | Vault folder holding template `.md` files. Option+T inserts one at the cursor. |
+| `newNote` | path (scope: templates) | `""` | Vault path to a template `.md` used to pre-fill a brand-new note (the New Note command and the file-tree "New File" action). Empty = no template (plain empty note). |
 
 ### `properties`
 
@@ -348,6 +382,16 @@ folderIcons:
 ```
 
 Empty or non-string values are dropped by `readFolderIconsFrom`.
+
+### `folderVisibility`
+
+A free-form `{folderPath: "chat-only"|"hidden"}` string map (folders have no frontmatter of their own to carry a `visibility` key). Seeded empty. Written via `POST /folder-visibility`; nearest-ancestor-wins resolution lives in `core/src/visibility.ts`. This restricts the daemon's and in-app chat's own tool calls from reading a marked note or folder — it is an honesty boundary, not a security boundary, and it never restricts the vault owner (editor/FileTree/graph/CLI) or their own interactive terminal Claude sessions. Per-file visibility is a note's own `visibility:` frontmatter key, not this section.
+
+```yaml
+folderVisibility:
+  private: hidden
+  drafts: chat-only
+```
 
 ### `toolbar`
 
@@ -376,7 +420,23 @@ toolbar:
     tooltip: Note + terminal
 ```
 
-Default toolbar has two buttons: `create-menu` (icon `Plus`) and `search` (icon `Search`).
+Default toolbar has three buttons: `create-menu` (icon `Plus`), `search` (icon `Search`), and `open-inbox` (icon `Inbox`) — the daemon inbox button, hidden while the daemon is off and carrying a due-count badge.
+
+### `tabBar`
+
+A YAML sequence of button objects — the tab-bar action buttons (right of the tab strip). Same item shape and rendering as `toolbar` (`command`/`commands`, `icon`, `tooltip`), configured the same way.
+
+Default tab bar has three buttons: `new-tab` (icon `SquarePlus`), `terminal` (icon `SquareTerminal`), and `new-claude-chat` (icon `MessageSquare`).
+
+```yaml
+tabBar:
+  - command: new-tab
+    icon: SquarePlus
+  - command: terminal
+    icon: SquareTerminal
+  - command: new-claude-chat
+    icon: MessageSquare
+```
 
 ### `dailyNotes`
 
@@ -478,9 +538,17 @@ The backend consumes settings at runtime via `loadAppConfig(vault): Promise<AppC
 ```typescript
 interface AppConfig {
   server: { fileWatchDebounceMs: number; sseHeartbeatMs: number };
-  daemon: { enabled: boolean };
+  daemon: { enabled: boolean; inboxRetentionDays: number };
   templates?: { folder: string };
   srs: SrsConfig;        // identity match for core/src/srs/scheduler.ts SrsConfig
+  googleCalendar?: {
+    enabled: boolean;
+    calendarId: string;
+    basePath: string;
+    conflictPolicy: "lastWriteWins" | "googleWins" | "bismuthWins";
+    syncIntervalMinutes: number;
+    timeZone: string;
+  };
   [section: string]: unknown;
 }
 ```
@@ -616,4 +684,4 @@ editor: {
 - **Per-vault mutex scope**: the mutex is keyed by vault path, so concurrent requests against different vaults run in parallel.
 - **`folderIcons` written by `POST /folder-icon`**: folder icons are not set via `POST /set-setting`; they go through the dedicated `setFolderIcon(vault, path, icon)` helper which also acquires the per-vault mutex. An empty/null/undefined icon deletes the entry.
 
-Source: `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/settingsDiff.ts`, `core/test/settings.test.ts`, `core/test/schema/settingsSchema.test.ts`, `app/src/settings.parity.test.ts`
+Source: `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/theme/tokens.ts`, `core/src/agentBackends/catalog.ts`, `core/src/commands.ts`, `core/src/visibility.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/settingsDiff.ts`, `core/test/settings.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/fixtures/upgrade/settings-schema-snapshot.json`, `app/src/settings.parity.test.ts`

@@ -1,5 +1,7 @@
 # Editor Autocomplete
 
+This is the reference for every autocomplete source in Bismuth's editors — read it when adding a new completion trigger or tracking down why two sources fight for the same keystroke.
+
 All editor autocompletion in Bismuth is implemented as a single CodeMirror `autocompletion()` extension registered in `app/src/editor/autocomplete.ts`. Because multiple `autocompletion()` extensions conflict, every source — wikilinks, tags, emoji, frontmatter properties, task metadata, `query` block keys, and `.settings` fields — lives in one `override` array. The `.settings` editor uses a separate extension (`settingsComplete.ts`) registered only on the vault's `.settings` file. Each source is a pure `CompletionSource` function with a matching pure helper (in `wikilink.ts`, `tag.ts`, `emoji.ts`, `templateToken.ts`) that can be unit-tested without a browser.
 
 ---
@@ -112,6 +114,8 @@ line. Authoring a flashcard with `??`↵ is unaffected.
 ---
 
 ## Frontmatter Property Completions
+
+**File:** `app/src/editor/autocomplete.ts` → `propertyKeySource`, `iconValueSource`, `enumValueSource`, `tagListSource`
 
 All frontmatter completions are gated by the `inFrontmatter(ctx: CompletionContext) => boolean` predicate passed to `vaultCompletion`. They fire only when the cursor is between the `---` YAML fences.
 

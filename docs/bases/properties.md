@@ -203,14 +203,14 @@ properties:
 
 The parsed config carries the names in declaration order as `BaseConfig.declaredProperties`; its presence is the flag that the base declares its own set (the map form never sets it, so existing bases are untouched).
 
-### What a declaration changes
+## What a declaration changes
 
 1. **Columns / card fields.** A view without an explicit `order:` shows **exactly the declared properties, in declaration order** (canonicalized: `status` → `note.status`), instead of the row-frontmatter union — a stray extra key on one note no longer leaks a column/field onto every card. `file.name` is still seeded first when the rows are real notes (declare it yourself to reposition it; `hidden: true` drops any declared entry). An explicit view `order:` **always wins**, exactly as before.
 2. **Kanban card meta.** A kanban without an `order:` shows the declared properties (minus the title column and the `groupBy` property — the column a card sits in already conveys it) as each card's editable meta chips — previously only an explicit `order:` produced meta. `description` is not excluded (#103 removed its dedicated slot; it's just another declared property, typically `type: markdown`). Empty values are still dropped per `hasValue`.
 3. **New cards seed the declared defaults.** Kanban's add-card writes every declared writable property that has a `default` (via `declaredDefaults`), then the values shared by all existing sibling cards (`constProps` — so the new card keeps matching the base's filter), then the clicked column's status value. Only the status/`order` keys are never seeded from defaults.
 4. **Pickers offer declared fields.** The view-settings dropdowns (`BaseSettings`) union the declared names with the row-derived columns, so a declared-but-not-yet-populated field can be bound/sorted/grouped immediately.
 
-### What it does NOT change
+## What it does NOT change
 
 - **Bases that read existing pages keep reflecting the notes' own frontmatter** — no declaration, no change: columns still derive from the rows.
 - The `properties:` **map form keeps its exact metadata-only semantics**; it never restricts columns.

@@ -74,7 +74,7 @@ describe("surfaceSummary", () => {
     expect(s).toEqual({
       chat: true,
       terminal: true,
-      agentsGraph: "hooks",
+      relayReporting: "hooks",
       daemon: true,
       mcp: "cli",
       memory: "hooks",

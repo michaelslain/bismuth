@@ -4,6 +4,8 @@ The flashcards view is a spaced-repetition review UI built on top of a base's ro
 
 For the SM-2 scheduling algorithm and the markdown-card (`?`/`??`) code path see [../../../flashcards/srs.md](../../flashcards/srs.md).
 
+**In this doc:** view config fields → the row column schema a card deck needs → the review queue and its pure helper functions → grading, bidirectional mode, and cram mode → the session progress bar and card rendering → the single-card and deck-wide edit modals → the API calls a review makes → empty states → edge cases.
+
 ---
 
 ## View Configuration
@@ -373,7 +375,7 @@ For grading, the `fields` parameter overrides which due/ease/interval columns ar
 
 **Cram never persists**: forgetting this means you can "review" a deck in cram mode and find all cards still due afterward — by design.
 
-**Bidirectional column naming is positional, not configurable**: the `*Back` columns are always `dueField + "Back"` etc. If you rename `dueField` to `nextReview`, the companion columns become `nextReviewBack`, `easeBack` → `easeBack` (unchanged, since `easeField` default is `"ease"`). Ensure your base's `schema:` section declares these columns if you use a non-default `dueField`.
+**Bidirectional column naming is positional, not configurable**: the `*Back` columns are always `dueField + "Back"` etc. If you rename `dueField` to `nextReview`, its companion column becomes `nextReviewBack` — while `easeField`'s companion stays `easeBack` (unchanged, since `easeField` still defaults to `"ease"`). Ensure your base's `schema:` section declares these columns if you use a non-default `dueField`.
 
 **New card with null/empty due is always due**: this is intentional — when you add a card without scheduling columns it surfaces immediately for first review.
 

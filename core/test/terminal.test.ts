@@ -121,9 +121,9 @@ test("buildPtyEnv neutralizes the host's Claude-Code workflow provenance (Bug #1
 
 // --- shimSpecsFor (pure) --------------------------------------------------------------------
 
-const CLAUDE_CANDIDATE: BackendShimCandidate = { id: "claude", binary: "claude", agentsGraph: "hooks", terminal: true };
-const OPENCODE_NONE_CANDIDATE: BackendShimCandidate = { id: "opencode", binary: "opencode", agentsGraph: "none", terminal: true };
-const WRAPPER_CANDIDATE: BackendShimCandidate = { id: "opencode", binary: "opencode", agentsGraph: "wrapper", terminal: true };
+const CLAUDE_CANDIDATE: BackendShimCandidate = { id: "claude", binary: "claude", relayReporting: "hooks", terminal: true };
+const OPENCODE_NONE_CANDIDATE: BackendShimCandidate = { id: "opencode", binary: "opencode", relayReporting: "none", terminal: true };
+const WRAPPER_CANDIDATE: BackendShimCandidate = { id: "opencode", binary: "opencode", relayReporting: "wrapper", terminal: true };
 
 test("shimSpecsFor produces claude's spec matching today's behavior (mode hooks, resolved path passed through)", () => {
   const specs = shimSpecsFor([CLAUDE_CANDIDATE], () => "/usr/local/bin/claude", { wrapperReportingEnabled: false });
@@ -151,19 +151,19 @@ test("shimSpecsFor: wrapper-vs-hooks distinction — a 'wrapper' backend is incl
 });
 
 test("shimSpecsFor never emits a 'wrapper' entry for claude, even if the catalog claimed one", () => {
-  const misconfigured: BackendShimCandidate = { id: "claude", binary: "claude", agentsGraph: "wrapper", terminal: true };
+  const misconfigured: BackendShimCandidate = { id: "claude", binary: "claude", relayReporting: "wrapper", terminal: true };
   const specs = shimSpecsFor([misconfigured], () => "/usr/local/bin/claude", { wrapperReportingEnabled: true });
   expect(specs).toEqual([]);
 });
 
 test("shimSpecsFor omits a backend with no terminal surface", () => {
-  const noTerminal: BackendShimCandidate = { id: "x", binary: "x", agentsGraph: "hooks", terminal: false };
+  const noTerminal: BackendShimCandidate = { id: "x", binary: "x", relayReporting: "hooks", terminal: false };
   expect(shimSpecsFor([noTerminal], () => "/usr/bin/x", { wrapperReportingEnabled: false })).toEqual([]);
 });
 
 test("shimSpecsFor handles a mixed list: resolved hooks + resolved wrapper + unresolved wrapper + none, in order", () => {
-  const resolvableWrapper: BackendShimCandidate = { id: "goose", binary: "goose", agentsGraph: "wrapper", terminal: true };
-  const unresolvableWrapper: BackendShimCandidate = { id: "gemini", binary: "gemini", agentsGraph: "wrapper", terminal: true };
+  const resolvableWrapper: BackendShimCandidate = { id: "goose", binary: "goose", relayReporting: "wrapper", terminal: true };
+  const unresolvableWrapper: BackendShimCandidate = { id: "gemini", binary: "gemini", relayReporting: "wrapper", terminal: true };
   const resolve = (bin: string) => (bin === "gemini" ? null : `/usr/local/bin/${bin}`);
   const specs = shimSpecsFor(
     [CLAUDE_CANDIDATE, resolvableWrapper, unresolvableWrapper, OPENCODE_NONE_CANDIDATE],

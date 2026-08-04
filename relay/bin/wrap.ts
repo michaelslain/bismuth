@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Generic session reporter for "wrapper"-mode agent-CLI backends (BackendCapabilities.agentsGraph
+// Generic session reporter for "wrapper"-mode agent-CLI backends (BackendCapabilities.relayReporting
 // === "wrapper" in core/src/agentBackends/catalog.ts): CLIs with no hook/plugin system of their
 // own, so the PTY shim wrapping the binary is the ONLY telemetry path into the agents graph —
 // unlike claude, which reports itself via real hooks (relay/hooks/hooks.json) and needs none of
@@ -16,7 +16,7 @@
 // most users; adding a process layer to it would be pure risk (signal handling, tty ownership,
 // exit-code fidelity) for zero telemetry gain, since it already reports itself better than a
 // wrapper ever could. Structurally this should never even be reached for claude (its
-// agentsGraph capability is "hooks", so shimSpecsFor never emits a "wrapper" spec for it, and
+// relayReporting capability is "hooks", so shimSpecsFor never emits a "wrapper" spec for it, and
 // nothing symlinks "claude" at relay/shim/agent-shim) — the guard here is defense in depth for a
 // misconfigured invocation, not the primary safeguard.
 //

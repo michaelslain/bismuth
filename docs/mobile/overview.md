@@ -28,7 +28,6 @@ Because nothing in the logic pipeline may statically import Bun/`node:fs` (or th
 | `GET /graph/views` | `computeViewLayouts` over the cached graph |
 | `GET /tree` | `FileAccess.listTree(vault)` |
 | `GET /vault-data` | `buildVaultRows(vault)` (the Bases feed) |
-| `GET /agent-graph` | `{ nodes: [], edges: [] }` — no relay on mobile |
 | `GET /config` | `{ vault, memory }` |
 | `GET /settings` | schema `DEFAULTS` (no `.settings` reconcile yet — see below) |
 | `GET /schema` | `{ properties: {} }` |

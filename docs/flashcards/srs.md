@@ -1,6 +1,6 @@
 # Flashcards / SRS — Deep Reference
 
-This document covers Bismuth's spaced-repetition system end-to-end: the two card models (markdown cards embedded in notes, and row cards stored in base files), the SM-2 scheduler, the deck/tag convention, bidirectional and cram modes, and every HTTP endpoint that reads or writes card data. The frontend review UI (`FlashcardsView.tsx`) is described only as far as it determines API behavior and scheduling semantics.
+This document covers Bismuth's spaced-repetition system end-to-end: the two card models (markdown cards embedded in notes, and row cards stored in base files), the SM-2 scheduler, the deck/tag convention, bidirectional and cram modes, and every HTTP endpoint that reads or writes card data. It's for anyone implementing a new SRS-backed surface, tuning the scheduler, or debugging why a card scheduled the way it did. The frontend review UI (`FlashcardsView.tsx`) is described only as far as it determines API behavior and scheduling semantics.
 
 ---
 
