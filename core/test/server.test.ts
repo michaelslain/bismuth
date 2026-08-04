@@ -194,10 +194,13 @@ test("POST /relay/session + /relay/subagent/start reach the relay registry", asy
 });
 
 // GET /relay/snapshot is the read side of the registry above, powering `bismuth relay list`.
-// Owner-token gate: a RelaySubagent can carry `lastMessage` (its SubagentStop last_assistant_message,
-// free-text output that may quote vault content) — the same reason GET /chat/sessions et al. are
-// blanket owner-only (see ownerToken.test.ts) rather than per-path filtered.
-test("GET /relay/snapshot returns the registry snapshot for the owner, and 403s everyone else", async () => {
+// The owner sees the full registry, including RelaySubagent.lastMessage (its SubagentStop
+// last_assistant_message — free-text output that may quote vault content). Everyone else gets
+// redactSnapshot()'s projection instead of a blanket 403: `bismuth relay list` runs from a shell
+// and never carries an owner token, so a blanket gate made the route unreachable by its only
+// caller. The load-bearing assertion is the LAST one below — the raw response body must not
+// contain the seeded content string at all, proving no leak rather than merely checking shape.
+test("GET /relay/snapshot: owner gets the full snapshot, non-owner gets it redacted (no content leak)", async () => {
   resetRelay();
   const { vault, memory } = await makeSampleVault();
   // readRunRecords() below scans the WHOLE run registry dir; isolate it to a fresh tmp dir for
@@ -209,25 +212,40 @@ test("GET /relay/snapshot returns the registry snapshot for the owner, and 403s 
   const base = `http://localhost:${server.port}`;
   const post = (path: string, body: unknown) =>
     fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const SECRET = "SENTINEL-quotes-private-vault-note-xyz123";
   try {
     await post("/relay/session", { sessionId: "sess-1", terminalId: "tab-1", cwd: "/x/my-proj" });
     await post("/relay/subagent/start", { parentSessionId: "sess-1", agentId: "ag-1", agentType: "Explore" });
-    await post("/relay/subagent/stop", { agentId: "ag-1", lastMessage: "done" });
+    await post("/relay/subagent/stop", { agentId: "ag-1", lastMessage: SECRET });
 
-    const noToken = await fetch(`${base}/relay/snapshot`);
-    expect(noToken.status).toBe(403);
-
+    // Owner: full snapshot, lastMessage included.
     const token = readRunRecords().find((r) => r.vault === vault)?.token;
     expect(token).toBeTruthy();
     const withToken = await fetch(`${base}/relay/snapshot`, { headers: { "X-Bismuth-Token": token! } });
     expect(withToken.status).toBe(200);
-    const body = await withToken.json();
-    expect(body.sessions).toContainEqual(
+    const ownerBody = await withToken.json();
+    expect(ownerBody.sessions).toContainEqual(
       expect.objectContaining({ sessionId: "sess-1", terminalId: "tab-1", cwd: "/x/my-proj" }),
     );
-    expect(body.subagents).toContainEqual(
-      expect.objectContaining({ agentId: "ag-1", parentSessionId: "sess-1", agentType: "Explore", lastMessage: "done" }),
+    expect(ownerBody.subagents).toContainEqual(
+      expect.objectContaining({ agentId: "ag-1", parentSessionId: "sess-1", agentType: "Explore", lastMessage: SECRET }),
     );
+
+    // Non-owner (no token at all — the CLI's real posture): 200 with a redacted body, not 403.
+    const noToken = await fetch(`${base}/relay/snapshot`);
+    expect(noToken.status).toBe(200);
+    const rawText = await noToken.text();
+    // The one assertion that actually proves no leak: the seeded content string must not appear
+    // anywhere in the raw response body, not just be absent from a parsed field.
+    expect(rawText).not.toContain(SECRET);
+
+    const nonOwnerBody = JSON.parse(rawText);
+    expect(nonOwnerBody.sessions).toContainEqual(
+      expect.objectContaining({ sessionId: "sess-1", terminalId: "tab-1", cwd: "/x/my-proj" }),
+    );
+    const nonOwnerSub = nonOwnerBody.subagents.find((s: { agentId: string }) => s.agentId === "ag-1");
+    expect(nonOwnerSub).toMatchObject({ agentId: "ag-1", parentSessionId: "sess-1", agentType: "Explore", done: true });
+    expect("lastMessage" in nonOwnerSub).toBe(false);
   } finally {
     resetRelay();
     server.stop(true);

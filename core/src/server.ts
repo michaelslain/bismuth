@@ -53,7 +53,7 @@ import {
   parseChatScope,
   invalidateChatVisibility,
 } from "./chat";
-import { registerSession, endSession, startSubagent, stopSubagent, snapshot as relaySnapshot } from "./relay";
+import { registerSession, endSession, startSubagent, stopSubagent, snapshot as relaySnapshot, redactSnapshot } from "./relay";
 import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarget, sendCommand, resolveReply, type UiTabsSnapshot } from "./uiControl";
 import { isUiControlAllowed } from "./commands";
 import { writeRunRecord } from "./runRegistry";
@@ -1030,14 +1030,17 @@ export function createServer(cfg: CoreConfig) {
       return ok({ ok: true });
     },
 
-    // Read side of the registry above, for `bismuth relay list`. Owner-token gate: a subagent's
-    // RelaySubagent carries `lastMessage` (its SubagentStop last_assistant_message) — free-text
-    // output that can quote vault content the same way a chat transcript snippet can — so this
-    // gets the same blanket owner-only treatment as GET /chat/sessions above, not a per-path
-    // filter (there's no note path to filter a session/subagent list against).
+    // Read side of the registry above, for `bismuth relay list`. A subagent's RelaySubagent can
+    // carry `lastMessage` (its SubagentStop last_assistant_message) — free-text output that can
+    // quote vault content the same way a chat transcript snippet can — but unlike GET
+    // /chat/sessions et al. there IS a non-sensitive projection: everything except lastMessage is
+    // bookkeeping (ids, types, timestamps, cwd, backend), so a non-owner caller gets that
+    // redacted view instead of a blanket 403. `bismuth relay list` runs from a shell and never
+    // carries an owner token (see cli/src/http.ts) — a blanket gate made the route unreachable by
+    // its only caller. See redactSnapshot() in relay.ts for the field-by-field classification.
     "GET /relay/snapshot": async (req) => {
-      if (requestChannel(req) !== "owner") return error("forbidden", 403);
-      return ok(relaySnapshot());
+      const snap = relaySnapshot();
+      return ok(requestChannel(req) === "owner" ? snap : redactSnapshot(snap));
     },
 
     // App-control read surface (see core/src/uiControl.ts) — the ONLY channel that drives a running
