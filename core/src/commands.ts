@@ -77,7 +77,7 @@ export const UI_CONTROL_BLOCKLIST: string[] = [
   "new-window",
   "open-folder",
   "update-app",
-  "update-daemon",
+  "daemon-update",
   "new-claude-chat",
 ];
 

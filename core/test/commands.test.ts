@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { COMMAND_CATALOG, COMMAND_IDS, commandLabel } from "../src/commands";
+import { COMMAND_CATALOG, COMMAND_IDS, commandLabel, UI_CONTROL_BLOCKLIST, isUiControlAllowed } from "../src/commands";
 
 describe("command catalog", () => {
   it("derives COMMAND_IDS from the catalog, in order", () => {
@@ -39,5 +39,27 @@ describe("command catalog", () => {
   it("looks up a label by id", () => {
     expect(commandLabel("terminal")).toBe("Open Terminal");
     expect(commandLabel("does-not-exist")).toBeUndefined();
+  });
+});
+
+describe("ui control gate", () => {
+  // A blocklist entry that matches no catalog id is worse than no entry: it reads as
+  // protection in review and in the docs while blocking nothing.
+  it("every blocklist entry is a real catalog id", () => {
+    for (const id of UI_CONTROL_BLOCKLIST) {
+      expect(COMMAND_IDS).toContain(id);
+    }
+  });
+
+  it("refuses the daemon service-reinstall verb", () => {
+    expect(isUiControlAllowed("daemon-update")).toBe(false);
+  });
+
+  it("refuses an id that is not in the catalog at all", () => {
+    expect(isUiControlAllowed("not-a-command")).toBe(false);
+  });
+
+  it("allows an ordinary catalog id", () => {
+    expect(isUiControlAllowed("new-note")).toBe(true);
   });
 });

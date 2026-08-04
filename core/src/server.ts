@@ -55,7 +55,7 @@ import {
 } from "./chat";
 import { registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarget, sendCommand, resolveReply, type UiTabsSnapshot } from "./uiControl";
-import { UI_CONTROL_BLOCKLIST } from "./commands";
+import { isUiControlAllowed } from "./commands";
 import { writeRunRecord } from "./runRegistry";
 import { mintOwnerToken, resolveRequestChannel, type RequestChannel } from "./ownerToken";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
@@ -1052,7 +1052,7 @@ export function createServer(cfg: CoreConfig) {
       if (action === "run-command") {
         const id = (args as { id?: unknown } | undefined)?.id;
         if (typeof id !== "string" || !id) return error("run-command requires args.id", 400);
-        if (UI_CONTROL_BLOCKLIST.includes(id)) return error(`command "${id}" is not allowed via app control`, 403);
+        if (!isUiControlAllowed(id)) return error(`command "${id}" is not allowed via app control`, 403);
       }
       if (action === "open-tab") {
         const content = (args as { content?: unknown } | undefined)?.content;

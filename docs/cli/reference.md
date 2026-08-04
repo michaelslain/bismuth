@@ -536,7 +536,7 @@ Drive a **running Bismuth app**'s tabs (and, through the bismuth MCP's `bismuth_
 - **`app tabs [--window <id>]`** — list a window's tabs + panes.
 - **`app open <content> [--new-tab] [--window <id>]`** — open a note path or sentinel (`::graph`/`::inbox`/`.settings`/`::term:<uuid>` — no `::search`; search is the in-window Cmd+O switcher, not a tab). `::chat:*` is refused.
 - **`app close <tabId> [--window <id>]`** / **`app focus <tabId> [--window <id>]`** — close / activate a tab.
-- **`app run <commandId> [--window <id>]`** — run a command-catalog id; a small blocklist (`new-window`/`open-folder`/`update-app`/`update-daemon`/`new-claude-chat`) is refused.
+- **`app run <commandId> [--window <id>]`** — run a command-catalog id; a small blocklist (`new-window`/`open-folder`/`update-app`/`daemon-update`/`new-claude-chat`) is refused.
 - **`app commands`** — the ids `app run` accepts (catalog − blocklist).
 
 ```bash
