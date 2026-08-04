@@ -134,14 +134,16 @@ bismuth tree --vault ~/vault --pretty
 
 Note creation, templates, and the daily note. All require a vault.
 
-### `note new <path> [--template NAME] [--template-folder DIR]`
+### `note new <path> [--template NAME] [--template-folder DIR] [--no-template]`
 Create a new note, optionally seeded from a template. The path gets a `.md` extension appended if missing. Steps:
 1. `createEntry(vault, rel, "file")`.
 2. If `--template NAME` is given: list templates from the template folder (`--template-folder`, default `"Templates"`), find one whose `name` **or** `path` equals `NAME` (fails `note new: template not found: <NAME>` otherwise), read it, run `expandTemplate(raw, { now: new Date(), title })` where `title` is the filename without dir/`.md`, and write the result.
-3. Prints `{ path: rel, created: true }`.
+3. Otherwise (no `--template`), unless `--no-template` is passed: fall back to the vault's configured default template (`settings.templates.newNote`, read via `loadAppConfig(vault)`), mirroring the app's FileTree "New File" action. If it's set and the file exists, it's read + expanded + written the same way as an explicit `--template`. Empty/missing setting or missing file → no-op (plain empty note, unchanged behavior).
+4. Prints `{ path: rel, created: true }`.
 ```bash
 bismuth note new "Meetings/Standup" --template "Meeting" --vault ~/vault
-bismuth note new "Quick.md" --vault ~/vault   # no template
+bismuth note new "Quick.md" --vault ~/vault              # applies settings.templates.newNote if configured
+bismuth note new "Quick.md" --no-template --vault ~/vault  # always a plain empty note
 ```
 
 ### `templates [--template-folder DIR]`
@@ -151,10 +153,11 @@ bismuth templates --vault ~/vault --pretty
 bismuth templates --template-folder "_templates" --vault ~/vault
 ```
 
-### `daily`
-Open (creating if needed) today's daily note. Reads the first daily-note config via `readDailyNotes(vault)`; if none configured, defaults to `{ id: "daily", label: "Daily", icon: "CalendarDays", folder: "", fileName: "{{date}}", template: "" }`. Computes the path via `dailyNotePath(config, now)`. If it already exists → prints `{ path, created: false }`. Otherwise it reads the configured template (if set and present) and writes `dailyNoteContent(config, now, templateRaw)`, then prints `{ path, created: true }`.
+### `daily [--id <n>]`
+Open (creating if needed) today's daily note. Reads every configured daily-note type via `readDailyNotes(vault)` (`settings.dailyNotes`) and selects the one at `--id <n>` (0-based index into that array; default `0`, the first configured type). If the vault configures none at all, index `0` falls back to `{ id: "daily", label: "Daily", icon: "CalendarDays", folder: "", fileName: "{{date}}", template: "" }`; any other `--id` fails. An out-of-range `--id` against a vault that DOES configure types fails naming how many it configures and the valid range (`--id <n> out of range — this vault configures <count> daily-note type(s) (valid range: 0-<max>)`). Computes the path via `dailyNotePath(config, now)`. If it already exists → prints `{ path, created: false }`. Otherwise it reads the configured template (if set and present) and writes `dailyNoteContent(config, now, templateRaw)`, then prints `{ path, created: true }`.
 ```bash
 bismuth daily --vault ~/vault --pretty
+bismuth daily --id 1 --vault ~/vault --pretty   # the SECOND configured daily-note type
 ```
 
 ---
@@ -203,12 +206,13 @@ bismuth task list --vault ~/vault --pretty
 bismuth task list --query "not done\ndue before tomorrow\nsort by due" --vault ~/vault
 ```
 
-### `task toggle <file> <line>`
-Toggle the done state of a task at `<file>:<line>`, where `<line>` is a **1-based** line number. Mirrors `POST /tasks/toggle`: reads the note, splits on `\n`, runs `toggleTaskLine(lines[idx], today())` on the target line (which may insert a recurrence's next occurrence — handled by splicing in place), writes it back, prints `ok`.
+### `task toggle <file> <line> [--status <char>]`
+Toggle the done state of a task at `<file>:<line>`, where `<line>` is a **1-based** line number. Mirrors `POST /tasks/toggle`: reads the note, splits on `\n`, and either runs `toggleTaskLine(lines[idx], today())` (no `--status`, the plain binary checkbox toggle) or `setTaskLineStatus(lines[idx], status, today())` (with `--status`, setting the checkbox to that exact character — e.g. `/` in-progress, `-` cancelled) on the target line (either may insert a recurrence's next occurrence — handled by splicing in place), writes it back, prints `ok`.
 
-Validation: `<line>` must be an integer ≥ 1 (`invalid line number: <x>`), and within the file (`line out of range`). Missing args → `usage: task toggle <file> <line>`.
+Validation: `<line>` must be an integer ≥ 1 (`invalid line number: <x>`), and within the file (`line out of range`). `--status` must be exactly one character (`--status must be a single character: <x>` otherwise). Missing args → `usage: task toggle <file> <line>`.
 ```bash
 bismuth task toggle "Projects/Todo.md" 12 --vault ~/vault
+bismuth task toggle "Projects/Todo.md" 12 --status "/" --vault ~/vault   # mark in-progress
 ```
 
 ---
@@ -447,11 +451,12 @@ bismuth daemon process toggle watcher --off --vault ~/vault
 
 ## Drawing render command (`commands/draw.ts`)
 
-### `render <file.draw> [--pdf] [--out FILE]`
-Render a `.draw` file to PNG (or, with `--pdf`, PDF), **headless** via the core renderer. Reads the file directly off the filesystem with `node:fs` (NOT through the vault — `<file.draw>` is a plain filesystem path, **no `--vault` needed**), parses it with `parseDoc`, renders with `renderDocToPng` / `renderDocToPdf` using the `"dark"` theme, and writes the bytes. Output path defaults to `<file>.png` (or `.pdf`); override with `--out`. Prints `wrote <outPath>`.
+### `render <file.draw> [--pdf] [--out FILE] [--theme dark|light]`
+Render a `.draw` file to PNG (or, with `--pdf`, PDF), **headless** via the core renderer. Reads the file directly off the filesystem with `node:fs` (NOT through the vault — `<file.draw>` is a plain filesystem path, **no `--vault` needed**), parses it with `parseDoc`, renders with `renderDocToPng` / `renderDocToPdf` using `--theme` (default `"dark"`; any other value fails `--theme must be "dark" or "light": <x>`), and writes the bytes. Output path defaults to `<file>.png` (or `.pdf`); override with `--out`. Prints `wrote <outPath>`.
 ```bash
 bismuth render Sketch.draw
 bismuth render Sketch.draw --pdf --out Sketch.pdf
+bismuth render Sketch.draw --theme light --out Sketch-light.png
 ```
 This overlaps with `export <file.draw>` (below); `render` is the dedicated drawing-only entry point.
 
@@ -476,7 +481,7 @@ bismuth backup --vault ~/vault
 
 ## Universal export command (`commands/export.ts`)
 
-### `export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter]`
+### `export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--theme dark|light]`
 Export a note / base / sheet / drawing to `md | html | png | pdf | csv`, reusing the app's own exporter (`app/src/export/exporters.ts` `renderExport`) with headless deps so CLI output matches in-app export exactly. The target file is the first non-flag arg.
 
 Format defaulting: `--format` if given, else `png` for `.draw` files, else `md`.
@@ -489,9 +494,11 @@ Base-specific options (`optionsFrom()`; no-ops for non-base files):
 
 `--no-frontmatter` strips a plain note's leading YAML frontmatter block from the output (`ExportOptions.includeFrontmatter: false` — applies to `md` and `html` headlessly; ignored for bases/sheets/drawings, whose frontmatter is config, not content). Omit it for the default (frontmatter included, the historical behavior). See [export overview](../export/overview.md) "Include/exclude frontmatter".
 
+`--theme dark|light` (default `"dark"`; any other value fails `--theme must be "dark" or "light": <x>`) picks the theme used to rasterize a drawing (standalone `.draw` export or one embedded in a note) and, for notes/bases/sheets, the theme passed to `renderExport`.
+
 Two paths:
-- **`.draw` files** — rendered straight through the headless core renderer (`parseDoc` + `renderDocToPng`/`renderDocToPdf`, `"dark"` theme). Only `png` or `pdf` are valid (`a .draw file exports to png or pdf` otherwise). **No `--vault` needed** for drawings (file read with `node:fs`). This is the *only* file kind that rasterizes to `png` (or `pdf`) headlessly from the CLI.
-- **Notes / bases / sheets** — `requireVault`, then `renderExport(file, fmt, deps, "dark", optionsFrom(args))` with deps wiring `read` → `readNote`, `resolveRows` → `resolveSource`, and `drawingToPng` → the core renderer (so an embedded `.draw` inside a note still rasterizes). Only `md`/`html`/`csv` are headless. **Both `png` AND `pdf` of notes/bases/sheets are browser-only** (the `htmlToPng`/`htmlToPdf` deps both `throw`, since both rely on `html2canvas`/`jsPDF` which need a DOM). The CLI raises a clear "open in the app" error:
+- **`.draw` files** — rendered straight through the headless core renderer (`parseDoc` + `renderDocToPng`/`renderDocToPdf`, themed via `--theme`). Only `png` or `pdf` are valid (`a .draw file exports to png or pdf` otherwise). **No `--vault` needed** for drawings (file read with `node:fs`). This is the *only* file kind that rasterizes to `png` (or `pdf`) headlessly from the CLI.
+- **Notes / bases / sheets** — `requireVault`, then `renderExport(file, fmt, deps, theme, optionsFrom(args))` with deps wiring `read` → `readNote`, `resolveRows` → `resolveSource`, and `drawingToPng` → the core renderer (so an embedded `.draw` inside a note still rasterizes). Only `md`/`html`/`csv` are headless. **Both `png` AND `pdf` of notes/bases/sheets are browser-only** (the `htmlToPng`/`htmlToPdf` deps both `throw`, since both rely on `html2canvas`/`jsPDF` which need a DOM). The CLI raises a clear "open in the app" error:
   - `pdf` → *"pdf export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md"*
   - `png` → *"png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md"*
   - `csv` is base-only — a flat-table format with no sensible non-base form (`CSV export is only available for bases` if the target file isn't a `type: base` note).
@@ -506,6 +513,7 @@ bismuth export "Bases/Reading.md" --format csv --view 1 --vault ~/vault       # 
 bismuth export "Bases/Team Cal" --format html --mode visual --cal-span week --cal-start 2026-07-06 --vault ~/vault
 bismuth export Sketch.draw                 # → Sketch.draw.png (no vault)
 bismuth export Sketch.draw --format pdf --out sketch.pdf
+bismuth export Sketch.draw --theme light --out sketch-light.png
 bismuth export "Bases/Reading.md" --format png --vault ~/vault   # ERRORS — png is app-only
 bismuth export "Notes/Essay.md" --format pdf --vault ~/vault     # ERRORS — pdf is app-only
 bismuth export "Notes/Essay.md" --format csv --vault ~/vault     # ERRORS — csv is base-only

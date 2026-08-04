@@ -331,3 +331,120 @@ test("a snapshot failure warns on stderr but the replace still proceeds", async 
   const commitsAfter = (await new Response(after.stdout).text()).trim().split("\n").length;
   expect(commitsAfter).toBe(commitsBefore); // the failed snapshot really didn't commit anything
 });
+
+// --- `daily --id <n>` selects a configured daily-note type by index (note.ts) -----------------
+
+test("`daily --id <n>` selects a configured daily-note type by index; out-of-range fails naming the count", async () => {
+  const vault = makeVault({
+    ".settings":
+      "dailyNotes:\n" +
+      '  - id: journal\n    label: Journal\n    icon: BookOpen\n    folder: Journal\n    fileName: "{{date}} journal"\n    template: ""\n' +
+      '  - id: work\n    label: Work\n    icon: Briefcase\n    folder: Work\n    fileName: "{{date}} work"\n    template: ""\n',
+  });
+
+  // --id 1 picks the SECOND configured type (Work/), not the first (Journal/). A date-derived
+  // filename can't be asserted exactly (bun test forces UTC, the spawned CLI uses local time —
+  // see the module docstring on the daily-note filename/timezone caveat), so assert on the
+  // stable part: which folder the path landed under.
+  const second = await runCli(vault, "daily", "--id", "1");
+  expect(second.code).toBe(0);
+  expect(second.json.path.startsWith("Work/")).toBe(true);
+
+  // Out of range fails, naming how many types the vault configures.
+  const outOfRange = await runCli(vault, "daily", "--id", "5");
+  expect(outOfRange.code).toBe(1);
+  expect(outOfRange.err).toContain("2");
+});
+
+// --- `task toggle --status <char>` sets an explicit status instead of the binary toggle -------
+
+test("`task toggle --status <char>` sets an explicit status char; without it, the binary toggle is unchanged", async () => {
+  const vault = makeVault({ "Todo.md": "- [ ] buy milk\n" });
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "task", "toggle", "Todo.md", "1", "--status", "/");
+  expect(result.code).toBe(0);
+  expect(await readNote(vault, "Todo.md")).toContain("- [/] buy milk");
+});
+
+test("`task toggle --status <multi-char>` is rejected", async () => {
+  const vault = makeVault({ "Todo.md": "- [ ] buy milk\n" });
+  const result = await runCli(vault, "task", "toggle", "Todo.md", "1", "--status", "ab");
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("--status");
+});
+
+// --- `render --theme` / `export --theme` (draw.ts / export.ts) --------------------------------
+
+test("`render --theme light` produces bytes that differ from the default dark theme", async () => {
+  const { readFileSync, writeFileSync } = await import("node:fs");
+  const { emptyDoc } = await import("../../core/src/drawing/model");
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-draw-render-"));
+  const drawPath = join(dir, "Sketch.draw");
+  writeFileSync(drawPath, JSON.stringify(emptyDoc()));
+  const darkOut = join(dir, "dark.png");
+  const lightOut = join(dir, "light.png");
+
+  const dark = Bun.spawn(["bun", "run", "cli/src/index.ts", "render", drawPath, "--out", darkOut], { stdout: "pipe", stderr: "pipe" });
+  expect((await dark.exited)).toBe(0);
+  const light = Bun.spawn(["bun", "run", "cli/src/index.ts", "render", drawPath, "--out", lightOut, "--theme", "light"], { stdout: "pipe", stderr: "pipe" });
+  expect((await light.exited)).toBe(0);
+
+  expect(Buffer.compare(readFileSync(darkOut), readFileSync(lightOut))).not.toBe(0);
+});
+
+test("`render --theme purple` is rejected", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const { emptyDoc } = await import("../../core/src/drawing/model");
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-draw-render-bad-"));
+  const drawPath = join(dir, "Sketch.draw");
+  writeFileSync(drawPath, JSON.stringify(emptyDoc()));
+
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "render", drawPath, "--theme", "purple"], { stdout: "pipe", stderr: "pipe" });
+  const [, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("--theme");
+});
+
+test("`export <file.draw> --theme light` produces bytes that differ from the default dark theme", async () => {
+  const { readFileSync, writeFileSync } = await import("node:fs");
+  const { emptyDoc } = await import("../../core/src/drawing/model");
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-draw-export-"));
+  const drawPath = join(dir, "Sketch.draw");
+  writeFileSync(drawPath, JSON.stringify(emptyDoc()));
+  const darkOut = join(dir, "dark.png");
+  const lightOut = join(dir, "light.png");
+
+  const dark = Bun.spawn(["bun", "run", "cli/src/index.ts", "export", drawPath, "--out", darkOut], { stdout: "pipe", stderr: "pipe" });
+  expect((await dark.exited)).toBe(0);
+  const light = Bun.spawn(["bun", "run", "cli/src/index.ts", "export", drawPath, "--out", lightOut, "--theme", "light"], { stdout: "pipe", stderr: "pipe" });
+  expect((await light.exited)).toBe(0);
+
+  expect(Buffer.compare(readFileSync(darkOut), readFileSync(lightOut))).not.toBe(0);
+});
+
+// --- `note new` applies the vault's configured default template (note.ts) ---------------------
+
+test("`note new` applies the vault's configured default template when --template is omitted", async () => {
+  const vault = makeVault({
+    ".settings": "templates:\n  folder: Templates\n  newNote: Templates/Default.md\n",
+    "Templates/Default.md": "# {{title}}\n\nDefault body.\n",
+  });
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "note", "new", "Quick.md");
+  expect(result.code).toBe(0);
+  expect(await readNote(vault, "Quick.md")).toBe("# Quick\n\nDefault body.\n");
+});
+
+test("`note new --no-template` skips the vault's configured default template", async () => {
+  const vault = makeVault({
+    ".settings": "templates:\n  folder: Templates\n  newNote: Templates/Default.md\n",
+    "Templates/Default.md": "# {{title}}\n\nDefault body.\n",
+  });
+  const { readNote } = await import("../../core/src/files");
+
+  const result = await runCli(vault, "note", "new", "Quick.md", "--no-template");
+  expect(result.code).toBe(0);
+  expect(await readNote(vault, "Quick.md")).toBe("");
+});

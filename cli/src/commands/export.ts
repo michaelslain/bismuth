@@ -33,14 +33,17 @@ function optionsFrom(args: string[]): ExportOptions {
 
 async function run(args: string[]): Promise<void> {
   const file = args.find((a) => !a.startsWith("--"));
-  if (!file) fail("usage: bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter]");
+  if (!file) fail("usage: bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--theme dark|light]");
   const fmt = (flag(args, "format") ?? (file.endsWith(".draw") ? "png" : "md")) as ExportFormat;
+  const themeArg = flag(args, "theme") ?? "dark";
+  if (themeArg !== "dark" && themeArg !== "light") fail(`--theme must be "dark" or "light": ${themeArg}`);
+  const theme = themeArg as "dark" | "light";
 
   // Drawings: headless core renderer (both png + pdf work without a browser).
   if (file.endsWith(".draw")) {
     const doc = parseDoc(readFileSync(file, "utf8"));
     if (fmt !== "png" && fmt !== "pdf") fail("a .draw file exports to png or pdf");
-    const bytes = fmt === "pdf" ? await renderDocToPdf(doc, "dark") : await renderDocToPng(doc, "dark");
+    const bytes = fmt === "pdf" ? await renderDocToPdf(doc, theme) : await renderDocToPng(doc, theme);
     const outPath = flag(args, "out") ?? `${file}.${fmt}`;
     writeFileSync(outPath, bytes);
     out(`wrote ${outPath}`, args);
@@ -77,7 +80,7 @@ async function run(args: string[]): Promise<void> {
       return { bytes, dataUrl: `data:image/png;base64,${Buffer.from(bytes).toString("base64")}` };
     },
   };
-  const res = await renderExport(file, fmt, deps, "dark", optionsFrom(args));
+  const res = await renderExport(file, fmt, deps, theme, optionsFrom(args));
   // A `<!-- pagebreak -->`-split PNG note (see app/src/export/pageBreaks.ts) yields several
   // files, one per page — `--out` (a single path) doesn't apply, so each writes to its own
   // computed name. Unreachable today for the app-only png/pdf-of-notes paths above (they throw
@@ -95,7 +98,7 @@ async function run(args: string[]): Promise<void> {
 export const commands: CommandMap = {
   export: {
     summary: "Export a note/base/sheet/drawing to md|html|png|pdf|csv (pdf/png of notes is app-only)",
-    usage: "<file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--vault <dir>]",
+    usage: "<file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--theme dark|light] [--vault <dir>]",
     run,
   },
 };
