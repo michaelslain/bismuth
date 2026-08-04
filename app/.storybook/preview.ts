@@ -45,6 +45,31 @@ import type { Settings } from "../src/settings";
 
 setCssVars(settingsToCssVars(DEFAULTS as unknown as Settings));
 
+// ── Backend seam ──────────────────────────────────────────────────────────────
+// The SECOND crucial step, for the same reason as the theme tokens above: several components
+// fetch on mount (CardEditor's `api.read()`, QueryBuilder's `resolveRows`/`tree`, the daemon and
+// gcal status panels). With no backend those reads fail and the component sits in its loading
+// state forever — a story that renders only a "Loading…" chip verifies nothing about the
+// component, while looking like it passed.
+//
+// `setTransport` is the same seam mobile uses to run the whole app in-process with no HTTP server
+// (app/src/inProcessTransport.ts), so an in-memory implementation is a supported configuration,
+// not a hack. Seeded from the shared fixture rows so a card reads back the note it claims to show.
+import { setTransport } from "../src/api";
+import { fakeTransport } from "../src/ui/_fakeTransport";
+import { SAMPLE_ROWS } from "../src/ui/_baseFixtures";
+
+setTransport(
+  fakeTransport({
+    files: Object.fromEntries(
+      SAMPLE_ROWS.map((r) => [
+        r.file.path,
+        `# ${r.file.name}\n\nNotes for **${r.file.name}**.\n\n- [ ] first checklist item\n- [x] second, already done\n`,
+      ]),
+    ),
+  }),
+);
+
 const preview: Preview = {
   parameters: {
     // We paint the page from --bg (via App.css `body`), so disable Storybook's own
