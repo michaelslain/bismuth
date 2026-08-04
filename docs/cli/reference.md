@@ -2,7 +2,7 @@
 
 The `bismuth` CLI ("control every aspect of a Bismuth vault from the shell") is the `@bismuth/cli` workspace — the reference for anyone scripting a vault, wiring it into an agent, or driving it from a terminal instead of the app. It is a thin shell wrapper over the `@bismuth/core` library: nearly every command calls a core function directly against the vault's files on disk, with **no running HTTP server required** — the running app's file watcher picks up writes live.
 
-A few commands need a live server instead: `api` (reads the server process's in-memory state / any route), the **`app`-control commands** (`app windows/tabs/open/close/focus/rename/pin/reorder/run/commands`, which drive a *running* Bismuth window over `/ui/*` — see the [App-control commands](#app-control-commands-commandsappts) section for their own discovery precedence), and `serve` itself, which *starts* the server.
+A few commands need a live server instead: `api` (reads the server process's in-memory state / any route), the **`app`-control commands** (`app windows/tabs/open/close/focus/rename/pin/reorder/run/commands`, which drive a *running* Bismuth window over `/ui/*` — see the [App-control commands](#app-control-commands-commandsappts) section for their own discovery precedence), `update status`/`update apply`, `gcal status/connect/sync/disconnect` (`gcal targets`/`gcal health` are headless — see the [gcal section](#google-calendar-sync-commands-commandsgcalts)), `relay list` (needs a server route core doesn't expose yet — see that section), and `serve` itself, which *starts* the server.
 
 This page documents every command (one per `cli/src/commands/*.ts`), every flag, the global flags + environment variables, output conventions, and the dispatch model — jump to the [Command index](#command-index-by-domain) for a table of every command grouped by domain, vault requirement, and output shape.
 
@@ -215,6 +215,13 @@ bismuth task toggle "Projects/Todo.md" 12 --vault ~/vault
 bismuth task toggle "Projects/Todo.md" 12 --status "/" --vault ~/vault   # mark in-progress
 ```
 
+### `task archive [<file>]`
+Permanently remove every resolved (`done`/`cancelled`) task item — head line plus indented children — via `archiveResolvedTasks` (`core/src/tasks.ts`). Mirrors `POST /tasks/archive`. With `<file>`, only that note is swept; omitted, every markdown file in the vault is (`listMarkdown`). Removal is **permanent** — no `--force`/confirmation prompt (the CLI has no such pattern anywhere; git history retains the removed lines if the vault is backed up). Prints `{ removed, files }` — the count of task items removed and the count of files actually rewritten (a note with nothing resolved is left untouched and doesn't count toward `files`).
+```bash
+bismuth task archive "Projects/Todo.md" --vault ~/vault   # one note
+bismuth task archive --vault ~/vault                      # whole vault
+```
+
 ---
 
 ## Base & row commands (`commands/base.ts`)
@@ -421,6 +428,23 @@ bismuth settings set toolbar '[{"command":"search","icon":"Search"}]' --vault ~/
 Print the vault's property/validation schema (`getVaultSchema`).
 ```bash
 bismuth settings schema --vault ~/vault --pretty
+```
+
+### `settings deny-list [--channel chat|daemon]`
+Report this vault's [visibility](../vault/visibility.md) deny plan for a channel — `resolveDenyPlan(vault, channel)` (`core/src/visibility.ts`), the same resolver every enforcement point (chat, the daemon, the CLI gate) calls. Default channel is `daemon` (the stricter one — see visibility docs); pass `--channel chat` for the chat-channel plan. An UNDETERMINED walk (an unreadable subtree, a broken `.settings`) prints `{ channel, determined: false, reason }` — safe to show in full, since a reason names *why the walk failed*, never a path.
+
+**Security-critical output shape, read carefully:** this exists so an agent in a restricted vault can learn *that* something is hidden without having to trigger a refusal first — but the answer must never become a way to enumerate what's hidden. So the output depends on **who is asking**, resolved via `cliAgentChannel()` (`core/src/visibilityCliGate.ts`, keyed on `BISMUTH_AGENT_CHANNEL` — absent means the vault owner's own hand, exactly as the CLI's own dispatch-time gate treats it):
+
+| Caller | Output |
+|---|---|
+| **Owner** (`BISMUTH_AGENT_CHANNEL` unset) | `{ channel, determined: true, count, entries: [<rel path>, …] }` — the full list, since the owner already knows what they hid. |
+| **Agent channel** (`chat`/`daemon`) | `{ channel, determined: true, count }` — **no `entries` key at all.** A count, never a path. |
+
+`settings` is Tier A (`ALWAYS_SAFE_COMMANDS`) in `core/src/visibilityCliGate.ts`'s command classification (by its `settings`-prefixed group, unchanged by this command), so the outer CLI gate never refuses `settings deny-list` wholesale even in a restricted vault — the count-only branch above is what actually protects it. See [visibility docs § CLI preflight](../vault/visibility.md#the-deny-list-preflight-settings-deny-list) for the full reasoning and the enumeration-oracle threat this closes.
+```bash
+bismuth settings deny-list --vault ~/vault --pretty                  # owner, default (daemon) channel
+bismuth settings deny-list --channel chat --vault ~/vault --pretty   # owner, chat channel
+BISMUTH_AGENT_CHANNEL=daemon bismuth settings deny-list --vault ~/vault   # agent → count only
 ```
 
 ### `folder-icon <folder> <icon> [--clear]`
@@ -836,6 +860,67 @@ bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault
 
 ---
 
+## Google Calendar sync commands (`commands/gcal.ts`)
+
+Google Calendar two-way sync (`core/src/gcal/`) from the shell — see [gcal overview](../gcal/overview.md) for the subsystem. Two different shapes, deliberately:
+
+- **`status` / `connect` / `sync` / `disconnect` need a RUNNING server** (`--api <url>` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry → `:4321`, the same `resolveCore` precedence as the `app` group). They're thin wrappers over `/gcal/*` routes rather than direct core imports, because `sync` needs the server's already-loaded appConfig (conflict policy/timezone/theme) and the OAuth/token lifecycle is orchestrated in one place (`core/src/gcal/index.ts`'s in-process serialization chain) — wrapping the live server keeps that to ONE call site.
+- **`targets` / `health` are headless** — no server needed. Before this command group, neither had ANY caller reachable from an agent: `listGcalSyncTargets` was called only by the internal 60s auto-sync ticker; `readManifest`/`baseSyncOf` read `~/.bismuth/gcal/sync.json`, which lives **outside every vault**, so no vault-scoped command could reach it either.
+
+### `gcal status [--api <url>]`
+Google Calendar connection status: `GET /gcal/status` → `{ connected, needsCredentials, account?, timeZone?, connectedAt? }`.
+```bash
+bismuth gcal status --pretty
+```
+
+### `gcal connect [--client-id <id>] [--client-secret <secret>] [--api <url>]`
+Start Google OAuth. If `--client-id`/`--client-secret` are given (both required together — `usage: gcal connect --client-id <id> --client-secret <secret>` otherwise), `POST /gcal/credentials` first; then `POST /gcal/auth/start` and print `{ url, note }` — the consent URL plus a note that **a person must finish sign-in in a browser**. This command never polls for completion and never claims the flow succeeded — it only prints where to go next. Re-run `gcal status` afterward to confirm the connection.
+```bash
+bismuth gcal connect --client-id "…" --client-secret "…"
+bismuth gcal connect   # credentials already stored — just get a fresh consent URL
+```
+
+### `gcal sync <basePath> [--api <url>]`
+Two-way sync ONE calendar base against Google now: `POST /gcal/sync {basePath}`, prints the `SyncResult` (`total`, `pulledNew`, `pulledUpdate`, `pushedNew`, `pushedUpdate`, `deletedLocal`, `deletedRemote`, `conflicts`, `skipped`, `failed`, `relinked` — see [gcal overview § Phase counts](../gcal/overview.md)). `<basePath>` is required (`usage: gcal sync <basePath>`).
+```bash
+bismuth gcal sync "Bases/Team Cal.md"
+```
+
+### `gcal disconnect [--api <url>]`
+Disconnect Google Calendar: `POST /gcal/disconnect` revokes the refresh token and wipes local sync state. **Permanent** — event links are not recoverable; there is no `--force`/confirmation flag (no command in this CLI has one — see the global-flags table).
+```bash
+bismuth gcal disconnect
+```
+
+### `gcal targets`
+List calendar bases with Google sync enabled — the exact scan the auto-sync ticker runs (`listGcalSyncTargets(vault, legacy)`, `core/src/gcal/discover.ts`), with `legacy` built from this vault's own `googleCalendar.{enabled,calendarId,basePath}` settings (`loadAppConfig`) so the legacy global-mapping fallback is honored just like the real ticker. Prints `[{ basePath, calendarId }, …]`. **Headless — requires only `--vault`.**
+```bash
+bismuth gcal targets --vault ~/vault --pretty
+```
+
+### `gcal health [<basePath>]`
+Per-base sync state from `~/.bismuth/gcal/sync.json` (or `BISMUTH_GCAL_DIR`) — **outside the vault**, so no other command can reach it. Prints `{ basePath, calendarId, lastSyncAt?, linkedEvents, hasSyncToken }` for one base, or every base in the manifest as an array when `<basePath>` is omitted. `linkedEvents` is `Object.keys(links).length`; `hasSyncToken` says whether the next sync will be incremental or full. **Per-sync `conflicts` counts are NOT persisted in the manifest** — see `gcal sync`'s own output for those; a base never synced shows `linkedEvents: 0` and no `lastSyncAt` key rather than an error. **Headless — no `--vault` needed** (the manifest is machine-wide, not vault-scoped).
+```bash
+bismuth gcal health --pretty                    # every base in the manifest
+bismuth gcal health "Bases/Team Cal.md" --pretty   # one base
+```
+
+---
+
+## Relay commands (`commands/relay.ts`)
+
+Read Bismuth's in-process registry of Claude Code work happening inside THIS vault's own terminal tabs (`core/src/relay.ts`) — top-level sessions (one per open tab) and the subagents they spawn, fed by the relay plugin's hooks. Before this command, `snapshot()` had **zero callers** outside `core/test/relay.test.ts` — the registry was write-only. Exposing it gives an agent basic orchestration awareness: what other sessions/subagents are alive in this vault right now.
+
+### `relay list [--api <url>]`
+`GET /relay/snapshot` → `{ sessions: RelaySession[], subagents: RelaySubagent[] }` (see `core/src/relay.ts` for both shapes), same `resolveCore` discovery precedence as `app`/`gcal`.
+
+**Known gap, stated plainly:** `core/src/server.ts` does not expose `GET /relay/snapshot` yet — only the write routes (`POST /relay/session[/end]`, `POST /relay/subagent/start|stop`) exist today. This command is wired to the intended contract (mirroring the POST routes' naming and the `ok(snapshot())` shape every other read route uses) and is covered by a contract test against a fake server (`cli/test/cli.test.ts`), but **it will fail with a normal 404 against a real running `bismuth serve`/app until that one route is added to `core/src/server.ts`** — a small, out-of-scope-for-this-change addition (`"GET /relay/snapshot": async (_, __) => ok(snapshot())`, mirroring every other read route's shape). It fails honestly (a normal HTTP error) rather than silently returning an empty result.
+```bash
+bismuth relay list --pretty
+```
+
+---
+
 ## Command index (by domain)
 
 | Command | Group file | Needs vault? | Output |
@@ -844,11 +929,11 @@ bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault
 | `note new` `templates` `daily` | note.ts | yes | JSON |
 | `search` `replace` | search.ts | yes | JSON |
 | `graph` | graph.ts | yes (+optional memory) | JSON |
-| `task list` `task toggle` | task.ts | yes | JSON / `ok` |
+| `task list` `task toggle` `task archive` | task.ts | yes | JSON / `ok` |
 | `base create` `base read` `base validate` `base render` `rows` `row add` `row update` `row delete` `row reorder` | base.ts | yes | JSON / `{ok:true}` |
 | `card decks` `card all` `card due` `card note` `card review` | card.ts | yes | JSON / `{ok:true}` |
 | `prop set` `prop delete` | prop.ts | yes | `{ok:true}` |
-| `settings get` `settings set` `settings schema` `folder-icon` | settings.ts | yes | JSON / `{ok:true}` |
+| `settings get` `settings set` `settings schema` `settings deny-list` `folder-icon` | settings.ts | yes | JSON / `{ok:true}` |
 | `calendar bases/create/list/range/day/get/search/overlaps/add/move/delete/override/delete-occurrence` + `calendar categories` + `calendar category add/update/remove` | calendar.ts | yes | JSON / `{ok:true}` |
 | `daemon status/devices/owner/install/setup/update/stop/restart` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |
 | `daemon graph` `daemon cron toggle/run` `daemon process toggle` | daemon.ts | **yes** (per-vault `<vault>/.daemon`) | JSON / `ok` |
@@ -862,5 +947,8 @@ bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault
 | `install` `install --mcp <cli>` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + per-CLI MCP config) | JSON |
 | `backends` | backends.ts | **no** (probes binaries on PATH; read-only) | table / JSON |
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
+| `gcal status/connect/sync/disconnect` | gcal.ts | **no** (needs a running server) | JSON |
+| `gcal targets` `gcal health` | gcal.ts | `targets`: **yes**; `health`: **no** (machine-wide `~/.bismuth/gcal`) | JSON |
+| `relay list` | relay.ts | **no** (needs a running server exposing `GET /relay/snapshot` — not yet added to core, see the section above) | JSON |
 
-Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `daemon/src/lib/platform.ts`
+Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/src/relay.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`

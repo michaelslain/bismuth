@@ -925,3 +925,317 @@ test("`bismuth update status` fails cleanly (no crash) when no server is running
   const [, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
   expect(code).toBe(1);
 });
+
+// --- `gcal targets` / `gcal health` (commands/gcal.ts) — headless, no server needed ------------
+// Both had NO caller reachable from the CLI/an agent before this: `listGcalSyncTargets` was only
+// called by the internal 60s auto-sync ticker; `readManifest`/`baseSyncOf` read a file OUTSIDE
+// the vault that no vault-scoped command could reach either.
+
+test("`gcal targets` lists calendar bases with Google sync enabled — ignores sync-off bases and non-base notes", async () => {
+  const vault = makeVault({
+    "Work.md": "---\ntype: base\nviews:\n  - type: calendar\n    googleCalendarSync: true\n    googleCalendarId: work-cal\ncategories: []\n---\n",
+    "Off.md": "---\ntype: base\nviews:\n  - type: calendar\n    googleCalendarSync: false\ncategories: []\n---\n",
+    "Note.md": "# Just a note, not a base\n",
+  });
+  const result = await runCli(vault, "gcal", "targets");
+  expect(result.code).toBe(0);
+  expect(result.json).toEqual([{ basePath: "Work.md", calendarId: "work-cal" }]);
+});
+
+test("`gcal health` reads the manifest at BISMUTH_GCAL_DIR (outside the vault) — per-base and whole-manifest shapes", async () => {
+  const { mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+  const gcalDir = mkdtempSync(join(tmpdir(), "bismuth-gcal-health-"));
+  mkdirSync(gcalDir, { recursive: true });
+  writeFileSync(
+    join(gcalDir, "sync.json"),
+    JSON.stringify({
+      bases: {
+        "Work.md": {
+          lastSyncAt: "2026-01-01T00:00:00.000Z",
+          syncToken: "tok1",
+          calendarId: "work-cal",
+          links: { ev1: { bismuthId: "b1" }, ev2: { bismuthId: "b2" } },
+        },
+        "Home.md": { calendarId: "home-cal", links: {} },
+      },
+    }),
+  );
+  try {
+    const all = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "health"], {
+      stdout: "pipe",
+      env: { ...process.env, BISMUTH_GCAL_DIR: gcalDir },
+    });
+    const allOut = await new Response(all.stdout).text();
+    expect(await all.exited).toBe(0);
+    const parsed = JSON.parse(allOut);
+    expect(parsed).toContainEqual({ basePath: "Work.md", calendarId: "work-cal", lastSyncAt: "2026-01-01T00:00:00.000Z", linkedEvents: 2, hasSyncToken: true });
+    expect(parsed).toContainEqual({ basePath: "Home.md", calendarId: "home-cal", linkedEvents: 0, hasSyncToken: false }); // no lastSyncAt key — never synced
+
+    const single = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "health", "Work.md"], {
+      stdout: "pipe",
+      env: { ...process.env, BISMUTH_GCAL_DIR: gcalDir },
+    });
+    const singleOut = await new Response(single.stdout).text();
+    expect(await single.exited).toBe(0);
+    expect(JSON.parse(singleOut)).toEqual({ basePath: "Work.md", calendarId: "work-cal", lastSyncAt: "2026-01-01T00:00:00.000Z", linkedEvents: 2, hasSyncToken: true });
+  } finally {
+    rmSync(gcalDir, { recursive: true, force: true });
+  }
+});
+
+// --- `gcal status/connect/sync/disconnect` (commands/gcal.ts) — server-backed, fake server ------
+// Per the hard constraint (never touch the user's real Google account), these hit a throwaway
+// in-test HTTP server that mimics the real `/gcal/*` route contracts, never core/src/gcal/index.ts
+// itself — proving the CLI's dispatch/argument-building/output-passthrough, not live OAuth/sync.
+
+function mockGcalServer(replies: { status?: unknown; authStart?: unknown; sync?: unknown } = {}): {
+  url: string;
+  calls: { method: string; path: string; body: unknown }[];
+  stop: () => void;
+} {
+  const calls: { method: string; path: string; body: unknown }[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (req) => {
+      const { pathname } = new URL(req.url);
+      let body: unknown;
+      if (req.method !== "GET") {
+        try {
+          body = await req.json();
+        } catch {
+          body = undefined;
+        }
+      }
+      calls.push({ method: req.method, path: pathname, body });
+      if (req.method === "GET" && pathname === "/gcal/status") return Response.json(replies.status ?? { connected: false, needsCredentials: true });
+      if (req.method === "POST" && pathname === "/gcal/credentials") return Response.json({ ok: true });
+      if (req.method === "POST" && pathname === "/gcal/auth/start") return Response.json(replies.authStart ?? { url: "https://accounts.google.com/o/oauth2/v2/auth?fake=1" });
+      if (req.method === "POST" && pathname === "/gcal/sync") {
+        return Response.json(
+          replies.sync ?? { total: 0, pulledNew: 0, pulledUpdate: 0, pushedNew: 0, pushedUpdate: 0, deletedLocal: 0, deletedRemote: 0, conflicts: 0, skipped: 0, failed: 0, relinked: 0 },
+        );
+      }
+      if (req.method === "POST" && pathname === "/gcal/disconnect") return Response.json({ ok: true });
+      return new Response("not found", { status: 404 });
+    },
+  });
+  return { url: `http://localhost:${server.port}`, calls, stop: () => server.stop(true) };
+}
+
+test("`gcal status` GETs /gcal/status and prints the route's JSON", async () => {
+  const mockSrv = mockGcalServer({ status: { connected: true, needsCredentials: false, account: "me@example.com", timeZone: "UTC", connectedAt: "2026-01-01T00:00:00Z" } });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "status", "--api", mockSrv.url], { stdout: "pipe", stderr: "pipe" });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls).toEqual([{ method: "GET", path: "/gcal/status", body: undefined }]);
+    expect(JSON.parse(outText)).toEqual({ connected: true, needsCredentials: false, account: "me@example.com", timeZone: "UTC", connectedAt: "2026-01-01T00:00:00Z" });
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`gcal connect --client-id --client-secret` POSTs credentials then auth/start, prints the consent URL + a browser note (never claims the flow completed)", async () => {
+  const mockSrv = mockGcalServer({ authStart: { url: "https://accounts.google.com/fake-consent" } });
+  try {
+    const proc = Bun.spawn(
+      ["bun", "run", "cli/src/index.ts", "gcal", "connect", "--client-id", "cid", "--client-secret", "csecret", "--api", mockSrv.url],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls.map((c) => ({ method: c.method, path: c.path }))).toEqual([
+      { method: "POST", path: "/gcal/credentials" },
+      { method: "POST", path: "/gcal/auth/start" },
+    ]);
+    expect(mockSrv.calls[0].body).toEqual({ clientId: "cid", clientSecret: "csecret" });
+    const parsed = JSON.parse(outText);
+    expect(parsed.url).toBe("https://accounts.google.com/fake-consent");
+    expect(String(parsed.note).toLowerCase()).toContain("browser"); // must say a PERSON finishes this, never imply it already did
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`gcal connect --client-id` without --client-secret fails before ever reaching the network", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "connect", "--client-id", "cid", "--api", "http://localhost:59999"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("usage: gcal connect");
+});
+
+test("`gcal sync <basePath>` POSTs {basePath} to /gcal/sync and prints the SyncResult", async () => {
+  const mockSrv = mockGcalServer({ sync: { total: 3, pulledNew: 1, pulledUpdate: 0, pushedNew: 2, pushedUpdate: 0, deletedLocal: 0, deletedRemote: 0, conflicts: 1, skipped: 0, failed: 0, relinked: 0 } });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "sync", "Bases/Team.md", "--api", mockSrv.url], { stdout: "pipe", stderr: "pipe" });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls).toHaveLength(1);
+    expect(mockSrv.calls[0]).toMatchObject({ method: "POST", path: "/gcal/sync", body: { basePath: "Bases/Team.md" } });
+    expect(JSON.parse(outText).conflicts).toBe(1);
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`gcal sync` without <basePath> fails before ever reaching the network", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "sync", "--api", "http://localhost:59999"], { stdout: "pipe", stderr: "pipe" });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("usage: gcal sync");
+});
+
+test("`gcal disconnect` POSTs /gcal/disconnect and prints {ok:true}", async () => {
+  const mockSrv = mockGcalServer();
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "disconnect", "--api", mockSrv.url], { stdout: "pipe", stderr: "pipe" });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls).toEqual([{ method: "POST", path: "/gcal/disconnect", body: undefined }]);
+    expect(JSON.parse(outText)).toEqual({ ok: true });
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`gcal status` fails cleanly (no crash) when no server is running", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "gcal", "status", "--api", "http://localhost:59997"], { stdout: "pipe", stderr: "pipe" });
+  const [, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+});
+
+// --- `relay list` (commands/relay.ts) — contract test against a FAKE server -------------------
+// core/src/relay.ts's `snapshot()` had ZERO callers before this command. IMPORTANT, stated here
+// too (not just in the source header): core/src/server.ts does not expose `GET /relay/snapshot`
+// yet, so this command will fail with a normal 404 against a REAL running `bismuth serve`/app
+// today. This test proves the CLI's own dispatch/URL/passthrough logic is correct against the
+// intended contract — it is not a claim that the real server currently serves this route.
+
+test("`relay list` GETs /relay/snapshot and passes the route's JSON straight through", async () => {
+  const calls: { method: string; path: string }[] = [];
+  const snapshot = {
+    sessions: [{ sessionId: "s1", terminalId: "t1", cwd: "/vault", backend: "claude", lastSeen: 1000 }],
+    subagents: [{ agentId: "a1", parentSessionId: "s1", agentType: "general-purpose", startedAt: 900, done: false }],
+  };
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req) => {
+      const { pathname } = new URL(req.url);
+      calls.push({ method: req.method, path: pathname });
+      if (req.method === "GET" && pathname === "/relay/snapshot") return Response.json(snapshot);
+      return new Response("not found", { status: 404 });
+    },
+  });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "relay", "list", "--api", `http://localhost:${server.port}`], { stdout: "pipe", stderr: "pipe" });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(calls).toEqual([{ method: "GET", path: "/relay/snapshot" }]);
+    expect(JSON.parse(outText)).toEqual(snapshot);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("`relay list` fails cleanly (no crash) when no server is running", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "relay", "list", "--api", "http://localhost:59996"], { stdout: "pipe", stderr: "pipe" });
+  const [, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+});
+
+// --- `task archive` (commands/task.ts) — mirrors POST /tasks/archive, headlessly ----------------
+
+test("`task archive <file>` removes only resolved (done/cancelled) tasks from that note; open/in-progress tasks + other files stay", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({
+    "Todo.md": "- [ ] open task\n- [x] done task\n- [-] cancelled task\n- [/] in progress\n",
+    "Other.md": "- [x] should stay (different file)\n",
+  });
+  const result = await runCli(vault, "task", "archive", "Todo.md");
+  expect(result.code).toBe(0);
+  expect(result.json).toEqual({ removed: 2, files: 1 });
+  const after = await readNote(vault, "Todo.md");
+  expect(after).toContain("open task");
+  expect(after).toContain("in progress");
+  expect(after).not.toContain("done task");
+  expect(after).not.toContain("cancelled task");
+  expect(await readNote(vault, "Other.md")).toContain("should stay"); // untouched — no <file> given, but this call was scoped
+});
+
+test("`task archive` (no file) sweeps the whole vault and reports files touched", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({
+    "A.md": "- [x] done in A\n- [ ] open in A\n",
+    "B.md": "- [-] cancelled in B\n",
+    "C.md": "- [ ] nothing resolved here\n",
+  });
+  const result = await runCli(vault, "task", "archive");
+  expect(result.code).toBe(0);
+  expect(result.json).toEqual({ removed: 2, files: 2 });
+  expect(await readNote(vault, "A.md")).not.toContain("done in A");
+  expect(await readNote(vault, "A.md")).toContain("open in A");
+  expect(await readNote(vault, "B.md")).not.toContain("cancelled in B");
+  expect(await readNote(vault, "C.md")).toContain("nothing resolved here"); // untouched — nothing resolved
+});
+
+test("`task archive <file>` with nothing to archive reports {removed:0, files:0} and doesn't touch the file", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({ "Clean.md": "- [ ] still open\n" });
+  const before = await readNote(vault, "Clean.md");
+  const result = await runCli(vault, "task", "archive", "Clean.md");
+  expect(result.code).toBe(0);
+  expect(result.json).toEqual({ removed: 0, files: 0 });
+  expect(await readNote(vault, "Clean.md")).toBe(before);
+});
+
+// --- `settings deny-list` (commands/settings.ts) — the visibility preflight, gated correctly ---
+// MANDATORY per the task brief: a restricted (agent-channel) caller must get a COUNT, never a
+// path list — otherwise the command becomes an enumeration oracle for exactly what it exists to
+// protect. `settings` is Tier A ("always-safe") in core/src/visibilityCliGate.ts's command
+// classification (by its `settings`-prefixed group, unchanged by this task), so the command
+// always RUNS even under a restricted vault + agent channel — the count-only behavior below is
+// what actually protects it, not the outer gate refusing the command wholesale.
+
+test("`settings deny-list` — the OWNER (BISMUTH_AGENT_CHANNEL unset) gets the full path list", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nsecret body\n", "Public.md": "# public\n" });
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "settings", "deny-list", "--vault", vault], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, BISMUTH_AGENT_CHANNEL: undefined },
+  });
+  const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(0);
+  expect(JSON.parse(outText)).toEqual({ channel: "daemon", determined: true, count: 1, entries: ["Private/secret.md"] });
+});
+
+test("`settings deny-list` — a RESTRICTED (agent-channel) caller gets a COUNT ONLY, never a path — mandatory security assertion", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nsecret body\n", "Public.md": "# public\n" });
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "settings", "deny-list", "--vault", vault], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, BISMUTH_AGENT_CHANNEL: "daemon" },
+  });
+  const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(0); // NOT refused wholesale — Tier A runs; the internal count-only branch is the real protection
+  expect(JSON.parse(outText)).toEqual({ channel: "daemon", determined: true, count: 1 }); // no `entries` key at all
+  expect(outText).not.toContain("secret.md"); // belt-and-suspenders: the path never appears anywhere in the raw output
+  expect(outText).not.toContain("Private");
+});
+
+test("`settings deny-list --channel chat` vs the default `daemon` channel: a chat-only note is visible to chat but restricted for daemon", async () => {
+  const vault = makeVault({ "Draft.md": "---\nvisibility: chat-only\n---\nwork in progress\n" });
+  const daemonView = await runCli(vault, "settings", "deny-list"); // default channel = daemon (stricter)
+  expect(daemonView.json).toMatchObject({ channel: "daemon", count: 1 });
+  const chatView = await runCli(vault, "settings", "deny-list", "--channel", "chat");
+  expect(chatView.json).toMatchObject({ channel: "chat", count: 0 });
+});
+
+test("`settings deny-list --channel bogus` is rejected before touching the vault", async () => {
+  const vault = makeVault({ "Private/secret.md": "---\nvisibility: hidden\n---\nx\n" });
+  const result = await runCli(vault, "settings", "deny-list", "--channel", "bogus");
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("usage: settings deny-list");
+});

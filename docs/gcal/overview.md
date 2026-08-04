@@ -207,6 +207,16 @@ The **per-base** linkage (which base ↔ which Google calendar + whether sync is
 
 ---
 
+## CLI (`bismuth gcal` — `cli/src/commands/gcal.ts`)
+
+Before this command group, the subsystem had **zero CLI commands** — every capability above was reachable only from the app UI (or, for anything with an HTTP route, `bismuth api <METHOD> /gcal/...`). Full flag/usage reference: [`docs/cli/reference.md`](../cli/reference.md#google-calendar-sync-commands-commandsgcalts); summarized here for how each maps onto this page's model:
+
+- **`gcal status` / `gcal connect` / `gcal sync <basePath>` / `gcal disconnect`** wrap the `/gcal/*` routes above over HTTP (same `resolveCore` discovery as `bismuth app`) rather than importing `core/src/gcal/index.ts` directly — `sync` needs the server's already-loaded `appConfig` (`gcalConnectionArgs`), and the OAuth/sync lifecycle stays orchestrated from exactly one call site. `gcal connect` is the one OAuth entry point that CAN be automated safely: it prints the consent URL from `POST /gcal/auth/start` and a note that **a person must finish sign-in in a browser** — it never polls for completion or claims the flow succeeded (`GET /gcal/callback` above is still what completes it, exactly as today).
+- **`gcal targets`** wraps `listGcalSyncTargets` (`discover.ts`) — the same scan the auto-sync ticker runs — but headlessly: it builds its own `legacy: LegacyGcalConfig` from the vault's settings (`loadAppConfig`) rather than needing a running server's `appConfig`. This was previously called ONLY by the internal ticker; answers "which calendar bases have sync enabled" for the first time from outside the app.
+- **`gcal health [<basePath>]`** wraps `readManifest`/`baseSyncOf` (`manifest.ts`) — also headless, since the manifest is a plain file at `gcalDir()` (`~/.bismuth/gcal/sync.json`, or `BISMUTH_GCAL_DIR`). Reports `{ basePath, calendarId, lastSyncAt?, linkedEvents, hasSyncToken }` per base. Because this file lives **outside every vault**, no vault-scoped command could reach it before this — an agent had no way to answer "when did this calendar last sync, and how many events are linked?" without triggering a sync itself. Per-sync `conflicts` counts are NOT in this output (they're not persisted in `BaseSync` — see `SyncResult` above); they're in `gcal sync`'s own printed result instead.
+
+---
+
 ## Config: per-calendar linkage + connection-level settings
 
 The **per-calendar** linkage lives on each calendar base's own frontmatter (folded into its calendar view config, like `dateField`):
@@ -244,4 +254,4 @@ Without this, a torn-down server's ticker would keep firing for the rest of the 
 
 ---
 
-Source: `core/src/gcal/index.ts`, `core/src/gcal/oauth.ts`, `core/src/gcal/pkce.ts`, `core/src/gcal/sync.ts`, `core/src/gcal/config.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/client.ts`, `core/src/gcal/state.ts`, `core/src/gcal/lock.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/map.ts`, `core/src/gcal/recurrence.ts`, `core/src/gcal/colors.ts`, `core/src/bases/parse.ts` + `core/src/bases/types.ts` (`googleCalendarSync`/`googleCalendarId` view config), `core/src/server.ts` (the `/gcal/*` routes + auto-sync ticker), `core/src/schema/settingsSchema.ts` (`googleCalendar`), `core/src/settings.ts` (`.settings` — the live vault settings file), `app/src/GcalConnectModal.tsx`, `app/src/calendar/components/GcalSyncPanel.tsx` (the per-calendar panel), `app/src/api.ts` (`gcal*` methods).
+Source: `core/src/gcal/index.ts`, `core/src/gcal/oauth.ts`, `core/src/gcal/pkce.ts`, `core/src/gcal/sync.ts`, `core/src/gcal/config.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/client.ts`, `core/src/gcal/state.ts`, `core/src/gcal/lock.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/map.ts`, `core/src/gcal/recurrence.ts`, `core/src/gcal/colors.ts`, `core/src/bases/parse.ts` + `core/src/bases/types.ts` (`googleCalendarSync`/`googleCalendarId` view config), `core/src/server.ts` (the `/gcal/*` routes + auto-sync ticker), `core/src/schema/settingsSchema.ts` (`googleCalendar`), `core/src/settings.ts` (`.settings` — the live vault settings file + `loadAppConfig`), `app/src/GcalConnectModal.tsx`, `app/src/calendar/components/GcalSyncPanel.tsx` (the per-calendar panel), `app/src/api.ts` (`gcal*` methods), `cli/src/commands/gcal.ts`, `cli/src/commands/app.ts` (`resolveCore`), `cli/test/cli.test.ts`.

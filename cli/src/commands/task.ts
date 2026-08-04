@@ -5,10 +5,10 @@
 // write live — mirroring server.ts's POST /tasks/toggle handler.
 import type { CommandMap } from "../types";
 import { fail, flag, out, positionals, requireVault, today } from "../args";
-import { collectVaultTasks, toggleTaskLine, setTaskLineStatus } from "../../../core/src/tasks";
+import { collectVaultTasks, toggleTaskLine, setTaskLineStatus, archiveResolvedTasks } from "../../../core/src/tasks";
 import { reorderTaskBlocks } from "../../../core/src/taskReorder";
 import { runTaskQuery } from "../../../core/src/tasks-query";
-import { readNote, writeNote } from "../../../core/src/files";
+import { readNote, writeNote, listMarkdown } from "../../../core/src/files";
 
 export const commands: CommandMap = {
   "task list": {
@@ -54,6 +54,32 @@ export const commands: CommandMap = {
       lines[idx] = status !== undefined ? setTaskLineStatus(lines[idx], status, today()) : toggleTaskLine(lines[idx], today());
       await writeNote(vault, file, reorderTaskBlocks(lines.join("\n")));
       out("ok", args);
+    },
+  },
+  "task archive": {
+    summary: "Permanently remove completed/cancelled tasks — mirrors POST /tasks/archive. With <file>, only that note; omitted, the whole vault. Removal is permanent (git history retains it)",
+    usage: "[<file>]",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [file] = positionals(args);
+      if (file) {
+        const { content, removed } = archiveResolvedTasks(await readNote(vault, file));
+        if (removed > 0) await writeNote(vault, file, content);
+        out({ removed, files: removed > 0 ? 1 : 0 }, args);
+        return;
+      }
+      const rels = await listMarkdown(vault);
+      let removed = 0;
+      let files = 0;
+      for (const rel of rels) {
+        const res = archiveResolvedTasks(await readNote(vault, rel));
+        if (res.removed > 0) {
+          await writeNote(vault, rel, res.content);
+          removed += res.removed;
+          files++;
+        }
+      }
+      out({ removed, files }, args);
     },
   },
 };
