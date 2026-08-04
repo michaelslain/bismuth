@@ -1138,9 +1138,10 @@ export default function App() {
     closeTabById(id);
   };
 
-  // Open the core→frontend control channel now that the tab helpers it drives exist. Wires the five
-  // app-control actions to App state; the blocklist + chat exclusion are enforced here (and again on
-  // the server) so opening a live recursive Agent-SDK chat stays off the app-control surface.
+  // Open the core→frontend control channel now that the tab helpers it drives exist. Wires the
+  // app-control actions (list/open/close/focus/rename/pin/reorder tabs, run-command) to App state;
+  // the blocklist + chat exclusion are enforced here (and again on the server) so opening a live
+  // recursive Agent-SDK chat stays off the app-control surface.
   onMount(() => {
     const handle = connectUiControl(resolveWindowId(), {
       listTabs: () => listTabsSnapshot(),
@@ -1158,6 +1159,21 @@ export default function App() {
       focusTab: ({ tabId }) => {
         if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
         setActiveTabId(tabId);
+        return { ok: true };
+      },
+      renameTab: ({ tabId, name }) => {
+        if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
+        updateTab(tabId, (t) => ({ ...t, name }));
+        return { ok: true };
+      },
+      pinTab: ({ tabId, pinned }) => {
+        if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
+        setTabs((ts) => setTabPinned(ts, tabId, pinned));
+        return { ok: true };
+      },
+      reorderTab: ({ tabId, index }) => {
+        if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
+        setTabs((ts) => reorderTabs(ts, tabId, index));
         return { ok: true };
       },
       runCommand: async ({ id }) => {

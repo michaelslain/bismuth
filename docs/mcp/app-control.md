@@ -1,6 +1,6 @@
 # App control — driving a running Bismuth window
 
-A Claude session (or any shell) can drive a **running Bismuth app**: list its open windows, list/open/close/focus tabs, run a safe UI command, and author a daemon inbox page. This is the one surface that reaches into the live webview from outside it.
+A Claude session (or any shell) can drive a **running Bismuth app**: list its open windows, list/open/close/focus/rename/pin/reorder tabs, run a safe UI command, and author a daemon inbox page. This is the one surface that reaches into the live webview from outside it.
 
 It adds **zero new MCP tools**. Everything routes through the existing `bismuth_cli` tool via two CLI groups — `app` (needs a running app) and `page` (headless). See [overview.md](overview.md) for why (a machine-wide MCP mustn't grow its always-listed tool set).
 
@@ -34,6 +34,9 @@ bismuth app <verb>  ──HTTP──▶  core /ui/command  ──WebSocket──
 | `open-tab` | `{content, newTab?}` | Open a note path or sentinel; `newTab` opens its own tab vs. the focused pane |
 | `close-tab` | `{tabId}` | Close a tab (whole pane tree) |
 | `focus-tab` | `{tabId}` | Activate a tab |
+| `rename-tab` | `{tabId, name}` | Set a custom label on a tab, overriding its auto content label |
+| `pin-tab` | `{tabId, pinned}` | Pin (or unpin) a tab so pinned tabs lead the tab strip |
+| `reorder-tab` | `{tabId, index}` | Move a tab to a new 0-based position in the tab strip |
 | `run-command` | `{id}` | Run a command-catalog id (`core/src/commands.ts`) — allowlist-gated; the window awaits the action before replying, and an interactive command's `result` says so (see below) |
 
 `content` is a vault path (`reading/x.md`) or a sentinel: `::graph`, `::inbox`, `.settings`, `::term:<uuid>`. (There is no `::search` sentinel — search is the in-window Cmd+O switcher, not a tab.) **`::chat:*` is refused** — opening a live recursive Agent-SDK chat is a deliberately different trust boundary.
@@ -59,6 +62,9 @@ A handful of commands — `create-menu`, `emoji-library`, `edit-dictionary`, `da
 | `bismuth app open <content> [--new-tab] [--window <id>]` | open a note/sentinel |
 | `bismuth app close <tabId> [--window <id>]` | close a tab |
 | `bismuth app focus <tabId> [--window <id>]` | focus a tab |
+| `bismuth app rename <tabId> <name> [--window <id>]` | set a tab's custom label |
+| `bismuth app pin <tabId> [--off] [--window <id>]` | pin (or `--off` to unpin) a tab |
+| `bismuth app reorder <tabId> <index> [--window <id>]` | move a tab to a new position |
 | `bismuth app run <commandId> [--window <id>]` | run a safe command |
 | `bismuth app commands` | the ids `app run` accepts (catalog − blocklist) |
 

@@ -129,6 +129,95 @@ test("`bismuth app windows` fails cleanly (no crash) when no app is running", as
   expect(code).toBe(1); // fail() exits non-zero, doesn't throw an uncaught error
 });
 
+// --- `app rename`/`app pin`/`app reorder`: dispatch + arg validation --------------------------
+// A tiny in-test mock of POST /ui/command captures exactly what the CLI sent (action + args), so
+// these tests prove the argument-building logic in cli/src/commands/app.ts — not just "it didn't
+// crash" — without needing a real Bismuth window.
+
+/** Spin up a throwaway HTTP server that records every POST /ui/command body and answers it with
+ *  `reply`. Caller must `stop()` it. */
+function mockUiControlServer(reply: unknown = { ok: true }): { url: string; calls: any[]; stop: () => void } {
+  const calls: any[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (req) => {
+      if (req.method === "POST" && new URL(req.url).pathname === "/ui/command") {
+        calls.push(await req.json());
+        return new Response(JSON.stringify(reply), { headers: { "content-type": "application/json" } });
+      }
+      return new Response("not found", { status: 404 });
+    },
+  });
+  return { url: `http://localhost:${server.port}`, calls, stop: () => server.stop(true) };
+}
+
+test("`bismuth app rename <tabId> <name>` dispatches rename-tab with {tabId, name}", async () => {
+  const mock = mockUiControlServer({ ok: true });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "rename", "t1", "New Name", "--api", mock.url], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]).toMatchObject({ action: "rename-tab", args: { tabId: "t1", name: "New Name" } });
+  } finally {
+    mock.stop();
+  }
+});
+
+test("`bismuth app rename <tabId>` (missing name) fails before ever reaching the network", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "rename", "t1", "--api", "http://localhost:59999"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("usage: bismuth app rename");
+});
+
+test("`bismuth app pin <tabId>` dispatches pin-tab with pinned:true; `--off` sends pinned:false", async () => {
+  const mock = mockUiControlServer({ ok: true });
+  try {
+    const on = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "pin", "t1", "--api", mock.url], { stdout: "pipe", stderr: "pipe" });
+    expect(await on.exited).toBe(0);
+    const off = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "pin", "t1", "--off", "--api", mock.url], { stdout: "pipe", stderr: "pipe" });
+    expect(await off.exited).toBe(0);
+    expect(mock.calls).toHaveLength(2);
+    expect(mock.calls[0]).toMatchObject({ action: "pin-tab", args: { tabId: "t1", pinned: true } });
+    expect(mock.calls[1]).toMatchObject({ action: "pin-tab", args: { tabId: "t1", pinned: false } });
+  } finally {
+    mock.stop();
+  }
+});
+
+test("`bismuth app reorder <tabId> <index>` dispatches reorder-tab with a numeric index", async () => {
+  const mock = mockUiControlServer({ ok: true });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "reorder", "t1", "2", "--api", mock.url], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]).toMatchObject({ action: "reorder-tab", args: { tabId: "t1", index: 2 } });
+  } finally {
+    mock.stop();
+  }
+});
+
+test("`bismuth app reorder <tabId> <index>` rejects a non-integer index before ever reaching the network", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "app", "reorder", "t1", "notanumber", "--api", "http://localhost:59999"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
+  expect(err).toContain("invalid index");
+});
+
 // --- `calendar` group: headless calendar-base CRUD end-to-end --------------------------------
 
 /** Spawn `bismuth <args>` against a vault; returns { code, json } (json parsed from stdout). */

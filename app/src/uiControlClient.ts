@@ -25,6 +25,9 @@ export interface UiControlHandlers {
   closeTab(args: { tabId: string }): { ok: boolean; error?: string };
   focusTab(args: { tabId: string }): { ok: boolean; error?: string };
   runCommand(args: { id: string }): ({ ok: boolean; error?: string } & RunCommandResult) | Promise<{ ok: boolean; error?: string } & RunCommandResult>;
+  renameTab(args: { tabId: string; name: string }): { ok: boolean; error?: string };
+  pinTab(args: { tabId: string; pinned: boolean }): { ok: boolean; error?: string };
+  reorderTab(args: { tabId: string; index: number }): { ok: boolean; error?: string };
 }
 
 export interface UiControlHandle {
@@ -80,6 +83,27 @@ export function connectUiControl(windowId: string, handlers: UiControlHandlers):
           const tabId = args?.tabId;
           if (typeof tabId !== "string" || !tabId) return { ok: false, error: "focus-tab requires a tabId" };
           return handlers.focusTab({ tabId });
+        }
+        case "rename-tab": {
+          const tabId = args?.tabId;
+          const name = args?.name;
+          if (typeof tabId !== "string" || !tabId) return { ok: false, error: "rename-tab requires a tabId" };
+          if (typeof name !== "string" || !name.trim()) return { ok: false, error: "rename-tab requires a name" };
+          return handlers.renameTab({ tabId, name });
+        }
+        case "pin-tab": {
+          const tabId = args?.tabId;
+          const pinned = args?.pinned;
+          if (typeof tabId !== "string" || !tabId) return { ok: false, error: "pin-tab requires a tabId" };
+          if (typeof pinned !== "boolean") return { ok: false, error: "pin-tab requires a boolean pinned" };
+          return handlers.pinTab({ tabId, pinned });
+        }
+        case "reorder-tab": {
+          const tabId = args?.tabId;
+          const index = args?.index;
+          if (typeof tabId !== "string" || !tabId) return { ok: false, error: "reorder-tab requires a tabId" };
+          if (typeof index !== "number" || !Number.isInteger(index)) return { ok: false, error: "reorder-tab requires an integer index" };
+          return handlers.reorderTab({ tabId, index });
         }
         case "run-command": {
           const id = args?.id;

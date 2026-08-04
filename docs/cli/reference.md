@@ -2,7 +2,7 @@
 
 The `bismuth` CLI ("control every aspect of a Bismuth vault from the shell") is the `@bismuth/cli` workspace — the reference for anyone scripting a vault, wiring it into an agent, or driving it from a terminal instead of the app. It is a thin shell wrapper over the `@bismuth/core` library: nearly every command calls a core function directly against the vault's files on disk, with **no running HTTP server required** — the running app's file watcher picks up writes live.
 
-A few commands need a live server instead: `api` (reads the server process's in-memory state / any route), the **`app`-control commands** (`app windows/tabs/open/close/focus/run/commands`, which drive a *running* Bismuth window over `/ui/*` — see the [App-control commands](#app-control-commands-commandsappts) section for their own discovery precedence), and `serve` itself, which *starts* the server.
+A few commands need a live server instead: `api` (reads the server process's in-memory state / any route), the **`app`-control commands** (`app windows/tabs/open/close/focus/rename/pin/reorder/run/commands`, which drive a *running* Bismuth window over `/ui/*` — see the [App-control commands](#app-control-commands-commandsappts) section for their own discovery precedence), and `serve` itself, which *starts* the server.
 
 This page documents every command (one per `cli/src/commands/*.ts`), every flag, the global flags + environment variables, output conventions, and the dispatch model — jump to the [Command index](#command-index-by-domain) for a table of every command grouped by domain, vault requirement, and output shape.
 
@@ -603,6 +603,9 @@ Drive a **running Bismuth app**'s tabs (and, through the bismuth MCP's `bismuth_
 - **`app tabs [--window <id>]`** — list a window's tabs + panes.
 - **`app open <content> [--new-tab] [--window <id>]`** — open a note path or sentinel (`::graph`/`::inbox`/`.settings`/`::term:<uuid>` — no `::search`; search is the in-window Cmd+O switcher, not a tab). `::chat:*` is refused.
 - **`app close <tabId> [--window <id>]`** / **`app focus <tabId> [--window <id>]`** — close / activate a tab.
+- **`app rename <tabId> <name> [--window <id>]`** — set a custom tab label, overriding its auto content label.
+- **`app pin <tabId> [--off] [--window <id>]`** — pin a tab so it leads the tab strip (`--off` unpins).
+- **`app reorder <tabId> <index> [--window <id>]`** — move a tab to a new 0-based position in the tab strip.
 - **`app run <commandId> [--window <id>]`** — run a command-catalog id; a small blocklist (`new-window`/`open-folder`/`update-app`/`daemon-update`/`new-claude-chat`) is refused.
 - **`app commands`** — the ids `app run` accepts (catalog − blocklist).
 
@@ -820,7 +823,7 @@ bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault
 | `serve` `backup` | serve.ts | yes (+optional memory) | string |
 | `export` | export.ts | yes (no for `.draw`) | `wrote <file>` |
 | `api` | api.ts | **no** (needs running server) | JSON / text |
-| `app windows/tabs/open/close/focus/run/commands` | app.ts | **no** (needs running app; discovery via `BISMUTH_API`/`CLAUDE_RELAY_URL`/run-registry) | JSON |
+| `app windows/tabs/open/close/focus/rename/pin/reorder/run/commands` | app.ts | **no** (needs running app; discovery via `BISMUTH_API`/`CLAUDE_RELAY_URL`/run-registry) | JSON |
 | `page list/create/resolve/mark-failed` | page.ts | **yes** (per-vault `<vault>/.daemon/pages`) | JSON |
 | `install` `install --mcp <cli>` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + per-CLI MCP config) | JSON |
 | `backends` | backends.ts | **no** (probes binaries on PATH; read-only) | table / JSON |
