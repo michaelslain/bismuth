@@ -168,6 +168,19 @@ test("the Claude Code skill entry is created as a symlink into the staged skill"
   });
 });
 
+test("stageSkills against a source tree WITHOUT skills/ warns instead of silently no-opping", () => {
+  withTempDirs((bismuthHome, _claudeSkillsDir, src) => {
+    // Deliberately do NOT call writeFixtureSkill(src) — src has no skills/ dir at all, the
+    // shape of a build (e.g. a forgotten staging step in app/scripts/build-bismuth-tools.ts)
+    // that never staged skills into its output.
+    const r = stageSkills(src, bismuthHome);
+    expect(r.warning).toBeDefined();
+    expect(r.warning).toContain("no skills/ found");
+    // Non-fatal: no skills dir gets created, but nothing throws and the dest is left clean.
+    expect(existsSync(join(bismuthHome, "skills"))).toBe(false);
+  });
+});
+
 test("BISMUTH_SKILLS_DIR is set on the registered MCP server spec, pointing at the installed skills path", () => {
   const args = claudeMcpAddArgs();
   const valueIdx = args.findIndex((a) => a.startsWith("BISMUTH_SKILLS_DIR="));

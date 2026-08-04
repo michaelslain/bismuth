@@ -214,15 +214,26 @@ export function isSkillLinkedToClaudeCode(bismuthHome: string, claudeSkillsDir: 
 
 /**
  * Stage `src/skills` into `<bismuthHome>/skills`, mirroring installFiles()'s docs handling
- * exactly (wipe the dest, then copy-if-present — a src with no skills/ dir is a silent no-op,
- * same as a src with no docs/). Parameterized on `bismuthHome` (not the module-level
- * BISMUTH_HOME) so tests can exercise the real copy against a throwaway temp dir.
+ * (wipe the dest, then copy-if-present) — with ONE deliberate difference: unlike a missing
+ * `src/docs`, a missing `src/skills` is NOT a silent no-op. A build that forgot to stage
+ * skills/ (see app/scripts/build-bismuth-tools.ts) would otherwise install "successfully"
+ * while leaving the MCP `bismuth_skill` tool and the Claude Code skill symlink with nothing to
+ * serve — exactly the silent-success-on-nothing shape this exists to avoid. Still non-fatal:
+ * we console.warn AND return the warning so a caller that surfaces InstallResult.warnings can
+ * show it too. Parameterized on `bismuthHome` (not the module-level BISMUTH_HOME) so tests can
+ * exercise the real copy against a throwaway temp dir.
  */
-export function stageSkills(src: string, bismuthHome: string): void {
+export function stageSkills(src: string, bismuthHome: string): { warning?: string } {
   const dest = join(bismuthHome, "skills");
   rmSync(dest, { recursive: true, force: true });
   const skillsSrc = join(src, "skills");
-  if (existsSync(skillsSrc)) cpSync(skillsSrc, dest, { recursive: true });
+  if (!existsSync(skillsSrc)) {
+    const warning = `no skills/ found at ${src} — this build didn't stage it, so the bismuth_skill MCP tool and the Claude Code skill have nothing to serve`;
+    console.warn(`[bismuthInstall] ${warning}`);
+    return { warning };
+  }
+  cpSync(skillsSrc, dest, { recursive: true });
+  return {};
 }
 
 /**
