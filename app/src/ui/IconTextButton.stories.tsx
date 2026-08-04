@@ -1,4 +1,4 @@
-// Visual spec for <IconTextButton> — a text <Button> with a leading Lucide icon.
+// Visual spec for <IconTextButton> — a text <Button> with a leading icon (Lucide-named).
 //
 // Props: icon (required), iconSize (default 14), variant ("normal" default | "selected"
 // | "unselected"), danger, primary, size, plus native <button> attributes. Labels must be

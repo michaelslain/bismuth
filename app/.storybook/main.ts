@@ -11,8 +11,9 @@ import type { StorybookConfig } from "storybook-solidjs-vite";
  */
 const config: StorybookConfig = {
   framework: "storybook-solidjs-vite",
-  // Stories are colocated next to the components they document.
-  stories: ["../src/ui/**/*.stories.@(ts|tsx)"],
+  // Stories are colocated next to the components they document. Widened past src/ui so
+  // feature surfaces (bases/, calendar/, graph/, ...) can carry their own stories too.
+  stories: ["../src/**/*.stories.@(ts|tsx)"],
   addons: [],
 };
 

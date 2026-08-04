@@ -29,7 +29,19 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { openContextMenu } from "./nativeMenu";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
-import type { ChatFrame, ChatManifest, ChatQuestion } from "../../core/src/chat";
+import type { ChatFrame, ChatManifest } from "../../core/src/chat";
+import {
+  applyChatFrame,
+  type TurnItem,
+  type UserItem,
+  type AssistantItem,
+  type SystemItem,
+  type TextPart,
+  type ThinkingPart,
+  type ToolPart,
+  type PermissionPart,
+  type QuestionPart,
+} from "./chatTranscript";
 import { getFocusedSelection } from "./editorRegistry";
 import { getEditorTabs, addChatReference, getChatReferences, clearChatReferences } from "./chatContext";
 import { buildEditorContextText } from "./chatEditorContext";
@@ -184,81 +196,9 @@ function readImageFile(file: File): Promise<Attachment | null> {
 }
 
 // ── Transcript model ──────────────────────────────────────────────────────────────────────
-// The transcript is an ordered list of turn ITEMS. A `user` item is one sent message. An
-// `assistant` item is a whole assistant turn — a list of ordered PARTS (prose / thinking / a
-// tool call / an inline permission prompt) interleaved in arrival order, plus an optional
-// result footer. Streaming deltas append into the current assistant turn's trailing part.
-
-/** A run of streamed assistant prose (markdown), accumulated across `assistant-text` deltas. */
-interface TextPart { kind: "text"; text: string }
-/** A run of streamed extended-thinking text, accumulated across `thinking` deltas. */
-interface ThinkingPart { kind: "thinking"; text: string }
-/** A tool invocation chip; `result`/`isError` fill in when the matching tool-result arrives.
- *  `toolKind` (NOT `kind` — that name is already the part discriminant) is the frame's optional
- *  machine token for the call, used only to pick the icon; see chatToolIcon.ts. */
-interface ToolPart {
-  kind: "tool";
-  id: string;
-  name: string;
-  toolKind?: string;
-  input: unknown;
-  result: string | null;
-  isError: boolean;
-  pending: boolean;
-}
-/** An inline permission prompt; `answered` records the user's choice once they pick. `cancelled`
- *  marks a prompt orphaned by Stop (the backend denied it when the turn aborted) — rendered as a
- *  muted "Cancelled" note, NOT as a user denial, and its buttons stop being actionable. */
-interface PermissionPart {
-  kind: "permission";
-  id: string;
-  toolName: string;
-  input: unknown;
-  answered: null | { behavior: "allow" | "deny"; always: boolean };
-  cancelled?: boolean;
-}
-/** An interactive AskUserQuestion prompt: 1-4 multiple-choice questions rendered as option buttons.
- *  `answered` records the submitted answers (question text → chosen answer string) once the user picks;
- *  `cancelled` marks a prompt skipped or orphaned by Stop (rendered as a muted "Skipped", buttons
- *  inert). Only one of answered/cancelled is ever set. */
-interface QuestionPart {
-  kind: "question";
-  id: string;
-  questions: ChatQuestion[];
-  answered: null | Record<string, string>;
-  cancelled?: boolean;
-}
-type AssistantPart = TextPart | ThinkingPart | ToolPart | PermissionPart | QuestionPart;
-
-interface UserItem {
-  role: "user";
-  text: string;
-  images?: string[]; // data: URLs, shown in the bubble
-  /** Staged while a turn streams (dimmed bubble + cancel); cleared when actually dispatched. */
-  queued?: boolean;
-  /** Joins the bubble to its entry in the queued-turns list for cancel-before-send. */
-  queueId?: string;
-}
-interface AssistantItem {
-  role: "assistant";
-  parts: AssistantPart[];
-  /** Set from the turn's `result` frame — a muted footer (turns + cost). */
-  footer: { numTurns: number; costUsd: number | null } | null;
-  /** True when this turn answers a slash-command input (the preceding user bubble started with
-   *  "/"): its prose is a locally-produced command result (e.g. `/context`'s panel), so it renders
-   *  in a boxed monospace "command output" container — like the Claude Code TUI — not loose prose (#28). */
-  command?: boolean;
-}
-/** A transient, non-error system notice (BUG #87) — confirms a client-side slash command actually
- *  DID something (e.g. `/chrome` toggling a setting with no other visible surface nearby), without
- *  claiming to be part of the conversation (no "You"/persona label, not sent to the model, not
- *  replayed from session history). Rendered as a quiet one-line notice, like .chat-turn-error but
- *  neutral instead of danger-colored. */
-interface SystemItem {
-  role: "system";
-  text: string;
-}
-type TurnItem = UserItem | AssistantItem | SystemItem;
+// The item/part types AND the frame → transcript reducer live in ./chatTranscript (pure, unit-
+// tested, and drivable from a static ChatFrame[] with no socket) — see that file's header for the
+// model and for which frame kinds it deliberately leaves to the session/header state below.
 
 /** One-line summary of a tool's input for the chip label (the path / command / query / url). */
 function summarizeInput(input: unknown): string {
@@ -631,40 +571,15 @@ export function ChatView(props: {
     });
   };
 
-  // --- Transcript mutation helpers (all funnel through produce so the store updates in place) --
-  const lastTurn = (m: TurnItem[]): TurnItem | undefined => m[m.length - 1];
-
-  /** Ensure the trailing item is an assistant turn (create one if the previous item was the
-   *  user's), then run `fn` against it. */
-  const withAssistant = (fn: (a: AssistantItem) => void) => {
-    setTranscript(
-      produce((m) => {
-        let last = lastTurn(m);
-        if (!last || last.role !== "assistant") {
-          // A turn answering a slash-command input (the preceding user bubble starts with "/") is a
-          // command result — flag it so its prose renders as a boxed monospace panel, not prose (#28).
-          const command = !!last && last.role === "user" && last.text.trim().startsWith("/");
-          const a: AssistantItem = { role: "assistant", parts: [], footer: null, command };
-          m.push(a);
-          last = a;
-        }
-        fn(last as AssistantItem);
-      }),
-    );
-    scrollToBottom();
-  };
-
-  /** Append a prose/thinking delta into the assistant turn's trailing part of that kind, or
-   *  start a new part (so an interleaved tool call splits prose into separate bubbles). */
-  const appendStream = (kind: "text" | "thinking", text: string) => {
-    withAssistant((a) => {
-      const tail = a.parts[a.parts.length - 1];
-      if (tail && tail.kind === kind) tail.text += text;
-      // `{ kind, text }` widens `kind` to "text"|"thinking", which isn't assignable to the
-      // discriminated AssistantPart union — the cast (sound: it IS a TextPart|ThinkingPart) keeps it
-      // a one-liner without the narrowing ternary.
-      else a.parts.push({ kind, text } as TextPart | ThinkingPart);
-    });
+  // --- Transcript mutation helper -------------------------------------------------------------
+  /** Apply a frame's TRANSCRIPT effect through the pure reducer (chatTranscript.ts), inside
+   *  `produce` so the store updates in place. `applyChatFrame` returns whether the frame is a
+   *  transcript frame at all — the transcript-neutral ones (manifest/done/models/…) never touch the
+   *  store and never scroll, exactly as before the extraction. */
+  const applyFrameToTranscript = (frame: ChatFrame) => {
+    let touched = false;
+    setTranscript(produce((m) => void (touched = applyChatFrame(m, frame))));
+    if (touched) scrollToBottom();
   };
 
   const onFrame = (frame: ChatFrame) => {
@@ -734,78 +649,25 @@ export function ChatView(props: {
         }
         break;
       }
+      // The frames that BUILD the transcript — a replayed user turn, streamed prose/thinking
+      // deltas, tool chips and their (possibly out-of-band) results, and the inline permission /
+      // AskUserQuestion cards. All of them are pure data → pure item edits, so the rules live in
+      // chatTranscript.ts and each one here is the same one-liner.
       case "user-message":
-        // A replayed past user turn (history only — live user messages come from send(), not the
-        // wire). Render it as a user bubble, identical to a freshly-sent one — including any
-        // persisted image attachments (data: URLs), so an image-only turn doesn't vanish.
-        setTranscript(produce((m) => m.push({ role: "user", text: frame.text, images: frame.images })));
-        scrollToBottom();
-        break;
       case "assistant-text":
-        appendStream("text", frame.text);
-        break;
       case "thinking":
-        appendStream("thinking", frame.text);
-        break;
       case "tool-use":
-        withAssistant((a) => {
-          a.parts.push({
-            kind: "tool",
-            id: frame.id,
-            name: frame.name,
-            toolKind: frame.kind,
-            input: frame.input,
-            result: null,
-            isError: false,
-            pending: true,
-          });
-        });
-        break;
       case "tool-result":
-        setTranscript(
-          produce((m) => {
-            // Match the chip by id anywhere in the transcript (results can arrive out of band).
-            for (const item of m) {
-              if (item.role !== "assistant") continue;
-              const part = item.parts.find((p) => p.kind === "tool" && p.id === frame.id) as ToolPart | undefined;
-              if (part) {
-                part.result = frame.content;
-                part.isError = frame.isError;
-                part.pending = false;
-                return;
-              }
-            }
-          }),
-        );
-        scrollToBottom();
-        break;
       case "permission":
-        withAssistant((a) => {
-          a.parts.push({
-            kind: "permission",
-            id: frame.id,
-            toolName: frame.toolName,
-            input: frame.input,
-            answered: null,
-          });
-        });
-        break;
       case "question":
-        // AskUserQuestion: render its questions as an interactive card (QuestionCard). Parking the
-        // dialog server-side keeps the turn from ending, so no extra client-side gating is needed —
-        // a follow-up message the user sends meanwhile is STAGED (streaming() is still true) and
-        // dispatched on `done`, which only fires once the question is answered or skipped.
-        withAssistant((a) => {
-          a.parts.push({ kind: "question", id: frame.id, questions: frame.questions, answered: null });
-        });
+        applyFrameToTranscript(frame);
         break;
       case "result":
         // Don't clobber the SPECIFIC message an earlier `error` frame already set — a failed
         // opencode turn emits its error frame first, then a result with isError (exit code 0).
+        // (Set BEFORE the transcript footer, as it always has been.)
         if (frame.isError && !turnError()) setTurnError("The turn ended with an error.");
-        withAssistant((a) => {
-          a.footer = { numTurns: frame.numTurns, costUsd: frame.costUsd };
-        });
+        applyFrameToTranscript(frame);
         break;
       case "done":
         setStreaming(false);

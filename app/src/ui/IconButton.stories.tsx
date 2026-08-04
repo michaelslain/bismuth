@@ -1,6 +1,6 @@
 // Visual spec for <IconButton> — the icon-only wrapper over the base <Button kind="icon">.
 //
-// Props: icon (Lucide name, required), label (required a11y label → aria-label + title),
+// Props: icon (Lucide-style name, required), label (required a11y label → aria-label + title),
 // variant ("normal" default | "selected" | "unselected"), danger, size, iconSize, plus any
 // native <button> attribute (disabled, onClick, …).
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
@@ -59,11 +59,11 @@ export const Sizes: Story = {
   ),
 };
 
-/** Custom icon pixel size (default 16). */
+/** Custom icon pixel size (default 12 — an exact 0.5 scale of the 24×24 pixel-icon grid). */
 export const IconSize: Story = {
   render: () => (
     <Row wrap={false}>
-      <IconButton icon="Settings" label="Settings (12px)" iconSize={12} />
+      <IconButton icon="Settings" label="Settings (12px, current default)" iconSize={12} />
       <IconButton icon="Settings" label="Settings (16px)" iconSize={16} />
       <IconButton icon="Settings" label="Settings (24px)" iconSize={24} />
     </Row>

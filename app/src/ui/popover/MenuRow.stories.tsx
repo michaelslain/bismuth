@@ -64,8 +64,8 @@ export const AllStates: Story = {
 export const NoIcon: Story = {
   render: () => (
     <Wrap>
-      <MenuRow label="Oxide Duotone" selected />
-      <MenuRow label="Gunmetal Teal" />
+      <MenuRow label="Ink" selected />
+      <MenuRow label="Paper" />
     </Wrap>
   ),
 };
