@@ -126,6 +126,22 @@ test("setTaskLineStatus throws on a non-task line", () => {
   expect(() => setTaskLineStatus("not a task", "x", "2026-05-27")).toThrow();
 });
 
+test("setTaskLineStatus rejects control characters and multi-character status", () => {
+  expect(() => setTaskLineStatus("- [ ] buy milk", "\n", "2026-05-27")).toThrow();
+  expect(() => setTaskLineStatus("- [ ] buy milk", "\r", "2026-05-27")).toThrow();
+  expect(() => setTaskLineStatus("- [ ] buy milk", "\x7f", "2026-05-27")).toThrow();
+  expect(() => setTaskLineStatus("- [ ] buy milk", "ab", "2026-05-27")).toThrow();
+});
+
+test("setTaskLineStatus accepts every legitimate single-character status", () => {
+  // Tab is deliberately allowed — TASK_LINE's `.` matches it fine — plus a BMP
+  // non-ASCII character, which is not a control character either.
+  for (const status of [" ", "x", "X", "/", "-", "3", "q", "\t", "é"]) {
+    const out = setTaskLineStatus("- [ ] buy milk", status, "2026-05-27");
+    expect(out).toContain(`[${status}]`);
+  }
+});
+
 test("toggleTaskLine completes a todo and appends today's done date", () => {
   const out = toggleTaskLine("- [ ] buy milk", "2026-05-27");
   expect(out).toBe("- [x] buy milk ✅ 2026-05-27");

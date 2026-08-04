@@ -1863,6 +1863,26 @@ test("POST /tasks/toggle preserves CRLF line endings", async () => {
   }
 });
 
+test("POST /tasks/toggle rejects a control-character status and leaves the file untouched", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const before = ["- [ ] a", "- [ ] b", "- [ ] c"].join("\n");
+  await writeNote(vault, "todo.md", before);
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/tasks/toggle`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "todo.md", line: 1, status: "\n" }),
+    });
+    expect(res.status).toBe(400);
+    const after = await readNote(vault, "todo.md");
+    expect(after).toBe(before);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("POST /tasks/archive removes resolved tasks from a single note", async () => {
   const { vault, memory } = await makeSampleVault();
   await writeNote(vault, "todo.md", ["- [ ] keep", "- [x] done", "- [-] cancelled"].join("\n"));
