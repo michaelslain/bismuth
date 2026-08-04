@@ -30,6 +30,17 @@ export interface CommandHandlers {
   setMode: (mode: GraphMode) => void;
   openDailyNote: (id: string) => void;
   equalizePanes: () => void;
+  // Pane arrangement verbs. App.tsx already implements every one of these as a keybinding-only
+  // handler (splitPane/closeFocusedPane/focusNeighbor) — optional here because wiring the actual
+  // App.tsx functions through is a separate task; until that lands, an omitted handler just
+  // leaves its command id unbound (see bindCommands's defensive `if (!action) continue`).
+  splitPaneRight?: () => void;
+  splitPaneDown?: () => void;
+  closeFocusedPane?: () => void;
+  focusPaneLeft?: () => void;
+  focusPaneRight?: () => void;
+  focusPaneUp?: () => void;
+  focusPaneDown?: () => void;
   toggleSidebar: () => void;
   // Tab lifecycle + per-pane navigation history.
   newTab: () => void;
@@ -92,7 +103,10 @@ export interface BoundCommand {
 
 /** Map each catalog command id to a runnable {id,label,icon,action}. */
 export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] = []): Map<string, BoundCommand> {
-  const actions: Record<string, (e?: MouseEvent) => void | Promise<void>> = {
+  // Value type allows `undefined` so the optional pane-arrangement handlers (see
+  // CommandHandlers) can be plugged in directly below — the loop's `if (!action) continue`
+  // already treats a missing handler as "catalog entry, not yet bound".
+  const actions: Record<string, ((e?: MouseEvent) => void | Promise<void>) | undefined> = {
     // "New tab" always spawns a fresh graph home tab; "Open graph view" focuses an
     // existing graph tab if one is open (else opens one).
     "new-tab": h.newTab,
@@ -123,7 +137,15 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "graph-3rd": () => h.setMode("3rd"),
     "graph-both": () => h.setMode("both"),
     "graph-daemon": () => h.setMode("daemon"),
+    "graph-local": () => h.setMode("local"),
     "equalize-panes": h.equalizePanes,
+    "split-right": h.splitPaneRight,
+    "split-down": h.splitPaneDown,
+    "close-pane": h.closeFocusedPane,
+    "focus-pane-left": h.focusPaneLeft,
+    "focus-pane-right": h.focusPaneRight,
+    "focus-pane-up": h.focusPaneUp,
+    "focus-pane-down": h.focusPaneDown,
     "toggle-sidebar": h.toggleSidebar,
     "daemon-owner": h.openDaemonOwner,
     "daemon-setup": h.openDaemonSetup,

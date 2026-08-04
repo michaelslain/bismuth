@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { COMMAND_CATALOG, COMMAND_IDS, commandLabel, UI_CONTROL_BLOCKLIST, isUiControlAllowed } from "../src/commands";
+import { KEYBINDING_CATALOG } from "../src/keybindings";
 
 describe("command catalog", () => {
   it("derives COMMAND_IDS from the catalog, in order", () => {
@@ -39,6 +40,48 @@ describe("command catalog", () => {
   it("looks up a label by id", () => {
     expect(commandLabel("terminal")).toBe("Open Terminal");
     expect(commandLabel("does-not-exist")).toBeUndefined();
+  });
+
+  // The seven split/focus/close pane verbs previously existed only as keybindings
+  // (core/src/keybindings.ts) — an agent could open and close tabs but never arrange a
+  // layout. They're catalog commands now so app control can reach them.
+  it("includes the pane split/focus/close commands, allowed via app control", () => {
+    const paneCommandIds = [
+      "split-right",
+      "split-down",
+      "close-pane",
+      "focus-pane-left",
+      "focus-pane-right",
+      "focus-pane-up",
+      "focus-pane-down",
+    ];
+    for (const id of paneCommandIds) {
+      expect(COMMAND_IDS).toContain(id);
+      expect(isUiControlAllowed(id)).toBe(true);
+    }
+  });
+
+  // "local" is a real, user-toggleable GraphMode (app/src/GraphView.tsx) that previously had
+  // no catalog id — the one graph mode an agent couldn't switch to via app control.
+  it("includes graph-local, allowed via app control", () => {
+    expect(COMMAND_IDS).toContain("graph-local");
+    expect(isUiControlAllowed("graph-local")).toBe(true);
+  });
+
+  // This exact gap — a keybinding-only pane verb with no catalog counterpart — is how
+  // split-right/split-down/close-pane/focus-pane-* went unreachable from app control in the
+  // first place. Assert the two catalogs can't drift apart on pane actions again: every
+  // keybinding id that names a pane action must have a matching command id.
+  it("keeps every pane-action keybinding wired into the command catalog (drift guard)", () => {
+    const paneKeybindingIds = KEYBINDING_CATALOG
+      .map((k) => k.id)
+      .filter((id) => id.includes("pane") || id.startsWith("split-"));
+    // Sanity: the filter itself must actually find the pane keybindings, or this guard
+    // would vacuously pass forever.
+    expect(paneKeybindingIds.length).toBeGreaterThanOrEqual(8);
+    for (const id of paneKeybindingIds) {
+      expect(COMMAND_IDS).toContain(id);
+    }
   });
 });
 
