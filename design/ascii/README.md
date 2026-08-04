@@ -195,7 +195,7 @@ No emoji, ever.
 
 *Pixel art* carries **everything else** — toolbar, command catalog, palettes, pickers, view
 toolbars. 112 icons from HackerNoon's Pixel Icon Library (CC BY 4.0, see
-`THIRD-PARTY-NOTICES.md`), drawn on a 24px grid, flattened to single paths and inlined by
+`docs/overview/third-party-notices.md`), drawn on a 24px grid, flattened to single paths and inlined by
 `app/scripts/build-pixel-icons.ts` — no icon font, no sprite, no runtime dependency. They fill
 with `currentColor` and render with `shape-rendering: crispEdges`, which is what keeps the
 pixels hard at the 12–18px boxes the app actually asks for; it is safe only because every path
@@ -261,7 +261,7 @@ position, inbox section collapse). The one genuinely new piece of persisted stat
   locally** and swap the `@font-face` rules.
 - **Icons / images**: no icon font, no sprite, no photography, no illustration. Surface
   identity and chrome are typed characters; every other icon is inlined pixel art on a 24px
-  grid (CC BY 4.0, `THIRD-PARTY-NOTICES.md`) — see **Iconography** above.
+  grid (CC BY 4.0, `docs/overview/third-party-notices.md`) — see **Iconography** above.
 - **Brand mark**: none exists in the repo. `app/src/assets/logo.svg` is the **SolidJS starter
   logo** left over from Vite, not a Bismuth mark — do not treat it as branding. The wordmark
   is rendered in type.

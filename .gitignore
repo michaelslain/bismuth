@@ -4,10 +4,8 @@ target/
 .superpowers/
 superpowers/
 .worktrees/
-# Impeccable: the per-session dedup cache and any private/local overrides are machine state, but
-# config.json holds SHARED rule suppressions (with their reasons) and belongs in the repo.
-.impeccable/hook.cache.json
-.impeccable/*.local.json
+# Impeccable: local agent state — none of it belongs in the repo, config.json included.
+.impeccable/
 .claude/
 .DS_Store
 *.log

@@ -158,3 +158,4 @@ The in-repo background runtime — **one machine process that multiplexes per-va
 
 - [Codebase map](contributing/codebase-map.md) — module-by-module navigation
 - [Testing](contributing/testing.md) — how tests work, how to add them
+- [Third-party notices](overview/third-party-notices.md) — attribution for bundled assets (the CC BY 4.0 icon set)

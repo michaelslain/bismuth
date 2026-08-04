@@ -224,7 +224,7 @@ writeFileSync(
 // Run \`bun run icons:build\` (from app/) after changing that script's PIXEL_MAP.
 //
 // Canonical icon name -> SVG path data from HackerNoon's Pixel Icon Library, drawn on a 24x24
-// grid. Icons are CC BY 4.0 (c) HackerNoon — see THIRD-PARTY-NOTICES.md at the repo root.
+// grid. Icons are CC BY 4.0 (c) HackerNoon — see docs/overview/third-party-notices.md.
 // Paths are unmodified; only the surrounding <svg> wrapper is ours (see Icon.tsx).
 
 /** Name -> the icon's \`d\`, to be rendered in a \`viewBox="0 0 24 24"\` with \`fill="currentColor"\`. */
