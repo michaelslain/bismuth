@@ -17,6 +17,14 @@ import type { Row, SourceSpec } from "../../../core/src/bases/types";
 export interface FakeTransportSeed {
   /** Vault-relative path -> file contents. Drives GET/PUT /file and the default /tree. */
   files?: Record<string, string>;
+  /** GET /daemon/status — components that gate on the daemon being enabled read this on mount. */
+  daemonStatus?: unknown;
+  /** GET /daemon/pages — the inbox. */
+  daemonPages?: unknown;
+  /** GET /graph — Backlinks and anything deriving from the vault graph. */
+  graph?: unknown;
+  /** GET /update/status — the update banner. */
+  updateStatus?: unknown;
   /** Overrides the /tree response derived from `files` (one flat file entry per key). */
   tree?: TreeEntry[];
   /** POST /rows (api.resolveRows): a fixed Row[] for every spec, or a resolver keyed by spec. */
@@ -42,6 +50,22 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
       const { pathname } = splitPath(path);
       if (pathname === "/tree") return tree as unknown as T;
       if (pathname === "/version") return { version: 1 } as unknown as T;
+      // Read-only status/graph routes that components hit on mount. Without these a story renders
+      // its error state instead of the component — InboxPageView did exactly that, failing on
+      // `unhandled GET /daemon/status`. `seed` overrides win so a story can pose a specific state
+      // (daemon off, an update available) rather than always the happy path.
+      if (pathname === "/daemon/status") {
+        return (seed.daemonStatus ?? { enabled: true, running: true, crons: [], processes: [] }) as unknown as T;
+      }
+      if (pathname === "/daemon/pages") return (seed.daemonPages ?? []) as unknown as T;
+      if (pathname === "/graph") {
+        return (seed.graph ?? { nodes: [], edges: [] }) as unknown as T;
+      }
+      if (pathname === "/update/status") {
+        return (seed.updateStatus ?? { current: "0.0.0", latest: "0.0.0", behind: 0 }) as unknown as T;
+      }
+      // Deliberately THROWS rather than returning empty: a silent {} lets a component render a
+      // blank shell that looks like a passing story. A loud failure names the missing route.
       throw new Error(`fakeTransport: unhandled GET ${path}`);
     },
     getText: async (path: string): Promise<string> => {
