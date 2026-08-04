@@ -201,6 +201,34 @@ test("`bismuth calendar …` create → category → add → list/range/search �
   expect((await runCli(vault, "calendar", "list", cal)).json).toHaveLength(1);
 }, 60_000);
 
+// --- `card review` must honour settings.srs (not the hardcoded SM-2 defaults) ------------------
+
+test("`card review` honours settings.srs instead of the hardcoded defaults", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const { parseBaseFile } = await import("../../core/src/bases/parse");
+  const { applyReviewToRow } = await import("../../core/src/srs/reviewRow");
+  const { DEFAULT_SRS } = await import("../../core/src/srs/scheduler");
+  const { today } = await import("../src/args");
+
+  const deckPath = "Deck.md";
+  const vault = makeVault({
+    ".settings": "srs:\n  easyGraduatingInterval: 9\n",
+    [deckPath]: "---\ntype: base\nview: flashcards\n---\n\n| front | back | due | ease | interval |\n| --- | --- | --- | --- | --- |\n| a | b |  |  |  |\n",
+  });
+
+  // Capture the pre-review row so the expectation is computed from the SAME input the CLI sees.
+  const before = parseBaseFile(await readNote(vault, deckPath), { name: "Deck", path: deckPath });
+  const expected = applyReviewToRow(before.rows[0].note, "easy", today(), { ...DEFAULT_SRS, easyGraduatingInterval: 9 }, undefined);
+
+  const result = await runCli(vault, "card", "review", "--file", deckPath, "--index", "0", "--response", "easy");
+  expect(result.code).toBe(0);
+
+  const after = parseBaseFile(await readNote(vault, deckPath), { name: "Deck", path: deckPath });
+  expect(after.rows[0].note.interval).toBe(expected.interval);
+  // Sanity: the configured value actually diverges from what the hardcoded default would produce.
+  expect(expected.interval).not.toBe(DEFAULT_SRS.easyGraduatingInterval);
+});
+
 test("`bismuth page create` + `page list` author and read back a page headlessly", async () => {
   const { vault } = await makeSampleVault();
   const create = Bun.spawn(
