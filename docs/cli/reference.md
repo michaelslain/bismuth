@@ -436,10 +436,10 @@ bismuth folder-icon "Projects" anything --clear --vault ~/vault   # icon arg ign
 
 Reads/writes the **`@bismuth/daemon`** runtime's on-disk state. The daemon is ONE machine process that multiplexes per-vault "brains"; its state is split in two:
 
-- **Machine-level identity** (device-id, devices.json, owner.json, daemon.pid) lives at `~/.bismuth/daemon` (`daemonMachineDir()`, override with the `BISMUTH_DAEMON_DIR` env var). The machine-level commands — `status`, `devices`, `owner`, `install`, `setup`, `update` — **take no `--vault`**.
+- **Machine-level identity** (device-id, devices.json, owner.json, daemon.pid) lives at `~/.bismuth/daemon` (`daemonMachineDir()`, override with the `BISMUTH_DAEMON_DIR` env var). The machine-level commands — `status`, `devices`, `owner`, `install`, `setup`, `update`, `stop`, `restart` — **take no `--vault`**.
 - **Per-vault brain** (crons, processes, memory, session-id, identity.md) lives under `<vault>/.daemon` (`vaultDaemonDir(vault)`). The per-vault commands — `daemon graph`, `daemon cron toggle`, `daemon cron run`, `daemon process toggle` — **REQUIRE a vault** (`--vault <dir>` / `BISMUTH_VAULT`) and operate on that vault's `.daemon` dir.
 
-Mirrors the server's `/daemon/*` routes. See [daemon integration](../daemon/overview.md). status/devices/owner-read/graph just read files; owner-set, cron/process toggles, and cron-run flip frontmatter / drop trigger files the running daemon polls. install/setup register the bundled daemon service. Bismuth never starts/stops the daemon.
+Mirrors the server's `/daemon/*` routes (plus `stop`/`restart`, which call the daemon workspace's own service-control functions directly — there is no HTTP route for them). See [daemon integration](../daemon/overview.md). status/devices/owner-read/graph just read files; owner-set, cron/process toggles, and cron-run flip frontmatter / drop trigger files the running daemon polls. install/setup register the bundled daemon service. `stop`/`restart` are the only commands that touch the running OS service — everything else in this section only reads or writes files the daemon polls.
 
 ### `daemon status`
 Print the daemon's liveness, this device id, and current owner (`daemonStatus()`).
@@ -476,6 +476,18 @@ bismuth daemon setup --pretty
 Re-register the bundled daemon service. The daemon ships with the app and updates **with** it (no git pull / no self-update) — so "update" just calls the same `runSetup()` as `daemon setup` to (re)write the service definition pointing at the freshly-staged binary. Result: `{ ok, binPath, error? }`.
 ```bash
 bismuth daemon update --pretty
+```
+
+### `daemon stop`
+Stop the installed daemon service — `launchctl unload <plist>` on macOS, `systemctl --user stop` + `disable` on Linux (`unloadDaemon(daemonConfigPath())`, `daemon/src/lib/platform.ts`) — so it stops running in the background and does **not** come back on its own (unlike `daemon restart`, this does not re-arm `KeepAlive`/`Restart=always`; a stopped service stays stopped until `daemon setup`/`daemon install` re-registers it). `daemonConfigPath()` is the same zero-arg plist/unit path `--ensure-installed` resolves — no vault or binary path needed. `unloadDaemon` itself is `void` (launchctl/systemctl failures aren't surfaced by the function) so a printed `{ok:true}` means "the unload command was issued," not "the process is confirmed dead" — check with `daemon install` afterward. Only a thrown error (e.g. an unwritable config path) prints `{ ok: false, error }` and exits non-zero.
+```bash
+bismuth daemon stop --pretty
+```
+
+### `daemon restart`
+Restart the running daemon service **in place**, without rewriting its config — `launchctl kickstart -k gui/<uid>/com.bismuth.daemon` on macOS, `systemctl --user restart` on Linux (`restartDaemon()`, `daemon/src/lib/platform.ts`). For picking up a code update after `git pull` + `bun install` (no plist/unit changes). Requires the service to already be installed. Result: `{ ok, error? }`; exits non-zero when `ok` is `false`.
+```bash
+bismuth daemon restart --pretty
 ```
 
 ### `daemon graph` — **requires `--vault`**
@@ -592,6 +604,27 @@ bismuth api PUT /file --json '{"path":"Notes/X.md","content":"# X"}'
 bismuth api GET /version --api http://localhost:4322
 ```
 This is the escape hatch for any endpoint without a dedicated CLI command (see the full route list in the project's server documentation).
+
+---
+
+## Self-update commands (`commands/update.ts`)
+
+Thin wrappers over core's git-based self-update routes (`core/src/selfUpdate.ts`, wired at `GET /update/status` / `POST /update/apply` in `server.ts`). These carry **no owner-token gate** and were already reachable via `bismuth api GET /update/status` before this group existed — nothing told an agent they were there. Same API-base resolution as `api` above: `--api <url>` → `BISMUTH_API` env → `http://localhost:4321`.
+
+Self-update only applies to a bundled **source** build (`BISMUTH_INSTALL_SRC` + `BISMUTH_APP_PATH` set on the running core) — everywhere else (dev, a non-source install) `status` reports `{ available: false, reason: "not-a-source-build" }` and `apply` reports `{ phase: "error", message: "self-update unavailable (not a bundled source build)" }`; neither ever throws.
+
+### `update status [--api <url>]`
+`GET /update/status` — whether the installed build is behind `origin/main`. Auto-fetches `origin/main` first (best-effort; offline reports against the last-known remote). Result: `{ available, behind, localSha, remoteSha, builtSha, dirty, reason? }` — `behind` measures the installed build's sha against `origin/main` (not the clone's live `HEAD`, so committing+pushing from the build-source clone doesn't itself trigger a false "you're behind"); `dirty` means the build-source repo has uncommitted changes, which blocks `apply`; `reason` (only when `available` is `false` and nothing's actually behind) explains why — `not-a-source-build` / `not-a-git-repo` / `access-denied` / `repo-missing` / `git-not-found` / `no-upstream`.
+```bash
+bismuth update status --pretty
+```
+
+### `update apply [--api <url>]`
+`POST /update/apply` — kick off `git pull --ff-only` + rebuild + relaunch. Validates first (must be `available`, not `dirty`, a real source build) and returns **immediately** — the pull/build runs in the background. Result: `{ phase, message?, log? }` where `phase` is `idle | pulling | building | ready | error`. Poll `update status` or `bismuth api GET /update/progress` for the current phase; calling `apply` again while already `pulling`/`building` is a no-op that returns the in-flight state.
+```bash
+bismuth update apply --pretty
+bismuth update status --api http://localhost:4322   # a non-default port
+```
 
 ---
 
@@ -817,16 +850,17 @@ bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault
 | `prop set` `prop delete` | prop.ts | yes | `{ok:true}` |
 | `settings get` `settings set` `settings schema` `folder-icon` | settings.ts | yes | JSON / `{ok:true}` |
 | `calendar bases/create/list/range/day/get/search/overlaps/add/move/delete/override/delete-occurrence` + `calendar categories` + `calendar category add/update/remove` | calendar.ts | yes | JSON / `{ok:true}` |
-| `daemon status/devices/owner/install/setup/update` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |
+| `daemon status/devices/owner/install/setup/update/stop/restart` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |
 | `daemon graph` `daemon cron toggle/run` `daemon process toggle` | daemon.ts | **yes** (per-vault `<vault>/.daemon`) | JSON / `ok` |
 | `render` | draw.ts | **no** (filesystem path) | `wrote <file>` |
 | `serve` `backup` | serve.ts | yes (+optional memory) | string |
 | `export` | export.ts | yes (no for `.draw`) | `wrote <file>` |
 | `api` | api.ts | **no** (needs running server) | JSON / text |
+| `update status` `update apply` | update.ts | **no** (needs running server) | JSON |
 | `app windows/tabs/open/close/focus/rename/pin/reorder/run/commands` | app.ts | **no** (needs running app; discovery via `BISMUTH_API`/`CLAUDE_RELAY_URL`/run-registry) | JSON |
 | `page list/create/resolve/mark-failed` | page.ts | **yes** (per-vault `<vault>/.daemon/pages`) | JSON |
 | `install` `install --mcp <cli>` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + per-CLI MCP config) | JSON |
 | `backends` | backends.ts | **no** (probes binaries on PATH; read-only) | table / JSON |
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 
-Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`
+Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `daemon/src/lib/platform.ts`

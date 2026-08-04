@@ -1,4 +1,4 @@
-import { test, expect, beforeEach, afterEach } from "bun:test";
+import { test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -727,4 +727,195 @@ test("`base render --view <n>` picks a non-default view", async () => {
   const result = await runCli(vault, "base", "render", "Multi.md", "--view", "1");
   expect(result.code).toBe(0);
   expect(result.json.view.type).toBe("list");
+});
+
+// --- `daemon stop` / `daemon restart` (daemon.ts) — wiring to the platform module ---------------
+// unloadDaemon/restartDaemon drive REAL launchctl/systemctl, so a round-trip isn't testable in
+// CI (and must never run against this machine's real daemon — see the hard constraint in the
+// task brief). These assert the WIRING instead: the command calls the platform function with the
+// right args, forwards its result through `out()`, and exits non-zero when `ok` is false.
+//
+// The platform module is mocked BEFORE daemon.ts is ever imported in this process, so the real
+// daemon/src/lib/platform.ts (and therefore any real spawnSync of launchctl/systemctl) is never
+// loaded here. Each test reconfigures `platformMock`'s fields rather than re-registering the
+// mock, since mock.module's replacement module object is shared (live ES-module bindings) across
+// every already-resolved import of the specifier.
+const platformMock: {
+  configPath: string;
+  unload: (configPath: string) => void;
+  restart: () => { ok: boolean; error?: string };
+} = {
+  configPath: "/fake/.bismuth-test/config.plist",
+  unload: () => {},
+  restart: () => ({ ok: true }),
+};
+mock.module("../../daemon/src/lib/platform", () => ({
+  daemonConfigPath: () => platformMock.configPath,
+  unloadDaemon: (configPath: string) => platformMock.unload(configPath),
+  restartDaemon: () => platformMock.restart(),
+}));
+const { commands: daemonCommands } = await import("../src/commands/daemon");
+
+/** Capture console.log output AND process.exit's code around `fn()`, restoring both afterward.
+ *  process.exit is stubbed to record the code and abort via throw (a real exit would kill the
+ *  test runner) — that throw is swallowed here so callers get a plain `{ logs, code }` back
+ *  whether or not `fn()`'s command called process.exit. A single combined helper (rather than
+ *  nesting a logs-capture inside an exit-capture) matters: if `fn()` throws to unwind the stubbed
+ *  exit, an *outer* capture's `return` after `await fn()` never runs, silently discarding
+ *  whatever the inner capture collected. */
+async function captureLogsAndExit(fn: () => void | Promise<void>): Promise<{ logs: string[]; code: number | undefined }> {
+  const logs: string[] = [];
+  const originalLog = console.log;
+  const originalExit = process.exit;
+  let code: number | undefined;
+  console.log = (s: unknown) => { logs.push(String(s)); };
+  process.exit = ((c?: number) => {
+    code = c;
+    throw new Error("__test_process_exit__");
+  }) as never;
+  try {
+    await fn();
+  } catch (e) {
+    if (!(e instanceof Error) || e.message !== "__test_process_exit__") throw e;
+  } finally {
+    console.log = originalLog;
+    process.exit = originalExit;
+  }
+  return { logs, code };
+}
+
+test("`daemon stop`/`daemon restart` are registered, take no positionals, and accept --pretty", () => {
+  expect(daemonCommands["daemon stop"]).toBeDefined();
+  expect(daemonCommands["daemon restart"]).toBeDefined();
+  expect(daemonCommands["daemon stop"].usage).toBe("[--pretty]");
+  expect(daemonCommands["daemon restart"].usage).toBe("[--pretty]");
+});
+
+test("`daemon stop` calls unloadDaemon(daemonConfigPath()) and reports {ok:true} on success", async () => {
+  let calledWith: string | undefined;
+  platformMock.unload = (configPath) => { calledWith = configPath; };
+
+  const { logs, code } = await captureLogsAndExit(() => daemonCommands["daemon stop"].run([]));
+
+  expect(calledWith).toBe(platformMock.configPath);
+  expect(JSON.parse(logs[0])).toEqual({ ok: true });
+  expect(code).toBeUndefined(); // success never calls process.exit
+});
+
+test("`daemon stop` exits non-zero and reports {ok:false,error} when unloadDaemon throws", async () => {
+  platformMock.unload = () => { throw new Error("launchctl exploded"); };
+
+  const { logs, code } = await captureLogsAndExit(() => daemonCommands["daemon stop"].run([]));
+
+  expect(code).toBe(1);
+  expect(JSON.parse(logs[0])).toEqual({ ok: false, error: "launchctl exploded" });
+});
+
+test("`daemon restart` calls restartDaemon() and forwards {ok:true}, exit 0", async () => {
+  let restartCalled = false;
+  platformMock.restart = () => { restartCalled = true; return { ok: true }; };
+
+  const { logs, code } = await captureLogsAndExit(() => daemonCommands["daemon restart"].run([]));
+
+  expect(restartCalled).toBe(true);
+  expect(JSON.parse(logs[0])).toEqual({ ok: true });
+  expect(code).toBeUndefined(); // success never calls process.exit
+});
+
+test("`daemon restart` exits non-zero when restartDaemon() reports {ok:false,error}", async () => {
+  platformMock.restart = () => ({ ok: false, error: "launchctl kickstart failed: boom" });
+
+  const { logs, code } = await captureLogsAndExit(() => daemonCommands["daemon restart"].run([]));
+
+  expect(code).toBe(1);
+  expect(JSON.parse(logs[0])).toEqual({ ok: false, error: "launchctl kickstart failed: boom" });
+});
+
+test("`daemon restart --pretty` pretty-prints the JSON result (argument parsing works)", async () => {
+  platformMock.restart = () => ({ ok: true });
+
+  const { logs } = await captureLogsAndExit(() => daemonCommands["daemon restart"].run(["--pretty"]));
+
+  expect(logs[0]).toBe(JSON.stringify({ ok: true }, null, 2));
+});
+
+// --- `update status` / `update apply` (commands/update.ts) — dispatch + route JSON passthrough --
+
+/** Spin up a throwaway HTTP server that records every request and answers GET /update/status /
+ *  POST /update/apply with the given payloads. Caller must `stop()` it. */
+function mockUpdateServer(replies: { status?: unknown; apply?: unknown } = {}): {
+  url: string;
+  calls: { method: string; path: string }[];
+  stop: () => void;
+} {
+  const calls: { method: string; path: string }[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req) => {
+      const { pathname } = new URL(req.url);
+      calls.push({ method: req.method, path: pathname });
+      if (req.method === "GET" && pathname === "/update/status") {
+        return new Response(JSON.stringify(replies.status ?? { available: false, behind: 0 }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (req.method === "POST" && pathname === "/update/apply") {
+        return new Response(JSON.stringify(replies.apply ?? { phase: "idle" }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    },
+  });
+  return { url: `http://localhost:${server.port}`, calls, stop: () => server.stop(true) };
+}
+
+test("`bismuth update status` GETs /update/status and prints the route's JSON", async () => {
+  const mockSrv = mockUpdateServer({
+    status: { available: true, behind: 3, localSha: "abc123", remoteSha: "def456", builtSha: "abc123", dirty: false },
+  });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "update", "status", "--api", mockSrv.url], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls).toEqual([{ method: "GET", path: "/update/status" }]);
+    expect(JSON.parse(outText)).toEqual({
+      available: true,
+      behind: 3,
+      localSha: "abc123",
+      remoteSha: "def456",
+      builtSha: "abc123",
+      dirty: false,
+    });
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`bismuth update apply` POSTs /update/apply and prints the route's JSON", async () => {
+  const mockSrv = mockUpdateServer({ apply: { phase: "pulling", message: "pulling latest…" } });
+  try {
+    const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "update", "apply", "--api", mockSrv.url], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [outText, , code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(mockSrv.calls).toEqual([{ method: "POST", path: "/update/apply" }]);
+    expect(JSON.parse(outText)).toEqual({ phase: "pulling", message: "pulling latest…" });
+  } finally {
+    mockSrv.stop();
+  }
+});
+
+test("`bismuth update status` fails cleanly (no crash) when no server is running", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "update", "status", "--api", "http://localhost:59998"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(1);
 });
