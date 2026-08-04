@@ -11,6 +11,8 @@ import {
   setFolderIcon,
   setFolderVisibility,
 } from "../../../core/src/settings";
+import { resolveDenyPlan, type VisibilityChannel } from "../../../core/src/visibility";
+import { cliAgentChannel } from "../../../core/src/visibilityCliGate";
 
 /** Walk a dotted path into a value; returns undefined if any segment is missing. */
 function walkPath(obj: unknown, path: string): unknown {
@@ -50,6 +52,35 @@ export const commands: CommandMap = {
     run: async (args) => {
       const vault = requireVault(args);
       out(await getVaultSchema(vault), args);
+    },
+  },
+  "settings deny-list": {
+    summary:
+      "This vault's visibility deny plan for a channel (see docs/vault/visibility.md). SECURITY: this must never become an enumeration oracle — " +
+      "the OWNER (BISMUTH_AGENT_CHANNEL unset) gets the full path list; any AGENT channel (chat/daemon) gets a COUNT ONLY, never paths, " +
+      "the same 'a count, not names' rule visibilityRefusalMessage already uses for the chat-refusal panel",
+    usage: "[--channel chat|daemon]  (default: daemon, the stricter channel)",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const channelFlag = flag(args, "channel");
+      if (channelFlag !== undefined && channelFlag !== "chat" && channelFlag !== "daemon") {
+        fail("usage: settings deny-list [--channel chat|daemon]");
+      }
+      const channel: VisibilityChannel = channelFlag === "chat" ? "chat" : "daemon";
+      const plan = await resolveDenyPlan(vault, channel);
+      if (!plan.determined) {
+        // Undetermined is itself safe to report in full: it's a REASON the walk failed (an
+        // unreadable subtree, a bad .settings), never a path list.
+        out({ channel, determined: false, reason: plan.reason }, args);
+        return;
+      }
+      const isOwner = cliAgentChannel() === "owner";
+      out(
+        isOwner
+          ? { channel, determined: true, count: plan.entries.length, entries: plan.entries.map((e) => e.rel) }
+          : { channel, determined: true, count: plan.entries.length },
+        args,
+      );
     },
   },
   "folder-icon": {

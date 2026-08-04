@@ -595,7 +595,15 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` |
 | `graph-both` | Graph: Both Brains | `Network` |
 | `graph-daemon` | Graph: Daemon | `Server` |
+| `graph-local` | Graph: Local (open note) | `Pin` |
 | `equalize-panes` | Equalize panes | `Columns3` |
+| `split-right` | Split right | `PanelRight` |
+| `split-down` | Split down | `PanelBottom` |
+| `close-pane` | Close pane | `SquareX` |
+| `focus-pane-left` | Focus pane left | `ArrowLeft` |
+| `focus-pane-right` | Focus pane right | `ArrowRight` |
+| `focus-pane-up` | Focus pane up | `ArrowUp` |
+| `focus-pane-down` | Focus pane down | `ArrowDown` |
 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` |
 | `daemon-owner` | Set daemon owner device… | `Server` |
 | `daemon-setup` | Set up daemon… | `Download` |

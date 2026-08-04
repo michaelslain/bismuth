@@ -212,3 +212,31 @@ export function resetRelay(): void {
   sessions.clear();
   subagents.clear();
 }
+
+/**
+ * Non-owner projection of a snapshot: drops every CONTENT field while preserving every
+ * BOOKKEEPING field, so a non-owner caller — `bismuth relay list` runs from a shell and never
+ * carries an owner token, see `GET /relay/snapshot` in server.ts — still gets orchestration
+ * awareness (which sessions/subagents are alive, their ids/types/timestamps/cwd/backend) without
+ * any free text leaving the owner boundary.
+ *
+ * Field-by-field classification of the two registry shapes:
+ * - {@link RelaySession}: `sessionId`, `terminalId`, `cwd`, `backend`, `lastSeen` — all
+ *   bookkeeping (ids, a working-directory path, a backend tag, a timestamp). Nothing here is
+ *   free text a user or model wrote.
+ * - {@link RelaySubagent}: `agentId`, `parentSessionId`, `agentType`, `workflowId`, `startedAt`,
+ *   `done`, `doneAt` — all bookkeeping. `lastMessage` is the ONE content field: it's the
+ *   subagent's SubagentStop `last_assistant_message`, free-text output that can quote vault notes
+ *   the same way a chat transcript snippet can (the reason this route was gated in the first
+ *   place). It is the only field dropped below.
+ *
+ * A redacted field is OMITTED entirely, not replaced with `""` — an empty string would be
+ * indistinguishable from "the subagent said nothing", silently misreporting withheld content as
+ * an empty response instead of an absent one.
+ */
+export function redactSnapshot(snap: RelaySnapshot): RelaySnapshot {
+  return {
+    sessions: snap.sessions.map((s) => ({ ...s })),
+    subagents: snap.subagents.map(({ lastMessage: _lastMessage, ...rest }) => rest),
+  };
+}

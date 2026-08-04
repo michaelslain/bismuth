@@ -43,7 +43,7 @@ A Claude session can also drive a **running Bismuth app** — list/open/close/fo
 
 **Core discovery** (the `app` group): `--api <url>` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry (`~/.bismuth/run/<vault>.json`, written by each core on boot; matched by `--vault`/`BISMUTH_VAULT`, else the single running core) → `:4321`. In-app terminal tabs already carry `BISMUTH_API`/`CLAUDE_RELAY_URL`, so `bismuth app …` from inside a tab targets its own window with no config. Zero windows connected → a benign `404 {error:"no Bismuth window is open"}` (the daemon treats this as expected, not a retry condition); several open windows → `409`, so pass `--window <id>` (see `app windows`).
 
-**Deliberately excluded — opening a Claude chat.** A chat tab is a live, recursive Agent-SDK session: a materially different trust boundary for an unattended caller. Enforced at two layers (POST `/ui/command` AND the frontend dispatch): `run-command` refuses a small `UI_CONTROL_BLOCKLIST` (`core/src/commands.ts` — `new-window`, `open-folder`, `update-app`, `update-daemon`, `new-claude-chat`), and `open-tab` refuses any `::chat:` content. Full reference: [app-control.md](app-control.md).
+**Deliberately excluded — opening a Claude chat.** A chat tab is a live, recursive Agent-SDK session: a materially different trust boundary for an unattended caller. Enforced at two layers (POST `/ui/command` AND the frontend dispatch): `run-command` refuses a small `UI_CONTROL_BLOCKLIST` (`core/src/commands.ts` — `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat`), and `open-tab` refuses any `::chat:` content. Full reference: [app-control.md](app-control.md).
 
 ## Memory tools (daemon-gated, per-vault)
 

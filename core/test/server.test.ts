@@ -7,6 +7,7 @@ import { writeNote, readNote } from "../src/files";
 import { readSettings } from "../src/settings";
 import { resetUiControl } from "../src/uiControl";
 import { resetRelay, snapshot as relaySnapshot } from "../src/relay";
+import { readRunRecords } from "../src/runRegistry";
 import { searchPromptDeps } from "../src/searchPrompt";
 import { makeSampleVault } from "./helpers";
 import * as visibility from "../src/visibility";
@@ -189,6 +190,67 @@ test("POST /relay/session + /relay/subagent/start reach the relay registry", asy
   } finally {
     resetRelay();
     server.stop(true);
+  }
+});
+
+// GET /relay/snapshot is the read side of the registry above, powering `bismuth relay list`.
+// The owner sees the full registry, including RelaySubagent.lastMessage (its SubagentStop
+// last_assistant_message — free-text output that may quote vault content). Everyone else gets
+// redactSnapshot()'s projection instead of a blanket 403: `bismuth relay list` runs from a shell
+// and never carries an owner token, so a blanket gate made the route unreachable by its only
+// caller. The load-bearing assertion is the LAST one below — the raw response body must not
+// contain the seeded content string at all, proving no leak rather than merely checking shape.
+test("GET /relay/snapshot: owner gets the full snapshot, non-owner gets it redacted (no content leak)", async () => {
+  resetRelay();
+  const { vault, memory } = await makeSampleVault();
+  // readRunRecords() below scans the WHOLE run registry dir; isolate it to a fresh tmp dir for
+  // this test so it doesn't pay the real ~/.bismuth/run's accumulated-records cost (readRunRecords
+  // documents this as measured multi-second on a large real directory).
+  const prevRunDir = process.env.BISMUTH_RUN_DIR;
+  process.env.BISMUTH_RUN_DIR = mkdtempSync(join(tmpdir(), "bismuth-relay-run-"));
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const post = (path: string, body: unknown) =>
+    fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const SECRET = "SENTINEL-quotes-private-vault-note-xyz123";
+  try {
+    await post("/relay/session", { sessionId: "sess-1", terminalId: "tab-1", cwd: "/x/my-proj" });
+    await post("/relay/subagent/start", { parentSessionId: "sess-1", agentId: "ag-1", agentType: "Explore" });
+    await post("/relay/subagent/stop", { agentId: "ag-1", lastMessage: SECRET });
+
+    // Owner: full snapshot, lastMessage included.
+    const token = readRunRecords().find((r) => r.vault === vault)?.token;
+    expect(token).toBeTruthy();
+    const withToken = await fetch(`${base}/relay/snapshot`, { headers: { "X-Bismuth-Token": token! } });
+    expect(withToken.status).toBe(200);
+    const ownerBody = await withToken.json();
+    expect(ownerBody.sessions).toContainEqual(
+      expect.objectContaining({ sessionId: "sess-1", terminalId: "tab-1", cwd: "/x/my-proj" }),
+    );
+    expect(ownerBody.subagents).toContainEqual(
+      expect.objectContaining({ agentId: "ag-1", parentSessionId: "sess-1", agentType: "Explore", lastMessage: SECRET }),
+    );
+
+    // Non-owner (no token at all — the CLI's real posture): 200 with a redacted body, not 403.
+    const noToken = await fetch(`${base}/relay/snapshot`);
+    expect(noToken.status).toBe(200);
+    const rawText = await noToken.text();
+    // The one assertion that actually proves no leak: the seeded content string must not appear
+    // anywhere in the raw response body, not just be absent from a parsed field.
+    expect(rawText).not.toContain(SECRET);
+
+    const nonOwnerBody = JSON.parse(rawText);
+    expect(nonOwnerBody.sessions).toContainEqual(
+      expect.objectContaining({ sessionId: "sess-1", terminalId: "tab-1", cwd: "/x/my-proj" }),
+    );
+    const nonOwnerSub = nonOwnerBody.subagents.find((s: { agentId: string }) => s.agentId === "ag-1");
+    expect(nonOwnerSub).toMatchObject({ agentId: "ag-1", parentSessionId: "sess-1", agentType: "Explore", done: true });
+    expect("lastMessage" in nonOwnerSub).toBe(false);
+  } finally {
+    resetRelay();
+    server.stop(true);
+    if (prevRunDir === undefined) delete process.env.BISMUTH_RUN_DIR;
+    else process.env.BISMUTH_RUN_DIR = prevRunDir;
   }
 });
 
@@ -2080,6 +2142,24 @@ test("app control: run-command blocklist + open-tab chat exclusion are enforced 
       body: JSON.stringify({ action: "open-tab", args: { content: "::chat:x" } }),
     });
     expect(chat.status).toBe(403);
+  } finally {
+    server.stop(true);
+    resetUiControl();
+  }
+});
+
+test("app control: run-command refuses an id that isn't in the catalog at all (403)", async () => {
+  resetUiControl();
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/ui/command`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "run-command", args: { id: "not-a-real-command" } }),
+    });
+    expect(res.status).toBe(403);
   } finally {
     server.stop(true);
     resetUiControl();

@@ -1,5 +1,5 @@
 // Prebuild step: compile the bismuth CLI + MCP server into standalone binaries and stage
-// them (plus the docs/ reference) as a Tauri resource at resources/bismuth-tools/.
+// them (plus the docs/ reference and skills/ tree) as a Tauri resource at resources/bismuth-tools/.
 //
 // At runtime the core sidecar points BISMUTH_INSTALL_SRC here, and
 // core/src/bismuthInstall.ts copies these into ~/.bismuth and registers them MACHINE-WIDE
@@ -52,6 +52,17 @@ if (!existsSync(docsSrc)) {
 }
 cpSync(docsSrc, join(outDir, "docs"), { recursive: true });
 console.log(`✓ docs staged → ${join(outDir, "docs")}`);
+
+// Stage skills/ for Claude Code's native skills surface (core/src/bismuthInstall.ts's
+// stageSkills() copies this into ~/.bismuth/skills, then symlinks it into ~/.claude/skills/ —
+// the third of three delivery adapters alongside the MCP bismuth_skill tool + AGENTS.md pointer).
+const skillsSrc = join(repoRoot, "skills");
+if (!existsSync(skillsSrc)) {
+  console.error(`skills/ not found at ${skillsSrc}`);
+  process.exit(1);
+}
+cpSync(skillsSrc, join(outDir, "skills"), { recursive: true });
+console.log(`✓ skills staged → ${join(outDir, "skills")}`);
 
 // Record where this build came from so the installed app can git-fetch/pull + rebuild to
 // self-update (core/src/selfUpdate.ts reads ${BISMUTH_INSTALL_SRC}/build-origin.json).

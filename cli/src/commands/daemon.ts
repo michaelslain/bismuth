@@ -18,6 +18,13 @@ import {
 } from "../../../core/src/daemon";
 import { daemonGraph } from "../../../core/src/daemonGraph";
 import { installStatus, runSetup } from "../../../core/src/daemonInstall";
+// unloadDaemon/restartDaemon are the @bismuth/daemon workspace's own launchctl/systemd control
+// functions (daemon/src/lib/platform.ts) — complete implementations that, before this file, had
+// ZERO callers anywhere in the repo: an agent could `daemon setup`/`daemon install` a service but
+// never stop or restart one. daemonConfigPath() is the SAME zero-arg path resolver
+// `--ensure-installed` uses (daemon/src/daemon/index.ts's ensureInstalled()) — computed purely
+// from platform + homedir, no vault or binary path required.
+import { daemonConfigPath, restartDaemon, unloadDaemon } from "../../../daemon/src/lib/platform";
 
 export const commands: CommandMap = {
   "daemon status": {
@@ -65,6 +72,24 @@ export const commands: CommandMap = {
     usage: "[--pretty]",
     run: async (args) => {
       out(await runSetup(), args);
+    },
+  },
+  "daemon stop": {
+    summary: "Stop the installed daemon service (launchctl unload / systemctl stop+disable) — it won't restart on its own",
+    usage: "[--pretty]",
+    run: (args) => {
+      const result = unloadDaemon(daemonConfigPath());
+      out(result, args);
+      if (!result.ok) process.exit(1);
+    },
+  },
+  "daemon restart": {
+    summary: "Restart the running daemon service in place (launchctl kickstart -k / systemctl restart) without rewriting its config",
+    usage: "[--pretty]",
+    run: (args) => {
+      const result = restartDaemon();
+      out(result, args);
+      if (!result.ok) process.exit(1);
     },
   },
   "daemon graph": {

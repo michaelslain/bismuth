@@ -10,18 +10,24 @@
 import { apiBase } from "./api";
 import { UI_CONTROL_BLOCKLIST } from "../../core/src/commands";
 import { CHAT_PREFIX } from "./tabIds";
-import type { UiTabsSnapshot } from "../../core/src/uiControl";
+import type { UiTabsSnapshot, RunCommandResult } from "../../core/src/uiControl";
 
-export type { UiTabsSnapshot };
+export type { UiTabsSnapshot, RunCommandResult };
 
-/** The App-side handlers each control action maps to. Every handler is synchronous + returns a
- *  small result object; a thrown error is caught and reported as `{ok:false}`. */
+/** The App-side handlers each control action maps to. Every handler except `runCommand` is
+ *  synchronous; `runCommand` may be async because its underlying command action may be (e.g.
+ *  `detect-ai`, `gcal-sync`) — the dispatcher below awaits it before replying, so a caller never
+ *  gets `ok:true` before the action has actually resolved. A thrown error (sync or rejected) is
+ *  caught and reported as `{ok:false}`. */
 export interface UiControlHandlers {
   listTabs(): UiTabsSnapshot;
   openTab(args: { content: string; newTab?: boolean }): { ok: boolean; error?: string; opened?: string };
   closeTab(args: { tabId: string }): { ok: boolean; error?: string };
   focusTab(args: { tabId: string }): { ok: boolean; error?: string };
-  runCommand(args: { id: string }): { ok: boolean; error?: string };
+  runCommand(args: { id: string }): ({ ok: boolean; error?: string } & RunCommandResult) | Promise<{ ok: boolean; error?: string } & RunCommandResult>;
+  renameTab(args: { tabId: string; name: string }): { ok: boolean; error?: string };
+  pinTab(args: { tabId: string; pinned: boolean }): { ok: boolean; error?: string };
+  reorderTab(args: { tabId: string; index: number }): { ok: boolean; error?: string };
 }
 
 export interface UiControlHandle {
@@ -54,7 +60,10 @@ export function connectUiControl(windowId: string, handlers: UiControlHandlers):
     }
   };
 
-  const dispatch = (action: string, args: Record<string, unknown> | undefined): { ok: boolean; result?: unknown; error?: string } => {
+  // Async because `run-command` awaits its handler (see UiControlHandlers). The other actions are
+  // synchronous — awaiting their already-resolved return values is a no-op tick, not a behavior
+  // change.
+  const dispatch = async (action: string, args: Record<string, unknown> | undefined): Promise<{ ok: boolean; result?: unknown; error?: string }> => {
     try {
       switch (action) {
         case "list-tabs":
@@ -75,11 +84,39 @@ export function connectUiControl(windowId: string, handlers: UiControlHandlers):
           if (typeof tabId !== "string" || !tabId) return { ok: false, error: "focus-tab requires a tabId" };
           return handlers.focusTab({ tabId });
         }
+        case "rename-tab": {
+          const tabId = args?.tabId;
+          const name = args?.name;
+          if (typeof tabId !== "string" || !tabId) return { ok: false, error: "rename-tab requires a tabId" };
+          if (typeof name !== "string" || !name.trim()) return { ok: false, error: "rename-tab requires a name" };
+          return handlers.renameTab({ tabId, name });
+        }
+        case "pin-tab": {
+          const tabId = args?.tabId;
+          const pinned = args?.pinned;
+          if (typeof tabId !== "string" || !tabId) return { ok: false, error: "pin-tab requires a tabId" };
+          if (typeof pinned !== "boolean") return { ok: false, error: "pin-tab requires a boolean pinned" };
+          return handlers.pinTab({ tabId, pinned });
+        }
+        case "reorder-tab": {
+          const tabId = args?.tabId;
+          const index = args?.index;
+          if (typeof tabId !== "string" || !tabId) return { ok: false, error: "reorder-tab requires a tabId" };
+          if (typeof index !== "number" || !Number.isInteger(index)) return { ok: false, error: "reorder-tab requires an integer index" };
+          return handlers.reorderTab({ tabId, index });
+        }
         case "run-command": {
           const id = args?.id;
           if (typeof id !== "string" || !id) return { ok: false, error: "run-command requires an id" };
           if (UI_CONTROL_BLOCKLIST.includes(id)) return { ok: false, error: `command "${id}" is not allowed via app control` };
-          return handlers.runCommand({ id });
+          const r = await handlers.runCommand({ id });
+          // Nest the interactive/label/note fields in `result` — the wire reply (core/src/uiControl.ts's
+          // UiReply, and server.ts's parse of the {type:"reply"} frame) only carries {ok,result,error}.
+          const extra: RunCommandResult = {};
+          if (r.interactive) extra.interactive = true;
+          if (r.label) extra.label = r.label;
+          if (r.note) extra.note = r.note;
+          return { ok: r.ok, error: r.error, result: Object.keys(extra).length > 0 ? extra : undefined };
         }
         default:
           return { ok: false, error: `unknown action: ${action}` };
@@ -117,8 +154,10 @@ export function connectUiControl(windowId: string, handlers: UiControlHandlers):
         return;
       }
       if (!msg || msg.type !== "command" || typeof msg.reqId !== "string" || typeof msg.action !== "string") return;
-      const reply = dispatch(msg.action, msg.args);
-      send({ type: "reply", reqId: msg.reqId, ok: reply.ok, result: reply.result, error: reply.error });
+      const reqId = msg.reqId;
+      dispatch(msg.action, msg.args).then((reply) => {
+        send({ type: "reply", reqId, ok: reply.ok, result: reply.result, error: reply.error });
+      });
     };
     ws.onclose = () => {
       ws = null;

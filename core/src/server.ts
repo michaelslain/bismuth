@@ -53,9 +53,9 @@ import {
   parseChatScope,
   invalidateChatVisibility,
 } from "./chat";
-import { registerSession, endSession, startSubagent, stopSubagent } from "./relay";
+import { registerSession, endSession, startSubagent, stopSubagent, snapshot as relaySnapshot, redactSnapshot } from "./relay";
 import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarget, sendCommand, resolveReply, type UiTabsSnapshot } from "./uiControl";
-import { UI_CONTROL_BLOCKLIST } from "./commands";
+import { isUiControlAllowed } from "./commands";
 import { writeRunRecord } from "./runRegistry";
 import { mintOwnerToken, resolveRequestChannel, type RequestChannel } from "./ownerToken";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
@@ -1030,6 +1030,19 @@ export function createServer(cfg: CoreConfig) {
       return ok({ ok: true });
     },
 
+    // Read side of the registry above, for `bismuth relay list`. A subagent's RelaySubagent can
+    // carry `lastMessage` (its SubagentStop last_assistant_message) — free-text output that can
+    // quote vault content the same way a chat transcript snippet can — but unlike GET
+    // /chat/sessions et al. there IS a non-sensitive projection: everything except lastMessage is
+    // bookkeeping (ids, types, timestamps, cwd, backend), so a non-owner caller gets that
+    // redacted view instead of a blanket 403. `bismuth relay list` runs from a shell and never
+    // carries an owner token (see cli/src/http.ts) — a blanket gate made the route unreachable by
+    // its only caller. See redactSnapshot() in relay.ts for the field-by-field classification.
+    "GET /relay/snapshot": async (req) => {
+      const snap = relaySnapshot();
+      return ok(requestChannel(req) === "owner" ? snap : redactSnapshot(snap));
+    },
+
     // App-control read surface (see core/src/uiControl.ts) — the ONLY channel that drives a running
     // window's tabs from outside the webview, powering the `app` CLI group and (through bismuth_cli)
     // MCP app control. Like /relay/* these live in the READ table: /ui/command relays a request to a
@@ -1052,7 +1065,7 @@ export function createServer(cfg: CoreConfig) {
       if (action === "run-command") {
         const id = (args as { id?: unknown } | undefined)?.id;
         if (typeof id !== "string" || !id) return error("run-command requires args.id", 400);
-        if (UI_CONTROL_BLOCKLIST.includes(id)) return error(`command "${id}" is not allowed via app control`, 403);
+        if (!isUiControlAllowed(id)) return error(`command "${id}" is not allowed via app control`, 403);
       }
       if (action === "open-tab") {
         const content = (args as { content?: unknown } | undefined)?.content;

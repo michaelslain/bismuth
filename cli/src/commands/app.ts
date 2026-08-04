@@ -1,5 +1,6 @@
 // The `app` command group: drive a RUNNING Bismuth window's tabs from the shell (and, through the
-// bismuth_cli MCP tool, from a Claude session) — list/open/close/focus tabs, run a safe command.
+// bismuth_cli MCP tool, from a Claude session) — list/open/close/focus/rename/pin/reorder tabs,
+// run a safe command.
 // Everything hits the running core's /ui/* routes, which relay over the per-window control socket
 // the app holds open (core/src/uiControl.ts). A headless CLI has no window, so — unlike the
 // file-based groups — these REQUIRE a running app.
@@ -76,6 +77,35 @@ export const commands: CommandMap = {
       const [tabId] = positionals(args);
       if (!tabId) fail("usage: bismuth app focus <tabId> [--window <id>]");
       out(await command(args, "focus-tab", { tabId }), args);
+    },
+  },
+  "app rename": {
+    summary: "Rename a tab (custom label overriding its auto content label)",
+    usage: "<tabId> <name> [--window <id>]",
+    run: async (args) => {
+      const [tabId, name] = positionals(args);
+      if (!tabId || !name) fail("usage: bismuth app rename <tabId> <name> [--window <id>]");
+      out(await command(args, "rename-tab", { tabId, name }), args);
+    },
+  },
+  "app pin": {
+    summary: "Pin a tab so it leads the tab strip (pass --off to unpin)",
+    usage: "<tabId> [--off] [--window <id>]",
+    run: async (args) => {
+      const [tabId] = positionals(args);
+      if (!tabId) fail("usage: bismuth app pin <tabId> [--off] [--window <id>]");
+      out(await command(args, "pin-tab", { tabId, pinned: !bool(args, "off") }), args);
+    },
+  },
+  "app reorder": {
+    summary: "Move a tab to a new 0-based position in the tab strip",
+    usage: "<tabId> <index> [--window <id>]",
+    run: async (args) => {
+      const [tabId, indexRaw] = positionals(args);
+      if (!tabId || indexRaw === undefined) fail("usage: bismuth app reorder <tabId> <index> [--window <id>]");
+      const index = Number(indexRaw);
+      if (!Number.isInteger(index)) fail(`invalid index "${indexRaw}" — must be an integer`);
+      out(await command(args, "reorder-tab", { tabId, index }), args);
     },
   },
   "app run": {
