@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { buildQueryOptions, DEFAULT_DAEMON_IDENTITY, resolveDaemonBackend } from "../src/daemon/session.ts"
+import { buildQueryOptions, DEFAULT_DAEMON_IDENTITY, resolveDaemonBackend, composeBackendRefusalNote, finalizeBotResponse } from "../src/daemon/session.ts"
 import type { VaultContext } from "../src/lib/config.ts"
 import { ownerTokenDenyPath } from "../src/lib/bismuthPaths.ts"
 
@@ -220,4 +220,48 @@ test("buildQueryOptions maps low/medium effort onto `effort` too, and omits it e
   expect(buildQueryOptions(ctx, { effort: "medium" }, undefined, { systemPrompt: "x" }).effort).toBe("medium")
   // No effort configured → the key is absent, so the SDK keeps its own default.
   expect(buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" }).effort).toBeUndefined()
+})
+
+// --- surfacing the refusal to the user -------------------------------------------------------
+// resolveDaemonBackend's `refusal` string is real, but sendMessage only ever console.errors it —
+// a daemon log nobody reads. composeBackendRefusalNote is the shared, pure carrier both real
+// callers (pages.ts's daemonNote — rendered verbatim by app/src/InboxPageView.tsx — and cron.ts's
+// notify() OS notification) use to fold it into text the user actually sees. A user-visible
+// signal means: given a refusal, the text a caller displays CONTAINS it.
+
+test("composeBackendRefusalNote: passes the base text through unchanged when there's no refusal", () => {
+  expect(composeBackendRefusalNote("Consolidated 3 notes.", undefined)).toBe("Consolidated 3 notes.")
+})
+
+test("composeBackendRefusalNote: a refusal is folded into the displayed text, not dropped", () => {
+  const refusal =
+    `daemon.backend "codex" cannot enforce this vault's visibility gate (1 hidden note); ` +
+    `only the Claude Code backend can. Running on "claude" instead — clear the vault's ` +
+    `hidden/chat-only notes to use another backend.`
+  const note = composeBackendRefusalNote("Consolidated 3 notes.", refusal)
+  expect(note).toContain("Consolidated 3 notes.")
+  expect(note).toContain(`cannot enforce this vault's visibility gate`)
+})
+
+test("composeBackendRefusalNote: the refusal alone is the whole note when there's no base text", () => {
+  expect(composeBackendRefusalNote("", "cannot enforce this vault's visibility gate")).toBe(
+    "cannot enforce this vault's visibility gate",
+  )
+})
+
+// finalizeBotResponse is the exact wiring sendMessage's Claude-backend path uses to build its
+// return value — this is what closes the gap between resolveDaemonBackend's `refusal` and the
+// BotResponse a caller actually receives, without invoking the live SDK.
+
+test("finalizeBotResponse: carries resolveDaemonBackend's refusal onto the returned BotResponse", () => {
+  expect(finalizeBotResponse("done", "sess-1", "cannot enforce this vault's visibility gate")).toEqual({
+    result: "done",
+    sessionId: "sess-1",
+    backendRefusal: "cannot enforce this vault's visibility gate",
+  })
+})
+
+test("finalizeBotResponse: backendRefusal is undefined when the requested backend ran as asked", () => {
+  const r = finalizeBotResponse("done", "sess-1", undefined)
+  expect(r.backendRefusal).toBeUndefined()
 })

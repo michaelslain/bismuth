@@ -114,6 +114,35 @@ async function buildSystemPrompt(ctx: VaultContext, denyEntries: DenyEntry[]): P
 export interface BotResponse {
   result: string
   sessionId: string
+  /** Set when resolveDaemonBackend downgraded settings.daemon.backend for THIS run (a vault with
+   *  hidden notes requesting a non-Claude backend). This is the only carrier of that decision a
+   *  caller can act on — sendMessage's console.error is a daemon log nobody reads. Undefined
+   *  whenever the requested backend ran as asked (including every unrestricted vault). Callers
+   *  fold it into whatever they already show the user via {@link composeBackendRefusalNote}. */
+  backendRefusal?: string
+}
+
+/**
+ * Fold resolveDaemonBackend's refusal into text a caller already shows the user for this run —
+ * the shared, pure carrier for the ONLY place that downgrade becomes visible (pages.ts's
+ * daemonNote, rendered verbatim by app/src/InboxPageView.tsx; cron.ts's notify() OS notification).
+ * Refusal-first: someone reading a done page or a cron notification should see WHY before the
+ * result, not buried after it. A no-op (returns `base` unchanged) when there's nothing to report.
+ */
+export function composeBackendRefusalNote(base: string, backendRefusal?: string): string {
+  if (!backendRefusal) return base
+  return base ? `${backendRefusal}\n\n${base}` : backendRefusal
+}
+
+/**
+ * Assemble the BotResponse sendMessage's Claude-backend path returns. Extracted (same reason as
+ * buildQueryOptions above) so the wiring from resolveDaemonBackend's `refusal` onto
+ * BotResponse.backendRefusal — the fix in this file — is unit-tested without invoking the real
+ * SDK. `refusal` passes straight through: undefined stays undefined (an unrestricted vault's
+ * response is unaffected), a string is carried onto the field callers read.
+ */
+export function finalizeBotResponse(result: string, sessionId: string, refusal?: string): BotResponse {
+  return { result, sessionId, backendRefusal: refusal }
 }
 
 /**
@@ -408,5 +437,5 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
     if (timeoutId) clearTimeout(timeoutId)
   }
 
-  return { result: resultText, sessionId: latestSessionId }
+  return finalizeBotResponse(resultText, latestSessionId, refusal)
 }

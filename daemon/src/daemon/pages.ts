@@ -8,7 +8,7 @@
 // "done"/"failed" after, never anything else).
 import { join } from "node:path"
 import { readdir, readFile, writeFile, unlink, rename, mkdir } from "node:fs/promises"
-import { sendMessage } from "./session"
+import { sendMessage, composeBackendRefusalNote } from "./session"
 import { parseFrontmatter } from "../lib/frontmatter"
 import { isOwner } from "../lib/owner"
 import type { VaultContext } from "../lib/config.ts"
@@ -127,7 +127,10 @@ export async function processPageTriggers(ctx: VaultContext): Promise<void> {
         await writePageState(ctx, slug, {
           ...state,
           status: "done",
-          daemonNote: summarize(response.result),
+          // composeBackendRefusalNote: when settings.daemon.backend was silently downgraded to
+          // Claude for this run (vault has hidden notes), say so — otherwise the user reads a
+          // normal "Done" note with no idea it ran on a different backend than requested.
+          daemonNote: composeBackendRefusalNote(summarize(response.result), response.backendRefusal),
           completedAt: new Date().toISOString(),
         })
       } catch (err) {
