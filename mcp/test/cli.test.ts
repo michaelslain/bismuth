@@ -10,13 +10,23 @@ const repoRoot = resolve(import.meta.dir, "..", "..");
 
 test("bismuth_cli_help surfaces the app + page groups (zero new MCP tools; app control rides the CLI)", async () => {
   const help = await cliHelp(repoRoot);
-  expect(help).toContain("app windows");
-  expect(help).toContain("app open");
-  expect(help).toContain("app run");
-  expect(help).toContain("page create");
+  expect(help.ok).toBe(true);
+  expect(help.text).toContain("app windows");
+  expect(help.text).toContain("app open");
+  expect(help.text).toContain("app run");
+  expect(help.text).toContain("page create");
 }, 30_000);
 
-test("a failing CLI invocation surfaces a non-zero exit code the server can map to isError", async () => {
+// Regression for the inert isError check the reviewer caught: cliHelp used to return a bare
+// string, and server.ts inferred failure from `text.trim().length === 0` — a check that can
+// never be true, since the total-failure path itself returns a non-empty message. This asserts
+// on the discriminated `ok` field, not on the message text, so it can't pass by accident.
+test("cliHelp reports ok:false when the CLI cannot be run at all (repoRoot points nowhere real)", async () => {
+  const result = await cliHelp("/definitely/not/a/real/bismuth-repo-root-xyz");
+  expect(result.ok).toBe(false);
+}, 30_000);
+
+test("runCli/formatCliResult surface a non-zero exit code with an [exit N] marker (unchanged by this fix; cliToolResult below is what actually maps it to isError)", async () => {
   const r = await runCli(repoRoot, ["definitely-not-a-command"]);
   expect(r.code).not.toBe(0);
   expect(formatCliResult(r)).toContain("[exit");

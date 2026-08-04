@@ -107,21 +107,32 @@ export function cliToolResult(r: CliResult): {
 }
 
 /**
+ * Discriminated result of fetching CLI help text. `ok` is explicit rather than inferred from
+ * content, because the failure path itself returns non-empty text ("bismuth CLI help is
+ * unavailable.") — a length check on `text` can never distinguish success from failure. Callers
+ * (server.ts) must read `ok`, not the text, to decide `isError`.
+ */
+export interface CliHelpResult {
+  text: string;
+  ok: boolean;
+}
+
+/**
  * Fetch the CLI's own help text. For a group, tries `<group> --help`; if that
  * exits non-zero or yields nothing, falls back to the global `--help` (which the
- * CLI prints on `--help`/`-h`/`help`/no args). Returns trimmed stdout, or a
- * short message on total failure.
+ * CLI prints on `--help`/`-h`/`help`/no args). Returns trimmed stdout with `ok: true`,
+ * or a short message with `ok: false` on total failure (e.g. the CLI can't be spawned at all).
  */
-export async function cliHelp(repoRoot: string, group?: string): Promise<string> {
+export async function cliHelp(repoRoot: string, group?: string): Promise<CliHelpResult> {
   if (group) {
     const scoped = await runCli(repoRoot, [group, "--help"]);
     const out = scoped.stdout.trim();
-    if (scoped.code === 0 && out) return out;
+    if (scoped.code === 0 && out) return { text: out, ok: true };
   }
 
   const global = await runCli(repoRoot, ["--help"]);
   const out = global.stdout.trim();
-  if (out) return out;
+  if (out) return { text: out, ok: true };
 
-  return "bismuth CLI help is unavailable.";
+  return { text: "bismuth CLI help is unavailable.", ok: false };
 }

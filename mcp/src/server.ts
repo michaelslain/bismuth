@@ -4,6 +4,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  type CallToolRequest,
+  type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import { listDocs, searchDocs, readDoc } from "./docs";
 import { runCli, cliHelp, cliToolResult } from "./cli";
@@ -157,7 +159,10 @@ function asText(result: unknown): string {
   return JSON.stringify(result, null, 2);
 }
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+// Exported (rather than left as an inline callback) so tests can dispatch a fabricated
+// CallToolRequest straight through the real switch/case wiring — the thing that actually
+// determines isError — instead of only exercising the helpers (cliToolResult, cliHelp) it calls.
+export async function handleCallTool(request: CallToolRequest): Promise<CallToolResult> {
   const { name, arguments: rawArgs } = request.params;
   const args = (rawArgs ?? {}) as Record<string, unknown>;
   try {
@@ -191,8 +196,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       case "bismuth_cli_help": {
         const group = typeof args.group === "string" ? args.group : undefined;
-        const text = asText(await cliHelp(repoRoot, group));
-        return { content: [{ type: "text", text }], isError: text.trim().length === 0 };
+        const { text, ok } = await cliHelp(repoRoot, group);
+        return { content: [{ type: "text", text }], isError: !ok };
       }
       case "remember":
       case "recall":
@@ -235,7 +240,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const msg = err instanceof Error ? err.message : String(err);
     return { content: [{ type: "text", text: msg }], isError: true };
   }
-});
+}
+
+server.setRequestHandler(CallToolRequestSchema, handleCallTool);
 
 async function main(): Promise<void> {
   const transport = new StdioServerTransport();
