@@ -51,10 +51,49 @@ function stagedFiles(): string[] {
   return r.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 
+/**
+ * Git's repo-location environment variables. Git injects these into every hook it runs, and they
+ * OVERRIDE path-based repo discovery — including `git -C <dir>`, which only changes where paths
+ * resolve, not which repository is operated on.
+ *
+ * That matters here because this gate spawns test suites, and some of those suites shell out to
+ * git against throwaway directories (core/src/backup.ts's `ensureRepo`/`commitVault` git-init and
+ * commit temp vaults). Inherited unchanged, those nested calls resolve to THIS repository instead
+ * of the temp dir they were pointed at — writing its index, and re-entering its own hooks.
+ */
+const GIT_LOCATION_VARS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_PREFIX",
+  "GIT_COMMON_DIR",
+  "GIT_NAMESPACE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+] as const;
+
+/**
+ * Strip git's repo-location vars from an environment. PURE — exported so gate.test.ts can pin it
+ * without spawning anything.
+ *
+ * Deliberately narrow: it removes only the vars that redirect which repo a git call operates on.
+ * GIT_EXEC_PATH, GIT_CONFIG_*, author/committer identity and the like are left alone — they change
+ * git's behaviour, not its target, and a test that legitimately wants them should keep them.
+ */
+export function sanitizeGitEnv(env: Record<string, string | undefined>): Record<string, string | undefined> {
+  const out = { ...env };
+  for (const k of GIT_LOCATION_VARS) delete out[k];
+  return out;
+}
+
 function run(label: string, cmd: string, args: string[], env: Record<string, string> = {}): boolean {
   process.stdout.write(`\x1b[2m[gate]\x1b[0m ${label}… `);
   const started = Date.now();
-  const r = spawnSync(cmd, args, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", env: { ...process.env, ...env } });
+  const r = spawnSync(cmd, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+    env: { ...sanitizeGitEnv(process.env), ...env } as NodeJS.ProcessEnv,
+  });
   const secs = ((Date.now() - started) / 1000).toFixed(1);
   if (r.status === 0) {
     process.stdout.write(`\x1b[32mok\x1b[0m (${secs}s)\n`);
