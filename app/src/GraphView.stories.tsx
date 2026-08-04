@@ -1,3 +1,11 @@
+// ⚠ A BLANK CANVAS HERE IS USUALLY NOT A BUG. GraphView gates its renderer on
+// `props.visible !== false && !docHidden()` (GraphView.tsx:342,378). Any browser-automation tab
+// that is not foregrounded reports `document.visibilityState === "hidden"`, so the rAF loop is
+// paused and the canvas samples as 0% inked — indistinguishable from a broken renderer. This is
+// documented in bench/visual.ts, which exists precisely because of it and launches its own Chrome
+// with --disable-*background* flags to get a live loop unattended. Verify this story either in a
+// real foregrounded browser or via bench/visual.ts; do not "fix" the story in response to a blank
+// automated screenshot.
 // Visual spec for <GraphView> — the ASCII knowledge-graph canvas. It takes `graph: GraphData`
 // as a plain prop and makes NO api./fetch calls of its own; every position comes pre-computed
 // from sampleGraphData() (app/src/ui/_graphFixtures.ts), which runs the SAME pure layout the
