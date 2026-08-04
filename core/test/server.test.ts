@@ -2066,6 +2066,24 @@ test("app control: run-command blocklist + open-tab chat exclusion are enforced 
   }
 });
 
+test("app control: run-command refuses an id that isn't in the catalog at all (403)", async () => {
+  resetUiControl();
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/ui/command`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "run-command", args: { id: "not-a-real-command" } }),
+    });
+    expect(res.status).toBe(403);
+  } finally {
+    server.stop(true);
+    resetUiControl();
+  }
+});
+
 test("POST /daemon/pages creates a validated page under .daemon/pages and lists it", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
