@@ -201,8 +201,13 @@ function startPolling(): void {
       // cooldown passed, a still-dead backend never got the notice — or its Retry-now
       // button — back, even across minutes of continuous failure (regression found in
       // whole-branch review; see connectionState.test.ts's matching case).
-      applyConnectionDecision("poll-failure");
-      closeEventSource(); // so attemptReconnect / the next successful poll can open a fresh one
+      const wasConnected = connectionState() === "connected";
+      applyConnectionDecision("poll-failure"); // always — do NOT re-guard this
+      // Only tear down on the transition into disconnected, not on every repeat tick — otherwise
+      // this races the mid-handshake guard above (`es === null`) and starves SSE reconnection
+      // indefinitely under an alternating poll (flaky network / proxy), since a fresh handshake
+      // started by the previous poll's success gets killed before it can reach `onopen`.
+      if (wasConnected) closeEventSource();
     }
   }, currentPollInterval);
 }
