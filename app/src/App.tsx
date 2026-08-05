@@ -41,6 +41,7 @@ import { setPendingAnchor } from "./pendingAnchor";
 import { installNativeDrop, uninstallNativeDrop } from "./nativeDrop";
 import { isReloadNavigation } from "./navType";
 import { installAppMenu } from "./nativeAppMenu";
+import { vaultBasename } from "./vaultPath";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
 const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalTab })));
 // Lazy: ChatView pulls in the shared markdown renderer (marked + KaTeX). Mounted HERE (in an
@@ -159,16 +160,35 @@ export default function App() {
   // Vault name for the status bar's field-log line (design/ascii/README.md "App shell").
   // Fetched once from the existing GET /config (already used by the settings page to show how
   // core was launched) — pure presentation of an existing backend signal, no new server state.
+  // The status bar only ever shows the basename (issue #7: a full path doesn't belong inline in
+  // a field-log line), but `vaultPath` keeps the full path around so `.status-vault` can surface
+  // it as a `title` tooltip + click-to-copy — see the status bar below.
   const [vaultName, setVaultName] = createSignal<string>("");
+  const [vaultPath, setVaultPath] = createSignal<string>("");
   onMount(() => {
     fetch(`${apiBase()}/config`)
       .then((r) => (r.ok ? r.json() : null))
       .then((cfg: { vault?: string } | null) => {
         const v = cfg?.vault;
-        if (typeof v === "string") setVaultName(v.split("/").filter(Boolean).pop() ?? v);
+        if (typeof v === "string") {
+          setVaultPath(v);
+          setVaultName(vaultBasename(v));
+        }
       })
       .catch(() => {}); // best-effort — the status bar just shows a blank vault name on failure
   });
+
+  /** Click-to-copy the full vault path off `.status-vault` (issue #7) — mirrors
+   *  ChatView.tsx's copyMessage: confirm via toast, and toast on rejection too since
+   *  navigator.clipboard can fail (permissions, insecure context). */
+  const copyVaultPath = () => {
+    const p = vaultPath();
+    if (!p) return;
+    navigator.clipboard
+      .writeText(p)
+      .then(() => pushToast("Copied vault path"))
+      .catch(() => pushToast("Couldn't copy vault path"));
+  };
 
   // Chat tab labels: the session's conversation title once one exists (chatTitles, published by
   // ChatView from the backend's `title` frames), else the daemon's identity name when it's
@@ -2396,7 +2416,11 @@ export default function App() {
         health (serverVersion's ConnectionState), and right-aligned mode indicators, closed by
         a blinking `_` caret. No new state. */}
     <div class="status-bar">
-      <span class="status-vault">{vaultName() || "vault"}</span>
+      <span
+        class="status-vault"
+        title={vaultPath() || undefined}
+        onClick={copyVaultPath}
+      >{vaultName() || "vault"}</span>
       <span class="status-sep">//</span>
       <span class="status-path">{statusPath()}</span>
       <Show when={currentConnectionState() !== "connected"}>
