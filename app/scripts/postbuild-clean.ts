@@ -3,7 +3,11 @@
 // bundle/macos/Bismuth.app once the dmg exists, so a source build stops leaving a second
 // Bismuth in Spotlight / the Applications list (github issue #4). The decision lives in
 // postbuildClean.ts (pure + tested); this file only does the filesystem work.
-// macOS-only; a no-op elsewhere. Run standalone: bun run scripts/postbuild-clean.ts
+// macOS-only; a no-op elsewhere. Intended to run ONLY as part of the `installer` npm
+// script chain (`tauri build && postbuild-clean && open-installer`), immediately after a
+// build that produced a dmg in this same run — never standalone. Run standalone against a
+// dmg left over from an older build and it will delete a freshly-built .app that never got
+// a matching dmg of its own; this script has no way to tell the two apart.
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
