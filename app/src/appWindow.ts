@@ -4,39 +4,13 @@
 // Both "New window" and "Open folder" go through here (the URL already carries the
 // ?api= that pins the new window to its backend).
 import { isTauri } from "./nativeMenu";
+import { pushToast } from "./Toast";
 import { withWindowId } from "./windowId";
-// `pushToast` is loaded lazily (below) rather than imported statically: Toast.tsx is a real
-// Solid component, and a static import here would force it to evaluate whenever ANYTHING in
-// this module loads — including a plain unit test of the pure `classifyPickResult` below,
-// which has no business touching JSX. Every call site already only needs it under `isTauri()`.
-
-/**
- * Outcome of a native picker. Deliberately three-valued: a *cancel* is normal and silent,
- * an *error* must be surfaced to the user. Collapsing the two into `null` is what made
- * "Open folder…" fail invisibly (github issue #6) — a packaged app has no visible console.
- */
-export type PickResult =
-  | { status: "picked"; path: string }
-  | { status: "cancelled" }
-  | { status: "error"; message: string };
-
-/**
- * Pure core of the picker's outcome decision, so the cancel-vs-error distinction is testable
- * without Tauri. `unavailable` means we are not under Tauri at all (browser) — callers there
- * fall back to their own flow, so it reads as a cancel, not an error.
- */
-export function classifyPickResult(r: {
-  value?: unknown;
-  thrown?: unknown;
-  unavailable?: boolean;
-}): PickResult {
-  if (r.unavailable) return { status: "cancelled" };
-  if (r.thrown !== undefined) {
-    const message = r.thrown instanceof Error ? r.thrown.message : String(r.thrown);
-    return { status: "error", message };
-  }
-  return typeof r.value === "string" ? { status: "picked", path: r.value } : { status: "cancelled" };
-}
+// PickResult/classifyPickResult live in their own module (pickResult.ts) — it has zero
+// `.tsx` imports, so a unit test of the pure classifier never has to load a Solid component.
+// Re-exported here so existing callers can keep importing them from "./appWindow".
+import { classifyPickResult, type PickResult } from "./pickResult";
+export { classifyPickResult, type PickResult };
 
 /**
  * Native OS folder picker (Tauri only). Returns a three-valued result so callers can tell a
@@ -112,7 +86,6 @@ export async function openExternalUrl(url: string): Promise<void> {
       return;
     } catch (e) {
       console.error("openUrl failed", e);
-      const { pushToast } = await import("./Toast");
       pushToast("Couldn't open link — see console");
       return;
     }
@@ -165,7 +138,6 @@ export async function openAppWindow(url: string, title = "Bismuth"): Promise<boo
   if (isTauri()) {
     try {
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-      const { pushToast } = await import("./Toast");
       const label = `bismuth-${crypto.randomUUID()}`;
       const w = new WebviewWindow(label, { url, title, width: 1200, height: 800 });
       // Creation is async; a missing capability / nav block surfaces as an error event

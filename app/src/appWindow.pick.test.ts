@@ -3,7 +3,7 @@
 // apart and a failure produced no user-visible reaction at all. classifyPickResult is the pure
 // core of that decision, so the distinction is testable without Tauri or a real dialog.
 import { describe, expect, it } from "bun:test";
-import { classifyPickResult } from "./appWindow";
+import { classifyPickResult } from "./pickResult";
 
 describe("classifyPickResult", () => {
   it("reports a chosen path", () => {
