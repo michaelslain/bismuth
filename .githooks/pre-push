@@ -15,5 +15,20 @@ if [ "$BISMUTH_SKIP_GATE" = "1" ]; then
   exit 0
 fi
 
+# A DELETE-ONLY push has no code to test. Git feeds this hook one line per ref update on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# and a deletion is the all-zero local sha. Deleting a merged branch adds no commits, so running
+# the full suite to do it is pure latency — and worse, a flake can then BLOCK a deletion that
+# could not possibly break anything, which is exactly how this was found.
+#
+# Only skip when EVERY update is a deletion: a mixed push (drop one branch, advance another) still
+# carries commits and must be tested. An empty or absent stdin (someone running the hook by hand)
+# falls through to the full suite — the safe direction.
+refs=$(cat)
+if [ -n "$refs" ] && ! printf '%s\n' "$refs" | awk '$2 !~ /^0+$/ { real = 1 } END { exit !real }'; then
+  printf '\033[2m[pre-push] delete-only push — no new commits to test\033[0m\n'
+  exit 0
+fi
+
 printf '\033[2m[pre-push] running the FULL test suite (slow suites included)…\033[0m\n'
 bun test

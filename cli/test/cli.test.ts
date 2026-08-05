@@ -1,9 +1,38 @@
-import { test, expect, beforeEach, afterEach, mock } from "bun:test";
+import { test as bunTest, expect, beforeEach, afterEach, mock } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeSampleVault, makeVault } from "../../core/test/helpers";
 import { resolveCore } from "../src/commands/app";
+
+/**
+ * Every test in this file drives the CLI the way a user does — `bun run cli/src/index.ts …` in a
+ * REAL subprocess — which is the whole point: it proves the dispatcher, arg parsing and exit codes
+ * work end to end, not just that a function returns. The cost is that a cold Bun start is
+ * ~0.4-0.65s on an idle machine BEFORE the command does any work, and this file spawns 53 of them.
+ * Several tests spawn two; `checkpoint diff` spawns five. That is ~1-3s of pure startup racing
+ * Bun's 5s default timeout.
+ *
+ * On an idle machine it passes. Under the full pre-push suite it does not: a spawn-heavy test
+ * fails on the CLOCK while the behaviour it asserts is perfectly fine. Worse, it does not fail
+ * legibly — Bun kills the subprocess mid-read, so the reported error is a bare
+ * `SyntaxError: JSON Parse error: Unexpected EOF` from the truncated stdout, which reads like a
+ * CLI bug and sends you looking in the wrong place. That is what the one "flaky" CLI failure was.
+ *
+ * Seven tests here already carry a hand-written 20-60s timeout, which is the same diagnosis
+ * reached one test at a time; this makes it the file's default instead, so the next spawn-heavy
+ * test is not written straight back into the trap. An explicit third argument still wins — the
+ * calendar test's 60s is longer than this floor and must stay that way.
+ *
+ * This budgets for the spawns, not for the work. A command that genuinely hangs still fails, just
+ * later.
+ */
+const SPAWN_TIMEOUT_MS = 30_000;
+const test = (
+  name: string,
+  fn: Parameters<typeof bunTest>[1],
+  opts: Parameters<typeof bunTest>[2] = SPAWN_TIMEOUT_MS,
+) => bunTest(name, fn, opts);
 
 test("`bismuth graph --vault <dir>` prints graph JSON with the vault nodes", async () => {
   const { vault } = await makeSampleVault();
