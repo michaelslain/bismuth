@@ -134,9 +134,14 @@ export async function openAppWindow(url: string, title = "Bismuth"): Promise<boo
   // Stamp a fresh per-window id so the new window persists its tabs independently. Without
   // it every window shares the one origin-wide localStorage tab blob and they mirror/clobber
   // each other (see windowId.ts). Only added if the URL doesn't already carry a `?w=`.
-  url = withWindowId(url, crypto.randomUUID());
+  url = withWindowId(url, crypto.randomUUID(), globalThis.location?.href);
   if (isTauri()) {
     try {
+      // `url` is relative (pathname + search), not an absolute tauri://localhost/… URL.
+      // Tauri's WebviewWindow treats an absolute custom-protocol URL as an external
+      // navigation rather than the app's own embedded asset, which drops the query string
+      // that pins the new window to its backend (?api=) — github issue #5. Resolving a
+      // relative url against the app's own origin keeps the query string intact.
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
       const label = `bismuth-${crypto.randomUUID()}`;
       const w = new WebviewWindow(label, { url, title, width: 1200, height: 800 });

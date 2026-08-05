@@ -39,11 +39,20 @@ export function tabsStorageKey(windowId: string): string {
 }
 
 /** Ensure `url` carries a `?w=` window id, adding `id` only if one isn't already present.
- *  Pure — the (impure) id generation stays at the call site. */
-export function withWindowId(url: string, id: string): string {
-  const u = new URL(url);
-  if (!u.searchParams.has("w")) u.searchParams.set("w", id);
-  return u.toString();
+ *  Pure — the (impure) id generation stays at the call site. `url` may be relative (e.g. the
+ *  packaged app's `tauri://localhost/…` origin turned into a relative path by the caller) —
+ *  pass `base` so it can be parsed; the result then stays relative (pathname + search) rather
+ *  than resolving to an absolute URL. */
+export function withWindowId(url: string, id: string, base?: string): string {
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("w")) u.searchParams.set("w", id);
+    return u.toString();
+  } catch {
+    const u = new URL(url, base);
+    if (!u.searchParams.has("w")) u.searchParams.set("w", id);
+    return u.pathname + u.search;
+  }
 }
 
 /** This window's id, read from the live URL. "main" when there's no `?w=` (primary window). */

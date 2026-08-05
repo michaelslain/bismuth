@@ -796,7 +796,7 @@ export default function App() {
     const url = new URL(globalThis.location.href);
     url.search = "";
     url.searchParams.set("api", apiBase());
-    if (!(await openAppWindow(url.toString()))) pushToast("Couldn't open a new window");
+    if (!(await openAppWindow(url.pathname + url.search))) pushToast("Couldn't open a new window");
   };
   // Open folder: a chosen folder becomes its own brain in a new window. The backend
   // spawns a sibling server pointed at the folder (process-per-vault); we open a window
@@ -826,7 +826,7 @@ export default function App() {
       const win = new URL(globalThis.location.href);
       win.search = ""; // drop any inherited ?api= before pinning the new backend
       win.searchParams.set("api", url);
-      if (!(await openAppWindow(win.toString()))) {
+      if (!(await openAppWindow(win.pathname + win.search))) {
         pushToast("Folder server started, but the window couldn't open");
         return; // keep the modal open for a retry
       }
