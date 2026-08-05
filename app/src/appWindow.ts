@@ -4,23 +4,55 @@
 // Both "New window" and "Open folder" go through here (the URL already carries the
 // ?api= that pins the new window to its backend).
 import { isTauri } from "./nativeMenu";
-import { pushToast } from "./Toast";
 import { withWindowId } from "./windowId";
+// `pushToast` is loaded lazily (below) rather than imported statically: Toast.tsx is a real
+// Solid component, and a static import here would force it to evaluate whenever ANYTHING in
+// this module loads — including a plain unit test of the pure `classifyPickResult` below,
+// which has no business touching JSX. Every call site already only needs it under `isTauri()`.
 
 /**
- * Native OS folder picker (Tauri only). Returns the chosen absolute path, or null if
- * the user cancelled / we're not in Tauri (the browser has no picker that yields a
- * server-accessible path — callers fall back to the typed-path modal there).
+ * Outcome of a native picker. Deliberately three-valued: a *cancel* is normal and silent,
+ * an *error* must be surfaced to the user. Collapsing the two into `null` is what made
+ * "Open folder…" fail invisibly (github issue #6) — a packaged app has no visible console.
  */
-export async function pickFolder(): Promise<string | null> {
-  if (!isTauri()) return null;
+export type PickResult =
+  | { status: "picked"; path: string }
+  | { status: "cancelled" }
+  | { status: "error"; message: string };
+
+/**
+ * Pure core of the picker's outcome decision, so the cancel-vs-error distinction is testable
+ * without Tauri. `unavailable` means we are not under Tauri at all (browser) — callers there
+ * fall back to their own flow, so it reads as a cancel, not an error.
+ */
+export function classifyPickResult(r: {
+  value?: unknown;
+  thrown?: unknown;
+  unavailable?: boolean;
+}): PickResult {
+  if (r.unavailable) return { status: "cancelled" };
+  if (r.thrown !== undefined) {
+    const message = r.thrown instanceof Error ? r.thrown.message : String(r.thrown);
+    return { status: "error", message };
+  }
+  return typeof r.value === "string" ? { status: "picked", path: r.value } : { status: "cancelled" };
+}
+
+/**
+ * Native OS folder picker (Tauri only). Returns a three-valued result so callers can tell a
+ * user cancel (silent) from a dialog failure (must be surfaced) — see PickResult. In the
+ * browser this reports `cancelled`: there is no picker that yields a server-accessible path,
+ * and callers fall back to the typed-path modal.
+ */
+export async function pickFolder(): Promise<PickResult> {
+  if (!isTauri()) return classifyPickResult({ unavailable: true });
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const res = await open({ directory: true, multiple: false, title: "Open folder" });
-    return typeof res === "string" ? res : null;
+    return classifyPickResult({ value: res });
   } catch (e) {
     console.error("folder picker failed", e);
-    return null;
+    return classifyPickResult({ thrown: e });
   }
 }
 
@@ -80,6 +112,7 @@ export async function openExternalUrl(url: string): Promise<void> {
       return;
     } catch (e) {
       console.error("openUrl failed", e);
+      const { pushToast } = await import("./Toast");
       pushToast("Couldn't open link — see console");
       return;
     }
@@ -132,6 +165,7 @@ export async function openAppWindow(url: string, title = "Bismuth"): Promise<boo
   if (isTauri()) {
     try {
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+      const { pushToast } = await import("./Toast");
       const label = `bismuth-${crypto.randomUUID()}`;
       const w = new WebviewWindow(label, { url, title, width: 1200, height: 800 });
       // Creation is async; a missing capability / nav block surfaces as an error event

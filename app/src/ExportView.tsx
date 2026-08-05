@@ -251,8 +251,13 @@ export function ExportView(props: { path: string }) {
       pushToast("Choosing a folder needs the desktop app — browser exports go to Downloads");
       return;
     }
-    const folder = await pickFolder();
-    if (!folder) return;
+    const picked = await pickFolder();
+    if (picked.status === "error") {
+      pushToast(`Couldn't open the folder picker: ${picked.message}`);
+      return;
+    }
+    if (picked.status !== "picked") return;
+    const folder = picked.path;
     setDestFolder(folder);
     saveLs(DEST_KEY, folder);
   };
