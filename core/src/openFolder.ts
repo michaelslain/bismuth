@@ -105,7 +105,11 @@ async function defaultProbe(url: string): Promise<boolean> {
 
 /**
  * Spawn a core server for `folder` on a free port and resolve once it answers
- * /version. Rejects (and kills the child) if it never comes up within `waitMs`.
+ * /version. A child that EXITS before becoming ready is retried on a fresh port
+ * (up to `opts.attempts`) — that is the signature of a lost port-collision race,
+ * not a real startup failure. A child that stays alive but never answers is a
+ * genuine startup problem: it is killed and rejected immediately, with no retry,
+ * once `waitMs` elapses.
  */
 export async function spawnVaultBackend(opts: SpawnOptions): Promise<SpawnedBackend> {
   const vault = validateVaultFolder(opts.folder);
