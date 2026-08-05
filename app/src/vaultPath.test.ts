@@ -19,7 +19,7 @@ describe("vaultBasename", () => {
     expect(vaultBasename("/Notes")).toBe("Notes");
   });
 
-  it("falls back to the input instead of rendering blank for an empty string", () => {
+  it("returns an empty string unchanged for an empty input (caller guards against blank rendering)", () => {
     expect(vaultBasename("")).toBe("");
   });
 

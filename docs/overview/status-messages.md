@@ -39,8 +39,12 @@ Both are driven by the same underlying connection state, they just surface it in
 the status bar is the persistent indicator, the toast is the one-time nudge with an action
 attached.
 
-**What happened:** the SSE stream dropped *and* the `/version` poll also failed, so the window
-currently cannot reach the backend at all.
+**What happened:** the indicator means the window does not currently have positive confirmation
+the backend is reachable via either signal — not strictly that both have failed at once. That
+covers a genuine outage where the SSE stream dropped *and* the `/version` poll is also failing,
+but also two milder cases that flip the same indicator: a single SSE-only error by itself (the
+label can appear for up to ~1 second, until the very next fast poll confirms the backend is fine
+again), and the brief `"reconnecting"` state while a manual **Retry now** attempt is in flight.
 
 **What Bismuth does about it:** switches the poll from every 5 seconds to every 1 second and
 keeps retrying the stream in the background. When either succeeds, both the status-bar label and
@@ -67,6 +71,8 @@ flash on every launch would be noise, not information — see the comment above
 | `Open folder failed: <reason>` | A folder was chosen, but no backend could be started for it. | Check the folder still exists and is readable, then retry — the prompt stays open for another attempt. |
 | `Folder server started, but the window couldn't open` | The backend for that folder is running, but the OS refused to open a new window for it. | Retry; if it repeats, relaunch Bismuth. |
 | `Couldn't open a new window` | The OS refused to open a new window (used by "New window", which reopens your current vault in another window). | Relaunch Bismuth. |
+| `Copied vault path` | Clicking the vault name in the status bar copied the vault's full filesystem path to your clipboard (`app/src/App.tsx:189`). | None — the path is on your clipboard. |
+| `Couldn't copy vault path` | The clipboard write failed after clicking the vault name (e.g. clipboard permissions, or an insecure context — `app/src/App.tsx:190`). | Try clicking again, or read the path from the tooltip shown on hover. |
 
 ## One folder, one backend, one window
 
@@ -76,8 +82,11 @@ gets its own backend process on its own port, and its own window pinned to that 
 `?api=<url>`. So two open folders are two windows that cannot interfere with each other's
 caches, watchers, or tabs.
 
-The vault's folder name (not the full path) is shown at the left of the status bar at the bottom
-of the window, next to the connection indicator described above.
+The vault's folder name is shown at the left of the status bar at the bottom of the window, next
+to the connection indicator described above. The full path is not shown inline, but it is one
+hover away: point at the folder name for a `title` tooltip with the full path, or click it to
+copy the full path to your clipboard (`app/src/App.tsx:184-191`) — see the `Copied vault path` /
+`Couldn't copy vault path` toasts in the table above.
 
 ---
 
