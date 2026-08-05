@@ -6,21 +6,27 @@
 import { isTauri } from "./nativeMenu";
 import { pushToast } from "./Toast";
 import { withWindowId } from "./windowId";
+// PickResult/classifyPickResult live in their own module (pickResult.ts) — it has zero
+// `.tsx` imports, so a unit test of the pure classifier never has to load a Solid component.
+// Re-exported here so existing callers can keep importing them from "./appWindow".
+import { classifyPickResult, type PickResult } from "./pickResult";
+export { classifyPickResult, type PickResult };
 
 /**
- * Native OS folder picker (Tauri only). Returns the chosen absolute path, or null if
- * the user cancelled / we're not in Tauri (the browser has no picker that yields a
- * server-accessible path — callers fall back to the typed-path modal there).
+ * Native OS folder picker (Tauri only). Returns a three-valued result so callers can tell a
+ * user cancel (silent) from a dialog failure (must be surfaced) — see PickResult. In the
+ * browser this reports `cancelled`: there is no picker that yields a server-accessible path,
+ * and callers fall back to the typed-path modal.
  */
-export async function pickFolder(): Promise<string | null> {
-  if (!isTauri()) return null;
+export async function pickFolder(): Promise<PickResult> {
+  if (!isTauri()) return classifyPickResult({ unavailable: true });
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const res = await open({ directory: true, multiple: false, title: "Open folder" });
-    return typeof res === "string" ? res : null;
+    return classifyPickResult({ value: res });
   } catch (e) {
     console.error("folder picker failed", e);
-    return null;
+    return classifyPickResult({ thrown: e });
   }
 }
 

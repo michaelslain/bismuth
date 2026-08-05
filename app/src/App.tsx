@@ -789,7 +789,13 @@ export default function App() {
     // a server-accessible path there).
     if (isTauri()) {
       const picked = await pickFolder();
-      if (picked) await doOpenFolder(picked);
+      // A cancel is silent; a FAILED picker must say so. Treating the two alike is what made
+      // this command a silent no-op in a packaged build (github issue #6).
+      if (picked.status === "error") {
+        pushToast(`Couldn't open the folder picker: ${picked.message}`);
+        return;
+      }
+      if (picked.status === "picked") await doOpenFolder(picked.path);
       return;
     }
     setFolderPromptOpen(true);
