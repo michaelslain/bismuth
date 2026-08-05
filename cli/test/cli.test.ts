@@ -1808,3 +1808,389 @@ for (const c of calendarArgValidationCases) {
     expect(result.err).toContain(c.expect);
   });
 }
+
+// --- `card decks` / `card all` / `card due` / `card note` (commands/card.ts) — real reads --------
+// `card review` (the settings.srs wiring) is already covered above. collectDecks/collectCards/
+// dueCards/noteCards (core/src/srs/cards.ts) take no config the CLI could drop — compared their
+// exported signatures against every call site in card.ts and each is a plain passthrough.
+
+test("`card all`/`card decks`/`card due --deck`/`card note` read real flashcards parsed from tagged notes, skipping untagged ones", async () => {
+  const vault = makeVault({
+    "Deck.md": "---\ntags: [flashcards/Geo]\n---\n\nQ1::A1\n\nQ2::A2\n",
+    "Other.md": "---\ntags: [flashcards]\n---\n\nQ3::A3\n",
+    "NotACard.md": "# just a note, no flashcards tag\n",
+  });
+
+  const all = await runCli(vault, "card", "all");
+  expect(all.code).toBe(0);
+  expect(all.json).toHaveLength(3); // NotACard.md contributes nothing
+  expect(all.json.map((c: any) => c.deck).sort()).toEqual(["", "Geo", "Geo"]);
+
+  const decks = await runCli(vault, "card", "decks");
+  expect(decks.code).toBe(0);
+  expect(decks.json).toEqual([
+    { name: "", total: 1, due: 1 },
+    { name: "Geo", total: 2, due: 2 },
+  ]);
+
+  const due = await runCli(vault, "card", "due", "--deck", "Geo");
+  expect(due.code).toBe(0);
+  expect(due.json.map((c: any) => c.question)).toEqual(["Q1", "Q2"]); // filtered to the Geo deck only
+
+  const note = await runCli(vault, "card", "note", "Deck.md");
+  expect(note.code).toBe(0);
+  expect(note.json.map((c: any) => c.question)).toEqual(["Q1", "Q2"]);
+});
+
+test("`card note` (missing path) fails with a usage message", async () => {
+  const vault = makeVault({});
+  const result = await runCli(vault, "card", "note");
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("usage: card note <path>");
+});
+
+// --- `checkpoint advance` / `checkpoint ref` (checkpoint.ts) — real git refs, throwaway repos ----
+// `checkpoint diff` (+ the visibility gate over it) is already covered above; these are the other
+// two commands in the group. Every repo here is a fresh tmpdir from makeVault(), never this repo —
+// per the task's hard constraint, `checkpoint` must never touch this repo's own git refs.
+
+/** Spawn `bismuth <args>` with NO forced --vault (checkpoint uses --dir, not --vault). Optional
+ *  `env` override for the missing-BISMUTH_VAULT arg-validation case below. */
+async function spawnCli(args: string[], env: Record<string, string | undefined> = process.env): Promise<{ code: number | null; out: string; err: string }> {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", ...args], { stdout: "pipe", stderr: "pipe", env });
+  const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  return { code, out, err };
+}
+
+test("`checkpoint ref` reports sha:null before any checkpoint (auto-inits the repo, like `checkpoint diff` does); `checkpoint advance` commits pending changes and moves the ref — verified via a FRESH `checkpoint ref` read and the git log", async () => {
+  const repo = makeVault({ "note.md": "hello\n" }, "bismuth-checkpoint-advance-");
+
+  const before = await spawnCli(["checkpoint", "ref", "cron-x", "--dir", repo]);
+  expect(before.code).toBe(0);
+  expect(JSON.parse(before.out)).toEqual({ ref: "cron-x", sha: null });
+
+  const advance = await spawnCli(["checkpoint", "advance", "cron-x", "--dir", repo]);
+  expect(advance.code).toBe(0);
+  const advanceJson = JSON.parse(advance.out);
+  expect(advanceJson.ref).toBe("cron-x");
+  expect(advanceJson.head).toBeTruthy();
+
+  const after = await spawnCli(["checkpoint", "ref", "cron-x", "--dir", repo]);
+  expect(after.code).toBe(0);
+  expect(JSON.parse(after.out).sha).toBe(advanceJson.head); // the ref really moved, verified via a FRESH read
+
+  const log = await Bun.spawn(["git", "-C", repo, "log", "--oneline"], { stdout: "pipe" });
+  const commits = (await new Response(log.stdout).text()).trim().split("\n").filter(Boolean);
+  expect(commits).toHaveLength(1); // note.md really got committed by advance's default commit-before-op behavior
+}, 20_000);
+
+test("`checkpoint advance --no-commit` moves the ref to the CURRENT head without committing pending changes", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const repo = makeVault({ "note.md": "hello\n" }, "bismuth-checkpoint-nocommit-");
+
+  // Establish a first real commit via a normal advance, then dirty the tree again.
+  const first = await spawnCli(["checkpoint", "advance", "x", "--dir", repo]);
+  expect(first.code).toBe(0);
+  const firstHead = JSON.parse(first.out).head as string;
+  writeFileSync(join(repo, "note.md"), "dirty, uncommitted\n");
+
+  const result = await spawnCli(["checkpoint", "advance", "x", "--dir", repo, "--no-commit"]);
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.out).head).toBe(firstHead); // HEAD never moved — nothing was committed
+
+  const status = await Bun.spawn(["git", "-C", repo, "status", "--porcelain"], { stdout: "pipe" });
+  expect((await new Response(status.stdout).text()).trim()).not.toBe(""); // the dirty change is still uncommitted
+});
+
+test("`checkpoint advance`/`checkpoint ref` (no ref) fail with a usage message naming the command; (no --dir/--vault, BISMUTH_VAULT unset) fails naming the missing dir", async () => {
+  const repo = makeVault({}, "bismuth-checkpoint-argval-");
+
+  const noRefAdvance = await spawnCli(["checkpoint", "advance", "--dir", repo]);
+  expect(noRefAdvance.code).toBe(1);
+  expect(noRefAdvance.err).toContain("usage: checkpoint advance");
+
+  const noRefRef = await spawnCli(["checkpoint", "ref", "--dir", repo]);
+  expect(noRefRef.code).toBe(1);
+  expect(noRefRef.err).toContain("usage: checkpoint ref");
+
+  const noDir = await spawnCli(["checkpoint", "advance", "some-ref"], { ...process.env, BISMUTH_VAULT: undefined });
+  expect(noDir.code).toBe(1);
+  expect(noDir.err).toContain("no dir");
+});
+
+// --- `page resolve` / `page mark-failed` (page.ts) — dispatch + real sidecar effect --------------
+// `page create`/`page list` are already covered above. These fill the mutating paths: a
+// pure-dismiss action, an approve action (checked via the trigger file the daemon's
+// processPageTriggers polls), an unknown action, and the mark-failed escape hatch — including that
+// it never clobbers an already-settled page (per daemonPages.ts's own compare-and-swap doc).
+
+test("`page resolve <path> <actionId>` on a pure-dismiss action (no prompt) settles the page to dismissed and writes NO trigger file", async () => {
+  const { vault } = await makeSampleVault();
+  const create = await runCli(vault, "page", "create", "dismiss-me", "--actions", JSON.stringify([{ id: "ok", label: "OK" }]));
+  expect(create.code).toBe(0);
+  const path = create.json.path as string;
+
+  const resolve = await runCli(vault, "page", "resolve", path, "ok");
+  expect(resolve.code).toBe(0);
+  expect(resolve.json).toEqual({ status: "dismissed", alreadyResolved: false });
+
+  const list = await runCli(vault, "page", "list");
+  expect(list.json.find((p: any) => p.slug === "dismiss-me").status).toBe("dismissed");
+
+  const { existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  expect(existsSync(join(vault, ".daemon", "pages", ".triggers", "dismiss-me"))).toBe(false);
+});
+
+test("`page resolve <path> <actionId>` on an approve action (has a prompt) sets status:working and drops a trigger file for the daemon's processPageTriggers to poll", async () => {
+  const { vault } = await makeSampleVault();
+  const create = await runCli(
+    vault, "page", "create", "approve-me",
+    "--actions", JSON.stringify([{ id: "go", label: "Go", prompt: "do the thing" }]),
+  );
+  const path = create.json.path as string;
+
+  const resolve = await runCli(vault, "page", "resolve", path, "go");
+  expect(resolve.code).toBe(0);
+  expect(resolve.json).toEqual({ status: "working", alreadyResolved: false });
+
+  const list = await runCli(vault, "page", "list");
+  expect(list.json.find((p: any) => p.slug === "approve-me").status).toBe("working");
+
+  const { existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  expect(existsSync(join(vault, ".daemon", "pages", ".triggers", "approve-me"))).toBe(true);
+});
+
+test("`page resolve <path> <bogus-action>` fails naming the action; the page's state is left untouched", async () => {
+  const { vault } = await makeSampleVault();
+  const create = await runCli(vault, "page", "create", "unknown-action", "--actions", JSON.stringify([{ id: "ok", label: "OK" }]));
+  const path = create.json.path as string;
+
+  const result = await runCli(vault, "page", "resolve", path, "does-not-exist");
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("does-not-exist");
+
+  const list = await runCli(vault, "page", "list");
+  expect(list.json.find((p: any) => p.slug === "unknown-action").status).toBe("pending"); // untouched
+});
+
+test("`page resolve`/`page mark-failed` (missing positionals) fail with a usage message", async () => {
+  const { vault } = await makeSampleVault();
+  const noPath = await runCli(vault, "page", "resolve");
+  expect(noPath.code).toBe(1);
+  expect(noPath.err).toContain("usage: bismuth page resolve");
+
+  const noAction = await runCli(vault, "page", "resolve", ".daemon/pages/x.md");
+  expect(noAction.code).toBe(1);
+  expect(noAction.err).toContain("usage: bismuth page resolve");
+
+  const noMarkFailedPath = await runCli(vault, "page", "mark-failed");
+  expect(noMarkFailedPath.code).toBe(1);
+  expect(noMarkFailedPath.err).toContain("usage: bismuth page mark-failed");
+});
+
+test("`page mark-failed <path>` forces a stuck 'working' page to failed (verified via `page list`), but never re-marks an already-settled (dismissed) page", async () => {
+  const { vault } = await makeSampleVault();
+  const stuck = await runCli(vault, "page", "create", "stuck", "--actions", JSON.stringify([{ id: "go", label: "Go", prompt: "do it" }]));
+  const stuckPath = stuck.json.path as string;
+  expect((await runCli(vault, "page", "resolve", stuckPath, "go")).json.status).toBe("working");
+
+  const markFailed = await runCli(vault, "page", "mark-failed", stuckPath);
+  expect(markFailed.code).toBe(0);
+  expect(markFailed.json).toEqual({ ok: true });
+
+  const list1 = await runCli(vault, "page", "list");
+  expect(list1.json.find((p: any) => p.slug === "stuck").status).toBe("failed");
+
+  // Compare-and-swap: an already-dismissed page must never be relabeled "failed" by a late click.
+  const dismissed = await runCli(vault, "page", "create", "already-dismissed", "--actions", JSON.stringify([{ id: "ok", label: "OK" }]));
+  const dismissedPath = dismissed.json.path as string;
+  await runCli(vault, "page", "resolve", dismissedPath, "ok"); // -> dismissed
+  const markFailed2 = await runCli(vault, "page", "mark-failed", dismissedPath);
+  expect(markFailed2.code).toBe(0);
+  const list2 = await runCli(vault, "page", "list");
+  expect(list2.json.find((p: any) => p.slug === "already-dismissed").status).toBe("dismissed"); // NOT overwritten
+});
+
+// --- `prop set` / `prop delete` (prop.ts) — real frontmatter mutation, read back from disk -------
+
+test("`prop set <file> <key> <value>` JSON-parses the value when possible, else keeps it a raw string — verified by reading the note back from disk", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const { parseFrontmatter } = await import("../../core/src/frontmatter");
+  const vault = makeVault({ "Note.md": "---\ntitle: Before\n---\nbody\n" });
+
+  expect((await runCli(vault, "prop", "set", "Note.md", "priority", "3")).code).toBe(0);
+  expect((await runCli(vault, "prop", "set", "Note.md", "done", "true")).code).toBe(0);
+  expect((await runCli(vault, "prop", "set", "Note.md", "status", "in progress")).code).toBe(0);
+
+  const { data } = parseFrontmatter(await readNote(vault, "Note.md"));
+  expect(data.priority).toBe(3); // valid JSON -> number
+  expect(data.done).toBe(true); // valid JSON -> boolean
+  expect(data.status).toBe("in progress"); // not valid JSON -> raw string
+  expect(data.title).toBe("Before"); // untouched by the other sets
+});
+
+test("`prop delete <file> <key>` removes exactly that key, preserving the rest of the frontmatter", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const { parseFrontmatter } = await import("../../core/src/frontmatter");
+  const vault = makeVault({ "Note.md": "---\ntitle: Keep\npriority: 3\n---\nbody\n" });
+
+  const result = await runCli(vault, "prop", "delete", "Note.md", "priority");
+  expect(result.code).toBe(0);
+
+  const { data } = parseFrontmatter(await readNote(vault, "Note.md"));
+  expect(data.priority).toBeUndefined();
+  expect(data.title).toBe("Keep");
+});
+
+test("`prop set`/`prop delete` (missing required args) fail with a usage message; the file is left untouched", async () => {
+  const { readNote } = await import("../../core/src/files");
+  const vault = makeVault({ "Note.md": "---\ntitle: X\n---\nbody\n" });
+  const before = await readNote(vault, "Note.md");
+
+  const noValue = await runCli(vault, "prop", "set", "Note.md", "key");
+  expect(noValue.code).toBe(1);
+  expect(noValue.err).toContain("usage: prop set");
+
+  const noKey = await runCli(vault, "prop", "delete", "Note.md");
+  expect(noKey.code).toBe(1);
+  expect(noKey.err).toContain("usage: prop delete");
+
+  expect(await readNote(vault, "Note.md")).toBe(before);
+});
+
+// --- `tree` (file.ts) — real vault file-tree JSON -------------------------------------------------
+//
+// WIRING GAP FOUND, NOT FIXED (per the task brief — reported here, left alone): core/src/server.ts
+// builds its tree cache via listTree(cfg.vault, { daemonEnabled: appConfig.daemon?.enabled,
+// daemonName: daemonIdentityName(cfg.vault) }) — core/src/files.ts's listTree only ever shows the
+// `.daemon` folder when daemonEnabled is passed true. cli/src/commands/file.ts's `tree` command
+// calls listTree(vault) with NO second argument at all, so `bismuth tree` can NEVER surface
+// `.daemon` (crons/processes/pages/memory), even on a vault with settings.daemon.enabled: true —
+// exactly the "CLI silently drops a config core supports" shape named in the task brief. Not
+// fixed here (a fix is a separate reviewed change). This test only exercises the unaffected
+// ordinary-file path, since asserting on `.daemon` visibility would just be asserting the bug.
+
+test("`bismuth tree` lists the vault's real file tree, including nested folders and file/dir kinds", async () => {
+  const vault = makeVault({
+    "Root.md": "# root\n",
+    "Folder/Child.md": "# child\n",
+    "Folder/Sub/Deep.md": "# deep\n",
+  });
+  const result = await runCli(vault, "tree");
+  expect(result.code).toBe(0);
+  const byPath = Object.fromEntries(result.json.map((e: any) => [e.path, e.kind]));
+  expect(byPath["Root.md"]).toBe("file");
+  expect(byPath["Folder"]).toBe("dir");
+  expect(byPath["Folder/Child.md"]).toBe("file");
+  expect(byPath["Folder/Sub"]).toBe("dir");
+  expect(byPath["Folder/Sub/Deep.md"]).toBe("file");
+});
+
+test("`bismuth tree` (no vault, BISMUTH_VAULT unset) fails cleanly naming the missing vault", async () => {
+  const result = await spawnCli(["tree"], { ...process.env, BISMUTH_VAULT: undefined });
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("no vault");
+});
+
+// --- `backup` (serve.ts) — commits a real git snapshot of the vault -------------------------------
+
+test("`backup` commits a real git snapshot of the vault; a second call with nothing changed reports 'nothing to commit'", async () => {
+  const vault = makeVault({ "Note.md": "hello\n" });
+
+  const first = await runCli(vault, "backup");
+  expect(first.code).toBe(0);
+
+  const log = await Bun.spawn(["git", "-C", vault, "log", "--oneline"], { stdout: "pipe" });
+  const commits = (await new Response(log.stdout).text()).trim().split("\n").filter(Boolean);
+  expect(commits).toHaveLength(1); // the note really got committed
+
+  const second = await runCli(vault, "backup");
+  expect(second.code).toBe(0);
+});
+
+test("`backup` (no vault, BISMUTH_VAULT unset) fails cleanly naming the missing vault", async () => {
+  const result = await spawnCli(["backup"], { ...process.env, BISMUTH_VAULT: undefined });
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("no vault");
+});
+
+// --- `backends` (backends.ts) — read-only machine probe, safe to run for real -------------------
+// Per the module's own doc: never runs an agent turn, authenticates, spends money, starts a
+// daemon, or writes config — it only resolves binaries already on PATH and asks each for its
+// version (bounded per-probe timeout). Safe to spawn for real, unlike install/uninstall below.
+
+test("`bismuth backends --json` reports a real per-backend row for every entry in the catalog", async () => {
+  const result = await spawnCli(["backends", "--json"]);
+  expect(result.code).toBe(0);
+  const reports = JSON.parse(result.out);
+  expect(Array.isArray(reports)).toBe(true);
+  expect(reports.length).toBeGreaterThan(0);
+  for (const r of reports) {
+    expect(typeof r.id).toBe("string");
+    expect(typeof r.installed).toBe("boolean");
+    expect(r.surfaces).toBeTruthy();
+  }
+}, 30_000);
+
+test("`bismuth backends` (no --json) prints a human-readable table by default, not raw JSON", async () => {
+  const result = await spawnCli(["backends"]);
+  expect(result.code).toBe(0);
+  expect(() => JSON.parse(result.out)).toThrow(); // the default path is formatTable(), not out()
+  expect(result.out.length).toBeGreaterThan(0);
+}, 30_000);
+
+test("`bismuth backends --json --installed` only includes installed backends", async () => {
+  const result = await spawnCli(["backends", "--json", "--installed"]);
+  expect(result.code).toBe(0);
+  const reports = JSON.parse(result.out);
+  expect(reports.every((r: any) => r.installed === true)).toBe(true);
+}, 30_000);
+
+// --- `install` / `uninstall` (install.ts) — SAFETY-CONSTRAINED per the task brief ----------------
+//
+// Both write MACHINE-WIDE state with NO env-var seam to redirect them into a temp dir the way
+// every other command group in this file is sandboxed: core/src/bismuthInstall.ts hardcodes
+// BISMUTH_HOME = join(homedir(), ".bismuth") and CLAUDE_SKILLS_DIR = join(homedir(), ".claude",
+// "skills") at module scope. A real `install` (with --src, or --mcp) writes there and calls the
+// real `claude mcp add`; `uninstall` unconditionally rmSync()s ~/.bismuth. Per the task's hard
+// constraint, neither may be run for real against this developer's machine — skipped.
+//
+// Mocking core/src/bismuthInstall.ts (the pattern used above for `daemon stop`/`daemon restart`
+// via daemon/src/lib/platform.ts) is ALSO unsafe here, unlike that case: core/test/
+// bismuthInstall.test.ts calls the SAME exported ensureBismuthInstalled/getBismuthStatus/
+// uninstallBismuth functions directly (injecting a fake `io` argument, not module-mocking).
+// mock.module swaps a module out process-wide for the rest of a combined `bun test` run (see the
+// comment above the daemon mock), so mocking it here would silently replace those functions for
+// that OTHER file's real-function assertions too. So this covers exactly what's provably safe:
+// (1) dispatcher registration — index.ts's printHelp() runs before any command's own code, so
+// spawning `--help` never touches disk; (2) the two invocations that are read-only BY INSPECTION
+// of ensureBismuthInstalled's own source (core/src/bismuthInstall.ts:419-436): with no --src, it
+// returns { action: "skipped-no-src" } immediately — before any of InstallIO's write methods
+// (installFiles/linkCli/writeMarker/…) are ever called; --status takes the identical
+// getBismuthStatus() read-only path. `--mcp`, a real `--src`, `--dry-run` WITH a real --src (which
+// would still call getBismuthStatus() on this machine but is riskier to reason about than the
+// no-src case), and `uninstall` are NOT exercised here — they write real machine state with
+// nothing to sandbox into.
+
+test("`bismuth --help` proves install/uninstall/backends are really registered in the dispatcher (not just exported from commands/*.ts)", async () => {
+  const result = await spawnCli(["--help"]);
+  expect(result.code).toBe(0);
+  expect(result.out).toContain("Install the bismuth CLI + MCP machine-wide");
+  expect(result.out).toContain("Remove the machine-wide bismuth CLI symlink");
+  expect(result.out).toContain("List agent backends");
+});
+
+test("`bismuth install --status` and `bismuth install --dry-run` (no --src) are read-only no-ops by construction — safe to run for real, never writes to ~/.bismuth", async () => {
+  const env = { ...process.env, BISMUTH_INSTALL_SRC: undefined };
+
+  const status = await spawnCli(["install", "--status"], env);
+  expect(status.code).toBe(0);
+  expect(typeof JSON.parse(status.out).installed).toBe("boolean"); // BismuthStatus shape, real read
+
+  const dryRun = await spawnCli(["install", "--dry-run"], env);
+  expect(dryRun.code).toBe(0);
+  expect(JSON.parse(dryRun.out).action).toBe("skipped-no-src"); // returns before any write — no --src given
+}, 20_000);
