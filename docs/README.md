@@ -62,7 +62,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 <details><summary>Notes</summary>
 
 - A Finder window may flash open and shut **during the build** — that's just the dmg being styled, not the installer. Ignore it.
-- Prefer to do it by hand? `cd app && bun run tauri build`, then drag `src-tauri/target/release/bundle/macos/Bismuth.app` into `/Applications` (or open the dmg under `bundle/dmg/`).
+- Prefer to do it by hand? `cd app && bun run tauri build`, then open the dmg under `src-tauri/target/release/bundle/dmg/` and drag Bismuth into `/Applications`. (`bun run build:app` additionally deletes the staged `bundle/macos/Bismuth.app` afterwards, so macOS does not list a second Bismuth alongside your installed one — do the same by hand if you build this way.)
 - Full prerequisites, env vars, and dev-server details: [Install & run](overview/install.md).
 
 </details>
