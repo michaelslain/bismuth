@@ -95,8 +95,9 @@ let esClosed = false;
  * of sync with each other again (github issue #3).
  */
 function applyConnectionDecision(event: ConnectionEvent) {
+  const previousState = connectionState();
   const decision = decideConnectionState({
-    state: connectionState(),
+    state: previousState,
     event,
     everConnected,
     toastShown: connectionErrorToastId !== null,
@@ -139,8 +140,12 @@ function applyConnectionDecision(event: ConnectionEvent) {
   }
 
   // Single call site for this log line (it used to be duplicated at each of the three
-  // error-observation call sites) so the wording can't drift between them.
-  if (event === "sse-error" || event === "poll-failure") {
+  // error-observation call sites) so the wording can't drift between them. Gated on an
+  // actual transition INTO "disconnected" (previousState !== "disconnected"), not on
+  // every repeat event: poll-failure is now called unconditionally below (regression
+  // fix — see that catch handler's comment), so without this gate a sustained outage
+  // would warn once per DISCONNECTED_POLL_INTERVAL (1s) for as long as it stayed down.
+  if ((event === "sse-error" || event === "poll-failure") && previousState !== "disconnected") {
     console.warn("[sse] connection lost; switching to aggressive polling", {
       at: new Date().toISOString(),
     });
@@ -187,11 +192,17 @@ function startPolling(): void {
         attemptReconnect();
       }
     } catch {
-      // Poll failed; if we were connected, mark as disconnected
-      if (connectionState() === "connected") {
-        applyConnectionDecision("poll-failure");
-        closeEventSource(); // so attemptReconnect / the next successful poll can open a fresh one
-      }
+      // Poll failed. Always re-evaluate — decideConnectionState already dedupes
+      // correctly (toastShown short-circuits showToast once the notice is up, and the
+      // cooldown handles a flapping SSE stream), so this alone won't spam the toast.
+      // This used to be guarded on `connectionState() === "connected"`, which meant a
+      // poll-failure arriving any time after state had already left "connected" was
+      // silently dropped: once the toast was dismissed (e.g. a brief recovery) and the
+      // cooldown passed, a still-dead backend never got the notice — or its Retry-now
+      // button — back, even across minutes of continuous failure (regression found in
+      // whole-branch review; see connectionState.test.ts's matching case).
+      applyConnectionDecision("poll-failure");
+      closeEventSource(); // so attemptReconnect / the next successful poll can open a fresh one
     }
   }, currentPollInterval);
 }

@@ -268,4 +268,60 @@ describe("decideConnectionState", () => {
     });
     expect(later.showToast).toBe(true);
   });
+
+  // --- regression: poll-failure must stay reachable once already disconnected ---
+
+  it("shows the notice again for a sustained outage that begins shortly after a dismissal, even once state has already left \"connected\"", () => {
+    // serverVersion.ts's poll catch handler (~line 191) used to call
+    // applyConnectionDecision("poll-failure") only while `connectionState() ===
+    // "connected"`. That guard meant a poll-failure arriving at any point AFTER
+    // state had already left "connected" was silently dropped, so
+    // decideConnectionState was never re-evaluated again for the rest of the
+    // outage. Once the toast was dismissed (e.g. by a brief recovery) and the
+    // post-dismissal cooldown passed, a still-dead backend's toast + Retry-now
+    // button never came back — even across minutes of continuous failure
+    // (regression found in whole-branch review). The fix calls
+    // applyConnectionDecision unconditionally on every poll-failure — this
+    // test models that unconditional call site. Confirmed during TDD: adding
+    // back `if (event === "poll-failure" && state !== "connected") return;`
+    // here reproduces the bug and makes this test fail.
+    //
+    // serverVersion.ts itself can't be imported headless (it opens a real
+    // EventSource + starts a poll setInterval at module load), so this drives
+    // decideConnectionState directly through the same event sequence its call
+    // sites produce.
+    //
+    // Timeline: SSE dies at t=0 (toast shows) -> poll recovers at t=1000
+    // (toast dismissed, dismissedAt=1000) -> SSE flaps at t=1100, within the
+    // 5s cooldown (correctly suppressed, per the flapping test above) -> the
+    // backend then goes down for real; poll failures continue every 1s
+    // (DISCONNECTED_POLL_INTERVAL) for two full minutes. The notice MUST
+    // reappear once the cooldown has elapsed — that is the fix under test.
+    let state: ConnectionState = "connected";
+    let toastShown = false;
+    let dismissedAt: number | null = null;
+    let shownAgain = false;
+
+    const step = (event: "sse-error" | "poll-failure" | "poll-success", now: number) => {
+      const d = decideConnectionState({ state, event, everConnected: true, toastShown, now, dismissedAt });
+      state = d.nextState;
+      dismissedAt = d.dismissedAt;
+      if (d.showToast) {
+        toastShown = true;
+        shownAgain = true;
+      }
+      if (d.dismissToast) toastShown = false;
+    };
+
+    step("sse-error", 0);
+    step("poll-success", 1000);
+    step("sse-error", 1100);
+
+    shownAgain = false; // only the sustained-outage period below is under test
+    for (let t = 1100; t <= 1100 + 120_000; t += 1000) {
+      step("poll-failure", t);
+    }
+
+    expect(shownAgain).toBe(true);
+  });
 });
