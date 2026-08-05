@@ -33,7 +33,14 @@ cpSync(relayDir, stagedDir, {
     const b = basename(src);
     // Drop node_modules (dev-only), .mcp.json (machine-wide install instead), and the
     // stray .zsh_history artifact (the bundle is read-only, so zsh would fail to lock it).
-    return b !== "node_modules" && b !== ".mcp.json" && b !== ".zsh_history";
+    //
+    // `test` is dropped for TWO reasons. It is dead weight in a shipped .app — but more
+    // importantly it breaks test discovery: `bun test <name>` is a SUBSTRING match on the
+    // whole path, so a staged copy at app/src-tauri/resources/relay/test/ matches `relay`
+    // just as the real relay/test/ does. With the staged copy plus the two under
+    // src-tauri/target/, `bun test relay` ran 36 tests against a 16-test file — and would
+    // happily run a STALE copy of a test whose source had since changed.
+    return b !== "node_modules" && b !== ".mcp.json" && b !== ".zsh_history" && b !== "test";
   },
 });
 

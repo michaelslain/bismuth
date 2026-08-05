@@ -127,7 +127,15 @@ function main(): void {
   process.stdout.write(`\x1b[2m[gate] ${staged.length} staged file(s) → testing: ${targets.join(", ")}\x1b[0m\n`);
 
   let ok = run("typecheck (all workspaces)", "bun", ["run", "typecheck"]);
-  if (ok) ok = run(`tests (fast) — ${targets.join(", ")}`, "bun", ["test", ...targets], { BISMUTH_FAST_TESTS: "1" });
+  // Pass `cli/` not `cli`: `bun test <arg>` is a SUBSTRING match on the whole path, not a
+  // workspace selector. Bare `cli` also matches core/test/chatProviders/clineMocked.test.ts
+  // ("cli" is in "clineMocked"), so the gate silently ran 7 unrelated tests and reported a
+  // count nobody could reconcile. The trailing slash scopes it to the directory.
+  if (ok) {
+    ok = run(`tests (fast) — ${targets.join(", ")}`, "bun", ["test", ...targets.map((t) => `${t}/`)], {
+      BISMUTH_FAST_TESTS: "1",
+    });
+  }
 
   if (!ok) {
     process.stdout.write(
