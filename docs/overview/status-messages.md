@@ -63,6 +63,7 @@ flash on every launch would be noise, not information — see the comment above
 
 | Message | Meaning | What to do |
 |---|---|---|
+| `Couldn't open the folder picker: <reason>` | The native OS folder dialog itself failed to open (desktop app only) — a genuine dialog error, not you clicking Cancel. Shown both when opening a folder as a new vault and when browsing for an export destination folder. Cancelling the picker is silent by design and shows nothing at all. | Retry. If it repeats, the reason names the underlying failure — include it in a bug report. |
 | `Open folder failed: <reason>` | A folder was chosen, but no backend could be started for it. | Check the folder still exists and is readable, then retry — the prompt stays open for another attempt. |
 | `Folder server started, but the window couldn't open` | The backend for that folder is running, but the OS refused to open a new window for it. | Retry; if it repeats, relaunch Bismuth. |
 | `Couldn't open a new window` | The OS refused to open a new window (used by "New window", which reopens your current vault in another window). | Relaunch Bismuth. |
@@ -80,5 +81,6 @@ of the window, next to the connection indicator described above.
 
 ---
 
-Source: `app/src/serverVersion.ts`, `app/src/App.tsx`, `app/src/Toast.tsx`, `core/src/server.ts`,
+Source: `app/src/serverVersion.ts`, `app/src/App.tsx`, `app/src/ExportView.tsx`,
+`app/src/pickResult.ts`, `app/src/Toast.tsx`, `core/src/server.ts`,
 `core/src/schema/settingsSchema.ts`, `core/src/openFolder.ts`.
