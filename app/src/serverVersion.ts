@@ -70,6 +70,13 @@ let everConnected = false;
 // disconnect session (deduplication).
 let connectionErrorToastId: number | null = null;
 
+// When the toast was last dismissed (ms, Date.now()), or null if it never has
+// been this session. Feeds decideConnectionState's cooldown, which stops a
+// flapping SSE stream (opens, errors, opens, errors... — a real corporate
+// proxy/VPN pattern that kills long-lived streams but serves ordinary GETs
+// fine) from showing/dismissing the toast on every poll tick.
+let toastDismissedAt: number | null = null;
+
 const NORMAL_POLL_INTERVAL = 5000; // 5 seconds
 const DISCONNECTED_POLL_INTERVAL = 1000; // 1 second when disconnected
 
@@ -93,9 +100,12 @@ function applyConnectionDecision(event: ConnectionEvent) {
     event,
     everConnected,
     toastShown: connectionErrorToastId !== null,
+    now: Date.now(),
+    dismissedAt: toastDismissedAt,
   });
 
   everConnected = decision.everConnected;
+  toastDismissedAt = decision.dismissedAt;
   setConnectionState(decision.nextState);
 
   if (decision.dismissToast && connectionErrorToastId !== null) {
@@ -103,10 +113,11 @@ function applyConnectionDecision(event: ConnectionEvent) {
     connectionErrorToastId = null;
   }
 
-  // Show toast only once per disconnect session — and never during initial boot, before we've
-  // ever reached the backend (that's warmup, not a lost connection). `decideConnectionState`
-  // already encodes both rules; this just avoids pushing a second toast on top of one already
-  // showing.
+  // Show toast only once per disconnect session, never during initial boot before we've ever
+  // reached the backend (that's warmup, not a lost connection), and never within the cooldown
+  // right after a dismissal (otherwise a flapping SSE stream re-shows it on every poll tick).
+  // decideConnectionState already encodes all three rules; this just avoids pushing a second
+  // toast on top of one already showing.
   if (decision.showToast && connectionErrorToastId === null) {
     connectionErrorToastId = pushToast(
       "Connection lost. Retrying...",
@@ -125,6 +136,14 @@ function applyConnectionDecision(event: ConnectionEvent) {
   if (currentPollInterval !== desiredInterval) {
     currentPollInterval = desiredInterval;
     startPolling(); // restart the timer so the new cadence actually takes effect
+  }
+
+  // Single call site for this log line (it used to be duplicated at each of the three
+  // error-observation call sites) so the wording can't drift between them.
+  if (event === "sse-error" || event === "poll-failure") {
+    console.warn("[sse] connection lost; switching to aggressive polling", {
+      at: new Date().toISOString(),
+    });
   }
 
   return decision;
@@ -172,9 +191,6 @@ function startPolling(): void {
       if (connectionState() === "connected") {
         applyConnectionDecision("poll-failure");
         closeEventSource(); // so attemptReconnect / the next successful poll can open a fresh one
-        console.warn("[sse] connection lost; switching to aggressive polling", {
-          at: new Date().toISOString(),
-        });
       }
     }
   }, currentPollInterval);
@@ -217,16 +233,10 @@ function createEventSource(): void {
       recordSseError(e);
       applyConnectionDecision("sse-error");
       closeEventSource();
-      console.warn("[sse] connection lost; switching to aggressive polling", {
-        at: new Date().toISOString(),
-      });
     };
   } catch {
     // EventSource constructor itself failed; fall back to poll
     applyConnectionDecision("sse-error");
-    console.warn("[sse] connection lost; switching to aggressive polling", {
-      at: new Date().toISOString(),
-    });
   }
 }
 
