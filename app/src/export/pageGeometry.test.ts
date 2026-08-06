@@ -11,7 +11,9 @@ import {
   pdfSliceMetrics,
   pageSlices,
   parseRgbColor,
+  snapDownToGrid,
 } from "./pageGeometry";
+import { RULE_PX } from "./htmlTemplate";
 
 describe("page constants", () => {
   test("US Letter portrait at 72pt/in", () => {
@@ -51,10 +53,14 @@ describe("page constants", () => {
     expect(cssPx * scale).toBeCloseTo(12, 10); // -> 12pt in the PDF
   });
 
-  test("one printable page holds exactly 9in (CONTENT_H) of content at CONTENT_W_PX", () => {
+  test("one printable page holds AT MOST 9in (CONTENT_H) of content at CONTENT_W_PX, snapped to the ruled grid", () => {
     const { pageHpx } = pdfSliceMetrics(CONTENT_W_PX);
-    // 9in @ 96dpi = 864 source px.
-    expect(pageHpx).toBe(9 * 96); // 864
+    // 9in @ 96dpi = 864 source px is the raw geometric bound. Defect 1's grid-snapping fix
+    // rounds DOWN to the nearest whole rule (RULE_PX canvas px at 1x scale, since canvasWidthPx
+    // === CONTENT_W_PX here) so a page boundary can only land on a text baseline.
+    expect(pageHpx).toBeLessThanOrEqual(9 * 96); // 864
+    expect(pageHpx % RULE_PX).toBe(0);
+    expect(pageHpx).toBeGreaterThan(0);
   });
 });
 
@@ -64,8 +70,11 @@ describe("pdfSliceMetrics", () => {
     const { scale, pageHpx } = pdfSliceMetrics(816);
     // 468pt / 816px -> content px map into the 6.5in printable width.
     expect(scale).toBeCloseTo(CONTENT_W_PT / 816, 10);
-    // One printable page holds CONTENT_H_PT worth of source px.
-    expect(pageHpx).toBe(Math.floor(CONTENT_H_PT / scale));
+    // One printable page holds AT MOST CONTENT_H_PT worth of source px — defect 1's
+    // grid-snapping fix rounds pageHpx DOWN to a whole multiple of the ruled-paper baseline,
+    // so it is strictly <= the raw (unsnapped) geometric bound, never equal in general.
+    expect(pageHpx).toBeLessThanOrEqual(Math.floor(CONTENT_H_PT / scale));
+    expect(pageHpx).toBeGreaterThan(0);
     // A page of source px scaled back up lands within the printable height (never overshoots).
     expect(pageHpx * scale).toBeLessThanOrEqual(CONTENT_H_PT + 1e-6);
   });
@@ -75,6 +84,52 @@ describe("pdfSliceMetrics", () => {
     const two = pdfSliceMetrics(1632);
     expect(two.scale).toBeCloseTo(one.scale / 2, 10);
     expect(two.pageHpx).toBeGreaterThanOrEqual(one.pageHpx * 2 - 1);
+  });
+
+  // GitHub issue #9, defect 1: at every raster scale the un-snapped page height (648pt /
+  // scale, in canvas px) divided by the 22px baseline grid landed on 39.2727... lines — never
+  // a whole number — so every page boundary cut through the middle of a text line. The fix
+  // snaps pageHpx DOWN to a whole multiple of the grid, in CANVAS px (the raster may be scaled
+  // up from CSS px by a device-pixel factor: canvasWidthPx / CONTENT_W_PX).
+  describe("pageHpx is grid-aligned at 1x/2x/3x raster scale (defect 1)", () => {
+    for (const devScale of [1, 2, 3]) {
+      test(`${devScale}x scale: pageHpx is an exact whole multiple of the rule height in canvas px`, () => {
+        const canvasWidthPx = CONTENT_W_PX * devScale;
+        const { pageHpx } = pdfSliceMetrics(canvasWidthPx);
+        const ruleCanvasPx = RULE_PX * devScale; // the 22px CSS rule scaled into canvas px
+        expect(pageHpx).toBeGreaterThan(0);
+        expect(pageHpx % ruleCanvasPx).toBe(0);
+      });
+    }
+  });
+
+  // NOTE: with today's constants (RULE_PX=22, CONTENT_W_PT=468, CONTENT_H_PT=648,
+  // CONTENT_W_PX=624) the ratio rawPageHpx/ruleCanvasPx is scale-invariant — it always works
+  // out to ~39.27 for ANY positive canvasWidthPx, since canvasWidthPx cancels out of both the
+  // numerator and denominator. So the zero/negative guard can never actually be exercised by
+  // varying canvasWidthPx alone; testing it that way would be a vacuous test that can never
+  // fail. The guard is genuinely tested below, directly, on the extracted pure helper.
+  describe("snapDownToGrid — the zero/negative guard behind pdfSliceMetrics", () => {
+    test("snaps down to the nearest whole multiple of the unit", () => {
+      expect(snapDownToGrid(100, 22)).toBe(88); // floor(100/22)=4, 4*22=88
+    });
+
+    test("an exact multiple is left unchanged", () => {
+      expect(snapDownToGrid(88, 22)).toBe(88);
+    });
+
+    test("falls back to the floored raw value when the unit is bigger than the raw height (snapping would zero it out)", () => {
+      // A grid unit (1000) bigger than the raw page height (5): naive snapping gives
+      // floor(5/1000)*1000 = 0, which would make pageSlices' `while (offset < contentHpx)`
+      // loop forever on a zero-height slice. The guard must fall back to floor(raw) instead.
+      expect(snapDownToGrid(5, 1000)).toBe(5);
+      expect(snapDownToGrid(5, 1000)).toBeGreaterThan(0);
+    });
+
+    test("a non-positive unit is ignored entirely (falls back to the floored raw value)", () => {
+      expect(snapDownToGrid(123.7, 0)).toBe(123);
+      expect(snapDownToGrid(123.7, -5)).toBe(123);
+    });
   });
 });
 
@@ -155,6 +210,23 @@ describe("pageSlices — auto-pagination of overflow content", () => {
     expect(pageSlices(0, 1000)).toEqual([]);
     expect(pageSlices(1000, 0)).toEqual([]);
     expect(pageSlices(-5, 1000)).toEqual([]);
+  });
+
+  // GitHub issue #9, defect 1: given a pageHpx that is itself grid-aligned (defect 1's fix in
+  // pdfSliceMetrics), every slice boundary pageSlices produces must ALSO land on the grid — a
+  // page can only ever start/end on a rule line, never mid-line, for content whose own height
+  // is also a whole number of lines (true of every real export document, built on the same
+  // 22px baseline grid — see htmlTemplate.ts).
+  test("no slice boundary ever falls mid-line, given a grid-aligned pageHpx", () => {
+    const ruleCanvasPx = 22; // 1x-scale rule height in canvas px
+    const pageHpx = 39 * ruleCanvasPx; // 858 — a grid-aligned page height
+    const contentHpx = 130 * ruleCanvasPx; // an arbitrary content height, also grid-aligned
+    const slices = pageSlices(contentHpx, pageHpx);
+    expect(slices.length).toBeGreaterThan(1); // exercise more than a single trivial slice
+    for (const s of slices) {
+      expect(s.start % ruleCanvasPx).toBe(0);
+      expect((s.start + s.height) % ruleCanvasPx).toBe(0);
+    }
   });
 });
 
