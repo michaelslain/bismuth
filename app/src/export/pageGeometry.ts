@@ -13,6 +13,8 @@
 // The pure parts (page constants + px->pt slice scale + an rgb() parser used to paint the page
 // background into the 1in margin band) are unit-tested in pageGeometry.test.ts.
 
+import { RULE_PX } from "./htmlTemplate";
+
 /** US Letter portrait, in PDF points (72pt/in): 8.5in x 11in. */
 export const PAGE_W_PT = 612; // 8.5 * 72
 export const PAGE_H_PT = 792; // 11 * 72
@@ -37,15 +39,42 @@ export const PAGE_W_PX = 816; // 8.5 * 96
 export const CONTENT_W_PX = 624; // 6.5 * 96
 
 /**
+ * Snap a raw size DOWN to the nearest whole multiple of `unit` (same px space). Falls back to
+ * the floored raw value when `unit` doesn't fit within `raw` at all (or is non-positive) —
+ * naive snapping would zero the result out in that case, and pageSlices' `while (offset <
+ * contentHpx)` loop advances by the slice height each iteration, so a zero-height slice would
+ * never advance `offset` and loop forever. `raw` is assumed non-negative (callers here always
+ * pass a page-height-shaped value); a negative `raw` just floors through unchanged.
+ */
+export function snapDownToGrid(raw: number, unit: number): number {
+  if (!(unit > 0)) return Math.floor(raw);
+  const snapped = Math.floor(raw / unit) * unit;
+  return snapped > 0 ? snapped : Math.floor(raw);
+}
+
+/**
  * Map a rasterized canvas (whose width fills the printable box) onto Letter pages:
  *   - `scale` converts source canvas px -> PDF pt inside the 1in margins.
  *   - `pageHpx` is how many source px of height fill ONE printable page (the vertical slice
  *     height the pager cuts at, before honoring any earlier forced page-break marker).
+ *
+ * `pageHpx` is snapped DOWN to a whole multiple of the 22px (RULE_PX) text-baseline grid the
+ * export document is built on (htmlTemplate.ts) — every line-height is RULE_PX or a whole
+ * multiple of it, so a page boundary that isn't grid-aligned is guaranteed to eventually cut
+ * straight through the middle of a text line (GitHub issue #9: the raw, unsnapped page height
+ * divided by the grid landed on 39.2727... lines at every raster scale — never a whole number
+ * — so EVERY page boundary sliced mid-line, deterministically). The grid is defined in CSS px;
+ * the raster may be scaled up by a device-pixel factor, so it's converted into canvas px via
+ * `canvasWidthPx / CONTENT_W_PX` (the CSS width the PDF path lays the document out at) before
+ * snapping. Cost is at most one rule's worth of page height per page — under one line.
+ *
  * Pure so the pager's math is unit-tested without a DOM.
  */
 export function pdfSliceMetrics(canvasWidthPx: number): { scale: number; pageHpx: number } {
   const scale = CONTENT_W_PT / canvasWidthPx; // canvas px -> pt within the printable box
-  const pageHpx = Math.floor(CONTENT_H_PT / scale); // source px per printable page
+  const rawPageHpx = CONTENT_H_PT / scale; // source px per printable page, before grid-snapping
+  const ruleCanvasPx = RULE_PX * (canvasWidthPx / CONTENT_W_PX); // the CSS rule, in canvas px
+  const pageHpx = snapDownToGrid(rawPageHpx, ruleCanvasPx);
   return { scale, pageHpx };
 }
 
