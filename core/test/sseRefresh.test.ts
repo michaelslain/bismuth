@@ -18,7 +18,14 @@ import { test, expect } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "../src/server";
+import { initializeSettings } from "../src/settings";
 import { makeSampleVault } from "./helpers";
+
+// waitForFrame's own poll runs up to 4000ms by default, on top of vault setup, server boot, and
+// several HTTP round trips — leaving only a few hundred ms of headroom against Bun's 5s default
+// per-test timeout (the exact flake class fixed in 46680ecb for the CLI suite). Give each test
+// real margin via bun:test's third `test()` argument, matching cli/test/cli.test.ts's style.
+const TEST_TIMEOUT_MS = 15_000;
 
 /** Read SSE frames until `match` accepts one, or `timeoutMs` elapses. Returns the frame. */
 async function waitForFrame(
@@ -54,6 +61,14 @@ async function waitForFrame(
 
 test("a new FOLDER on disk marks the tree dirty and lands in GET /tree", async () => {
   const { vault, memory } = await makeSampleVault();
+  // A brand-new vault has no `.settings` yet, so server boot fires an async reconcileSettings()
+  // that bootstraps a default one (core/src/server.ts ~line 226). Materialize it BEFORE
+  // createServer so that boot-time write never happens at all — reconcileSettings's
+  // fillMissing() then finds nothing missing and performs no write. Without this, the bootstrap
+  // write could land on the same debounced watcher flush as our trigger below, and because
+  // `.settings` changes unconditionally force dirty.tree=true (classifyVault's isSettingsPath
+  // branch), it would make this test pass even if the real folder-creation code path were broken.
+  await initializeSettings(vault);
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -63,14 +78,6 @@ test("a new FOLDER on disk marks the tree dirty and lands in GET /tree", async (
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: "prime-folder.md", kind: "file" }),
     });
-    // A brand-new vault has no `.settings` yet, so server boot fires an async
-    // reconcileSettings() that bootstraps a default one (core/src/server.ts ~line 226,
-    // core/src/settings.ts's initializeSettings). That write lands on the SAME debounced
-    // watcher flush as our trigger below unless we let it drain first — and because
-    // `.settings` changes unconditionally force dirty.tree=true (classifyVault's
-    // isSettingsPath branch), an undrained bootstrap write would make this test pass
-    // even if the real folder-creation code path were broken. Let it drain before we trigger.
-    await new Promise((r) => setTimeout(r, 600));
 
     const frame = await waitForFrame(
       base,
@@ -84,10 +91,14 @@ test("a new FOLDER on disk marks the tree dirty and lands in GET /tree", async (
   } finally {
     server.stop(true);
   }
-});
+}, TEST_TIMEOUT_MS);
 
 test("a new NOTE on disk marks the tree dirty and lands in GET /tree", async () => {
   const { vault, memory } = await makeSampleVault();
+  // See the identical comment in the FOLDER test above: materialize `.settings` before
+  // createServer so the boot-time bootstrap write never happens, removing its race with our
+  // trigger outright instead of racing it.
+  await initializeSettings(vault);
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -96,10 +107,6 @@ test("a new NOTE on disk marks the tree dirty and lands in GET /tree", async () 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: "prime-note.md", kind: "file" }),
     });
-    // See the identical comment in the FOLDER test above: let the boot-time `.settings`
-    // bootstrap's debounced watcher flush drain before triggering, so it can't donate a
-    // false dirty.tree=true to this test.
-    await new Promise((r) => setTimeout(r, 600));
 
     const frame = await waitForFrame(
       base,
@@ -113,7 +120,7 @@ test("a new NOTE on disk marks the tree dirty and lands in GET /tree", async () 
   } finally {
     server.stop(true);
   }
-});
+}, TEST_TIMEOUT_MS);
 
 test("POST /create (the path the app itself uses) marks the tree dirty and lands in GET /tree", async () => {
   const { vault, memory } = await makeSampleVault();
@@ -144,13 +151,17 @@ test("POST /create (the path the app itself uses) marks the tree dirty and lands
   } finally {
     server.stop(true);
   }
-});
+}, TEST_TIMEOUT_MS);
 
 test("a content-only edit does NOT mark the tree dirty", async () => {
   // The complement, and the reason this suite is not vacuous: if `dirty.tree` were hardcoded
   // true, every test above would pass while the optimisation that keeps the sidebar quiet on a
   // pure prose edit was broken. This case fails in that world.
   const { vault, memory } = await makeSampleVault();
+  // Materialize `.settings` before createServer (see the FOLDER test above) so a boot-time
+  // bootstrap write can never land in the same debounced batch as the create below and force
+  // dirty.tree=true on the frame we go on to match.
+  await initializeSettings(vault);
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -159,8 +170,6 @@ test("a content-only edit does NOT mark the tree dirty", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: "EditMe.md", kind: "file" }),
     });
-    // Let the create's own frame drain before we watch for the edit's.
-    await new Promise((r) => setTimeout(r, 600));
 
     const frame = await waitForFrame(
       base,
@@ -177,4 +186,4 @@ test("a content-only edit does NOT mark the tree dirty", async () => {
   } finally {
     server.stop(true);
   }
-});
+}, TEST_TIMEOUT_MS);
