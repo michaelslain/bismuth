@@ -701,6 +701,42 @@ uses it). Do not "fix" this by converting an unrelated production import to a la
 on an error path, an unenforced "the caller's module graph already loaded X" assumption) for a
 test-only reason, and the module split above gets the same result without touching it.
 
+The same trap resurfaces anywhere a Toast-free module needs `pushToast`/`dismissToast` — `Toast.tsx`
+is itself a real Solid component (`ToastHost`). `app/src/toastStore.ts` is the split: the pure
+signal + `pushToast`/`updateToast`/`dismissToast` moved there, with `Toast.tsx` re-exporting them
+unchanged so none of its other ~25 importers had to change. Import from `./toastStore`, not
+`./Toast`, from any module you want to stay unit-testable (see `app/src/serverVersion.ts`).
+
+### Deferring module-scope side effects so they can be tested
+
+`app/src/serverVersion.ts` used to open its `EventSource` and start its fallback `setInterval`
+poll at **module scope** — the moment anything imported the file. That made it impossible to
+import headlessly: Bun has no global `EventSource`, and a module-scope `setInterval` leaks a live
+timer into every later test in the process. Two real regressions (github issues #3 and #8) shipped
+through exactly that blind spot with zero runtime coverage.
+
+The fix: an exported `start(deps?: Partial<StartDeps>)` that performs those side effects
+explicitly and returns a disposer, called once at real app boot (`app/src/index.tsx`) instead of
+at import time. `StartDeps` injects the `EventSource` factory, the version-fetch function, and the
+timer functions, so a test drives the whole SSE + poll chain with fakes — no network, no real
+timer:
+
+```ts
+const mod = await import("./serverVersion");
+const dispose = mod.start({
+  eventSourceFactory: (url) => new FakeEventSource(url) as unknown as EventSource,
+  fetchVersion: async () => ({ version: 0 }),
+  setIntervalFn: () => 0 as unknown as ReturnType<typeof setInterval>,
+  clearIntervalFn: () => {},
+});
+// ...drive the fake EventSource, assert on serverVersion()/lastChange()/currentConnectionState()...
+dispose();
+```
+
+`start()` is idempotent (a second call is a no-op, returning the same disposer) so it's safe to
+call unconditionally at boot. See `app/src/serverVersionStart.test.ts` for the full suite this
+seam makes possible.
+
 ### Server endpoint test
 
 Follow the `core/test/server.test.ts` pattern:

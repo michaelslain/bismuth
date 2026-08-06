@@ -34,6 +34,16 @@ const firstRun =
 
 const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App")));
 
+// serverVersion's SSE stream + fallback poll used to start as a module-load side effect, picked
+// up transitively via App's import graph; that made the module impossible to import in a headless
+// test (bun has no global EventSource, and a module-scope setInterval leaked a live timer into
+// every later test). Now it's explicit: call start() once here, at real app boot. Dynamic import
+// + the !firstRun gate preserve the original property that the intro takeover never loads
+// serverVersion's chunk or talks to a backend that doesn't exist yet (see the comment above).
+if (!firstRun) {
+  import("./serverVersion").then(({ start }) => start());
+}
+
 render(() => <Root />, document.getElementById("root") as HTMLElement);
 
 // First run renders the intro takeover instead of App, so App's boot-ready signal (which dismisses

@@ -1,7 +1,11 @@
 import { createSignal, type Accessor } from "solid-js";
 import { api, eventsUrl } from "./api";
 import { recordSseError, recordPollCatchup } from "./telemetry";
-import { pushToast, dismissToast } from "./Toast";
+// Pulls from toastStore (not ./Toast) deliberately: ./Toast also exports the real JSX ToastHost
+// component, and a static import of anything from it forces Bun to transpile that JSX — which
+// breaks `bun test app/` from the repo root (the commit/push gate's invocation). See
+// toastStore.ts's header comment and docs/contributing/testing.md's JSX-resolution trap.
+import { pushToast, dismissToast } from "./toastStore";
 import { decideConnectionState, type ConnectionEvent, type ConnectionState } from "./connectionState";
 
 /**
@@ -88,6 +92,30 @@ let es: EventSource | null = null;
 let esClosed = false;
 
 /**
+ * Injectable seams so the whole SSE + poll chain can be driven in a headless test. Defaults are
+ * the real browser/API primitives, so app code calls `start()` with no arguments and gets exactly
+ * today's behaviour.
+ */
+export interface StartDeps {
+  eventSourceFactory: (url: string) => EventSource;
+  fetchVersion: () => Promise<{ version: number }>;
+  setIntervalFn: (fn: () => void, ms: number) => ReturnType<typeof setInterval>;
+  clearIntervalFn: (h: ReturnType<typeof setInterval>) => void;
+}
+
+const defaultDeps: StartDeps = {
+  eventSourceFactory: (url) => new EventSource(url),
+  fetchVersion: () => api.version(),
+  setIntervalFn: (fn, ms) => setInterval(fn, ms),
+  clearIntervalFn: (h) => clearInterval(h),
+};
+
+// Resolved against `defaultDeps` (or a test's overrides) by `start()`; every use of
+// EventSource/fetch/setInterval/clearInterval below goes through this rather than the globals
+// directly, so a test can substitute fakes without touching the network or a real timer.
+let deps: StartDeps = defaultDeps;
+
+/**
  * Run the pure `decideConnectionState` for one of the four observation points
  * (SSE opened/errored, poll succeeded/failed) and apply its decision: update
  * the `connectionState` signal, show/dismiss the toast, and switch the poll
@@ -164,11 +192,11 @@ function closeEventSource(): void {
 
 // Fallback poll: aggressive when disconnected, normal when connected
 function startPolling(): void {
-  if (pollIntervalHandle !== undefined) clearInterval(pollIntervalHandle);
+  if (pollIntervalHandle !== undefined) deps.clearIntervalFn(pollIntervalHandle);
 
-  pollIntervalHandle = setInterval(async () => {
+  pollIntervalHandle = deps.setIntervalFn(async () => {
     try {
-      const { version: v } = await api.version();
+      const { version: v } = await deps.fetchVersion();
       // Capture BEFORE applying the decision: the poll reaching the backend means we are not
       // disconnected, whatever the SSE stream is doing — clear the state and the toast right
       // here rather than only ever doing it from es.onopen, which could leave a stalled SSE
@@ -221,7 +249,7 @@ function createEventSource(): void {
   if (es !== null || esClosed) return; // Already created or manually closed
 
   try {
-    es = new EventSource(eventsUrl());
+    es = deps.eventSourceFactory(eventsUrl());
 
     es.onopen = () => {
       const wasNotConnected = connectionState() !== "connected";
@@ -256,24 +284,60 @@ function createEventSource(): void {
   }
 }
 
-// Initialize EventSource on module load
-createEventSource();
+let started = false;
+let beforeUnloadHandler: (() => void) | null = null;
 
-// Close EventSource on page unload to prevent connection leaks
-if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", () => {
+/**
+ * Start the SSE stream + fallback poll. Called once at app boot (app/src/index.tsx).
+ *
+ * This is deliberately NOT done at module scope. Doing so made the module impossible to import in
+ * a headless test — bun has no global EventSource, and a module-scope setInterval leaks a live
+ * timer into every later test in the process. That blind spot is where github issues #3 and #8
+ * both lived. Returns a disposer; idempotent, so a double-call cannot open two streams.
+ */
+export function start(overrides: Partial<StartDeps> = {}): () => void {
+  if (started) return dispose;
+  started = true;
+  deps = { ...defaultDeps, ...overrides };
+
+  createEventSource();
+  startPolling();
+
+  // Close EventSource on page unload to prevent connection leaks. `esClosed = true` here is
+  // permanent (the page is going away) — deliberately NOT set by `dispose()` below, which needs
+  // to leave the door open for a later `start()` call to reconnect (tests rely on this).
+  beforeUnloadHandler = () => {
     esClosed = true;
     if (es !== null) {
       es.close();
       es = null;
     }
     if (pollIntervalHandle !== undefined) {
-      clearInterval(pollIntervalHandle);
+      deps.clearIntervalFn(pollIntervalHandle);
     }
-  });
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("beforeunload", beforeUnloadHandler);
+  }
+
+  return dispose;
 }
 
-startPolling();
+/** Disposer returned by `start()`: closes the stream, clears the poll, and lets a later `start()`
+ *  call restart cleanly (unlike the real `beforeunload` path, this does not set `esClosed`). */
+function dispose(): void {
+  started = false;
+  closeEventSource();
+  if (pollIntervalHandle !== undefined) {
+    deps.clearIntervalFn(pollIntervalHandle);
+    pollIntervalHandle = undefined;
+  }
+  if (typeof window !== "undefined" && beforeUnloadHandler) {
+    window.removeEventListener("beforeunload", beforeUnloadHandler);
+  }
+  beforeUnloadHandler = null;
+  deps = defaultDeps;
+}
 
 /** Just the version number. Triggers re-runs on any invalidation. */
 export const serverVersion: Accessor<number> = () => change().version;
