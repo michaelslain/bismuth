@@ -809,15 +809,20 @@ function Level(props: {
     e.stopPropagation(); // don't let a nested row's press bubble to an ancestor row
     props.startItemDrag(e, kind, node.path, label);
   };
-  // Snapshot once per render: <For>'s (item, index) pair needs the sibling count to know
-  // whether a row is the LAST child (picks `|--` vs `` `-- `` in the connector prefix below —
-  // design/ascii/README.md "Components", ascii-tree.card.html). Depth-driven padding is gone;
-  // the connector string itself now encodes indentation.
-  const kids = sortedChildren(props.node);
+  // MUST stay a memo, not a captured array. A Solid component body runs ONCE, so a plain
+  // `const kids = sortedChildren(props.node)` freezes <For>'s list at whatever the first paint
+  // had — every later tree change (a new note, a new folder, a delete) updates files() and
+  // treeRoot() but never reaches the DOM, and the sidebar only "catches up" on next launch when
+  // it re-seeds from the cached tree. That was github issue #8. Reading kids() inside the JSX
+  // keeps `each` a call expression, so Solid wraps it in a getter and the list tracks props.node.
+  // <For>'s (item, index) pair still needs the sibling count to know whether a row is the LAST
+  // child (picks `|--` vs `` `-- `` in the connector prefix below — design/ascii/README.md
+  // "Components", ascii-tree.card.html); the connector string itself encodes indentation.
+  const kids = createMemo(() => sortedChildren(props.node));
+  const prefixFor = (i: number) => treePrefix(props.depth, i === kids().length - 1);
   return (
-    <For each={kids}>
+    <For each={kids()}>
       {(child, i) => {
-        const prefix = treePrefix(props.depth, i() === kids.length - 1);
         return child.children ? (
           <div>
             <div
@@ -828,7 +833,7 @@ function Level(props: {
               onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.toggle(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
-              <span class="ft-prefix">{prefix}</span>
+              <span class="ft-prefix">{prefixFor(i())}</span>
               {/* One glyph, not two: the folder icon's own shape IS the disclosure state (Folder "▸" /
                   FolderOpen "▾" — see icons/registry.ts), so there is no separate chevron icon here.
                   A bare ChevronRight/ChevronDown alongside it drew the same triangle twice. */}
@@ -856,7 +861,7 @@ function Level(props: {
             onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.onOpen(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
-            <span class="ft-prefix">{prefix}</span>
+            <span class="ft-prefix">{prefixFor(i())}</span>
             <Icon value={child.icon} fallback={child.name.endsWith(".sheet") ? "Table" : "FileText"} size={16} class="ft-icon" />
             <VisibilityBadge visibility={child.visibility} />
             <Show when={props.editing === child.path} fallback={child.label ?? displayName(child.name)}>
