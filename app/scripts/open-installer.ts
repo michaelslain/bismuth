@@ -38,6 +38,8 @@ if (process.platform === "darwin" && dmg) {
 } else {
   console.log("\n✓ Built. Install it by dragging into /Applications:");
   if (dmg) console.log(`  dmg: ${dmg}`);
-  if (existsSync(appPath)) console.log(`  app: ${appPath}`);
+  // The staged .app is removed by postbuild-clean.ts once a dmg exists (issue #4), so it is
+  // only ever mentioned here when the bundler produced no dmg and it IS the artifact.
+  else if (existsSync(appPath)) console.log(`  app: ${appPath}`);
   console.log("");
 }

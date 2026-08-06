@@ -680,6 +680,63 @@ test("returns the expected value", () => {
 
 4. Run with `bun test app/src/myutil.test.ts` (or `bun test myutil` — never `bun test core -- myutil`, which does not filter)
 
+### A cwd-dependent JSX-resolution trap
+
+If a new `app/src/*.test.ts` imports a module that — even indirectly, through an otherwise
+unrelated import — pulls in a real `.tsx` Solid component, `bun test` can fail with
+`Cannot find module 'react/jsx-dev-runtime'` instead of running your actual test. Cause: Bun's
+JSX-runtime resolution (which is supposed to read `app/tsconfig.json`'s
+`jsxImportSource: "solid-js"`) is **cwd-dependent** — it resolves correctly when Bun's working
+directory is inside `app/`, but falls back to its default (`react-jsx`, importing the `react`
+package, which this repo does not have) when run from the repo root. That matters because the
+commit/push gates (`scripts/gate.ts`) invoke `bun test app/` from the repo root, not from inside
+`app/`, so this is not just a local quirk of how you happen to run a file.
+
+Fix: keep the logic under test in a module with **zero `.tsx` imports** of its own — see
+`app/src/pickResult.ts`, split out of `app/src/appWindow.ts` for exactly this reason (the latter
+has an unrelated static `import { pushToast } from "./Toast"`, a real Solid component; a static
+ES import evaluates its target eagerly regardless of whether the test ever calls anything that
+uses it). Do not "fix" this by converting an unrelated production import to a lazy
+`await import(...)` purely to dodge a test — that changes real runtime behavior (an extra await
+on an error path, an unenforced "the caller's module graph already loaded X" assumption) for a
+test-only reason, and the module split above gets the same result without touching it.
+
+The same trap resurfaces anywhere a Toast-free module needs `pushToast`/`dismissToast` — `Toast.tsx`
+is itself a real Solid component (`ToastHost`). `app/src/toastStore.ts` is the split: the pure
+signal + `pushToast`/`updateToast`/`dismissToast` moved there, with `Toast.tsx` re-exporting them
+unchanged so none of its other ~25 importers had to change. Import from `./toastStore`, not
+`./Toast`, from any module you want to stay unit-testable (see `app/src/serverVersion.ts`).
+
+### Deferring module-scope side effects so they can be tested
+
+`app/src/serverVersion.ts` used to open its `EventSource` and start its fallback `setInterval`
+poll at **module scope** — the moment anything imported the file. That made it impossible to
+import headlessly: Bun has no global `EventSource`, and a module-scope `setInterval` leaks a live
+timer into every later test in the process. Two real regressions (github issues #3 and #8) shipped
+through exactly that blind spot with zero runtime coverage.
+
+The fix: an exported `start(deps?: Partial<StartDeps>)` that performs those side effects
+explicitly and returns a disposer, called once at real app boot (`app/src/index.tsx`) instead of
+at import time. `StartDeps` injects the `EventSource` factory, the version-fetch function, and the
+timer functions, so a test drives the whole SSE + poll chain with fakes — no network, no real
+timer:
+
+```ts
+const mod = await import("./serverVersion");
+const dispose = mod.start({
+  eventSourceFactory: (url) => new FakeEventSource(url) as unknown as EventSource,
+  fetchVersion: async () => ({ version: 0 }),
+  setIntervalFn: () => 0 as unknown as ReturnType<typeof setInterval>,
+  clearIntervalFn: () => {},
+});
+// ...drive the fake EventSource, assert on serverVersion()/lastChange()/currentConnectionState()...
+dispose();
+```
+
+`start()` is idempotent (a second call is a no-op, returning the same disposer) so it's safe to
+call unconditionally at boot. See `app/src/serverVersionStart.test.ts` for the full suite this
+seam makes possible.
+
 ### Server endpoint test
 
 Follow the `core/test/server.test.ts` pattern:

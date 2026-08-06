@@ -48,6 +48,33 @@ describe("withWindowId", () => {
     const url = withWindowId("http://localhost:1420/", "round-trip");
     expect(windowIdFromSearch(new URL(url).search)).toBe("round-trip");
   });
+
+  // Packaged-app case (github issue #5): the origin is the tauri:// custom protocol, and
+  // an absolute tauri://localhost/… url handed to WebviewWindow is treated as an external
+  // URL rather than the app's own embedded asset, dropping the query string that pins the
+  // new window's backend. The fix is to pass a relative url instead — these cases cover it.
+  test("a relative url gets ?w= added and stays relative", () => {
+    const out = withWindowId("/?api=http://localhost:61162", "win-3", "tauri://localhost/");
+    expect(out.startsWith("tauri://")).toBe(false);
+    expect(out.startsWith("http://")).toBe(false);
+    const u = new URL(out, "tauri://localhost/");
+    expect(u.searchParams.get("w")).toBe("win-3");
+    expect(u.searchParams.get("api")).toBe("http://localhost:61162");
+  });
+  test("a relative url with an existing ?w= keeps it", () => {
+    const out = withWindowId("/?w=keep", "win-4", "tauri://localhost/");
+    expect(new URL(out, "tauri://localhost/").searchParams.get("w")).toBe("keep");
+  });
+  test("parses against a tauri://localhost/ base and the result stays relative", () => {
+    const out = withWindowId("/?api=http://localhost:4321", "win-5", "tauri://localhost/");
+    expect(out.startsWith("/")).toBe(true);
+  });
+  test("the api param survives withWindowId unchanged (the property the bug violates)", () => {
+    const out = withWindowId("/?api=http://localhost:61162", "win-6", "tauri://localhost/");
+    expect(new URL(out, "tauri://localhost/").searchParams.get("api")).toBe(
+      "http://localhost:61162",
+    );
+  });
 });
 
 describe("resolveWindowId (reads live location)", () => {

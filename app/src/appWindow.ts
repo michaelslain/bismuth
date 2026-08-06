@@ -7,20 +7,39 @@ import { isTauri } from "./nativeMenu";
 import { pushToast } from "./Toast";
 import { withWindowId } from "./windowId";
 
+// Mirrors App.tsx's IS_MAC_PLATFORM (duplicated rather than imported — App.tsx imports
+// openAppWindow from this module, so importing back would be circular). A window opened here
+// (New window / Open folder) must match the SAME chrome as lib.rs's build_main_window: on
+// macOS an Overlay titlebar with the title hidden (App.tsx's own `.top-strip` renders the
+// wordmark + traffic-light gutter), on Windows/Linux fully undecorated with the typed
+// `[-] [+] [x]` controls. Without this, a new window got Tauri's DEFAULT chrome — a normal
+// native titlebar — stacked ABOVE the app's own top-strip, which still reserved gutter space
+// for traffic lights that were no longer there: a duplicate title bar and an offset wordmark.
+const IS_MAC_PLATFORM =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
+// PickResult/classifyPickResult live in their own module (pickResult.ts) — it has zero
+// `.tsx` imports, so a unit test of the pure classifier never has to load a Solid component.
+// Re-exported here so existing callers can keep importing them from "./appWindow".
+import { classifyPickResult, type PickResult } from "./pickResult";
+export { classifyPickResult, type PickResult };
+import { windowChromeOptions } from "./windowChrome";
+export { windowChromeOptions };
+
 /**
- * Native OS folder picker (Tauri only). Returns the chosen absolute path, or null if
- * the user cancelled / we're not in Tauri (the browser has no picker that yields a
- * server-accessible path — callers fall back to the typed-path modal there).
+ * Native OS folder picker (Tauri only). Returns a three-valued result so callers can tell a
+ * user cancel (silent) from a dialog failure (must be surfaced) — see PickResult. In the
+ * browser this reports `cancelled`: there is no picker that yields a server-accessible path,
+ * and callers fall back to the typed-path modal.
  */
-export async function pickFolder(): Promise<string | null> {
-  if (!isTauri()) return null;
+export async function pickFolder(): Promise<PickResult> {
+  if (!isTauri()) return classifyPickResult({ unavailable: true });
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const res = await open({ directory: true, multiple: false, title: "Open folder" });
-    return typeof res === "string" ? res : null;
+    return classifyPickResult({ value: res });
   } catch (e) {
     console.error("folder picker failed", e);
-    return null;
+    return classifyPickResult({ thrown: e });
   }
 }
 
@@ -128,12 +147,23 @@ export async function openAppWindow(url: string, title = "Bismuth"): Promise<boo
   // Stamp a fresh per-window id so the new window persists its tabs independently. Without
   // it every window shares the one origin-wide localStorage tab blob and they mirror/clobber
   // each other (see windowId.ts). Only added if the URL doesn't already carry a `?w=`.
-  url = withWindowId(url, crypto.randomUUID());
+  url = withWindowId(url, crypto.randomUUID(), globalThis.location?.href);
   if (isTauri()) {
     try {
+      // `url` is relative (pathname + search), not an absolute tauri://localhost/… URL.
+      // Tauri's WebviewWindow treats an absolute custom-protocol URL as an external
+      // navigation rather than the app's own embedded asset, which drops the query string
+      // that pins the new window to its backend (?api=) — github issue #5. Resolving a
+      // relative url against the app's own origin keeps the query string intact.
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
       const label = `bismuth-${crypto.randomUUID()}`;
-      const w = new WebviewWindow(label, { url, title, width: 1200, height: 800 });
+      const w = new WebviewWindow(label, {
+        url,
+        title,
+        width: 1200,
+        height: 800,
+        ...windowChromeOptions(IS_MAC_PLATFORM),
+      });
       // Creation is async; a missing capability / nav block surfaces as an error event
       // rather than a throw — surface it instead of failing silently.
       w.once("tauri://error", (e) => {

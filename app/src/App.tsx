@@ -1,7 +1,7 @@
 // app/src/App.tsx
 import { createSignal, onMount, onCleanup, For, Index, createMemo, createEffect, Show, Suspense, lazy } from "solid-js";
 import { api, apiBase, summarizeSync } from "./api";
-import { readCache, writeCache } from "./viewCache";
+import { readCache, writeCache, scopedKey } from "./viewCache";
 import { FileTree } from "./FileTree";
 import { Icon } from "./icons/Icon";
 // Lazy: GraphView pulls in the renderer and, through core/src/layout.ts, d3-force-3d (its own
@@ -41,6 +41,7 @@ import { setPendingAnchor } from "./pendingAnchor";
 import { installNativeDrop, uninstallNativeDrop } from "./nativeDrop";
 import { isReloadNavigation } from "./navType";
 import { installAppMenu } from "./nativeAppMenu";
+import { vaultBasename } from "./vaultPath";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
 const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalTab })));
 // Lazy: ChatView pulls in the shared markdown renderer (marked + KaTeX). Mounted HERE (in an
@@ -147,7 +148,7 @@ export default function App() {
   // caches node positions in localStorage; this supplies the structure). Reconciles when
   // /graph returns. Persisted WITHOUT the lazy `views` layouts to keep the blob small.
   const [graph, setGraph] = createSignal<GraphData>(
-    readCache<GraphData>(GRAPH_CACHE_KEY) ?? { nodes: [], edges: [] },
+    readCache<GraphData>(scopedKey(GRAPH_CACHE_KEY, apiBase())) ?? { nodes: [], edges: [] },
   );
   const [daemon, setDaemon] = createSignal<GraphData>({ nodes: [], edges: [] });
   // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd".
@@ -159,16 +160,35 @@ export default function App() {
   // Vault name for the status bar's field-log line (design/ascii/README.md "App shell").
   // Fetched once from the existing GET /config (already used by the settings page to show how
   // core was launched) — pure presentation of an existing backend signal, no new server state.
+  // The status bar only ever shows the basename (issue #7: a full path doesn't belong inline in
+  // a field-log line), but `vaultPath` keeps the full path around so `.status-vault` can surface
+  // it as a `title` tooltip + click-to-copy — see the status bar below.
   const [vaultName, setVaultName] = createSignal<string>("");
+  const [vaultPath, setVaultPath] = createSignal<string>("");
   onMount(() => {
     fetch(`${apiBase()}/config`)
       .then((r) => (r.ok ? r.json() : null))
       .then((cfg: { vault?: string } | null) => {
         const v = cfg?.vault;
-        if (typeof v === "string") setVaultName(v.split("/").filter(Boolean).pop() ?? v);
+        if (typeof v === "string") {
+          setVaultPath(v);
+          setVaultName(vaultBasename(v));
+        }
       })
       .catch(() => {}); // best-effort — the status bar just shows a blank vault name on failure
   });
+
+  /** Click-to-copy the full vault path off `.status-vault` (issue #7) — mirrors
+   *  ChatView.tsx's copyMessage: confirm via toast, and toast on rejection too since
+   *  navigator.clipboard can fail (permissions, insecure context). */
+  const copyVaultPath = () => {
+    const p = vaultPath();
+    if (!p) return;
+    navigator.clipboard
+      .writeText(p)
+      .then(() => pushToast("Copied vault path"))
+      .catch(() => pushToast("Couldn't copy vault path"));
+  };
 
   // Chat tab labels: the session's conversation title once one exists (chatTitles, published by
   // ChatView from the backend's `title` frames), else the daemon's identity name when it's
@@ -534,7 +554,7 @@ export default function App() {
         ? { ...g, views: prev.views }
         : g;
     setGraph(next);
-    writeCache(GRAPH_CACHE_KEY, { nodes: g.nodes, edges: g.edges });
+    writeCache(scopedKey(GRAPH_CACHE_KEY, apiBase()), { nodes: g.nodes, edges: g.edges });
   };
 
   // The graph doesn't carry per-note frontmatter icons; the file tree does. Build a
@@ -776,7 +796,7 @@ export default function App() {
     const url = new URL(globalThis.location.href);
     url.search = "";
     url.searchParams.set("api", apiBase());
-    if (!(await openAppWindow(url.toString()))) pushToast("Couldn't open a new window");
+    if (!(await openAppWindow(url.pathname + url.search))) pushToast("Couldn't open a new window");
   };
   // Open folder: a chosen folder becomes its own brain in a new window. The backend
   // spawns a sibling server pointed at the folder (process-per-vault); we open a window
@@ -789,7 +809,13 @@ export default function App() {
     // a server-accessible path there).
     if (isTauri()) {
       const picked = await pickFolder();
-      if (picked) await doOpenFolder(picked);
+      // A cancel is silent; a FAILED picker must say so. Treating the two alike is what made
+      // this command a silent no-op in a packaged build (github issue #6).
+      if (picked.status === "error") {
+        pushToast(`Couldn't open the folder picker: ${picked.message}`);
+        return;
+      }
+      if (picked.status === "picked") await doOpenFolder(picked.path);
       return;
     }
     setFolderPromptOpen(true);
@@ -800,7 +826,7 @@ export default function App() {
       const win = new URL(globalThis.location.href);
       win.search = ""; // drop any inherited ?api= before pinning the new backend
       win.searchParams.set("api", url);
-      if (!(await openAppWindow(win.toString()))) {
+      if (!(await openAppWindow(win.pathname + win.search))) {
         pushToast("Folder server started, but the window couldn't open");
         return; // keep the modal open for a retry
       }
@@ -2390,7 +2416,11 @@ export default function App() {
         health (serverVersion's ConnectionState), and right-aligned mode indicators, closed by
         a blinking `_` caret. No new state. */}
     <div class="status-bar">
-      <span class="status-vault">{vaultName() || "vault"}</span>
+      <span
+        class="status-vault"
+        title={vaultPath() || undefined}
+        onClick={copyVaultPath}
+      >{vaultName() || "vault"}</span>
       <span class="status-sep">//</span>
       <span class="status-path">{statusPath()}</span>
       <Show when={currentConnectionState() !== "connected"}>

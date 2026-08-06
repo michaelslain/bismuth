@@ -1,7 +1,12 @@
 import { createSignal, type Accessor } from "solid-js";
 import { api, eventsUrl } from "./api";
 import { recordSseError, recordPollCatchup } from "./telemetry";
-import { pushToast, dismissToast } from "./Toast";
+// Pulls from toastStore (not ./Toast) deliberately: ./Toast also exports the real JSX ToastHost
+// component, and a static import of anything from it forces Bun to transpile that JSX — which
+// breaks `bun test app/` from the repo root (the commit/push gate's invocation). See
+// toastStore.ts's header comment and docs/contributing/testing.md's JSX-resolution trap.
+import { pushToast, dismissToast } from "./toastStore";
+import { decideConnectionState, type ConnectionEvent, type ConnectionState } from "./connectionState";
 
 /**
  * `dirty` tells graph/tree consumers whether their data actually changed. The
@@ -19,8 +24,12 @@ export type ServerChange = {
  * - 'connected': EventSource is open and receiving messages
  * - 'disconnected': EventSource closed or errored; polling at the faster interval
  * - 'reconnecting': Attempting to re-establish the EventSource connection
+ *
+ * The type lives in ./connectionState (re-exported here) alongside the pure
+ * `decideConnectionState` transition function — see that module for why the
+ * decision had to be extracted (github issue #3).
  */
-export type ConnectionState = "connected" | "disconnected" | "reconnecting";
+export type { ConnectionState };
 
 /**
  * Reactive accessor for the latest server cache `version` plus the paths
@@ -65,6 +74,13 @@ let everConnected = false;
 // disconnect session (deduplication).
 let connectionErrorToastId: number | null = null;
 
+// When the toast was last dismissed (ms, Date.now()), or null if it never has
+// been this session. Feeds decideConnectionState's cooldown, which stops a
+// flapping SSE stream (opens, errors, opens, errors... — a real corporate
+// proxy/VPN pattern that kills long-lived streams but serves ordinary GETs
+// fine) from showing/dismissing the toast on every poll tick.
+let toastDismissedAt: number | null = null;
+
 const NORMAL_POLL_INTERVAL = 5000; // 5 seconds
 const DISCONNECTED_POLL_INTERVAL = 1000; // 1 second when disconnected
 
@@ -75,53 +91,63 @@ let pollIntervalHandle: ReturnType<typeof setInterval> | undefined;
 let es: EventSource | null = null;
 let esClosed = false;
 
-// Fallback poll: aggressive when disconnected, normal when connected
-function startPolling(): void {
-  if (pollIntervalHandle !== undefined) clearInterval(pollIntervalHandle);
-
-  pollIntervalHandle = setInterval(async () => {
-    try {
-      const { version: v } = await api.version();
-      everConnected = true; // the backend answered — we've made contact at least once
-      if (v > change().version) {
-        // Only log as 'SSE missed' when the version wasn't already delivered via SSE.
-        if (v > lastSseVersion) recordPollCatchup(v, lastSseVersion);
-        fireChange({ version: v, paths: [] });
-      }
-
-      // Poll succeeded; if we were disconnected, try reconnecting EventSource.
-      // Guard on `es === null` so we don't tear down an EventSource that's
-      // still mid-handshake — otherwise a handshake slower than the poll
-      // interval would be killed every tick and never reach `onopen`.
-      if (connectionState() !== "connected" && !esClosed && es === null) {
-        setConnectionState("reconnecting");
-        attemptReconnect();
-      }
-    } catch {
-      // Poll failed; if we were connected, mark as disconnected
-      if (connectionState() === "connected") {
-        handleConnectionError();
-      }
-    }
-  }, currentPollInterval);
+/**
+ * Injectable seams so the whole SSE + poll chain can be driven in a headless test. Defaults are
+ * the real browser/API primitives, so app code calls `start()` with no arguments and gets exactly
+ * today's behaviour.
+ */
+export interface StartDeps {
+  eventSourceFactory: (url: string) => EventSource;
+  fetchVersion: () => Promise<{ version: number }>;
+  setIntervalFn: (fn: () => void, ms: number) => ReturnType<typeof setInterval>;
+  clearIntervalFn: (h: ReturnType<typeof setInterval>) => void;
 }
 
-function handleConnectionError(): void {
-  if (connectionState() !== "disconnected") {
-    setConnectionState("disconnected");
-    currentPollInterval = DISCONNECTED_POLL_INTERVAL;
-    startPolling(); // Restart with faster interval
+const defaultDeps: StartDeps = {
+  eventSourceFactory: (url) => new EventSource(url),
+  fetchVersion: () => api.version(),
+  setIntervalFn: (fn, ms) => setInterval(fn, ms),
+  clearIntervalFn: (h) => clearInterval(h),
+};
+
+// Resolved against `defaultDeps` (or a test's overrides) by `start()`; every use of
+// EventSource/fetch/setInterval/clearInterval below goes through this rather than the globals
+// directly, so a test can substitute fakes without touching the network or a real timer.
+let deps: StartDeps = defaultDeps;
+
+/**
+ * Run the pure `decideConnectionState` for one of the four observation points
+ * (SSE opened/errored, poll succeeded/failed) and apply its decision: update
+ * the `connectionState` signal, show/dismiss the toast, and switch the poll
+ * cadence. Single call site for all four paths so none of them can drift out
+ * of sync with each other again (github issue #3).
+ */
+function applyConnectionDecision(event: ConnectionEvent) {
+  const previousState = connectionState();
+  const decision = decideConnectionState({
+    state: previousState,
+    event,
+    everConnected,
+    toastShown: connectionErrorToastId !== null,
+    now: Date.now(),
+    dismissedAt: toastDismissedAt,
+  });
+
+  everConnected = decision.everConnected;
+  toastDismissedAt = decision.dismissedAt;
+  setConnectionState(decision.nextState);
+
+  if (decision.dismissToast && connectionErrorToastId !== null) {
+    dismissToast(connectionErrorToastId);
+    connectionErrorToastId = null;
   }
 
-  // Close the broken EventSource so we can attempt a fresh connection
-  if (es !== null) {
-    es.close();
-    es = null;
-  }
-
-  // Show toast only once per disconnect session — and never during initial boot, before we've
-  // ever reached the backend (that's warmup, not a lost connection).
-  if (everConnected && connectionErrorToastId === null) {
+  // Show toast only once per disconnect session, never during initial boot before we've ever
+  // reached the backend (that's warmup, not a lost connection), and never within the cooldown
+  // right after a dismissal (otherwise a flapping SSE stream re-shows it on every poll tick).
+  // decideConnectionState already encodes all three rules; this just avoids pushing a second
+  // toast on top of one already showing.
+  if (decision.showToast && connectionErrorToastId === null) {
     connectionErrorToastId = pushToast(
       "Connection lost. Retrying...",
       {
@@ -135,16 +161,87 @@ function handleConnectionError(): void {
     );
   }
 
-  console.warn("[sse] connection lost; switching to aggressive polling", {
-    at: new Date().toISOString(),
-  });
+  const desiredInterval = decision.pollInterval === "normal" ? NORMAL_POLL_INTERVAL : DISCONNECTED_POLL_INTERVAL;
+  if (currentPollInterval !== desiredInterval) {
+    currentPollInterval = desiredInterval;
+    startPolling(); // restart the timer so the new cadence actually takes effect
+  }
+
+  // Single call site for this log line (it used to be duplicated at each of the three
+  // error-observation call sites) so the wording can't drift between them. Gated on an
+  // actual transition INTO "disconnected" (previousState !== "disconnected"), not on
+  // every repeat event: poll-failure is now called unconditionally below (regression
+  // fix — see that catch handler's comment), so without this gate a sustained outage
+  // would warn once per DISCONNECTED_POLL_INTERVAL (1s) for as long as it stayed down.
+  if ((event === "sse-error" || event === "poll-failure") && previousState !== "disconnected") {
+    console.warn("[sse] connection lost; switching to aggressive polling", {
+      at: new Date().toISOString(),
+    });
+  }
+
+  return decision;
 }
 
-function attemptReconnect(): void {
+/** Close the live EventSource (if any) so a fresh one can be created. */
+function closeEventSource(): void {
   if (es !== null) {
     es.close();
     es = null;
   }
+}
+
+// Fallback poll: aggressive when disconnected, normal when connected
+function startPolling(): void {
+  if (pollIntervalHandle !== undefined) deps.clearIntervalFn(pollIntervalHandle);
+
+  pollIntervalHandle = deps.setIntervalFn(async () => {
+    try {
+      const { version: v } = await deps.fetchVersion();
+      // Capture BEFORE applying the decision: the poll reaching the backend means we are not
+      // disconnected, whatever the SSE stream is doing — clear the state and the toast right
+      // here rather than only ever doing it from es.onopen, which could leave a stalled SSE
+      // handshake (one that never fires onopen OR onerror) showing "connection lost" forever
+      // even though this very poll proves the app is working (github issue #3).
+      const wasNotConnected = connectionState() !== "connected";
+      applyConnectionDecision("poll-success");
+
+      if (v > change().version) {
+        // Only log as 'SSE missed' when the version wasn't already delivered via SSE.
+        if (v > lastSseVersion) recordPollCatchup(v, lastSseVersion);
+        fireChange({ version: v, paths: [] });
+      }
+
+      // If the SSE stream wasn't already connected, try reopening it in the background — the
+      // poll alone is a coarser fallback, not a replacement for real-time updates. Guard on
+      // `es === null` so we don't tear down an EventSource that's still mid-handshake —
+      // otherwise a handshake slower than the poll interval would be killed every tick and
+      // never reach `onopen`.
+      if (wasNotConnected && !esClosed && es === null) {
+        attemptReconnect();
+      }
+    } catch {
+      // Poll failed. Always re-evaluate — decideConnectionState already dedupes
+      // correctly (toastShown short-circuits showToast once the notice is up, and the
+      // cooldown handles a flapping SSE stream), so this alone won't spam the toast.
+      // This used to be guarded on `connectionState() === "connected"`, which meant a
+      // poll-failure arriving any time after state had already left "connected" was
+      // silently dropped: once the toast was dismissed (e.g. a brief recovery) and the
+      // cooldown passed, a still-dead backend never got the notice — or its Retry-now
+      // button — back, even across minutes of continuous failure (regression found in
+      // whole-branch review; see connectionState.test.ts's matching case).
+      const wasConnected = connectionState() === "connected";
+      applyConnectionDecision("poll-failure"); // always — do NOT re-guard this
+      // Only tear down on the transition into disconnected, not on every repeat tick — otherwise
+      // this races the mid-handshake guard above (`es === null`) and starves SSE reconnection
+      // indefinitely under an alternating poll (flaky network / proxy), since a fresh handshake
+      // started by the previous poll's success gets killed before it can reach `onopen`.
+      if (wasConnected) closeEventSource();
+    }
+  }, currentPollInterval);
+}
+
+function attemptReconnect(): void {
+  closeEventSource();
   createEventSource();
 }
 
@@ -152,26 +249,12 @@ function createEventSource(): void {
   if (es !== null || esClosed) return; // Already created or manually closed
 
   try {
-    es = new EventSource(eventsUrl());
+    es = deps.eventSourceFactory(eventsUrl());
 
     es.onopen = () => {
-      // Connection established
-      everConnected = true;
-      if (connectionState() === "disconnected" || connectionState() === "reconnecting") {
-        setConnectionState("connected");
-        currentPollInterval = NORMAL_POLL_INTERVAL;
-
-        // Dismiss error toast if one was showing
-        if (connectionErrorToastId !== null) {
-          dismissToast(connectionErrorToastId);
-          connectionErrorToastId = null;
-        }
-
-        // Restart polling with normal interval
-        startPolling();
-
-        console.log("[sse] connection restored");
-      }
+      const wasNotConnected = connectionState() !== "connected";
+      applyConnectionDecision("sse-open");
+      if (wasNotConnected) console.log("[sse] connection restored");
     };
 
     es.onmessage = (e) => {
@@ -192,32 +275,69 @@ function createEventSource(): void {
 
     es.onerror = (e) => {
       recordSseError(e);
-      handleConnectionError();
+      applyConnectionDecision("sse-error");
+      closeEventSource();
     };
   } catch {
     // EventSource constructor itself failed; fall back to poll
-    handleConnectionError();
+    applyConnectionDecision("sse-error");
   }
 }
 
-// Initialize EventSource on module load
-createEventSource();
+let started = false;
+let beforeUnloadHandler: (() => void) | null = null;
 
-// Close EventSource on page unload to prevent connection leaks
-if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", () => {
+/**
+ * Start the SSE stream + fallback poll. Called once at app boot (app/src/index.tsx).
+ *
+ * This is deliberately NOT done at module scope. Doing so made the module impossible to import in
+ * a headless test — bun has no global EventSource, and a module-scope setInterval leaks a live
+ * timer into every later test in the process. That blind spot is where github issues #3 and #8
+ * both lived. Returns a disposer; idempotent, so a double-call cannot open two streams.
+ */
+export function start(overrides: Partial<StartDeps> = {}): () => void {
+  if (started) return dispose;
+  started = true;
+  deps = { ...defaultDeps, ...overrides };
+
+  createEventSource();
+  startPolling();
+
+  // Close EventSource on page unload to prevent connection leaks. `esClosed = true` here is
+  // permanent (the page is going away) — deliberately NOT set by `dispose()` below, which needs
+  // to leave the door open for a later `start()` call to reconnect (tests rely on this).
+  beforeUnloadHandler = () => {
     esClosed = true;
     if (es !== null) {
       es.close();
       es = null;
     }
     if (pollIntervalHandle !== undefined) {
-      clearInterval(pollIntervalHandle);
+      deps.clearIntervalFn(pollIntervalHandle);
     }
-  });
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("beforeunload", beforeUnloadHandler);
+  }
+
+  return dispose;
 }
 
-startPolling();
+/** Disposer returned by `start()`: closes the stream, clears the poll, and lets a later `start()`
+ *  call restart cleanly (unlike the real `beforeunload` path, this does not set `esClosed`). */
+function dispose(): void {
+  started = false;
+  closeEventSource();
+  if (pollIntervalHandle !== undefined) {
+    deps.clearIntervalFn(pollIntervalHandle);
+    pollIntervalHandle = undefined;
+  }
+  if (typeof window !== "undefined" && beforeUnloadHandler) {
+    window.removeEventListener("beforeunload", beforeUnloadHandler);
+  }
+  beforeUnloadHandler = null;
+  deps = defaultDeps;
+}
 
 /** Just the version number. Triggers re-runs on any invalidation. */
 export const serverVersion: Accessor<number> = () => change().version;

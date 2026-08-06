@@ -163,7 +163,11 @@ body { background: var(--bg); color: var(--fg); }
   border-top: 1px solid var(--border-soft); background: var(--rail);
   font-size: var(--fs-micro); color: var(--faint); white-space: nowrap; overflow: hidden;
 }
-.status-vault { color: var(--text-muted); }
+/* Click-to-copy the full vault path (issue #7); title="" tooltip shows it on hover.
+   Only a color shift on hover — the status bar has no vertical padding to spare for a
+   hover background (compare .tab:hover / .vseg > *:hover, same treatment). */
+.status-vault { color: var(--text-muted); cursor: pointer; }
+.status-vault:hover { color: var(--fg); }
 .status-sep { color: var(--faint); }
 .status-path { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
 .status-conn { color: var(--warning); }

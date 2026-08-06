@@ -1,7 +1,7 @@
 // app/src/FileTree.tsx
 import { createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, type JSX } from "solid-js";
-import { api } from "./api";
-import { readCache, writeCache } from "./viewCache";
+import { api, apiBase } from "./api";
+import { readCache, writeCache, scopedKey } from "./viewCache";
 import { lastChange } from "./serverVersion";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { openContextMenu } from "./nativeMenu";
@@ -74,7 +74,7 @@ export function FileTree(props: {
   // Seed from the last good tree so the sidebar paints instantly on boot; the fetch
   // still runs and reconciles. Persist every fresh, non-error response for next launch.
   const [files, { refetch, mutate }] = createResource(() => api.tree(), {
-    initialValue: readCache<TreeEntry[]>(TREE_CACHE_KEY),
+    initialValue: readCache<TreeEntry[]>(scopedKey(TREE_CACHE_KEY, apiBase())),
   });
   // Persistent-identity tree root: rebuild from the flat entries on every files() change, then
   // reconcile against the previous root so untouched subtrees keep their object identity — the
@@ -130,7 +130,7 @@ export function FileTree(props: {
   createEffect(() => {
     if (files.loading || files.error || pendingOps() > 0) return;
     const f = files();
-    if (f) writeCache(TREE_CACHE_KEY, f);
+    if (f) writeCache(scopedKey(TREE_CACHE_KEY, apiBase()), f);
   });
   // React to server changes instead of blind polling. The effect tracks
   // editing()/pendingOps() so it re-runs (and applies any deferred change) once an

@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from "bun:test";
-import { readCache, writeCache } from "./viewCache";
+import { readCache, writeCache, scopedKey } from "./viewCache";
 
 /** Minimal in-memory Storage stub (Bun test env has no localStorage). */
 function installMemoryStorage(): Map<string, string> {
@@ -41,4 +41,17 @@ test("readCache returns undefined when localStorage is absent", () => {
   delete (globalThis as any).localStorage;
   expect(readCache("k")).toBeUndefined();
   expect(() => writeCache("k", 1)).not.toThrow();
+});
+
+test("scopedKey namespaces the same base key differently per backend", () => {
+  const a = scopedKey("bismuth-tree-cache-v1", "http://localhost:4321");
+  const b = scopedKey("bismuth-tree-cache-v1", "http://localhost:57853");
+  expect(a).not.toEqual(b);
+});
+
+test("writes under one backend's scoped key don't leak into another's read", () => {
+  const key = "bismuth-tree-cache-v1";
+  writeCache(scopedKey(key, "http://localhost:4321"), { vault: "A" });
+  expect(readCache(scopedKey(key, "http://localhost:57853"))).toBeUndefined();
+  expect(readCache(scopedKey(key, "http://localhost:4321"))).toEqual({ vault: "A" });
 });
