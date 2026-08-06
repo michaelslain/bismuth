@@ -1,6 +1,6 @@
 // app/src/export/htmlTemplate.test.ts
 import { test, expect, describe } from "bun:test";
-import { wrapHtmlDocument } from "./htmlTemplate";
+import { wrapHtmlDocument, RULE_PX } from "./htmlTemplate";
 
 describe("wrapHtmlDocument", () => {
   test("produces a full html doc with the body inlined", () => {
@@ -28,5 +28,24 @@ describe("wrapHtmlDocument", () => {
   test("emits the requested body font-size (pt) when given", () => {
     expect(wrapHtmlDocument("<p>hi</p>", "N", undefined, "", 12)).toContain("font-size: 12pt");
     expect(wrapHtmlDocument("<p>hi</p>", "N", undefined, "", 18)).toContain("font-size: 18pt");
+  });
+
+  // GitHub issue #9, defect 2: a horizontal ruled-paper background painted a line under every
+  // row of text in every export. The repo owner first asked to scope removal to the PDF path
+  // only, then broadened it mid-task ("lets not just scope it to pdf but all formats!") — so
+  // there is no format-conditional here, just an unconditional absence of the background.
+  test("no export document ever carries the ruled-paper background (removed for every format)", () => {
+    const out = wrapHtmlDocument("<p>hi</p>", "N");
+    expect(out).not.toContain("linear-gradient");
+    expect(out).not.toMatch(/background-size:\s*100%\s*\d+px/);
+  });
+
+  // The 22px text-baseline grid is a SEPARATE thing from the visible rules and must survive
+  // their removal — defect 1's page-slicing fix (pageGeometry.ts pdfSliceMetrics) snaps page
+  // height to whole multiples of this exact grid, so it staying intact is load-bearing, not
+  // cosmetic.
+  test("the 22px line-height baseline grid survives the ruled-background removal", () => {
+    const out = wrapHtmlDocument("<p>hi</p>", "N");
+    expect(out).toContain(`line-height: ${RULE_PX}px`);
   });
 });

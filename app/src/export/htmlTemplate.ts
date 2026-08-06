@@ -51,11 +51,15 @@ function calloutTypeCss(): string {
     .join("\n  ");
 }
 
-// The ruled-paper baseline (design/ascii-extended PORTING.md §3d): one rule every 22px,
-// and every text-bearing block's line-height is 22px or a whole multiple of it — a single
-// element off that grid walks the rest of the document off the ruling, so this list is
-// deliberately exhaustive rather than just the obvious prose tags.
-const RULE_PX = 22;
+// The 22px text-baseline grid: every text-bearing block's line-height is RULE_PX or a whole
+// multiple of it — a single element off that grid walks the rest of the document off the
+// baseline, so this list is deliberately exhaustive rather than just the obvious prose tags.
+// This grid is load-bearing beyond typography: the in-app PDF rasterizer (pageGeometry.ts
+// pdfSliceMetrics) snaps its page-slice height to a whole multiple of RULE_PX so a page
+// boundary can only ever land ON a line, never cut through the middle of one (GitHub issue
+// #9). Exported so pageGeometry.ts doesn't duplicate the literal 22 as a second copy that
+// could silently drift out of sync with this one.
+export const RULE_PX = 22;
 
 function styles(p: ThemePalette, fontSizePt?: number): string {
   // A concrete body font-size (pt) is emitted only when a caller asks for one (the PDF path,
@@ -73,19 +77,17 @@ function styles(p: ThemePalette, fontSizePt?: number): string {
      measureText() — so a concrete named font stack (not a CSS keyword) is required; the
      resolved stack carries its own fallbacks. */
   html, body { margin: 0; background: ${p.bg}; }
-  /* Ruled paper: one rule every ${RULE_PX}px, from the top of the padding box — padding-top
-     below is a whole multiple of ${RULE_PX}px so the first text line lands ON a rule, not
-     between two. p.border is already the app's own (muted) hairline color, used at full
-     opacity elsewhere in this stylesheet (blockquote/table borders) — reused as-is here
-     rather than a separate alpha-tinted literal, since html2canvas can't parse color-mix()/
-     CSS Color 4 functions (see resolvePalette.ts), only rgb()/rgba()/hex — and ${p.border}
-     is guaranteed to already be one of those. */
+  /* Exports are DELIBERATELY unruled (GitHub issue #9): a visible horizontal rule under every
+     line of text used to be painted here via a repeating CSS background gradient, across
+     every export format (html/pdf/png). The repo owner asked for it removed outright — don't
+     re-add it. The padding below stays a whole multiple of ${RULE_PX}px (the text-baseline
+     grid, still very much alive — see RULE_PX's own docs) purely so it doesn't shift every
+     existing export's layout; that no longer aligns the first line to a visible rule, since
+     there isn't one anymore. */
   body {
     font-family: ${p.font}; ${fontSizeRule}
     max-width: 760px; margin: 0 auto; padding: ${RULE_PX * 2}px 1.5rem ${RULE_PX * 3}px;
     line-height: ${RULE_PX}px; color: ${p.fg};
-    background-image: linear-gradient(to bottom, ${p.border} 1px, transparent 1px);
-    background-size: 100% ${RULE_PX}px;
   }
   h1 { font-size: 1.7em; font-weight: 600; letter-spacing: -0.01em; line-height: ${RULE_PX * 2}px; margin: ${RULE_PX * 2}px 0 0; }
   h2, h3, h4, h5, h6 { font-weight: 600; line-height: ${RULE_PX}px; margin: ${RULE_PX}px 0 0; }
