@@ -41,7 +41,14 @@ const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App
 // + the !firstRun gate preserve the original property that the intro takeover never loads
 // serverVersion's chunk or talks to a backend that doesn't exist yet (see the comment above).
 if (!firstRun) {
-  import("./serverVersion").then(({ start }) => start());
+  import("./serverVersion")
+    .then(({ start }) => start())
+    .catch((e) => {
+      // A chunk-load failure here would silently disable ALL live updates (no SSE, no poll) —
+      // exactly the outcome this whole refactor exists to avoid, and worse than leaving it an
+      // unhandled rejection nobody sees in a packaged app's console. Surface it loudly instead.
+      console.error("[boot] failed to start serverVersion (SSE + poll) — live updates disabled", e);
+    });
 }
 
 render(() => <Root />, document.getElementById("root") as HTMLElement);

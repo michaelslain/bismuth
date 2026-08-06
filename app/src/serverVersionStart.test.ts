@@ -71,17 +71,28 @@ describe("serverVersion start()", () => {
     expect(mod.serverVersion()).toBe(before);
   });
 
-  it("start() is idempotent — a second call does not open a second stream", async () => {
+  it("start() is idempotent — a second call does not open a second stream or a second poll", async () => {
     const mod = await import("./serverVersion");
+    // `createEventSource()` already no-ops once `es` is non-null, so an assertion on
+    // instance count alone would still pass even if the `started` guard in `start()` itself were
+    // deleted — it wouldn't be discriminating what it claims to. Counting `setIntervalFn` calls
+    // closes that hole: `startPolling()` has no such secondary guard of its own, so a missing
+    // `started` check would re-run it (and this count) on every extra `start()` call.
+    let intervalCalls = 0;
     const deps = {
       eventSourceFactory: (url: string) => new FakeEventSource(url) as unknown as EventSource,
       fetchVersion: async () => ({ version: 0 }),
-      setIntervalFn: () => 0 as unknown as ReturnType<typeof setInterval>,
+      setIntervalFn: () => {
+        intervalCalls++;
+        return 0 as unknown as ReturnType<typeof setInterval>;
+      },
       clearIntervalFn: () => {},
     };
     dispose = mod.start(deps);
+    const callsAfterFirstStart = intervalCalls;
     mod.start(deps);
     expect(FakeEventSource.instances.length).toBe(1);
+    expect(intervalCalls).toBe(callsAfterFirstStart);
   });
 
   it("the disposer closes the stream and clears the poll", async () => {
