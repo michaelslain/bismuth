@@ -11,6 +11,7 @@
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { sanitizeDocColorsForRaster, normalizeCssColor } from "./cssColor";
+import { RULE_PX } from "./htmlTemplate";
 import {
   PAGE_W_PX,
   CONTENT_W_PX,
@@ -30,6 +31,37 @@ import {
 // export started (or left running) while the window isn't foreground would hang forever
 // waiting for a frame that never comes. A fixed delay always fires.
 const settle = (ms = 50): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+// The 22px baseline grid (RULE_PX, htmlTemplate.ts) that pdfSliceMetrics() relies on only
+// holds if every block is a whole multiple of RULE_PX tall — but a `<p>`/`<li>` containing
+// inline KaTeX math can render TALLER than its own line-height: a stacked fraction or
+// superscript expands the line box to fit it, exactly like the pre/.callout gap this same
+// grid work already fixed once. Rather than clamp math to the grid (which would clip tall
+// expressions), measure each math-bearing block's REAL rendered height post-layout and pad
+// its bottom edge out to the next grid line, so nothing is clipped and every block after it
+// lands back on the grid pdfSliceMetrics() assumes. Must run after `doc.fonts.ready` (KaTeX's
+// embedded glyph fonts change its measured height) and before anything reads scrollHeight/
+// offsetTop for slicing.
+function snapMathBlocksToGrid(doc: Document): void {
+  // The nearest block-level ancestor is what actually owns the line box a `.katex` sits in —
+  // padding the inline math span itself wouldn't change the surrounding block's height.
+  const BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6, td, th, .callout-content, .fmatter";
+  const seen = new Set<Element>();
+  for (const math of doc.querySelectorAll<HTMLElement>(".katex")) {
+    const block = math.closest<HTMLElement>(BLOCK_SELECTOR);
+    if (!block || seen.has(block)) continue;
+    seen.add(block);
+    const height = block.getBoundingClientRect().height;
+    const remainder = height % RULE_PX;
+    // Sub-pixel remainders (rounding noise) aren't worth padding for; anything past ~0.5px
+    // is a real overflow into the next grid line.
+    if (remainder <= 0.5) continue;
+    const pad = RULE_PX - remainder;
+    const cs = getComputedStyle(block);
+    const currentMargin = parseFloat(cs.marginBottom) || 0;
+    block.style.marginBottom = `${currentMargin + pad}px`;
+  }
+}
 
 /**
  * Render an HTML document string to a single full-content canvas via an off-screen iframe.
@@ -71,6 +103,11 @@ async function htmlToCanvas(
     // Race a cap so a never-resolving fonts.ready (some embedded-font edge cases) can't hang.
     try { await Promise.race([doc.fonts?.ready, settle(4000)]); } catch { /* proceed */ }
     await settle();
+
+    // Math is measured/laid out now that KaTeX's embedded fonts are ready — pad any
+    // math-bearing block back onto the grid before anything below reads layout for slicing.
+    snapMathBlocksToGrid(doc);
+    iframe.style.height = `${doc.body.scrollHeight}px`;
 
     // Defense-in-depth against html2canvas's color parser: it throws on any CSS Color 4
     // function ("Attempting to parse an unsupported color function 'color'"). The palette is
