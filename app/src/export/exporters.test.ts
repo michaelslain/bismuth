@@ -244,6 +244,46 @@ describe("include/exclude frontmatter", () => {
   });
 });
 
+describe("markdown-syntax markers (showMarkdownSyntax)", () => {
+  const H2_NOTE = "# Title\n\n## Section\n\nbody";
+  const withH2 = (over: Partial<ExportDeps> = {}) => deps({ read: async () => H2_NOTE, ...over });
+
+  test("html export hides markdown-syntax markers by default", async () => {
+    const r = await renderExport("note.md", "html", withH2());
+    expect(r.previewHtml).not.toContain('content: "## "');
+  });
+
+  test("html export shows markdown-syntax markers when the option is on", async () => {
+    const r = await renderExport("note.md", "html", withH2(), "dark", opts({ showMarkdownSyntax: true }));
+    expect(r.previewHtml).toContain('content: "## "');
+    expect(r.previewHtml).toContain('content: "###### "');
+  });
+
+  test("png export threads the option through the wrapBody path too", async () => {
+    let capturedHtml = "";
+    const d = withH2({ htmlToPng: async (html) => { capturedHtml = html; return { bytes: new Uint8Array(), dataUrl: "" }; } });
+    await renderExport("note.md", "png", d, "dark", opts({ showMarkdownSyntax: true }));
+    expect(capturedHtml).toContain('content: "## "');
+  });
+
+  test("md preview (raw source dump) never grows markdown-syntax css, regardless of the option", async () => {
+    // renderPreview's md format wraps the raw text in a <pre> via a direct wrapHtmlDocument
+    // call that never receives ExportOptions — this guards against a future wiring mistake
+    // that threads opts into that call site by mistake.
+    const r = await renderPreview("note.md", "md", withH2(), "dark", opts({ showMarkdownSyntax: true }));
+    expect(r.previewHtml).not.toContain('content: "## "');
+  });
+
+  test("drawing pdf export never grows markdown-syntax css, regardless of the option", async () => {
+    // Same reasoning: the drawing pdf path wraps a bare <img>, via a direct wrapHtmlDocument
+    // call with no ExportOptions in scope.
+    let capturedHtml = "";
+    const d = deps({ htmlToPdf: async (html) => { capturedHtml = html; return new Uint8Array(); } });
+    await renderExport("s.draw", "pdf", d, "dark", opts({ showMarkdownSyntax: true }));
+    expect(capturedHtml).not.toContain('content: "## "');
+  });
+});
+
 describe("PNG export split by page-break markers", () => {
   const MARK = "<!-- pagebreak -->";
 
