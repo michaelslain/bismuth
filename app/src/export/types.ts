@@ -64,6 +64,15 @@ export interface ExportOptions {
   // frontmatter is config, never rendered as content in the first place).
   includeFrontmatter: boolean;
 
+  // Whether markdown syntax markers are rendered in the exported output — the literal
+  // "## "/"### "/…/"###### " prefix shown before h2-h6 headings (mirrors the app's own editor
+  // aesthetic; h1 never gets one, since it's the document title). Applies to the rendered-prose
+  // formats (html/pdf/png); md is already raw markdown text and csv has no headings, so both
+  // ignore this. Default false: clean, "read nicely formatted" output with no markdown syntax
+  // showing (the repo owner's ask, after an export literally rendered "## Problem 1" as visible
+  // text) — turn on to reveal the markers.
+  showMarkdownSyntax: boolean;
+
   // Resolved live-theme palette so the export matches the app (colors + font). Undefined
   // headlessly (CLI) → the renderer uses DEFAULT_PALETTE for the chosen theme.
   palette?: ThemePalette;

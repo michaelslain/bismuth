@@ -25,6 +25,7 @@ export function defaultExportOptions(): ExportOptions {
     militaryTime: false,
     pdfFontSize: DEFAULT_PDF_FONT_SIZE,
     includeFrontmatter: true,
+    showMarkdownSyntax: false,
   };
 }
 

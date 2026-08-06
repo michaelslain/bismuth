@@ -129,6 +129,12 @@ export function ExportView(props: { path: string }) {
   // rendered as content, so the control only makes sense for a plain note).
   const [includeFrontmatter, setIncludeFrontmatter] = createSignal(true);
 
+  // Non-base `.md` only, same scope as includeFrontmatter above: whether the "## "/"### "/…
+  // markdown marker is rendered before h2-h6 headings (mirrors the app's own editor aesthetic).
+  // Default false — clean formatting, no markdown syntax showing (GitHub issue: an export
+  // literally rendered "## Problem 1" as visible text).
+  const [showMarkdownSyntax, setShowMarkdownSyntax] = createSignal(false);
+
   // Read the source file once per path: if it's a `type: base` md, expose its views so we
   // can offer a view picker + visual/data toggle. null for any non-base file (prose md /
   // sheet / draw) — none of the base controls render then.
@@ -191,6 +197,7 @@ export function ExportView(props: { path: string }) {
     // the preview resource below via theme()/settings so it re-resolves on theme changes.
     palette: readThemePalette(theme()),
     includeFrontmatter: includeFrontmatter(),
+    showMarkdownSyntax: showMarkdownSyntax(),
   });
 
   const formats = () => formatsForOptions(srcPath(), isBase(), mode());
@@ -214,6 +221,7 @@ export function ExportView(props: { path: string }) {
         calStart(),
         settings.calendar.weekStartsOnMonday,
         includeFrontmatter(),
+        showMarkdownSyntax(),
         pdfFontSize(),
       ] as const,
     async ([path, fmt, thm]) => renderPreview(path, fmt, deps, thm, buildOptions()),
@@ -472,6 +480,9 @@ export function ExportView(props: { path: string }) {
             <div class="fopts">
               <Chip selected={includeFrontmatter()} onClick={() => setIncludeFrontmatter(!includeFrontmatter())}>
                 Include frontmatter
+              </Chip>
+              <Chip selected={showMarkdownSyntax()} onClick={() => setShowMarkdownSyntax(!showMarkdownSyntax())}>
+                Show markdown syntax
               </Chip>
             </div>
           </div>

@@ -97,6 +97,9 @@ async function wrapBody(
   // Real position within a page-broken export when the caller knows it (the PNG
   // per-section loop below); a single continuous document just gets "1 / 1".
   page: PageInfo = { index: 1, total: 1 },
+  // ExportOptions.showMarkdownSyntax, threaded through from every call site below (all of
+  // which have `opts` in hand — this is the one function real prose funnels through).
+  showMarkdownSyntax = false,
 ): Promise<string> {
   // `class="katex` is the marker KaTeX emits around rendered math (display or inline) —
   // far more precise than a bare "katex" substring. The inline CSS comes from
@@ -106,7 +109,7 @@ async function wrapBody(
   const view = extraCss ? `<style>${extraCss}</style>` : "";
   // `fontSizePt` is passed only by the PDF path (the user's chosen body size); other formats
   // leave it undefined so they keep their intrinsic sizing.
-  return wrapHtmlDocument(body, name, palette, view + katex, fontSizePt, page);
+  return wrapHtmlDocument(body, name, palette, view + katex, fontSizePt, page, showMarkdownSyntax);
 }
 
 // Render one `<!-- pagebreak -->`-delimited section (raw markdown, from pageSections) to an
@@ -244,7 +247,7 @@ export async function renderPreview(
   // page images the downloaded PDF holds, so preview and output never disagree.
   if (format === "pdf") {
     const { html, css } = await renderedBody(path, deps, opts, palette);
-    const doc = await wrapBody(html, name, palette, deps, css, opts.pdfFontSize);
+    const doc = await wrapBody(html, name, palette, deps, css, opts.pdfFontSize, undefined, opts.showMarkdownSyntax);
     const pages = await deps.htmlToPdfPages(doc);
     return { previewHtml: pdfPreviewDoc(pages, palette) };
   }
@@ -255,11 +258,22 @@ export async function renderPreview(
   if (sections) {
     const htmls: string[] = [];
     for (const s of sections) htmls.push(await renderSectionHtml(s));
-    return { previewHtml: await wrapBody(previewPagesBody(htmls), name, palette, deps, previewPagesCss(palette)) };
+    return {
+      previewHtml: await wrapBody(
+        previewPagesBody(htmls),
+        name,
+        palette,
+        deps,
+        previewPagesCss(palette),
+        undefined,
+        undefined,
+        opts.showMarkdownSyntax,
+      ),
+    };
   }
   // html + pdf + png share the same rendered HTML body (+ view CSS).
   const { html, css } = await renderedBody(path, deps, opts, palette);
-  return { previewHtml: await wrapBody(html, name, palette, deps, css) };
+  return { previewHtml: await wrapBody(html, name, palette, deps, css, undefined, undefined, opts.showMarkdownSyntax) };
 }
 
 /** Render a file to the chosen format, producing downloadable bytes. Impure I/O via `deps`. */
@@ -289,7 +303,7 @@ export async function renderExport(
     }
     case "html": {
       const { html, css } = await renderedBody(path, deps, opts, palette);
-      const doc = await wrapBody(html, name, palette, deps, css);
+      const doc = await wrapBody(html, name, palette, deps, css, undefined, undefined, opts.showMarkdownSyntax);
       return { bytes: TEXT.encode(doc), mime: "text/html", filename: `${name}.html`, previewHtml: doc };
     }
     case "pdf": {
@@ -299,7 +313,7 @@ export async function renderExport(
         return { bytes: pdf, mime: "application/pdf", filename: `${name}.pdf`, previewImg: dataUrl };
       }
       const { html, css } = await renderedBody(path, deps, opts, palette);
-      const doc = await wrapBody(html, name, palette, deps, css, opts.pdfFontSize);
+      const doc = await wrapBody(html, name, palette, deps, css, opts.pdfFontSize, undefined, opts.showMarkdownSyntax);
       const pdf = await deps.htmlToPdf(doc);
       return { bytes: pdf, mime: "application/pdf", filename: `${name}.pdf`, previewHtml: doc };
     }
@@ -335,6 +349,7 @@ export async function renderExport(
               "",
               undefined,
               { index: i + 1, total: sections.length },
+              opts.showMarkdownSyntax,
             );
             const { bytes, dataUrl } = await deps.htmlToPng(doc);
             if (i === 0) firstDataUrl = dataUrl;
@@ -350,7 +365,7 @@ export async function renderExport(
         }
       }
       const { html, css } = await renderedBody(path, deps, opts, palette);
-      const doc = await wrapBody(html, name, palette, deps, css);
+      const doc = await wrapBody(html, name, palette, deps, css, undefined, undefined, opts.showMarkdownSyntax);
       const { bytes, dataUrl } = await deps.htmlToPng(doc);
       return { bytes, mime: "image/png", filename: `${name}.png`, previewImg: dataUrl };
     }

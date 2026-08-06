@@ -28,12 +28,14 @@ function optionsFrom(args: string[]): ExportOptions {
   const span = flag(args, "cal-span");
   if (span === "month" || span === "week" || span === "3day" || span === "day") o.calSpan = span as CalSpan;
   if (bool(args, "no-frontmatter")) o.includeFrontmatter = false;
+  // Default is now off (clean formatting) — this flag turns markdown-syntax markers ON.
+  if (bool(args, "markdown-syntax")) o.showMarkdownSyntax = true;
   return o;
 }
 
 async function run(args: string[]): Promise<void> {
   const file = args.find((a) => !a.startsWith("--"));
-  if (!file) fail("usage: bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--theme dark|light]");
+  if (!file) fail("usage: bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light]");
   const fmt = (flag(args, "format") ?? (file.endsWith(".draw") ? "png" : "md")) as ExportFormat;
   const themeArg = flag(args, "theme") ?? "dark";
   if (themeArg !== "dark" && themeArg !== "light") fail(`--theme must be "dark" or "light": ${themeArg}`);
@@ -98,7 +100,7 @@ async function run(args: string[]): Promise<void> {
 export const commands: CommandMap = {
   export: {
     summary: "Export a note/base/sheet/drawing to md|html|png|pdf|csv (pdf/png of notes is app-only)",
-    usage: "<file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--theme dark|light] [--vault <dir>]",
+    usage: "<file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light] [--vault <dir>]",
     run,
   },
 };

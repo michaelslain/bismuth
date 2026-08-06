@@ -14,6 +14,10 @@ describe("defaultExportOptions", () => {
     expect(DEFAULT_PDF_FONT_SIZE).toBe(12);
     expect(defaultExportOptions().pdfFontSize).toBe(12);
   });
+
+  test("markdown syntax markers are off by default (clean formatting)", () => {
+    expect(defaultExportOptions().showMarkdownSyntax).toBe(false);
+  });
 });
 
 describe("clampPdfFontSize", () => {
