@@ -62,7 +62,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 <details><summary>Notes</summary>
 
 - A Finder window may flash open and shut **during the build** — that's just the dmg being styled, not the installer. Ignore it.
-- Prefer to do it by hand? `cd app && bun run tauri build`, then drag `src-tauri/target/release/bundle/macos/Bismuth.app` into `/Applications` (or open the dmg under `bundle/dmg/`).
+- Prefer to do it by hand? `cd app && bun run tauri build`, then open the dmg under `src-tauri/target/release/bundle/dmg/` and drag Bismuth into `/Applications`. (`bun run build:app` additionally deletes the staged `bundle/macos/Bismuth.app` afterwards, so macOS does not list a second Bismuth alongside your installed one — do the same by hand if you build this way.)
 - Full prerequisites, env vars, and dev-server details: [Install & run](overview/install.md).
 
 </details>
@@ -72,6 +72,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Architecture](overview/architecture.md) — workspaces, the three-brain model, how it all fits together
 - [Install & run](overview/install.md) — prerequisites, env vars, dev/build, multiple instances
 - [Storage](overview/storage.md) — where everything is stored on disk + in the browser
+- [Status messages](overview/status-messages.md) — what "connection lost — polling", "Open folder failed", and the rest actually mean
 - [Data flow](overview/data-flow.md) — file-watch → SSE → frontend, caching, layouts
 - [Self-update](overview/self-update.md) — the git-based in-place app updater (detect → pull → rebuild → swap)
 

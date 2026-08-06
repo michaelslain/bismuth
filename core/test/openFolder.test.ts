@@ -124,16 +124,21 @@ describe("spawnVaultBackend", () => {
   it("fails fast (before the timeout) if the child exits early", async () => {
     const dir = tmp();
     const start = Date.now();
+    let spawnCount = 0;
     await expect(
       spawnVaultBackend({
         folder: dir,
         memory: dir,
         serverEntry: "server.ts",
         waitMs: 5000, // long timeout — the early-exit detection should beat it
-        spawn: () => ({ pid: 9, kill() {}, exited: Promise.resolve(1) }),
+        attempts: 1, // pin the single-attempt give-up path; multi-attempt retry is covered
+        // separately by openFolderRetry.test.ts, and would otherwise let this case pass
+        // for the wrong reason (a loose message regex matching after N retries).
+        spawn: () => { spawnCount++; return { pid: 9, kill() {}, exited: Promise.resolve(1) }; },
         probe: async () => false,
       }),
     ).rejects.toThrow(/exited before it was ready/);
+    expect(spawnCount).toBe(1); // no hidden retries in the single-attempt path
     expect(Date.now() - start).toBeLessThan(2000); // didn't wait out the 5s timeout
   });
 

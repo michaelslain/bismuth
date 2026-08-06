@@ -78,6 +78,9 @@ export interface SpawnOptions {
   cwd?: string;
   /** How long to wait for the child to answer /version before giving up. */
   waitMs?: number;
+  /** How many children to try before giving up. Each attempt gets a FRESH port, because
+   *  findFreePort() cannot hold a port across the spawn boundary — see spawnVaultBackend. */
+  attempts?: number;
   /** Injectable spawner (tests) — defaults to Bun.spawn. `exited` (if provided)
    *  lets us detect a child that dies before it ever becomes ready. */
   spawn?: (cmd: string[], cwd?: string) => { pid: number; kill: () => void; exited?: Promise<number> };
@@ -102,37 +105,61 @@ async function defaultProbe(url: string): Promise<boolean> {
 
 /**
  * Spawn a core server for `folder` on a free port and resolve once it answers
- * /version. Rejects (and kills the child) if it never comes up within `waitMs`.
+ * /version. A child that EXITS before becoming ready is retried on a fresh port
+ * (up to `opts.attempts`) — that is the signature of a lost port-collision race,
+ * not a real startup failure. A child that stays alive but never answers is a
+ * genuine startup problem: it is killed and rejected immediately, with no retry,
+ * once `waitMs` elapses.
  */
 export async function spawnVaultBackend(opts: SpawnOptions): Promise<SpawnedBackend> {
   const vault = validateVaultFolder(opts.folder);
   if (!opts.memory) throw createError("EINVAL", "no memory dir configured");
-  const port = await findFreePort();
-  const url = `http://localhost:${port}`;
   const spawn = opts.spawn ?? defaultSpawn;
   const probe = opts.probe ?? defaultProbe;
+  const attempts = Math.max(1, opts.attempts ?? 3);
 
-  // In a `bun build --compile` binary, callers pass `import.meta.dir`, which is a virtual
-  // `/$bunfs/...` path that doesn't exist on disk. Spawning with a non-existent cwd makes
-  // posix_spawn fail with ENOENT (reported against the *executable*, e.g. "...posix_spawn
-  // 'bismuth-core'"), which looks like a missing binary but is really a bad cwd. Drop any
-  // cwd that isn't a real directory so the child just inherits the parent's valid cwd.
-  const cwd = opts.cwd && existsSync(opts.cwd) ? opts.cwd : undefined;
-  const child = spawn(coreLaunchArgv(opts.serverEntry, vault, opts.memory, port), cwd);
+  // findFreePort() binds :0, reads the number, and RELEASES it before the child binds — the
+  // port cannot be held across a spawn boundary. So two folder-opens in quick succession can
+  // be handed the same port and the loser dies on bind (github issue #6: "silently fails after
+  // a few folder opens"). We cannot close that race, only detect it: a child that EXITS before
+  // answering /version is the collision signature, and it gets one more go on a fresh port.
+  // A child that is merely slow is a genuine timeout and is not retried.
+  let lastExit = 0;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const port = await findFreePort();
+    const url = `http://localhost:${port}`;
 
-  // Watch for the child dying before it's ready (bad entry, port clash, crash on
-  // boot) so we fail fast with a clear message instead of waiting out the timeout.
-  let exitCode: number | null = null;
-  child.exited?.then((c) => { exitCode = c; }).catch(() => { exitCode = -1; });
+    // In a `bun build --compile` binary, callers pass `import.meta.dir`, which is a virtual
+    // `/$bunfs/...` path that doesn't exist on disk. Spawning with a non-existent cwd makes
+    // posix_spawn fail with ENOENT (reported against the *executable*, e.g. "...posix_spawn
+    // 'bismuth-core'"), which looks like a missing binary but is really a bad cwd. Drop any
+    // cwd that isn't a real directory so the child just inherits the parent's valid cwd.
+    const cwd = opts.cwd && existsSync(opts.cwd) ? opts.cwd : undefined;
+    const child = spawn(coreLaunchArgv(opts.serverEntry, vault, opts.memory, port), cwd);
 
-  const deadline = Date.now() + (opts.waitMs ?? 8000);
-  while (Date.now() < deadline) {
-    if (await probe(url)) return { url, port, vault, pid: child.pid };
-    if (exitCode !== null) {
-      throw createError("INTERNAL_ERROR", `backend for ${vault} exited before it was ready (code ${exitCode})`, 500);
+    let exitCode: number | null = null;
+    child.exited?.then((c) => { exitCode = c; }).catch(() => { exitCode = -1; });
+
+    const deadline = Date.now() + (opts.waitMs ?? 8000);
+    let died = false;
+    while (Date.now() < deadline) {
+      if (await probe(url)) return { url, port, vault, pid: child.pid };
+      if (exitCode !== null) { died = true; lastExit = exitCode; break; }
+      await new Promise((res) => setTimeout(res, 150));
     }
-    await new Promise((res) => setTimeout(res, 150));
+
+    if (!died) {
+      // Alive but never answered — a real startup problem, not a port race. Retrying would
+      // just spawn another hung child, so fail now.
+      child.kill();
+      throw createError("INTERNAL_ERROR", `backend for ${vault} did not become ready`, 500);
+    }
+    // Died before ready → probable port collision. Loop for a fresh port.
   }
-  child.kill();
-  throw createError("INTERNAL_ERROR", `backend for ${vault} did not become ready`, 500);
+
+  throw createError(
+    "INTERNAL_ERROR",
+    `backend for ${vault} exited before it was ready (code ${lastExit}) after ${attempts} attempts`,
+    500,
+  );
 }

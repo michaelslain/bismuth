@@ -14,7 +14,7 @@
     "build:bismuth-tools": "bun run scripts/build-bismuth-tools.ts",
     "build:daemon-sidecar": "bun run scripts/build-daemon-sidecar.ts",
     "icons:build": "bun run scripts/build-pixel-icons.ts",
-    "installer": "bun run tauri build && bun run scripts/open-installer.ts",
+    "installer": "bun run tauri build && bun run scripts/postbuild-clean.ts && bun run scripts/open-installer.ts",
     "tauri": "bun run scripts/tauri.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"

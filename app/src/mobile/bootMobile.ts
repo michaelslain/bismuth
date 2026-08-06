@@ -5,6 +5,9 @@
 //   import { bootMobile } from "./mobile/bootMobile";
 //   await bootMobile();                       // swap FileAccess + Transport
 //   const { App } = await import("./App");    // App + serverVersion load AFTER the swap
+//   const { start } = await import("../serverVersion");
+//   start();                                  // SSE + poll no longer start at module load —
+//                                              // see serverVersion.ts's start() — call explicitly
 //   render(() => <App />, root);
 //
 // Desktop's index.tsx is unchanged and never imports this module, so the HTTP
