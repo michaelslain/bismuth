@@ -6,11 +6,24 @@
 import { isTauri } from "./nativeMenu";
 import { pushToast } from "./Toast";
 import { withWindowId } from "./windowId";
+
+// Mirrors App.tsx's IS_MAC_PLATFORM (duplicated rather than imported — App.tsx imports
+// openAppWindow from this module, so importing back would be circular). A window opened here
+// (New window / Open folder) must match the SAME chrome as lib.rs's build_main_window: on
+// macOS an Overlay titlebar with the title hidden (App.tsx's own `.top-strip` renders the
+// wordmark + traffic-light gutter), on Windows/Linux fully undecorated with the typed
+// `[-] [+] [x]` controls. Without this, a new window got Tauri's DEFAULT chrome — a normal
+// native titlebar — stacked ABOVE the app's own top-strip, which still reserved gutter space
+// for traffic lights that were no longer there: a duplicate title bar and an offset wordmark.
+const IS_MAC_PLATFORM =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
 // PickResult/classifyPickResult live in their own module (pickResult.ts) — it has zero
 // `.tsx` imports, so a unit test of the pure classifier never has to load a Solid component.
 // Re-exported here so existing callers can keep importing them from "./appWindow".
 import { classifyPickResult, type PickResult } from "./pickResult";
 export { classifyPickResult, type PickResult };
+import { windowChromeOptions } from "./windowChrome";
+export { windowChromeOptions };
 
 /**
  * Native OS folder picker (Tauri only). Returns a three-valued result so callers can tell a
@@ -144,7 +157,13 @@ export async function openAppWindow(url: string, title = "Bismuth"): Promise<boo
       // relative url against the app's own origin keeps the query string intact.
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
       const label = `bismuth-${crypto.randomUUID()}`;
-      const w = new WebviewWindow(label, { url, title, width: 1200, height: 800 });
+      const w = new WebviewWindow(label, {
+        url,
+        title,
+        width: 1200,
+        height: 800,
+        ...windowChromeOptions(IS_MAC_PLATFORM),
+      });
       // Creation is async; a missing capability / nav block surfaces as an error event
       // rather than a throw — surface it instead of failing silently.
       w.once("tauri://error", (e) => {
