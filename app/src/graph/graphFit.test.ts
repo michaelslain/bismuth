@@ -9,6 +9,8 @@ import {
   boundingHalfExtents,
   fitScaleForBox,
   FIT_FILL_FRACTION,
+  MAX_CANVAS_AREA_PX,
+  clampDprToCanvasArea,
 } from "./graphFit";
 
 describe("isUsableBox", () => {
@@ -160,5 +162,49 @@ describe("fitScaleForBox", () => {
     expect(fitScaleForBox(1e9, 1e-9, 1e-9, 1e9)).toBeGreaterThan(0);
     expect(Number.isFinite(fitScaleForBox(-100, 500, 100, 100))).toBe(true);
     expect(fitScaleForBox(-100, 500, 100, 100)).toBe(1); // negative box -> negative ratio -> fallback
+  });
+});
+
+describe("clampDprToCanvasArea", () => {
+  // The failure this guards is silent: WebKit refuses an oversized 2D backing store without
+  // throwing, so the canvas keeps its CSS size and simply never paints. See MAX_CANVAS_AREA_PX.
+
+  it("leaves ordinary windows untouched, at every ratio a real display reports", () => {
+    // A maximised 16" MacBook Pro (1728x1117 CSS) — 7.7M device px at 2x, well under the cap.
+    expect(clampDprToCanvasArea(2, 1728, 1117)).toBe(2);
+    expect(clampDprToCanvasArea(1, 1728, 1117)).toBe(1);
+    expect(clampDprToCanvasArea(1.5, 1280, 800)).toBe(1.5);
+  });
+
+  it("steps the ratio down for a box whose backing store would exceed the cap", () => {
+    // 3600x2400 CSS at 2x = 69M device px, ~4x over budget.
+    const d = clampDprToCanvasArea(2, 3600, 2400);
+    expect(d).toBeLessThan(2);
+    expect(d).toBeGreaterThan(1);
+  });
+
+  it("lands the clamped backing store ON the budget, not merely under it", () => {
+    // Absolute, not relative to the returned value: an implementation that scaled the ratio
+    // linearly (rather than by sqrt) would still return "something smaller" and still be over
+    // budget — which is the whole bug. Area must actually fit.
+    // Every box here still fits under the cap at dpr 1, so the sqrt clamp is genuinely free to
+    // land on the budget — the dpr>=1 floor (tested separately below) never binds.
+    // 2560x1440 is a 5K Studio Display's CSS box — 14.7M DEVICE px at 2x, i.e. over budget on the
+    // exact hardware this bug was reported from, while fitting comfortably at 1x.
+    for (const [w, h] of [[3600, 2400], [2560, 1440], [4000, 3000]]) {
+      const d = clampDprToCanvasArea(2, w, h);
+      expect(w * h * d * d).toBeLessThanOrEqual(MAX_CANVAS_AREA_PX + 1);
+    }
+  });
+
+  it("never returns a ratio below 1 — a sub-1 backing store is blurrier than the bug it fixes", () => {
+    expect(clampDprToCanvasArea(2, 20000, 20000)).toBe(1);
+  });
+
+  it("falls back to 1 on a garbage ratio or box rather than propagating NaN into canvas.width", () => {
+    expect(clampDprToCanvasArea(NaN, 800, 600)).toBe(1);
+    expect(clampDprToCanvasArea(0, 800, 600)).toBe(1);
+    expect(clampDprToCanvasArea(2, NaN, NaN)).toBe(2);
+    expect(Number.isFinite(clampDprToCanvasArea(Infinity, 800, 600))).toBe(true);
   });
 });

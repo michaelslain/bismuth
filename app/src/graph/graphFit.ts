@@ -42,6 +42,43 @@ export function isUsableBox(width: number, height: number): boolean {
   );
 }
 
+/**
+ * The largest backing-store area (device px) we will ever ask a single canvas for.
+ *
+ * WebKit — which is what the packaged Tauri app runs on, not Chromium — refuses to allocate a 2D
+ * backing store past a hard area cap, and it does so SILENTLY: `canvas.width = n` succeeds, the
+ * element keeps its CSS size, every draw call returns without error, and the surface simply never
+ * paints. The symptom is a completely blank canvas under a perfectly populated HUD, on one machine
+ * and not another — because what crosses the cap is `cssWidth * cssHeight * dpr^2`, i.e. the user's
+ * DISPLAY, not their build. A 5K/Retina panel with the window maximised is roughly 5120x2880 =
+ * 14.7M device px for the main field alone, and the bloom canvas (GraphAtmosphere) allocates
+ * against the same per-page budget on top of that.
+ *
+ * 2^24 is WebKit's documented per-canvas area limit. We stay under it rather than at it, since the
+ * page holds more than one canvas.
+ */
+export const MAX_CANVAS_AREA_PX = 16_777_216 * 0.75;
+
+/**
+ * The device-pixel ratio to actually allocate the backing store at, given the host's CSS box.
+ *
+ * Returns `dpr` untouched whenever the resulting backing store fits under `MAX_CANVAS_AREA_PX` —
+ * which is every ordinary window on every ordinary display, so this changes nothing for the machines
+ * where the graph already works. Only an oversized box steps the ratio down (never below 1), trading
+ * crispness on a huge canvas for the canvas existing at all. See MAX_CANVAS_AREA_PX for why a canvas
+ * over the cap paints nothing rather than failing loudly.
+ */
+export function clampDprToCanvasArea(dpr: number, cssWidth: number, cssHeight: number): number {
+  const d = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+  const w = Number.isFinite(cssWidth) ? Math.max(1, cssWidth) : 1;
+  const h = Number.isFinite(cssHeight) ? Math.max(1, cssHeight) : 1;
+  const area = w * h * d * d;
+  if (area <= MAX_CANVAS_AREA_PX) return d;
+  // Scale the RATIO by sqrt(budget/area) — area grows with dpr^2, so the square root is what lands
+  // exactly on the budget instead of undershooting it.
+  return Math.max(1, d * Math.sqrt(MAX_CANVAS_AREA_PX / area));
+}
+
 /** Replace a non-finite number (NaN/±Infinity) with `fallback`. The single choke point that keeps a
  *  bad coordinate from propagating into bounds/scale math. */
 export function finiteOr(n: number, fallback = 0): number {
