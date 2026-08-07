@@ -23,6 +23,7 @@ import { buildColorSlots } from "./clusterVisual";
 import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
 import { MODE_MORPH_MS } from "./modeMorph";
 import { FIELD_H, FIELD_W, type DensityField } from "./densityField";
+import { MAX_CANVAS_AREA_PX } from "./graphFit";
 import { buildLodIndex, LOD_MIN_CLUSTER, LOD_REP_POINTS_K, type LodNodeInput } from "./lod";
 import { parseHexColor } from "./bloomColor";
 import { THEMES } from "../../../core/src/theme/tokens";
@@ -5824,4 +5825,82 @@ describe("depth-ordered cell arbitration in 3D (Task 23) — the nearer node own
       r.destroy();
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// SURVIVING A BAD FRAME / A REFUSED CONTEXT
+//
+// Both failures below present identically to a user — a blank canvas under a fully populated HUD,
+// on one machine and not another — and neither leaves an ongoing trace: the loop is simply no
+// longer running, so no resize, re-render, theme change or tab switch ever brings the field back.
+// ---------------------------------------------------------------------------
+describe("render loop resilience", () => {
+  it("keeps animating after a frame throws, and paints again once the fault clears", () => {
+    const { r } = mountRenderer("2d");
+    const priv = lodPriv(r) as unknown as { dirty: boolean };
+
+    const realFillText = ctx.fillText;
+    let thrown = 0;
+    // Behavioural sabotage: a real paint call fails, exactly as an unsupported/out-of-memory canvas
+    // operation would. Nothing about the renderer's own state is touched.
+    (ctx as unknown as { fillText: unknown }).fillText = () => { thrown++; throw new Error("canvas fault"); };
+    priv.dirty = true;
+    frame(32);
+    expect(thrown).toBeGreaterThan(0);
+
+    (ctx as unknown as { fillText: unknown }).fillText = realFillText;
+    ctx.fills.length = 0;
+    priv.dirty = true;
+    // If the throw had ended the loop there would be no queued callback at all, so this frame
+    // would be a no-op and `fills` would stay empty.
+    frame(48);
+    expect(ctx.fills.length).toBeGreaterThan(0);
+    r.destroy();
+  });
+
+  it("recovers when getContext('2d') refuses at mount and succeeds later", () => {
+    const canvasProto = (globalThis as unknown as { HTMLCanvasElement: { prototype: Record<string, unknown> } }).HTMLCanvasElement.prototype;
+    const realGetContext = canvasProto.getContext;
+    canvasProto.getContext = () => null;
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = newRenderer();
+    r.mount(host, () => {}, () => {});
+    r.setConfig({ ...CONFIG, viewMode: "2d" });
+    r.render(sampleGraph());
+    ctx.fills.length = 0;
+    frame(16);
+    // Nothing can have been drawn — there was no context to draw with.
+    expect(ctx.fills.length).toBe(0);
+
+    canvasProto.getContext = realGetContext;
+    frame(32);
+    frame(48);
+    expect(ctx.fills.length).toBeGreaterThan(0);
+    r.destroy();
+    canvasProto.getContext = realGetContext;
+  });
+
+  it("allocates a backing store within WebKit's canvas-area cap on a 5K display", () => {
+    // The wiring test for clampDprToCanvasArea (graphFit.test.ts covers the math). measure() is the
+    // ONLY place canvas.width is assigned, so a clamp that is computed and then not used would pass
+    // every pure test and still ship the blank canvas.
+    const realDpr = Object.getOwnPropertyDescriptor(globalThis.window, "devicePixelRatio");
+    Object.defineProperty(globalThis.window, "devicePixelRatio", { value: 2, configurable: true });
+    const [w0, h0] = [BOX.width, BOX.height];
+    BOX.width = 2560; BOX.height = 1440; // a 5K Studio Display's CSS box: 14.7M device px at 2x
+    try {
+      const { r } = mountRenderer("2d");
+      const canvas = (r as unknown as { canvas: HTMLCanvasElement }).canvas;
+      expect(canvas.width * canvas.height).toBeLessThanOrEqual(MAX_CANVAS_AREA_PX + 1);
+      // ...and it is still a real, full-size backing store, not a collapsed one.
+      expect(canvas.width).toBeGreaterThan(BOX.width);
+      expect(canvas.style.width).toBe(`${BOX.width}px`);
+      r.destroy();
+    } finally {
+      BOX.width = w0; BOX.height = h0;
+      if (realDpr) Object.defineProperty(globalThis.window, "devicePixelRatio", realDpr);
+    }
+  });
 });

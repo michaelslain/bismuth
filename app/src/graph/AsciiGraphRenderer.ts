@@ -53,7 +53,7 @@ import {
   buildColorSlots, clusterExtent, clusterLabelLift, inViewport, pathOf, pickHubAnchor, trimDanglingWord,
 } from "./clusterVisual";
 import { hashKey } from "../themeColors";
-import { isUsableBox, finiteVec3, boundingRadius, boundingHalfExtents, fitScaleForBox } from "./graphFit";
+import { isUsableBox, clampDprToCanvasArea, finiteVec3, boundingRadius, boundingHalfExtents, fitScaleForBox } from "./graphFit";
 import { structuralGraphSig, shouldResetView } from "./graphStability";
 import { noiseField, DEFAULT_NOISE_SEED } from "../ui/ascii/noiseField";
 import {
@@ -820,7 +820,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     this.viewport.className = "asc-graph-viewport asc-field";
     this.canvas = document.createElement("canvas");
     this.canvas.className = "asc-graph-canvas";
-    this.ctx = this.canvas.getContext("2d");
+    this.ensureContext();
     this.viewport.append(this.canvas);
     el.appendChild(this.viewport);
     this.applyGround();
@@ -847,6 +847,28 @@ export class AsciiGraphRenderer implements GraphRenderer {
     }
 
     this.start();
+  }
+
+  /**
+   * Get (or re-get) the 2D context, returning whether we have one.
+   *
+   * `getContext("2d")` is not guaranteed to succeed. WebKit returns null when the page is over its
+   * canvas-memory budget or the context was purged under pressure — and mount() used to take that
+   * null and carry on: `measure()` bailed on `!this.ctx` forever after, so the field stayed blank
+   * with no error anywhere, permanently, with no path back even once memory freed up. Re-asking each
+   * frame costs a property read in the healthy case (`this.ctx` is already set, so we return
+   * immediately) and is the only way a renderer that lost its context ever draws again.
+   */
+  private ensureContext(): boolean {
+    if (this.ctx) return true;
+    this.ctx = this.canvas.getContext("2d");
+    if (this.ctx) {
+      // A freshly-acquired context carries none of the state applyFont()/measure() had established
+      // on the old one, so the next frame must rebuild the grid rather than trust cached metrics.
+      this.dirty = true;
+      this.boxReady = false;
+    }
+    return !!this.ctx;
   }
 
   destroy() {
@@ -1422,12 +1444,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
   // ---- geometry ------------------------------------------------------------
 
   private measure() {
-    if (!this.host || !this.ctx) return;
+    if (!this.host || !this.ensureContext()) return;
     const r = this.host.getBoundingClientRect();
     if (!isUsableBox(r.width, r.height)) { if (!this.boxReady) this.dirty = true; return; }
     this.boxReady = true;
     this.W = Math.max(1, r.width); this.H = Math.max(1, r.height);
-    this.dpr = Math.min(2, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
+    this.dpr = clampDprToCanvasArea(
+      Math.min(2, (typeof window !== "undefined" && window.devicePixelRatio) || 1),
+      this.W,
+      this.H,
+    );
     // Only touch the backing store when it actually changes: assigning canvas.width/height CLEARS
     // the canvas (and resets the 2D context state) even when the value is identical. measure() is
     // called unconditionally from setConfig(), which GraphView fires on every theme/settings change
@@ -1555,8 +1581,37 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private start() { if (this.running || !this.visible || !this.host) return; this.running = true; this.raf = requestAnimationFrame(this.tick); }
   private stop() { this.running = false; if (this.raf) cancelAnimationFrame(this.raf); this.raf = 0; }
 
+  /**
+   * One animation frame, wrapped so a throw inside it cannot end the animation.
+   *
+   * `frame()` below ends with `requestAnimationFrame(this.tick)` — reschedule is the LAST statement,
+   * so anything that throws on the way there (a malformed node from a vault the other machines don't
+   * have, an unsupported canvas call, a transient allocation failure) silently stops the loop for
+   * good. The canvas keeps whatever it last painted, or nothing at all if the throw landed on the
+   * first frame, and no amount of resizing or re-rendering brings it back because nothing is running
+   * to notice. Rescheduling in `finally` means a frame can fail without the field dying with it.
+   *
+   * The error is reported once per renderer rather than every frame: a persistent fault would
+   * otherwise flood the console at 60Hz and bury its own first occurrence.
+   */
   private tick = (t: number) => {
+    try {
+      this.frame(t);
+    } catch (err) {
+      if (!this.frameErrorLogged) {
+        this.frameErrorLogged = true;
+        console.error("[graph] frame failed; the render loop continues", err);
+      }
+    } finally {
+      if (this.running) this.raf = requestAnimationFrame(this.tick);
+    }
+  };
+
+  private frameErrorLogged = false;
+
+  private frame = (t: number) => {
     if (!this.running) return;
+    if (!this.ensureContext()) return;
     this.syncSize();
     // Real elapsed ms since the last tick — clamped to [1, 100]: never zero/negative (defensive
     // against a non-monotonic or repeated rAF timestamp, which would otherwise divide-by-zero-ish or
@@ -1630,7 +1685,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.emitBloom();
       this.dirty = false;
     }
-    this.raf = requestAnimationFrame(this.tick);
+    // NB: the reschedule lives in tick()'s `finally`, not here — see its doc comment.
   };
 
   private emitZoom() {
