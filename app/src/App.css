@@ -276,7 +276,10 @@ body { background: var(--bg); color: var(--fg); }
 .ft-chevron { color: var(--faint); }
 /* The tree connector — treePrefix(depth,last)'s "|-- " / "`-- " run — prepended to every row
    (design/ascii/README.md "Components", ascii-tree.card.html). Plain --faint structure, never
-   body content; replaces the old depth*12px padding-left indent entirely. */
+   body content; replaces the old depth*12px padding-left indent entirely.
+   FileTree rows render the prefix trimEnd()-ed: treePrefix's trailing space is there for the
+   text-only <AsciiTree>, but in a flex row it stacks on top of .ft-row's gap and the icon box's
+   own side bearing, which read as a gaping hole between "|--" and the folder glyph. */
 .ft-prefix { flex-shrink: 0; color: var(--faint); white-space: pre; font-family: var(--ui-font-stack); }
 /* AI-visibility badge (chat-only / hidden) beside a row's icon — see docs/vault/visibility.md.
    "hidden" reads as more severe (danger tint); "chat-only" stays muted like the rest of the row. */
