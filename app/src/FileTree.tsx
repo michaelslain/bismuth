@@ -833,7 +833,7 @@ function Level(props: {
               onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.toggle(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
-              <span class="ft-prefix">{prefixFor(i())}</span>
+              <span class="ft-prefix">{prefixFor(i()).trimEnd()}</span>
               {/* One glyph, not two: the folder icon's own shape IS the disclosure state (Folder "▸" /
                   FolderOpen "▾" — see icons/registry.ts), so there is no separate chevron icon here.
                   A bare ChevronRight/ChevronDown alongside it drew the same triangle twice. */}
@@ -861,7 +861,7 @@ function Level(props: {
             onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.onOpen(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
-            <span class="ft-prefix">{prefixFor(i())}</span>
+            <span class="ft-prefix">{prefixFor(i()).trimEnd()}</span>
             <Icon value={child.icon} fallback={child.name.endsWith(".sheet") ? "Table" : "FileText"} size={16} class="ft-icon" />
             <VisibilityBadge visibility={child.visibility} />
             <Show when={props.editing === child.path} fallback={child.label ?? displayName(child.name)}>
