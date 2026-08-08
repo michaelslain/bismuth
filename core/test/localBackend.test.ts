@@ -19,7 +19,6 @@ function memVault(initial: Record<string, string>): { fa: FileAccess; files: Rec
       return files[rel];
     },
     writeNote: async (_root, rel, contents) => { files[rel] = contents; },
-    listBases: async () => Object.keys(files).filter((p) => p.endsWith(".base")),
     statNote: async (_root, rel) => (rel in files ? { size: files[rel].length, mtimeMs: 0, ctimeMs: 0, birthtimeMs: 0 } : null),
     realPath: async (p) => p,
   };

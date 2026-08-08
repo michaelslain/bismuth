@@ -40,11 +40,11 @@ export async function drawingToPng(
     scale(x: number, y: number): void; translate(x: number, y: number): void; save(): void; restore(): void;
   };
   ctx.scale(SCALE, SCALE);
-  renderDocStacked(ctx, doc, themeColors(theme), PAGE_W, PAGE_H, (c, dx, dy, body) => {
-    (c as any).save();
-    (c as any).translate(dx, dy);
+  renderDocStacked(ctx, doc, themeColors(theme), PAGE_W, PAGE_H, (_c, dx, dy, body) => {
+    ctx.save();
+    ctx.translate(dx, dy);
     body();
-    (c as any).restore();
+    ctx.restore();
   }, (src) => images.get(src));
   const dataUrl = canvas.toDataURL("image/png");
   const bytes = Uint8Array.from(atob(dataUrl.split(",")[1]), (ch) => ch.charCodeAt(0));

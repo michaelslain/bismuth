@@ -84,14 +84,15 @@ export function daemonSnapshot(home: string = daemonMachineDir(), name: string =
       const fm = (typeof data.name === "string" && data.name) || name;
       const lf = lastFired[fm];
       const run = runningMap[fm];
+      const lfAny = lf as any;
       const lastFiredEntry =
         lf && typeof lf === "object"
           ? {
-              timestamp: typeof (lf as any).timestamp === "string" ? (lf as any).timestamp : "",
-              result: typeof (lf as any).result === "string" ? (lf as any).result : "unknown",
+              timestamp: typeof lfAny.timestamp === "string" ? lfAny.timestamp : "",
+              result: typeof lfAny.result === "string" ? lfAny.result : "unknown",
               // Present only for a "skipped" incremental-cron run (see daemon/src/daemon/cron.ts) —
               // the human-readable reason, e.g. "skipped: no changes since <ISO>".
-              ...(typeof (lf as any).detail === "string" ? { detail: (lf as any).detail } : {}),
+              ...(typeof lfAny.detail === "string" ? { detail: lfAny.detail } : {}),
             }
           : null;
       const startedAt =

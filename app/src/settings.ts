@@ -388,7 +388,7 @@ if (typeof window !== "undefined") {
         if (!hydrated) return;
         clearTimeout(persistTimer);
         persistTimer = setTimeout(() => {
-          const current = JSON.parse(JSON.stringify(settings)) as Record<string, unknown>;
+          const current = structuredClone(settings) as unknown as Record<string, unknown>;
           const changes = diffLeaves(lastSnapshot, current);
           lastSnapshot = current;
           for (const { path, value } of changes) {

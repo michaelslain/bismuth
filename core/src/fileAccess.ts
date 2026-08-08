@@ -26,8 +26,6 @@ export interface FileAccess {
   readNote(root: string, rel: string): Promise<string>;
   /** Write one note's UTF-8 contents (vault-relative path). */
   writeNote(root: string, rel: string, contents: string): Promise<void>;
-  /** All `.base` files under the vault, vault-relative. */
-  listBases(root: string): Promise<string[]>;
   /** Stat one note; resolves null if it vanished since listing. */
   statNote(root: string, rel: string): Promise<FileStat | null>;
   /** Canonicalize an absolute path for cycle detection; best-effort (returns input on failure). */
@@ -55,7 +53,6 @@ export async function getFileAccess(): Promise<FileAccess> {
     listTree: files.listTree,
     readNote: files.readNote,
     writeNote: files.writeNote,
-    listBases: files.listBases,
     statNote: async (root, rel) => {
       const st = await stat(join(root, rel)).catch(() => null);
       if (!st) return null;

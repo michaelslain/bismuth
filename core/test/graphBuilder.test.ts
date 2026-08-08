@@ -12,7 +12,6 @@ function memAccess(vault: Record<string, string>): FileAccess {
     listTree: async () => Object.keys(vault).map((path) => ({ path, kind: "file" as const })),
     readNote: async (_root, rel) => vault[rel] ?? "",
     writeNote: async () => {},
-    listBases: async () => [],
     statNote: async () => null,
     realPath: async (p) => p,
   };
