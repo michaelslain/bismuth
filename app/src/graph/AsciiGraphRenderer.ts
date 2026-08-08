@@ -65,7 +65,7 @@ import {
   EDGE_WEIGHT_BUCKETS, buildLevelEdges, computeEdgeLevelWeights, edgeWeightBucketRange,
 } from "./backbone";
 import type { CommunityCentroid, GraphConfig, GraphRenderer, HoverNode, NodeForUI, Vec3 } from "./graphRenderer";
-import { buildBloom, pushCloud, type BloomPoint, type DensityField } from "./densityField";
+import { BASE_BLUR_RADIUS, blurRadiusForZoom, buildBloom, pushCloud, scaleField, type BloomPoint, type DensityField } from "./densityField";
 import { dollyForT, zoomT } from "./cameraModel";
 import { blendPosition, lerp, MODE_MORPH_MS, morphProgress } from "./modeMorph";
 import {
@@ -162,9 +162,31 @@ const WHEEL_NOTCH_PX = 120;      // one physical mouse-wheel click (the Windows 
                                   // browsers report a notch as); each notch moves ZOOM_STEP_PCT, trackpad
                                   // deltas simply accumulate toward the next notch instead of firing every event
 const RES_EPS = 0.002;           // below this the resolution glide is considered settled
+// Fraction of the gap the bloom's reference peak closes per DIRTY frame when the field gets sparser
+// (it rises instantly — see `bloomPeakRef`). ~8%/frame halves the gap in about nine frames, i.e. a
+// beat of dimming rather than an instant re-scale, which is what keeps a camera move from
+// re-lighting the ground under itself.
+const BLOOM_PEAK_DECAY = 0.08;
+// Ceiling on how far the reference peak may sit above the CURRENT frame's peak, i.e. the dimmest
+// the brightest cell on screen is allowed to become (1/2.5 = 0.4). Above the atmosphere's own v⁴
+// visibility floor ((5/255)^¼ ≈ 0.374), so a smoothed divisor can dim the ground but can never
+// extinguish it — see where it is applied in emitBloom().
+const BLOOM_PEAK_MAX_RATIO = 2.5;
 const NOISE_DENSITY = 0.08;      // texture, never the signal (the design card defaults GLYPHS to 0%)
 const NOISE_ALPHA = 0.45;        // tokens/ascii.css --field-noise-op
 const DEPTH_BANDS = 3;           // "." far / "o" mid / "@" near — the ramp shift, not a font change
+/** Fraction of the field a framed subset (`frameSubset`) or a clicked cluster (`clickEntity`'s fit
+ *  ceiling) is asked to fill. Short of 1 on purpose: the radius it multiplies is measured to the
+ *  member set's own extreme, so the remainder is what leaves room for that extreme node's GLYPH and
+ *  its file label — both of which are drawn outward from a position that would otherwise sit exactly
+ *  on the rim. Shared by both call sites so a click and a keyboard focus frame identically. */
+const CLUSTER_FRAME_FILL = 0.55;
+/** How much of the field a CLICKED cluster is allowed to cover before `clickEntity` stops zooming in
+ *  (`clusterFitCeilingT`). Above 1 on purpose — a click's job is to reveal the child grouping, and
+ *  rim members leaving the field is what zooming in means — but bounded, so the camera can never land
+ *  somewhere the cluster you clicked is mostly off-grid with no way to tell where the rest of it
+ *  went. 1.5 keeps roughly two thirds of the clicked cluster's box on the field in the worst case. */
+const CLUSTER_CLICK_MAX_COVER = 1.5;
 export const DIM_ALPHA = 0.28;   // NODE non-focus dimming on hover / cluster highlight — glyphs read fine
                                   // much dimmer than lines do, so this is deliberately NOT shared with
                                   // edges (see EDGE_DIM_ALPHA below — reusing this one for edges was bug).
@@ -661,6 +683,15 @@ export class AsciiGraphRenderer implements GraphRenderer {
    *  window. Written by emitBloom(), which runs after rasterize() in tick(). */
   private bloomPointsFrame = 0;
   private bloomWeightFrame = 0;
+  /** The REFERENCE PEAK the bloom is normalised against — the density that paints as full
+   *  brightness. Carried across frames rather than re-read from each frame's own maximum, which is
+   *  what makes the atmosphere stop lighting up arbitrary regions: see `normalise`'s `ref` doc for
+   *  the failure mode. It jumps up instantly to any new maximum (a denser region appearing must
+   *  read as denser on the very frame it appears) and decays toward the current frame's peak
+   *  slowly, so a dense core panning off-field dims the ground over a beat instead of promoting
+   *  whatever is left to maximum. 0 means "no reference yet" — the first frame adopts its own peak.
+   */
+  private bloomPeakRef = 0;
   /** ...and their weighted per-axis spread, in screen fractions — see `AsciiGraphStats.bloomSdx`
    *  for why the size of what the bloom emits is only measurable BEFORE `buildBloom`'s blur. */
   private bloomSdxFrame = 0;
@@ -942,6 +973,9 @@ export class AsciiGraphRenderer implements GraphRenderer {
   }
 
   private build(g: GraphData, resetCamera: boolean) {
+    // A different graph has a different density scale, so the carried reference peak from the old
+    // one means nothing — keeping it would paint the new graph relative to a vanished one.
+    this.bloomPeakRef = 0;
     this.measure();
     this.adjacency.clear();
     const deg = new Map<string, number>();
@@ -1877,7 +1911,38 @@ export class AsciiGraphRenderer implements GraphRenderer {
     } else {
       this.bloomSdxFrame = 0; this.bloomSdyFrame = 0;
     }
-    this.onBloom(buildBloom(pts));
+    // Kernel sized to the camera, not to the field: at fit this is the historical radius 6, and it
+    // grows with magnification so a zoomed-in cluster stays ONE lit region instead of resolving
+    // into one halo per node (blurRadiusForZoom). Free to grow — `blur` is O(cells), not O(cells·r).
+    const radius = blurRadiusForZoom(this.res);
+    // The reference peak is carried in FIT-EQUIVALENT units, and this is the conversion. `blur` is a
+    // windowed MEAN, so a blurred cell reads points-per-field-cell — a quantity that falls as
+    // roughly 1/zoom² for the simple reason that magnifying pushes the same nodes further apart on
+    // a fixed-size field. Comparing this frame's raw peak against a peak measured at another zoom
+    // would therefore be comparing two different units, and the atmosphere would fade out as you
+    // zoomed in (or blow out as you zoomed back). `area` is exactly that unit change — the kernel's
+    // growth in cells — so `raw * area` is a zoom-invariant density the reference can be kept in.
+    const area = (radius / BASE_BLUR_RADIUS) ** 2;
+    const field = buildBloom(pts, radius);
+    // The density this frame actually produced, in those fit-equivalent units.
+    const raw = (field.peak ?? 0) * area;
+    // The reference rises to any new maximum immediately (a denser region appearing must read as
+    // denser on the frame it appears) and falls toward a lower one geometrically, so a camera nudge
+    // cannot re-scale the whole field under itself...
+    const decayed = raw >= this.bloomPeakRef
+      ? raw
+      : this.bloomPeakRef + (raw - this.bloomPeakRef) * BLOOM_PEAK_DECAY;
+    // ...but it is never more than BLOOM_PEAK_MAX_RATIO above what this frame holds. Smoothing
+    // alone is not enough: against a SUSTAINED fall in density (zooming steadily in, panning off
+    // the dense core over many frames) a lagging reference never catches up and the atmosphere
+    // fades to black — the smoothing turns one honest re-scale into a permanent one. The clamp
+    // bounds how dim the brightest cell may get while leaving the smoothing free inside that band,
+    // so the ground can dim as you leave a dense region but can never go out.
+    this.bloomPeakRef = Math.min(decayed, raw * BLOOM_PEAK_MAX_RATIO);
+    // `buildBloom` already divided by this frame's own peak; scaling by raw/ref replaces that with
+    // the carried reference. Computed after the fact rather than passed in as the divisor because
+    // the clamp above needs to see the peak first.
+    this.onBloom(this.bloomPeakRef > 0 ? scaleField(field, raw / this.bloomPeakRef) : field);
   }
 
   /**
@@ -2848,7 +2913,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // and neither implies the other — `fileLabelBudget` and `fileLabelAlpha` are separate curves
     // that are BOTH zero at/below FILE_LABEL_REVEAL_T (0.75), i.e. across the whole range a diagram
     // opened at fit actually sits in, so dropping only one of them still shows nothing.
-    const everyNode = this.cfg.labelEveryNode === true;
+    // A flat graph (levelCount === 0, e.g. below the clustering node-count threshold — see
+    // engine.ts's stampCommunities) has no cluster names to fall back on at low zoom, so the normal
+    // zoom-gated reveal would leave it blank instead of showing the only content it has.
+    const everyNode = this.cfg.labelEveryNode === true || this.levelCount === 0;
     const budget = everyNode ? ordered.length : fileLabelBudget(t, ordered.length);
 
     const forced = (nv: NodeView) => {
@@ -3578,7 +3646,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     let r = 1e-6;
     for (const p of pts) r = Math.max(r, Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]));
     const whole = Math.max(1e-6, is2d ? this.radius2 : this.radius3);
-    const wantMag = (whole / r) * 0.55;
+    const wantMag = (whole / r) * CLUSTER_FRAME_FILL;
     // resFromT(resolutionT(m, maxRes), maxRes) is m clamped to [1, maxRes] — the 2D road, unchanged.
     let t = resolutionT(wantMag, this.maxRes);
     if (!is2d) t = Math.max(t, zoomT(this.P * (1 - 1 / Math.max(1, wantMag)), this.P));
@@ -3639,19 +3707,97 @@ export class AsciiGraphRenderer implements GraphRenderer {
    */
   private clickEntity(evIdx: number) {
     const ev = this.entityFlat[evIdx];
-    this.goalTarget = [ev.wx, ev.wy, 0];
+    // Anchor on the members' bounding-BOX CENTRE, not their centroid (`ev.wx/wy`). A vault's
+    // communities are hub-and-spoke (clusterVisual.ts's header records the same measurement for
+    // label anchoring), so the centroid sits wherever the mass of members happens to pile up — put
+    // it in the middle of the field and the sparse far side of the cluster hangs off one edge. The
+    // box centre is the one point that keeps BOTH extremes equidistant, and it is the point the
+    // half-extents below are measured from, so centring and the fit ceiling agree.
+    const ext = this.clusterExtent2d(ev);
+    this.goalTarget = [ext.cx, ext.cy, 0];
     const bounds = levelBoundaries(this.levelCount); // length levelCount+1, coarsest→finest, ends at FILE_LABEL_REVEAL_T
     const childLevel = Math.min(ev.level + 1, this.levelCount);
     const isLeaf = childLevel >= this.levelCount;
     // `bounds[childLevel]` is both the minimum resolution that reveals the child grouping AND the
     // strongest its masses ever get (massAlpha is non-increasing) — see this method's doc for what
     // that means when the child's window starts past the end of the mass band.
-    const targetT = isLeaf ? FILE_LABEL_REVEAL_T + FILE_LABEL_FADE_SPAN * 0.5 : bounds[childLevel];
+    const levelT = isLeaf ? FILE_LABEL_REVEAL_T + FILE_LABEL_FADE_SPAN * 0.5 : bounds[childLevel];
+    // …but never so deep that the cluster you clicked stops being on screen. The level boundary is a
+    // property of the HIERARCHY alone — the same `t` for a 400-node continent and a 9-node scrap —
+    // while how much of the field a cluster covers is a property of its world EXTENT. For a small or
+    // tightly-packed cluster the two disagree by a lot: the boundary magnifies a cluster that was
+    // already a few cells wide until its own members sit outside the grid, which is the reported
+    // bug. `min` keeps the level reveal in every case where the cluster survives it (see
+    // `clusterFitCeilingT` for how much overflow that tolerates) and gives way when it does not.
+    const targetT = Math.min(levelT, this.clusterFitCeilingT(ext.hx, ext.hy));
     const targetPct = snapZoomPercent(resolutionPercent(resFromT(targetT, this.maxRes), this.maxRes));
     this.zoomPct = Math.min(this.zoomPct, targetPct);
     this.goalRes = resFromPercent(this.zoomPct, this.maxRes);
     this.userTook = true;
     this.dirty = true;
+  }
+
+  /**
+   * A clicked entity's members in 2D world space: the bounding-box centre and the radius of the
+   * smallest circle about that centre containing every member. Deliberately measured over the
+   * MEMBER SET, not over `ev.sdx`/`ev.sdy` — a standard deviation describes the typical member and
+   * says nothing about the one stray that is actually the first thing to leave the field.
+   *
+   * Falls back to the cluster's own centroid with a degenerate radius when the member set is empty
+   * or unresolvable (a filtered graph mode can leave `memberIds` pointing at nodes `byId` no longer
+   * holds), so callers get a usable anchor rather than NaN — same guard discipline as graphFit.ts.
+   */
+  private clusterExtent2d(ev: EntityView): { cx: number; cy: number; hx: number; hy: number } {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const id of ev.memberIds) {
+      const nv = this.byId.get(id);
+      if (!nv) continue;
+      const x = nv.p2[0], y = nv.p2[1];
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return { cx: ev.wx, cy: ev.wy, hx: 1e-6, hy: 1e-6 };
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    return { cx, cy, hx: Math.max(1e-6, maxX - cx), hy: Math.max(1e-6, maxY - cy) };
+  }
+
+  /**
+   * The deepest resolution progress `t` a cluster of world half-extents `hx`/`hy`, centred in the
+   * field, may be zoomed to before it stops reading as a cluster at all.
+   *
+   * Exact rather than radius-based, because the field is a RECTANGLE and a cluster is rarely square:
+   * in 2D the projector's world→px scale is exactly `fitPxPerWorldFor(true) * res` (see
+   * `cameraFrame`) about a centred target, so the cluster's box covers the field exactly when
+   * `pxPerWorld * res * h = half-axis` on the binding axis — which is what `graphFit.ts`'s
+   * `fitScaleForBox` already solves, the same function that decides the whole graph's fit at
+   * `res = 1`. So this ceiling is the whole-graph fit law applied to one cluster's box, not a second
+   * spacing rule to keep in sync. A circumscribing radius would over-read a tall thin cluster by up
+   * to sqrt(2) and cap the zoom well short of what the field can actually hold, which is its own way
+   * of making a click feel broken.
+   *
+   * NOT `FIT_FILL_FRACTION`: this is a GUARD, not a framing rule (that is `frameSubset`'s job, at
+   * `CLUSTER_FRAME_FILL`). A click's first duty is to reveal the child grouping, so the ceiling is
+   * set where losing the cluster starts to cost more than the reveal buys —
+   * `CLUSTER_CLICK_MAX_COVER`, deliberately GREATER than 1 (the cluster is allowed to overflow the
+   * field somewhat; its rim members leaving is a normal consequence of zooming in) but bounded, so a
+   * click can never land somewhere the cluster is mostly off-grid. Pinning this at 0.92 instead was
+   * measured against this repo's own LOD fixtures and rejected: on both of them the child boundary
+   * sits just past a strict fit, so a strict ceiling silently cancelled the level reveal on every
+   * click — trading the reported bug for a worse one.
+   *
+   * 2D only in effect. In 3D magnification comes from the camera dolly as well as `res` and the two
+   * combine (see `frameSubset`), so a `res`-only ceiling would under-frame a 3D click for no reason;
+   * 3D returns 1 (no cap) and keeps its existing behaviour. An orbit camera also has no fixed box to
+   * overflow the way the character grid does, which is why the complaint this cap answers is a 2D
+   * one.
+   */
+  private clusterFitCeilingT(hx: number, hy: number): number {
+    if (this.cfg.viewMode !== "2d") return 1;
+    const maxScale = fitScaleForBox(
+      this.m.cols * this.m.cellW, this.m.rows * this.m.cellH, hx, hy, CLUSTER_CLICK_MAX_COVER,
+    );
+    return resolutionT(maxScale / Math.max(1e-9, this.fitPxPerWorldFor(true)), this.maxRes);
   }
 
   /** Back to the whole-graph overview. Nothing here mentions the camera dolly because there is

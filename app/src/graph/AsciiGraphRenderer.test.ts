@@ -3809,6 +3809,40 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
     // Measured range on this fixture: 0.69 .. 1.47.
   });
 
+  it("REQUIRED — the atmosphere dims when the density leaves, instead of re-scaling to whatever is left", () => {
+    // The "things glow randomly" defect. `normalise` pins EVERY non-empty field's peak to exactly 1,
+    // so brightness was purely relative: pan the dense core off the field and the sparse remnant —
+    // a handful of stragglers — was promoted to full brightness, and each camera move re-scaled the
+    // whole ground again. The renderer now carries a reference peak across frames (bloomPeakRef).
+    const { priv, field } = mountBloom(spreadClusterGraph(), false);
+    const peak = () => { const f = field(); return f ? Math.max(...Array.from(f)) : 0; };
+
+    park(priv, 0);                                    // fit: the whole dense graph owns the field
+    expect(peak()).toBeCloseTo(1, 6);                 // first frame adopts its own peak — full bright
+
+    // Same graph, same zoom; only the camera moves, far enough that the field empties out.
+    // Off to the lattice's far corner — most of it leaves the field, a sparse fringe stays. (Not
+    // all the way off: an EMPTY field has no density to be relative to and correctly stays black,
+    // which would not test anything.)
+    const cam = priv as unknown as { target: number[]; goalTarget: number[] };
+    const away = [8 * 36 * RING_SCALE, 0, 0];
+    cam.target = away.slice();
+    cam.goalTarget = away.slice();
+    priv.dirty = true;
+    frame(9999);
+    const dimmed = peak();
+    expect(dimmed).toBeLessThan(0.9);                 // dimmed, NOT re-scaled back up to full
+    expect(dimmed).toBeGreaterThan(0.39);             // ...but bounded: the ground never goes out
+
+    // And it recovers: bring the graph back and the very next frame is bright again (the reference
+    // rises immediately, so a denser region appearing is never held back).
+    cam.target = [0, 0, 0];
+    cam.goalTarget = [0, 0, 0];
+    priv.dirty = true;
+    frame(9999);
+    expect(peak()).toBeCloseTo(1, 6);
+  });
+
   it("the handover is a BLEND: both contributions are in the point list mid-crossfade, neither is outside it", () => {
     // The mechanism behind "no pop", pinned where it can be read exactly rather than inferred from
     // ink. Three stops, one per band, checked against `bandsForT` — the band authority — not
@@ -4367,6 +4401,70 @@ describe("interaction", () => {
     settle(200);
     expect(clicks).toEqual([]);                 // a cluster is not a note
     expect(zooms.at(-1)!).toBeLessThan(100);    // the field zoomed toward the cluster's members
+    r.destroy();
+  });
+
+  /**
+   * A cluster whose members are LOPSIDED and SPREAD: a tight nine-note core plus one lone stray far
+   * above it, with a counterweight cluster on the right so the graph's own bounding box is wider
+   * than the clicked cluster's. Two properties the other LOD fixtures don't have, both of them the
+   * geometry a real vault produces and the reason clicking a cluster used to throw its own members
+   * off the field:
+   *   - the member CENTROID (y ≈ -240, dragged down by the core) and the member bounding-box CENTRE
+   *     (y = 0) are 240 world units apart, so centring on the wrong one puts the stray off-grid;
+   *   - the cluster is TALL relative to the field, so the child-level boundary — which knows nothing
+   *     about extent — magnifies past what the grid can hold.
+   */
+  function lopsidedGraph() {
+    const nodes = [];
+    const edges = [];
+    const push = (id: string, x: number, y: number, top: number, blob: number) => nodes.push({
+      id, label: `note ${id}`, kind: "note" as const,
+      position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
+      community: blob, communityLabel: `Blob ${blob}`,
+      communityPath: [top, blob], communityPathLabels: [`Top ${top}`, `Blob ${blob}`],
+    });
+    for (let k = 0; k < 9; k++) push(`a${k}`, -600 + (k % 3) * 10, -300 + Math.floor(k / 3) * 10, 0, k < 5 ? 0 : 1);
+    push("astray", -600, 300, 0, 1);
+    for (let k = 0; k < 10; k++) push(`b${k}`, 600 + (k % 5) * 10, -20 + Math.floor(k / 5) * 10, 1, k < 5 ? 2 : 3);
+    for (let k = 1; k < 9; k++) edges.push({ from: "a0", to: `a${k}`, kind: "link" as const });
+    edges.push({ from: "a0", to: "astray", kind: "link" as const });
+    for (let k = 1; k < 10; k++) edges.push({ from: "b0", to: `b${k}`, kind: "link" as const });
+    edges.push({ from: "a0", to: "b0", kind: "link" as const });
+    return { nodes, edges };
+  }
+
+  it("clicking a cluster centres on its members' BOX, and never zooms so far in that it loses them", () => {
+    const { r, viewport } = mountRenderer("2d", lopsidedGraph(), { showLodMasses: true });
+    const p = lodPriv(r);
+    // Click the LEFT (lopsided) top-level mass specifically — the counterweight on the right is
+    // there to shape the fit, not to be clicked.
+    const cell = [...p.cellEntity].findIndex((v) => v >= 0 && p.entityFlat[v].level === 0 && p.entityFlat[v].community === 0);
+    expect(cell).toBeGreaterThanOrEqual(0);
+    const at = cellPx(p, cell);
+    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: at.x, clientY: at.y }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: at.x, clientY: at.y }));
+    settle(300);
+
+    const members = p.nodes.filter((n) => n.node.id.startsWith("a"));
+    expect(members.length).toBe(10);
+    const ys = members.map((n) => (n as unknown as { p2: number[] }).p2[1]);
+    const boxCy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const centroidCy = ys.reduce((a, b) => a + b, 0) / ys.length;
+    // The fixture is only meaningful if the two anchors actually disagree — assert that, so a future
+    // fixture edit that quietly collapses them can't turn this into a test of nothing.
+    expect(Math.abs(boxCy - centroidCy)).toBeGreaterThan(100);
+    // The camera went to the BOX centre. (Pre-fix it went to `ev.wy`, the centroid.)
+    expect(Math.abs(p.target[1] - boxCy)).toBeLessThan(Math.abs(boxCy - centroidCy) / 2);
+
+    // ...and it stopped short of the stop that would have lost the cluster: at the resolution it
+    // landed on, the members' box still covers no more than CLUSTER_CLICK_MAX_COVER of the field.
+    // Measured against the projector's own 2D scale law (pxPerWorld * res), so this fails if the
+    // ceiling is removed OR if it stops matching how the field is actually projected.
+    const halfSpanPx = (Math.max(...ys) - Math.min(...ys)) / 2 * p.pxPerWorld * p.res;
+    expect(halfSpanPx).toBeLessThanOrEqual((p.m.rows * p.m.cellH / 2) * 1.5 * 1.02);
+    // The click still zoomed IN — a ceiling that fires by refusing to move is not a fix.
+    expect(r.computeStats().zoomPct).toBeLessThan(100);
     r.destroy();
   });
 

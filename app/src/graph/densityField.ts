@@ -42,7 +42,12 @@ export interface RgbChannels { r: Float32Array; g: Float32Array; b: Float32Array
 /** The intensity field, optionally carrying colour. Attaching `rgb` to the Float32Array rather than
  *  wrapping it keeps every consumer (the whole `setBloomCallback` seam, the QA counters, the tests)
  *  reading a plain Float32Array unchanged. */
-export type DensityField = Float32Array & { rgb?: RgbChannels };
+export type DensityField = Float32Array & {
+  rgb?: RgbChannels;
+  /** The RAW blurred peak this frame, BEFORE normalisation. The caller needs it to carry a
+   *  reference peak across frames — see `scaleField`. */
+  peak?: number;
+};
 
 export interface BloomPoint {
   x: number; y: number; weight?: number;
@@ -111,19 +116,27 @@ export function blur(field: Float32Array, w: number, h: number, radius: number):
   const width = w, height = h;
   if (radius <= 0) return Float32Array.from(field);
 
+  // PREFIX SUMS, not a per-cell tap loop: cost is O(cells) regardless of `radius`, which is what
+  // makes a ZOOM-SCALED radius affordable (see `radiusForSpread` / AsciiGraphRenderer's emitBloom —
+  // the kernel has to grow with magnification or a magnified cluster resolves into one halo per
+  // node). Arithmetically identical to the old loop: the same mean over the same in-bounds taps,
+  // with the same edge clamping via the clipped window `count`.
   const pass = (src: Float32Array, horizontal: boolean) => {
     const out = new Float32Array(n);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        let sum = 0, count = 0;
-        for (let d = -radius; d <= radius; d++) {
-          const sx = horizontal ? x + d : x;
-          const sy = horizontal ? y : y + d;
-          if (sx < 0 || sx >= width || sy < 0 || sy >= height) continue;
-          sum += src[sy * width + sx];
-          count++;
-        }
-        out[y * width + x] = count ? sum / count : 0;
+    const major = horizontal ? height : width;   // lines to sweep
+    const minor = horizontal ? width : height;   // cells per line
+    const pre = new Float32Array(minor + 1);
+    for (let m = 0; m < major; m++) {
+      for (let i = 0; i < minor; i++) {
+        const idx = horizontal ? m * width + i : i * width + m;
+        pre[i + 1] = pre[i] + src[idx];
+      }
+      for (let i = 0; i < minor; i++) {
+        const lo = i - radius < 0 ? 0 : i - radius;
+        const hi = i + radius + 1 > minor ? minor : i + radius + 1;
+        const count = hi - lo;
+        const idx = horizontal ? m * width + i : i * width + m;
+        out[idx] = count ? (pre[hi] - pre[lo]) / count : 0;
       }
     }
     return out;
@@ -133,14 +146,61 @@ export function blur(field: Float32Array, w: number, h: number, radius: number):
   return out;
 }
 
+/** The kernel radius at fit, in field cells. */
+export const BASE_BLUR_RADIUS = 6;
+/** Ceiling, in field cells. The field is only FIELD_W×FIELD_H, so past roughly this the kernel
+ *  already reaches most of it and growing further only costs contrast. */
+export const MAX_BLUR_RADIUS = 20;
+
+/**
+ * Kernel radius for a camera magnification of `zoom` (1 = fit).
+ *
+ * LINEAR, because the thing the kernel has to bridge — the on-screen gap between neighbouring
+ * nodes — is itself exactly linear in the camera scale. A radius fixed at `BASE_BLUR_RADIUS` is
+ * correct only at fit: magnify 4× and every node sits four kernels from its neighbours, so each
+ * blurs into its own isolated disc and a cluster reads as a constellation of halos rather than one
+ * lit region. Keeping the kernel a fixed multiple of node SPACING instead of a fixed number of
+ * cells also keeps the field's peak roughly invariant under zoom, which is what lets `normalise`'s
+ * decayed reference peak (see `buildBloom`) hold a stable brightness across the zoom ladder.
+ */
+export function blurRadiusForZoom(zoom: number): number {
+  if (!Number.isFinite(zoom) || zoom <= 1) return BASE_BLUR_RADIUS;
+  return Math.min(MAX_BLUR_RADIUS, Math.round(BASE_BLUR_RADIUS * zoom));
+}
+
+/** The largest cell in a field, or 0 for an empty one. */
+export function fieldPeak(field: Float32Array): number {
+  let max = 0;
+  for (let i = 0; i < field.length; i++) if (field[i] > max) max = field[i];
+  return max;
+}
+
 /** Scale so the peak cell is exactly 1. An empty field stays empty — never NaN. */
 export function normalise(field: Float32Array): Float32Array {
-  let max = 0;
-  for (const v of field) if (v > max) max = v;
+  const max = fieldPeak(field);
   if (max <= 0) return Float32Array.from(field);
   const out = new Float32Array(field.length);
   for (let i = 0; i < field.length; i++) out[i] = field[i] / max;
   return out;
+}
+
+/**
+ * Scale a normalised field by `k` (clamped to 0..1), in place, returning it.
+ *
+ * This is what stops the atmosphere GLOWING RANDOMLY. `normalise` divides by the frame's OWN peak,
+ * which makes brightness purely relative: whatever happens to be densest right now paints at full
+ * intensity, so panning the dense core off-field promotes some arbitrary sparse corner to maximum,
+ * and every camera move re-scales the whole field again on the next frame — regions lighting up for
+ * no reason, flickering as you move. The renderer carries a reference peak across frames
+ * (AsciiGraphRenderer's `bloomPeakRef`) and hands the resulting ratio here, so brightness means
+ * roughly the same density from one frame to the next. Applied AFTER normalisation, not as a
+ * substitute divisor, so the caller can pick `k` knowing the peak this frame actually produced.
+ */
+export function scaleField(field: DensityField, k: number): DensityField {
+  const f = Number.isFinite(k) ? Math.max(0, Math.min(1, k)) : 1;
+  if (f === 1) return field;
+  for (let i = 0; i < field.length; i++) field[i] *= f;
+  return field;
 }
 
 /** Below this blurred weight a cell has no meaningful mean colour — dividing there amplifies
@@ -164,12 +224,19 @@ const COLOR_EPS = 1e-6;
  * 0.47 ms colourless against 1.81 ms coloured, i.e. +1.34 ms on a DIRTY frame (emitBloom does not
  * run on a still one). Four blurs, not one, is the price of the effect; skipping three of them
  * where there is nothing to colour is free.
+ *
+ * `radius` scales with the camera — see `blurRadiusForZoom`. The raw pre-normalisation peak comes
+ * back on `field.peak`, which is what lets a caller carry a reference peak across frames and damp
+ * this per-frame normalisation afterwards (see `scaleField`).
  */
-export function buildBloom(points: BloomPoint[], radius = 6): DensityField {
+export function buildBloom(points: BloomPoint[], radius = BASE_BLUR_RADIUS): DensityField {
   let colored = false;
   for (const p of points) if (p.rgb) { colored = true; break; }
   if (!colored) {
-    return normalise(blur(accumulate(points, FIELD_W, FIELD_H), FIELD_W, FIELD_H, radius));
+    const b = blur(accumulate(points, FIELD_W, FIELD_H), FIELD_W, FIELD_H, radius);
+    const mono: DensityField = normalise(b);
+    mono.peak = fieldPeak(b);
+    return mono;
   }
   const acc = accumulateColor(points, FIELD_W, FIELD_H);
   const vB = blur(acc.v, FIELD_W, FIELD_H, radius);
@@ -185,6 +252,7 @@ export function buildBloom(points: BloomPoint[], radius = 6): DensityField {
   }
   const out: DensityField = normalise(vB);
   out.rgb = { r: rB, g: gB, b: bB };
+  out.peak = fieldPeak(vB);
   return out;
 }
 
