@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   accumulate, accumulateColor, blur, normalise, buildBloom, pushCloud, cloudGrid, cloudSampleCount,
+  blurRadiusForZoom, scaleField, BASE_BLUR_RADIUS, MAX_BLUR_RADIUS,
   FIELD_W, FIELD_H,
   type BloomPoint,
 } from "./densityField";
@@ -470,4 +471,86 @@ test("a coloured cloud lands in the same place, at the same spread, as an uncolo
     expect(withRgb[i].y).toBe(without[i].y);
     expect(withRgb[i].weight).toBe(without[i].weight);
   }
+});
+
+// --- zoom-scaled kernel + the carried reference peak ---------------------------------------------
+
+test("blur's prefix-sum sweep matches a naive per-cell mean, at every radius", () => {
+  // The rewrite exists to make radius free (O(cells), not O(cells·r)) so the kernel can scale with
+  // the camera. It must not change the picture: this is the naive kernel the old implementation
+  // ran, applied the same BOX_PASSES times, compared against the shipped one.
+  const naive = (f: Float32Array, w: number, h: number, r: number) => {
+    const pass = (src: Float32Array, horizontal: boolean) => {
+      const out = new Float32Array(w * h);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let sum = 0, count = 0;
+        for (let d = -r; d <= r; d++) {
+          const sx = horizontal ? x + d : x, sy = horizontal ? y : y + d;
+          if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue;
+          sum += src[sy * w + sx]; count++;
+        }
+        out[y * w + x] = count ? sum / count : 0;
+      }
+      return out;
+    };
+    let out = f;
+    for (let i = 0; i < 3; i++) out = pass(pass(out, true), false);
+    return out;
+  };
+  const w = 17, h = 11;
+  const f = new Float32Array(w * h);
+  for (let i = 0; i < f.length; i++) f[i] = (i * 37) % 13;      // deterministic, non-symmetric
+  for (const r of [1, 2, 5, 9, 20, 40]) {
+    const a = blur(f, w, h, r), b = naive(f, w, h, r);
+    for (let i = 0; i < f.length; i++) expect(a[i]).toBeCloseTo(b[i], 4);
+  }
+});
+
+test("blurRadiusForZoom holds the fit radius at or below fit and grows linearly, capped", () => {
+  expect(blurRadiusForZoom(1)).toBe(BASE_BLUR_RADIUS);
+  expect(blurRadiusForZoom(0.5)).toBe(BASE_BLUR_RADIUS);        // below fit never SHRINKS the kernel
+  expect(blurRadiusForZoom(NaN)).toBe(BASE_BLUR_RADIUS);
+  expect(blurRadiusForZoom(2)).toBe(2 * BASE_BLUR_RADIUS);      // linear in the camera scale...
+  expect(blurRadiusForZoom(1000)).toBe(MAX_BLUR_RADIUS);        // ...to the ceiling
+});
+
+test("THE HALO BUG — a magnified pair stays ONE lit body; a fit-sized kernel leaves a dark gap", () => {
+  // The reported defect: zoom far enough in and each node grows its own halo instead of the cluster
+  // lighting up together. It is a CONTRAST failure, not a coverage one — a radius-6 kernel over
+  // three box passes still reaches far enough to leave the field technically connected, but the
+  // trough between two nodes falls to ~0.8 of the peak, and the atmosphere paints v⁴, which turns
+  // that into half the alpha. Dark gaps between bright discs IS the halo.
+  //
+  // Measured as the painted alpha in the gap relative to the peak, on the same geometry at fit
+  // spacing and magnified, with the kernel held fixed vs. scaled to the same camera.
+  const gapAlpha = (zoom: number, radius: number) => {
+    const sep = 0.03 * zoom;                              // node spacing is linear in the camera
+    const f = buildBloom([{ x: 0.5 - sep / 2, y: 0.5 }, { x: 0.5 + sep / 2, y: 0.5 }], radius);
+    const row = Math.floor(FIELD_H / 2);
+    let lo = 1;
+    for (let x = Math.round((0.5 - sep / 2) * FIELD_W); x <= Math.round((0.5 + sep / 2) * FIELD_W); x++) {
+      lo = Math.min(lo, f[row * FIELD_W + x]);
+    }
+    return lo ** 4;                                       // GraphAtmosphere's own alpha curve
+  };
+  // At fit the two agree by construction — blurRadiusForZoom(1) IS the fit radius.
+  expect(gapAlpha(1, BASE_BLUR_RADIUS)).toBeGreaterThan(0.9);
+  // The bug, still reproducible: magnified geometry, kernel left at its fit size.
+  expect(gapAlpha(6, BASE_BLUR_RADIUS)).toBeLessThan(0.5);
+  // The fix: the same geometry with the kernel scaled to the same camera. Also checked one stop
+  // either side, so this cannot pass on a single lucky separation.
+  for (const zoom of [3, 4, 6]) {
+    expect(gapAlpha(zoom, blurRadiusForZoom(zoom))).toBeGreaterThan(0.8);
+    expect(gapAlpha(zoom, blurRadiusForZoom(zoom))).toBeGreaterThan(gapAlpha(zoom, BASE_BLUR_RADIUS));
+  }
+});
+
+test("scaleField dims a field by the ratio, clamps out of range, and leaves 1 untouched", () => {
+  const make = () => buildBloom([{ x: 0.5, y: 0.5 }, { x: 0.45, y: 0.5 }]);
+  const ref = make();
+  const half = scaleField(make(), 0.5);
+  for (let i = 0; i < ref.length; i++) expect(half[i]).toBeCloseTo(ref[i] * 0.5, 6);
+  expect(Math.max(...Array.from(scaleField(make(), 3)))).toBeCloseTo(1, 6);      // >1 clamps to 1x
+  expect(Math.max(...Array.from(scaleField(make(), -1)))).toBe(0);               // <0 clamps to dark
+  expect(Math.max(...Array.from(scaleField(make(), NaN)))).toBeCloseTo(1, 6);    // non-finite: no-op
 });

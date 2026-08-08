@@ -73,6 +73,11 @@ test("two disconnected clusters get distinct community ids", async () => {
   await writeNote(vault, "x.md", "[[y]] [[z]]");
   await writeNote(vault, "y.md", "[[x]] [[z]]");
   await writeNote(vault, "z.md", "[[x]] [[y]]");
+  // Below MIN_NODES_FOR_CLUSTERING, community detection is skipped entirely — pad with unlinked
+  // filler notes so this vault stays above the threshold without disturbing the two clusters' own
+  // connectivity (an isolated note is its own singleton community at every level, so it can't merge
+  // into or split either real cluster).
+  for (let i = 0; i < 26; i++) await writeNote(vault, `filler${i}.md`, "");
   const g = await buildGraph(vault);
   const comm = (id: string) => g.nodes.find((n) => n.id === id)!.community;
   expect(comm("a")).toBe(comm("b"));
@@ -86,6 +91,24 @@ test("two disconnected clusters get distinct community ids", async () => {
   for (const n of g.nodes) {
     expect(n.communityPath).toEqual([n.community!]);
     expect(n.communityPathLabels).toEqual([n.communityLabel!]);
+  }
+});
+
+test("small vaults below the clustering threshold are left unstamped", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-small-"));
+  await writeNote(vault, "a.md", "[[b]] [[c]]");
+  await writeNote(vault, "b.md", "[[a]] [[c]]");
+  await writeNote(vault, "c.md", "[[a]] [[b]]");
+  await writeNote(vault, "x.md", "[[y]] [[z]]");
+  await writeNote(vault, "y.md", "[[x]] [[z]]");
+  await writeNote(vault, "z.md", "[[x]] [[y]]");
+  const g = await buildGraph(vault);
+  expect(g.nodes.length).toBeLessThan(30);
+  for (const n of g.nodes) {
+    expect(n.community).toBeUndefined();
+    expect(n.communityLabel).toBeUndefined();
+    expect(n.communityPath).toBeUndefined();
+    expect(n.communityPathLabels).toBeUndefined();
   }
 });
 

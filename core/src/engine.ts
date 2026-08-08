@@ -12,8 +12,15 @@ import { detectCommunityHierarchy } from "./community";
  * `communityLevelsFor`), so a small vault gets one flat level exactly as before and a big one gets
  * clusters nested up to 4 deep. `community`/`communityLabel` are always the FINEST level, so every
  * existing consumer is unaffected by the extra levels.
+ *
+ * Below `MIN_NODES_FOR_CLUSTERING`, skips detection entirely and leaves nodes unstamped: at that
+ * size Louvain only ever finds a handful of near-empty groups, so the grouping is visual noise
+ * rather than a useful organization of the graph.
  */
+const MIN_NODES_FOR_CLUSTERING = 30;
+
 function stampCommunities(g: GraphData): GraphData {
+  if (g.nodes.length < MIN_NODES_FOR_CLUSTERING) return g;
   const present = new Set(g.nodes.map((n) => n.id));
   const structural = g.edges.filter((e) => present.has(e.from) && present.has(e.to));
   const assignments = detectCommunityHierarchy(

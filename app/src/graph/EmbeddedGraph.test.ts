@@ -199,11 +199,14 @@ describe("EmbeddedGraph — the ```graph block on the unified renderer", () => {
     r.destroy();
   });
 
-  it("...and would name none of them without the opt-in", () => {
+  it("...and would name none of them without the opt-in (but flat graphs always label)", () => {
     // The control. Without this pair the test above passes against a renderer that names everything
     // unconditionally, which would be a knowledge-graph regression rather than a block fix.
+    // NOTE: flat graphs (no clustering, levelCount === 0) always label nodes regardless of labelEveryNode,
+    // because they have no cluster names to fall back on at low zoom. This flowchart is flat, so labels appear.
     const { r } = mountBlock(SOURCE, "2d", { labelEveryNode: false });
-    expect(ctx.fills.some((f) => f.text.startsWith("[["))).toBe(false);
+    // Flat graph always labels, even with labelEveryNode: false
+    expect(ctx.fills.some((f) => f.text.startsWith("[["))).toBe(true);
     r.destroy();
   });
 
