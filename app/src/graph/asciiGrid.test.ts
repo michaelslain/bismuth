@@ -4,11 +4,12 @@
 // from CanvasGraphRenderer and already proven, so it isn't re-tested here.
 import { describe, expect, it } from "bun:test";
 import {
-  CELL_H, CELL_W, DEEPEST_WORLD_PER_CELL, MIN_ZOOM_SPAN, NODE_GLYPHS, PAD_X, PAD_Y, ZOOM_STEP_PCT,
-  cellToPx, clipSegmentToGrid, degreeTier, depthAlpha, depthBand, fitPxPerWorld, glyphTier,
-  gridMetrics, inGrid, maxResFor, mergeEdgeChar, mergeEdgeCode, nearestCellNode, nodeGlyph,
-  pxToCell, quantizePan, resFromPercent, resFromT, resolutionPercent, resolutionT, snapToCell,
-  snapZoomPercent, traceEdge,
+  CELL_H, CELL_W, COMPACT_FLOOR_SCALE, COMPACT_MAX_DIM, COMPACT_MIN_DIM, DEEPEST_WORLD_PER_CELL,
+  MIN_ZOOM_SPAN, NODE_GLYPHS, PAD_X, PAD_Y, ZOOM_STEP_PCT,
+  cellToPx, clipSegmentToGrid, compactScale, degreeTier, depthAlpha, depthBand, fitPxPerWorld,
+  glyphTier, gridMetrics, inGrid, maxResFor, mergeEdgeChar, mergeEdgeCode, nearestCellNode,
+  nodeGlyph, pxToCell, quantizePan, resFromPercent, resFromT, resolutionPercent, resolutionT,
+  snapToCell, snapZoomPercent, traceEdge,
 } from "./asciiGrid";
 
 describe("gridMetrics", () => {
@@ -388,5 +389,38 @@ describe("zoom percent <-> resolution (100% = fit, 0% = deepest, in ZOOM_STEP_PC
     expect(snapZoomPercent(45)).toBe(50);
     expect(snapZoomPercent(-5)).toBe(0);
     expect(snapZoomPercent(105)).toBe(100);
+  });
+});
+
+describe("compactScale — cell/font size shrinks in a small panel, holds steady in a normal one", () => {
+  it("is exactly 1 (no shrink) at or above COMPACT_MAX_DIM", () => {
+    expect(compactScale(COMPACT_MAX_DIM, COMPACT_MAX_DIM)).toBe(1);
+    expect(compactScale(1200, 800)).toBe(1);
+  });
+
+  it("is driven by the SMALLER dimension — a tall narrow pane shrinks even with plenty of height", () => {
+    expect(compactScale(94, 1000)).toBeCloseTo(compactScale(94, 94), 10);
+  });
+
+  it("floors at COMPACT_FLOOR_SCALE at or below COMPACT_MIN_DIM, never below it", () => {
+    expect(compactScale(COMPACT_MIN_DIM, COMPACT_MIN_DIM)).toBe(COMPACT_FLOOR_SCALE);
+    expect(compactScale(10, 10)).toBe(COMPACT_FLOOR_SCALE);
+    expect(compactScale(0, 0)).toBe(COMPACT_FLOOR_SCALE);
+  });
+
+  it("interpolates monotonically between the floor and 1 across the band", () => {
+    let prev = compactScale(COMPACT_MIN_DIM, COMPACT_MIN_DIM);
+    for (let d = COMPACT_MIN_DIM; d <= COMPACT_MAX_DIM; d += 10) {
+      const s = compactScale(d, d);
+      expect(s).toBeGreaterThanOrEqual(prev - 1e-9);
+      expect(s).toBeLessThanOrEqual(1);
+      prev = s;
+    }
+  });
+
+  it("reproduces the reported bug's box (94x276) at a visibly shrunk, non-floored scale", () => {
+    const s = compactScale(94, 276);
+    expect(s).toBeGreaterThan(COMPACT_FLOOR_SCALE);
+    expect(s).toBeLessThan(1);
   });
 });

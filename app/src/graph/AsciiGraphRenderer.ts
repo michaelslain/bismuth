@@ -46,8 +46,9 @@ import "./asciiGraph.css";
 import type { GraphData, GraphNode } from "../../../core/src/graph";
 import { nodeVisualState } from "../../../core/src/daemonViz";
 import {
-  clusterLabelAlpha, clusterLabelText, clusterLevelAlphas, computeAlwaysOnSet, eyebrowWidthCells,
-  FILE_LABEL_FADE_SPAN, fileLabelAlpha, fileLabelBudget, FILE_LABEL_REVEAL_T, levelBoundaries,
+  clusterLabelAlpha, clusterLabelBudget, clusterLabelText, clusterLevelAlphas, computeAlwaysOnSet,
+  eyebrowWidthCells, FILE_LABEL_FADE_SPAN, fileLabelAlpha, fileLabelBudget, FILE_LABEL_REVEAL_T,
+  levelBoundaries,
 } from "./labelSelection";
 import {
   buildColorSlots, clusterExtent, clusterLabelLift, inViewport, pathOf, pickHubAnchor, trimDanglingWord,
@@ -118,7 +119,7 @@ export interface AsciiGraphStats {
 import {
   CELL_H, CELL_W, FONT_PX,
   LAYER_NODE, LAYER_NOISE, PAD_X, PAD_Y, ZOOM_STEP_PCT,
-  depthAlpha, fitPxPerWorld, gridMetrics, maxResFor, nearestCellNode,
+  compactScale, depthAlpha, fitPxPerWorld, gridMetrics, maxResFor, nearestCellNode,
   nodeGlyph, pxToCell, quantizePan, resFromPercent, resFromT, resolutionPercent, resolutionT,
   snapZoomPercent,
   type GridMetrics,
@@ -788,6 +789,16 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private edgeBaseAlpha = EDGE_BASE_ALPHA_FALLBACK;
   private fontStack = '"Monaspace Xenon", ui-monospace, monospace';
   private cellW = CELL_W; private cellH = CELL_H; private fontPx = FONT_PX;
+  // The CSS-derived row unit BEFORE the compact-pane shrink (readTokens() writes here, not to
+  // `cellH` directly) — measure() rescales `cellH`/`fontPx`/`cellW` off this + `sizeScale` on every
+  // box change, so it needs an unscaled source to scale FROM rather than compounding shrink on top
+  // of a previous frame's already-shrunk value.
+  private baseCellH = CELL_H;
+  // compactScale(this.W, this.H) — 1 in a normal-size pane, shrinking toward COMPACT_FLOOR_SCALE in
+  // a small one (a corner split, an embedded block dragged small). See asciiGrid.ts's doc: this is
+  // a function of the PANE, never the camera, so "zoom is resolution, not scale" is untouched above
+  // the compact floor — this only stops a fixed-size label from swallowing a pane too small for it.
+  private sizeScale = 1;
   // The pinned per-cell letterSpacing applyFont() computed (so glyphs land exactly on the grid) —
   // cluster (eyebrow) labels borrow the same ctx property for real tracking, then paint() restores
   // this value so the next row of field glyphs isn't shorn off its cells.
@@ -1292,7 +1303,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
     // cell any more) always matches the sidebar tree / tabs / tables rhythm. GRID LAW: line-height
     // == cell height, so this is the ONLY thing that ever changes the row pitch — never the font size.
     const rowH = parseFloat(read("--cell-h", `${CELL_H}px`));
-    if (Number.isFinite(rowH) && rowH > 0) this.cellH = rowH;
+    if (Number.isFinite(rowH) && rowH > 0) this.baseCellH = rowH;
     this.applyFont();
   }
 
@@ -1306,9 +1317,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
   private applyFont() {
     const ctx = this.ctx;
     if (!ctx) return;
+    // Compact-pane shrink (see `sizeScale`'s field doc): scale the font WITH the cell width below,
+    // so the two never drift apart — a mismatched pair is exactly what shears text off the grid.
+    this.fontPx = FONT_PX * this.sizeScale;
     ctx.font = `${this.fontPx}px ${this.fontStack}`;
     const ls = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
-    const want = CELL_W;
+    const want = CELL_W * this.sizeScale;
     const supported = typeof ls.letterSpacing === "string";
     if (supported) ls.letterSpacing = "0px";
     const natural = ctx.measureText("0".repeat(64)).width / 64;
@@ -1449,6 +1463,17 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (!isUsableBox(r.width, r.height)) { if (!this.boxReady) this.dirty = true; return; }
     this.boxReady = true;
     this.W = Math.max(1, r.width); this.H = Math.max(1, r.height);
+    // Compact-pane shrink: derive this frame's cell/font scale from the CURRENT box, off the
+    // unscaled `baseCellH` readTokens() maintains — never off `cellH` itself, or a pane that
+    // stays small across several measure() calls (no readTokens() in between, e.g. the plain
+    // ResizeObserver path) would compound the shrink smaller every time instead of holding steady.
+    // 2D ONLY: 3D's deep-zoom camera ladder (maxResFor, the dolly) is derived FROM cellW, so
+    // shrinking it there would silently retune the camera ceiling with the pane size — a coupling
+    // nothing about "the panel got smaller" should imply. 2D has no such coupling (LOD/label
+    // placement only), which is also where every reported instance of the swallowed-panel bug
+    // (and both screenshots it was reported with) actually is.
+    this.sizeScale = this.cfg.viewMode === "3d" ? 1 : compactScale(this.W, this.H);
+    this.cellH = this.baseCellH * this.sizeScale;
     this.dpr = clampDprToCanvasArea(
       Math.min(2, (typeof window !== "undefined" && window.devicePixelRatio) || 1),
       this.W,
@@ -2953,7 +2978,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
     if (agg.size === 0) return;
 
     const items = [...agg.entries()].sort((a, b) => b[1].length - a[1].length || a[0] - b[0]);
+    // DENSITY cap — see layoutEntityNames' identical guard and clusterLabelBudget's doc. `items` is
+    // already sorted largest-first, so capping here keeps the biggest, most meaningful names.
+    const budget = clusterLabelBudget(m.rows, items.length);
+    let drawn = 0;
     for (const [community, members] of items) {
+      if (drawn >= budget) break;
       const hubId = hubs.get(community);
       const hub = hubId != null ? this.byId.get(hubId) : undefined;
       if (!hub || !hub.projValid) continue; // no valid whole-graph anchor this frame
@@ -2971,6 +3001,12 @@ export class AsciiGraphRenderer implements GraphRenderer {
       // free-space check below share the exact same [col-1, col+wCells] bounds — that identity is
       // what makes overlap impossible, not just unlikely.
       const wCells = eyebrowWidthCells(len, CLUSTER_LABEL_TRACKING_EM, this.fontPx, this.cellW);
+      // A label wider than the ENTIRE grid can never fit, on-grid anchor or not — the clamp below
+      // only relocates an on-grid label within the grid, it doesn't shrink one, so feeding it a label
+      // wider than `m.cols` just parks it at column 0 and lets it spill out the right edge anyway (a
+      // tiny/split pane's whole field swallowed by one oversized name). Drop it instead, same as an
+      // off-grid label two checks down.
+      if (wCells > m.cols) continue;
       let col = col0 - Math.floor(wCells / 2); // centre by DRAWN width, not raw char count
       // Keep an ON-SCREEN name inside the grid — but ONLY while the anchor's own column is on the
       // grid. `col0` is the test, deliberately, NOT a pixel-space `inViewport(hub.sx, …)`: the clamp
@@ -2996,6 +3032,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.reserveLabelCells(col, wCells, row);
       const color = this.communityColorsByLevel[level]?.get(community) ?? "#888";
       this.labels.push({ text, col, row, color, accent: false, alpha, eyebrow: true, widthCells: wCells });
+      drawn++;
     }
   }
 
@@ -3018,8 +3055,18 @@ export class AsciiGraphRenderer implements GraphRenderer {
     const m = this.m;
     const evs = this.entityLevels[level];
     if (!evs) return;
+    // DENSITY cap — see clusterLabelBudget's doc. Unlike the per-row occupancy check further down
+    // (which only stops two names literally landing on the same cells), this stops a small pane
+    // from naming EVERY community it has room to place one-per-row: a ~20-community vault in a
+    // panel with 15 rows would otherwise draw 20 cramped names instead of its biggest few. `evs` is
+    // already presorted largest-first, so capping the loop keeps the most meaningful names.
+    let onGridCount = 0;
+    for (const ev of evs) if (ev.onGrid) onGridCount++;
+    const budget = clusterLabelBudget(m.rows, onGridCount);
+    let drawn = 0;
     for (const ev of evs) {
       if (!ev.onGrid) continue;
+      if (drawn >= budget) break;
       // Same treatment as the non-LOD cluster-name pass above. Canvas applies trimDanglingWord at
       // its ONE name site; ASCII has TWO (that pass and this one), so applying it at only one of
       // them would leave the LOD mass names — the ones the app's DEFAULT 2D view actually shows —
@@ -3032,6 +3079,10 @@ export class AsciiGraphRenderer implements GraphRenderer {
       // Reserve the REAL drawn width (tracking included), not the raw char count — see
       // layoutClusterNames' comment. Reservation and the free-space check share identical bounds.
       const wCells = eyebrowWidthCells(len, CLUSTER_LABEL_TRACKING_EM, this.fontPx, this.cellW);
+      // Same guard as layoutClusterNames above: a label wider than the whole grid can't be shrunk by
+      // the on-grid clamp below, only relocated within it — fed one anyway it parks at column 0 and
+      // spills past the right edge (a small/split pane's field swallowed by one oversized name).
+      if (wCells > m.cols) continue;
       let col = ev.col - Math.floor(wCells / 2); // centre by DRAWN width, not raw char count
       // ON-GRID anchors only — see this method's doc. `ev.col` is the test, in column space, for the
       // same reason `layoutClusterNames` tests `col0` rather than a pixel-space predicate: gating
@@ -3055,6 +3106,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
       this.labels.push({
         text, col, row, color: this.resolveFillColor(ev.color), accent: false, alpha, eyebrow: true, widthCells: wCells,
       });
+      drawn++;
     }
   }
 

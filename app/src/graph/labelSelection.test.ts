@@ -4,8 +4,11 @@ import {
   fileLabelBudget,
   fileLabelAlpha,
   clusterLabelAlpha,
+  clusterLabelBudget,
   clusterLabelText,
   CLUSTER_LABEL_MAX_CHARS,
+  CLUSTER_LABEL_MIN_BUDGET,
+  CLUSTER_LABEL_ROWS_PER_LABEL,
   eyebrowWidthCells,
   clusterLevelAlphas,
   levelBoundaries,
@@ -303,5 +306,34 @@ describe("clusterLevelAlphas", () => {
   it("at/after revealT, only the finest level is nonzero — the outer file crossfade owns the handoff from there", () => {
     expect(clusterLevelAlphas(FILE_LABEL_REVEAL_T, 3)).toEqual([0, 0, 1]);
     expect(clusterLevelAlphas(1, 4)).toEqual([0, 0, 0, 1]);
+  });
+});
+
+describe("clusterLabelBudget — how many cluster names a pane may draw at once, by ROW COUNT not zoom", () => {
+  it("names every candidate when there's plenty of vertical room", () => {
+    expect(clusterLabelBudget(60, 5)).toBe(5);
+    expect(clusterLabelBudget(60, 15)).toBe(15);
+  });
+
+  it("caps at roughly one name per CLUSTER_LABEL_ROWS_PER_LABEL rows once candidates outnumber the room", () => {
+    const rows = 30;
+    const budget = clusterLabelBudget(rows, 1000);
+    expect(budget).toBe(Math.floor(rows / CLUSTER_LABEL_ROWS_PER_LABEL));
+  });
+
+  it("never drops below CLUSTER_LABEL_MIN_BUDGET when there are enough candidates to fill it — a tiny pane still names its biggest few", () => {
+    expect(clusterLabelBudget(1, 20)).toBe(CLUSTER_LABEL_MIN_BUDGET);
+    expect(clusterLabelBudget(0, 20)).toBe(CLUSTER_LABEL_MIN_BUDGET);
+  });
+
+  it("never exceeds totalCandidates, even under the MIN_BUDGET floor", () => {
+    expect(clusterLabelBudget(0, 1)).toBe(1);
+    expect(clusterLabelBudget(0, 0)).toBe(0);
+  });
+
+  it("reproduces the reported vault's shape — ~18 real communities, a small panel — capped well below the full count", () => {
+    const budget = clusterLabelBudget(15, 18); // a compact-shrunk small panel's row count, ballpark
+    expect(budget).toBeLessThan(18);
+    expect(budget).toBeGreaterThanOrEqual(CLUSTER_LABEL_MIN_BUDGET);
   });
 });

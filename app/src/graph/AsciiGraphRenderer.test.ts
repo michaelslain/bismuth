@@ -1298,6 +1298,34 @@ describe("cluster label occupancy — no two eyebrow labels ever overlap (the 's
   });
 });
 
+describe("tiny panel — an eyebrow label wider than the whole grid must not overflow it", () => {
+  it("drops a cluster/entity name instead of clamping it to col 0 and spilling past the grid", () => {
+    const [w0, h0] = [BOX.width, BOX.height];
+    // Small enough that a tracked cluster name ("CLUSTER 0" etc.) is wider than the whole grid —
+    // reproduces a graph pane shrunk into a small split/corner. gridMetrics with these dims and the
+    // default CELL_W/CELL_H yields well under ten columns.
+    BOX.width = 90; BOX.height = 260;
+    try {
+      const { r } = mountRenderer("2d");
+      const priv = r as unknown as {
+        labels: { text: string; col: number; row: number; widthCells: number; eyebrow?: boolean }[];
+        m: { cols: number; rows: number };
+      };
+      const eyebrows = priv.labels.filter((l) => l.eyebrow);
+      // The bug: `col = Math.max(0, m.cols - wCells)` still parks an over-wide label at column 0
+      // and draws it, so `col + widthCells` runs far past `m.cols`. Every label actually drawn must
+      // fit ENTIRELY inside the grid — one that doesn't fit must be dropped, not clamped-and-spilled.
+      for (const l of eyebrows) {
+        expect(l.col).toBeGreaterThanOrEqual(0);
+        expect(l.col + l.widthCells).toBeLessThanOrEqual(priv.m.cols);
+      }
+      r.destroy();
+    } finally {
+      BOX.width = w0; BOX.height = h0;
+    }
+  });
+});
+
 describe("THE LAW — zoom is resolution, never scale", () => {
   it("keeps the type size byte-identical across a wheel zoom", () => {
     const { r, viewport } = mountRenderer("2d");
