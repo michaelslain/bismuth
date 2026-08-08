@@ -36,6 +36,36 @@ export const LAYER_NOISE = 1;
 export const LAYER_EDGE = 2;
 export const LAYER_NODE = 3;
 
+/**
+ * Below this box dimension (the SMALLER of width/height — a graph is usually wide, so a narrow
+ * pane is the binding constraint), the fixed cell/font size starts shrinking. At or above it, the
+ * field draws at the normal, un-shrunk cell size — "zoom is resolution, not scale" still governs
+ * everything ABOVE this floor; this only kicks in for a panel too small for that law to read as
+ * anything but oversized text (a corner split, an embedded block dragged small).
+ */
+export const COMPACT_MAX_DIM = 460;
+
+/** Below this box dimension the shrink is fully floored at COMPACT_FLOOR_SCALE — going smaller
+ *  still doesn't shrink the cell further, so text never becomes illegibly tiny in a sliver pane. */
+export const COMPACT_MIN_DIM = 90;
+
+/** The smallest the cell/font size ever shrinks to, as a fraction of the normal size. */
+export const COMPACT_FLOOR_SCALE = 0.5;
+
+/**
+ * Cell/font size multiplier for a `w`x`h` CSS-px box: 1 (no shrink) at/above COMPACT_MAX_DIM,
+ * linearly down to COMPACT_FLOOR_SCALE at/below COMPACT_MIN_DIM. Pure function of the box, not the
+ * camera — unlike zoom (`resolutionPercent`/`fitPxPerWorld` above), this never changes as the user
+ * scrolls, only as the pane itself is resized.
+ */
+export function compactScale(w: number, h: number): number {
+  const dim = Math.min(w, h);
+  if (!Number.isFinite(dim) || dim >= COMPACT_MAX_DIM) return 1;
+  if (dim <= COMPACT_MIN_DIM) return COMPACT_FLOOR_SCALE;
+  const t = (dim - COMPACT_MIN_DIM) / (COMPACT_MAX_DIM - COMPACT_MIN_DIM);
+  return COMPACT_FLOOR_SCALE + (1 - COMPACT_FLOOR_SCALE) * t;
+}
+
 export interface GridMetrics {
   cols: number;
   rows: number;

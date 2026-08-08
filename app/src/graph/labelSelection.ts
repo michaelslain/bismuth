@@ -121,6 +121,35 @@ export function fileLabelBudget(
   return Math.round(Math.pow(u, power) * totalCandidates);
 }
 
+/** Minimum cluster-name budget, whatever the pane's row count — a tiny panel still gets to name
+ *  its biggest few communities, never zero. */
+export const CLUSTER_LABEL_MIN_BUDGET = 3;
+
+/** Rows of vertical room a cluster name needs to itself, on average, before the field reads as
+ *  crowded rather than merely labelled — the eyebrow lift plus a gap to the next name. Tuned
+ *  against the reported failure (a ~2200-note vault, ~15-20 real communities, a small panel): at
+ *  that count `clusterLabelBudget` keeps the pane down to its biggest handful of names instead of
+ *  drawing every community regardless of how few rows are actually available for them. */
+export const CLUSTER_LABEL_ROWS_PER_LABEL = 3;
+
+/**
+ * How many cluster/entity (eyebrow) names the field may draw at once, out of `totalCandidates`
+ * on-grid communities — UNLIKE `fileLabelBudget`, this has no zoom dependence: cluster names are
+ * the field's ENTIRE naming at fit (before file names ever reveal), so a budget that only opens
+ * with zoom would leave a small pane silently unlabelled at the exact stop where cluster names are
+ * everything it has to show. Instead the budget is driven by the pane's own ROW COUNT: plenty of
+ * rows names every candidate (the ladder was never the bottleneck at normal size), few rows caps it
+ * to the biggest few. Callers rank candidates biggest-community-first and stop once this many have
+ * actually been drawn, so a capped pane always keeps its most meaningful names, never an arbitrary
+ * subset.
+ */
+export function clusterLabelBudget(rows: number, totalCandidates: number): number {
+  if (totalCandidates <= 0) return 0;
+  const byRows = Math.floor(Math.max(0, rows) / CLUSTER_LABEL_ROWS_PER_LABEL);
+  const floor = Math.min(CLUSTER_LABEL_MIN_BUDGET, totalCandidates);
+  return Math.max(floor, Math.min(byRows, totalCandidates));
+}
+
 /** Smoothstep crossfade: 0 at/below `revealT`, 1 at `revealT + fadeSpan` and beyond. Drives file
  *  labels' fade-IN alpha; `clusterLabelAlpha` is its complement. */
 export function fileLabelAlpha(
