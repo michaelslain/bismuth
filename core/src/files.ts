@@ -84,14 +84,6 @@ export async function listMarkdown(root: string): Promise<string[]> {
   return out;
 }
 
-/** List `.base` files under the vault (the Bases data feed's discovery step). */
-export async function listBases(root: string): Promise<string[]> {
-  const glob = new Bun.Glob("**/*.base");
-  const out: string[] = [];
-  for await (const p of glob.scan({ cwd: root, dot: false })) out.push(p);
-  return out.sort();
-}
-
 // Per-note icon+visibility cache, keyed by absolute path → { mtime, icon, visibility }.
 // listTree otherwise reads + frontmatter-parses every .md just to pull the optional
 // `icon`/`visibility` fields; this skips that work for notes whose mtime is unchanged

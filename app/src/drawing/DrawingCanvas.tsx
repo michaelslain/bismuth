@@ -24,8 +24,8 @@ export function DrawingCanvas(props: {
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
 
   const theme = () => themeColors(props.theme());
-  function ctxOf(c: HTMLCanvasElement): Ctx2D & CanvasRenderingContext2D {
-    const x = c.getContext("2d")!; x.setTransform(DPR, 0, 0, DPR, 0, 0); return x as any;
+  function ctxOf(c: HTMLCanvasElement): Ctx2D {
+    const x = c.getContext("2d")!; x.setTransform(DPR, 0, 0, DPR, 0, 0); return x as unknown as Ctx2D;
   }
   // Per-instance set of srcs we've already hooked a repaint for (so we register at most one
   // pending repaint per undecoded image, not one per repaintBase call).

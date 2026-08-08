@@ -45,7 +45,6 @@ const TREE_EXTS = [".md", ".base", ".sheet", ".draw"];
 export function tauriFileAccess(): FileAccess {
   return {
     listMarkdown: (root) => collectByExt(root, ".md"),
-    listBases: (root) => collectByExt(root, ".base"),
 
     listTree: async (root) => {
       const out: TreeEntry[] = [];

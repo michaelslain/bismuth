@@ -1,4 +1,4 @@
-import { join, resolve } from "path";
+import { join, resolve, sep } from "path";
 import { mkdir as fsMkdir, unlink } from "fs/promises";
 
 // The memory dir is always supplied explicitly: the daemon passes the active vault's
@@ -93,7 +93,11 @@ function notePath(dir: string, name: string, folder?: string): string {
     full = join(dir, fileName);
   }
   // Final check: resolved path must be inside the directory
-  if (!resolve(full).startsWith(resolve(dir))) throw new Error("Invalid note name");
+  const resolvedFull = resolve(full);
+  const resolvedDir = resolve(dir);
+  if (resolvedFull !== resolvedDir && !resolvedFull.startsWith(resolvedDir + sep)) {
+    throw new Error("Invalid note name");
+  }
   return full;
 }
 
@@ -222,7 +226,11 @@ export async function listNotes(
     const safeFolder = sanitizeFolder(folder);
     if (!safeFolder) return [];
     const folderPath = join(dir, safeFolder);
-    if (!resolve(folderPath).startsWith(resolve(dir))) return [];
+    const resolvedFolderPath = resolve(folderPath);
+    const resolvedDir = resolve(dir);
+    if (resolvedFolderPath !== resolvedDir && !resolvedFolderPath.startsWith(resolvedDir + sep)) {
+      return [];
+    }
     const glob = new Bun.Glob("*.md");
     const names: string[] = [];
     try {

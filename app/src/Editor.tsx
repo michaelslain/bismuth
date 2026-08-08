@@ -31,7 +31,7 @@ import { harperSpellcheck } from "./editor/harper";
 import { yamlSchema, isInFrontmatter } from "./editor/yamlSchema";
 import { frontmatterBodyRange } from "./editor/frontmatterUtils";
 import { normalizeFrontmatterSpacing } from "./editor/normalizeFrontmatter";
-import { isSettingsBuffer } from "./editor/settingsBuffer";
+import { isConfigBuffer, isSettingsBuffer } from "./editor/settingsBuffer";
 import { InkOverlay } from "./editor/ink/InkOverlay";
 import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
@@ -807,7 +807,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       // reorder is a real content change that must be persisted, so we let it re-enter this
       // listener (which reschedules the save). The re-entry is a no-op for reordering — the block
       // is now sorted, so reorderAroundLine returns null — so there's no loop. Notes only.
-      if (view && !path.endsWith(".yaml") && !path.endsWith(".yml") && !isSettingsBuffer(path)) {
+      if (view && !isConfigBuffer(path)) {
         clearTimeout(reorderTimer);
         reorderTimer = setTimeout(() => {
           if (!view) return;
@@ -829,7 +829,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
         // it to the LIVE editor via a minimal diff (so the cursor stays put and the fix is
         // visible immediately, not only after a reload). Annotated ExternalReload so this
         // programmatic edit doesn't re-trigger autosave. Notes only — not config buffers.
-        const isMd = !path.endsWith(".yaml") && !path.endsWith(".yml") && !isSettingsBuffer(path);
+        const isMd = !isConfigBuffer(path);
         if (isMd && view) {
           const cur = view.state.doc.toString();
           const normalized = normalizeFrontmatterSpacing(cur);
@@ -952,7 +952,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // Config buffers render as YAML CODE — monospace, syntax-highlighted, NO
     // markdown rendering and NO spell/grammar check. settings.yaml additionally
     // validates the whole document against the fixed app-settings schema.
-    const isYaml = path.endsWith(".yaml") || path.endsWith(".yml") || isSettingsBuffer(path);
+    const isYaml = isConfigBuffer(path);
     // Auto-format on open: keep exactly one blank line between a note's frontmatter and
     // its body. Normalize the loaded text (so the editor shows it) and, if that changed
     // anything, write the reformat back so the file self-heals on disk. The editor doc
