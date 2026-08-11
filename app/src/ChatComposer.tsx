@@ -48,7 +48,11 @@ const composerTheme = EditorView.theme({
     maxHeight: "200px",
     padding: "0",
   },
-  ".cm-content": { padding: "5px 0", minHeight: "28px", caretColor: "var(--accent)", maxWidth: "none" },
+  // The vertical padding is published as --chat-composer-line-pad (ChatView.css) because the send
+  // button has to cancel exactly this value to sit level with the text: the button is bottom-aligned
+  // to the row, which is the CONTENT box's bottom edge, while the text stops one padding-step above
+  // it. Two hardcoded 5s would drift apart the first time either is tuned.
+  ".cm-content": { padding: "var(--chat-composer-line-pad) 0", minHeight: "28px", caretColor: "var(--accent)", maxWidth: "none" },
   ".cm-line": { padding: "0" },
   // The one blinking caret in the composer — accent-colored to read as the same mark as
   // .asc-caret elsewhere, even though CodeMirror's own cursor-blink timer (not a CSS

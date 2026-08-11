@@ -370,7 +370,7 @@ fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<(u
 // plumbing goes through VITE_OWNER_TOKEN instead — see app/scripts/dev.ts). `first_run` sets
 // `window.__BISMUTH_FIRST_RUN__`, telling index.tsx to render the intro instead of App (there's
 // no backend yet — the intro's CTA picks the vault and relaunches).
-fn build_main_window(app: &tauri::AppHandle, injected: Option<(String, String)>, first_run: bool, has_vault: bool) -> tauri::Result<()> {
+fn build_main_window(app: &tauri::AppHandle, injected: Option<(String, String, String)>, first_run: bool, has_vault: bool) -> tauri::Result<()> {
     // NOTE: we intentionally KEEP Tauri v2's native file drag-drop handler ENABLED (its default).
     // It is the ONLY source of a dragged OS file's REAL absolute path — a browser/webview `drop`
     // DataTransfer exposes only a basename. The frontend's nativeDrop.ts subscribes to it and
@@ -397,9 +397,16 @@ fn build_main_window(app: &tauri::AppHandle, injected: Option<(String, String)>,
         builder = builder.decorations(false);
     }
     let mut script = String::new();
-    if let Some((api, token)) = injected {
+    if let Some((api, token, vault)) = injected {
         script.push_str(&format!("window.__BISMUTH_API__={api:?};"));
         script.push_str(&format!("window.__BISMUTH_OWNER_TOKEN__={token:?};"));
+        // The vault this window is bound to. Purely an IDENTITY for client-side caches: the
+        // sidebar-tree / graph boot seeds are namespaced per vault, and they used to be keyed
+        // by __BISMUTH_API__ — which is a FREE PORT picked afresh on every launch
+        // (pick_free_port), so the key never matched the previous run and both surfaces
+        // painted empty until their first fetch landed. Carries no authority (the owner
+        // token above does that); it is never used to reach the filesystem.
+        script.push_str(&format!("window.__BISMUTH_VAULT__={vault:?};"));
     }
     if first_run {
         script.push_str("window.__BISMUTH_FIRST_RUN__=true;");
@@ -564,9 +571,10 @@ pub fn run() {
             let injected = if first_run {
                 None // intro renders standalone; no backend until the user enters a vault
             } else {
-                valid
-                    .and_then(|(vault, memory)| start_backend(&app.handle(), &vault, &memory))
-                    .map(|(p, token)| (format!("http://localhost:{p}"), token))
+                valid.and_then(|(vault, memory)| {
+                    start_backend(&app.handle(), &vault, &memory)
+                        .map(|(p, token)| (format!("http://localhost:{p}"), token, vault))
+                })
             };
             build_main_window(&app.handle(), injected, first_run, has_vault)?;
             Ok(())

@@ -1,6 +1,6 @@
 // app/src/api.test.ts
 import { test, expect, describe } from "bun:test";
-import { api, resolveBase, resolveOwnerToken, httpTransport, setTransport, apiBase, eventsUrl, type Transport } from "./api";
+import { api, resolveBase, resolveCacheScope, resolveOwnerToken, httpTransport, setTransport, apiBase, eventsUrl, type Transport } from "./api";
 import type { Schema } from "../../core/src/schema/types";
 
 test("api exposes a schema() method returning a Schema promise", () => {
@@ -94,5 +94,33 @@ describe("resolveOwnerToken (core/src/ownerToken.ts's X-Bismuth-Token, injected 
   });
   test("an empty injected string is treated as unset, not as an empty token", () => {
     expect(resolveOwnerToken("env-token", "")).toBe("env-token");
+  });
+});
+
+// The boot seeds for the sidebar tree + graph are namespaced by this scope. Keying them by
+// the backend URL made them miss on EVERY launch of the bundled app, which picks a fresh
+// free port each time — so both surfaces painted empty until their first fetch returned.
+describe("resolveCacheScope (stable per-vault cache namespacing)", () => {
+  test("prefers the injected vault over the ephemeral backend URL", () => {
+    expect(resolveCacheScope("", "http://localhost:51823", "/Users/me/vault")).toBe("/Users/me/vault");
+  });
+  test("is stable across launches even as the backend port changes", () => {
+    const a = resolveCacheScope("", "http://localhost:51823", "/Users/me/vault");
+    const b = resolveCacheScope("", "http://localhost:62991", "/Users/me/vault");
+    expect(a).toBe(b);
+  });
+  test("still separates two different vaults", () => {
+    expect(resolveCacheScope("", "http://localhost:1", "/vault/a"))
+      .not.toBe(resolveCacheScope("", "http://localhost:1", "/vault/b"));
+  });
+  test("an ?api= window (Open folder) ignores the injected vault — it is a different backend", () => {
+    expect(resolveCacheScope("?api=http://localhost:9999", "http://localhost:9999", "/Users/me/vault"))
+      .toBe("http://localhost:9999");
+  });
+  test("falls back to the backend URL when no vault is injected (dev)", () => {
+    expect(resolveCacheScope("", "http://localhost:4321", undefined)).toBe("http://localhost:4321");
+  });
+  test("a malformed search string is treated as no override", () => {
+    expect(resolveCacheScope("%", "http://localhost:1", "/vault/a")).toBe("/vault/a");
   });
 });
