@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildVaultRows, patchVaultRows } from "../src/basesData";
 import { createAsyncCache } from "../src/asyncCache";
+import { getFileAccess, setFileAccess } from "../src/fileAccess";
 import { writeNote } from "../src/files";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -62,15 +63,55 @@ test("patchVaultRows: a deleted note is spliced out, identical to a rebuild", as
   expect(norm(cache.peek()!)).toBe(norm(await buildVaultRows(vault)));
 });
 
-test("patchVaultRows: a brand-new note falls back to a full rebuild (order-safe)", async () => {
+// Creating a note used to drop the WHOLE feed, so the next /rows paid a full vault walk +
+// re-parse of every note — the "a base I just created loads slowly" cost. The new note must
+// now be spliced into its real position with the cached rows reused around it.
+//
+// listMarkdown is stubbed to put the new note in the MIDDLE of the walk order. On a real
+// APFS vault a newly-created file happens to come back last, which would let a naive
+// "append it to the end" implementation pass an order check by accident — this pins the
+// insertion position so only real order-preserving insertion passes.
+test("patchVaultRows: a brand-new note is inserted at its walk position, feed kept", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-patch-"));
+  await writeNote(vault, "a.md", "body a");
+  await writeNote(vault, "m.md", "body m");
+  await writeNote(vault, "z.md", "body z");
+
+  const real = await getFileAccess();
+  let order = ["z.md", "m.md", "a.md"];
+  setFileAccess({ ...real, listMarkdown: async () => order });
+  try {
+    const cache = await seededCache(vault);
+    expect(cache.peek()!.map((r) => r.file.path)).toEqual(["z.md", "m.md", "a.md"]);
+
+    await writeNote(vault, "fresh.md", "---\ntags: [new]\n---\nbrand new [[a]]");
+    order = ["z.md", "fresh.md", "m.md", "a.md"]; // lands mid-list, NOT appended
+    await patchVaultRows(vault, ["fresh.md"], cache);
+
+    // The feed survives — no full rebuild is forced on the next read.
+    expect(cache.peek()).not.toBeNull();
+    const patched = cache.peek()!;
+    expect(patched.map((r) => r.file.path)).toEqual(order); // append would give z,m,a,fresh
+    const fresh = patched.find((r) => r.file.path === "fresh.md")!;
+    expect(fresh.file.tags).toEqual(["new"]);
+    expect(fresh.file.links).toEqual(["a"]);
+    expect(norm(patched)).toBe(norm(await buildVaultRows(vault)));
+  } finally {
+    setFileAccess(real);
+  }
+});
+
+// Safety valve: if the vault holds a note the cached feed never saw (a missed watcher
+// event), patching would silently serve an incomplete feed — so it must rebuild instead.
+test("patchVaultRows: an unseen note on disk forces a full rebuild", async () => {
   const vault = mkdtempSync(join(tmpdir(), "bismuth-patch-"));
   await writeNote(vault, "a.md", "body a");
   const cache = await seededCache(vault);
 
-  await writeNote(vault, "fresh.md", "---\ntags: [new]\n---\nbrand new [[a]]");
+  await writeNote(vault, "unseen.md", "never announced"); // no event for this one
+  await writeNote(vault, "fresh.md", "announced");
   await patchVaultRows(vault, ["fresh.md"], cache);
 
-  // New note can't be inserted order-preservingly → cache dropped, next read rebuilds fresh.
   expect(cache.peek()).toBeNull();
   expect(norm(await cache.get())).toBe(norm(await buildVaultRows(vault)));
 });
