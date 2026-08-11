@@ -10,8 +10,11 @@ type Props = {
 };
 
 export function EmptyPane(props: Props) {
+  // `empty-pane`, not `empty`: a bare global `.empty` (display:flex, height:100%)
+  // silently captured any other component's `empty` span — it was what broke the
+  // flashcards progress meter onto three lines.
   return (
-    <div class="empty">
+    <div class="empty-pane">
       <IconButton
         icon="SquareTerminal"
         label="New terminal"

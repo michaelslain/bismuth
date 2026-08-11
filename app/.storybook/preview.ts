@@ -45,6 +45,24 @@ import type { Settings } from "../src/settings";
 
 setCssVars(settingsToCssVars(DEFAULTS as unknown as Settings));
 
+// ── The app-shell font ────────────────────────────────────────────────────────
+// THIRD crucial step, same spirit as the theme tokens above. App.css declares the interface font
+// on `.app-shell` / `.layout` — the two elements that wrap every pane in the real app — NOT on
+// `body`. Storybook mounts a component with neither ancestor, so anything that inherits its font
+// instead of naming one lands on the browser's default proportional SERIF.
+//
+// That is not a cosmetic gap: it makes a story actively lie. ChatView's AskUserQuestion card
+// (`.chat-question-option { font: inherit }`) rendered its labels and descriptions in Times in the
+// catalog while being correct Monaspace in the app — a reviewer comparing them would "fix" a bug
+// that does not exist, or distrust the surface. Components that DO name a family (--ui-font-stack,
+// --editor-font) looked right, so the breakage was partial and easy to misread.
+//
+// Mirrors `.app-shell`'s own declaration in App.css. Global, so no story has to re-solve it — the
+// same reason the theme tokens and the fake transport are installed here rather than per story.
+const appFont = document.createElement("style");
+appFont.textContent = `body { font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; }`;
+document.head.appendChild(appFont);
+
 // ── Backend seam ──────────────────────────────────────────────────────────────
 // The SECOND crucial step, for the same reason as the theme tokens above: several components
 // fetch on mount (CardEditor's `api.read()`, QueryBuilder's `resolveRows`/`tree`, the daemon and

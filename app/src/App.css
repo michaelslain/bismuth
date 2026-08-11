@@ -260,13 +260,13 @@ body { background: var(--bg); color: var(--fg); }
    centres. 20px box + 3px gap puts ~11px of air between glyphs, roughly one glyph width, which is what
    makes a row of icons read as a group. Radius drops 7 -> --r-control (3px): 7px on a 20px box is nearly
    a pill, and nothing in this design system is pill-round (ui.css :root). */
-.sidebar-icons .btn--icon, .tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty .btn--icon, .graph-mode-icons .btn--icon { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
+.sidebar-icons .btn--icon, .tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty-pane .btn--icon, .graph-mode-icons .btn--icon { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
 /* The sidebar toolbar's icon buttons read the settings-driven size (appearance.sidebarIconFontSize,
    unified with the sidebar tree's --fs-ui rhythm) instead of the generic .btn--icon 14px literal
    (ui.css) — the icon glyph itself already scales via IconButton's iconSize prop (App.tsx); this
    also brings the BUTTON element's own font-size in line so nothing inside it silently reverts. */
 .sidebar-icons .btn--icon { font-size: var(--sidebar-icon-font-size); }
-.sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .empty .btn--icon:hover:not(:disabled), .graph-mode-icons .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+.sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .empty-pane .btn--icon:hover:not(:disabled), .graph-mode-icons .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 .sidebar-logo { width: 18px; height: 18px; flex-shrink: 0; margin-right: 4px; display: block; }
 .sidebar canvas { display: block; }
 /* File-tree row icons (typed glyphs, icons/Icon.tsx). Inherit currentColor; never shrink in
@@ -427,11 +427,22 @@ body { background: var(--bg); color: var(--fg); }
 }
 @media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
 
-/* Top action toolbar. A LEFT-packed flex-wrap row: collapsed (46px, content 28px) each
-   28px button wraps to its own line → a centered single-icon column whose centre lands at
-   23px = the collapsed rail's midline / the tab icon column; expanded (232px) the buttons
-   fit on one line as a horizontal row. */
-.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 9px; flex: 0 0 auto; }
+/* Top action toolbar. A LEFT-packed flex-wrap row whose ASYMMETRIC side padding is what puts
+   the icons on the rail's centre line. The arithmetic, measured not guessed:
+     .tab-rail-inner is 46px border-box with a 1px border-left, so its content starts at x=1
+     and is 45px wide. A tab row below sits at margin 5 + padding 10, so its 16px icon centres
+     at 1+5+10+8 = 24px — THAT is the column these buttons must land on.
+     Buttons are 20px (.btn--icon above) and never shrink (flex:0 0 auto below), so
+     padding-left 13 puts a button centre at 1+13+10 = 24px. ✓
+     padding-right 12 makes the content box exactly 45−13−12 = 20px, i.e. one button wide, so
+     collapsed each button wraps onto its own line → a single centred icon column.
+   Expanded (232px) they fit on one line, still starting on that same 24px centre, so the
+   column stays straight through the hover transition. Do NOT switch this to
+   justify-content:center — that centres the whole row in the 232px expanded rail and the
+   icons slide ~70px sideways on hover. Do NOT make the padding symmetric either: a 19px
+   content box squeezes the buttons and drops them back to 23.5px, half a pixel off the tabs. */
+.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 12px 8px 13px; flex: 0 0 auto; }
+.tab-rail-actions .btn--icon { flex: 0 0 auto; }
 .tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
 
 /* The scrollable row list fills the middle. */
@@ -572,10 +583,15 @@ html.view-dragging .graph-floater { pointer-events: none; }
    from theme vars so the deck re-tints per theme. */
 .flashcards-host { padding: 0; gap: 0; position: relative; }
 
-/* Header strip overlays the top so the stage fills the full pane height and the
-   card centers on the true page center (not just the space below the header). */
+/* IN FLOW, not an overlay. It used to be `position: absolute; top: 0` so the stage could
+   fill the whole pane and centre the card on the true page centre — but the card is
+   `min(680px, 92vw)` centred in that same full-height stage, so its top edge lands INSIDE
+   the header band, and as the pane narrows the card slides left until it runs through the
+   meter and the HARD/GOOD/EASY tally. Measured at a 970px pane: card left ≈ 145px, meter
+   right ≈ 270px — a 125px collision. Centring the card in the space BELOW the header is
+   worth more than centring it on the pane. */
 .revhead {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+  flex: 0 0 auto;
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 18px; padding: 18px 26px 6px;
 }
@@ -599,17 +615,23 @@ html.view-dragging .graph-floater { pointer-events: none; }
    short window push it past the fold with no way to scroll it into view — `center`, unlike
    `safe center`, doesn't extend the scrollable area to cover its own overflow). */
 .stage {
-  flex: 1 1 auto; min-height: 0; height: 100%; display: flex; flex-direction: column; align-items: center;
+  /* No `height: 100%` — the header is a flow sibling now, so a full-height stage would
+     overflow the host by exactly the header's height and push the grade row off the fold.
+     `flex: 1 1 auto` + `min-height: 0` already claims everything the header leaves. */
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; align-items: center;
   gap: 26px; padding: 26px; overflow: hidden;
 }
-.grade-row { flex: 0 0 auto; display: flex; gap: 12px; width: min(680px, 92vw); }
+/* 100% of the STAGE, not 92vw. `vw` is the window, but this view lives in a pane — in a split
+   pane or beside the sidebar the card was sized against a viewport far wider than its own
+   container and overhung it. .stage's 26px padding is the breathing room `92vw` was standing in for. */
+.grade-row { flex: 0 0 auto; display: flex; gap: 12px; width: min(680px, 100%); }
 
 /* Flip card: reveal flips to the back; the prompt stays as a small italic caption.
    Flexes to fill whatever height the grade row leaves it, and — since .flip-card below carries a
    hard 420px min-height floor — scrolls (safely centered, so the overflow stays reachable, same
    idiom as .flip-face's "safe center" below) once the pane is shorter than the card. */
 .cardwrap {
-  perspective: 1800px; width: min(680px, 92vw);
+  perspective: 1800px; width: min(680px, 100%);   /* pane-relative, not 92vw — see .grade-row */
   flex: 1 1 auto; min-height: 0; display: flex; align-items: safe center; justify-content: center;
   overflow-y: auto;
 }
@@ -903,20 +925,36 @@ html.view-dragging .graph-floater { pointer-events: none; }
 /* No DOM label overlay: the renderer draws its labels as cells on its own canvas. The
    `.graph-labels`/`.graph-label` rules that used to live here belonged to LabelLayer.ts, deleted
    with the second renderer — nothing has written those classes since. */
-.graph-legend-card { position: absolute; left: 18px; top: 18px; z-index: 4; max-width: 230px; background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 11px; padding: 12px 14px; backdrop-filter: blur(8px); }
+/* GEOMETRY ONLY. The SURFACE (fill, hairline, radius, blur, shadow) comes from .asc-popover +
+   asciiGraph.css — the same material as the find panel and the stats footer floating over the same
+   field. It used to redeclare all five here on the pre-ASCII pill register (11px radius, --border-soft,
+   blur(8px)); the radius/border/padding were already dead (asciiGraph.css outranks them at two-class
+   specificity) but `backdrop-filter` tied with .asc-popover's, so stylesheet import order silently
+   decided the card's blur. Declare nothing here that .asc-popover owns. */
+.graph-legend-card { position: absolute; left: 18px; top: 18px; z-index: 4; max-width: 230px; }
 .graph-legend-card.daemon-legend { max-width: 290px; }
 /* Daemon-mode services list (DaemonList.tsx): cron/process rows with live status. The
    per-row dynamic opacity (disabled → 0.45) + the Processes head's dynamic margin-top
    stay inline; everything static lives here. */
-.daemon-list { display: flex; flex-direction: column; gap: 1px; width: 100%; height: 100%; overflow-y: auto; pointer-events: auto; font-family: inherit; font-size: 11px; }
+.daemon-list { display: flex; flex-direction: column; gap: 1px; width: 100%; height: 100%; overflow-y: auto; pointer-events: auto; font-family: inherit; font-size: var(--fs-ui); }
 /* Row height is the app's row unit (--row-h, 18px) — same pattern as .ft-row: a fixed
-   box + horizontal-only padding, not vertical padding around free-flowing text. */
-.daemon-row { display: flex; align-items: center; gap: 7px; height: var(--row-h, 18px); padding: 0 6px; border-radius: 3px; cursor: pointer; }
+   box + horizontal-only padding, not vertical padding around free-flowing text. Gap and padding
+   match .graph-search-row / .cluster-row (asciiGraph.css): a daemon row and a find-panel row float
+   over the same field on the same surface, so they are the same object. Radius + hover live in
+   DaemonList.css with the rest of this list's ASCII register. */
+.daemon-row { display: flex; align-items: center; gap: 6px; height: var(--row-h, 18px); padding: 0 5px; cursor: pointer; }
 .daemon-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
-.daemon-section-head { padding: 4px 6px 2px; font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+/* Type register in DaemonList.css. More space above than below — a head belongs to the rows under
+   it, and the gap before the NEXT section is what separates the groups. */
+.daemon-section-head { padding: 4px 5px 2px; }
+.daemon-row + .daemon-section-head { margin-top: 6px; }
 .graph-legend-rows { max-height: 240px; overflow: auto; }
 .graph-card-h { font-size: 10.5px; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; }
-.graph-stats { position: absolute; right: 18px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--faint); background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 9px; padding: 7px 12px; }
+/* GEOMETRY ONLY — surface from .asc-popover, type from asciiGraph.css (same split as
+   .graph-legend-card above). A fixed --row-h box with horizontal-only padding, the .daemon-row /
+   .ft-row idiom, so the readout sits on the app's row grid instead of inventing its own height out
+   of vertical padding. */
+.graph-stats { position: absolute; right: 18px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: 10px; height: var(--row-h, 18px); padding: 0 10px; }
 .graph-find-panel { position: absolute; top: 8px; right: 8px; width: 260px; max-height: calc(100% - 16px); display: flex; flex-direction: column; pointer-events: auto; background: var(--pop-bg-strong); border: 1px solid var(--border); border-radius: 11px; backdrop-filter: blur(10px); box-shadow: var(--shadow-card); z-index: 5; overflow: hidden; }
 .graph-bottom-narrow { display: flex; gap: 2px; align-items: stretch; background: var(--pop-bg); border-radius: 4px; padding: 1px; pointer-events: auto; flex-shrink: 0; }
 /* Bottom-bar fps readout (paired with .graph-hud-pill; dynamic traffic-light color stays inline). */
@@ -958,8 +996,8 @@ html.view-dragging .graph-floater { pointer-events: none; }
 
 /* Empty pane: a centered "new terminal" icon (styled to match the sidebar toolbar icons,
    .sidebar-icons .btn--icon) above a faint italic hint that the pane is fillable. */
-.empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; user-select: none; }
-.empty .empty-hint { font-style: italic; font-size: 12.5px; color: var(--faint); max-width: 220px; padding: 0 16px; text-align: center; text-wrap: balance; }
+.empty-pane { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; user-select: none; }
+.empty-pane .empty-hint { font-style: italic; font-size: 12.5px; color: var(--faint); max-width: 220px; padding: 0 16px; text-align: center; text-wrap: balance; }
 
 .pane-header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 4px 10px; font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border-soft); background: var(--rail); white-space: nowrap; cursor: grab; }
 .pane-header:active { cursor: grabbing; }
