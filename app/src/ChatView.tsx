@@ -2009,7 +2009,13 @@ export function ChatView(props: {
                 getTags={props.tagNames}
                 getFiles={fileCandidates}
                 onFileMention={(p) => addChatReference(props.chatId, p)}
-                placeholder={() => `Message ${persona()}…  ( / for commands · @ to reference a file · drop or paste an image · Enter to send · Shift+Enter for newline )`}
+                // Short, quiet, one line — the app's placeholder idiom (BlockEditor's "Start
+                // writing…", the switcher's search field). The long parenthetical that used to
+                // live here listed every affordance (/ · @ · drop · Enter · Shift+Enter), wrapped
+                // to two lines at the 680px column, and made the empty composer the loudest thing
+                // on the surface. Those affordances are introduced by the empty state above and
+                // are self-revealing on first keystroke.
+                placeholder={() => `Message ${persona()}…`}
               />
             </div>
             <Show

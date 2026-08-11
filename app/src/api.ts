@@ -23,6 +23,43 @@ const BASE = resolveBase(
   (globalThis as { __BISMUTH_API__?: string }).__BISMUTH_API__,
 );
 
+/**
+ * A STABLE identity for this window's vault, for namespacing client-side caches
+ * (the sidebar-tree and graph boot seeds in viewCache.ts).
+ *
+ * Those seeds were keyed by the backend URL, which is correct for isolating vaults but
+ * is NOT stable across launches: the bundled app spawns its core on a free port chosen
+ * fresh every time (`pick_free_port` in src-tauri/src/lib.rs), so the key never matched
+ * the previous run and the sidebar + graph both painted empty until their first fetch
+ * returned. The Tauri shell injects `__BISMUTH_VAULT__` (the vault path) so the key can
+ * be stable AND still per-vault.
+ *
+ * A window opened with `?api=` ("Open folder") is pointed at a DIFFERENT backend than the
+ * one the shell injected, so the injected vault is not its vault — it falls back to the
+ * backend URL, exactly as before. Pure, so it is unit-testable.
+ */
+export function resolveCacheScope(
+  search: string | undefined,
+  base: string,
+  injectedVault?: string,
+): string {
+  let overridden = false;
+  try {
+    overridden = !!new URLSearchParams(search ?? "").get("api");
+  } catch {
+    // malformed search — treat as no override
+  }
+  return !overridden && injectedVault ? injectedVault : base;
+}
+
+/** The cache-namespacing identity for this window (see resolveCacheScope). */
+export const cacheScope = (): string =>
+  resolveCacheScope(
+    globalThis.location?.search,
+    transport.base(),
+    (globalThis as { __BISMUTH_VAULT__?: string }).__BISMUTH_VAULT__,
+  );
+
 /** The backend this window is bound to (already query/env resolved). Exposed so the UI
  *  can build "new window" / "open folder" URLs that pin the right backend via `?api=`. */
 export const apiBase = (): string => transport.base();

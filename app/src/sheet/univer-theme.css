@@ -21,7 +21,7 @@
    aggregate readout ship in this Univer build as Tailwind utilities with build-hashed
    class names — no stable selector to hook without risking breakage on Univer's next
    internal refactor, so those are left at Univer's own chrome (recolored only insofar as
-   they read the --univer-gray-*/--univer-primary-* variable remap below, which is a
+   they read the --univer-gray-* and --univer-primary-* variable remap below, which is a
    real theming API, not a guessed selector) rather than a name-by-name CSS override. */
 
 /* Use the app's UI face everywhere in the chrome (the single biggest cohesion win,
