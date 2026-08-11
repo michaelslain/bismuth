@@ -43,6 +43,30 @@ export function extractFingerprint(content: string): Fingerprint {
   };
 }
 
+/**
+ * How many debounce intervals a batch may keep growing before it is flushed anyway.
+ * The file watcher coalesces with a RESETTING debounce, which alone has no upper bound:
+ * while something writes faster than `debounceMs` — an agent editing a run of files over
+ * a terminal/chat session, a bulk move, a git checkout — the timer is re-armed on every
+ * event and the sidebar/graph never refresh until the writer finally pauses. Capping the
+ * total window keeps bursts coalesced while guaranteeing the UI still updates during one.
+ * Derived from the configured debounce (rather than a separate setting) so raising
+ * `server.fileWatchDebounceMs` widens both windows together.
+ */
+export const MAX_COALESCE_INTERVALS = 4;
+
+/**
+ * Delay before flushing the pending watch batch: the normal debounce, shortened so the
+ * batch never spans more than `MAX_COALESCE_INTERVALS * debounceMs` from its first event.
+ * `firstPendingAt === 0` means the batch is empty (nothing accumulating yet).
+ * Never negative — an already-overdue batch flushes on the next tick.
+ */
+export function flushDelayMs(now: number, firstPendingAt: number, debounceMs: number): number {
+  if (firstPendingAt === 0) return debounceMs;
+  const deadline = firstPendingAt + debounceMs * MAX_COALESCE_INTERVALS;
+  return Math.max(0, Math.min(debounceMs, deadline - now));
+}
+
 /** True when a changed path is the vault settings file (drives registry re-parse + SSE).
  *  Settings live in the single `.settings` file; the legacy root `settings.yaml` and the interim
  *  `.settings/settings.yaml` are still matched during the migration window. */

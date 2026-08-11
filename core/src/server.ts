@@ -58,7 +58,7 @@ import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarge
 import { isUiControlAllowed } from "./commands";
 import { writeRunRecord } from "./runRegistry";
 import { mintOwnerToken, resolveRequestChannel, type RequestChannel } from "./ownerToken";
-import { createChangeTracker, isSettingsPath } from "./changeClassifier";
+import { createChangeTracker, isSettingsPath, flushDelayMs } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, readMcpRegisterWith, type AppConfig, SETTINGS_FILE, setFolderIcon, setFolderVisibility, readDailyNotes } from "./settings";
 import { resolveVisibility, resolveFolderVisibility, buildDenyPaths, isDeniedPath, type Visibility, type DenyEntry, type VisibilityChannel } from "./visibility";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
@@ -303,6 +303,9 @@ export function createServer(cfg: CoreConfig) {
   }).catch(() => {});
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  // When the current pending batch received its first event (0 = no batch pending).
+  // Bounds the resetting debounce — see flushDelayMs.
+  let firstPendingAt = 0;
   let pendingVault = new Set<string>();
   let pendingVaultUnknown = false;
   let pendingMemory = false;
@@ -461,9 +464,16 @@ export function createServer(cfg: CoreConfig) {
   }
 
   function arm() {
+    // Stamp when this batch started accumulating so flushDelayMs can cap how long the
+    // resetting debounce may keep deferring it (see MAX_COALESCE_INTERVALS): without the
+    // cap, anything writing faster than the debounce — an agent editing a run of files
+    // from a terminal/chat session, a bulk move — re-arms the timer forever and the
+    // sidebar/graph never update until the writer stops.
+    if (firstPendingAt === 0) firstPendingAt = Date.now();
     if (debounceTimer !== null) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
+      firstPendingAt = 0;
       const vaultPaths = [...pendingVault];
       const unknown = pendingVaultUnknown;
       const memory = pendingMemory;
@@ -491,7 +501,7 @@ export function createServer(cfg: CoreConfig) {
         const vaultTouched = unknown || vaultPaths.some((p) => !isInkSidecarPath(p));
         await applyDirty(unknown ? [] : vaultPaths, dirty, vaultTouched);
       })();
-    }, appConfig.server.fileWatchDebounceMs);
+    }, flushDelayMs(Date.now(), firstPendingAt, appConfig.server.fileWatchDebounceMs));
   }
 
   async function readNoteOrEmpty(vault: string, path: string): Promise<string> {

@@ -1,5 +1,11 @@
 import { test, expect } from "bun:test";
-import { extractFingerprint, diffFingerprints, createChangeTracker } from "../src/changeClassifier";
+import {
+  extractFingerprint,
+  diffFingerprints,
+  createChangeTracker,
+  flushDelayMs,
+  MAX_COALESCE_INTERVALS,
+} from "../src/changeClassifier";
 
 test("extractFingerprint captures wikilinks, tags, and icon", () => {
   const fp = extractFingerprint(`---\nicon: 📕\ntags: [a, b]\n---\nSee [[Other Note]] and #inline`);
@@ -112,4 +118,45 @@ test("createChangeTracker aggregates dirtiness across multiple changed paths", a
   fs.set("a.md", "plain edited");
   fs.set("b.md", "plain #t");
   expect(await tracker.classify(["a.md", "b.md"], read)).toEqual({ graph: true, tree: false });
+});
+
+// --- watch-batch coalescing cap (flushDelayMs) -------------------------------
+// A resetting debounce alone has no upper bound: while an agent writes files faster than
+// `debounceMs`, every event re-arms the timer and the sidebar/graph never refresh until
+// the writer pauses. flushDelayMs caps the batch's total span.
+
+test("flushDelayMs: an empty batch waits the full debounce", () => {
+  expect(flushDelayMs(1_000, 0, 250)).toBe(250);
+});
+
+test("flushDelayMs: a young batch still waits the full debounce", () => {
+  // Batch opened 100ms ago; the cap (4 x 250 = 1000ms) is nowhere near, so nothing changes.
+  expect(flushDelayMs(1_100, 1_000, 250)).toBe(250);
+});
+
+test("flushDelayMs: the wait shortens as the batch approaches its cap", () => {
+  // Batch opened at t=1000, cap at t=2000. At t=1900 only 100ms remains, not a fresh 250.
+  expect(flushDelayMs(1_900, 1_000, 250)).toBe(100);
+});
+
+test("flushDelayMs: an overdue batch flushes immediately, never negative", () => {
+  expect(flushDelayMs(2_500, 1_000, 250)).toBe(0);
+});
+
+// The regression this exists to prevent: sustained writes must still flush.
+test("flushDelayMs: sustained sub-debounce writes cannot defer a batch forever", () => {
+  const debounceMs = 250;
+  const openedAt = 1_000;
+  let now = openedAt;
+  let elapsedWithoutFlush = 0;
+  // Simulate a writer touching a file every 50ms (well under the 250ms debounce).
+  for (let i = 0; i < 100; i++) {
+    const wait = flushDelayMs(now, openedAt, debounceMs);
+    if (wait === 0) break;              // the batch flushed
+    elapsedWithoutFlush = now - openedAt;
+    now += 50;                          // next write re-arms before `wait` elapses
+  }
+  // Without the cap this loop never breaks and elapsed grows to ~5s.
+  expect(elapsedWithoutFlush).toBeLessThanOrEqual(debounceMs * MAX_COALESCE_INTERVALS);
+  expect(flushDelayMs(now, openedAt, debounceMs)).toBe(0);
 });
