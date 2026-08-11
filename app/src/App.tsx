@@ -1,6 +1,6 @@
 // app/src/App.tsx
 import { createSignal, onMount, onCleanup, For, Index, createMemo, createEffect, Show, Suspense, lazy } from "solid-js";
-import { api, apiBase, summarizeSync } from "./api";
+import { api, apiBase, cacheScope, summarizeSync } from "./api";
 import { readCache, writeCache, scopedKey } from "./viewCache";
 import { FileTree } from "./FileTree";
 import { Icon } from "./icons/Icon";
@@ -148,7 +148,7 @@ export default function App() {
   // caches node positions in localStorage; this supplies the structure). Reconciles when
   // /graph returns. Persisted WITHOUT the lazy `views` layouts to keep the blob small.
   const [graph, setGraph] = createSignal<GraphData>(
-    readCache<GraphData>(scopedKey(GRAPH_CACHE_KEY, apiBase())) ?? { nodes: [], edges: [] },
+    readCache<GraphData>(scopedKey(GRAPH_CACHE_KEY, cacheScope())) ?? { nodes: [], edges: [] },
   );
   const [daemon, setDaemon] = createSignal<GraphData>({ nodes: [], edges: [] });
   // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd".
@@ -554,7 +554,7 @@ export default function App() {
         ? { ...g, views: prev.views }
         : g;
     setGraph(next);
-    writeCache(scopedKey(GRAPH_CACHE_KEY, apiBase()), { nodes: g.nodes, edges: g.edges });
+    writeCache(scopedKey(GRAPH_CACHE_KEY, cacheScope()), { nodes: g.nodes, edges: g.edges });
   };
 
   // The graph doesn't carry per-note frontmatter icons; the file tree does. Build a

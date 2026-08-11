@@ -18,11 +18,17 @@ export function AsciiMeter(props: AsciiMeterProps) {
   const width = () => props.width ?? 10;
   const filled = () => meterFill(props.value, width());
   const color = () => props.color ?? "var(--accent)";
+  // The unfilled run is `asc-meter-empty`, NOT a bare `empty` — App.css owns a global
+  // `.empty { display: flex; flex-direction: column }` for the empty-pane state, which
+  // matched this span and turned it into a block, breaking `[`, the cells and `]` onto
+  // three separate lines. The whole bar must stay one inline glyph run.
+  // Width is a fixed cell count and cannot reflow, so callers in a resizable pane pick
+  // it with fitMeterWidth() against their measured slot.
   return (
     <span class="asc-meter" style={{ color: "var(--text-muted)" }}>
       {props.label ? props.label + "  " : ""}
       [<span style={{ color: color() }}>{"#".repeat(filled())}</span>
-      <span class="empty">{".".repeat(width() - filled())}</span>]
+      <span class="asc-meter-empty">{".".repeat(width() - filled())}</span>]
       {props.suffix ? " " + props.suffix : ""}
     </span>
   );

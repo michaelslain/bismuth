@@ -82,3 +82,23 @@ export const Empty: Story = {
     </div>
   ),
 };
+
+/** The list in the shell it actually ships in: GraphView's floating `.graph-legend-card
+ *  .daemon-legend .asc-popover`, over the graph field's ground. The bare stories above prove the
+ *  ROWS; only this one proves the surface they sit on — the panel hairline and 5px corner, the card
+ *  title against the section heads (one eyebrow register, the head never louder than the panel it
+ *  is inside), and the row hover. Positioning is neutralized (`position: static`) so the card lands
+ *  in the story frame instead of the viewport corner; everything else is the shipping markup. */
+export const InGraphCard: Story = {
+  parameters: { layout: "centered", backgrounds: { disable: true } },
+  render: () => (
+    <div style={{ background: "var(--graph-bg, var(--bg))", padding: "28px" }}>
+      <div class="graph-legend-card daemon-legend asc-popover" style={{ position: "static", width: "290px" }}>
+        <div class="graph-card-h">daemon · services</div>
+        <div class="graph-legend-rows">
+          <DaemonList nodes={NODES} onFocus={() => {}} onChanged={() => {}} />
+        </div>
+      </div>
+    </div>
+  ),
+};

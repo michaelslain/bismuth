@@ -8,7 +8,27 @@
    chrome is untouched — it already runs through the shared ContextMenu/popover.css register. */
 
 .daemon-list .daemon-row { font-size: var(--fs-ui); }
-.daemon-list .daemon-section-head { font-size: var(--fs-micro); }
+
+/* Rows are interactive (click focuses the node, right-click opens the menu) and must SAY so —
+   the same --r-chip corner and --hover-bg wash the cluster/find-panel rows use (asciiGraph.css),
+   so every list floating over the field responds identically. */
+.daemon-list .daemon-row {
+  border-radius: var(--r-chip);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.daemon-list .daemon-row:hover { background: var(--hover-bg); }
+
+/* Section heads run the SAME eyebrow register as the card's own title (.graph-card-h): --fs-micro,
+   --ls-eyebrow, --faint, regular weight. They were 600-weight at --ls-label in --text-muted, which
+   made "CRONS" — a subsection — read louder than "DAEMON · SERVICES", the panel it sits inside.
+   Nothing in the system's eyebrow is bold ("never a heading tag look"); a head is placed, not
+   weighted, so the two levels separate on spacing alone. */
+.daemon-list .daemon-section-head {
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  font-weight: var(--fw-regular);
+  color: var(--faint);
+}
 .daemon-section-count { opacity: 0.6; }
 
 /* A 6px currentColor dot (the shared .status-dot idiom) — its color comes from the row's

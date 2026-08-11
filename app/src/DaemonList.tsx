@@ -224,10 +224,10 @@ export function DaemonList(props: {
         <For each={crons()}>{(node) => <CronRow node={node} onFocus={props.onFocus} onMenu={openMenu} />}</For>
       </Show>
       <Show when={processes().length > 0}>
-        <div
-          class="daemon-section-head"
-          style={{ "margin-top": crons().length > 0 ? "4px" : "0" }}
-        >
+        {/* No inline margin: `.daemon-row + .daemon-section-head` (App.css) supplies the gap only
+            when rows actually precede this head, which is the same condition the inline style
+            computed — in CSS, where the rest of the list's spacing lives. */}
+        <div class="daemon-section-head">
           Processes <span class="daemon-section-count">{processes().length}</span>
         </div>
         <For each={processes()}>{(node) => <ProcessRow node={node} onFocus={props.onFocus} onMenu={openMenu} />}</For>

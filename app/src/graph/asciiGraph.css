@@ -134,8 +134,17 @@
 
 /* ── Footer readout ──────────────────────────────────────────────────────── */
 /* "N nodes · M edges · 2nd brain · 40%" — the zoom figure is the RESOLUTION percentage from
-   the design's viewbar (0% = fit, 100% = every note named). */
-.graph-stats .graph-zoom-pct {
+   the design's viewbar (0% = fit, 100% = every note named).
+   This is the design system's status readout (patterns.css .asc-statusbar): --fs-micro in --faint.
+   It used to sit at a hardcoded 11px on a 9px-radius --border-soft pill with no blur and no
+   shadow — the one floating overlay never moved onto the ASCII register, so it read as a soft
+   chip from another app while the legend card and find panel beside it were hairline panels.
+   The surface now comes from .asc-popover (GraphView.tsx); only type lands here.
+   Tabular figures on the WHOLE readout, not just the zoom %: the node/edge counts change as the
+   vault does, and proportional digits make the footer twitch when they do. */
+.graph-stats {
+  font-size: var(--fs-micro);
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
+.graph-stats .graph-zoom-pct { color: var(--faint); }

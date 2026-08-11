@@ -370,8 +370,13 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 .asc-tree-row { padding: 1px 12px; white-space: pre; color: var(--text-muted); cursor: pointer; }
 .asc-tree-row:hover { background: var(--hover-bg); color: var(--fg); }
 .asc-tree-row.active { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }
-.asc-meter { white-space: pre; color: var(--accent); }
-.asc-meter .empty { color: var(--faint); }
+/* font-family is NOT optional here (same as .asc-glyph): the meter is a character
+   grid, and in an inherited proportional font its `.` cells collapse to ~3px while
+   `#` stays wide, so the bar reads as a thin dotted line instead of a meter. */
+.asc-meter { white-space: pre; color: var(--accent); font-family: var(--ui-font-stack); }
+/* Namespaced, not `.empty` — App.css's global `.empty` (the empty-pane flex column)
+   would otherwise turn this inline run into a block and break the bar onto 3 lines. */
+.asc-meter .asc-meter-empty { color: var(--faint); }
 .asc-field { position: relative; overflow: hidden; background: var(--graph-bg); }
 .asc-field pre { position: absolute; left: 0; top: 0; margin: 0; white-space: pre; }
 .asc-field .noise { color: var(--faint); opacity: var(--field-noise-op); }

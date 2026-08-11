@@ -1,6 +1,6 @@
 // app/src/FileTree.tsx
 import { createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, type JSX } from "solid-js";
-import { api, apiBase } from "./api";
+import { api, cacheScope } from "./api";
 import { readCache, writeCache, scopedKey } from "./viewCache";
 import { lastChange } from "./serverVersion";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -71,11 +71,30 @@ export function FileTree(props: {
   // The folder path currently under a sidebar drag ("" = the tree root), for the drop highlight.
   dropHighlight: () => string | null;
 }) {
+  // Guards an optimistic edit against a /tree fetch that was ALREADY in flight when
+  // the edit happened. Solid's `mutate` is a raw signal setter: it does not clear the
+  // resource's pending promise, and `loadEnd` only discards fetches that are
+  // out-of-ORDER (a newer fetch superseding an older one) — never one that a
+  // mutation overtook. So a response that left the server before the delete/rename
+  // landed would still be applied on arrival, resurrecting the row the user just
+  // removed. `optimisticEpoch` bumps on every optimistic edit; a fetch that started
+  // under an older epoch resolves to the optimistic tree instead of its own stale
+  // snapshot. The reconciling refetch still arrives once pendingOps settles
+  // (see decideTreeRefresh), so this defers to the server rather than fighting it.
+  let optimisticEpoch = 0;
+  let optimisticTree: TreeEntry[] | null = null;
   // Seed from the last good tree so the sidebar paints instantly on boot; the fetch
   // still runs and reconciles. Persist every fresh, non-error response for next launch.
-  const [files, { refetch, mutate }] = createResource(() => api.tree(), {
-    initialValue: readCache<TreeEntry[]>(scopedKey(TREE_CACHE_KEY, apiBase())),
-  });
+  const [files, { refetch, mutate }] = createResource(
+    async () => {
+      const epoch = optimisticEpoch;
+      const fetched = await api.tree();
+      if (epoch !== optimisticEpoch && optimisticTree) return optimisticTree;
+      optimisticTree = null; // reconciled with the server; nothing left to protect
+      return fetched;
+    },
+    { initialValue: readCache<TreeEntry[]>(scopedKey(TREE_CACHE_KEY, cacheScope())) },
+  );
   // Persistent-identity tree root: rebuild from the flat entries on every files() change, then
   // reconcile against the previous root so untouched subtrees keep their object identity — the
   // reference-keyed <For> in Level preserves those rows (DOM + handlers) instead of disposing and
@@ -130,7 +149,7 @@ export function FileTree(props: {
   createEffect(() => {
     if (files.loading || files.error || pendingOps() > 0) return;
     const f = files();
-    if (f) writeCache(scopedKey(TREE_CACHE_KEY, apiBase()), f);
+    if (f) writeCache(scopedKey(TREE_CACHE_KEY, cacheScope()), f);
   });
   // React to server changes instead of blind polling. The effect tracks
   // editing()/pendingOps() so it re-runs (and applies any deferred change) once an
@@ -309,12 +328,18 @@ export function FileTree(props: {
   // server's graph rebuild). The op's own success path needs no refetch — the
   // optimistic state already matches the server; we only refresh() to *revert*
   // if the server call fails.
+  // Every optimistic edit goes through here so it both updates the resource AND
+  // records the epoch/tree the fetcher above needs to reject a pre-edit response.
+  const applyOptimistic = (fn: (cur: TreeEntry[]) => TreeEntry[]) => {
+    optimisticEpoch++;
+    mutate((cur) => (optimisticTree = fn(cur ?? [])));
+  };
   const optimisticRename = (from: string, to: string) =>
-    mutate((cur) => renameEntries(cur ?? [], from, to));
+    applyOptimistic((cur) => renameEntries(cur, from, to));
   const optimisticRemove = (path: string) =>
-    mutate((cur) => removeEntries(cur ?? [], path));
+    applyOptimistic((cur) => removeEntries(cur, path));
   const optimisticAdd = (path: string, kind: "file" | "dir") =>
-    mutate((cur) => addEntry(cur ?? [], path, kind));
+    applyOptimistic((cur) => addEntry(cur, path, kind));
 
   // LIFO stack of undoable deletes (most-recent first).
   const [undoStack, setUndoStack] = createSignal<{ trashPath: string; to: string; name: string }[]>([]);

@@ -484,8 +484,9 @@ export function GraphView(props: {
             </div>
           </div>
         </Show>
-        {/* Floating stats footer. */}
-        <div class="graph-stats">
+        {/* Floating stats footer — the same .asc-popover surface as the legend card and the find
+            panel, because all three float over the same field and must read as one material. */}
+        <div class="graph-stats asc-popover">
           <span>{nodeCount()} nodes · {edgeCount()} edges · {modeLabel()}</span>
           {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
           <span class="graph-zoom-pct">{zoomPct()}%</span>
