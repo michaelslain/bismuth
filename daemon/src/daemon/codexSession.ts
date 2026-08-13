@@ -65,6 +65,38 @@ function codexHomeDir(ctx: VaultContext): string {
   return join(ctx.daemonDir, "codex")
 }
 
+/**
+ * The child env for one `codex exec` turn. Extracted from sendCodexMessage for the same reason
+ * session.ts extracted buildQueryOptions: this env wiring is the part most likely to silently
+ * regress, and a missing key here has no error, no log, and no visible symptom until an agent
+ * has already written to the wrong place. Pure over its inputs.
+ */
+export function buildCodexEnv(
+  ctx: VaultContext,
+  codexHome: string,
+  base: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [k, v] of Object.entries(base)) if (v !== undefined) env[k] = v
+  env.PATH = augmentPath(base.PATH || "/usr/bin:/bin:/usr/sbin:/sbin")
+  env.CODEX_HOME = codexHome
+  // This vault's brain, named the same way session.ts's Claude path names it. UNCONDITIONAL and
+  // never omitted: ctx.memoryDir/ctx.root are computed strings (lib/config.ts's vaultPaths), so
+  // there is no "absent" case to degrade to — and the degrade is what bites. A cron session runs
+  // with cwd = the VAULT ROOT, so an agent told to record a memory note with no memory location in
+  // its environment resolves one relative to cwd and drops plain, frontmatter-less markdown into
+  // <vault>/memory — orphaned notes in the user's vault, outside the memory graph and its git repo.
+  // That is not hypothetical: it is the observed bug this injection closes.
+  env.BISMUTH_MEMORY_DIR = ctx.memoryDir
+  // Targets the bismuth CLI/MCP at THIS vault regardless of cwd, matching buildQueryOptions'
+  // mcpServers env (mcp/src/memory.ts's memoryDir() falls back to resolving from BISMUTH_VAULT).
+  env.BISMUTH_VAULT = ctx.root
+  // Same signal session.ts's Claude path stamps — core/src/visibilityCliGate.ts's CLI-dispatch
+  // gate reads this to tell the daemon's own `bismuth` invocations from the vault owner's.
+  env.BISMUTH_AGENT_CHANNEL = "daemon"
+  return env
+}
+
 async function getCodexThreadId(ctx: VaultContext): Promise<string | undefined> {
   try {
     const id = (await readFile(codexThreadIdFile(ctx), "utf-8")).trim()
@@ -110,8 +142,14 @@ async function refreshIdentityAgentsMd(ctx: VaultContext): Promise<void> {
     "",
     identity,
     "",
-    "Your memory lives in this vault's `.daemon/memory` — consult it (via the bismuth MCP tools, if",
-    "configured) before acting, and prefer linking to existing vault notes over duplicating them.",
+    `Your memory graph is \`${ctx.memoryDir}\` (also in your environment as \`$BISMUTH_MEMORY_DIR\`).`,
+    "Consult it before acting, and prefer linking to existing vault notes over duplicating them.",
+    "",
+    "Write memory notes ONLY through the bismuth `remember` tool — it is what stamps a note's",
+    "frontmatter and files it into the memory graph. Your working directory is the VAULT, not the",
+    "memory graph: never create a memory note at a path relative to your cwd, and in particular never",
+    "in a `memory/` folder beside the user's notes — that is an orphaned directory in their vault, not",
+    "the graph. If the `remember` tool is not available to you, say so and write nothing.",
   ].join("\n")
   writeAgentsMdBlock(ctx.root, content)
 }
@@ -247,14 +285,7 @@ export async function sendCodexMessage(message: string, ctx: VaultContext, opts?
 
   const codexHome = codexHomeDir(ctx)
   await mkdir(codexHome, { recursive: true }).catch(() => {})
-  const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    PATH: augmentPath(process.env.PATH || "/usr/bin:/bin:/usr/sbin:/sbin"),
-    CODEX_HOME: codexHome,
-    // Same signal session.ts's Claude path stamps — core/src/visibilityCliGate.ts's CLI-dispatch
-    // gate reads this to tell the daemon's own `bismuth` invocations from the vault owner's.
-    BISMUTH_AGENT_CHANNEL: "daemon",
-  }
+  const env = buildCodexEnv(ctx, codexHome)
 
   const ac = opts?.abortController
   let timeoutId: ReturnType<typeof setTimeout> | undefined

@@ -232,6 +232,15 @@ Review this vault (your current working directory) to build and maintain a deep 
 
 Some notes are marked off-limits by the vault's visibility settings (a per-file/folder control the user sets from the file tree) — a Read/Grep/Glob/Bash access to one of those will come back denied. That's expected and by design, not a bug or a missing file: skip it and move on without guessing at its contents or retrying.
 
+## Where your memory lives — read this before you write anything
+
+Your memory graph is \`$BISMUTH_MEMORY_DIR\` (this vault's \`.daemon/memory\`). That is the ONLY place a memory note ever goes, and the \`remember\` tool is the ONLY way to put one there — \`remember\` is what stamps a note's \`type:\`/\`tags:\`/\`created:\`/\`updated:\` frontmatter and files it into the memory graph's own git repo. A file you write yourself has none of that and is not part of the graph.
+
+Your working directory is the VAULT, not the memory graph. So:
+
+- NEVER create a memory note with Write/Edit, and never at a path relative to your cwd. A \`memory/\` folder next to the user's notes is NOT the memory graph — it is an orphaned directory in their vault, which is exactly the defect this paragraph exists to prevent.
+- If \`remember\`/\`recall\` are NOT among your available tools in this session, the memory graph is unreachable for this run. Do not improvise a location, do not fall back to writing files. Say so plainly in your output and write nothing.
+
 ## Scope for this run
 
 {{changedSinceLastRun}}

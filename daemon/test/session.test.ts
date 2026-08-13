@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test"
 import { buildQueryOptions, DEFAULT_DAEMON_IDENTITY, resolveDaemonBackend, composeBackendRefusalNote, finalizeBotResponse } from "../src/daemon/session.ts"
+import { buildCodexEnv } from "../src/daemon/codexSession.ts"
 import type { VaultContext } from "../src/lib/config.ts"
 import { ownerTokenDenyPath } from "../src/lib/bismuthPaths.ts"
 
@@ -264,4 +265,44 @@ test("finalizeBotResponse: carries resolveDaemonBackend's refusal onto the retur
 test("finalizeBotResponse: backendRefusal is undefined when the requested backend ran as asked", () => {
   const r = finalizeBotResponse("done", "sess-1", undefined)
   expect(r.backendRefusal).toBeUndefined()
+})
+
+// ── The Codex daemon backend's child env ───────────────────────────────────────────────────────
+//
+// Bug (observed 2026-08-06): a cron run left two plain, frontmatter-less markdown files in
+// `<vault>/memory/` rather than the memory graph at `<vault>/.daemon/memory`. The Claude path was
+// never at fault — buildQueryOptions above sets BISMUTH_MEMORY_DIR unconditionally, in BOTH the
+// base session env and the MCP server's env. The Codex path did not set it AT ALL: its env carried
+// PATH, CODEX_HOME and BISMUTH_AGENT_CHANNEL and nothing else, so a cron running on
+// `daemon.backend: "codex"` had cwd = the vault root, no memory location anywhere in its
+// environment, and (with settings.codex.writeAgentsMd off, the default) not even the AGENTS.md
+// persona block that would otherwise have mentioned it. There is no error and no log on that path
+// — a missing env key is silent — which is why it is pinned here.
+test("buildCodexEnv injects this vault's memory dir and vault root, unconditionally", () => {
+  const env = buildCodexEnv(ctx, "/vault/.daemon/codex", { PATH: "/usr/bin" })
+  expect(env.BISMUTH_MEMORY_DIR).toBe("/vault/.daemon/memory")
+  expect(env.BISMUTH_VAULT).toBe("/vault")
+  expect(env.CODEX_HOME).toBe("/vault/.daemon/codex")
+  expect(env.BISMUTH_AGENT_CHANNEL).toBe("daemon")
+})
+
+// Per-vault, not process-global: ONE runtime multiplexes every enabled vault, so two concurrent
+// codex sends must never see each other's brain. A hardcoded or cached path passes the test above
+// and fails this one.
+test("buildCodexEnv's memory dir follows the vault, so concurrent vaults never share a brain", () => {
+  const other = { root: "/other", name: "Bo", memoryDir: "/other/.daemon/memory" } as unknown as VaultContext
+  const a = buildCodexEnv(ctx, "/vault/.daemon/codex", {})
+  const b = buildCodexEnv(other, "/other/.daemon/codex", {})
+  expect(a.BISMUTH_MEMORY_DIR).toBe("/vault/.daemon/memory")
+  expect(b.BISMUTH_MEMORY_DIR).toBe("/other/.daemon/memory")
+  expect(b.BISMUTH_VAULT).toBe("/other")
+})
+
+// The env is a REPLACEMENT handed to Bun.spawn, so the parent's PATH must survive augmentation —
+// launchd hands the daemon a minimal PATH and the session's Bash `bismuth …` calls depend on it.
+test("buildCodexEnv augments PATH with the CLI install dirs and preserves the inherited env", () => {
+  const env = buildCodexEnv(ctx, "/vault/.daemon/codex", { PATH: "/usr/bin", HOME: "/home/me" })
+  expect(env.PATH).toContain("/usr/bin")
+  expect(env.PATH).toContain("/opt/homebrew/bin")
+  expect(env.HOME).toBe("/home/me")
 })

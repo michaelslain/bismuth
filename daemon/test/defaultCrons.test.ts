@@ -458,3 +458,38 @@ test("vault-review names canonical notes and forbids dated ones as an instructio
   // The old soft wording is what failed; it must not survive.
   expect(VAULT_REVIEW).not.toContain("Prefer updating one consolidated note per topic")
 })
+
+// Bug (observed 2026-08-06, a real vault): a cron run wrote two plain, frontmatter-less markdown
+// files into `<vault>/memory/` instead of the memory graph at `<vault>/.daemon/memory`. They never
+// went through `remember`, so they carried no `type:`/`tags:`/`created:`/`updated:`, were absent
+// from the memory dir's own git repo, and sat orphaned in the user's vault with nothing linking to
+// them.
+//
+// The prompt-side cause is directly measurable here and was true of every version shipped up to and
+// including v4: `dream` named `$BISMUTH_MEMORY_DIR` ten times, and `vault-review` — the cron that
+// actually writes findings — named it ZERO times, while telling the model to "fix the memory" with
+// a working directory of the vault ROOT. An agent asked to record something, given no location and
+// no usable tool, resolves a path against its cwd; `memory/` is the obvious guess.
+//
+// So the invariant is not "dream mentions the variable" but "EVERY default cron that can write a
+// memory note says where memory is". Asserted over DEFAULT_CRONS as a whole rather than over the
+// two names, so a third seeded cron added later inherits the check instead of quietly skipping it.
+test("every default cron names the memory dir it is allowed to write to", () => {
+  for (const cron of DEFAULT_CRONS) {
+    expect(`${cron.name}: ${cron.content.includes("$BISMUTH_MEMORY_DIR")}`).toBe(`${cron.name}: true`)
+  }
+})
+
+test("vault-review points memory writes at the graph, not at a path relative to its cwd", () => {
+  // The location, and the ONE mechanism that produces a well-formed note.
+  expect(VAULT_REVIEW).toContain("Your memory graph is `$BISMUTH_MEMORY_DIR`")
+  expect(VAULT_REVIEW).toContain("the `remember` tool is the ONLY way to put one there")
+  // The specific wrong turn that produced the orphaned notes, named so the model can recognize it:
+  // cwd is the vault, so a cwd-relative `memory/` is the user's vault, not the graph.
+  expect(VAULT_REVIEW).toContain("Your working directory is the VAULT, not the memory graph")
+  expect(VAULT_REVIEW).toContain("NEVER create a memory note with Write/Edit")
+  // And the degrade path: no tools must mean "write nothing", never "improvise a location". This
+  // is the half that matters when the MCP block is absent entirely (session.ts's mcpBin() gate).
+  expect(VAULT_REVIEW).toContain("Do not improvise a location")
+  expect(VAULT_REVIEW).toContain("write nothing")
+})

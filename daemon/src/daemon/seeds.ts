@@ -81,6 +81,7 @@ export const PRIOR_SEED_HASHES: Record<string, string[]> = {
     "355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39", // v1 — 2026-06-28 (unchanged through f48076b)
     "7cd2b6ddef11d432b17510271e952830ac58f9ca0c53f0c261d7494ca7e0c060", // v2 — 2026-07-06, vault-visibility note
     "fade0b08ac5c1bc2dbf4b702e310b5348716dc3d5ad5f7c43db8d74459c1292d", // v3 — 2026-07-27, incremental scoping
+    "ab20715e82555d796fa6c46e20b4544e9d260e361a1c77cfe1d3a80d6a2815fa", // v4 — 2026-08-06, still never named the memory dir
   ],
 }
 
