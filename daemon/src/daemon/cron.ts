@@ -718,6 +718,69 @@ const CRON_RESULT_INSTRUCTION = `\n\nIMPORTANT: When you are done, print exactly
 
 const CRON_NOTIFY_INSTRUCTION = `\n\nIMPORTANT: This cron has notifications enabled. Just before the [CRON_RESULT:...] marker, print one line of the form:\n[NOTIFY: <one short plain-text sentence, max ~120 chars, no markdown, no backticks, no emoji, no newlines>]\nThis line is shown verbatim as a macOS notification — keep it concise and human-readable.`
 
+/**
+ * Where this vault's memory graph is, appended by the DAEMON to every cron prompt — never written
+ * by the prompt author, and therefore not something a prompt author can omit.
+ *
+ * WHY this is daemon-side and not prompt-side. The prompt-side version of this instruction already
+ * exists (defaultCrons.ts's vault-review opens with it) and it is not enough on its own, for a
+ * structural reason: a cron body is a user-owned file. `seeds.ts`'s versioned refresh deliberately
+ * never touches a `.md` the user has edited — that is the correct behavior and must not change — so
+ * a template fix reaches stock vaults and no others. Every hand-edited cron, and every cron the user
+ * or the daemon authored from scratch, stays exactly as uninformed as it was. Appending here is what
+ * makes "the agent knows where memory is" a property of the RUNTIME rather than of prompt text.
+ *
+ * The failure it closes (observed 2026-08-06 on a real vault): a cron session runs with cwd = the
+ * VAULT ROOT. An agent told to record something in memory, given no location, resolves a path
+ * against cwd — `<vault>/memory/` — and writes plain markdown with the Write tool. The result has no
+ * `type`/`tags`/`created`/`updated` frontmatter (that is `remember` → `writeNote`'s doing), is absent
+ * from the memory dir's git repo, and sits orphaned in the user's vault with nothing linking to it.
+ *
+ * The third paragraph is the half that is easy to drop and load-bearing. `session.ts`'s `mcpBin()`
+ * is existsSync-gated, so a machine where the GUI app never installed the bundled tools runs cron
+ * sessions with NO MCP block at all — meaning `remember`/`recall`/`forget` do not exist as tools,
+ * silently. Naming the directory alone in that situation actively makes things worse: it tells the
+ * model exactly where to aim a Write. "No tool ⇒ write nothing" is the only safe instruction.
+ */
+export function cronMemoryInstruction(memoryDir: string): string {
+  return (
+    `\n\nIMPORTANT — where your memory lives. This vault's memory graph is \`${memoryDir}\` ` +
+    `(also in your environment as \`$BISMUTH_MEMORY_DIR\`). That is the ONLY place a memory note ever goes.` +
+    `\n\nWrite memory notes ONLY through the \`remember\` tool — it is what stamps a note's ` +
+    `\`type\`/\`tags\`/\`created\`/\`updated\` frontmatter and files it into the memory graph. Your working ` +
+    `directory is the VAULT, not the memory graph, so never create a memory note with Write/Edit and ` +
+    `never at a path relative to your cwd: a \`memory/\` folder beside the user's notes is an orphaned ` +
+    `directory in their vault, not the graph.` +
+    `\n\nIf \`remember\` is not among your available tools in this session, the memory graph is ` +
+    `unreachable for this run. Do not improvise a location and do not fall back to writing files — ` +
+    `say so plainly in your output and write nothing.`
+  )
+}
+
+/**
+ * Assemble the exact prompt one cron fire sends. Pure, so the invariant that matters — the memory
+ * instruction is present on EVERY cron regardless of what its body says — is provable against the
+ * real assembly rather than asserted about a constant nothing is proven to use.
+ *
+ * Order is deliberate: the memory instruction precedes CRON_RESULT_INSTRUCTION, whose own text
+ * ("This must be the last thing you print") is only true if nothing follows it.
+ */
+export function buildCronPrompt(p: {
+  jobName: string
+  body: string
+  memoryDir: string
+  triggerContext?: string
+  notify: boolean
+}): string {
+  const triggerNote = p.triggerContext ? `\n\nTriggered by change to: ${p.triggerContext}` : ""
+  return (
+    `[Cron: ${p.jobName}] ${p.body}${triggerNote}` +
+    cronMemoryInstruction(p.memoryDir) +
+    CRON_RESULT_INSTRUCTION +
+    (p.notify ? CRON_NOTIFY_INSTRUCTION : "")
+  )
+}
+
 function parseCronResult(output: string): "success" | "failed" | "unknown" {
   // Search from the end for the last marker
   const successIdx = output.lastIndexOf("[CRON_RESULT:SUCCESS]")
@@ -858,8 +921,13 @@ async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string
   // Run the actual session in the background (not awaited by caller)
   const sessionPromise = (async () => {
     try {
-      const triggerNote = opts?.triggerContext ? `\n\nTriggered by change to: ${opts.triggerContext}` : ""
-      const prompt = `[Cron: ${job.name}] ${promptOverride ?? job.prompt}${triggerNote}${CRON_RESULT_INSTRUCTION}${job.notify ? CRON_NOTIFY_INSTRUCTION : ""}`
+      const prompt = buildCronPrompt({
+        jobName: job.name,
+        body: promptOverride ?? job.prompt,
+        memoryDir: ctx.memoryDir,
+        triggerContext: opts?.triggerContext,
+        notify: job.notify,
+      })
       const response = await sendMessage(prompt, ctx, { model: job.model, effort: job.effort, abortController: ac, timeoutSecs: job.timeout, newSession: true })
 
       if (job.waitFor) {

@@ -396,11 +396,28 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
     throw new Error(`daemon backend "${backend}" is not implemented — only "claude" and "codex" can run a vault brain today`)
   }
 
+  // existsSync-gated: absent (the GUI app never installed the bundled tools) → no MCP block.
+  // "Graceful degrade" undersells what is lost, which is why this is logged rather than silent:
+  // without the MCP block there are no `remember`/`recall`/`forget` tools AT ALL, so a session
+  // instructed to record something in memory has no way to do it. Left unannounced, that state is
+  // indistinguishable from a working daemon right up until an agent improvises a location and drops
+  // frontmatter-less notes somewhere in the vault (observed 2026-08-06). One line per send is
+  // deliberate — this is an error condition, not a routine one, and a post-mortem needs it on the
+  // record for the specific run that misbehaved.
+  const mcp = mcpBin()
+  if (!mcp) {
+    console.error(
+      `[session:${ctx.name}] bismuth-mcp is not installed (~/.bismuth/bin/bismuth-mcp) — this session ` +
+        `has NO remember/recall/forget tools and cannot reach ${ctx.memoryDir}. Open the Bismuth app ` +
+        `once to install the machine-wide tools. Until then, crons that record memory will report ` +
+        `that they wrote nothing.`,
+    )
+  }
+
   const options = buildQueryOptions(ctx, opts, existingSessionId, {
     claudeBin: claudeBin(),
     systemPrompt: await buildSystemPrompt(ctx, denyEntries),
-    // existsSync-gated: absent (app never installed the tools) → no MCP block, graceful degrade.
-    mcp: mcpBin(),
+    mcp,
     cli: cliBin(),
     docs: docsDir(),
   }, denyEntries)

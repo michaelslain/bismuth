@@ -22,6 +22,7 @@ import {
   getIntervalMs,
   createCronJob,
   updateCronJob,
+  buildCronPrompt,
   type FailureCause,
   type LastFiredEntry,
   type ScheduleCronJob,
@@ -662,4 +663,72 @@ test("replay: the number of EXTRA retries is a small constant — it does not gr
     return fires - scheduled
   })
   expect(permanentExtras).toEqual([3, 3, 3, 3])
+})
+
+// ── The memory instruction the DAEMON appends to every cron prompt ──────────────────────────────
+//
+// Bug (observed 2026-08-06, a real vault): a cron run left two plain, frontmatter-less markdown
+// files in `<vault>/memory/` instead of the memory graph at `<vault>/.daemon/memory`. A cron session
+// runs with cwd = the VAULT ROOT, so an agent told to record something in memory, given no location,
+// resolved a path against cwd.
+//
+// The prompt-side fix (defaultCrons.ts's vault-review) cannot close this on its own: `seeds.ts`
+// deliberately never refreshes a cron file the user has edited, so a template change reaches stock
+// vaults and NO others — every hand-edited or user-authored cron stays uninformed. These tests pin
+// the runtime-side guarantee instead: the instruction is appended by `buildCronPrompt`, so it is
+// present no matter what a cron's body says or who wrote it.
+test("buildCronPrompt appends the memory location to a cron whose body never mentions memory", () => {
+  const p = buildCronPrompt({ jobName: "whatever", body: "Do a thing.", memoryDir: "/vault/.daemon/memory", notify: false })
+  expect(p).toContain("Do a thing.")
+  expect(p).toContain("/vault/.daemon/memory")
+  expect(p).toContain("$BISMUTH_MEMORY_DIR")
+  expect(p).toContain("Write memory notes ONLY through the `remember` tool")
+  expect(p).toContain("never at a path relative to your cwd")
+})
+
+// The half that matters when session.ts's mcpBin() gate omits the MCP block entirely: with no
+// `remember` tool, naming the directory alone would tell the model exactly where to aim a Write.
+// "No tool ⇒ write nothing" is the only safe instruction, so it must survive every edit here.
+test("buildCronPrompt tells a tool-less session to write nothing rather than improvise a location", () => {
+  const p = buildCronPrompt({ jobName: "j", body: "b", memoryDir: "/v/.daemon/memory", notify: false })
+  expect(p).toContain("If `remember` is not among your available tools")
+  expect(p).toContain("Do not improvise a location")
+  expect(p).toContain("write nothing")
+})
+
+// Per-vault, never process-global: ONE runtime multiplexes every enabled vault, so two vaults'
+// prompts must name their own brains. A hardcoded path passes the tests above and fails this one.
+test("buildCronPrompt names the firing vault's own memory dir", () => {
+  const a = buildCronPrompt({ jobName: "j", body: "b", memoryDir: "/vault-a/.daemon/memory", notify: false })
+  const b = buildCronPrompt({ jobName: "j", body: "b", memoryDir: "/vault-b/.daemon/memory", notify: false })
+  expect(a).toContain("/vault-a/.daemon/memory")
+  expect(a).not.toContain("/vault-b/.daemon/memory")
+  expect(b).toContain("/vault-b/.daemon/memory")
+})
+
+// CRON_RESULT_INSTRUCTION's own text claims "This must be the last thing you print", which is only
+// true if nothing is appended after it. The memory block must therefore precede it — and the notify
+// block, which asks for a line "just before the [CRON_RESULT:...] marker", must follow it.
+test("buildCronPrompt orders the appended blocks so the result marker stays last", () => {
+  const p = buildCronPrompt({ jobName: "j", body: "b", memoryDir: "/v/.daemon/memory", notify: true })
+  const memory = p.indexOf("where your memory lives")
+  const result = p.indexOf("[CRON_RESULT:SUCCESS]")
+  const notify = p.indexOf("[NOTIFY:")
+  expect(memory).toBeGreaterThan(-1)
+  expect(result).toBeGreaterThan(memory)
+  expect(notify).toBeGreaterThan(result)
+})
+
+test("buildCronPrompt omits the notify block when the cron has notifications off", () => {
+  const p = buildCronPrompt({ jobName: "j", body: "b", memoryDir: "/v/.daemon/memory", notify: false })
+  expect(p).not.toContain("[NOTIFY:")
+  // ...while everything unconditional still holds.
+  expect(p).toContain("[CRON_RESULT:SUCCESS]")
+  expect(p).toContain("/v/.daemon/memory")
+})
+
+test("buildCronPrompt keeps the file-change trigger context, and still appends the memory block", () => {
+  const p = buildCronPrompt({ jobName: "j", body: "b", memoryDir: "/v/.daemon/memory", notify: false, triggerContext: "notes/inbox.md" })
+  expect(p).toContain("Triggered by change to: notes/inbox.md")
+  expect(p).toContain("/v/.daemon/memory")
 })
