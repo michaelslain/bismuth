@@ -32,7 +32,7 @@ export type IconButtonProps = {
  * around them, which are 11.5px (--fs-ui, the app's workhorse); 12 sits with the text.
  *
  * 12 rather than 11.5 or 13 for a concrete reason: the pixel icons are authored on a 24x24 grid
- * (icons/pixelPaths.ts), so 12px is an exact 0.5 scale — every source pixel maps to the same number
+ * (a single Nerd Font glyph), so the icon scales by hinting rather than by pixel-grid snapping
  * of device pixels and the stems stay even. A fractional factor (11.5/24, 13/24) samples unevenly and
  * makes some strokes visibly heavier than others.
  */
