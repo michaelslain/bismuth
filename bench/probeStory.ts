@@ -7,10 +7,9 @@
 // This runs one story and answers that in about five seconds. It is a MICROSCOPE, not a gate — the
 // full baseline is still the thing that has to be green before a commit lands.
 //
-// WHY IT DRIVES ITS OWN CHROME: same reason as bench/cssBaseline.ts and bench/visual.ts — a
-// background automation tab reports visibilityState "hidden", so rAF-gated components (GraphView
-// pauses its loop on exactly that) never paint and sample as blank. The three --disable-*background*
-// flags keep the loop live with no foreground window. The reported visibilityState is printed with
+// WHY IT DRIVES ITS OWN CHROME: see bench/chromeSession.ts, which owns the launch, the flags and the
+// teardown for every tool here — a background automation tab reports visibilityState "hidden", so
+// rAF-gated components never paint and sample as blank. The reported visibilityState is printed with
 // every run so a "hidden" regression can never be mistaken for a broken component.
 //
 // WHY IT KEYS ON STRUCTURAL PATHS, NEVER CLASS NAMES. Class names are the one thing a CSS-module
@@ -43,12 +42,8 @@
 //   cd app && bun run storybook              # must already be running; this only READS :6006
 //   bun bench/probeStory.ts shell-windowcontrols--default
 //   bun bench/probeStory.ts app-filetree--default --select "div > div" --props padding-left,color
-import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { launchChrome } from "./chromeSession";
 
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const VALUE_FLAGS = new Set(["select", "props", "base", "settle", "stable", "tries", "root"]);
 const argv = process.argv.slice(2);
 const opts = new Map<string, string>();
@@ -129,64 +124,20 @@ if (!index.entries?.[ID]) {
   process.exit(2);
 }
 
-const rpc = (ws: WebSocket, sessionId?: string) => {
-  let id = 0;
-  const pending = new Map<number, { res: (v: any) => void; rej: (e: any) => void }>();
-  ws.addEventListener("message", (e) => {
-    const m = JSON.parse(String(e.data));
-    if (m.id && pending.has(m.id)) {
-      const p = pending.get(m.id)!; pending.delete(m.id);
-      m.error ? p.rej(new Error(JSON.stringify(m.error))) : p.res(m.result);
-    }
+// Launch + attach + teardown are chromeSession.ts's. `--force-prefers-reduced-motion` is passed
+// explicitly rather than defaulted there: visual.ts must NOT have it (its readiness loop waits for
+// animation to settle), so it belongs to the caller that wants it.
+let session;
+try {
+  session = await launchChrome({
+    label: "probestory", width: W, height: H, flags: ["--force-prefers-reduced-motion"],
   });
-  return (method: string, params: any = {}) => new Promise<any>((res, rej) => {
-    const n = ++id;
-    pending.set(n, { res, rej });
-    ws.send(JSON.stringify({ id: n, method, params, ...(sessionId ? { sessionId } : {}) }));
-  });
-};
-
-const port = 9700 + Math.floor(Math.random() * 200);
-const profile = mkdtempSync(join(tmpdir(), "bismuth-probestory-"));
-const chrome = spawn(CHROME, [
-  "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
-  // The three that keep rAF alive with no foreground window — see the header.
-  "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
-  "--disable-renderer-backgrounding",
-  `--window-size=${W},${H}`, "--hide-scrollbars", "--force-prefers-reduced-motion",
-  "--no-first-run", "--no-default-browser-check", "--disable-extensions", "about:blank",
-], { stdio: "ignore" });
-// Registered on "exit" so EVERY path out is covered — the clean run, the exit(1) on an empty story,
-// an unhandled throw, and a Ctrl-C. Killing Chrome only on the happy path leaks a browser and a
-// ~50MB profile dir per failed run; that exact leak was fixed in cssBaseline.ts, so it is not
-// reintroduced here.
-// SIGKILL, not the default SIGTERM: a gracefully-terminating Chrome keeps WRITING to its profile
-// while shutting down, so the rmSync immediately after loses a race with it and throws ENOTEMPTY —
-// which, swallowed by a `catch {}`, leaks a ~50MB dir per run and looks like it cleaned up. Measured:
-// three of seven runs leaked before this changed. The bounded retry covers the rest of the race.
-process.on("exit", () => {
-  try { chrome.kill("SIGKILL"); } catch {}
-  for (let i = 0; i < 5; i++) {
-    try { rmSync(profile, { recursive: true, force: true }); return; } catch { Bun.sleepSync(60); }
-  }
-});
-for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => process.exit(130));
-
-let wsUrl = "";
-for (let i = 0; i < 100 && !wsUrl; i++) {
-  try { const r = await fetch(`http://127.0.0.1:${port}/json/version`); if (r.ok) wsUrl = (await r.json()).webSocketDebuggerUrl; } catch {}
-  if (!wsUrl) await sleep(100);
+} catch (e) {
+  // This tool reports infrastructure failure as exit 2 with a plain message rather than a stack.
+  console.error((e as Error).message);
+  process.exit(2);
 }
-if (!wsUrl) { console.error("chrome debugger port never opened"); process.exit(2); }
-
-const ws = new WebSocket(wsUrl);
-await new Promise((r) => ws.addEventListener("open", r, { once: true }));
-const browser = rpc(ws);
-const { targetId } = await browser("Target.createTarget", { url: "about:blank" });
-const { sessionId } = await browser("Target.attachToTarget", { targetId, flatten: true });
-const page = rpc(ws, sessionId);
-await page("Page.enable");
-await page("Runtime.enable");
+const { page } = session;
 await page("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: false });
 
 /** Runs in the page. Kills animations and awaits webfonts for the same determinism reasons

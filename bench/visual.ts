@@ -4,8 +4,10 @@
 // hidden (`setVisible(props.visible !== false && !docHidden())`). Any browser-automation tab that
 // isn't foregrounded reports `visibilityState: "hidden"`, so the graph never paints and every
 // screenshot comes back blank — a 0%-inked canvas that looks like a broken renderer. Launching our
-// own Chrome with the three --disable-*background* flags below gives a live rAF loop with no
-// foreground window, so this runs unattended.
+// own Chrome with the three --disable-*background* flags gives a live rAF loop with no foreground
+// window, so this runs unattended. bench/chromeSession.ts owns that launch and its teardown for every
+// tool here; this file is the one that must NOT pass --force-prefers-reduced-motion or freeze the
+// clock, because its readiness loop waits for real animation to settle.
 //
 // DETERMINISM. Idle spin is disabled and each shot waits for the canvas ink to stop changing, so
 // two runs of identical code produce comparable images. Without that, every frame differs and
@@ -13,12 +15,10 @@
 //
 //   bun bench/visual.ts --base http://localhost:1422 --out shots/
 //   bun bench/visual.ts --base http://localhost:1422 --out shots/ --shot graph-2d
-import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { launchChrome } from "./chromeSession";
 
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const arg = (n: string, d = "") => { const i = process.argv.indexOf(`--${n}`); return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d; };
 const BASE = arg("base", "http://localhost:1422");
 const OUT = arg("out", "shots");
@@ -54,21 +54,6 @@ const SHOTS: { name: string; path: string; setup?: string }[] = [
 ];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-let nextId = 1;
-
-function rpc(ws: WebSocket, sessionId?: string) {
-  const pending = new Map<number, (v: any) => void>();
-  ws.addEventListener("message", (ev) => {
-    const m = JSON.parse(String(ev.data));
-    if (m.id && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id); }
-  });
-  return (method: string, params: any = {}) =>
-    new Promise<any>((resolve, reject) => {
-      const id = nextId++;
-      pending.set(id, (m) => (m.error ? reject(new Error(`${method}: ${m.error.message}`)) : resolve(m.result)));
-      ws.send(JSON.stringify(sessionId ? { id, method, params, sessionId } : { id, method, params }));
-    });
-}
 
 /** Per-canvas ink % and luminance, PLUS the composite of all of them.
  *
@@ -134,46 +119,19 @@ const INK_PROBE = `(() => {
 })()`;
 
 mkdirSync(OUT, { recursive: true });
-const port = 9600 + Math.floor(Math.random() * 300);
-const profile = mkdtempSync(join(tmpdir(), "bismuth-visual-"));
-const chrome = spawn(CHROME, [
-  "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
-  "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
-  "--disable-renderer-backgrounding",
-  `--window-size=${W},${H}`, "--hide-scrollbars",
-  "--no-first-run", "--no-default-browser-check", "--disable-extensions", "about:blank",
-], { stdio: "ignore" });
 
-// This tool created its profile dir and never removed it — no rmSync anywhere, no exit handler — so
-// every run leaked a full Chrome profile permanently. cssBaseline.ts had a subtler version of the
-// same bug (it deleted, but after a SIGTERM that leaves Chrome still writing, so rmSync threw
-// ENOTEMPTY into a swallowing catch) and that cost 600 MB across 20 profiles before it was measured.
-// SIGKILL, then retry the delete: Chrome releases the directory only once it is actually gone.
-const cleanup = () => {
-  try { chrome.kill("SIGKILL"); } catch {}
-  for (let i = 0; i < 6; i++) {
-    try { rmSync(profile, { recursive: true, force: true }); return; } catch {}
-    const until = Date.now() + 60;
-    while (Date.now() < until) { /* wait for Chrome to release the profile */ }
-  }
-};
-process.on("exit", cleanup);
-
-let wsUrl = "";
-for (let i = 0; i < 100 && !wsUrl; i++) {
-  try { const r = await fetch(`http://127.0.0.1:${port}/json/version`); if (r.ok) wsUrl = (await r.json()).webSocketDebuggerUrl; } catch {}
-  if (!wsUrl) await sleep(100);
-}
-if (!wsUrl) throw new Error("chrome debugger port never opened");
-
-const ws = new WebSocket(wsUrl);
-await new Promise((r) => ws.addEventListener("open", r, { once: true }));
-const browser = rpc(ws);
-const { targetId } = await browser("Target.createTarget", { url: "about:blank" });
-const { sessionId } = await browser("Target.attachToTarget", { targetId, flatten: true });
-const page = rpc(ws, sessionId);
-await page("Page.enable");
-await page("Runtime.enable");
+// Launch + attach + teardown are chromeSession.ts's. This tool used to create its profile dir and never
+// remove it — no rmSync anywhere, no exit handler — so every run leaked a full Chrome profile
+// permanently; two sibling tools had subtler versions of the same bug. `rpcError` keeps this tool's own
+// error format (`<method>: <message>`), which is user-facing output and therefore stays the caller's.
+const session = await launchChrome({
+  label: "visual", width: W, height: H,
+  rpcError: (method, e) => new Error(`${method}: ${e.message}`),
+});
+const { page } = session;
+// deviceScaleFactor 2 is PER-TOOL: these are screenshots meant to be looked at, where the two
+// style-reading tools want 1. And no clock freeze here — the ink-settling loop below needs time to
+// actually advance.
 await page("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 2, mobile: false });
 
 const evalIn = async (expression: string) => {
@@ -213,5 +171,4 @@ for (const shot of SHOTS) {
 }
 
 console.log(JSON.stringify({ base: BASE, viewport: [W, H], shots: results }, null, 1));
-ws.close();
-cleanup();
+session.close();
