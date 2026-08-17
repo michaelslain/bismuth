@@ -14,7 +14,7 @@
 //   bun bench/visual.ts --base http://localhost:1422 --out shots/
 //   bun bench/visual.ts --base http://localhost:1422 --out shots/ --shot graph-2d
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -144,12 +144,27 @@ const chrome = spawn(CHROME, [
   "--no-first-run", "--no-default-browser-check", "--disable-extensions", "about:blank",
 ], { stdio: "ignore" });
 
+// This tool created its profile dir and never removed it — no rmSync anywhere, no exit handler — so
+// every run leaked a full Chrome profile permanently. cssBaseline.ts had a subtler version of the
+// same bug (it deleted, but after a SIGTERM that leaves Chrome still writing, so rmSync threw
+// ENOTEMPTY into a swallowing catch) and that cost 600 MB across 20 profiles before it was measured.
+// SIGKILL, then retry the delete: Chrome releases the directory only once it is actually gone.
+const cleanup = () => {
+  try { chrome.kill("SIGKILL"); } catch {}
+  for (let i = 0; i < 6; i++) {
+    try { rmSync(profile, { recursive: true, force: true }); return; } catch {}
+    const until = Date.now() + 60;
+    while (Date.now() < until) { /* wait for Chrome to release the profile */ }
+  }
+};
+process.on("exit", cleanup);
+
 let wsUrl = "";
 for (let i = 0; i < 100 && !wsUrl; i++) {
   try { const r = await fetch(`http://127.0.0.1:${port}/json/version`); if (r.ok) wsUrl = (await r.json()).webSocketDebuggerUrl; } catch {}
   if (!wsUrl) await sleep(100);
 }
-if (!wsUrl) { chrome.kill(); throw new Error("chrome debugger port never opened"); }
+if (!wsUrl) throw new Error("chrome debugger port never opened");
 
 const ws = new WebSocket(wsUrl);
 await new Promise((r) => ws.addEventListener("open", r, { once: true }));
@@ -199,4 +214,4 @@ for (const shot of SHOTS) {
 
 console.log(JSON.stringify({ base: BASE, viewport: [W, H], shots: results }, null, 1));
 ws.close();
-chrome.kill();
+cleanup();
