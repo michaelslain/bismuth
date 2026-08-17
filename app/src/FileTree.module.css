@@ -1,0 +1,76 @@
+/* FileTree.module.css — scoped chrome for FileTree.tsx (moved out of the global App.css, 2026-08).
+   Class names here are HASHED at build time: they are reachable only through the imported `styles`
+   object, never as a string literal. Nothing outside FileTree.tsx may target them.
+
+   EVERY class in this file hashes, not just the `ft-` prefixed ones. The state classes that only
+   ever appear as a second class on an `ft-` element — `active`, `system`, `drop-target`, `open`,
+   `hidden` — are locals of THIS module now, so FileTree.tsx reaches them as `styles.active` and
+   friends too. That is the point: a bare global `.active` could never have been safely added to
+   this file, and now it cannot leak the other way either.
+
+   Two class names FileTree.tsx puts on these elements are deliberately NOT defined here and stay
+   bare string literals, because a name absent from the module resolves to `undefined` and would
+   land a literal `undefined` class on the element:
+     - `file`, on the leaf row. No stylesheet in the repo has ever matched it; it is a marker.
+   `selected` USED to be in that list — it reached the DOM and matched nothing, which is why
+   multi-select looked broken. It is now a real rule below, so FileTree.tsx reaches it through the
+   module like any other state class.
+   `drop-target` DOES live here (via `.ft-row.drop-target`), so FileTree.tsx uses the module name
+   for it — including on `.ft-root`, where it is likewise unstyled today and stays that way.
+
+   `.ft-chevron` has zero references in any .tsx or .ts. It is moved verbatim rather than deleted:
+   dead-rule removal is Task 11 of the modularization, and this task changes nothing but location. */
+
+/* File-tree row icons (typed glyphs, icons/Icon.tsx). Inherit currentColor; never shrink in
+   the flex row. min-height matches the text's 1.5 line-height so the icon centers on the FIRST
+   line when a long name wraps (rows use align-items: flex-start), not on the wrapped block. */
+.ft-icon, .ft-chevron { flex-shrink: 0; display: inline-flex; align-items: center; }
+.ft-chevron { color: var(--faint); }
+/* The tree connector — treePrefix(depth,last)'s "|-- " / "`-- " run — prepended to every row
+   (design/ascii/README.md "Components", ascii-tree.card.html). Plain --faint structure, never
+   body content; replaces the old depth*12px padding-left indent entirely.
+   FileTree rows render the prefix trimEnd()-ed: treePrefix's trailing space is there for the
+   text-only <AsciiTree>, but in a flex row it stacks on top of .ft-row's gap and the icon box's
+   own side bearing, which read as a gaping hole between "|--" and the folder glyph. */
+.ft-prefix { flex-shrink: 0; color: var(--faint); white-space: pre; font-family: var(--ui-font-stack); }
+/* AI-visibility badge (chat-only / hidden) beside a row's icon — see docs/vault/visibility.md.
+   "hidden" reads as more severe (danger tint); "chat-only" stays muted like the rest of the row. */
+.ft-visibility-badge { flex-shrink: 0; display: inline-flex; align-items: center; margin-left: -3px; color: var(--faint); }
+.ft-visibility-badge.hidden { color: var(--danger); opacity: 0.85; }
+/* File-tree rows (folders + files) — exactly the app's row unit (--row-h, 18px; ui.css
+   :root) tall, no pill radius. The connector prefix now carries depth; static look lives
+   here, the dynamic drop-target highlight stays inline/classList in FileTree.tsx. */
+.ft-row { display: flex; align-items: center; gap: 6px; height: var(--row-h, 18px); padding: 0 8px; font-size: var(--fs-ui); color: var(--text-muted); white-space: nowrap; cursor: pointer; user-select: none; }
+.ft-row .ft-icon { color: var(--text-muted); }
+.ft-row:hover { background: var(--hover-bg); color: var(--fg); }
+.ft-row:hover .ft-icon { color: var(--fg); }
+/* Multi-select (Cmd/Ctrl-click toggles a row, Shift-click extends a range, Delete removes the set).
+   The selection logic was already complete — anchor tracking, visible-order ranges, nested-path
+   pruning — but NOTHING RENDERED IT: the class reached the DOM and no rule anywhere matched it, so
+   selecting rows looked like nothing happening and the feature read as broken.
+   Deliberately NOT --accent-soft, even though the register's rule is "selected = accent-soft fill":
+   `.ft-row.active` already spends that on the file open in the editor, and a marked row must not be
+   confusable with the open one. --surface-3 is opaque where hover is a 5% wash and active is a 12%
+   accent tint, so a multi-selection reads as a solid contiguous block — which is exactly the shape
+   information a range selection needs to convey. Declared BEFORE .active so a row that is both
+   still reads as active; both are 0-2-0 and order is what separates them. */
+.ft-row.selected { background: var(--surface-3); color: var(--fg); }
+.ft-row.selected .ft-icon { color: var(--fg); }
+.ft-row.active { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }
+.ft-row.active .ft-icon { color: var(--accent); }
+.ft-row.drop-target { background: var(--accent-soft); }
+/* System folders (.settings / .daemon): rendered as muted, italic surfaces so they
+   read as runtime-managed rather than ordinary vault folders. */
+.ft-row.system { color: var(--text-muted); font-style: italic; opacity: 0.85; }
+.ft-row.system .ft-icon { color: var(--text-muted); }
+.ft-row.system:hover { opacity: 1; }
+/* Folder children slide open/closed: a grid row animates 0fr→1fr (i.e. 0→content
+   height) with no measuring; the inner wrapper clips the overflow as it grows/shrinks. */
+.ft-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
+.ft-collapse.open { grid-template-rows: 1fr; }
+.ft-collapse-inner { overflow: hidden; min-height: 0; }
+@media (prefers-reduced-motion: reduce) { .ft-collapse { transition: none; } }
+/* Inline rename input for a tree row (EditableLabel) — accent-bordered, sits in place of the label. */
+.ft-edit-input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--accent); border-radius: 3px; padding: 0 2px; width: 70%; }
+/* FileTree root fills the sidebar's scroll area so empty space below the tree is still a drop target. */
+.ft-root { min-height: 100%; }
