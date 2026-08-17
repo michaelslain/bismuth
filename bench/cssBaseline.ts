@@ -316,6 +316,11 @@ if (diffs.length > 200) console.log(`… and ${diffs.length - 200} more`);
 if (diffs.length) {
   writeFileSync(DRIFT, diffs.join("\n") + "\n");
   console.log(`full diff -> ${DRIFT}`);
+} else {
+  // A clean run must DELETE the dump, not just decline to write one. Leaving the previous failing
+  // run's file on disk means the next reader greps a stale drift list against a passing run and
+  // believes it — the exact confusion this file exists to prevent.
+  try { rmSync(DRIFT, { force: true }); } catch {}
 }
 console.log(`${diffs.length} changed`);
 process.exit(diffs.length === 0 ? 0 : 1);

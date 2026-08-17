@@ -253,7 +253,8 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 
 /* ── Status (colored dot + word) ─────────────────────────────────────────── */
 .status-text { display: inline-flex; align-items: center; gap: 6px; }
-/* .status-dot sizing (6px round) lives in App.css (shared with .chip .dot); fill = currentColor. */
+/* .status-dot sizing (6px round) is declared in the cross-component block below, in one grouped
+   rule shared with `.chip .dot`; fill = currentColor. */
 .status-text .status-dot { background: currentColor; }
 
 /* ── Chip toggle (selectable pill: export options, search toggles) ──────────
@@ -277,6 +278,85 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 .chip-toggle.tone-rose.selected { color: var(--rose); background: color-mix(in srgb, var(--rose) 14%, transparent); border-color: color-mix(in srgb, var(--rose) 45%, transparent); }
 .chip-toggle.tone-rose.selected svg { color: var(--rose); }
 
+/* ── Cross-component primitives (moved from App.css, 2026-08) ──────────────
+   These stay GLOBAL on purpose: each is used by two or more unrelated components, so scoping them
+   into any one module would force every other consumer to import that module. Global is the correct
+   answer for a design-system primitive; it is only the wrong answer for component-private chrome.
+
+   WHICH FAMILIES MOVED, AND WHICH DID NOT. The migration enumerated every consumer of seven
+   candidate families before touching anything, because "shared" is a claim about the consumer list,
+   not a feeling about the name:
+
+     MOVED — .viewbar, .crumb, .vbar-sp   ui/ViewBar.tsx writes the class and six unrelated views
+       mount it (InboxView, InboxPageView, ChatView, GraphView, bases/BaseView,
+       calendar/components/Toolbar). Four stylesheets outside this file also modify it:
+       ChatView.css, calendar/Calendar.css, InboxPageView.css, bases/BaseView.module.css.
+     MOVED — .vbtn   ui/ViewBar.tsx's VBtn, plus a raw button in calendar/components/Toolbar.tsx;
+       calendar/Calendar.css restyles it under .cal-viewbar.
+     MOVED — .vseg   Documented as one primitive with the two above by both calendar/Calendar.css
+       and ChatView.css. CAVEAT: it has ZERO consumers today — no .tsx writes the class and no
+       other stylesheet targets it. It was moved rather than orphaned so the documented set stays
+       in one place, but it is a deletion candidate, not live code.
+     MOVED — .chip and .status-dot   .status-dot is written by ui/StatusDot.tsx (the canonical
+       status renderer behind Table, List and Kanban) and restyled by calendar/Calendar.css, and
+       the `.status-text .status-dot` rule above already pointed at App.css for its sizing. That
+       sizing lives in ONE grouped rule with `.chip .dot`, so the chip family travels with it
+       rather than being split across two files. CAVEAT: the `.chip` base and its six tone
+       variants have ZERO consumers today — deletion candidates for the same reason as .vseg.
+
+     STAYED in App.css — the status bar (.status-bar, .status-vault, .status-sep, .status-path,
+       .status-conn, .status-spacer, .status-mode, .status-daemon). Written by App.tsx and by
+       nothing else. One consumer means it belongs in that component, not in the design system.
+     STAYED — the icon picker (six rules). Every one is written only by ui/gallery/SymbolGallery.tsx;
+       icons/IconPicker.tsx writes none of them. One consumer.
+     STAYED — .progress, its .count child and .card-dir. Written only by bases/FlashcardsView.tsx.
+
+   CASCADE. These rules changed FILE, and both files are global, so they changed POSITION — which is
+   the only way a pure relocation can break. Two equal-specificity ties exist:
+     .viewbar vs .graph-viewbar — both set `padding` on the same element at one class. This is why
+       App.css now writes `.viewbar.graph-viewbar`. The two surfaces disagree about file order: the
+       app bundle loads this file BEFORE App.css (ui.css rides a dependency chunk), while
+       .storybook/preview.ts imports App.css first and this file after. A one-class override would
+       have won in the app and lost in Storybook — the same source rendering two ways.
+     .viewbar vs .cal-viewbar (calendar/Calendar.css) and .inbox-page-bar (InboxPageView.css) —
+       both set `gap` at one class. Left alone deliberately: those two stylesheets load after this
+       one on BOTH surfaces (lazy component CSS in the bundle, story-module CSS in Storybook),
+       exactly as they loaded after App.css before, so they keep winning. */
+
+/* ── Shared view bar (breadcrumb + right-aligned controls) ─────────────────────
+   The 36px (2×--row-h) header most content views start with — graph header + base
+   ViewBar rows both route through this class: a breadcrumb on the left, a flexible
+   spacer, then .vseg segmented switchers and .vbtn buttons. New shared primitive. */
+.viewbar { height: calc(var(--row-h, 18px) * 2); flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 0 18px; border-bottom: 1px solid var(--border-soft); }
+.viewbar .crumb { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 7px; white-space: nowrap; min-width: 0; }
+.viewbar .crumb b { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.viewbar .crumb svg { color: var(--faint); }
+.viewbar .vbar-sp { flex: 1; }
+/* Serif crumb title (standalone calendar month, etc.). */
+.viewbar .crumb b.crumb-serif { font-family: var(--editor-font); font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.vbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 7px; font-size: 11.5px; color: var(--text-muted); background: transparent; border: 1px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.03em; }
+.vbtn:hover { background: var(--hover-bg); color: var(--fg); }
+.vbtn.active { color: var(--fg); background: var(--surface-2); border-color: var(--border); }
+/* Segmented view switcher (Table/Cards/… · 2nd/3rd/Both/… · Day/Week/Month). */
+.vseg { display: inline-flex; gap: 2px; background: var(--rail); border: 1px solid var(--border-soft); border-radius: 8px; padding: 2px; }
+.vseg > * { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 6px; font-size: 11px; color: var(--text-muted); background: transparent; border: none; cursor: pointer; white-space: nowrap; }
+.vseg > *:hover { color: var(--fg); }
+.vseg > .active { color: var(--fg); background: var(--surface-2); }
+
+/* ── Cross-view design components (shared so parallel view work needn't touch them) ──
+   Category chips and status dots. View-local styling lives in each view's colocated CSS;
+   these are the genuinely shared atoms. (The keyboard-hint chips that used to sit in this
+   section stayed behind in App.css — they are raw markup with no ui/ component.) */
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 6px; font-size: 10.5px; background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border-soft); white-space: nowrap; }
+.chip .dot, .status-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+/* Category-tinted chips. Each maps a category token to text/bg/border via color-mix. */
+.chip.teal   { color: var(--teal);   background: color-mix(in srgb, var(--teal) 13%, transparent);   border-color: color-mix(in srgb, var(--teal) 28%, transparent); }
+.chip.blue   { color: var(--blue);   background: color-mix(in srgb, var(--blue) 13%, transparent);   border-color: color-mix(in srgb, var(--blue) 28%, transparent); }
+.chip.violet { color: var(--violet); background: color-mix(in srgb, var(--violet) 13%, transparent); border-color: color-mix(in srgb, var(--violet) 28%, transparent); }
+.chip.green  { color: var(--green);  background: color-mix(in srgb, var(--green) 13%, transparent);  border-color: color-mix(in srgb, var(--green) 28%, transparent); }
+.chip.gold   { color: var(--gold);   background: color-mix(in srgb, var(--gold) 13%, transparent);   border-color: color-mix(in srgb, var(--gold) 28%, transparent); }
+.chip.rose   { color: var(--rose);   background: color-mix(in srgb, var(--rose) 13%, transparent);   border-color: color-mix(in srgb, var(--rose) 28%, transparent); }
+
 /* ══════════════════════════════════════════════════════════════════════════
    ASCII primitives — new .asc-* classes ported from
    design/ascii/design-system/patterns.css. Section order mirrors that file.
@@ -284,7 +364,9 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
    Stage 5 (views) are what will actually render them. Not ported here: the
    "App frame" section (.asc-app/.asc-window/.asc-strip/.asc-statusbar/.asc-rail)
    and .asc-wordmark/.asc-table, which belong to App.css view chrome (later
-   stages), and the .viewbar/.crumb/.vbtn set, which already lives in App.css.
+   stages). The .viewbar, .crumb and .vbtn set is no longer the exception this
+   note used to name — it moved INTO this file; see the cross-component
+   primitives block directly above.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Eyebrow: the system's section label. Inverse video, never a heading tag look. */
