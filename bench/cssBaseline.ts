@@ -5,9 +5,9 @@
 // and a typecheck cannot see CSS at all. This records what the browser ACTUALLY resolved for every
 // element in every story, so a migration either diffs to zero or names exactly what it broke.
 //
-// WHY IT DRIVES ITS OWN CHROME: same reason as bench/visual.ts — a background automation tab
-// reports visibilityState "hidden" and rAF-gated components never paint. The three
-// --disable-*background* flags below keep the loop live with no foreground window.
+// WHY IT DRIVES ITS OWN CHROME: see bench/chromeSession.ts, which owns the launch, the flag set and
+// the teardown for every tool in here — a background automation tab reports visibilityState "hidden"
+// and rAF-gated components never paint.
 //
 // DETERMINISM. Four things would otherwise make consecutive runs disagree, and a flaky gate is worse
 // than no gate because it trains the next reader to ignore it. Each of these was found the same way:
@@ -34,12 +34,12 @@
 //   cd app && bun run storybook          # in another shell
 //   bun bench/cssBaseline.ts --update    # record
 //   bun bench/cssBaseline.ts             # check (exit 1 on drift)
-import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+// rmSync here is for the generated drift dump, NOT for a Chrome profile — profile cleanup lives in
+// chromeSession.ts.
+import { readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { launchChrome } from "./chromeSession";
 
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const arg = (n: string, d = "") => { const i = process.argv.indexOf(`--${n}`); return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d; };
 const has = (n: string) => process.argv.includes(`--${n}`);
 const BASE = arg("base", "http://localhost:6006");
@@ -164,23 +164,6 @@ const FREEZE = `(() => {
   window.Date = D;
 })()`;
 
-const rpc = (ws: WebSocket, sessionId?: string) => {
-  let id = 0;
-  const pending = new Map<number, { res: (v: any) => void; rej: (e: any) => void }>();
-  ws.addEventListener("message", (e) => {
-    const m = JSON.parse(String(e.data));
-    if (m.id && pending.has(m.id)) {
-      const p = pending.get(m.id)!; pending.delete(m.id);
-      m.error ? p.rej(new Error(JSON.stringify(m.error))) : p.res(m.result);
-    }
-  });
-  return (method: string, params: any = {}) => new Promise<any>((res, rej) => {
-    const n = ++id;
-    pending.set(n, { res, rej });
-    ws.send(JSON.stringify({ id: n, method, params, ...(sessionId ? { sessionId } : {}) }));
-  });
-};
-
 const index = await (await fetch(`${BASE}/index.json`)).json();
 // --story takes an exact id OR a PREFIX. Exact-only was a footgun: story ids are
 // "<component>--<case>", so the natural thing to type for a component — `--story shell-windowcontrols`
@@ -193,55 +176,19 @@ const storyIds = Object.keys(index.entries).filter(matchesOnly).sort();
 if (storyIds.length === 0) throw new Error(`no stories matched (--story ${ONLY})`);
 if (ONLY) console.error(`--story ${ONLY} matched ${storyIds.length}: ${storyIds.join(", ")}`);
 
-const port = 9600 + Math.floor(Math.random() * 300);
-const profile = mkdtempSync(join(tmpdir(), "bismuth-cssbase-"));
-// This harness runs many times across the migration; a leaked Chrome user-data-dir per run adds up.
-// Registering on "exit" covers every path out — the clean run, the drift run's exit(1), and a throw.
-// Cleanup must cover the THROW path, not just the two clean exits. The happy path calls
-// chrome.kill() near the end; a crash before that (a dead CDP session, a Chrome that fell over)
-// skipped it, so every failed run risked leaving a headless Chrome and a profile dir behind, and a
-// harness that runs dozens of times across a refactor turns that into real resource pressure —
-// which then causes more crashes. Registering both on "exit" makes every path clean up.
-// SIGKILL, not the default SIGTERM, and then RETRY the delete. A gracefully-terminating Chrome keeps
-// writing to its profile after SIGTERM, so the immediately-following rmSync loses the race and throws
-// ENOTEMPTY — which the surrounding catch swallowed, so it looked like cleanup had happened. Measured:
-// 20 leaked profiles totalling 600 MB from this harness alone before this fix. The whole rest of the
-// repo's test suite leaves about 2 MB across 4000 temp dirs, so this one bug was the disk.
-let chromeProc: ReturnType<typeof spawn> | null = null;
-const cleanup = () => {
-  try { chromeProc?.kill("SIGKILL"); } catch {}
-  for (let i = 0; i < 6; i++) {
-    try { rmSync(profile, { recursive: true, force: true }); return; } catch {}
-    // Synchronous spin: this runs inside an "exit" handler, where nothing async will ever be awaited.
-    const until = Date.now() + 60;
-    while (Date.now() < until) { /* wait for Chrome to finish releasing the profile */ }
-  }
-};
-process.on("exit", cleanup);
-const chrome = spawn(CHROME, [
-  "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
-  "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
-  "--disable-renderer-backgrounding",
-  `--window-size=${W},${H}`, "--hide-scrollbars", "--force-prefers-reduced-motion",
-  "--no-first-run", "--no-default-browser-check", "--disable-extensions", "about:blank",
-], { stdio: "ignore" });
-chromeProc = chrome;
-
-let wsUrl = "";
-for (let i = 0; i < 100 && !wsUrl; i++) {
-  try { const r = await fetch(`http://127.0.0.1:${port}/json/version`); if (r.ok) wsUrl = (await r.json()).webSocketDebuggerUrl; } catch {}
-  if (!wsUrl) await sleep(100);
-}
-if (!wsUrl) { chrome.kill(); throw new Error("chrome debugger port never opened"); }
-
-const ws = new WebSocket(wsUrl);
-await new Promise((r) => ws.addEventListener("open", r, { once: true }));
-const browser = rpc(ws);
-const { targetId } = await browser("Target.createTarget", { url: "about:blank" });
-const { sessionId } = await browser("Target.attachToTarget", { targetId, flatten: true });
-const page = rpc(ws, sessionId);
-await page("Page.enable");
-await page("Runtime.enable");
+// Launch, port poll, CDP attach and teardown are chromeSession.ts's — including the SIGKILL-then-retry
+// profile delete that this harness needed after leaking 20 profiles / 600 MB, and which two sibling
+// tools each got wrong in their own way before it was shared.
+//
+// `--force-prefers-reduced-motion` is passed explicitly, not defaulted in the helper: visual.ts must
+// NOT have it, because its readiness loop waits for animation to settle.
+const session = await launchChrome({
+  label: "cssbase", width: W, height: H, flags: ["--force-prefers-reduced-motion"],
+});
+const { page } = session;
+// PER-TOOL, deliberately not in the helper: this harness needs a fixed viewport at scale 1, a pinned
+// timezone and a frozen clock (see DETERMINISM above). visual.ts renders at scale 2 and needs real
+// time, so none of the three can be a shared default.
 await page("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: false });
 // UTC, not the host zone: a calendar rendering local dates would otherwise shift with whoever runs it.
 await page("Emulation.setTimezoneOverride", { timezoneId: "UTC" });
@@ -289,8 +236,10 @@ for (const id of storyIds) {
   captured[id] = { ref: parsed.ref, els: parsed.els };
 }
 process.stderr.write("\n");
-ws.close();
-cleanup();
+// Release the browser as soon as the capture loop is done — the comparison and reporting below are pure
+// computation. close() is idempotent and is also registered on process exit, so calling it here is an
+// early release, not the only cleanup path.
+session.close();
 
 if (empty.length) console.error(`WARNING: ${empty.length} story(s) rendered 0 elements — unprotected:\n  ${empty.join("\n  ")}`);
 if (unstable.length) console.error(`WARNING: ${unstable.length} story(s) never converged in ${MAX_TRIES} probes — their values are arbitrary and will flake:\n  ${unstable.join("\n  ")}`);
