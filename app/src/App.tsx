@@ -73,6 +73,7 @@ import {
 } from "./panes";
 import { IconButton, ICON_PX } from "./ui/IconButton";
 import { PaneTree } from "./PaneTree";
+import { WindowControls } from "./shell/WindowControls";
 import { createViewDrag, type DragDescriptor, type DropTarget, type DropPoint } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
 import { descriptorMovePath, descriptorNotePath, descriptorChatRefPath, isMarkdown, wikilinkFor } from "./dnd/noteRef";
@@ -2126,11 +2127,11 @@ export default function App() {
       <span class="asc-wordmark" aria-label="Bismuth">,;']--]';,</span>
       <div class="top-strip-spacer" />
       <Show when={isTauri() && !IS_MAC_PLATFORM}>
-        <div class="win-controls">
-          <button type="button" class="win-btn" title="Minimize" onClick={() => void winMinimize()}>[-]</button>
-          <button type="button" class="win-btn" title="Maximize" onClick={() => void winToggleMaximize()}>[+]</button>
-          <button type="button" class="win-btn win-btn--close" title="Close" onClick={() => void winClose()}>[x]</button>
-        </div>
+        <WindowControls
+          onMinimize={() => void winMinimize()}
+          onToggleMaximize={() => void winToggleMaximize()}
+          onClose={() => void winClose()}
+        />
       </Show>
     </div>
     <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": true }}>
