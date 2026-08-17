@@ -21,7 +21,10 @@ import { DEFAULTS } from "./settings";
 
 const APP_SRC = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(APP_SRC, "..", "..");
-const APP_CSS = join(APP_SRC, "App.css");
+// The :root first-paint fallbacks moved out of App.css into styles/tokens.css (the CSS
+// modularization's global layer) — App.css only @imports it now. This constant is the one thing
+// that had to follow them; every assertion below is unchanged.
+const APP_CSS = join(APP_SRC, "styles", "tokens.css");
 const TOKENS = join(ROOT, "core", "src", "theme", "tokens.ts");
 
 /** ColorTokens fields every theme MUST define (the base palette). */
@@ -152,38 +155,39 @@ describe("theme guard — semantic + elevation tokens re-theme (light ≠ dark)"
 describe("theme guard — centralized colors never re-duplicate (anti-drift lint)", () => {
   // Step 8: a raw hex for a CENTRALIZED value may live ONLY in the sanctioned sources —
   // core/src/theme/tokens.ts (the source of truth) and, for the dark first-paint fallbacks,
-  // App.css :root. If one reappears anywhere else the 5-copies-that-drift problem is back.
+  // app/src/styles/tokens.css :root (split out of App.css, which now only @imports it).
+  // If one reappears anywhere else the 5-copies-that-drift problem is back.
   // (A blanket "no hex anywhere" ban is intentionally NOT used: issue/row refs like #100 or
   // #70a and fixed external palettes — Google event colors, xterm ANSI — are false positives.
   // The deliberate exceptions the task names, the FPS meter + chat swatches, are non-centralized
   // hues that never appear in this tracked set, so they need no allowlist here.)
 
-  it("the category swatch ramp lives only in tokens.ts + App.css :root fallbacks", () => {
+  it("the category swatch ramp lives only in tokens.ts + styles/tokens.css :root fallbacks", () => {
     for (const hex of ACCENT_RAMP) {
       const stray = filesContaining(hex).filter((f) => f !== TOKENS && f !== APP_CSS);
       expect(stray.map((f) => f.slice(ROOT.length + 1)), `ramp ${hex}`).toEqual([]);
     }
   });
 
-  it("dark semantic status colors live only in tokens.ts + App.css :root fallbacks", () => {
+  it("dark semantic status colors live only in tokens.ts + styles/tokens.css :root fallbacks", () => {
     for (const hex of [SEMANTIC_DARK.danger, SEMANTIC_DARK.success, SEMANTIC_DARK.warning]) {
       const stray = filesContaining(hex).filter((f) => f !== TOKENS && f !== APP_CSS);
       expect(stray.map((f) => f.slice(ROOT.length + 1)), `semantic ${hex}`).toEqual([]);
     }
   });
 
-  it("light semantic status colors live only in tokens.ts (no App.css mirror needed)", () => {
+  it("light semantic status colors live only in tokens.ts (no styles/tokens.css mirror needed)", () => {
     for (const hex of [SEMANTIC_LIGHT.danger, SEMANTIC_LIGHT.success, SEMANTIC_LIGHT.warning]) {
       const stray = filesContaining(hex).filter((f) => f !== TOKENS);
       expect(stray.map((f) => f.slice(ROOT.length + 1)), `light semantic ${hex}`).toEqual([]);
     }
   });
 
-  it("App.css :root fallbacks byte-mirror the tokens source (ramp + dark semantics)", () => {
+  it("styles/tokens.css :root fallbacks byte-mirror the tokens source (ramp + dark semantics)", () => {
     const css = readFileSync(APP_CSS, "utf8").toLowerCase();
-    for (const hex of Object.values(CATEGORY_SWATCHES)) expect(css, `App.css has ${hex}`).toContain(hex.toLowerCase());
+    for (const hex of Object.values(CATEGORY_SWATCHES)) expect(css, `styles/tokens.css has ${hex}`).toContain(hex.toLowerCase());
     for (const hex of [SEMANTIC_DARK.danger, SEMANTIC_DARK.success, SEMANTIC_DARK.warning]) {
-      expect(css, `App.css has ${hex}`).toContain(hex.toLowerCase());
+      expect(css, `styles/tokens.css has ${hex}`).toContain(hex.toLowerCase());
     }
   });
 });

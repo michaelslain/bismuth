@@ -1,0 +1,86 @@
+/* app/src/styles/tokens.css — the design-token layer.
+   Split out of App.css because a token is the one thing that CANNOT be scoped: CSS Modules hash
+   class names, never custom-property names, and every stylesheet in the app reads these by name.
+
+   Nothing here is a source of truth. core/src/theme/tokens.ts owns the palette; App.tsx projects
+   the SELECTED theme onto :root at runtime via settingsCssVars.ts and overwrites all of it. These
+   literals exist only for the frames before that projection runs, which is why they must stay
+   byte-identical to the "ink" theme (the schema default) — themeGuard.test.ts asserts exactly that
+   against this file, and its anti-drift lint points here too: a centralized hex may appear in
+   tokens.ts and in this file, and nowhere else in app/src or core/src. */
+:root {
+  color-scheme: dark;
+  /* Theme tokens are DERIVED in app/src/settingsCssVars.ts from the selected theme
+     (core/src/theme/tokens.ts) and set on :root at runtime. The literals below are
+     only first-paint fallbacks and MUST equal the "ink" theme (the schema default). */
+  --bg: #15161A;
+  --fg: #E8E3D6;
+  --accent: #93BDB0;
+  --border: #3A3E4A;
+  --text-muted: #9C998E;
+  --panel: #20222A;
+  --hover-bg: rgba(232,227,214,.05);
+  --surface-1: #20222A;
+  --surface-2: #272A33;
+  --surface-3: #31353F;
+  --border-soft: #282B34;
+  --faint: #6A675E;
+  --rail: #101116;
+  /* Structural surfaces that branch light/dark at runtime (settingsCssVars); the
+     literals here are dark (ink) first-paint fallbacks. See LIGHT_THEMES.md Part B. */
+  --editor: #191A1F;
+  --pop-bg: rgba(25,26,31,.88);
+  --pop-bg-strong: rgba(25,26,31,.94);
+  --scrim-bg: rgba(10,11,14,.6);
+  --overlay-bg: rgba(10,11,14,.6);
+  --label-halo: #15161A;
+  --graph-edge: #3C4048;
+  --node-cold: #4A4E58;
+  --node-self: #E8E3D6;
+  --term-bg: #101116;
+  --term-fg: #C9C4B6;
+  --accent-purple: #A190C4; /* Ink violet (accentPalette[1]) */
+  --accent-soft: rgba(147,189,176,0.12);
+  --on-accent: #15161A;
+  --glow-accent: 0 0 0 1px rgba(147,189,176,0.14);
+  --glow-text: none;
+  /* Named chrome accents + iridescent gradient (derived from the graph ramp at runtime). */
+  --teal: #83B4AE;
+  --blue: #8296C6;
+  --violet: #A190C4;
+  --grad: linear-gradient(120deg,#C98CA8,#A190C4,#8296C6,#83B4AE,#A3BE8C,#CBB27E);
+  /* Category hues — Bases statuses / calendar categories / map pins / chart series.
+     CATEGORICAL, kept separate from the semantic --success/--danger below. */
+  --green: #A3BE8C;
+  --gold: #CBB27E;
+  --rose: #C98CA8;
+  --editor-font: 'Monaspace Xenon', ui-monospace, monospace;
+  --editor-font-size: 16px;
+  /* Semantic status colors + shadows — first-paint DARK (ink) fallbacks; settingsCssVars.ts
+     projects the per-theme (light/dark) values at runtime from core/src/theme/tokens.ts. */
+  --danger: #C87F72;
+  --success: #A3BE8C;
+  --warning: #CBB27E;
+  --shadow-menu: 0 4px 16px rgba(0,0,0,.3);
+  --shadow-popup: 0 8px 24px rgba(0,0,0,.4);
+  /* Design elevation shadows (cards/popovers vs modals). */
+  --shadow-card: 0 1px 0 rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  --shadow-modal: 0 24px 70px rgba(0,0,0,.5);
+}
+
+/* Registered custom properties. `@property` registration is document-global — it cannot be scoped
+   to a module or a component — so it belongs with the tokens even though the two properties are
+   SET on `.layout` (App.css). Registration order relative to use does not matter; what matters is
+   that the registration exists at all, or the collapse animations below degrade to instant jumps. */
+/* The animated sidebar width lives in a *registered* custom property so it
+   interpolates as a real <length>. Transitioning grid-template-columns directly
+   is unreliable — Chrome falls back to a discrete (instant) jump when a track
+   animates next to an `fr` track. Driving the grid from var(--sidebar-w) and
+   transitioning that property instead gives a smooth, frame-by-frame collapse. */
+@property --sidebar-w { syntax: "<length>"; inherits: true; initial-value: 266px; }
+/* Registered (like --sidebar-w above) so its 48px<->0 collapse animates as a real <length>
+   instead of snapping instantly — see BUG #40 below. */
+@property --rail-w { syntax: "<length>"; inherits: true; initial-value: 0px; }
+/* The vertical tab rail (ui.verticalTabs) is a third grid track on the RIGHT. It stays at
+   its COLLAPSED width even while hovered — the hover-expansion overflows leftward as an
+   overlay (see .tab-rail-inner) so the editor never reflows. 0 unless `.has-rail`. */

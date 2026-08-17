@@ -1,128 +1,23 @@
-/* app/src/App.css */
-:root {
-  color-scheme: dark;
-  /* Theme tokens are DERIVED in app/src/settingsCssVars.ts from the selected theme
-     (core/src/theme/tokens.ts) and set on :root at runtime. The literals below are
-     only first-paint fallbacks and MUST equal the "ink" theme (the schema default). */
-  --bg: #15161A;
-  --fg: #E8E3D6;
-  --accent: #93BDB0;
-  --border: #3A3E4A;
-  --text-muted: #9C998E;
-  --panel: #20222A;
-  --hover-bg: rgba(232,227,214,.05);
-  --surface-1: #20222A;
-  --surface-2: #272A33;
-  --surface-3: #31353F;
-  --border-soft: #282B34;
-  --faint: #6A675E;
-  --rail: #101116;
-  /* Structural surfaces that branch light/dark at runtime (settingsCssVars); the
-     literals here are dark (ink) first-paint fallbacks. See LIGHT_THEMES.md Part B. */
-  --editor: #191A1F;
-  --pop-bg: rgba(25,26,31,.88);
-  --pop-bg-strong: rgba(25,26,31,.94);
-  --scrim-bg: rgba(10,11,14,.6);
-  --overlay-bg: rgba(10,11,14,.6);
-  --label-halo: #15161A;
-  --graph-edge: #3C4048;
-  --node-cold: #4A4E58;
-  --node-self: #E8E3D6;
-  --term-bg: #101116;
-  --term-fg: #C9C4B6;
-  --accent-purple: #A190C4; /* Ink violet (accentPalette[1]) */
-  --accent-soft: rgba(147,189,176,0.12);
-  --on-accent: #15161A;
-  --glow-accent: 0 0 0 1px rgba(147,189,176,0.14);
-  --glow-text: none;
-  /* Named chrome accents + iridescent gradient (derived from the graph ramp at runtime). */
-  --teal: #83B4AE;
-  --blue: #8296C6;
-  --violet: #A190C4;
-  --grad: linear-gradient(120deg,#C98CA8,#A190C4,#8296C6,#83B4AE,#A3BE8C,#CBB27E);
-  /* Category hues — Bases statuses / calendar categories / map pins / chart series.
-     CATEGORICAL, kept separate from the semantic --success/--danger below. */
-  --green: #A3BE8C;
-  --gold: #CBB27E;
-  --rose: #C98CA8;
-  --editor-font: 'Monaspace Xenon', ui-monospace, monospace;
-  --editor-font-size: 16px;
-  /* Semantic status colors + shadows — first-paint DARK (ink) fallbacks; settingsCssVars.ts
-     projects the per-theme (light/dark) values at runtime from core/src/theme/tokens.ts. */
-  --danger: #C87F72;
-  --success: #A3BE8C;
-  --warning: #CBB27E;
-  --shadow-menu: 0 4px 16px rgba(0,0,0,.3);
-  --shadow-popup: 0 8px 24px rgba(0,0,0,.4);
-  /* Design elevation shadows (cards/popovers vs modals). */
-  --shadow-card: 0 1px 0 rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
-  --shadow-modal: 0 24px 70px rgba(0,0,0,.5);
-}
-* { box-sizing: border-box; }
-/* Buttons don't inherit font-family from ancestors — force it so every button
-   (including non-.btn ones like .vbtn) renders in the app's Monaspace, not the
-   browser UA system font. */
-button { outline: none; font: inherit; }
-body, html, #root { margin: 0; height: 100%; }
-/* Monaspace ships coding ligatures (e.g. "->", "!="); they break the character grid
-   the whole ASCII design leans on, so they're off everywhere, app-wide. */
-body, html { font-variant-ligatures: none; }
-body { background: var(--bg); color: var(--fg); }
+/* App.css — the GLOBAL layer only. Component rules live in <Component>.module.css next to their
+   component; shared design-system primitives live in ui/ui.css. What stays global here is what
+   CANNOT be scoped: design tokens, the element reset, and classes written into runtime-generated
+   HTML strings (see styles/content.css and cssLayering.test.ts).
 
-/* Text selection ("highlighting" a drag-range) tints with the accent palette color
-   everywhere. Without this the whole app — and rendered/live-preview "formatter"
-   content — falls back to the browser's harsh bright-blue default. The CodeMirror
-   editor sets its own matching tint in Editor.tsx (.cm-selectionBackground). */
-::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-::-moz-selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+   CSS `@import` HOISTS. Regardless of where the three lines below sit in this file, the browser
+   emits those stylesheets AHEAD of every rule here — so any rule still in App.css now outranks an
+   imported one of equal specificity, whatever their original line numbers were. Check that pair
+   before moving the next group out: relocation flips precedence, and a flip is invisible in review.
 
-/* Iridescent "bismuth" — every literal, whole-word occurrence of the word "bismuth" is painted
-   with a shimmering bismuth-crystal gradient (the rainbow oxide iridescence of real bismuth:
-   magenta → purple → blue → teal → green → gold) via background-clip:text. Shared by the
-   reading-mode markdown renderer (`.bismuth-word`, bases/markdown.ts) and the live-preview editor
-   decoration (`.cm-bismuth`, editor/livePreview.ts). The gradient is oversized and slowly pans for
-   a gentle shimmer; reduced-motion users get the static ramp. Theme-independent by design — the
-   crystal colors read the same on every theme; the effect never uses a theme-accent color.
-   Reuses the wordmark's own `asc-sheen`/`--sheen` animation (defined below, with `.asc-wordmark`)
-   rather than a second infinite loop — PORTING.md §7 permits exactly one decorative sheen. */
-.bismuth-word, .cm-bismuth {
-  background-image: linear-gradient(100deg,
-    #ff6ec7 0%, #a06bff 18%, #4d8bff 36%, #22d3d6 52%, #5ff0a8 68%, #ffd36e 84%, #ff6ec7 100%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  font-weight: 600;
-  animation: asc-sheen var(--sheen, 8s) linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .bismuth-word, .cm-bismuth { animation: none; }
-}
+   Everything below the imports is component chrome that has not been given a home yet; the later
+   tasks of the CSS modularization move it out group by group. cssLayering.test.ts holds a
+   descending ceiling on the class-rule count so nothing new accumulates here in the meantime. */
+@import "./styles/tokens.css";
+@import "./styles/reset.css";
+@import "./styles/content.css";
 
-/* Thin, theme-matched scrollbars — replace the chunky default OS ones. Track is
-   invisible; the thumb is a faint inset pill that only firms up on hover. */
-* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--fg) 16%, transparent) transparent; }
-*::-webkit-scrollbar { width: 9px; height: 9px; }
-*::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 15%, transparent); border-radius: 9px; border: 2px solid transparent; background-clip: padding-box; }
-*::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--fg) 30%, transparent); background-clip: padding-box; }
-*::-webkit-scrollbar-corner { background: transparent; }
 /* The tab strip never needs a visible scrollbar (it overflows horizontally on many tabs). */
 .tabbar::-webkit-scrollbar { height: 0; }
 .tabbar { scrollbar-width: none; }
-/* The animated sidebar width lives in a *registered* custom property so it
-   interpolates as a real <length>. Transitioning grid-template-columns directly
-   is unreliable — Chrome falls back to a discrete (instant) jump when a track
-   animates next to an `fr` track. Driving the grid from var(--sidebar-w) and
-   transitioning that property instead gives a smooth, frame-by-frame collapse. */
-@property --sidebar-w { syntax: "<length>"; inherits: true; initial-value: 266px; }
-/* Registered (like --sidebar-w above) so its 48px<->0 collapse animates as a real <length>
-   instead of snapping instantly — see BUG #40 below. */
-@property --rail-w { syntax: "<length>"; inherits: true; initial-value: 0px; }
-/* The vertical tab rail (ui.verticalTabs) is a third grid track on the RIGHT. It stays at
-   its COLLAPSED width even while hovered — the hover-expansion overflows leftward as an
-   overlay (see .tab-rail-inner) so the editor never reflows. 0 unless `.has-rail`. */
 /* height:100% (NOT 100vh): `.layout` is the top-level element under #root, and
    `html, body, #root` are all `height:100%`, so 100% here tracks the webview's ACTUAL
    client area. The `vh` viewport unit does NOT — in the macOS WKWebView it fails to track
@@ -963,13 +858,6 @@ html.view-dragging .graph-floater { pointer-events: none; }
    pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D pair; pointer-events are
    re-enabled because the bar itself is click-through. */
 
-/* EMBEDDED ```query blocks (editor/queryBlock.ts sets .bismuth-query-block) render a base view INSIDE
-   a note, so their text follows the NOTE prose size — everything in a note is one size. Scoped to this
-   wrapper: a FULL-PANE base is a standalone data grid and keeps the --fs-ui chrome size. Element
-   selectors (not the CSS-module class) so this stays one rule and outranks .table/.dateCell. */
-.bismuth-query-block table,
-.bismuth-query-block td,
-.bismuth-query-block th { font-size: var(--editor-font-size, 13.5px); }
 
 /* Mini-graph mode switcher: the sidebar toolbar's own row, so the two read as one family. Sizing,
    radius and hover come from the shared .btn--icon rules above (this selector is listed there) — only
@@ -1024,18 +912,3 @@ html.view-dragging .graph-floater { pointer-events: none; }
 /* Serif crumb title (standalone calendar month, etc.). */
 .viewbar .crumb b.crumb-serif { font-family: var(--editor-font); font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
 
-/* Math rendered into note HTML on reading surfaces (cards, transclusion, calendar,
-   export) by bases/markdown.ts. Display math ($$…$$) is a full-width block so KaTeX's
-   equation tags / numbers sit flush right; inline math ($…$) flows with the prose. */
-.bismuth-math-display { display: block; }
-.bismuth-math-display .katex-display { margin: 0.4em 0; }
-
-/* Lists inside a table cell (see editor/cellList.ts): a `- item` / `1. item` run renders as a
-   compact <ul>/<ol> whose bullet/number is REAL TEXT (a `.bismuth-cell-mk` span), the native
-   marker off via inline `list-style:none`. One global rule covers BOTH the editor's editable-
-   table widget cells (.cm-td) and every reading surface (note tables, cards, export): tight
-   margins so the list sits neatly within the cell, and `list-style:none` (belt-and-suspenders
-   with the render's inline style) so the native marker never doubles the text glyph. */
-.bismuth-cell-list, .bismuth-cell-list li { list-style: none; }
-.bismuth-cell-list { margin: 0; padding-left: 0.2em; }
-.bismuth-cell-list li { margin: 0.05em 0; }
