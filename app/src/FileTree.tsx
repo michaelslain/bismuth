@@ -18,6 +18,9 @@ import { applyNewNoteTemplate } from "../../core/src/newNoteTemplate";
 import { NOTE_EXT_RE } from "../../core/src/pathUtils";
 import { setPendingCursor } from "./pendingCursor";
 import { createRenameSettleRegistry } from "./renameSettle";
+// Scoped chrome. Bracket access, not `styles.ftRow`: vite.config.ts sets no
+// `css.modules.localsConvention`, so only the literal names exist on this object.
+import styles from "./FileTree.module.css";
 import { treePrefix } from "./ui/ascii/treePrefix";
 
 import { buildTree, reconcileTree, type TreeNode } from "./fileTreeModel";
@@ -619,8 +622,8 @@ export function FileTree(props: {
 
   return (
     <div
-      class="ft-root"
-      classList={{ "drop-target": props.dropHighlight() === "" }}
+      class={styles["ft-root"]}
+      classList={{ [styles["drop-target"]]: props.dropHighlight() === "" }}
       data-drop-root="true"
       onClick={(e) => { if (e.target === e.currentTarget && selected().size > 0) setSelected(new Set<string>()); }}
     >
@@ -748,7 +751,7 @@ function EditableLabel(props: {
         });
       }}
       value={stem}
-      class="ft-edit-input"
+      class={styles["ft-edit-input"]}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === "Enter") commit();
@@ -777,13 +780,13 @@ function Collapsible(props: { open: boolean; children: JSX.Element }) {
   });
   return (
     <div
-      class="ft-collapse"
-      classList={{ open: expanded() }}
+      class={styles["ft-collapse"]}
+      classList={{ [styles["open"]]: expanded() }}
       onTransitionEnd={(e) => {
         if (e.propertyName === "grid-template-rows" && !props.open) setMounted(false);
       }}
     >
-      <div class="ft-collapse-inner">
+      <div class={styles["ft-collapse-inner"]}>
         <Show when={mounted()}>{props.children}</Show>
       </div>
     </div>
@@ -799,8 +802,8 @@ function VisibilityBadge(props: { visibility?: "chat-only" | "hidden" }) {
     <Show when={props.visibility}>
       {(v) => (
         <span
-          class="ft-visibility-badge"
-          classList={{ hidden: v() === "hidden" }}
+          class={styles["ft-visibility-badge"]}
+          classList={{ [styles["hidden"]]: v() === "hidden" }}
           title={v() === "hidden" ? "Hidden from the daemon and in-app chat" : "Chat only — hidden from the daemon"}
         >
           <Icon value={v() === "hidden" ? "EyeOff" : "MessageSquareOff"} size={12} />
@@ -830,7 +833,9 @@ function Level(props: {
     if (e.button !== 0) return;
     if (props.editing === node.path) return;
     if (node.isSystemFolder || node.path === SETTINGS_FILE) return;
-    if ((e.target as HTMLElement).closest(".ft-edit-input")) return;
+    // Interpolate the HASHED name — a literal ".ft-edit-input" here compiles and matches nothing,
+    // which would let a press inside the rename input start a row drag instead of placing a caret.
+    if ((e.target as HTMLElement).closest(`.${styles["ft-edit-input"]}`)) return;
     e.stopPropagation(); // don't let a nested row's press bubble to an ancestor row
     props.startItemDrag(e, kind, node.path, label);
   };
@@ -851,18 +856,18 @@ function Level(props: {
         return child.children ? (
           <div>
             <div
-              class="ft-row"
-              classList={{ "drop-target": props.dropHighlight() === child.path, system: !!child.isSystemFolder, selected: props.selected.has(child.path) }}
+              class={styles["ft-row"]}
+              classList={{ [styles["drop-target"]]: props.dropHighlight() === child.path, [styles["system"]]: !!child.isSystemFolder, [styles["selected"]]: props.selected.has(child.path) }}
               data-drop-folder={child.isSystemFolder ? undefined : child.path}
               onPointerDown={(e) => onRowPointerDown(e, child, "folder", child.label ?? child.name)}
               onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.toggle(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
-              <span class="ft-prefix">{prefixFor(i()).trimEnd()}</span>
+              <span class={styles["ft-prefix"]}>{prefixFor(i()).trimEnd()}</span>
               {/* One glyph, not two: the folder icon's own shape IS the disclosure state (Folder "▸" /
                   FolderOpen "▾" — see icons/registry.ts), so there is no separate chevron icon here.
                   A bare ChevronRight/ChevronDown alongside it drew the same triangle twice. */}
-              <Icon value={child.icon} fallback={child.isSystemFolder ? "Settings2" : props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class="ft-icon" />
+              <Icon value={child.icon} fallback={child.isSystemFolder ? "Settings2" : props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class={styles["ft-icon"]} />
               <VisibilityBadge visibility={child.visibility} />
               <Show when={props.editing === child.path} fallback={child.label ?? child.name}>
                 <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} awaitCreate={props.awaitCreate} onSettled={props.onSettled} />
@@ -880,14 +885,14 @@ function Level(props: {
           </div>
         ) : (
           <div
-            class="ft-row file"
-            classList={{ active: child.path === props.activeFile, system: child.path === SETTINGS_FILE, selected: props.selected.has(child.path) }}
+            class={`${styles["ft-row"]} file`}
+            classList={{ [styles["active"]]: child.path === props.activeFile, [styles["system"]]: child.path === SETTINGS_FILE, [styles["selected"]]: props.selected.has(child.path) }}
             onPointerDown={(e) => onRowPointerDown(e, child, "note", child.label ?? displayName(child.name))}
             onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.onOpen(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
-            <span class="ft-prefix">{prefixFor(i()).trimEnd()}</span>
-            <Icon value={child.icon} fallback={child.name.endsWith(".sheet") ? "Table" : "FileText"} size={16} class="ft-icon" />
+            <span class={styles["ft-prefix"]}>{prefixFor(i()).trimEnd()}</span>
+            <Icon value={child.icon} fallback={child.name.endsWith(".sheet") ? "Table" : "FileText"} size={16} class={styles["ft-icon"]} />
             <VisibilityBadge visibility={child.visibility} />
             <Show when={props.editing === child.path} fallback={child.label ?? displayName(child.name)}>
               <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} awaitCreate={props.awaitCreate} onSettled={props.onSettled} />
