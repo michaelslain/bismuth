@@ -206,36 +206,13 @@
 /* FileTree root fills the sidebar's scroll area so empty space below the tree is still a drop target. */
 .ft-root { min-height: 100%; }
 
-/* ── Shared view bar (breadcrumb + right-aligned controls) ─────────────────────
-   The 36px (2×--row-h) header most content views start with — graph header + base
-   ViewBar rows both route through this class: a breadcrumb on the left, a flexible
-   spacer, then .vseg segmented switchers and .vbtn buttons. New shared primitive. */
-.viewbar { height: calc(var(--row-h, 18px) * 2); flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 0 18px; border-bottom: 1px solid var(--border-soft); }
-.viewbar .crumb { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 7px; white-space: nowrap; min-width: 0; }
-.viewbar .crumb b { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
-.viewbar .crumb svg { color: var(--faint); }
-.viewbar .vbar-sp { flex: 1; }
-.vbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 7px; font-size: 11.5px; color: var(--text-muted); background: transparent; border: 1px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.03em; }
-.vbtn:hover { background: var(--hover-bg); color: var(--fg); }
-.vbtn.active { color: var(--fg); background: var(--surface-2); border-color: var(--border); }
-/* Segmented view switcher (Table/Cards/… · 2nd/3rd/Both/… · Day/Week/Month). */
-.vseg { display: inline-flex; gap: 2px; background: var(--rail); border: 1px solid var(--border-soft); border-radius: 8px; padding: 2px; }
-.vseg > * { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 6px; font-size: 11px; color: var(--text-muted); background: transparent; border: none; cursor: pointer; white-space: nowrap; }
-.vseg > *:hover { color: var(--fg); }
-.vseg > .active { color: var(--fg); background: var(--surface-2); }
+/* The shared view bar (.viewbar, .crumb, .vbar-sp, .vbtn, .vseg) and the category chips +
+   status dot (.chip, .status-dot) moved UP into ui/ui.css: each has consumers in several
+   unrelated components, so scoping them into any one module would force every other consumer
+   to import that module. ui/ui.css records the per-family consumer count and the cascade
+   analysis behind the move. Note the knock-on below: the mini-graph's `.graph-viewbar`
+   padding override had to become a two-class selector once `.viewbar` left this file. */
 
-/* ── Cross-view design components (shared so parallel view work needn't touch them) ──
-   Category chips, status dots, and keyboard hints. View-local styling lives in each
-   view's colocated CSS; these are the genuinely shared atoms. */
-.chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 6px; font-size: 10.5px; background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border-soft); white-space: nowrap; }
-.chip .dot, .status-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
-/* Category-tinted chips. Each maps a category token to text/bg/border via color-mix. */
-.chip.teal   { color: var(--teal);   background: color-mix(in srgb, var(--teal) 13%, transparent);   border-color: color-mix(in srgb, var(--teal) 28%, transparent); }
-.chip.blue   { color: var(--blue);   background: color-mix(in srgb, var(--blue) 13%, transparent);   border-color: color-mix(in srgb, var(--blue) 28%, transparent); }
-.chip.violet { color: var(--violet); background: color-mix(in srgb, var(--violet) 13%, transparent); border-color: color-mix(in srgb, var(--violet) 28%, transparent); }
-.chip.green  { color: var(--green);  background: color-mix(in srgb, var(--green) 13%, transparent);  border-color: color-mix(in srgb, var(--green) 28%, transparent); }
-.chip.gold   { color: var(--gold);   background: color-mix(in srgb, var(--gold) 13%, transparent);   border-color: color-mix(in srgb, var(--gold) 28%, transparent); }
-.chip.rose   { color: var(--rose);   background: color-mix(in srgb, var(--rose) 13%, transparent);   border-color: color-mix(in srgb, var(--rose) 28%, transparent); }
 /* Keyboard hint chips (empty pane / palettes). */
 .kbd { display: inline-flex; gap: 4px; }
 .kbd b { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 11px; background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 2px 7px; color: var(--text-muted); font-weight: 400; }
@@ -876,7 +853,14 @@ html.view-dragging .graph-floater { pointer-events: none; }
      either made the graph the one section in the sidebar with no divider and an off-grid 41px height.
      The old height:auto/min-height:41px existed to let five TEXT segments wrap onto a second row — the
      mini switcher is icons now (see MODE_ICON), so one row always fits. Padding matches .sidebar-icons. */
-  .graph-viewbar { padding: 0 10px; justify-content: center; }
+  /* TWO-CLASS on purpose (the graph/asciiGraph.css idiom), not a bare `.graph-viewbar`. This
+     rule and the base `.viewbar` both set `padding` at one-class specificity on the SAME element,
+     so only source order separated them — and `.viewbar` no longer lives in this file. The two
+     surfaces disagree about that order: the app bundle loads ui.css BEFORE App.css (it rides a
+     dependency chunk), while .storybook/preview.ts imports App.css first and ui.css after. A bare
+     one-class override would therefore win in the app and lose in Storybook, on the same source.
+     `@container` contributes nothing to specificity, so the query cannot break the tie for us. */
+  .viewbar.graph-viewbar { padding: 0 10px; justify-content: center; }
   .graph-viewbar .segmented { flex-wrap: wrap; justify-content: center; gap: 3px; row-gap: 3px; }
   .graph-bottom-narrow .segmented { gap: 3px; }
 }
@@ -907,8 +891,3 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .pane-divider { flex: 0 0 var(--pane-divider-width, 5px); background: var(--border); cursor: col-resize; }
 .pane-divider.col { cursor: row-resize; }
 .pane-divider:hover { background: var(--accent); }
-
-
-/* Serif crumb title (standalone calendar month, etc.). */
-.viewbar .crumb b.crumb-serif { font-family: var(--editor-font); font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
-
