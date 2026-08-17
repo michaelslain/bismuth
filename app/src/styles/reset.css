@@ -1,0 +1,36 @@
+/* app/src/styles/reset.css — the element-level layer.
+   Every selector in this file is a universal, a bare element, an id, or a pseudo-element: `*`,
+   `button`, `body`, `html`, `#root`, `::selection`, `::-webkit-scrollbar`. CSS Modules hash class
+   names, so there is nothing here for a module to hash — these rules are global or they do not
+   exist at all.
+
+   Cascade note for whoever moves the next batch of rules out of App.css: `@import` hoists, so this
+   file always wins the ORDER contest against anything left in App.css. That is inert here — every
+   rule below is specificity 0-0-0 or 0-0-1, so any class rule anywhere still beats it. Keep it that
+   way; the moment a class selector lands in this file the hoist stops being harmless. */
+* { box-sizing: border-box; }
+/* Buttons don't inherit font-family from ancestors — force it so every button
+   (including non-.btn ones like .vbtn) renders in the app's Monaspace, not the
+   browser UA system font. */
+button { outline: none; font: inherit; }
+body, html, #root { margin: 0; height: 100%; }
+/* Monaspace ships coding ligatures (e.g. "->", "!="); they break the character grid
+   the whole ASCII design leans on, so they're off everywhere, app-wide. */
+body, html { font-variant-ligatures: none; }
+body { background: var(--bg); color: var(--fg); }
+
+/* Text selection ("highlighting" a drag-range) tints with the accent palette color
+   everywhere. Without this the whole app — and rendered/live-preview "formatter"
+   content — falls back to the browser's harsh bright-blue default. The CodeMirror
+   editor sets its own matching tint in Editor.tsx (.cm-selectionBackground). */
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+::-moz-selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* Thin, theme-matched scrollbars — replace the chunky default OS ones. Track is
+   invisible; the thumb is a faint inset pill that only firms up on hover. */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--fg) 16%, transparent) transparent; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 15%, transparent); border-radius: 9px; border: 2px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--fg) 30%, transparent); background-clip: padding-box; }
+*::-webkit-scrollbar-corner { background: transparent; }

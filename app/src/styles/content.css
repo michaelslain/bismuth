@@ -1,0 +1,71 @@
+/* app/src/styles/content.css — classes written into runtime-generated HTML as plain strings.
+   The emitters (bases/markdown.ts, editor/livePreview.ts, editor/inlineMarkdown.ts,
+   editor/bismuthWord.ts, editor/cellList.ts, editor/queryBlock.ts, export/) build these class
+   names as string literals, never as an imported identifier. Put one in a CSS Module and the
+   module hashes the name at build time while the emitter keeps writing the literal: the styling
+   disappears from every rendered note, and nothing — not typecheck, not a unit test, not a
+   console warning — reports it. cssLayering.test.ts is the ratchet that keeps them here.
+
+   `:global(...)` in a module is the sanctioned escape hatch (bases/BaseView.module.css and
+   bases/CardEditModal.module.css both use it, correctly) because names inside it are not hashed.
+   The test allows that form and only that form.
+
+   DEPENDENCY: the sheen rule below animates `asc-sheen`, whose `@keyframes` still lives in
+   App.css beside `.asc-wordmark`. CSS Modules hash keyframe names too, so if `.asc-wordmark`
+   ever migrates into a module the keyframes block has to stay global or this rule silently
+   stops animating — a blank-looking word, not an error. */
+/* Iridescent "bismuth" — every literal, whole-word occurrence of the word "bismuth" is painted
+   with a shimmering bismuth-crystal gradient (the rainbow oxide iridescence of real bismuth:
+   magenta → purple → blue → teal → green → gold) via background-clip:text. Shared by the
+   reading-mode markdown renderer (`.bismuth-word`, bases/markdown.ts) and the live-preview editor
+   decoration (`.cm-bismuth`, editor/livePreview.ts). The gradient is oversized and slowly pans for
+   a gentle shimmer; reduced-motion users get the static ramp. Theme-independent by design — the
+   crystal colors read the same on every theme; the effect never uses a theme-accent color.
+   Reuses the wordmark's own `asc-sheen`/`--sheen` animation (defined below, with `.asc-wordmark`)
+   rather than a second infinite loop — PORTING.md §7 permits exactly one decorative sheen. */
+.bismuth-word, .cm-bismuth {
+  background-image: linear-gradient(100deg,
+    #ff6ec7 0%, #a06bff 18%, #4d8bff 36%, #22d3d6 52%, #5ff0a8 68%, #ffd36e 84%, #ff6ec7 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  font-weight: 600;
+  animation: asc-sheen var(--sheen, 8s) linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bismuth-word, .cm-bismuth { animation: none; }
+}
+
+/* EMBEDDED ```query blocks (editor/queryBlock.ts sets .bismuth-query-block) render a base view INSIDE
+   a note, so their text follows the NOTE prose size — everything in a note is one size. Scoped to this
+   wrapper: a FULL-PANE base is a standalone data grid and keeps the --fs-ui chrome size. Element
+   selectors (not the CSS-module class) so this stays one rule and outranks .table/.dateCell. */
+.bismuth-query-block table,
+.bismuth-query-block td,
+.bismuth-query-block th { font-size: var(--editor-font-size, 13.5px); }
+
+/* Math rendered into note HTML on reading surfaces (cards, transclusion, calendar,
+   export) by bases/markdown.ts. Display math ($$…$$) is a full-width block so KaTeX's
+   equation tags / numbers sit flush right; inline math ($…$) flows with the prose. */
+.bismuth-math-display { display: block; }
+.bismuth-math-display .katex-display { margin: 0.4em 0; }
+
+/* Lists inside a table cell (see editor/cellList.ts): a `- item` / `1. item` run renders as a
+   compact <ul>/<ol> whose bullet/number is REAL TEXT (a `.bismuth-cell-mk` span), the native
+   marker off via inline `list-style:none`. One global rule covers BOTH the editor's editable-
+   table widget cells (.cm-td) and every reading surface (note tables, cards, export): tight
+   margins so the list sits neatly within the cell, and `list-style:none` (belt-and-suspenders
+   with the render's inline style) so the native marker never doubles the text glyph.
+
+   Moving these out of App.css flipped one precedence pair worth recording so nobody re-litigates
+   it: `.card-md li` sets `margin: 0` and stays in App.css, so it now sorts AFTER this file and
+   would out-rank the `li` margin below at equal specificity. It does not matter. cellList.ts
+   writes `margin:0.05em 0` as an INLINE style on every li it emits, and an inline declaration
+   beats both rules — before the split and after. The class appears in no other markup, so there
+   is no element where the flip is observable. Raising the specificity here would be a change with
+   no effect, made to satisfy an analysis rather than a symptom. */
+.bismuth-cell-list, .bismuth-cell-list li { list-style: none; }
+.bismuth-cell-list { margin: 0; padding-left: 0.2em; }
+.bismuth-cell-list li { margin: 0.05em 0; }
