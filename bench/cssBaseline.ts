@@ -60,6 +60,8 @@ const MAX_TRIES = Number(arg("tries", "16"));
 const FROZEN_NOW = Date.parse("2026-01-15T12:00:00Z");
 const UPDATE = has("update");
 const OUT = join(import.meta.dir, "css-baseline.json");
+/** Full drift dump on a failing run — generated, gitignored, overwritten every run. */
+const DRIFT = join(import.meta.dir, "css-baseline.drift.txt");
 const W = 1280, H = 900;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -307,5 +309,13 @@ for (const id of Object.keys(base)) {
 }
 console.log(diffs.slice(0, 200).join("\n"));
 if (diffs.length > 200) console.log(`… and ${diffs.length - 200} more`);
+// The terminal cap is for readability, but the truncated remainder is where a real regression hides
+// inside an expected-looking diff: an intentional app-wide change (a font swap, a white-space rule
+// on every icon) easily produces four figures of drift, and reviewing only the first 200 lines means
+// grading the change by its most boring rows. Always write the FULL list somewhere greppable.
+if (diffs.length) {
+  writeFileSync(DRIFT, diffs.join("\n") + "\n");
+  console.log(`full diff -> ${DRIFT}`);
+}
 console.log(`${diffs.length} changed`);
 process.exit(diffs.length === 0 ? 0 : 1);

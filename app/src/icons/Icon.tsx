@@ -60,6 +60,18 @@ export const Icon: Component<IconProps> = (props) => {
     return looksLikeIconName(s) ? FALLBACK_ART : { kind: "glyph", text: s };
   };
   const size = () => props.size ?? 16;
+  /** A MULTI-character typed glyph — "[ ]", "[x]", "<<", ">>", ".*", "Aa", "[W]", "><", "][" and
+   *  the two folder marks. Twelve of registry.ts's entries are these ASCII marks rather than single
+   *  characters, and they are the case this file's "fixed size x size box" invariant never handled.
+   *
+   *  Three characters at 0.85 x size need about 1.6 x size of width, so inside a box one row tall
+   *  they wrapped to a SECOND ROW: the chat Stop button rendered as a bracket pair split by a line
+   *  break (measured: scrollHeight 27 inside a clientHeight 20 box). Two fixes were possible and the
+   *  first one was wrong — scaling font-size down to fit took `[ ]` to 7px at a 13px icon, trading
+   *  a broken glyph for an illegible one. So the BOX grows instead: an N-cell ASCII mark is honestly
+   *  N cells wide, the type stays at full size, and the character grid still lines up because the
+   *  width lands on a whole number of cells. Height is untouched, so rows never shift. */
+  const isWide = () => { const a = art(); return a.kind === "glyph" && [...a.text].length > 1; };
   return (
     <span
       class={props.class}
@@ -69,10 +81,11 @@ export const Icon: Component<IconProps> = (props) => {
         "align-items": "center",
         "justify-content": "center",
         "flex-shrink": 0,
-        width: `${size()}px`,
+        ...(isWide() ? { "min-width": `${size()}px` } : { width: `${size()}px` }),
         height: `${size()}px`,
         "font-size": `${Math.round(size() * 0.85)}px`,
         "line-height": 1,
+        "white-space": "nowrap",
         "font-family": "var(--ui-font-stack)",
         "font-variant-ligatures": "none",
         ...props.style,
