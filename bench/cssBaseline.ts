@@ -202,11 +202,22 @@ const profile = mkdtempSync(join(tmpdir(), "bismuth-cssbase-"));
 // skipped it, so every failed run risked leaving a headless Chrome and a profile dir behind, and a
 // harness that runs dozens of times across a refactor turns that into real resource pressure —
 // which then causes more crashes. Registering both on "exit" makes every path clean up.
+// SIGKILL, not the default SIGTERM, and then RETRY the delete. A gracefully-terminating Chrome keeps
+// writing to its profile after SIGTERM, so the immediately-following rmSync loses the race and throws
+// ENOTEMPTY — which the surrounding catch swallowed, so it looked like cleanup had happened. Measured:
+// 20 leaked profiles totalling 600 MB from this harness alone before this fix. The whole rest of the
+// repo's test suite leaves about 2 MB across 4000 temp dirs, so this one bug was the disk.
 let chromeProc: ReturnType<typeof spawn> | null = null;
-process.on("exit", () => {
-  try { chromeProc?.kill(); } catch {}
-  try { rmSync(profile, { recursive: true, force: true }); } catch {}
-});
+const cleanup = () => {
+  try { chromeProc?.kill("SIGKILL"); } catch {}
+  for (let i = 0; i < 6; i++) {
+    try { rmSync(profile, { recursive: true, force: true }); return; } catch {}
+    // Synchronous spin: this runs inside an "exit" handler, where nothing async will ever be awaited.
+    const until = Date.now() + 60;
+    while (Date.now() < until) { /* wait for Chrome to finish releasing the profile */ }
+  }
+};
+process.on("exit", cleanup);
 const chrome = spawn(CHROME, [
   "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
   "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
@@ -279,7 +290,7 @@ for (const id of storyIds) {
 }
 process.stderr.write("\n");
 ws.close();
-chrome.kill();
+cleanup();
 
 if (empty.length) console.error(`WARNING: ${empty.length} story(s) rendered 0 elements — unprotected:\n  ${empty.join("\n  ")}`);
 if (unstable.length) console.error(`WARNING: ${unstable.length} story(s) never converged in ${MAX_TRIES} probes — their values are arbitrary and will flake:\n  ${unstable.join("\n  ")}`);
