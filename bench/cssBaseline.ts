@@ -200,6 +200,32 @@ const empty: string[] = [];
 // show, which reads as a hang — and any supervisor watching the stream (a subagent watchdog, CI's
 // no-output timeout) will kill it on exactly that silence. \r keeps it to one line interactively.
 const unstable: string[] = [];
+
+/** Probe the CURRENTLY-LOADED page until it stops changing, then return the capture.
+ *
+ *  CONVERGENCE PROVES STABILITY, NOT COMPLETENESS, and that distinction cost a false alarm. Univer
+ *  (app-sheetview) and Milkdown (app-blockeditor) mount in stages, and under CPU contention a stage
+ *  can PLATEAU for longer than the stability window — so three identical captures in a row are a real
+ *  measurement of a half-mounted component. The full run reported 2727 REMOVED elements across those
+ *  stories with no warning, while re-checking each in isolation gave `0 changed`. Hence the
+ *  drift-retry pass below: a plateau is broken by re-loading the story on its own, and a real
+ *  regression survives that. */
+const captureOne = async (id: string, settle: number, wait: number) => {
+  await sleep(settle);
+  let last = "", value = "", same = 0;
+  for (let i = 0; i < MAX_TRIES; i++) {
+    const r = await page("Runtime.evaluate", { expression: PROBE, returnByValue: true, awaitPromise: true });
+    if (r.exceptionDetails) { console.error(`\nSKIP ${id}: ${r.exceptionDetails.text}`); return null; }
+    value = r.result.value;
+    same = value === last ? same + 1 : 0;
+    last = value;
+    if (same >= STABLE - 1) break;
+    await sleep(wait);
+  }
+  const parsed = JSON.parse(value);
+  return { ref: parsed.ref, els: parsed.els, count: parsed.count as number, settled: same >= STABLE - 1 };
+};
+
 let done = 0;
 for (const id of storyIds) {
   process.stderr.write(`\r[${++done}/${storyIds.length}] ${id.slice(0, 60).padEnd(60)}`);
@@ -214,32 +240,17 @@ for (const id of storyIds) {
     process.stderr.write("\n");
     throw new Error(`CDP died navigating to "${id}" (story ${done}/${storyIds.length}): ${(e as Error).message}`);
   }
-  await sleep(SETTLE);
-  // Converge: re-probe until STABLE captures in a row are byte-identical. `same` counts MATCHES, so
-  // it reaches STABLE-1 exactly when STABLE identical captures have been seen.
-  let last = "", value = "", same = 0, threw = false;
-  for (let i = 0; i < MAX_TRIES; i++) {
-    const r = await page("Runtime.evaluate", { expression: PROBE, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) { console.error(`\nSKIP ${id}: ${r.exceptionDetails.text}`); threw = true; break; }
-    value = r.result.value;
-    same = value === last ? same + 1 : 0;
-    last = value;
-    if (same >= STABLE - 1) break;
-    await sleep(CONVERGE_WAIT);
-  }
-  if (threw) continue;
-  // Never settled. Recording it anyway would bake in whatever it looked like at the cutoff and turn
-  // this story into a permanent source of phantom drift, so say so instead of hiding it.
-  if (same < STABLE - 1) unstable.push(id);
-  const parsed = JSON.parse(value);
-  if (parsed.count === 0) empty.push(id);
-  captured[id] = { ref: parsed.ref, els: parsed.els };
+  const got = await captureOne(id, SETTLE, CONVERGE_WAIT);
+  if (!got) continue;
+  if (!got.settled) unstable.push(id);
+  if (got.count === 0) empty.push(id);
+  captured[id] = { ref: got.ref, els: got.els };
 }
 process.stderr.write("\n");
-// Release the browser as soon as the capture loop is done — the comparison and reporting below are pure
-// computation. close() is idempotent and is also registered on process exit, so calling it here is an
-// early release, not the only cleanup path.
-session.close();
+// The browser is NOT released here. It was, until the drift-retry pass below needed to re-load a
+// story — and closing first turned every retry into a dead-session catch that silently kept the
+// first-pass verdict. close() is idempotent and registered on process exit; the explicit call now sits
+// after the retry.
 
 if (empty.length) console.error(`WARNING: ${empty.length} story(s) rendered 0 elements — unprotected:\n  ${empty.join("\n  ")}`);
 if (unstable.length) console.error(`WARNING: ${unstable.length} story(s) never converged in ${MAX_TRIES} probes — their values are arbitrary and will flake:\n  ${unstable.join("\n  ")}`);
@@ -266,28 +277,69 @@ const diffs: string[] = [];
 // first, and walk the full PROPS list rather than only the keys that happen to be present.
 const resolve = (rec: Record<string, string> | undefined, ref: Record<string, string>, prop: string) =>
   rec?.[prop] ?? ref[prop] ?? "[absent]";
-for (const id of Object.keys(captured)) {
-  const b = base[id], c = captured[id];
-  if (!b) { diffs.push(`${id}: NEW story (no baseline)`); continue; }
+/** All drift lines for ONE story, or [] if it matches. Pure, so the retry pass can reuse it. */
+const diffStory = (id: string, c: { ref: Record<string, string>; els: Record<string, any> }): string[] => {
+  const out: string[] = [];
+  const b = base[id];
+  if (!b) return [`${id}: NEW story (no baseline)`];
   if (!b.ref || !b.els) throw new Error(`baseline story "${id}" predates the recorded-reference schema — re-record with --update`);
-  const bRef = b.ref as Record<string, string>, cRef = c.ref as Record<string, string>;
+  const bRef = b.ref as Record<string, string>, cRef = c.ref;
   // Reference drift is reported in its own right: it is the app-wide signal, and without it a
   // dropped global rule reads only as a wall of per-element lines with no stated cause.
   for (const prop of PROPS) {
-    if (bRef[prop] !== cRef[prop]) diffs.push(`${id} [reference] ${prop}: ${bRef[prop] ?? "[absent]"} -> ${cRef[prop] ?? "[absent]"}`);
+    if (bRef[prop] !== cRef[prop]) out.push(`${id} [reference] ${prop}: ${bRef[prop] ?? "[absent]"} -> ${cRef[prop] ?? "[absent]"}`);
   }
   const allPaths = new Set([...Object.keys(b.els), ...Object.keys(c.els)]);
   for (const p of allPaths) {
     const bp = b.els[p], cp = c.els[p];
-    if (!bp) { diffs.push(`${id} ${p}: NEW element`); continue; }
-    if (!cp) { diffs.push(`${id} ${p}: REMOVED element`); continue; }
+    if (!bp) { out.push(`${id} ${p}: NEW element`); continue; }
+    if (!cp) { out.push(`${id} ${p}: REMOVED element`); continue; }
     for (const prop of PROPS) {
       const bv = resolve(bp, bRef, prop);
       const cv = resolve(cp, cRef, prop);
-      if (bv !== cv) diffs.push(`${id} ${p} ${prop}: ${bv} -> ${cv}`);
+      if (bv !== cv) out.push(`${id} ${p} ${prop}: ${bv} -> ${cv}`);
     }
   }
+  return out;
+};
+
+const perStory = new Map<string, string[]>();
+for (const id of Object.keys(captured)) perStory.set(id, diffStory(id, captured[id]));
+
+// RETRY the drifted stories, one at a time, with a fresh load and more patience.
+//
+// A full 247-story sweep runs the machine hot, and a staged mounter (Univer, Milkdown) can plateau
+// mid-mount for longer than the stability window — so the convergence loop measures a half-built
+// component and, because it IS stable, reports no warning. That produced 2727 phantom REMOVED
+// elements in one run while re-checking the same stories alone gave `0 changed`. A real regression is
+// deterministic and survives the retry; contention does not. This costs nothing on a clean run,
+// because there is nothing to retry.
+// Capped at a QUARTER of the run. Contention hits a handful of heavy stories; an app-wide change
+// (a font swap, a rule on every icon) drifts most of them, and retrying those would double a
+// 12-minute sweep to re-confirm a change the author already knows they made. Above the cap the
+// first-pass verdict stands and the cap is announced, so a skipped retry is never silent.
+const RETRY_CAP = Math.max(8, Math.floor(storyIds.length / 4));
+const drifted = [...perStory].filter(([, d]) => d.length).map(([id]) => id);
+if (drifted.length > RETRY_CAP && !UPDATE) {
+  process.stderr.write(`${drifted.length} of ${storyIds.length} stories drifted — above the ${RETRY_CAP} retry cap, so this reads as an intended app-wide change, not contention. Reporting the first pass as-is.\n`);
+} else if (drifted.length && !UPDATE) {
+  process.stderr.write(`re-checking ${drifted.length} drifted story(s) in isolation before reporting…\n`);
+  for (const id of drifted) {
+    try {
+      await page("Page.navigate", { url: `${BASE}/iframe.html?id=${id}&viewMode=story` });
+    } catch { break; }  // session gone; keep the first-pass verdict rather than silently passing
+    const again = await captureOne(id, SETTLE * 2, CONVERGE_WAIT * 2);
+    if (!again) continue;
+    const d2 = diffStory(id, again);
+    if (d2.length < perStory.get(id)!.length) {
+      process.stderr.write(`  ${id}: ${perStory.get(id)!.length} -> ${d2.length} on retry\n`);
+    }
+    perStory.set(id, d2);
+    if (d2.length === 0) captured[id] = { ref: again.ref, els: again.els };
+  }
 }
+for (const d of perStory.values()) diffs.push(...d);
+session.close();
 // A story whose probe threw was logged SKIP and never landed in `captured`. Iterating only the
 // captured side would let it drop out of the comparison entirely with the exit code still 0 — the
 // story-level version of the same union rule applied to properties above.

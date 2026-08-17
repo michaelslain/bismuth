@@ -1,78 +1,59 @@
 // app/src/icons/registry.ts
 //
-// The redesign's icon registry: a static NAME -> ART map (design/ascii/README.md "Iconography").
-// Every icon call site still passes a canonical Lucide-style name (e.g. "Plus", "FileText") so
-// the ~100 existing call sites across the app never change; this module resolves that name to
-// one of two kinds of art:
+// The icon registry: a static NAME -> GLYPH map. Every call site still passes a canonical
+// Lucide-style name (e.g. "Plus", "FileText"), so the ~100 existing call sites never change; this
+// module resolves that name to a single Nerd Font character.
 //
-//   • SURFACE_GLYPHS — a typed character. The seven glyphs that carry a SURFACE's identity in
-//     the tab rail and vault tree (graph/note/base/calendar/agent/daemon/folder), plus the
-//     handful of names whose ASCII form is simply the better drawing: `x` (close), `[ ]`/`[x]`
-//     (task checkboxes), `<<`/`>>` (undo/redo), `.*` (regex), `Aa`, `S`, `><`, `][`.
-//   • PIXEL_PATHS — a 24x24 pixel-art SVG path from HackerNoon's Pixel Icon Library, generated
-//     into pixelPaths.ts by app/scripts/build-pixel-icons.ts. Everything else: toolbar, command
-//     catalog, palettes, pickers, view toolbars.
+// ONE ICON SYSTEM, NO OTHERS. This used to hold two: 112 hand-authored 24x24 pixel-art SVG paths,
+// and 19 typed characters layered over them (seven "surface glyphs" plus a set of ASCII marks like
+// `[ ]`, `<<`, `.*`, `][`). Both are gone. The ASCII marks were also actively broken — a
+// three-character glyph in a fixed size x size box wrapped to a second row, so the chat Stop button
+// rendered as a bracket pair split by a line break. Codepoints come from ./nerdGlyphs.ts; the face
+// they are drawn from is subset into app/src/assets/fonts/ by app/scripts/build-icon-font.ts.
 //
-// Surface glyphs are applied LAST when composing the manifest, so a name appearing in both maps
-// always keeps its typed form — the ASCII vocabulary wins where it's load-bearing.
+// A MISSING GLYPH IS INVISIBLE, NOT BROKEN-LOOKING. Measured in Chrome: a Private Use Area
+// codepoint the subset font does not contain draws ZERO pixels — no `.notdef` box, no placeholder,
+// no console warning. So a name that slips out of nerdGlyphs.ts, or a codepoint that never made it
+// into the subset, is a button with nothing in it. nerdGlyphs.test.ts asserts an exact name count
+// and full font coverage precisely because nothing downstream would notice.
 //
-// Because both maps are small static literals (not ~1,700 lazily-imported Lucide components),
-// resolution is entirely SYNCHRONOUS — there is no "eager seed vs lazily-loaded full manifest"
-// split, no idle-scheduled import, no pending/placeholder state. `resolveIcon` returns art or
+// Resolution is entirely SYNCHRONOUS — the map is a static literal of numbers, not ~1,700 lazily
+// imported components — so there is no pending/placeholder state and `resolveIcon` returns art or
 // null immediately.
 //
 // All name-normalization (case/separator-insensitive matching, the "…Icon" alias, the legacy
 // "Li"/"Lu" vault-icon prefix) is handled by the pure, framework-free registry-core.ts.
 import { createIconRegistry, type IconEntry, type IconRegistry } from "./registry-core";
 import { looksLikeIconName } from "./registry-core";
-import { PIXEL_PATHS } from "./pixelPaths";
+import { NERD_GLYPHS, FALLBACK_CODEPOINT } from "./nerdGlyphs";
 
 export { looksLikeIconName };
 
-/** What a name resolves to: a typed character, or pixel-art path data on a 24x24 grid. */
-export type IconArt =
-  | { kind: "glyph"; text: string }
-  | { kind: "pixel"; d: string };
-
-// The seven surface glyphs (design vocabulary) — graph / note / base / calendar / agent /
-// daemon / folder — and their aliases. These stay typed characters on purpose: they're the
-// identity of a surface wherever it appears, and the folder family reads as tree structure
-// rather than as an icon.
-const SURFACE_GLYPHS: Record<string, string> = {
-  Share2: "⁘", // graph
-  FileText: "✎", File: "✎", // note
-  Table: "▤", // base (also .sheet — both are "grid" data)
-  Calendar: "▦", CalendarX: "▦", // calendar
-  MessageSquare: "◈", MessagesSquare: "◈", // agent / chat
-  Bot: "✳", Inbox: "✳", Server: "✳", Settings2: "✳", BrainCircuit: "✳", // daemon
-  Folder: "▸", FolderOpen: "▾", FolderInput: "▸>", FolderPlus: "▸+", // folder
-
-  // Names whose ASCII form IS the drawing — the pixel set has no equivalent and a loose
-  // substitute would read worse than the literal syntax (design/ascii/README.md line 185:
-  // window controls, collapse handles and `x` are typography, not icons).
-  X: "x",
-  Square: "[ ]", SquareCheck: "[x]",
-  Undo2: "<<", Redo2: ">>",
-  Regex: ".*", CaseSensitive: "Aa", WholeWord: "[W]",
-  Sigma: "S", Scissors: "><", Ungroup: "][",
-};
+/** What a name resolves to. A single shape now — the `pixel` variant died with the SVG paths, and
+ *  keeping the discriminated union for one member would leave every consumer branching on nothing. */
+export type IconArt = { kind: "glyph"; text: string };
 
 const asGlyph = (text: string): IconArt => ({ kind: "glyph", text });
-const asPixel = (d: string): IconArt => ({ kind: "pixel", d });
 
-const manifest: Record<string, IconArt> = {
-  ...Object.fromEntries(Object.entries(PIXEL_PATHS).map(([name, d]) => [name, asPixel(d)])),
-  // Applied last: a surface glyph always beats a pixel drawing of the same name.
-  ...Object.fromEntries(Object.entries(SURFACE_GLYPHS).map(([name, text]) => [name, asGlyph(text)])),
-};
+/** Codepoint -> character. `String.fromCodePoint` is why nerdGlyphs.ts stores NUMBERS: the astral
+ *  literals would be invisible in review and undiffable in source. */
+const glyphFor = (cp: number): IconArt => asGlyph(String.fromCodePoint(cp));
+
+const manifest: Record<string, IconArt> = Object.fromEntries(
+  Object.entries(NERD_GLYPHS).map(([name, cp]) => [name, glyphFor(cp)]),
+);
 
 const iconRegistry: IconRegistry<IconArt> = createIconRegistry<IconArt>(manifest);
 
-/** Generic fallback for a value that LOOKS like an icon name (see `looksLikeIconName`) but
- *  isn't mapped — e.g. a legacy Lucide name from old vault/note frontmatter. Renders as a typed
- *  glyph instead of the literal (broken-looking) name string. */
-export const FALLBACK_GLYPH = "▸";
-export const FALLBACK_ART: IconArt = asGlyph(FALLBACK_GLYPH);
+/** Generic fallback for a value that LOOKS like an icon name (see `looksLikeIconName`) but isn't
+ *  mapped — e.g. a legacy Lucide name left in old vault frontmatter.
+ *
+ *  It has its OWN glyph, deliberately. This used to be `▸`, the same character as `Folder`, so an
+ *  unresolved name rendered as a folder arrow: indistinguishable from a real icon, in a tree full of
+ *  real folder arrows. Given that a missing glyph draws nothing at all, the fallback is now the only
+ *  thing that can make a bad name visible, so it must not impersonate a valid icon. */
+export const FALLBACK_ART: IconArt = glyphFor(FALLBACK_CODEPOINT);
+export const FALLBACK_GLYPH = FALLBACK_ART.text;
 
 /**
  * Resolve an icon spec (a name in any casing, the legacy "Li"/"Lu" convention, or an emoji /

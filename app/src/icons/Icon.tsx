@@ -8,26 +8,26 @@
 // size/class/style/fallback), so the ~100 existing call sites are unchanged;
 // only the rendering moved underneath it.
 //
-// Resolution is synchronous (see registry.ts) — two small static maps, not a
+// Resolution is synchronous (see registry.ts) — one static map of numbers, not a
 // lazily-loaded manifest — so there's no pending/placeholder state to render
 // while a chunk loads. Three cases, in order:
-//   1. `value` (or `fallback`) is a known name -> its mapped art: a 24x24
-//      pixel-art path, or a typed glyph for the seven surface icons.
+//   1. `value` (or `fallback`) is a known name -> its Nerd Font glyph.
 //   2. It LOOKS like an icon name but isn't mapped (e.g. a legacy Lucide name
 //      from old vault frontmatter) -> the generic fallback glyph, never the
 //      literal name text (which would just read as a typo on screen).
 //   3. Anything else (an emoji, an arbitrary glyph) -> passed through as-is.
 //
-// Every icon renders in a fixed `size`x`size` box regardless of case, so
-// glyphs/emoji/pixel art line up on the character grid identically.
+// EVERY ICON IS NOW ONE CHARACTER FROM ONE FACE. The pixel-art SVG branch is
+// gone with pixelPaths.ts, and so are the ASCII marks that used to sit over it.
+// What survives from that era, and MUST survive: cases 2 and 3 above still hand
+// this component arbitrary-length text — an emoji, or a raw string — so the box
+// still has to cope with more than one character. That is what `isWide` is for.
+// Deleting it would re-open the bug this whole migration started from: a
+// three-character glyph wrapped to a second row inside a one-row box, and the
+// chat Stop button rendered as a bracket pair split by a line break.
 //
-// PIXEL CRISPNESS: the art is drawn on a 24px grid but the app asks for boxes
-// of 12-18px, so edges land on fractional device pixels and would antialias
-// into mush — which is the whole point of pixel art, lost. `shape-rendering:
-// crispEdges` snaps them instead: safe here precisely because every path in
-// the set is axis-aligned (see build-pixel-icons.ts), so there are no diagonals
-// to turn jagged. This is what lets every existing `size={13}`/`size={14}` call
-// site stay exactly as it is.
+// Every icon renders in a `size`x`size` box (widening only for multi-character
+// pass-through text), so glyphs and emoji line up on the character grid.
 import { type Component, type JSX } from "solid-js";
 import { resolveIcon, looksLikeIconName, FALLBACK_ART, type IconArt } from "./registry";
 
@@ -71,7 +71,7 @@ export const Icon: Component<IconProps> = (props) => {
    *  a broken glyph for an illegible one. So the BOX grows instead: an N-cell ASCII mark is honestly
    *  N cells wide, the type stays at full size, and the character grid still lines up because the
    *  width lands on a whole number of cells. Height is untouched, so rows never shift. */
-  const isWide = () => { const a = art(); return a.kind === "glyph" && [...a.text].length > 1; };
+  const isWide = () => [...art().text].length > 1;
   return (
     <span
       class={props.class}
@@ -86,28 +86,16 @@ export const Icon: Component<IconProps> = (props) => {
         "font-size": `${Math.round(size() * 0.85)}px`,
         "line-height": 1,
         "white-space": "nowrap",
-        "font-family": "var(--ui-font-stack)",
+        // NOT --ui-font-stack. That one follows the user's `appearance.uiFont` choice (settings.ts
+        // FONT_STACKS offers five Monaspace variants), and NONE of them contain these glyphs — so
+        // inheriting it would blank every icon in the app the moment someone changed their UI font.
+        // Icons ride their own face, declared once in styles/icons.css.
+        "font-family": "var(--icon-font-stack)",
         "font-variant-ligatures": "none",
         ...props.style,
       }}
     >
-      {(() => {
-        const a = art();
-        return a.kind === "pixel" ? (
-          <svg
-            viewBox="0 0 24 24"
-            width={size()}
-            height={size()}
-            fill="currentColor"
-            shape-rendering="crispEdges"
-            style={{ display: "block" }}
-          >
-            <path d={a.d} />
-          </svg>
-        ) : (
-          a.text
-        );
-      })()}
+      {art().text}
     </span>
   );
 };

@@ -89,12 +89,19 @@ export const NERD_GLYPHS: Record<string, number> = {
   ArrowUp:             0xf005d,  // md-arrow_up
   AtSign:              0xf0065,  // md-at
   Ban:                 0xf05e,  // fa-ban
-  Blend:               0xf1853,  // md-circle_opacity
+  // Two overlapping circles, NOT md-circle_opacity (which renders as a halftone swatch). `Blend` is
+  // the graph's "both brains" mode — vault plus memory, shown together — so it has to read as two
+  // things overlapping. An opacity swatch reads as a transparency control.
+  Blend:               0xf0695,  // md-circle_multiple_outline
   Bold:                0xf032,  // fa-bold
   Book:                0xf00ba,  // md-book
   BookOpen:            0xf00bd,  // md-book_open
   Bot:                 0xf06a9,  // md-robot
-  Box:                 0xf00d4,  // md-box
+  // NOT md-box. Material's "box" glyph is a literal lowercase "box" WORDMARK — it renders as the
+  // three letters, so the icon grid showed the word "box" sitting among 139 pictures. A name matching
+  // a glyph name is not the same as a glyph matching the name's meaning, which is the whole reason the
+  // full-set story exists to be looked at.
+  Box:                 0xf03d7,  // md-package_variant_closed
   Brain:               0xf09d1,  // md-brain
   BrainCircuit:        0xee9c,  // + fa-brain
   Bug:                 0xf00e4,  // md-bug
