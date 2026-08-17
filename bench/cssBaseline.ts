@@ -182,14 +182,31 @@ const rpc = (ws: WebSocket, sessionId?: string) => {
 };
 
 const index = await (await fetch(`${BASE}/index.json`)).json();
-const storyIds = Object.keys(index.entries).filter((id) => !ONLY || id === ONLY).sort();
+// --story takes an exact id OR a PREFIX. Exact-only was a footgun: story ids are
+// "<component>--<case>", so the natural thing to type for a component — `--story shell-windowcontrols`
+// — matched nothing and threw, and the per-component workflow this harness is used for is exactly
+// "record every case of the thing I just changed". Prefix matching makes that one command. The
+// matched set is always printed, because a filter that silently covers more than you meant is worse
+// than one that covers less.
+const matchesOnly = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY);
+const storyIds = Object.keys(index.entries).filter(matchesOnly).sort();
 if (storyIds.length === 0) throw new Error(`no stories matched (--story ${ONLY})`);
+if (ONLY) console.error(`--story ${ONLY} matched ${storyIds.length}: ${storyIds.join(", ")}`);
 
 const port = 9600 + Math.floor(Math.random() * 300);
 const profile = mkdtempSync(join(tmpdir(), "bismuth-cssbase-"));
 // This harness runs many times across the migration; a leaked Chrome user-data-dir per run adds up.
 // Registering on "exit" covers every path out — the clean run, the drift run's exit(1), and a throw.
-process.on("exit", () => { try { rmSync(profile, { recursive: true, force: true }); } catch {} });
+// Cleanup must cover the THROW path, not just the two clean exits. The happy path calls
+// chrome.kill() near the end; a crash before that (a dead CDP session, a Chrome that fell over)
+// skipped it, so every failed run risked leaving a headless Chrome and a profile dir behind, and a
+// harness that runs dozens of times across a refactor turns that into real resource pressure —
+// which then causes more crashes. Registering both on "exit" makes every path clean up.
+let chromeProc: ReturnType<typeof spawn> | null = null;
+process.on("exit", () => {
+  try { chromeProc?.kill(); } catch {}
+  try { rmSync(profile, { recursive: true, force: true }); } catch {}
+});
 const chrome = spawn(CHROME, [
   "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
   "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
@@ -197,6 +214,7 @@ const chrome = spawn(CHROME, [
   `--window-size=${W},${H}`, "--hide-scrollbars", "--force-prefers-reduced-motion",
   "--no-first-run", "--no-default-browser-check", "--disable-extensions", "about:blank",
 ], { stdio: "ignore" });
+chromeProc = chrome;
 
 let wsUrl = "";
 for (let i = 0; i < 100 && !wsUrl; i++) {
@@ -227,7 +245,17 @@ const unstable: string[] = [];
 let done = 0;
 for (const id of storyIds) {
   process.stderr.write(`\r[${++done}/${storyIds.length}] ${id.slice(0, 60).padEnd(60)}`);
-  await page("Page.navigate", { url: `${BASE}/iframe.html?id=${id}&viewMode=story` });
+  // A CDP call can reject outright — "Session with given id not found" when the renderer falls over,
+  // which happened once at story 185 of 247 under memory pressure from a second browser. Left
+  // unhandled that surfaces as a raw protocol error with a stack pointing at the RPC helper and NO
+  // indication of which story was in flight, which is the least useful possible failure. Name the
+  // story, then rethrow: a half-finished run must not be mistaken for a pass.
+  try {
+    await page("Page.navigate", { url: `${BASE}/iframe.html?id=${id}&viewMode=story` });
+  } catch (e) {
+    process.stderr.write("\n");
+    throw new Error(`CDP died navigating to "${id}" (story ${done}/${storyIds.length}): ${(e as Error).message}`);
+  }
   await sleep(SETTLE);
   // Converge: re-probe until STABLE captures in a row are byte-identical. `same` counts MATCHES, so
   // it reaches STABLE-1 exactly when STABLE identical captures have been seen.
@@ -304,7 +332,7 @@ for (const id of Object.keys(captured)) {
 // captured side would let it drop out of the comparison entirely with the exit code still 0 — the
 // story-level version of the same union rule applied to properties above.
 for (const id of Object.keys(base)) {
-  if (ONLY && id !== ONLY) continue;
+  if (!matchesOnly(id)) continue;
   if (!(id in captured)) diffs.push(`${id}: MISSING from capture (story errored or was removed)`);
 }
 console.log(diffs.slice(0, 200).join("\n"));
