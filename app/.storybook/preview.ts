@@ -22,14 +22,24 @@ import "@fontsource/monaspace-radon/500.css";
 import "@fontsource/monaspace-radon/700.css";
 
 // ── Stylesheets ───────────────────────────────────────────────────────────────
-// App.css supplies the global chrome the primitives lean on beyond their own file:
-// the `:root` first-paint CSS-var fallbacks, the semantic tokens NOT covered by the
-// theme (`--danger`, `--success`, `--shadow-menu`/`--shadow-popup`/…), `body`
-// background/color, `* { box-sizing }`, and the `button { font: inherit }` reset.
-import "../src/App.css";
-// The UI primitives' own chrome (.btn / .ui-input / .ui-select / .ui-overlay / .chip-toggle)
-// and the shared floating-list surface Select's dropdown renders into.
+// ORDER IS LOAD-BEARING, AND IT MUST MATCH THE APP. ui.css comes FIRST here because that is what
+// the shipping bundle does: `App.tsx` statically imports `settingsCssVars`, whose chunk carries
+// ui.css, so the browser inserts ui.css's <link> before App.css's. Storybook used to import them
+// the other way round, which meant any pair of EQUAL-specificity selectors split across the two
+// files resolved one way in Storybook and the opposite way in the app — from identical source.
+// That is not a cosmetic difference: `bench/cssBaseline.ts` measures Storybook, so with the orders
+// reversed a green "0 changed" was proving something about a cascade no user ever sees. The CSS
+// modularization moves rules between these two files by design, so the gate has to be reading the
+// real one.
+//
+// ui.css: the UI primitives' own chrome (.btn / .ui-input / .ui-select / .ui-overlay /
+// .chip-toggle) and the shared floating-list surface Select's dropdown renders into.
 import "../src/ui/ui.css";
+// App.css supplies the global chrome the primitives lean on beyond their own file: via its
+// styles/tokens.css import the `:root` first-paint CSS-var fallbacks and the semantic tokens NOT
+// covered by the theme (`--danger`, `--success`, `--shadow-menu`/`--shadow-popup`), and via
+// styles/reset.css the `body` background/color, `* { box-sizing }` and `button { font: inherit }`.
+import "../src/App.css";
 import "../src/ui/popover/popover.css";
 
 // ── Runtime theme tokens ──────────────────────────────────────────────────────
