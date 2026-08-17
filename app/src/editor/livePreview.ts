@@ -1242,14 +1242,30 @@ export const livePreview = [
       "padding-right": "0.62em",
       color: "color-mix(in srgb, var(--fg) 50%, transparent)",
     },
-    // Ordered marker: same gutter geometry as the bullet so spacing matches exactly.
-    // min-width (not fixed width) lets 10+/100+ numbers grow instead of overlapping text.
+    // Ordered marker: same 1.6em gutter as the bullet, so numbered and bulleted text align on the
+    // same column (1.6em == LIST_STEP == the hanging indent the line decoration applies).
+    //
+    // THE GAP IS 0.3em, NOT the bullet's 0.62em, and that is load-bearing arithmetic. The marker is
+    // right-aligned inside the gutter, so anything wider than (gutter - padding) hangs off the LEFT
+    // edge of the line box. Monaspace advances 0.622em per character, so a two-character marker
+    // ("1.", "9.") is 1.244em: with a 0.62em gap it needs 1.864em and overflows the 1.6em gutter by
+    // 0.264em. In the note editor that overhang merely spills into the surrounding chrome and looks
+    // like a hanging indent. In the chat composer the CodeMirror content box has ZERO horizontal
+    // padding and .cm-scroller clips at its edge, so it sliced 3.5px off the left of every numeral
+    // (measured: glyph starts x=311.5, clip edge x=315). At 0.3em the marker needs 1.544em and fits
+    // with room to spare, and the text column stays exactly on LIST_STEP.
+    //
+    // width:max-content (floored by min-width) is what handles "10." / "100.": those genuinely
+    // exceed the gutter, so the box grows rightward and pushes the text instead of clipping the
+    // number. min-width alone did NOT do this — the box stayed at 1.6em and overflowed.
     ".cm-ol-number": {
       display: "inline-block",
       "min-width": "1.6em",
+      width: "max-content",
       "box-sizing": "border-box",
       "text-align": "right",
-      "padding-right": "0.62em",
+      "padding-right": "0.3em",
+      "white-space": "nowrap",
       color: "color-mix(in srgb, var(--fg) 70%, transparent)",
     },
     // Code blocks: monospace text; the container chrome (flat surface + accent left edge) comes

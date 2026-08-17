@@ -2015,7 +2015,12 @@ export function ChatView(props: {
                 // to two lines at the 680px column, and made the empty composer the loudest thing
                 // on the surface. Those affordances are introduced by the empty state above and
                 // are self-revealing on first keystroke.
-                placeholder={() => `Message ${persona()}…`}
+                // No trailing ellipsis. It reads as TRUNCATION here, not as the "opens something"
+                // idiom it carries in a menu item or a search field: the name it follows is the
+                // last word, so "Message Bismuth…" looks like a clipped "Message Bismuth Sensei".
+                // Measured across ten viewport widths (1280 down to 360) — the placeholder is never
+                // actually clipped, so the ellipsis was manufacturing a defect that did not exist.
+                placeholder={() => `Message ${persona()}`}
               />
             </div>
             <Show
