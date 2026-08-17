@@ -9,20 +9,33 @@
 // reports visibilityState "hidden" and rAF-gated components never paint. The three
 // --disable-*background* flags below keep the loop live with no foreground window.
 //
-// DETERMINISM. Two things would otherwise make consecutive runs disagree, and a flaky gate is worse
-// than no gate because it trains the next reader to ignore it:
+// DETERMINISM. Four things would otherwise make consecutive runs disagree, and a flaky gate is worse
+// than no gate because it trains the next reader to ignore it. Each of these was found the same way:
+// a full record-then-check cycle reporting nonzero drift with no CSS having changed.
 //   1. Keyframe animations. The design system has a blinking caret (.asc-caret animates opacity) and
 //      the wordmark sheen (animates background-position). Sampling mid-flight returns a different
 //      number every run. Inject `animation: none` before reading. TRANSITIONS are deliberately left
 //      alone — a transition's computed duration is static and worth diffing.
 //   2. Webfonts. Monaspace loads async; measuring before it lands records fallback-font metrics.
 //      Await document.fonts.ready.
+//   3. Wall-clock time. bases-calendarview--* grids out-of-month cells relative to TODAY, so the same
+//      structural path is a normal cell one day and a dimmed one the next — that alone produced 98
+//      drift lines (rgb(232,227,214) -> color(srgb … / 0.6)) across two runs a day apart. Story
+//      fixtures also call Date.now() at module scope. So Date is frozen (see FREEZE) before any story
+//      code runs, and the timezone is pinned to UTC. performance.now() is deliberately left real:
+//      rAF, transitions and editor measurement all depend on time actually advancing.
+//   4. Async component settling. A fixed sleep is a guess, and the guess loses under load.
+//      app-blockeditor--default (Milkdown, a dynamic import) was still showing its loading state at
+//      2000ms in one run and fully mounted in the next — 20 drift lines including NEW element for the
+//      whole mounted subtree. So the harness CONVERGES instead of guessing: it re-probes until STABLE
+//      consecutive captures are byte-identical. A story that never settles is named in a warning
+//      rather than silently recorded at whatever it happened to look like.
 //
 //   cd app && bun run storybook          # in another shell
 //   bun bench/cssBaseline.ts --update    # record
 //   bun bench/cssBaseline.ts             # check (exit 1 on drift)
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -31,17 +44,20 @@ const arg = (n: string, d = "") => { const i = process.argv.indexOf(`--${n}`); r
 const has = (n: string) => process.argv.includes(`--${n}`);
 const BASE = arg("base", "http://localhost:6006");
 const ONLY = arg("story", "");
-// 700ms was the original default and is enough for most stories, but app-sheetview--default (Univer,
-// a heavy canvas-backed spreadsheet widget) applies its toolbar icon theming asynchronously and had
-// not finished by 700ms — captured colors drifted a few rgb units between runs (e.g.
-// rgb(49,52,63) -> rgb(51,54,65)) purely from real-world timing, not from a missed `animation: none`.
-// Confirmed by isolating that one story at --settle 1500/3000: both stable across repeated runs, so
-// this is genuine async settling, not flicker the animation-kill should have caught. A full 240-story
-// run at 1500ms still produced one single-property flake elsewhere (app-chatview--empty, a 1-2px
-// top/height jitter) that did not reproduce in isolation, consistent with settle margin shrinking
-// under full-suite CPU load rather than that story being inherently non-deterministic — so the
-// default carries extra headroom over the isolated-story minimum.
-const SETTLE = Number(arg("settle", "2000"));
+// SETTLE is only the head start before convergence takes over, not the thing being relied on. Raising
+// a fixed sleep was tried first and does not work: 700ms missed Univer's async toolbar theming,
+// 1500ms still let one story flake under full-suite CPU load, and 2000ms still caught Milkdown
+// mid-mount. The duration that is enough is a property of the machine's load that day, which is
+// exactly what a fixed number cannot encode. STABLE identical consecutive captures can.
+const SETTLE = Number(arg("settle", "800"));
+/** How many byte-identical consecutive captures mean "this story has stopped moving". Two is not
+ *  enough: a dynamic import can hold a stable loading state across one interval and then swap. */
+const STABLE = Number(arg("stable", "3"));
+const CONVERGE_WAIT = Number(arg("wait", "350"));
+const MAX_TRIES = Number(arg("tries", "16"));
+/** Frozen wall clock. Any fixed instant works; this one is a Thursday mid-month, so a month grid has
+ *  both leading and trailing out-of-month cells and the calendar stories exercise both. */
+const FROZEN_NOW = Date.parse("2026-01-15T12:00:00Z");
 const UPDATE = has("update");
 const OUT = join(import.meta.dir, "css-baseline.json");
 const W = 1280, H = 900;
@@ -66,7 +82,7 @@ const PROPS = [
   "box-shadow","backdrop-filter","transform","transition-property","transition-duration","cursor",
 ];
 
-/** Serialize one story's DOM as { stablePath: {prop: value} }.
+/** Serialize one story as { ref: {prop: value}, els: { stablePath: {prop: value} } }.
  *  The path is structural (tag + nth-child chain), NOT class-based — class names are exactly what
  *  CSS Modules change, so keying on them would make every migration look like a total rewrite.
  *
@@ -76,7 +92,15 @@ const PROPS = [
  *  body's font-family/color/font-size/line-height the same way any other bare element would), read
  *  PROPS off it, and only keep a real element's value for a property when it differs from that
  *  reference. An element with zero deviations still gets an (empty) entry so NEW/REMOVED element
- *  detection keeps working; a missing property inside an entry means "at the inherited default". */
+ *  detection keeps working; a missing property inside an entry means "the reference's value".
+ *
+ *  THE REFERENCE IS RECORDED, NOT RE-MEASURED. It is not a constant — it is whatever the ambient
+ *  global CSS resolves to at capture time. If a migration drops a global inherited rule (this repo
+ *  has `body { color: var(--fg) }`), the affected elements AND the bare reference fall back to the
+ *  browser default together, so a purely relative comparison would see "omitted vs omitted" on both
+ *  sides and report an app-wide regression as zero drift. Persisting `ref` per story and resolving
+ *  `els[path][prop] ?? ref[prop]` on BOTH sides before comparing keeps the file-size win while making
+ *  that lockstep drift visible. */
 const PROBE = `(async () => {
   document.querySelectorAll("style[data-cssbaseline]").forEach((n) => n.remove());
   const kill = document.createElement("style");
@@ -115,7 +139,27 @@ const PROBE = `(async () => {
     }
     out[path(el)] = rec;
   }
-  return JSON.stringify({ count: all.length, els: out });
+  return JSON.stringify({ count: all.length, ref: defaults, els: out });
+})()`;
+
+/** Installed via Page.addScriptToEvaluateOnNewDocument, so it runs before ANY story code — including
+ *  the module-scope `const NOW = Date.now()` several story fixtures use. Only the wall clock is
+ *  frozen; performance.now() is untouched, because rAF, transitions and CodeMirror's own measurement
+ *  all need time to keep advancing. Date is replaced with a function rather than a class so that
+ *  calling it without `new` still returns a string, as the real constructor does. */
+const FREEZE = `(() => {
+  const F = ${FROZEN_NOW};
+  const R = Date;
+  function D(...a) {
+    if (new.target === undefined) return new R(F).toString();
+    return a.length === 0 ? new R(F) : new R(...a);
+  }
+  D.prototype = R.prototype;
+  D.now = () => F;
+  D.parse = R.parse.bind(R);
+  D.UTC = R.UTC.bind(R);
+  Object.setPrototypeOf(D, R);
+  window.Date = D;
 })()`;
 
 const rpc = (ws: WebSocket, sessionId?: string) => {
@@ -141,6 +185,9 @@ if (storyIds.length === 0) throw new Error(`no stories matched (--story ${ONLY})
 
 const port = 9600 + Math.floor(Math.random() * 300);
 const profile = mkdtempSync(join(tmpdir(), "bismuth-cssbase-"));
+// This harness runs many times across the migration; a leaked Chrome user-data-dir per run adds up.
+// Registering on "exit" covers every path out — the clean run, the drift run's exit(1), and a throw.
+process.on("exit", () => { try { rmSync(profile, { recursive: true, force: true }); } catch {} });
 const chrome = spawn(CHROME, [
   "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
   "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
@@ -165,52 +212,98 @@ const page = rpc(ws, sessionId);
 await page("Page.enable");
 await page("Runtime.enable");
 await page("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+// UTC, not the host zone: a calendar rendering local dates would otherwise shift with whoever runs it.
+await page("Emulation.setTimezoneOverride", { timezoneId: "UTC" });
+await page("Page.addScriptToEvaluateOnNewDocument", { source: FREEZE });
 
 const captured: Record<string, any> = {};
 const empty: string[] = [];
+// Progress goes to stderr every story. A full run holds the terminal for minutes with nothing to
+// show, which reads as a hang — and any supervisor watching the stream (a subagent watchdog, CI's
+// no-output timeout) will kill it on exactly that silence. \r keeps it to one line interactively.
+const unstable: string[] = [];
+let done = 0;
 for (const id of storyIds) {
+  process.stderr.write(`\r[${++done}/${storyIds.length}] ${id.slice(0, 60).padEnd(60)}`);
   await page("Page.navigate", { url: `${BASE}/iframe.html?id=${id}&viewMode=story` });
   await sleep(SETTLE);
-  const r = await page("Runtime.evaluate", { expression: PROBE, returnByValue: true, awaitPromise: true });
-  if (r.exceptionDetails) { console.error(`SKIP ${id}: ${r.exceptionDetails.text}`); continue; }
-  const parsed = JSON.parse(r.result.value);
+  // Converge: re-probe until STABLE captures in a row are byte-identical. `same` counts MATCHES, so
+  // it reaches STABLE-1 exactly when STABLE identical captures have been seen.
+  let last = "", value = "", same = 0, threw = false;
+  for (let i = 0; i < MAX_TRIES; i++) {
+    const r = await page("Runtime.evaluate", { expression: PROBE, returnByValue: true, awaitPromise: true });
+    if (r.exceptionDetails) { console.error(`\nSKIP ${id}: ${r.exceptionDetails.text}`); threw = true; break; }
+    value = r.result.value;
+    same = value === last ? same + 1 : 0;
+    last = value;
+    if (same >= STABLE - 1) break;
+    await sleep(CONVERGE_WAIT);
+  }
+  if (threw) continue;
+  // Never settled. Recording it anyway would bake in whatever it looked like at the cutoff and turn
+  // this story into a permanent source of phantom drift, so say so instead of hiding it.
+  if (same < STABLE - 1) unstable.push(id);
+  const parsed = JSON.parse(value);
   if (parsed.count === 0) empty.push(id);
-  captured[id] = parsed.els;
+  captured[id] = { ref: parsed.ref, els: parsed.els };
 }
+process.stderr.write("\n");
 ws.close();
 chrome.kill();
 
 if (empty.length) console.error(`WARNING: ${empty.length} story(s) rendered 0 elements — unprotected:\n  ${empty.join("\n  ")}`);
+if (unstable.length) console.error(`WARNING: ${unstable.length} story(s) never converged in ${MAX_TRIES} probes — their values are arbitrary and will flake:\n  ${unstable.join("\n  ")}`);
 
 if (UPDATE) {
-  writeFileSync(OUT, JSON.stringify(captured, null, 1));
-  console.log(`recorded ${Object.keys(captured).length} stories -> ${OUT}`);
+  // A partial re-record (--update --story <id>) must MERGE, not replace: writing `captured` whole
+  // would silently wipe the snapshot for the other 239 stories, and re-recording just the story a
+  // task touched is the natural per-task workflow. Full --update still replaces everything, so a
+  // story deleted from Storybook drops out of the baseline the way it should.
+  let next = captured;
+  if (ONLY && existsSync(OUT)) next = { ...JSON.parse(readFileSync(OUT, "utf8")), ...captured };
+  writeFileSync(OUT, JSON.stringify(next, null, 1));
+  console.log(`recorded ${Object.keys(captured).length} stories -> ${OUT} (${Object.keys(next).length} total)`);
   process.exit(0);
 }
 
 if (!existsSync(OUT)) throw new Error(`no baseline at ${OUT} — run with --update first`);
 const base = JSON.parse(readFileSync(OUT, "utf8"));
 const diffs: string[] = [];
-// Entries are DEVIATIONS-ONLY (see PROBE): a property absent from an entry means "at the inherited
-// default". So the property-level comparison must walk the UNION of both sides' keys, not just the
-// captured side — otherwise a rule getting dropped (value drifting back to default) would present as
-// the property silently vanishing instead of a reported change, which is exactly the failure this
-// harness exists to catch.
+// Entries are DEVIATIONS-FROM-`ref` (see PROBE), so a property absent from an entry does NOT mean
+// "unchanged" — it means "whatever this run's reference resolved to". Comparing the stored keys
+// directly would let a global inherited rule vanish from both the element and the reference at once
+// and read as no drift. So resolve every property on both sides against ITS OWN recorded reference
+// first, and walk the full PROPS list rather than only the keys that happen to be present.
+const resolve = (rec: Record<string, string> | undefined, ref: Record<string, string>, prop: string) =>
+  rec?.[prop] ?? ref[prop] ?? "[absent]";
 for (const id of Object.keys(captured)) {
   const b = base[id], c = captured[id];
   if (!b) { diffs.push(`${id}: NEW story (no baseline)`); continue; }
-  const allPaths = new Set([...Object.keys(b), ...Object.keys(c)]);
+  if (!b.ref || !b.els) throw new Error(`baseline story "${id}" predates the recorded-reference schema — re-record with --update`);
+  const bRef = b.ref as Record<string, string>, cRef = c.ref as Record<string, string>;
+  // Reference drift is reported in its own right: it is the app-wide signal, and without it a
+  // dropped global rule reads only as a wall of per-element lines with no stated cause.
+  for (const prop of PROPS) {
+    if (bRef[prop] !== cRef[prop]) diffs.push(`${id} [reference] ${prop}: ${bRef[prop] ?? "[absent]"} -> ${cRef[prop] ?? "[absent]"}`);
+  }
+  const allPaths = new Set([...Object.keys(b.els), ...Object.keys(c.els)]);
   for (const p of allPaths) {
-    const bp = b[p], cp = c[p];
+    const bp = b.els[p], cp = c.els[p];
     if (!bp) { diffs.push(`${id} ${p}: NEW element`); continue; }
     if (!cp) { diffs.push(`${id} ${p}: REMOVED element`); continue; }
-    const allProps = new Set([...Object.keys(bp), ...Object.keys(cp)]);
-    for (const prop of allProps) {
-      const bv = bp[prop] ?? "[default]";
-      const cv = cp[prop] ?? "[default]";
+    for (const prop of PROPS) {
+      const bv = resolve(bp, bRef, prop);
+      const cv = resolve(cp, cRef, prop);
       if (bv !== cv) diffs.push(`${id} ${p} ${prop}: ${bv} -> ${cv}`);
     }
   }
+}
+// A story whose probe threw was logged SKIP and never landed in `captured`. Iterating only the
+// captured side would let it drop out of the comparison entirely with the exit code still 0 — the
+// story-level version of the same union rule applied to properties above.
+for (const id of Object.keys(base)) {
+  if (ONLY && id !== ONLY) continue;
+  if (!(id in captured)) diffs.push(`${id}: MISSING from capture (story errored or was removed)`);
 }
 console.log(diffs.slice(0, 200).join("\n"));
 if (diffs.length > 200) console.log(`… and ${diffs.length - 200} more`);
