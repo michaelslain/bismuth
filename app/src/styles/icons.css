@@ -1,0 +1,35 @@
+/* app/src/styles/icons.css — the icon font, and nothing else.
+
+   ONE @font-face, imported by App.css alongside tokens/reset/content. It is its own file rather
+   than three lines in tokens.css because that file is a token layer with a byte-mirroring contract
+   against core/src/theme/tokens.ts (themeGuard.test.ts), and an @font-face is not a token. Deleting
+   this file plus its @import is also the entire rollback for the Nerd Font icon migration, which is
+   only true while it is a file.
+
+   WHY A SECOND FAMILY AT ALL. Bismuth's interface font is Monaspace, chosen by the user from five
+   variants (appearance.uiFont, projected as --ui-font-stack). NONE of the five contains a Nerd Font
+   symbol, and the alternative — swapping all five for their patched "Monaspice" builds — would
+   re-rasterize every character of TEXT in the app to change its ICONS. So text keeps its family and
+   icons get their own. See app/scripts/build-icon-font.ts for the full argument.
+
+   WHY font-display: block, NOT swap. `swap` renders the fallback immediately and replaces it when
+   the font arrives — for an icon font the fallback IS tofu, so `swap` guarantees a flash of
+   placeholder boxes across the whole chrome on every cold load. A late-arriving text glyph reads as
+   a font loading; a screen of empty rectangles reads as a broken app. `block` holds the glyph
+   invisible for up to ~3s instead, and the file is ~11 KB, so the hold is imperceptible.
+
+   NO unicode-range, deliberately. Restricting it to the 124 subset codepoints would let the browser
+   skip this face for ordinary text, which sounds strictly better — but the range would be a SECOND
+   copy of the codepoint list, in a file the generator does not write, and the two would drift the
+   first time an icon is added. Drift here means a glyph that exists in the font and is refused by
+   the CSS: tofu, from a correct font, for a reason nobody would look for. The face is 11 KB and the
+   per-character fallback the browser already does costs nothing measurable. */
+@font-face {
+  font-family: "Symbols Nerd Font Mono";
+  /* Generated + committed by `bun run icons:font` (app/scripts/build-icon-font.ts): the ~124
+     glyphs this app references, subset out of a 2.5 MB upstream TTF. */
+  src: url("../assets/fonts/symbols-nerd-font-mono.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
