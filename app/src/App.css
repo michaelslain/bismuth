@@ -380,9 +380,19 @@ html.view-dragging .graph-floater { pointer-events: none; }
 
 /* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. */
 .palette-overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: var(--palette-top-offset, 12vh); background: var(--scrim-bg); backdrop-filter: blur(3px); font-family: "Monaspace Xenon", ui-monospace, monospace; }
-/* Shares the popover UI-chrome font so palette label/sublabel/search all read as one
-   family (the popover surfaces use the same --popover-font). */
-.palette-panel { width: 90%; max-width: 600px; max-height: 60vh; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-modal); overflow: hidden; font-family: var(--popover-font); }
+/* SIZE AND FONT ONLY. The surface itself — background, border, corner, shadow — comes from
+   `.asc-modal`, which `<Modal>` puts on this same element (palette/PaletteModal.tsx:75,
+   ui/gallery/SymbolGallery.tsx:148 both render `<Modal class="palette-panel …">`).
+   This rule used to redeclare all four, at the same one-class specificity as `.asc-modal`, so which
+   one won was decided purely by stylesheet order — and the two surfaces disagreed about that: the
+   app bundle loads ui.css first so `.palette-panel` won, while Storybook loaded it last so
+   `.asc-modal` won. The palette therefore SHIPPED with a 14px corner and a flat --surface-1 fill
+   while every story showed the register's 5px corner and blurred --pop-bg-strong. The corner law is
+   2/3/4/5 (chip/control/card/panel) and a modal panel is 5, so the register was right and the app
+   was wrong. Dropping the duplicates rather than out-specifying them leaves ONE owner for panel
+   chrome; adding `.asc-modal.palette-panel` would have kept both and just changed who wins.
+   Shares the popover UI-chrome font so palette label/sublabel/search all read as one family. */
+.palette-panel { width: 90%; max-width: 600px; max-height: 60vh; display: flex; flex-direction: column; overflow: hidden; font-family: var(--popover-font); }
 /* Graph Find panel search — a compact sibling of .palette-search (same anatomy:
    leading icon + transparent input + border-bottom divider above the result list). */
 .graph-search-bar { padding: 10px 12px; gap: 9px; }
