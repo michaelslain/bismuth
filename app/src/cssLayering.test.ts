@@ -28,7 +28,7 @@ export const RUNTIME_CLASS_PREFIXES = ["bismuth-", "callout-", "cm-"];
  *  of the modularization moves a group out and lowers this number; the plan's endpoint is 40.
  *  It exists so the pile can only shrink: adding a rule to App.css instead of to a module fails
  *  here immediately, which is the regression this refactor is most exposed to. */
-export const MAX_APP_CSS_CLASS_RULES = 335;
+export const MAX_APP_CSS_CLASS_RULES = 331;
 
 const allFiles = (dir: string, acc: string[] = []): string[] => {
   for (const e of readdirSync(dir, { withFileTypes: true })) {

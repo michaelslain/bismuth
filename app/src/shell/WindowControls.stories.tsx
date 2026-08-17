@@ -3,14 +3,16 @@
 //
 // WHY THIS FILE EXISTS: nobody sees these buttons by accident. App.tsx gates them on
 // `isTauri() && !IS_MAC_PLATFORM`, so they are absent from every browser/dev build and from every
-// macOS build — which is every machine this repo is developed on. The four `.win-*` rules are about
-// to move from the global App.css into WindowControls.module.css, which HASHES every class name; a
-// name left behind as a string literal still compiles and still renders, it just matches nothing,
-// and three unstyled buttons appear in a window no developer here ever opens. Nothing else in the
+// macOS build — which is every machine this repo is developed on. The four rules behind them have
+// moved from the global App.css into WindowControls.module.css, which HASHES every class name; a name
+// left behind as a string literal still compiles and still renders, it just matches nothing, and
+// three unstyled buttons appear in a window no developer here ever opens. Nothing else in the
 // repo can see that: typecheck reads no CSS, and Bun resolves `solid-js/web` to its server build so
 // no unit test can mount a Solid component at all. `bench/cssBaseline.ts` reads computed styles off
-// Storybook, so this story IS the gate — and it is recorded BEFORE the CSS moves, which is the only
-// ordering under which a later "0 changed" means the migration preserved the rendering.
+// Storybook, so this story IS the gate — and it was recorded BEFORE the CSS moved, while the class
+// names were still the pre-migration global literals. That ordering is the only one under which a
+// subsequent "0 changed" means the migration preserved the rendering; a story first recorded after
+// the move would have blessed whatever it happened to render, broken included.
 //
 // NO FIXTURE SEAM NEEDED: the component takes three callbacks and holds no state, fetches nothing,
 // and reads no context. The Storybook-wide setup in .storybook/preview.ts already supplies

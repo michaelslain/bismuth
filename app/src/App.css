@@ -45,14 +45,8 @@
    src-tauri/src/lib.rs build_main_window) — reserve room for them instead of the wordmark. */
 .top-strip--mac { padding-left: 78px; }
 .top-strip-spacer { flex: 1; }
-/* Windows/Linux typed window controls (decorations(false) — no native titlebar at all). */
-.win-controls { display: flex; align-items: center; gap: 2px; }
-.win-btn {
-  font: inherit; font-family: var(--ui-font-stack); cursor: pointer; color: var(--faint);
-  background: transparent; border: none; padding: 4px 8px; border-radius: var(--r-control, 3px);
-}
-.win-btn:hover { color: var(--fg); background: var(--hover-bg); }
-.win-btn--close:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+/* The Windows/Linux typed window controls that sit at this strip's right edge live in
+   shell/WindowControls.module.css, not here. */
 .status-bar {
   flex: 0 0 auto; height: var(--row-h, 18px); display: flex; align-items: center; gap: 16px; padding: 0 14px;
   border-top: 1px solid var(--border-soft); background: var(--rail);

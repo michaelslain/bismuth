@@ -1,0 +1,32 @@
+/* WindowControls.module.css — scoped chrome for shell/WindowControls.tsx (moved out of the global
+   App.css, 2026-08). Class names here are HASHED at build time: they are reachable only through the
+   imported `styles` object, never as a string literal. Nothing outside WindowControls.tsx may target
+   them.
+
+   `win-btn--close` HASHES TOO, even though it is a modifier riding as a second class on the same
+   <button> as `win-btn`. Both names are locals of this module, so the close button is written
+   `class={`${styles["win-btn"]} ${styles["win-btn--close"]}`}` — a bare "win-btn--close" literal
+   would still compile, still render, and match nothing. Bracket access rather than `styles.winBtn`
+   is the repo standard: Vite only exposes camelCase aliases under css.modules.localsConvention,
+   which app/vite.config.ts does not set.
+
+   TWO OF THESE FOUR RULES ARE OUTSIDE THE COMPUTED-STYLE BASELINE'S REACH. `bench/cssBaseline.ts`
+   records the resting state of every Storybook story, but CSS :hover follows the real pointer and
+   userEvent.hover only dispatches events, so no story can pose the hovered state. That leaves the
+   two :hover rules below verified only by `bench/moduleClassCheck.ts`, which proves the hashed names
+   still reach the emitted JS and says nothing about the hovered appearance. A green gate on this
+   file is NOT hover coverage.
+
+   `font: inherit` on the button is load-bearing and must stay first in that declaration: these
+   buttons sit inside `.top-strip`, which sets the strip's own font-size, and the UA button default
+   (13.333px Arial) would otherwise win. The `font-family` after it narrows the family only, keeping
+   the inherited size. */
+
+/* Windows/Linux typed window controls (decorations(false) — no native titlebar at all). */
+.win-controls { display: flex; align-items: center; gap: 2px; }
+.win-btn {
+  font: inherit; font-family: var(--ui-font-stack); cursor: pointer; color: var(--faint);
+  background: transparent; border: none; padding: 4px 8px; border-radius: var(--r-control, 3px);
+}
+.win-btn:hover { color: var(--fg); background: var(--hover-bg); }
+.win-btn--close:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
