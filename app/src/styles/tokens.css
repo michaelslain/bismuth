@@ -56,6 +56,19 @@
   --rose: #C98CA8;
   --editor-font: 'Monaspace Xenon', ui-monospace, monospace;
   --editor-font-size: 16px;
+  /* The icon family, and the ONE stack <Icon> may use. Not derived from a theme and not
+     user-choosable, so unlike --editor-font and --ui-font-stack it is defined only here and
+     settingsCssVars.ts never overwrites it.
+     Icons must NOT ride appearance.uiFont: that setting picks among five Monaspace variants and
+     none of them has a single Nerd Font symbol, so an icon inheriting the user's text font is an
+     icon that disappears the moment they change it.
+     --ui-font-stack SECOND on purpose, not as a safety net. The subset font (styles/icons.css)
+     contains ONLY the ~124 icon glyphs — no letters, no digits, no emoji — and <Icon> also renders
+     arbitrary pass-through text (a note whose frontmatter says `icon: 🪶`, or the `Aa` mark). Those
+     characters have to reach a family that can actually draw them, or every non-icon value renders
+     as a box. The inline fallback covers first paint, before settingsCssVars.ts projects the
+     user-chosen stack onto :root. */
+  --icon-font-stack: 'Symbols Nerd Font Mono', var(--ui-font-stack, 'Monaspace Xenon'), ui-monospace, monospace;
   /* Semantic status colors + shadows — first-paint DARK (ink) fallbacks; settingsCssVars.ts
      projects the per-theme (light/dark) values at runtime from core/src/theme/tokens.ts. */
   --danger: #C87F72;

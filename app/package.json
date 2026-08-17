@@ -1,7 +1,7 @@
 {
   "name": "@bismuth/app",
   "version": "0.1.0",
-  "description": "Bismuth \u2014 a personal knowledge management desktop app",
+  "description": "Bismuth — a personal knowledge management desktop app",
   "type": "module",
   "scripts": {
     "start": "vite",
@@ -14,6 +14,7 @@
     "build:bismuth-tools": "bun run scripts/build-bismuth-tools.ts",
     "build:daemon-sidecar": "bun run scripts/build-daemon-sidecar.ts",
     "icons:build": "bun run scripts/build-pixel-icons.ts",
+    "icons:font": "bun run scripts/build-icon-font.ts",
     "installer": "bun run tauri build && bun run scripts/postbuild-clean.ts && bun run scripts/open-installer.ts",
     "tauri": "bun run scripts/tauri.ts",
     "storybook": "storybook dev -p 6006",
@@ -98,6 +99,7 @@
     "happy-dom": "^20.10.6",
     "storybook": "9.1.20",
     "storybook-solidjs-vite": "9.0.3",
+    "subset-font": "^2.5.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
     "vite-plugin-solid": "^2.11.0"
