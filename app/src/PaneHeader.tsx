@@ -8,11 +8,13 @@
 // one module, per Trap 4 — `.pane-leaf.focused .pane-header` crosses the PaneLeaf/PaneHeader
 // boundary and needs one shared module to keep working).
 //
-// The `.pane-header-x` guard below is the imperative reference from PaneTree.tsx:112
-// (`classList.contains("pane-header-x")`) — it decides whether a pointerdown on the header should
-// start dragging the pane (drag) or fall through to the close button. It is carried over UNCHANGED
-// as a bare literal in this extraction commit; converting it to `classList.contains(styles["pane-header-x"])`
-// is CSS-half work (the class only needs converting once it is actually hashed).
+// The header's own `onPointerDown` starts a pane drag (see PaneLeaf's `onStartPaneDrag`). The
+// close button used to guard against that by having the PARENT interrogate `e.target`'s class
+// list for `"pane-header-x"` — a DOM-string check that would silently stop matching once the CSS
+// half hashes that class. The close button now declares the pointerdown is its own by stopping it
+// directly (`stopPropagation` on `onPointerDown`), so the header's own pointerdown handler never
+// sees it. Note `stopPropagation` on `onClick`/`onMouseDown` would NOT have covered this — pointerdown
+// is its own event and bubbles independently.
 import { Show } from 'solid-js'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
@@ -24,18 +26,7 @@ export function PaneHeader(props: {
     onClose: () => void
 }) {
     return (
-        <div
-            class="pane-header"
-            onPointerDown={e => {
-                if (
-                    (e.target as HTMLElement).classList.contains(
-                        'pane-header-x',
-                    )
-                )
-                    return
-                props.onPointerDown(e)
-            }}
-        >
+        <div class="pane-header" onPointerDown={props.onPointerDown}>
             <Show when={props.icon}>
                 {icon => (
                     <Icon value={icon()} size={13} class="pane-header-icon" />
@@ -47,6 +38,7 @@ export function PaneHeader(props: {
                 label="Close pane"
                 class="pane-header-x"
                 iconSize={12}
+                onPointerDown={e => e.stopPropagation()} // don't start a pane drag
                 onMouseDown={e => {
                     e.stopPropagation() // don't also trigger focus
                     e.preventDefault()

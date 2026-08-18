@@ -11,6 +11,8 @@
 // is load-bearing. `bench/cssBaseline.ts` is what actually verifies the migration; this file is
 // its input.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { createSignal } from 'solid-js'
+import { expect } from 'storybook/test'
 import { PaneHeader } from './PaneHeader'
 
 const noop = () => {}
@@ -75,4 +77,63 @@ export const LongLabel: Story = {
             />
         </div>
     ),
+}
+
+/** Proves the close button's pointerdown does NOT reach the header's own `onPointerDown` (which
+ *  starts a pane drag in the real app — PaneLeaf's `onStartPaneDrag`). Counts both callbacks: a
+ *  pointerdown dispatched on the close button must increment `closeCount` and leave `dragCount`
+ *  at 0; the header's own pointerdown handler must still fire for a pointerdown anywhere else in
+ *  the header (asserted second, so a handler that was accidentally removed entirely — rather than
+ *  just guarded correctly — cannot pass this story by both counts staying 0). */
+export const CloseDoesNotDrag: Story = {
+    render: () => {
+        const [dragCount, setDragCount] = createSignal(0)
+        const [closeCount, setCloseCount] = createSignal(0)
+        return (
+            <div>
+                <PaneHeader
+                    icon="File"
+                    label="design-notes.md"
+                    onPointerDown={() => setDragCount(c => c + 1)}
+                    onClose={() => setCloseCount(c => c + 1)}
+                />
+                <div data-testid="counts">
+                    drag:{dragCount()} close:{closeCount()}
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const closeBtn = canvasElement.querySelector('.pane-header-x')
+        if (!(closeBtn instanceof HTMLElement))
+            throw new Error('close button not found')
+        closeBtn.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                bubbles: true,
+                cancelable: true,
+            }),
+        )
+        // The mousedown-driven close (see PaneHeader.tsx) also needs firing here to observe
+        // closeCount move — mirror what a real click does.
+        closeBtn.dispatchEvent(
+            new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
+        )
+
+        const header = canvasElement.querySelector('.pane-header')
+        if (!(header instanceof HTMLElement))
+            throw new Error('header not found')
+        header.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                bubbles: true,
+                cancelable: true,
+            }),
+        )
+
+        // Read the live counters back off the rendered text rather than closures captured at
+        // render time, so the assertion sees post-play state.
+        const counts = canvasElement.querySelector(
+            '[data-testid="counts"]',
+        )?.textContent
+        await expect(counts).toBe('drag:1 close:1')
+    },
 }

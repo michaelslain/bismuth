@@ -939,6 +939,10 @@ function EditableLabel(props: {
             value={stem}
             class={styles['ft-edit-input']}
             onClick={e => e.stopPropagation()}
+            // The row starts a drag on POINTERDOWN, not click — stopPropagation on onClick alone
+            // doesn't reach it. Stop it here so a press placing the caret can never be read as a
+            // row-drag start, instead of the parent DOM-matching a hashed class name to find out.
+            onPointerDown={e => e.stopPropagation()}
             onKeyDown={e => {
                 if (e.key === 'Enter') commit()
                 else if (e.key === 'Escape') cancel()
@@ -1043,10 +1047,8 @@ function Level(props: {
         if (e.button !== 0) return
         if (props.editing === node.path) return
         if (node.isSystemFolder || node.path === SETTINGS_FILE) return
-        // Interpolate the HASHED name — a literal ".ft-edit-input" here compiles and matches nothing,
-        // which would let a press inside the rename input start a row drag instead of placing a caret.
-        if ((e.target as HTMLElement).closest(`.${styles['ft-edit-input']}`))
-            return
+        // The rename input (when open) stops its own pointerdown from reaching here — see its
+        // onPointerDown — so a press placing the caret can never be misread as a row-drag start.
         e.stopPropagation() // don't let a nested row's press bubble to an ancestor row
         props.startItemDrag(e, kind, node.path, label)
     }

@@ -8,6 +8,7 @@
 // `layout: "fullscreen"` lets the overlay fill the preview frame like Modal's stories.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
+import { expect, waitFor, within } from 'storybook/test'
 import { SymbolGallery } from './SymbolGallery'
 import { iconSource, emojiSource } from './sources'
 import { Button } from '../Button'
@@ -50,6 +51,49 @@ export const EmojiSource: Story = {
     render: () => (
         <SymbolGallery source={emojiSource} onPick={noop} onClose={noop} />
     ),
+}
+
+/** Regression coverage for the WebKit focus-guard (#67): for ~300ms after mount, any focusin
+ *  landing OUTSIDE the modal panel is redirected back to the search box, but a focus landing
+ *  INSIDE the panel (a grid cell) is left alone. The guard used to locate "inside the panel" by
+ *  matching the `.icon-picker-panel` class with `closest()` — a string that stops matching the
+ *  instant this repo hashes that class under a CSS-module migration, at which point EVERY focus
+ *  (including legitimate ones on grid cells) looks "outside" and gets yanked back to the search
+ *  box. It now resolves the panel via Modal's `panelRef` — an actual DOM reference Modal hands
+ *  back, which can't go stale that way. This story drives real focus at a cell inside the modal
+ *  and at a decoy button outside it, and asserts each lands where it should. */
+export const FocusGuardIgnoresInModalFocus: Story = {
+    render: () => (
+        <div>
+            <button type="button" data-testid="decoy">
+                Decoy — outside the modal
+            </button>
+            <SymbolGallery source={iconSource} onPick={noop} onClose={noop} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const body = within(document.body)
+        const searchInput = await body.findByPlaceholderText('Search icons…')
+        const decoy = await canvas.findByTestId('decoy')
+        // Any OTHER button in the document is a grid cell — Modal portals the panel to
+        // document.body, outside canvasElement, so it can't collide with the decoy above.
+        const gridCell = (await body.findAllByRole('button')).find(
+            b => b !== decoy,
+        ) as HTMLElement
+
+        // Let the gallery's own re-focus passes (immediate + rAF + 0/50/150ms timeouts) settle
+        // first so we're not racing them, then probe the guard well inside its 300ms window.
+        await new Promise(resolve => setTimeout(resolve, 200))
+
+        // Focus landing INSIDE the panel must be left alone.
+        gridCell.focus()
+        await waitFor(() => expect(document.activeElement).toBe(gridCell))
+
+        // Focus landing OUTSIDE the panel must be redirected back to the search box.
+        decoy.focus()
+        await waitFor(() => expect(document.activeElement).toBe(searchInput))
+    },
 }
 
 /** Interactive: a trigger opens the gallery; picking a symbol or Escape/backdrop closes

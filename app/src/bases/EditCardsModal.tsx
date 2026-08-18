@@ -161,6 +161,7 @@ export function EditCardsModal(props: {
     // ── Inline add (draft row) ────────────────────────────────────────────
     const [draftFront, setDraftFront] = createSignal('')
     const [draftBack, setDraftBack] = createSignal('')
+    let draftBackRef: HTMLTextAreaElement | undefined
     const addDraft = async () => {
         const front = draftFront().trim()
         const back = draftBack().trim()
@@ -345,19 +346,14 @@ export function EditCardsModal(props: {
                                 onKeyDown={e => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
                                         e.preventDefault()
-                                        ;(
-                                            e.currentTarget
-                                                .closest('.cards-draft')!
-                                                .querySelector(
-                                                    '.cell-back textarea',
-                                                ) as HTMLTextAreaElement | null
-                                        )?.focus()
+                                        draftBackRef?.focus()
                                     }
                                 }}
                             />
                         </div>
                         <div class="cell cell-back">
                             <textarea
+                                ref={draftBackRef}
                                 rows={1}
                                 value={draftBack()}
                                 placeholder="Back…"
