@@ -471,11 +471,21 @@ const captureOne = async (id: string, settle: number, wait: number) => {
     }
 }
 
+const PROGRESS_FILE = '/tmp/bismuth-bench.progress'
+const beacon = (label: string, n: number, total: number) => {
+    try {
+        writeFileSync(PROGRESS_FILE, `${label} ${n}/${total}`)
+    } catch {
+        /* a status line is a nicety; never let it break a run */
+    }
+}
+
 let done = 0
 for (const id of storyIds) {
     process.stderr.write(
         `\r[${++done}/${storyIds.length}] ${id.slice(0, 60).padEnd(60)}`,
     )
+    beacon(UPDATE ? 'record' : 'gate', done, storyIds.length)
     // A CDP call can reject outright — "Session with given id not found" when the renderer falls over,
     // which happened once at story 185 of 247 under memory pressure from a second browser. Left
     // unhandled that surfaces as a raw protocol error with a stack pointing at the RPC helper and NO

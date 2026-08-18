@@ -223,11 +223,21 @@ await page('Emulation.setDeviceMetricsOverride', {
 const report: any[] = []
 let done = 0
 
+const PROGRESS_FILE = '/tmp/bismuth-bench.progress'
+const beacon = (label: string, n: number, total: number) => {
+    try {
+        writeFileSync(PROGRESS_FILE, `${label} ${n}/${total}`)
+    } catch {
+        /* a status line is a nicety; never let it break a run */
+    }
+}
+
 for (const e of entries as any[]) {
     const id = e.id
     process.stderr.write(
         `\r[${++done}/${entries.length}] ${id.slice(0, 60).padEnd(60)}`,
     )
+    beacon('audit', done, entries.length)
     const rec: any = {
         id,
         title: e.title,
