@@ -14,7 +14,6 @@ import {
 import { api, apiBase, cacheScope, summarizeSync } from './api'
 import { readCache, writeCache, scopedKey } from './viewCache'
 import { FileTree } from './FileTree'
-import { Icon } from './icons/Icon'
 // Lazy: GraphView pulls in the renderer and, through core/src/layout.ts, d3-force-3d (its own
 // chunk), so defer it off the entry bundle even though the graph is the home tab. <Suspense> keeps
 // boot smooth. (It no longer pulls three.js — nothing under app/src has imported `three` since the
@@ -130,13 +129,20 @@ import {
     splitColdLaunch,
     decideOpen,
 } from './panes'
-import { IconButton, ICON_PX } from './ui/IconButton'
+import { ICON_PX } from './ui/IconButton'
 import { PaneTree } from './PaneTree'
 import { WindowControls } from './shell/WindowControls'
 import { TopStrip } from './shell/TopStrip'
 import { StatusBar } from './shell/StatusBar'
 import { CommandButton } from './shell/CommandButton'
 import { Sidebar } from './shell/Sidebar'
+import { DragGhost } from './shell/DragGhost'
+import { GraphFloater } from './shell/GraphFloater'
+import { PaneOverlay } from './shell/PaneOverlay'
+import { TabRail } from './shell/TabRail'
+import { TabRailRow } from './shell/TabRailRow'
+import { AppFrame } from './shell/AppFrame'
+import { EditorPane } from './shell/EditorPane'
 import {
     createViewDrag,
     type DragDescriptor,
@@ -2769,24 +2775,25 @@ export default function App() {
     })
 
     return (
-        <div class="app-shell">
-            <TopStrip mac={isTauri() && IS_MAC_PLATFORM} dragRegion={isTauri()}>
-                <Show when={isTauri() && !IS_MAC_PLATFORM}>
-                    <WindowControls
-                        onMinimize={() => void winMinimize()}
-                        onToggleMaximize={() => void winToggleMaximize()}
-                        onClose={() => void winClose()}
-                    />
-                </Show>
-            </TopStrip>
-            <div
-                class="layout"
-                classList={{
-                    'sidebar-hidden': !sidebarVisible() || switcherOpen(),
-                    'switcher-active': switcherOpen(),
-                    'has-rail': true,
-                }}
-            >
+        <AppFrame
+            sidebarHidden={!sidebarVisible() || switcherOpen()}
+            switcherActive={switcherOpen()}
+            hasRail={true}
+            topStrip={
+                <TopStrip
+                    mac={isTauri() && IS_MAC_PLATFORM}
+                    dragRegion={isTauri()}
+                >
+                    <Show when={isTauri() && !IS_MAC_PLATFORM}>
+                        <WindowControls
+                            onMinimize={() => void winMinimize()}
+                            onToggleMaximize={() => void winToggleMaximize()}
+                            onClose={() => void winClose()}
+                        />
+                    </Show>
+                </TopStrip>
+            }
+            sidebar={
                 <Sidebar
                     visible={sidebarVisible()}
                     graphCollapsed={!anyTabOpen() || activeTabShowsGraph()}
@@ -2814,208 +2821,175 @@ export default function App() {
                         />
                     }
                 />
-                <main class="editor-pane">
-                    <UpdateBanner />
-                    {/* Cmd+O switcher: a big search bar absolutely positioned over the tab strip while
-            switcher mode is on. The graph floater (below) fills the body behind it. */}
-                    <Show when={switcherOpen()}>
-                        <SwitcherBar
-                            onClose={closeSwitcher}
-                            openFile={openFile}
-                            onResultsChange={setSwitcherResultPaths}
-                        />
-                    </Show>
-                    {/* Tabs are the right-edge vertical RAIL only — see the .tab-rail block below. The classic
-            horizontal top strip (and its ui.verticalTabs opt-out) was removed: two full tab
-            presentations meant every tab feature had to be built, styled and drag-tested twice, and
-            the rail is the one that fits the redesign. */}
-                    <div class="editor-body" ref={editorBodyEl}>
-                        <Show
-                            when={activeTab()}
-                            fallback={
-                                <div class="graph-slot-main" ref={mainSlot} />
-                            }
-                        >
-                            {t => (
-                                <PaneTree
-                                    node={t().root}
-                                    focusId={t().focusId}
-                                    showHeader={leafCount(t().root) > 1}
-                                    onFocus={leafId =>
-                                        updateActiveTab(tab => ({
-                                            ...tab,
-                                            focusId: leafId,
-                                        }))
-                                    }
-                                    onResize={(splitId, ratio) =>
-                                        updateActiveTab(tab => ({
-                                            ...tab,
-                                            root: setRatio(
-                                                tab.root,
-                                                splitId,
-                                                ratio,
-                                            ),
-                                        }))
-                                    }
-                                    onMenu={(leafId, x, y) =>
-                                        openContextMenu(
-                                            x,
-                                            y,
-                                            paneMenuItems(leafId),
-                                            setPaneMenu,
-                                        )
-                                    }
-                                    onClose={closePane}
-                                    onDropFile={dropFileOnPane}
-                                    dragState={drag}
-                                    onStartPaneDrag={(e, leafId, label) => {
-                                        const content = leaves(
-                                            activeTab()!.root,
-                                        ).find(l => l.id === leafId)?.content
-                                        const path =
-                                            content &&
-                                            !isSentinel(content) &&
-                                            isMarkdown(content)
-                                                ? content
-                                                : undefined
-                                        viewDrag.startPane(
-                                            e,
-                                            activeTabId()!,
-                                            leafId,
-                                            label,
-                                            path,
-                                        )
-                                    }}
-                                    // Graph refresh is driven entirely by the server's SSE `dirty`
-                                    // signal now (it knows whether a save changed any connection), so
-                                    // a save itself needs no client-side graph poke.
-                                    onSaved={() => {}}
-                                    onOpen={openFile}
-                                    onNewTerminal={openTerminalInLeaf}
-                                    noteNames={noteCandidates}
-                                    memoryNames={memoryCandidates}
-                                    tagNames={tagCandidates}
-                                    terminalLabel={content =>
-                                        contentLabel(
-                                            content,
-                                            terminalContentIndex().get(content),
-                                        )
-                                    }
-                                    // A ::graph pane renders just a `data-graph-host` placeholder; the single
-                                    // always-mounted `.graph-floater` graph below is repositioned over it (so it
-                                    // survives splits/tab switches without a remount). See placeFloater.
-                                />
-                            )}
+            }
+            main={
+                <EditorPane
+                    banner={<UpdateBanner />}
+                    switcher={
+                        <Show when={switcherOpen()}>
+                            <SwitcherBar
+                                onClose={closeSwitcher}
+                                openFile={openFile}
+                                onResultsChange={setSwitcherResultPaths}
+                            />
                         </Show>
-                        {/* Always-mounted terminal overlay — preserves PTY and scrollback across tab/pane switches.
+                    }
+                    bodyRef={el => {
+                        editorBodyEl = el
+                    }}
+                >
+                    <Show
+                        when={activeTab()}
+                        fallback={
+                            <div class="graph-slot-main" ref={mainSlot} />
+                        }
+                    >
+                        {t => (
+                            <PaneTree
+                                node={t().root}
+                                focusId={t().focusId}
+                                showHeader={leafCount(t().root) > 1}
+                                onFocus={leafId =>
+                                    updateActiveTab(tab => ({
+                                        ...tab,
+                                        focusId: leafId,
+                                    }))
+                                }
+                                onResize={(splitId, ratio) =>
+                                    updateActiveTab(tab => ({
+                                        ...tab,
+                                        root: setRatio(
+                                            tab.root,
+                                            splitId,
+                                            ratio,
+                                        ),
+                                    }))
+                                }
+                                onMenu={(leafId, x, y) =>
+                                    openContextMenu(
+                                        x,
+                                        y,
+                                        paneMenuItems(leafId),
+                                        setPaneMenu,
+                                    )
+                                }
+                                onClose={closePane}
+                                onDropFile={dropFileOnPane}
+                                dragState={drag}
+                                onStartPaneDrag={(e, leafId, label) => {
+                                    const content = leaves(
+                                        activeTab()!.root,
+                                    ).find(l => l.id === leafId)?.content
+                                    const path =
+                                        content &&
+                                        !isSentinel(content) &&
+                                        isMarkdown(content)
+                                            ? content
+                                            : undefined
+                                    viewDrag.startPane(
+                                        e,
+                                        activeTabId()!,
+                                        leafId,
+                                        label,
+                                        path,
+                                    )
+                                }}
+                                // Graph refresh is driven entirely by the server's SSE `dirty`
+                                // signal now (it knows whether a save changed any connection), so
+                                // a save itself needs no client-side graph poke.
+                                onSaved={() => {}}
+                                onOpen={openFile}
+                                onNewTerminal={openTerminalInLeaf}
+                                noteNames={noteCandidates}
+                                memoryNames={memoryCandidates}
+                                tagNames={tagCandidates}
+                                terminalLabel={content =>
+                                    contentLabel(
+                                        content,
+                                        terminalContentIndex().get(content),
+                                    )
+                                }
+                                // A ::graph pane renders just a `data-graph-host` placeholder; the single
+                                // always-mounted `.graph-floater` graph below is repositioned over it (so it
+                                // survives splits/tab switches without a remount). See placeFloater.
+                            />
+                        )}
+                    </Show>
+                    {/* Always-mounted terminal overlay — preserves PTY and scrollback across tab/pane switches.
               Each unique terminal content id mounts once. We position it over the matching
               data-terminal-host inside the active tab's pane tree (so terminals in splits live
               within their leaf, not over the whole editor body). When no host exists in the
               active tab the terminal is hidden but stays mounted. */}
-                        <For each={terminalContents()}>
-                            {id => {
-                                const rect = () => terminalHostRects().get(id)
-                                return (
-                                    <div
-                                        class="terminal-overlay"
-                                        // The overlay covers the pane-leaf, so re-trigger the leaf's pane menu
-                                        // (split/close/equalize) on right-click instead of the browser default.
-                                        onContextMenu={e => {
-                                            const leafId = leafIdForContent(id)
-                                            if (!leafId) return
-                                            e.preventDefault()
-                                            openContextMenu(
-                                                e.clientX,
-                                                e.clientY,
-                                                paneMenuItems(leafId),
-                                                setPaneMenu,
-                                            )
-                                        }}
-                                        style={{
-                                            position: 'absolute',
-                                            left: rect()
-                                                ? `${rect()!.x}px`
-                                                : '0',
-                                            top: rect()
-                                                ? `${rect()!.y}px`
-                                                : '0',
-                                            width: rect()
-                                                ? `${rect()!.w}px`
-                                                : '100%',
-                                            height: rect()
-                                                ? `${rect()!.h}px`
-                                                : '100%',
-                                            display: rect() ? 'block' : 'none',
-                                        }}
+                    <For each={terminalContents()}>
+                        {id => {
+                            const rect = () => terminalHostRects().get(id)
+                            return (
+                                <PaneOverlay
+                                    kind="terminal"
+                                    rect={rect()}
+                                    // The overlay covers the pane-leaf, so re-trigger the leaf's pane menu
+                                    // (split/close/equalize) on right-click instead of the browser default.
+                                    onContextMenu={e => {
+                                        const leafId = leafIdForContent(id)
+                                        if (!leafId) return
+                                        e.preventDefault()
+                                        openContextMenu(
+                                            e.clientX,
+                                            e.clientY,
+                                            paneMenuItems(leafId),
+                                            setPaneMenu,
+                                        )
+                                    }}
+                                >
+                                    <Suspense
+                                        fallback={<div class="term-host" />}
                                     >
-                                        <Suspense
-                                            fallback={<div class="term-host" />}
-                                        >
-                                            <TerminalTab
-                                                id={id}
-                                                active={() =>
-                                                    focusedContent() === id
-                                                }
-                                                onExit={() =>
-                                                    closeTerminalContent(id)
-                                                }
-                                            />
-                                        </Suspense>
-                                    </div>
-                                )
-                            }}
-                        </For>
-                        {/* Always-mounted chat overlay — the same keep-alive pattern as the terminals: each
+                                        <TerminalTab
+                                            id={id}
+                                            active={() =>
+                                                focusedContent() === id
+                                            }
+                                            onExit={() =>
+                                                closeTerminalContent(id)
+                                            }
+                                        />
+                                    </Suspense>
+                                </PaneOverlay>
+                            )
+                        }}
+                    </For>
+                    {/* Always-mounted chat overlay — the same keep-alive pattern as the terminals: each
               unique chat content id mounts ONE ChatView, positioned over its data-chat-host in
               the active tab and hidden (display:none, NOT unmounted) elsewhere, so the backend
               `claude` session, WS, and transcript survive tab/pane switches. Unmount (and the
               clean ws.close(1000) → backend closeChat) happens only when the id leaves
               chatContents — a genuine tab/pane close. */}
-                        <For each={chatContents()}>
-                            {id => {
-                                const rect = () => chatHostRects().get(id)
-                                return (
-                                    <div
-                                        class="chat-overlay"
-                                        style={{
-                                            position: 'absolute',
-                                            left: rect()
-                                                ? `${rect()!.x}px`
-                                                : '0',
-                                            top: rect()
-                                                ? `${rect()!.y}px`
-                                                : '0',
-                                            width: rect()
-                                                ? `${rect()!.w}px`
-                                                : '100%',
-                                            height: rect()
-                                                ? `${rect()!.h}px`
-                                                : '100%',
-                                            display: rect() ? 'block' : 'none',
-                                        }}
-                                    >
-                                        <Suspense
-                                            fallback={<div class="full" />}
-                                        >
-                                            <ChatView
-                                                chatId={id.slice(
-                                                    CHAT_PREFIX.length,
-                                                )}
-                                                tabName={() =>
-                                                    tabNameForContent(id)
-                                                }
-                                                noteNames={noteCandidates}
-                                                memoryNames={memoryCandidates}
-                                                tagNames={tagCandidates}
-                                            />
-                                        </Suspense>
-                                    </div>
-                                )
-                            }}
-                        </For>
-                    </div>
-                </main>
-                {/* The tab rail — the app's ONLY tab presentation (the horizontal strip is gone). The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
+                    <For each={chatContents()}>
+                        {id => {
+                            const rect = () => chatHostRects().get(id)
+                            return (
+                                <PaneOverlay kind="chat" rect={rect()}>
+                                    <Suspense fallback={<div class="full" />}>
+                                        <ChatView
+                                            chatId={id.slice(
+                                                CHAT_PREFIX.length,
+                                            )}
+                                            tabName={() =>
+                                                tabNameForContent(id)
+                                            }
+                                            noteNames={noteCandidates}
+                                            memoryNames={memoryCandidates}
+                                            tagNames={tagCandidates}
+                                        />
+                                    </Suspense>
+                                </PaneOverlay>
+                            )
+                        }}
+                    </For>
+                </EditorPane>
+            }
+            rail={
+                /* The tab rail — the app's ONLY tab presentation (the horizontal strip is gone). The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
           column; .tab-rail-inner is absolutely anchored to the right edge and widens leftward
           OVER the editor on hover (via CSS :hover / :focus-within), so the editor never
           reflows. Top-to-bottom: the +/terminal/chat action TOOLBAR, then the scrollable
@@ -3025,229 +2999,92 @@ export default function App() {
           BUG #40: also gated on !switcherOpen() (tabRailVisible) — the Cmd+O quick switcher is a
           full-window search takeover that already hides the file-tree sidebar (`sidebar-hidden`,
           below); the rail used to keep floating over that takeover instead of hiding with it. The
-          grid column itself collapses to 0 in lockstep via `.layout.switcher-active` (App.css). */}
+          grid column itself collapses to 0 in lockstep via `.layout.switcher-active` (App.css). */
                 <Show when={tabRailVisible({ switcherOpen: switcherOpen() })}>
-                    <div class="tab-rail">
-                        <div class="tab-rail-inner">
-                            <div class="tab-rail-actions">
-                                {/* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */}
-                                <For each={settings.tabBar}>
-                                    {btn => <ToolbarButton btn={btn} />}
-                                </For>
-                            </div>
-                            <div class="tab-rail-list" data-tabstrip="vertical">
-                                <Index each={tabs()}>
-                                    {t => {
-                                        const railColor = createMemo(() => {
-                                            const tab = t()
-                                            const leaf =
-                                                leaves(tab.root).find(
-                                                    l => l.id === tab.focusId,
-                                                ) ?? leaves(tab.root)[0]
-                                            return leaf
-                                                ? chatTabColor(leaf.content)
-                                                : undefined
-                                        })
-                                        const railStyle = createMemo(() => ({}))
-                                        return (
-                                            <div
-                                                class="tab-rail-row"
-                                                classList={{
-                                                    active:
-                                                        activeTabId() ===
-                                                        t().id,
-                                                    pinned: !!t().pinned,
-                                                    dragging:
-                                                        draggingTabId() ===
-                                                        t().id,
-                                                }}
-                                                data-tab-chip="true"
-                                                // Native tooltip surfaces the name while the rail is collapsed to icons.
-                                                title={
-                                                    renamingTabId() !== t().id
-                                                        ? tabBarLabel(t())
-                                                        : undefined
-                                                }
-                                                style={railStyle()}
-                                                onClick={e => {
-                                                    if (
-                                                        (
-                                                            e.target as HTMLElement
-                                                        ).closest(
-                                                            '.tab-x, .tab-pin, .tab-rename',
-                                                        )
-                                                    )
-                                                        return
-                                                    setActiveTabId(t().id)
-                                                }}
-                                                onPointerDown={e => {
-                                                    if (
-                                                        (
-                                                            e.target as HTMLElement
-                                                        ).closest(
-                                                            '.tab-x, .tab-pin, .tab-rename',
-                                                        )
-                                                    )
-                                                        return
-                                                    viewDrag.startTab(
-                                                        e,
-                                                        t().id,
-                                                        tabBarLabel(t()),
-                                                        () =>
-                                                            setActiveTabId(
-                                                                t().id,
-                                                            ),
-                                                        tabNotePath(t()),
-                                                    )
-                                                }}
-                                                // Middle-click closes any tab (incl. a pinned one) — the escape hatch.
-                                                onAuxClick={e => {
-                                                    if (e.button !== 1) return
-                                                    e.preventDefault()
-                                                    closeTabById(t().id)
-                                                }}
-                                                onDblClick={e => {
-                                                    if (
-                                                        (
-                                                            e.target as HTMLElement
-                                                        ).closest(
-                                                            '.tab-x, .tab-pin',
-                                                        )
-                                                    )
-                                                        return
-                                                    startRenameTab(t().id)
-                                                }}
-                                                onContextMenu={e =>
-                                                    openTabContextMenu(e, t())
-                                                }
-                                            >
-                                                {/* Every rail row shows an icon (fall back to a generic doc) so the
-                        collapsed icon-column is never empty for an unnamed note. */}
-                                                <Icon
-                                                    class="tab-rail-icon"
-                                                    value={
-                                                        tabBarIcon(t()) ??
-                                                        'File'
-                                                    }
-                                                    size={16}
-                                                    style={
-                                                        railColor()
-                                                            ? {
-                                                                  color: railColor(),
-                                                              }
-                                                            : undefined
-                                                    }
-                                                />
-                                                <Show
-                                                    when={
-                                                        renamingTabId() ===
-                                                        t().id
-                                                    }
-                                                    fallback={
-                                                        <span class="tab-rail-label">
-                                                            {tabBarLabel(t())}
-                                                        </span>
-                                                    }
-                                                >
-                                                    <input
-                                                        class="tab-rename"
-                                                        value={tabBarLabel(t())}
-                                                        ref={el =>
-                                                            queueMicrotask(
-                                                                () => {
-                                                                    el.focus()
-                                                                    el.select()
-                                                                },
-                                                            )
-                                                        }
-                                                        onClick={e =>
-                                                            e.stopPropagation()
-                                                        }
-                                                        onBlur={e =>
-                                                            commitRename(
-                                                                t().id,
-                                                                e.currentTarget
-                                                                    .value,
-                                                            )
-                                                        }
-                                                        onKeyDown={e => {
-                                                            if (
-                                                                e.key ===
-                                                                'Enter'
-                                                            ) {
-                                                                e.preventDefault()
-                                                                commitRename(
-                                                                    t().id,
-                                                                    e
-                                                                        .currentTarget
-                                                                        .value,
-                                                                )
-                                                            } else if (
-                                                                e.key ===
-                                                                'Escape'
-                                                            ) {
-                                                                e.preventDefault()
-                                                                setRenamingTabId(
-                                                                    null,
-                                                                )
-                                                            }
-                                                            e.stopPropagation()
-                                                        }}
-                                                    />
-                                                </Show>
-                                                {/* Pinned rows show a pin (click → unpin) in place of the close X; the
-                        close X only appears on row-hover (see .tab-rail CSS). */}
-                                                <Show
-                                                    when={t().pinned}
-                                                    fallback={
-                                                        <IconButton
-                                                            class="tab-x"
-                                                            icon="X"
-                                                            label="Close tab"
-                                                            iconSize={13}
-                                                            onClick={e =>
-                                                                closeTab(
-                                                                    t().id,
-                                                                    e,
-                                                                )
-                                                            }
-                                                        />
-                                                    }
-                                                >
-                                                    <IconButton
-                                                        class="tab-pin"
-                                                        icon="Pin"
-                                                        label="Unpin tab"
-                                                        iconSize={13}
-                                                        onClick={e => {
-                                                            e.stopPropagation()
-                                                            togglePinTab(t().id)
-                                                        }}
-                                                    />
-                                                </Show>
-                                            </div>
-                                        )
-                                    }}
-                                </Index>
-                            </div>
-                        </div>
-                    </div>
+                    <TabRail
+                        actions={
+                            /* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */
+                            <For each={settings.tabBar}>
+                                {btn => <ToolbarButton btn={btn} />}
+                            </For>
+                        }
+                    >
+                        <Index each={tabs()}>
+                            {t => {
+                                const railColor = createMemo(() => {
+                                    const tab = t()
+                                    const leaf =
+                                        leaves(tab.root).find(
+                                            l => l.id === tab.focusId,
+                                        ) ?? leaves(tab.root)[0]
+                                    return leaf
+                                        ? chatTabColor(leaf.content)
+                                        : undefined
+                                })
+                                return (
+                                    <TabRailRow
+                                        label={tabBarLabel(t())}
+                                        icon={tabBarIcon(t()) ?? 'File'}
+                                        color={railColor()}
+                                        active={activeTabId() === t().id}
+                                        pinned={!!t().pinned}
+                                        dragging={draggingTabId() === t().id}
+                                        renaming={renamingTabId() === t().id}
+                                        onActivate={() =>
+                                            setActiveTabId(t().id)
+                                        }
+                                        onPointerDown={e =>
+                                            viewDrag.startTab(
+                                                e,
+                                                t().id,
+                                                tabBarLabel(t()),
+                                                () => setActiveTabId(t().id),
+                                                tabNotePath(t()),
+                                            )
+                                        }
+                                        // Middle-click closes any tab (incl. a pinned one) — the escape hatch.
+                                        onAuxClick={e => {
+                                            if (e.button !== 1) return
+                                            e.preventDefault()
+                                            closeTabById(t().id)
+                                        }}
+                                        onDblClick={() =>
+                                            startRenameTab(t().id)
+                                        }
+                                        onContextMenu={e =>
+                                            openTabContextMenu(e, t())
+                                        }
+                                        onClose={e => closeTab(t().id, e)}
+                                        onUnpin={() => togglePinTab(t().id)}
+                                        onCommitRename={value =>
+                                            commitRename(t().id, value)
+                                        }
+                                        onCancelRename={() =>
+                                            setRenamingTabId(null)
+                                        }
+                                    />
+                                )
+                            }}
+                        </Index>
+                    </TabRail>
                 </Show>
-                {/* The single always-mounted Knowledge Graph. It floats over whichever slot is active:
+            }
+            floater={
+                /* The single always-mounted Knowledge Graph. It floats over whichever slot is active:
           the sidebar mini-square, the full main pane (no tabs), or — when a tab shows a graph
           pane — that pane's `data-graph-host` (placed by placeFloater). Reusing one instance
           everywhere means a split/tab-switch repositions it instead of tearing down + rebuilding
           the WebGL renderer (which reset the camera). `docked` (the sidebar clip-path) and `mini`
-          only apply in the cramped sidebar square, not when it covers a full graph pane. */}
-                <div
-                    class="graph-floater"
-                    classList={{
-                        docked:
-                            anyTabOpen() &&
-                            !activeTabShowsGraph() &&
-                            !switcherOpen(),
+          only apply in the cramped sidebar square, not when it covers a full graph pane. */
+                <GraphFloater
+                    docked={
+                        anyTabOpen() &&
+                        !activeTabShowsGraph() &&
+                        !switcherOpen()
+                    }
+                    ref={el => {
+                        floater = el
                     }}
-                    ref={floater}
                 >
                     <Suspense fallback={<div class="graph-root" />}>
                         <GraphView
@@ -3272,116 +3109,134 @@ export default function App() {
                             }
                         />
                     </Suspense>
-                </div>
-                <Show when={palette() === 'command'}>
-                    <CommandPalette
-                        onClose={() => setPalette(null)}
-                        commands={commands()}
-                    />
-                </Show>
-                <Show when={palette() === 'template'}>
-                    <TemplatePalette
-                        onClose={() => setPalette(null)}
-                        title={activeNoteTitle()}
-                    />
-                </Show>
-                <Show when={folderPromptOpen()}>
-                    <FolderPrompt
-                        onClose={() => setFolderPromptOpen(false)}
-                        onOpen={doOpenFolder}
-                    />
-                </Show>
-                <Show when={daemonOwnerOpen()}>
-                    <DaemonOwnerModal
-                        onClose={() => setDaemonOwnerOpen(false)}
-                    />
-                </Show>
-                <Show when={daemonSetupOpen()}>
-                    <DaemonSetupModal
-                        onClose={() => setDaemonSetupOpen(false)}
-                    />
-                </Show>
-                <Show when={bismuthInstallOpen()}>
-                    <BismuthInstallModal
-                        onClose={() => setBismuthInstallOpen(false)}
-                    />
-                </Show>
-                <Show when={editDictionaryOpen()}>
-                    <EditDictionaryModal
-                        onClose={() => setEditDictionaryOpen(false)}
-                    />
-                </Show>
-                <Show when={gcalConnectOpen()}>
-                    <GcalConnectModal
-                        onClose={() => setGcalConnectOpen(false)}
-                    />
-                </Show>
-                <Show when={paneMenu()}>
-                    {m => (
-                        <ContextMenu
-                            x={m().x}
-                            y={m().y}
-                            onClose={() => setPaneMenu(null)}
-                            items={m().items}
+                </GraphFloater>
+            }
+            modals={
+                <>
+                    <Show when={palette() === 'command'}>
+                        <CommandPalette
+                            onClose={() => setPalette(null)}
+                            commands={commands()}
                         />
-                    )}
-                </Show>
-                <Show when={editorMenu()}>
-                    {m => (
-                        <ContextMenu
-                            x={m().x}
-                            y={m().y}
-                            items={m().items}
-                            quickActions={m().quickActions}
-                            onClose={() => setEditorMenu(null)}
+                    </Show>
+                    <Show when={palette() === 'template'}>
+                        <TemplatePalette
+                            onClose={() => setPalette(null)}
+                            title={activeNoteTitle()}
                         />
-                    )}
-                </Show>
-                <Show when={createMenu()}>
-                    {m => (
-                        <ContextMenu
-                            x={m().x}
-                            y={m().y}
-                            items={m().items}
-                            onClose={() => setCreateMenu(null)}
+                    </Show>
+                    <Show when={folderPromptOpen()}>
+                        <FolderPrompt
+                            onClose={() => setFolderPromptOpen(false)}
+                            onOpen={doOpenFolder}
                         />
-                    )}
-                </Show>
-                {/* Floating ghost that follows the cursor during a tab/pane drag. pointer-events:none
+                    </Show>
+                    <Show when={daemonOwnerOpen()}>
+                        <DaemonOwnerModal
+                            onClose={() => setDaemonOwnerOpen(false)}
+                        />
+                    </Show>
+                    <Show when={daemonSetupOpen()}>
+                        <DaemonSetupModal
+                            onClose={() => setDaemonSetupOpen(false)}
+                        />
+                    </Show>
+                    <Show when={bismuthInstallOpen()}>
+                        <BismuthInstallModal
+                            onClose={() => setBismuthInstallOpen(false)}
+                        />
+                    </Show>
+                    <Show when={editDictionaryOpen()}>
+                        <EditDictionaryModal
+                            onClose={() => setEditDictionaryOpen(false)}
+                        />
+                    </Show>
+                    <Show when={gcalConnectOpen()}>
+                        <GcalConnectModal
+                            onClose={() => setGcalConnectOpen(false)}
+                        />
+                    </Show>
+                    <Show when={paneMenu()}>
+                        {m => (
+                            <ContextMenu
+                                x={m().x}
+                                y={m().y}
+                                onClose={() => setPaneMenu(null)}
+                                items={m().items}
+                            />
+                        )}
+                    </Show>
+                    <Show when={editorMenu()}>
+                        {m => (
+                            <ContextMenu
+                                x={m().x}
+                                y={m().y}
+                                items={m().items}
+                                quickActions={m().quickActions}
+                                onClose={() => setEditorMenu(null)}
+                            />
+                        )}
+                    </Show>
+                    <Show when={createMenu()}>
+                        {m => (
+                            <ContextMenu
+                                x={m().x}
+                                y={m().y}
+                                items={m().items}
+                                onClose={() => setCreateMenu(null)}
+                            />
+                        )}
+                    </Show>
+                </>
+            }
+            overlays={
+                <>
+                    {/* Floating ghost that follows the cursor during a tab/pane drag. pointer-events:none
           so elementFromPoint resolves the drop target beneath it. Width is capped to a
           tab-like size — a pane header spans the whole pane, which looked oversized — and
           the grab offset is clamped to that width so the cursor stays over the ghost. */}
-                <Show when={drag().active && drag().descriptor}>
-                    <div
-                        class="drag-ghost"
-                        classList={{ pane: drag().descriptor?.kind === 'pane' }}
-                        style={{
-                            left: `${drag().x - Math.min(drag().grabDX, Math.min(drag().descriptor?.width ?? 0, GHOST_MAX_W))}px`,
-                            top: `${drag().y - drag().grabDY}px`,
-                            width: `${Math.min(drag().descriptor?.width ?? 0, GHOST_MAX_W)}px`,
-                        }}
-                    >
-                        {drag().descriptor?.label}
-                    </div>
-                </Show>
-                <ToastHost />
-                <GalleryHost />
-            </div>
-            <StatusBar
-                vaultName={vaultName()}
-                vaultPath={vaultPath()}
-                path={statusPath()}
-                connected={currentConnectionState() === 'connected'}
-                mode={mode()}
-                daemon={
-                    settings.daemon.enabled
-                        ? anyWorking()
-                            ? 'working'
-                            : 'idle'
-                        : 'off'
-                }
-                onCopyVault={copyVaultPath}
-            />
-        </div>
+                    <Show when={drag().active && drag().descriptor}>
+                        <DragGhost
+                            label={drag().descriptor?.label ?? ''}
+                            pane={drag().descriptor?.kind === 'pane'}
+                            x={
+                                drag().x -
+                                Math.min(
+                                    drag().grabDX,
+                                    Math.min(
+                                        drag().descriptor?.width ?? 0,
+                                        GHOST_MAX_W,
+                                    ),
+                                )
+                            }
+                            y={drag().y - drag().grabDY}
+                            width={Math.min(
+                                drag().descriptor?.width ?? 0,
+                                GHOST_MAX_W,
+                            )}
+                        />
+                    </Show>
+                    <ToastHost />
+                    <GalleryHost />
+                </>
+            }
+            statusBar={
+                <StatusBar
+                    vaultName={vaultName()}
+                    vaultPath={vaultPath()}
+                    path={statusPath()}
+                    connected={currentConnectionState() === 'connected'}
+                    mode={mode()}
+                    daemon={
+                        settings.daemon.enabled
+                            ? anyWorking()
+                                ? 'working'
+                                : 'idle'
+                            : 'off'
+                    }
+                    onCopyVault={copyVaultPath}
+                />
+            }
+        />
     )
 }
