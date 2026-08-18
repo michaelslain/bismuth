@@ -10,18 +10,29 @@
    is still the only thing exercising it, since it is a co-riding state class rather than a
    `:hover`-only rule.
 
-   Nothing here is `:hover`-only, so `bench/cssBaseline.ts`'s resting-state recording covers both
-   rules in full. */
+   Nothing here is `:hover`-only, so `bench/cssBaseline.ts`'s resting-state recording covers all
+   three rules in full. */
 
-/* Floating ghost that follows the cursor during a tab/pane drag. */
+/* Floating ghost that follows the cursor during a tab/pane drag.
+
+   `overflow`/`text-overflow`/`white-space` live on `.drag-ghost-label`, NOT on `.drag-ghost`
+   itself — text-overflow: ellipsis does not truncate a bare text child of a flex container. The
+   text becomes an anonymous flex item whose min-width defaults to its full content width, so the
+   container's overflow:hidden just hard-clips it mid-character with no "…" ever drawn. Wrapping
+   the label in its own (non-flex) child element with `min-width: 0` gives that child a real box
+   the ellipsis logic can shrink and truncate. Verified against shell-dragghost--long-label,
+   which rendered a hard word-clip at the border before this fix. */
 .drag-ghost {
   position: fixed; z-index: 1000; pointer-events: none;
   display: flex; align-items: center; gap: 6px;
-  padding: 5px 10px; font-size: 12px; white-space: nowrap;
-  max-width: 280px; overflow: hidden; text-overflow: ellipsis;
+  padding: 5px 10px; font-size: 12px;
+  max-width: 280px;
   background: var(--panel); color: var(--fg);
   border: 1px solid var(--accent); border-radius: 6px;
   box-shadow: var(--shadow-popup);
   opacity: 0.96; transform: scale(1.02); transform-origin: top left;
 }
 .drag-ghost.pane { border-style: dashed; }
+.drag-ghost-label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}

@@ -9,7 +9,7 @@ import {
 } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
-import { renderValue } from './renderValue'
+import { plainLabel } from './renderValue'
 import { settings } from '../settings'
 import styles from './BaseView.module.css'
 
@@ -465,7 +465,7 @@ export function MapView(props: {
                         {m => {
                             const p = project(m.lat, m.lng, zoom())
                             const s = toScreen(p.x, p.y)
-                            const title = String(renderValue(titleCol(), m.row))
+                            const title = plainLabel(titleCol(), m.row)
                             return (
                                 <div
                                     class={styles.mapPin}

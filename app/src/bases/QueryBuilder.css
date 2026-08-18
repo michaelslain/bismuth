@@ -37,15 +37,20 @@
 }
 .evm-modal.query-builder .qb-rm:hover { color: var(--rose); background: color-mix(in srgb, var(--rose) 14%, transparent); }
 
-/* Generated-query preview — monospace, read-only, the editor's code look. */
+/* Generated-query preview — monospace, read-only, the editor's code look.
+   NO max-height/overflow of its own: `.evm-body > *` (Calendar.css) forces flex-shrink:0
+   on every direct body section precisely so `.evm-body` is the ONE scroll surface for the
+   whole modal. A second capped-and-scrolling box nested inside that already-scrolling body
+   defeats that — the inner scrollbar is invisible until hovered/dragged, so a long query
+   read as hard-clipped against the footer with no affordance that more existed below,
+   reachable only by scrolling the box AGAIN after scrolling the body. Rendering at natural
+   height lets the one `.evm-body` scrollbar reveal all of it. */
 .evm-modal.query-builder .qb-preview {
   margin: 0;
   background: var(--surface2);
   border: 1px solid var(--border2);
   border-radius: 10px;
   padding: 11px 13px;
-  overflow: auto;
-  max-height: 180px;
 }
 .evm-modal.query-builder .qb-preview code {
   font-family: var(--mono, ui-monospace, monospace);

@@ -23,6 +23,11 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { AppFrame } from './AppFrame'
 
+// Every stub background is one of the theme's opaque swatches EXCEPT `floater`, whose real
+// counterpart (`.graph-floater`) is transparent where its canvas has no glow. A fixed `--bg` text
+// colour reads fine against an opaque accent/faint/border fill, but against a transparent stub it
+// shows through to the page's own `--bg` — same colour as the text, so it renders invisible. Use
+// `--fg` (the page's own foreground) whenever the stub itself contributes no background.
 const Stub = (props: { label: string; color: string }) => (
     <div
         style={{
@@ -32,7 +37,7 @@ const Stub = (props: { label: string; color: string }) => (
             height: '100%',
             width: '100%',
             background: props.color,
-            color: 'var(--bg)',
+            color: props.color === 'transparent' ? 'var(--fg)' : 'var(--bg)',
             'font-size': '11px',
         }}
     >

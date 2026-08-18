@@ -65,7 +65,7 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
     // fall in a new month, blank otherwise (GitHub-style sparse month row).
     const monthLabels = createMemo<string[]>(() => {
         let prev = -1
-        return grid().weeks.map(week => {
+        const raw = grid().weeks.map(week => {
             const iso = week[0]?.date
             if (!iso) return ''
             const m = Number(iso.slice(5, 7)) - 1
@@ -73,6 +73,22 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
             prev = m
             return MONTH_NAMES[m] ?? ''
         })
+        // Each label sits in a 14px column (one week-cell wide) with overflow visible, so a
+        // 3-letter abbreviation spills into the next column. That's invisible for a normal
+        // month (several blank columns follow before the next label), but the grid's FIRST
+        // column is labeled unconditionally regardless of how many of its 7 days actually
+        // fall in that month — when the data starts a day or two into a month, that column's
+        // Monday is still the prior month, so its label lands immediately beside the very
+        // next column's label and the two glyphs merge. Drop a label that doesn't have at
+        // least one blank column of clearance before the next one, favoring the later
+        // (fuller) month over the earlier sliver.
+        let lastKept = -Infinity
+        for (let i = 0; i < raw.length; i++) {
+            if (!raw[i]) continue
+            if (i - lastKept < 2) raw[lastKept] = ''
+            lastKept = i
+        }
+        return raw
     })
 
     // Streak stat cards (entries / current streak / longest streak) over the

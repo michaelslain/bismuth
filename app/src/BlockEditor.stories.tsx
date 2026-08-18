@@ -4,12 +4,18 @@
 // so every story below supplies all five directly rather than routing through FileView.
 //
 // Autosave is a debounced side effect of EDITING (scheduleSave, fired from onPlainInput/commit),
-// never mount-time IO — the component's initial parse comes entirely from `initialText`, so
-// these stories need no fakeTransport file seeding to render (the global fakeTransport from
-// `.storybook/preview.ts` is still installed and answers `GET /settings` etc., it's just not on
-// the critical path for a static render here). The ONE mount-time network call is a defensive
-// `normalizeFrontmatterSpacing` re-write, and only when the document HAS frontmatter that needs
-// reformatting; none of the fixtures below carry frontmatter, so it never fires.
+// never mount-time IO — the component's initial parse comes entirely from `initialText`. BUT a
+// SEPARATE effect (the SSE external-change reconcile) unconditionally fires once on mount
+// regardless of `initialText`, and it calls `api.read(path)` to compare against disk. The global
+// fakeTransport from `.storybook/preview.ts` has no entry for these stories' paths, and its
+// `getText` resolves an unseeded path to `""` rather than throwing — so that first reconcile read
+// silently succeeds with an empty string, and the effect treats it as a genuine external change,
+// re-parsing "" and STOMPING the freshly-loaded blocks back to empty. So every story below layers
+// its own `setTransport(fakeTransport({ files: { [path]: MARKDOWN } }))` (PreviewView.stories.tsx's
+// pattern) so that read-back matches what's already loaded and the reconcile is a no-op. The other
+// mount-time network call is a defensive `normalizeFrontmatterSpacing` re-write, and only when the
+// document HAS frontmatter that needs reformatting; none of the fixtures below carry frontmatter,
+// so it never fires.
 //
 // Milkdown bridge risk: `./blocks/milkdownEditor.ts`'s `createBlockEditor` is the SAME module
 // (and the same `@milkdown/core` + `@milkdown/preset-commonmark` plugin stack) already proven to
@@ -22,6 +28,8 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { BlockEditor } from './BlockEditor'
 import type { NoteCandidate } from './editor/wikilink'
+import { setTransport } from './api'
+import { fakeTransport } from './ui/_fakeTransport'
 
 const meta = {
     title: 'App/BlockEditor',
@@ -72,32 +80,40 @@ const DEFAULT_MARKDOWN =
  *  and a checked task, a markdown link, and a fenced code block (stays a monospace textarea —
  *  code is the one rich-text type that does NOT route through Milkdown). */
 export const Default: Story = {
-    render: () => (
-        <div style={hostStyle}>
-            <BlockEditor
-                path="Project Notes.md"
-                initialText={DEFAULT_MARKDOWN}
-                onSaved={noop}
-                noteNames={noteNames}
-                tagNames={tagNames}
-            />
-        </div>
-    ),
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Project Notes.md': DEFAULT_MARKDOWN } }),
+        )
+        return (
+            <div style={hostStyle}>
+                <BlockEditor
+                    path="Project Notes.md"
+                    initialText={DEFAULT_MARKDOWN}
+                    onSaved={noop}
+                    noteNames={noteNames}
+                    tagNames={tagNames}
+                />
+            </div>
+        )
+    },
 }
 
 /** A brand-new, empty note — the "Start writing…" affordance shown when `blocks.length === 0`. */
 export const Empty: Story = {
-    render: () => (
-        <div style={hostStyle}>
-            <BlockEditor
-                path="Untitled.md"
-                initialText=""
-                onSaved={noop}
-                noteNames={noteNames}
-                tagNames={tagNames}
-            />
-        </div>
-    ),
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Untitled.md': '' } }))
+        return (
+            <div style={hostStyle}>
+                <BlockEditor
+                    path="Untitled.md"
+                    initialText=""
+                    onSaved={noop}
+                    noteNames={noteNames}
+                    tagNames={tagNames}
+                />
+            </div>
+        )
+    },
 }
 
 // A GFM table is an OPAQUE block (blockModel.ts never breaks it into cells): it renders read-only
@@ -116,15 +132,20 @@ const TABLE_MARKDOWN =
 /** A document with a GFM table — the read-only RenderedBlock path (click-to-edit-raw), not the
  *  Milkdown surface. */
 export const WithTable: Story = {
-    render: () => (
-        <div style={hostStyle}>
-            <BlockEditor
-                path="Team Roster.md"
-                initialText={TABLE_MARKDOWN}
-                onSaved={noop}
-                noteNames={noteNames}
-                tagNames={tagNames}
-            />
-        </div>
-    ),
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Team Roster.md': TABLE_MARKDOWN } }),
+        )
+        return (
+            <div style={hostStyle}>
+                <BlockEditor
+                    path="Team Roster.md"
+                    initialText={TABLE_MARKDOWN}
+                    onSaved={noop}
+                    noteNames={noteNames}
+                    tagNames={tagNames}
+                />
+            </div>
+        )
+    },
 }
