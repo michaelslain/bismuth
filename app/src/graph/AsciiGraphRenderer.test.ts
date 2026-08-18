@@ -10,162 +10,306 @@
 // `bun test app/src` module into ONE process, and several app modules resolve DOM-dependent
 // singletons lazily off `globalThis.window`. So the DOM globals are installed in beforeAll (NOT at
 // module top level) and exactly what we added is deleted in afterAll.
-import { GlobalWindow } from "happy-dom";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
+import { GlobalWindow } from 'happy-dom'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test'
 import {
-  AsciiGraphRenderer, DIM_ALPHA, EDGE_DIM_ALPHA, EDGE_W_GAIN, EDGE_W_MAX,
-  deriveEdgeBaseAlpha, safeDepthBand, trimSegmentForClearance,
-} from "./AsciiGraphRenderer";
-import { CELL_W, LAYER_EDGE, resFromT } from "./asciiGrid";
-import { CLUSTER_LABEL_MAX_CHARS, clusterLevelAlphas } from "./labelSelection";
-import { DEFAULT_LEVEL_REVEAL_T, EDGE_WEIGHT_BUCKETS, bandsForT, edgeWeightBucketRange } from "./backbone";
-import { buildColorSlots } from "./clusterVisual";
-import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from "./cameraModel";
-import { MODE_MORPH_MS } from "./modeMorph";
-import { FIELD_H, FIELD_W, type DensityField } from "./densityField";
-import { MAX_CANVAS_AREA_PX } from "./graphFit";
-import { buildLodIndex, LOD_MIN_CLUSTER, LOD_REP_POINTS_K, type LodNodeInput } from "./lod";
-import { parseHexColor } from "./bloomColor";
-import { THEMES } from "../../../core/src/theme/tokens";
+    AsciiGraphRenderer,
+    DIM_ALPHA,
+    EDGE_DIM_ALPHA,
+    EDGE_W_GAIN,
+    EDGE_W_MAX,
+    deriveEdgeBaseAlpha,
+    safeDepthBand,
+    trimSegmentForClearance,
+} from './AsciiGraphRenderer'
+import { CELL_W, LAYER_EDGE, resFromT } from './asciiGrid'
+import { CLUSTER_LABEL_MAX_CHARS, clusterLevelAlphas } from './labelSelection'
+import {
+    DEFAULT_LEVEL_REVEAL_T,
+    EDGE_WEIGHT_BUCKETS,
+    bandsForT,
+    edgeWeightBucketRange,
+} from './backbone'
+import { buildColorSlots } from './clusterVisual'
+import { MAX_MAGNIFICATION, MAX_ZOOM_FRAC } from './cameraModel'
+import { MODE_MORPH_MS } from './modeMorph'
+import { FIELD_H, FIELD_W, type DensityField } from './densityField'
+import { MAX_CANVAS_AREA_PX } from './graphFit'
+import {
+    buildLodIndex,
+    LOD_MIN_CLUSTER,
+    LOD_REP_POINTS_K,
+    type LodNodeInput,
+} from './lod'
+import { parseHexColor } from './bloomColor'
+import { THEMES } from '../../../core/src/theme/tokens'
 
 const DOM_GLOBALS = [
-  "document", "window", "navigator", "Node", "Element", "HTMLElement", "HTMLDivElement",
-  "HTMLCanvasElement", "Text", "Event", "CustomEvent", "MouseEvent", "PointerEvent", "WheelEvent",
-  "KeyboardEvent", "getComputedStyle", "DOMRect",
-];
-const installed: string[] = [];
-const saved: Record<string, unknown> = {};
+    'document',
+    'window',
+    'navigator',
+    'Node',
+    'Element',
+    'HTMLElement',
+    'HTMLDivElement',
+    'HTMLCanvasElement',
+    'Text',
+    'Event',
+    'CustomEvent',
+    'MouseEvent',
+    'PointerEvent',
+    'WheelEvent',
+    'KeyboardEvent',
+    'getComputedStyle',
+    'DOMRect',
+]
+const installed: string[] = []
+const saved: Record<string, unknown> = {}
 /** [object, key, originalValue] triples put back in afterAll. */
-const restore: [Record<string, unknown>, string, unknown][] = [];
+const restore: [Record<string, unknown>, string, unknown][] = []
 
-const BOX = { width: 800, height: 600 };
+const BOX = { width: 800, height: 600 }
 
 interface FakeCtx {
-  fills: { text: string; x: number; y: number; color: string }[];
-  /** Every batched `stroke()` call the vector-edge pass (strokeEdges()) issued this paint — one
-   *  entry per `pass()` bucket, each carrying every `moveTo/lineTo` segment traced between its
-   *  `beginPath()` and its `stroke()`. */
-  strokes: { color: string; width: number; alpha: number; segs: [number, number, number, number][] }[];
-  /** Every `fillRect` this paint issued, with the paint state it was issued under. The label pass's
-   *  ground-clear is a fillRect, and an OPAQUE one painted after `strokeEdges()` erases whatever line
-   *  work runs behind it — see the "a label never erases the field behind it" test. `clearRect` (the
-   *  frame reset) is deliberately NOT recorded here: it is not a paint, and folding the two together
-   *  would make every frame look like it blanked the whole canvas. */
-  fillRects: { x: number; y: number; w: number; h: number; color: string; alpha: number }[];
-  /** Same for `strokeText` — the per-glyph ground halo the label pass draws under each name. */
-  strokeTexts: { text: string; x: number; y: number; color: string; width: number; alpha: number }[];
-  fonts: string[];
-  font: string;
-  letterSpacing: string;
-  fillStyle: string;
-  strokeStyle: string;
-  lineWidth: number;
-  globalAlpha: number;
-  textBaseline: string;
-  textAlign: string;
-  setTransform(): void;
-  clearRect(): void;
-  fillRect(x: number, y: number, w: number, h: number): void;
-  fillText(t: string, x: number, y: number): void;
-  strokeText(t: string, x: number, y: number): void;
-  measureText(s: string): { width: number };
-  beginPath(): void;
-  moveTo(x: number, y: number): void;
-  lineTo(x: number, y: number): void;
-  stroke(): void;
+    fills: { text: string; x: number; y: number; color: string }[]
+    /** Every batched `stroke()` call the vector-edge pass (strokeEdges()) issued this paint — one
+     *  entry per `pass()` bucket, each carrying every `moveTo/lineTo` segment traced between its
+     *  `beginPath()` and its `stroke()`. */
+    strokes: {
+        color: string
+        width: number
+        alpha: number
+        segs: [number, number, number, number][]
+    }[]
+    /** Every `fillRect` this paint issued, with the paint state it was issued under. The label pass's
+     *  ground-clear is a fillRect, and an OPAQUE one painted after `strokeEdges()` erases whatever line
+     *  work runs behind it — see the "a label never erases the field behind it" test. `clearRect` (the
+     *  frame reset) is deliberately NOT recorded here: it is not a paint, and folding the two together
+     *  would make every frame look like it blanked the whole canvas. */
+    fillRects: {
+        x: number
+        y: number
+        w: number
+        h: number
+        color: string
+        alpha: number
+    }[]
+    /** Same for `strokeText` — the per-glyph ground halo the label pass draws under each name. */
+    strokeTexts: {
+        text: string
+        x: number
+        y: number
+        color: string
+        width: number
+        alpha: number
+    }[]
+    fonts: string[]
+    font: string
+    letterSpacing: string
+    fillStyle: string
+    strokeStyle: string
+    lineWidth: number
+    globalAlpha: number
+    textBaseline: string
+    textAlign: string
+    setTransform(): void
+    clearRect(): void
+    fillRect(x: number, y: number, w: number, h: number): void
+    fillText(t: string, x: number, y: number): void
+    strokeText(t: string, x: number, y: number): void
+    measureText(s: string): { width: number }
+    beginPath(): void
+    moveTo(x: number, y: number): void
+    lineTo(x: number, y: number): void
+    stroke(): void
 }
 
 /** A 2D context that records what was drawn. Its advance ratio (0.6em) deliberately does NOT equal
  *  the design's 6.3px cell, so applyFont()'s letterSpacing correction is genuinely exercised. */
 function makeCtx(): FakeCtx {
-  let font = "11.5px monospace";
-  let pendingPoint: [number, number] | null = null;
-  let pendingSegs: [number, number, number, number][] = [];
-  const ctx = {
-    fills: [] as { text: string; x: number; y: number; color: string }[],
-    strokes: [] as { color: string; width: number; alpha: number; segs: [number, number, number, number][] }[],
-    fillRects: [] as { x: number; y: number; w: number; h: number; color: string; alpha: number }[],
-    strokeTexts: [] as { text: string; x: number; y: number; color: string; width: number; alpha: number }[],
-    fonts: [] as string[],
-    get font() { return font; },
-    set font(v: string) { font = v; ctx.fonts.push(v); },
-    letterSpacing: "0px",
-    fillStyle: "", strokeStyle: "", lineWidth: 1, globalAlpha: 1, textBaseline: "", textAlign: "",
-    setTransform() {},
-    clearRect() {},
-    fillRect(x: number, y: number, w: number, h: number) {
-      ctx.fillRects.push({ x, y, w, h, color: ctx.fillStyle, alpha: ctx.globalAlpha });
-    },
-    fillText(t: string, x: number, y: number) { ctx.fills.push({ text: t, x, y, color: ctx.fillStyle }); },
-    strokeText(t: string, x: number, y: number) {
-      ctx.strokeTexts.push({ text: t, x, y, color: ctx.strokeStyle, width: ctx.lineWidth, alpha: ctx.globalAlpha });
-    },
-    measureText(s: string) {
-      const px = parseFloat((font.match(/^([\d.]+)px/) ?? ["", "11.5"])[1]);
-      const ls = parseFloat(ctx.letterSpacing) || 0;
-      return { width: s.length * (px * 0.6 + ls) };
-    },
-    beginPath() { pendingPoint = null; pendingSegs = []; },
-    moveTo(x: number, y: number) { pendingPoint = [x, y]; },
-    lineTo(x: number, y: number) {
-      if (pendingPoint) pendingSegs.push([pendingPoint[0], pendingPoint[1], x, y]);
-      pendingPoint = [x, y];
-    },
-    stroke() {
-      ctx.strokes.push({ color: ctx.strokeStyle, width: ctx.lineWidth, alpha: ctx.globalAlpha, segs: pendingSegs });
-      pendingSegs = [];
-    },
-  };
-  return ctx as unknown as FakeCtx;
+    let font = '11.5px monospace'
+    let pendingPoint: [number, number] | null = null
+    let pendingSegs: [number, number, number, number][] = []
+    const ctx = {
+        fills: [] as { text: string; x: number; y: number; color: string }[],
+        strokes: [] as {
+            color: string
+            width: number
+            alpha: number
+            segs: [number, number, number, number][]
+        }[],
+        fillRects: [] as {
+            x: number
+            y: number
+            w: number
+            h: number
+            color: string
+            alpha: number
+        }[],
+        strokeTexts: [] as {
+            text: string
+            x: number
+            y: number
+            color: string
+            width: number
+            alpha: number
+        }[],
+        fonts: [] as string[],
+        get font() {
+            return font
+        },
+        set font(v: string) {
+            font = v
+            ctx.fonts.push(v)
+        },
+        letterSpacing: '0px',
+        fillStyle: '',
+        strokeStyle: '',
+        lineWidth: 1,
+        globalAlpha: 1,
+        textBaseline: '',
+        textAlign: '',
+        setTransform() {},
+        clearRect() {},
+        fillRect(x: number, y: number, w: number, h: number) {
+            ctx.fillRects.push({
+                x,
+                y,
+                w,
+                h,
+                color: ctx.fillStyle,
+                alpha: ctx.globalAlpha,
+            })
+        },
+        fillText(t: string, x: number, y: number) {
+            ctx.fills.push({ text: t, x, y, color: ctx.fillStyle })
+        },
+        strokeText(t: string, x: number, y: number) {
+            ctx.strokeTexts.push({
+                text: t,
+                x,
+                y,
+                color: ctx.strokeStyle,
+                width: ctx.lineWidth,
+                alpha: ctx.globalAlpha,
+            })
+        },
+        measureText(s: string) {
+            const px = parseFloat(
+                (font.match(/^([\d.]+)px/) ?? ['', '11.5'])[1],
+            )
+            const ls = parseFloat(ctx.letterSpacing) || 0
+            return { width: s.length * (px * 0.6 + ls) }
+        },
+        beginPath() {
+            pendingPoint = null
+            pendingSegs = []
+        },
+        moveTo(x: number, y: number) {
+            pendingPoint = [x, y]
+        },
+        lineTo(x: number, y: number) {
+            if (pendingPoint)
+                pendingSegs.push([pendingPoint[0], pendingPoint[1], x, y])
+            pendingPoint = [x, y]
+        },
+        stroke() {
+            ctx.strokes.push({
+                color: ctx.strokeStyle,
+                width: ctx.lineWidth,
+                alpha: ctx.globalAlpha,
+                segs: pendingSegs,
+            })
+            pendingSegs = []
+        },
+    }
+    return ctx as unknown as FakeCtx
 }
 
-let ctx: FakeCtx;
-let rafQueue: FrameRequestCallback[] = [];
+let ctx: FakeCtx
+let rafQueue: FrameRequestCallback[] = []
 
 beforeAll(() => {
-  const win = new GlobalWindow();
-  for (const key of DOM_GLOBALS) {
-    if (!(key in globalThis) && key in win) {
-      (globalThis as Record<string, unknown>)[key] = (win as unknown as Record<string, unknown>)[key];
-      installed.push(key);
+    const win = new GlobalWindow()
+    for (const key of DOM_GLOBALS) {
+        if (!(key in globalThis) && key in win) {
+            ;(globalThis as Record<string, unknown>)[key] = (
+                win as unknown as Record<string, unknown>
+            )[key]
+            installed.push(key)
+        }
     }
-  }
-  if (!("window" in globalThis)) { (globalThis as Record<string, unknown>).window = win; installed.push("window"); }
+    if (!('window' in globalThis)) {
+        ;(globalThis as Record<string, unknown>).window = win
+        installed.push('window')
+    }
 
-  ctx = makeCtx();
-  // happy-dom shares its Element/HTMLCanvasElement prototypes across GlobalWindow instances in one
-  // process, so these two patches MUST be restored in afterAll — leaving a 800x600 box on every
-  // element breaks other suites that rely on real 0x0 measurements (editor/tableWidget.test.ts).
-  const canvasProto = (globalThis as unknown as { HTMLCanvasElement: { prototype: Record<string, unknown> } }).HTMLCanvasElement.prototype;
-  restore.push([canvasProto, "getContext", canvasProto.getContext]);
-  canvasProto.getContext = () => ctx;
-  const elProto = Element.prototype as unknown as Record<string, unknown>;
-  restore.push([elProto, "getBoundingClientRect", elProto.getBoundingClientRect]);
-  elProto.getBoundingClientRect = function () {
-    return { x: 0, y: 0, left: 0, top: 0, right: BOX.width, bottom: BOX.height, ...BOX, toJSON: () => ({}) } as DOMRect;
-  };
-  for (const key of ["ResizeObserver", "requestAnimationFrame", "cancelAnimationFrame"]) {
-    saved[key] = (globalThis as Record<string, unknown>)[key];
-  }
-  (globalThis as Record<string, unknown>).ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
-  // A MANUAL frame pump — the tests step the loop themselves so nothing is timing-dependent.
-  globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => { rafQueue.push(cb); return rafQueue.length; }) as typeof requestAnimationFrame;
-  globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
-});
+    ctx = makeCtx()
+    // happy-dom shares its Element/HTMLCanvasElement prototypes across GlobalWindow instances in one
+    // process, so these two patches MUST be restored in afterAll — leaving a 800x600 box on every
+    // element breaks other suites that rely on real 0x0 measurements (editor/tableWidget.test.ts).
+    const canvasProto = (
+        globalThis as unknown as {
+            HTMLCanvasElement: { prototype: Record<string, unknown> }
+        }
+    ).HTMLCanvasElement.prototype
+    restore.push([canvasProto, 'getContext', canvasProto.getContext])
+    canvasProto.getContext = () => ctx
+    const elProto = Element.prototype as unknown as Record<string, unknown>
+    restore.push([
+        elProto,
+        'getBoundingClientRect',
+        elProto.getBoundingClientRect,
+    ])
+    elProto.getBoundingClientRect = function () {
+        return {
+            x: 0,
+            y: 0,
+            left: 0,
+            top: 0,
+            right: BOX.width,
+            bottom: BOX.height,
+            ...BOX,
+            toJSON: () => ({}),
+        } as DOMRect
+    }
+    for (const key of [
+        'ResizeObserver',
+        'requestAnimationFrame',
+        'cancelAnimationFrame',
+    ]) {
+        saved[key] = (globalThis as Record<string, unknown>)[key]
+    }
+    ;(globalThis as Record<string, unknown>).ResizeObserver = class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    }
+    // A MANUAL frame pump — the tests step the loop themselves so nothing is timing-dependent.
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+        rafQueue.push(cb)
+        return rafQueue.length
+    }) as typeof requestAnimationFrame
+    globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame
+})
 
 afterAll(() => {
-  for (const [obj, key, value] of restore) obj[key] = value;
-  for (const key of Object.keys(saved)) (globalThis as Record<string, unknown>)[key] = saved[key];
-  for (const key of installed) delete (globalThis as Record<string, unknown>)[key];
-});
+    for (const [obj, key, value] of restore) obj[key] = value
+    for (const key of Object.keys(saved))
+        (globalThis as Record<string, unknown>)[key] = saved[key]
+    for (const key of installed)
+        delete (globalThis as Record<string, unknown>)[key]
+})
 
 function frame(t = 16) {
-  const q = rafQueue;
-  rafQueue = [];
-  for (const cb of q) cb(t);
+    const q = rafQueue
+    rafQueue = []
+    for (const cb of q) cb(t)
 }
 /** Advance many frames so a camera glide (resolution / target) settles. */
-function settle(n = 120) { for (let i = 0; i < n; i++) frame(16 * (i + 2)); }
+function settle(n = 120) {
+    for (let i = 0; i < n; i++) frame(16 * (i + 2))
+}
 
 // ---------------------------------------------------------------------------
 // FILE-WIDE TEARDOWN — the cascade guard.
@@ -185,23 +329,23 @@ function settle(n = 120) { for (let i = 0; i < n; i++) frame(16 * (i + 2)); }
 //
 // Construct renderers with `newRenderer()`, never `newRenderer()` — an unregistered
 // instance re-opens exactly this hole.
-const liveRenderers = new Set<AsciiGraphRenderer>();
+const liveRenderers = new Set<AsciiGraphRenderer>()
 function newRenderer(): AsciiGraphRenderer {
-  const r = new AsciiGraphRenderer();
-  liveRenderers.add(r);
-  return r;
+    const r = new AsciiGraphRenderer()
+    liveRenderers.add(r)
+    return r
 }
 afterEach(() => {
-  for (const r of liveRenderers) r.destroy();
-  liveRenderers.clear();
-  // Drain whatever the just-destroyed renderers (or a mid-glide `settle()`) left queued, so the
-  // next test's first `frame()` runs only ITS OWN callbacks.
-  rafQueue = [];
-  // The two newest recording buffers, drained for the same reason `ctx.fills`/`ctx.strokes` are
-  // drained per test: they accumulate across every frame of every test otherwise.
-  ctx.fillRects.length = 0;
-  ctx.strokeTexts.length = 0;
-});
+    for (const r of liveRenderers) r.destroy()
+    liveRenderers.clear()
+    // Drain whatever the just-destroyed renderers (or a mid-glide `settle()`) left queued, so the
+    // next test's first `frame()` runs only ITS OWN callbacks.
+    rafQueue = []
+    // The two newest recording buffers, drained for the same reason `ctx.fills`/`ctx.strokes` are
+    // drained per test: they accumulate across every frame of every test otherwise.
+    ctx.fillRects.length = 0
+    ctx.strokeTexts.length = 0
+})
 
 // The fixture's world coordinates are scaled up from the "natural" ring geometry below (still only 24
 // notes on a small ring) so the graph's bounding radius is big enough, relative to the fixed absolute
@@ -217,85 +361,131 @@ afterEach(() => {
 // what each stop MEANS for this fixture — exactly where it was: measured at 800x600, RING_SCALE 1.5
 // with W 0.4 reproduces RING_SCALE 3 with W 0.8 exactly (2D maxRes 8.00 — the MIN_ZOOM_SPAN floor —
 // and 3D maxRes 9.77). Retune this whenever that constant moves.
-const RING_SCALE = 1.5;
+const RING_SCALE = 1.5
 
 /** A ring of notes around one high-degree hub, in three communities. */
 function sampleGraph() {
-  const nodes = [];
-  const edges = [];
-  for (let i = 0; i < 24; i++) {
-    const a = (i / 24) * Math.PI * 2;
-    nodes.push({
-      id: `n${i}`, label: `note ${i}`, kind: "note" as const,
-      position: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE, ((i % 5) - 2) * 30 * RING_SCALE] as [number, number, number],
-      position2d: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE] as [number, number],
-      community: i % 3,
-      communityLabel: `Cluster ${i % 3}`,
-    });
-  }
-  for (let i = 1; i < 24; i++) edges.push({ from: "n0", to: `n${i}`, kind: "link" as const });
-  for (let i = 1; i < 23; i++) edges.push({ from: `n${i}`, to: `n${i + 1}`, kind: "link" as const });
-  return { nodes, edges };
+    const nodes = []
+    const edges = []
+    for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2
+        nodes.push({
+            id: `n${i}`,
+            label: `note ${i}`,
+            kind: 'note' as const,
+            position: [
+                Math.cos(a) * 80 * RING_SCALE,
+                Math.sin(a) * 80 * RING_SCALE,
+                ((i % 5) - 2) * 30 * RING_SCALE,
+            ] as [number, number, number],
+            position2d: [
+                Math.cos(a) * 80 * RING_SCALE,
+                Math.sin(a) * 80 * RING_SCALE,
+            ] as [number, number],
+            community: i % 3,
+            communityLabel: `Cluster ${i % 3}`,
+        })
+    }
+    for (let i = 1; i < 24; i++)
+        edges.push({ from: 'n0', to: `n${i}`, kind: 'link' as const })
+    for (let i = 1; i < 23; i++)
+        edges.push({ from: `n${i}`, to: `n${i + 1}`, kind: 'link' as const })
+    return { nodes, edges }
 }
 
 const CONFIG = {
-  spin: false, spinSpeed: 0, palette: [],
-  viewMode: "3d" as const, showGraphLabels: true, graphLabelHubCount: 6,
-  edgeColor: 0, edgeOpacity: 0.3, backgroundColor: 0,
-  labelTextColor: "#fff", labelBgColor: "#000", selfColor: 0xffffff,
-};
+    spin: false,
+    spinSpeed: 0,
+    palette: [],
+    viewMode: '3d' as const,
+    showGraphLabels: true,
+    graphLabelHubCount: 6,
+    edgeColor: 0,
+    edgeOpacity: 0.3,
+    backgroundColor: 0,
+    labelTextColor: '#fff',
+    labelBgColor: '#000',
+    selfColor: 0xffffff,
+}
 
 interface Mounted {
-  r: AsciiGraphRenderer;
-  viewport: HTMLElement;
-  clicks: string[];
-  hovers: (string | null)[];
-  zooms: number[];
+    r: AsciiGraphRenderer
+    viewport: HTMLElement
+    clicks: string[]
+    hovers: (string | null)[]
+    zooms: number[]
 }
 
 function mountRenderer(
-  viewMode: "2d" | "3d" = "3d",
-  graph: ReturnType<typeof sampleGraph> = sampleGraph(),
-  cfgOverrides: Partial<typeof CONFIG & { showLodMasses: boolean }> = {},
+    viewMode: '2d' | '3d' = '3d',
+    graph: ReturnType<typeof sampleGraph> = sampleGraph(),
+    cfgOverrides: Partial<typeof CONFIG & { showLodMasses: boolean }> = {},
 ): Mounted {
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const r = newRenderer();
-  const clicks: string[] = [];
-  const hovers: (string | null)[] = [];
-  const zooms: number[] = [];
-  r.mount(host, (id) => clicks.push(id), (n) => hovers.push(n?.id ?? null));
-  r.setZoomCallback((p) => zooms.push(p));
-  r.setConfig({ ...CONFIG, viewMode, ...cfgOverrides });
-  r.render(graph);
-  ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-  frame();
-  return { r, viewport: host.firstElementChild as HTMLElement, clicks, hovers, zooms };
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const r = newRenderer()
+    const clicks: string[] = []
+    const hovers: (string | null)[] = []
+    const zooms: number[] = []
+    r.mount(
+        host,
+        id => clicks.push(id),
+        n => hovers.push(n?.id ?? null),
+    )
+    r.setZoomCallback(p => zooms.push(p))
+    r.setConfig({ ...CONFIG, viewMode, ...cfgOverrides })
+    r.render(graph)
+    ctx.fills.length = 0
+    ctx.strokes.length = 0
+    frame()
+    return {
+        r,
+        viewport: host.firstElementChild as HTMLElement,
+        clicks,
+        hovers,
+        zooms,
+    }
 }
 
 /** The private per-frame LOD state the integration tests assert against (cell buffers + entity
  *  views). Cast-only — the public surface stays exactly GraphRenderer. */
 interface LodPriv {
-  cellEntity: Int32Array;
-  cellNode: Int32Array;
-  layerBuf: Uint8Array;
-  entityFlat: { level: number; community: number; count: number; col: number; row: number }[];
-  nodes: { col: number; row: number; onGrid: boolean; node: { id: string } }[];
-  m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
-  pxPerWorld: number; res: number; panX: number; panY: number; target: [number, number, number];
+    cellEntity: Int32Array
+    cellNode: Int32Array
+    layerBuf: Uint8Array
+    entityFlat: {
+        level: number
+        community: number
+        count: number
+        col: number
+        row: number
+    }[]
+    nodes: { col: number; row: number; onGrid: boolean; node: { id: string } }[]
+    m: {
+        cols: number
+        rows: number
+        cellW: number
+        cellH: number
+        padX: number
+        padY: number
+    }
+    pxPerWorld: number
+    res: number
+    panX: number
+    panY: number
+    target: [number, number, number]
 }
-const lodPriv = (r: AsciiGraphRenderer) => r as unknown as LodPriv;
+const lodPriv = (r: AsciiGraphRenderer) => r as unknown as LodPriv
 /** Distinct entity levels currently rasterized (via the hit-test buffer). */
 function entityLevelsOnGrid(p: LodPriv): Set<number> {
-  const out = new Set<number>();
-  for (const v of p.cellEntity) if (v >= 0) out.add(p.entityFlat[v].level);
-  return out;
+    const out = new Set<number>()
+    for (const v of p.cellEntity) if (v >= 0) out.add(p.entityFlat[v].level)
+    return out
 }
 const cellPx = (p: LodPriv, i: number) => ({
-  x: p.m.padX + (i % p.m.cols) * p.m.cellW + 1,
-  y: p.m.padY + Math.floor(i / p.m.cols) * p.m.cellH + 1,
-});
+    x: p.m.padX + (i % p.m.cols) * p.m.cellW + 1,
+    y: p.m.padY + Math.floor(i / p.m.cols) * p.m.cellH + 1,
+})
 
 /**
  * The LOD fixture: four spatially TIGHT 6-note blobs in a 2-level hierarchy — TOP 0 (blobs 0+1)
@@ -305,45 +495,65 @@ const cellPx = (p: LodPriv, i: number) => ({
  * click-to-frame all behave like a real vault's geometry.
  */
 function lodGraph() {
-  const nodes = [];
-  const edges = [];
-  // Two top clusters (left/right), each of two blobs (up/down). The VERTICAL offset is bounded by
-  // what the field can still show at the level-1 boundary stop, which is the stop these tests step
-  // to: fit maps the graph's WIDE axis to the field, so at the boundary's resolution the visible
-  // world half-height is ~122 units — a ±120 offset (the original) left both children within a third
-  // of a row of the edge, so which of them counted as "on the grid" came down to rounding. ±80 keeps
-  // ~5 rows of margin. Bounded by the ladder, so re-check it if FILE_LABEL_REVEAL_T moves again.
-  const CENTERS = [[-350, -80], [-350, 80], [350, -80], [350, 80]];
-  for (let b = 0; b < 4; b++) {
-    for (let k = 0; k < 6; k++) {
-      const a = (k / 6) * Math.PI * 2;
-      const x = (CENTERS[b][0] + Math.cos(a) * 8) * RING_SCALE;
-      const y = (CENTERS[b][1] + Math.sin(a) * 8) * RING_SCALE;
-      const top = b < 2 ? 0 : 1;
-      nodes.push({
-        id: `b${b}k${k}`, label: `note ${b}${k}`, kind: "note" as const,
-        position: [x, y, 0] as [number, number, number],
-        position2d: [x, y] as [number, number],
-        community: b, communityLabel: `Blob ${b}`,
-        communityPath: [top, b], communityPathLabels: [`Top ${top}`, `Blob ${b}`],
-      });
+    const nodes = []
+    const edges = []
+    // Two top clusters (left/right), each of two blobs (up/down). The VERTICAL offset is bounded by
+    // what the field can still show at the level-1 boundary stop, which is the stop these tests step
+    // to: fit maps the graph's WIDE axis to the field, so at the boundary's resolution the visible
+    // world half-height is ~122 units — a ±120 offset (the original) left both children within a third
+    // of a row of the edge, so which of them counted as "on the grid" came down to rounding. ±80 keeps
+    // ~5 rows of margin. Bounded by the ladder, so re-check it if FILE_LABEL_REVEAL_T moves again.
+    const CENTERS = [
+        [-350, -80],
+        [-350, 80],
+        [350, -80],
+        [350, 80],
+    ]
+    for (let b = 0; b < 4; b++) {
+        for (let k = 0; k < 6; k++) {
+            const a = (k / 6) * Math.PI * 2
+            const x = (CENTERS[b][0] + Math.cos(a) * 8) * RING_SCALE
+            const y = (CENTERS[b][1] + Math.sin(a) * 8) * RING_SCALE
+            const top = b < 2 ? 0 : 1
+            nodes.push({
+                id: `b${b}k${k}`,
+                label: `note ${b}${k}`,
+                kind: 'note' as const,
+                position: [x, y, 0] as [number, number, number],
+                position2d: [x, y] as [number, number],
+                community: b,
+                communityLabel: `Blob ${b}`,
+                communityPath: [top, b],
+                communityPathLabels: [`Top ${top}`, `Blob ${b}`],
+            })
+        }
     }
-  }
-  for (let b = 0; b < 4; b++) for (let k = 1; k < 6; k++) edges.push({ from: `b${b}k0`, to: `b${b}k${k}`, kind: "link" as const });
-  for (let k = 0; k < 3; k++) edges.push({ from: `b0k${k}`, to: `b2k${k}`, kind: "link" as const });
-  for (let k = 0; k < 3; k++) edges.push({ from: `b1k${k}`, to: `b3k${k}`, kind: "link" as const });
-  edges.push({ from: "b0k0", to: "b1k0", kind: "link" as const }, { from: "b0k1", to: "b1k1", kind: "link" as const });
-  return { nodes, edges };
+    for (let b = 0; b < 4; b++)
+        for (let k = 1; k < 6; k++)
+            edges.push({
+                from: `b${b}k0`,
+                to: `b${b}k${k}`,
+                kind: 'link' as const,
+            })
+    for (let k = 0; k < 3; k++)
+        edges.push({ from: `b0k${k}`, to: `b2k${k}`, kind: 'link' as const })
+    for (let k = 0; k < 3; k++)
+        edges.push({ from: `b1k${k}`, to: `b3k${k}`, kind: 'link' as const })
+    edges.push(
+        { from: 'b0k0', to: 'b1k0', kind: 'link' as const },
+        { from: 'b0k1', to: 'b1k1', kind: 'link' as const },
+    )
+    return { nodes, edges }
 }
 
-const allText = () => ctx.fills.map((f) => f.text).join("");
+const allText = () => ctx.fills.map(f => f.text).join('')
 /** Every line segment the vector-edge pass (strokeEdges()) actually stroked this paint, flattened
  *  across all batched `stroke()` calls. */
-const strokeSegs = () => ctx.strokes.flatMap((s) => s.segs);
+const strokeSegs = () => ctx.strokes.flatMap(s => s.segs)
 // The fallback --graph-0..4 tokens (COLOR_FALLBACK's first 5 entries in AsciiGraphRenderer.ts) —
 // happy-dom resolves no CSS vars, so this is the exact palette rebuildCommunityColors() passes to
 // buildColorSlots() in every test in this file. Declared before nodeRuns() (below), which depends on it.
-const RAMP_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a"];
+const RAMP_FALLBACK = ['#f0509b', '#9b53e8', '#3f6bf0', '#27c7d9', '#43d49a']
 // happy-dom resolves no CSS vars, so the renderer falls back to its literal token table. Community
 // colours are no longer one of a fixed 5-entry ramp (buildColorSlots ranks-and-boosts against the
 // --graph-0..4 tokens, so the actual hex a community lands on is a saturation/lightness-boosted, and
@@ -363,226 +573,275 @@ const RAMP_FALLBACK = ["#f0509b", "#9b53e8", "#3f6bf0", "#27c7d9", "#43d49a"];
 // — ids 0/1/2 -> ranks 0/1/2, all within the palette's first cycle (3 < 5, no hue rotation yet) — a
 // small, closed, exactly-computable set.
 const SAMPLE_GRAPH_COMMUNITY_COLORS = new Set(
-  buildColorSlots(new Map([[0, 8], [1, 8], [2, 8]]), RAMP_FALLBACK).values(),
-);
-const nodeRuns = () => ctx.fills.filter((f) => SAMPLE_GRAPH_COMMUNITY_COLORS.has(f.color) && /^[.o@ ]+$/.test(f.text));
+    buildColorSlots(
+        new Map([
+            [0, 8],
+            [1, 8],
+            [2, 8],
+        ]),
+        RAMP_FALLBACK,
+    ).values(),
+)
+const nodeRuns = () =>
+    ctx.fills.filter(
+        f =>
+            SAMPLE_GRAPH_COMMUNITY_COLORS.has(f.color) &&
+            /^[.o@ ]+$/.test(f.text),
+    )
 // A real wheel event always carries the cursor position — default to the field's centre (2D zoom
 // is cursor-ANCHORED now). happy-dom's WheelEvent constructor DROPS MouseEvent init fields
 // (clientX comes out undefined), so the coordinates are pinned on afterwards.
-const wheelIn = (viewport: HTMLElement, times = 10, at = { x: BOX.width / 2, y: BOX.height / 2 }) => {
-  for (let i = 0; i < times; i++) {
-    const e = new WheelEvent("wheel", { deltaY: -120, cancelable: true });
-    Object.defineProperty(e, "clientX", { value: at.x });
-    Object.defineProperty(e, "clientY", { value: at.y });
-    viewport.dispatchEvent(e);
-  }
-};
-
-describe("AsciiGraphRenderer — the field rasterizes into characters", () => {
-  it("strokes edges as vector lines and draws the node degree ramp as glyphs", () => {
-    const { r } = mountRenderer("3d");
-    expect(ctx.fills.length).toBeGreaterThan(0);
-    // Edges are real Canvas2D strokes now, not grid characters — a regression lock that the deleted
-    // character-edge path doesn't come back: no fillText run is purely edge glyphs ("- | / \ +").
-    expect(ctx.fills.some((f) => /^[-|/\\+]+$/.test(f.text))).toBe(false);
-    const segs = strokeSegs();
-    expect(segs.length).toBeGreaterThan(0);
-    for (const s of ctx.strokes) {
-      expect(s.width).toBeGreaterThanOrEqual(0.08);
-      expect(s.width).toBeLessThanOrEqual(1.6);
+const wheelIn = (
+    viewport: HTMLElement,
+    times = 10,
+    at = { x: BOX.width / 2, y: BOX.height / 2 },
+) => {
+    for (let i = 0; i < times; i++) {
+        const e = new WheelEvent('wheel', { deltaY: -120, cancelable: true })
+        Object.defineProperty(e, 'clientX', { value: at.x })
+        Object.defineProperty(e, 'clientY', { value: at.y })
+        viewport.dispatchEvent(e)
     }
-    // At fit (t == 0, the shallowest resolution stop) the width law (EDGE_W_GAIN + (EDGE_W_MAX -
-    // EDGE_W_GAIN) * resolutionT(res, maxRes)) lands exactly on EDGE_W_GAIN, its unclamped floor —
-    // see AsciiGraphRenderer.ts's strokeEdges() and the "edge width follows the resolution stop, not
-    // raw res" describe block below for the deepest-stop end of this same law.
-    expect(ctx.strokes[0]?.width).toBeCloseTo(EDGE_W_GAIN, 5);
-    const glyphs = nodeRuns().map((f) => f.text).join("");
-    expect(glyphs.includes("@")).toBe(true);           // the 24-spoke hub
-    expect(/[.o]/.test(glyphs)).toBe(true);            // leaves / linked notes
-    expect(/[^.o@ ]/.test(glyphs)).toBe(false);        // the node layer draws ONLY the degree ramp
-    r.destroy();
-  });
+}
 
-  it("reports the node count it painted (the boot splash correlates these)", () => {
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    const painted: number[] = [];
-    r.mount(host, () => {});
-    r.setPaintCallback((n) => painted.push(n));
-    r.setConfig({ ...CONFIG });
-    r.render(sampleGraph());
-    frame();
-    expect(painted.at(-1)).toBeGreaterThan(0);
-    r.destroy();
-  });
+describe('AsciiGraphRenderer — the field rasterizes into characters', () => {
+    it('strokes edges as vector lines and draws the node degree ramp as glyphs', () => {
+        const { r } = mountRenderer('3d')
+        expect(ctx.fills.length).toBeGreaterThan(0)
+        // Edges are real Canvas2D strokes now, not grid characters — a regression lock that the deleted
+        // character-edge path doesn't come back: no fillText run is purely edge glyphs ("- | / \ +").
+        expect(ctx.fills.some(f => /^[-|/\\+]+$/.test(f.text))).toBe(false)
+        const segs = strokeSegs()
+        expect(segs.length).toBeGreaterThan(0)
+        for (const s of ctx.strokes) {
+            expect(s.width).toBeGreaterThanOrEqual(0.08)
+            expect(s.width).toBeLessThanOrEqual(1.6)
+        }
+        // At fit (t == 0, the shallowest resolution stop) the width law (EDGE_W_GAIN + (EDGE_W_MAX -
+        // EDGE_W_GAIN) * resolutionT(res, maxRes)) lands exactly on EDGE_W_GAIN, its unclamped floor —
+        // see AsciiGraphRenderer.ts's strokeEdges() and the "edge width follows the resolution stop, not
+        // raw res" describe block below for the deepest-stop end of this same law.
+        expect(ctx.strokes[0]?.width).toBeCloseTo(EDGE_W_GAIN, 5)
+        const glyphs = nodeRuns()
+            .map(f => f.text)
+            .join('')
+        expect(glyphs.includes('@')).toBe(true) // the 24-spoke hub
+        expect(/[.o]/.test(glyphs)).toBe(true) // leaves / linked notes
+        expect(/[^.o@ ]/.test(glyphs)).toBe(false) // the node layer draws ONLY the degree ramp
+        r.destroy()
+    })
 
-  it("emits a per-frame density field for the phosphor bloom (buildBloom always normalises its peak cell to exactly 1)", () => {
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    const fields: Float32Array[] = [];
-    r.mount(host, () => {});
-    r.setBloomCallback((f) => fields.push(f));
-    r.setConfig({ ...CONFIG });
-    r.render(sampleGraph());
-    frame();
-    expect(fields.length).toBeGreaterThan(0);
-    expect(Math.max(...fields.at(-1)!)).toBe(1);
-    r.destroy();
-  });
+    it('reports the node count it painted (the boot splash correlates these)', () => {
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        const painted: number[] = []
+        r.mount(host, () => {})
+        r.setPaintCallback(n => painted.push(n))
+        r.setConfig({ ...CONFIG })
+        r.render(sampleGraph())
+        frame()
+        expect(painted.at(-1)).toBeGreaterThan(0)
+        r.destroy()
+    })
 
-  it("detaches its bloom callback on destroy — a torn-down renderer must not hold a stale sink", () => {
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    r.mount(host, () => {});
-    r.setBloomCallback(() => {});
-    expect((r as unknown as { onBloom?: unknown }).onBloom).toBeDefined();
-    r.destroy();
-    expect((r as unknown as { onBloom?: unknown }).onBloom).toBeUndefined();
-  });
+    it('emits a per-frame density field for the phosphor bloom (buildBloom always normalises its peak cell to exactly 1)', () => {
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        const fields: Float32Array[] = []
+        r.mount(host, () => {})
+        r.setBloomCallback(f => fields.push(f))
+        r.setConfig({ ...CONFIG })
+        r.render(sampleGraph())
+        frame()
+        expect(fields.length).toBeGreaterThan(0)
+        expect(Math.max(...fields.at(-1)!)).toBe(1)
+        r.destroy()
+    })
 
-  it("rasterizes the flat layout in 2D too", () => {
-    const { r } = mountRenderer("2d");
-    expect(allText().length).toBeGreaterThan(0);
-    r.destroy();
-  });
+    it('detaches its bloom callback on destroy — a torn-down renderer must not hold a stale sink', () => {
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        r.mount(host, () => {})
+        r.setBloomCallback(() => {})
+        expect((r as unknown as { onBloom?: unknown }).onBloom).toBeDefined()
+        r.destroy()
+        expect((r as unknown as { onBloom?: unknown }).onBloom).toBeUndefined()
+    })
 
-  it("names nodes on the grid — labels are cells, not a DOM overlay (once zoomed past the cluster-name reveal point)", () => {
-    // At fit (100% zoom) the field names CLUSTERS, not files — see the "cluster names own the field
-    // at fit" describe block below. frameSubset + a wheel push to saturation deterministically
-    // reaches max resolution (0%) centred on n0, regardless of the fixture's ring geometry.
-    const { r, viewport } = mountRenderer("2d");
-    r.frameSubset(["n0"]);
-    wheelIn(viewport, 30);
-    settle(200);
-    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
-    r.destroy();
-  });
+    it('rasterizes the flat layout in 2D too', () => {
+        const { r } = mountRenderer('2d')
+        expect(allText().length).toBeGreaterThan(0)
+        r.destroy()
+    })
 
-  it("writes a tag label exactly once (vault.ts already puts the # on the label)", () => {
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    r.mount(host, () => {});
-    r.setConfig({ ...CONFIG, viewMode: "2d" });
-    // Positions scaled by RING_SCALE for the same reason as sampleGraph() above — a big enough
-    // bounding radius to have real zoom range under the fixed-absolute 0% target.
-    r.render({
-      nodes: [
-        { id: "note", label: "note", kind: "note", position: [0, 0, 0], position2d: [0, 0] },
-        {
-          id: "tag:research", label: "#research", kind: "tag",
-          position: [60 * RING_SCALE, 0, 0], position2d: [60 * RING_SCALE, 0],
-        },
-      ],
-      edges: [{ from: "note", to: "tag:research", kind: "tag" }],
-    });
-    const viewport = host.firstElementChild as HTMLElement;
-    ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-    frame();
-    // Past the cluster-name reveal point — these two nodes carry no community, so file names are
-    // the only kind on offer once zoomed. frameSubset on the tag ITSELF (not the midpoint of the
-    // pair) keeps it dead-centre — and therefore on-grid — even once the wheel saturates resolution.
-    r.frameSubset(["tag:research"]);
-    wheelIn(viewport, 30);
-    settle(200);
-    expect(ctx.fills.some((f) => f.text === "#research")).toBe(true);
-    expect(ctx.fills.some((f) => f.text.includes("##"))).toBe(false);
-    r.destroy();
-  });
+    it('names nodes on the grid — labels are cells, not a DOM overlay (once zoomed past the cluster-name reveal point)', () => {
+        // At fit (100% zoom) the field names CLUSTERS, not files — see the "cluster names own the field
+        // at fit" describe block below. frameSubset + a wheel push to saturation deterministically
+        // reaches max resolution (0%) centred on n0, regardless of the fixture's ring geometry.
+        const { r, viewport } = mountRenderer('2d')
+        r.frameSubset(['n0'])
+        wheelIn(viewport, 30)
+        settle(200)
+        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(true)
+        r.destroy()
+    })
 
-  /** Card: the field rendered NOTHING while the HUD read "8 nodes · 10 edges". The knowledge graph
-   *  is one floating element App sizes from a rAF, so mount() AND the first render() both run
-   *  against a 0×0 host; measure() correctly refuses to fit a degenerate box, and the ONLY thing
-   *  that used to re-measure was a ResizeObserver notification. Miss that one delivery and the
-   *  field stayed pinned to its 1×1 bootstrap grid forever — every node off-grid, every cell empty.
-   *  The loop now reconciles the box itself. (The harness's ResizeObserver is a no-op, so this test
-   *  reproduces exactly the "no RO delivery ever arrives" case.) */
-  it("picks the host box up from the render loop when no ResizeObserver notification arrives", () => {
-    const restoreBox = { ...BOX };
-    BOX.width = 0; BOX.height = 0;
-    try {
-      const host = document.createElement("div");
-      document.body.appendChild(host);
-      const r = newRenderer();
-      const painted: number[] = [];
-      r.mount(host, () => {});
-      r.setPaintCallback((n) => painted.push(n));
-      r.setConfig({ ...CONFIG, viewMode: "2d" });
-      r.render(sampleGraph());
-      ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-      frame();
-      expect(nodeRuns()).toEqual([]);          // nothing measurable yet — blank, as designed
+    it('writes a tag label exactly once (vault.ts already puts the # on the label)', () => {
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        r.mount(host, () => {})
+        r.setConfig({ ...CONFIG, viewMode: '2d' })
+        // Positions scaled by RING_SCALE for the same reason as sampleGraph() above — a big enough
+        // bounding radius to have real zoom range under the fixed-absolute 0% target.
+        r.render({
+            nodes: [
+                {
+                    id: 'note',
+                    label: 'note',
+                    kind: 'note',
+                    position: [0, 0, 0],
+                    position2d: [0, 0],
+                },
+                {
+                    id: 'tag:research',
+                    label: '#research',
+                    kind: 'tag',
+                    position: [60 * RING_SCALE, 0, 0],
+                    position2d: [60 * RING_SCALE, 0],
+                },
+            ],
+            edges: [{ from: 'note', to: 'tag:research', kind: 'tag' }],
+        })
+        const viewport = host.firstElementChild as HTMLElement
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame()
+        // Past the cluster-name reveal point — these two nodes carry no community, so file names are
+        // the only kind on offer once zoomed. frameSubset on the tag ITSELF (not the midpoint of the
+        // pair) keeps it dead-centre — and therefore on-grid — even once the wheel saturates resolution.
+        r.frameSubset(['tag:research'])
+        wheelIn(viewport, 30)
+        settle(200)
+        expect(ctx.fills.some(f => f.text === '#research')).toBe(true)
+        expect(ctx.fills.some(f => f.text.includes('##'))).toBe(false)
+        r.destroy()
+    })
 
-      BOX.width = 800; BOX.height = 600;       // App places + sizes the floater; no RO callback fires
-      frame(32);
-      expect(nodeRuns().length).toBeGreaterThan(0);
-      expect(painted.at(-1)).toBeGreaterThan(0);
-      r.destroy();
-    } finally {
-      Object.assign(BOX, restoreBox);
-    }
-  });
-});
+    /** Card: the field rendered NOTHING while the HUD read "8 nodes · 10 edges". The knowledge graph
+     *  is one floating element App sizes from a rAF, so mount() AND the first render() both run
+     *  against a 0×0 host; measure() correctly refuses to fit a degenerate box, and the ONLY thing
+     *  that used to re-measure was a ResizeObserver notification. Miss that one delivery and the
+     *  field stayed pinned to its 1×1 bootstrap grid forever — every node off-grid, every cell empty.
+     *  The loop now reconciles the box itself. (The harness's ResizeObserver is a no-op, so this test
+     *  reproduces exactly the "no RO delivery ever arrives" case.) */
+    it('picks the host box up from the render loop when no ResizeObserver notification arrives', () => {
+        const restoreBox = { ...BOX }
+        BOX.width = 0
+        BOX.height = 0
+        try {
+            const host = document.createElement('div')
+            document.body.appendChild(host)
+            const r = newRenderer()
+            const painted: number[] = []
+            r.mount(host, () => {})
+            r.setPaintCallback(n => painted.push(n))
+            r.setConfig({ ...CONFIG, viewMode: '2d' })
+            r.render(sampleGraph())
+            ctx.fills.length = 0
+            ctx.strokes.length = 0
+            frame()
+            expect(nodeRuns()).toEqual([]) // nothing measurable yet — blank, as designed
 
-describe("semantic zoom — cluster names own the field zoomed out, file names crossfade in on zoom-in", () => {
-  it("shows cluster names and NO file names at fit (100% zoom)", () => {
-    const { r } = mountRenderer("2d");
-    // sampleGraph() gives every node communityLabel `Cluster ${0|1|2}`; the eyebrow register
-    // upper-cases it.
-    expect(ctx.fills.some((f) => f.text.includes("CLUSTER 0"))).toBe(true);
-    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(false);
-    r.destroy();
-  });
+            BOX.width = 800
+            BOX.height = 600 // App places + sizes the floater; no RO callback fires
+            frame(32)
+            expect(nodeRuns().length).toBeGreaterThan(0)
+            expect(painted.at(-1)).toBeGreaterThan(0)
+            r.destroy()
+        } finally {
+            Object.assign(BOX, restoreBox)
+        }
+    })
+})
 
-  it("crossfades to file names as the field zooms in", () => {
-    const { r, viewport } = mountRenderer("2d");
-    r.frameSubset(["n0"]);
-    wheelIn(viewport, 30);
-    settle(200);
-    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
-    r.destroy();
-  });
+describe('semantic zoom — cluster names own the field zoomed out, file names crossfade in on zoom-in', () => {
+    it('shows cluster names and NO file names at fit (100% zoom)', () => {
+        const { r } = mountRenderer('2d')
+        // sampleGraph() gives every node communityLabel `Cluster ${0|1|2}`; the eyebrow register
+        // upper-cases it.
+        expect(ctx.fills.some(f => f.text.includes('CLUSTER 0'))).toBe(true)
+        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(false)
+        r.destroy()
+    })
 
-  it("hover at fit reports the CLUSTER entity when LOD masses are opted into; a hovered NOTE is force-named once leaves are on the field", () => {
-    // LOD masses are OFF by default (see the "LEVEL OF DETAIL" describe block further down) — this
-    // test opts in (showLodMasses) to cover the retained aggregate-entity hover path. At fit with
-    // masses on, the 2D field is AGGREGATE ENTITIES — there is no note glyph to hover; hovering a
-    // mass surfaces the cluster, and the forced file-name behaviour still lives at the deep stops.
-    const { r, hovers } = mountRenderer("2d", undefined, { showLodMasses: true });
-    const priv = r as unknown as {
-      cellEntity: Int32Array;
-      m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
-      nodes: { col: number; row: number; onGrid: boolean; node: { id: string } }[];
-    };
-    const i = priv.cellEntity.findIndex((v) => v >= 0);
-    expect(i).toBeGreaterThanOrEqual(0);
-    const m = priv.m;
-    window.dispatchEvent(new PointerEvent("pointermove", {
-      clientX: m.padX + (i % m.cols) * m.cellW + 1, clientY: m.padY + Math.floor(i / m.cols) * m.cellH + 1,
-    }));
-    expect(String(hovers.at(-1))).toContain("cluster:");
+    it('crossfades to file names as the field zooms in', () => {
+        const { r, viewport } = mountRenderer('2d')
+        r.frameSubset(['n0'])
+        wheelIn(viewport, 30)
+        settle(200)
+        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(true)
+        r.destroy()
+    })
 
-    // Deep: frame a note (t → 1, leaves fully on the field), hover it → forced label.
-    r.frameSubset(["n0"]);
-    settle(200);
-    const nv = priv.nodes.find((n) => n.onGrid);
-    expect(nv).toBeDefined();
-    ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-    window.dispatchEvent(new PointerEvent("pointermove", {
-      clientX: m.padX + nv!.col * m.cellW + 1, clientY: m.padY + nv!.row * m.cellH + m.cellH / 2,
-    }));
-    frame();
-    expect(hovers.filter(Boolean).length).toBeGreaterThan(1);
-    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true); // forced past the reveal gate
-    r.destroy();
-  });
-});
+    it('hover at fit reports the CLUSTER entity when LOD masses are opted into; a hovered NOTE is force-named once leaves are on the field', () => {
+        // LOD masses are OFF by default (see the "LEVEL OF DETAIL" describe block further down) — this
+        // test opts in (showLodMasses) to cover the retained aggregate-entity hover path. At fit with
+        // masses on, the 2D field is AGGREGATE ENTITIES — there is no note glyph to hover; hovering a
+        // mass surfaces the cluster, and the forced file-name behaviour still lives at the deep stops.
+        const { r, hovers } = mountRenderer('2d', undefined, {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as {
+            cellEntity: Int32Array
+            m: {
+                cols: number
+                rows: number
+                cellW: number
+                cellH: number
+                padX: number
+                padY: number
+            }
+            nodes: {
+                col: number
+                row: number
+                onGrid: boolean
+                node: { id: string }
+            }[]
+        }
+        const i = priv.cellEntity.findIndex(v => v >= 0)
+        expect(i).toBeGreaterThanOrEqual(0)
+        const m = priv.m
+        window.dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: m.padX + (i % m.cols) * m.cellW + 1,
+                clientY: m.padY + Math.floor(i / m.cols) * m.cellH + 1,
+            }),
+        )
+        expect(String(hovers.at(-1))).toContain('cluster:')
+
+        // Deep: frame a note (t → 1, leaves fully on the field), hover it → forced label.
+        r.frameSubset(['n0'])
+        settle(200)
+        const nv = priv.nodes.find(n => n.onGrid)
+        expect(nv).toBeDefined()
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        window.dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: m.padX + nv!.col * m.cellW + 1,
+                clientY: m.padY + nv!.row * m.cellH + m.cellH / 2,
+            }),
+        )
+        frame()
+        expect(hovers.filter(Boolean).length).toBeGreaterThan(1)
+        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(true) // forced past the reveal gate
+        r.destroy()
+    })
+})
 
 // The 3D twins of the three tests above. 3D takes the OTHER name pass — `showLodMasses` is forced
 // off in 3D ("3D never draws entities" is its own pinned test), so `layoutClusterNames` runs where
@@ -592,891 +851,1153 @@ describe("semantic zoom — cluster names own the field zoomed out, file names c
 // against 56 at fit — and the 41 extra belong to one- and two-note communities whose exemplar name
 // IS a note's own title, so the 3D field read as a wall of file names over the glyph field. It was
 // found by looking at a screenshot, with the whole suite green.
-describe("semantic zoom in 3D — the same ladder on the pass that has no LOD masses", () => {
-  /** Three REAL communities of eight notes each, plus twelve one-note communities whose exemplar
-   *  name is a note title ("Stray N") rather than a cluster's — the shape of the reference vault's
-   *  coarsest level (171 communities, 15 of them real), in miniature.
-   *
-   *  The strays are what makes this fixture worth anything: on a fixture whose every community is
-   *  big enough, BOTH name passes name all of them and the two branches agree by accident. Sizes are
-   *  written as literal 8 and 1, deliberately NOT as expressions over `LOD_MIN_CLUSTER` — a fixture
-   *  phrased in terms of the threshold under test cannot fail when the threshold moves.
-   *
-   *  The strays are spread across the lower half of the field on distinct rows so that, unfixed,
-   *  they genuinely reach the field: nothing crowds them out of the occupancy grid, so a failure
-   *  here is the roster, never the placement. */
-  const STRAY_COUNT = 12;
-  function soupGraph() {
-    const nodes = [];
-    const edges = [];
-    const REAL = [[-420, -260], [0, -300], [420, -260]];
-    for (let b = 0; b < REAL.length; b++) {
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
-        const x = (REAL[b][0] + Math.cos(a) * 30) * RING_SCALE;
-        const y = (REAL[b][1] + Math.sin(a) * 30) * RING_SCALE;
+describe('semantic zoom in 3D — the same ladder on the pass that has no LOD masses', () => {
+    /** Three REAL communities of eight notes each, plus twelve one-note communities whose exemplar
+     *  name is a note title ("Stray N") rather than a cluster's — the shape of the reference vault's
+     *  coarsest level (171 communities, 15 of them real), in miniature.
+     *
+     *  The strays are what makes this fixture worth anything: on a fixture whose every community is
+     *  big enough, BOTH name passes name all of them and the two branches agree by accident. Sizes are
+     *  written as literal 8 and 1, deliberately NOT as expressions over `LOD_MIN_CLUSTER` — a fixture
+     *  phrased in terms of the threshold under test cannot fail when the threshold moves.
+     *
+     *  The strays are spread across the lower half of the field on distinct rows so that, unfixed,
+     *  they genuinely reach the field: nothing crowds them out of the occupancy grid, so a failure
+     *  here is the roster, never the placement. */
+    const STRAY_COUNT = 12
+    function soupGraph() {
+        const nodes = []
+        const edges = []
+        const REAL = [
+            [-420, -260],
+            [0, -300],
+            [420, -260],
+        ]
+        for (let b = 0; b < REAL.length; b++) {
+            for (let k = 0; k < 8; k++) {
+                const a = (k / 8) * Math.PI * 2
+                const x = (REAL[b][0] + Math.cos(a) * 30) * RING_SCALE
+                const y = (REAL[b][1] + Math.sin(a) * 30) * RING_SCALE
+                nodes.push({
+                    id: `b${b}k${k}`,
+                    label: `note ${b}${k}`,
+                    kind: 'note' as const,
+                    position: [x, y, 0] as [number, number, number],
+                    position2d: [x, y] as [number, number],
+                    community: b,
+                    communityLabel: `Real Cluster ${b}`,
+                })
+            }
+            for (let k = 1; k < 8; k++)
+                edges.push({
+                    from: `b${b}k0`,
+                    to: `b${b}k${k}`,
+                    kind: 'link' as const,
+                })
+        }
+        for (let s = 0; s < STRAY_COUNT; s++) {
+            const x = (-420 + (s % 4) * 280) * RING_SCALE
+            const y = (60 + Math.floor(s / 4) * 130) * RING_SCALE
+            nodes.push({
+                id: `s${s}`,
+                label: `stray ${s}`,
+                kind: 'note' as const,
+                position: [x, y, 0] as [number, number, number],
+                position2d: [x, y] as [number, number],
+                community: 100 + s,
+                communityLabel: `Stray ${s}`,
+            })
+        }
+        return { nodes, edges }
+    }
+
+    const REAL_NAMES = ['REAL CLUSTER 0', 'REAL CLUSTER 1', 'REAL CLUSTER 2']
+    const eyebrowNames = (r: AsciiGraphRenderer) =>
+        (
+            r as unknown as { labels: { text: string; eyebrow?: boolean }[] }
+        ).labels
+            .filter(l => l.eyebrow)
+            .map(l => l.text)
+            .sort()
+
+    it('shows cluster names and NO file names at fit (100% zoom) — and names only REAL clusters, not one-note ones', () => {
+        const { r } = mountRenderer('3d', soupGraph())
+        // ABSOLUTE, not relative to the threshold: three names on the field, and they are these three.
+        // Unfixed this is fifteen — the twelve stray note titles as well.
+        expect(eyebrowNames(r)).toEqual([...REAL_NAMES].sort())
+        // Said again the other way round, because the failure output matters: a note title must never
+        // reach the field dressed as a cluster name.
+        expect(eyebrowNames(r).filter(t => t.startsWith('STRAY'))).toEqual([])
+        // ...and the file-label ladder is still shut at fit, exactly as in 2D. Asserted on BOTH sides of
+        // the alpha: nothing PAINTED (the 2D twin's assertion), and nothing LAID OUT either. At fit
+        // `fileLabelAlpha` is 0, so a file label that got past the budget is placed with alpha 0 and
+        // never reaches `ctx.fills` — the painted check alone cannot see a blown budget.
+        expect(ctx.fills.some(f => f.text.includes('[['))).toBe(false)
+        const priv = r as unknown as { labels: { eyebrow?: boolean }[] }
+        expect(priv.labels.filter(l => !l.eyebrow).length).toBe(0)
+        r.destroy()
+    })
+
+    it('lands on the SAME names 2D does at fit — the roster is not a property of which pass ran', () => {
+        // The two branches share nothing but the roster: 2D anchors an entity name under its mass from
+        // `entityLevels`, 3D anchors a hub name above its hub from `clusterHubByLevel`, through a
+        // different projection. Agreement here is a real measurement, not an identity — unfixed the two
+        // sides read 3 and 15 on this fixture.
+        const g = soupGraph()
+        const a = mountRenderer('2d', g, { showLodMasses: true })
+        const names2d = eyebrowNames(a.r)
+        a.r.destroy()
+        const b = mountRenderer('3d', g)
+        const names3d = eyebrowNames(b.r)
+        b.r.destroy()
+        expect(names2d).toEqual([...REAL_NAMES].sort()) // guard: neither side is empty
+        expect(names3d).toEqual(names2d)
+    })
+
+    it('crossfades to file names as the field zooms in — in 3D the camera really dollies in to get there', () => {
+        const { r, viewport } = mountRenderer('3d', soupGraph())
+        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(false) // where it starts
+        r.frameSubset(['b0k0'])
+        wheelIn(viewport, 30)
+        settle(200)
+        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(true)
+        r.destroy()
+    })
+
+    it('computeStats() reports zero label overlaps at fit in 3D, on the fixture that used to soup', () => {
+        const { r } = mountRenderer('3d', soupGraph())
+        const stats = r.computeStats()
+        expect(stats.labelsDrawn).toBe(REAL_NAMES.length)
+        expect(stats.labelOverlaps).toBe(0)
+        expect(stats.maxLabelChars).toBeLessThanOrEqual(CLUSTER_LABEL_MAX_CHARS)
+        expect(stats.entitiesDrawn).toBe(0) // 3D never draws entities — this is the non-LOD branch
+        r.destroy()
+    })
+})
+
+describe('N-level semantic labels — the zoom ladder walks communityPath, coarsest to finest', () => {
+    /** Two top-level super-clusters (TOP 0/TOP 1), each split into two finer sub-clusters (SUB
+     *  0..3) — a 2-level hierarchy, communityPath/communityPathLabels coarsest-first per graph.ts.
+     *  A FLATTENED ring (y radius 30 against x radius 80), for the same reason as lodGraph's CENTERS:
+     *  the two top halves are the upper/lower arcs, so their centroids sit at 0.62 of the y radius, and
+     *  at the sub-level boundary stop the field only shows the middle ~0.7 of the y extent. On the
+     *  circular ring this put every cluster centroid off the grid at that stop and no name could draw. */
+    function twoLevelGraph() {
+        const nodes = []
+        const edges = []
+        for (let i = 0; i < 24; i++) {
+            const a = (i / 24) * Math.PI * 2
+            const top = i < 12 ? 0 : 1
+            const sub = top * 2 + (i % 2)
+            nodes.push({
+                id: `n${i}`,
+                label: `note ${i}`,
+                kind: 'note' as const,
+                position: [
+                    Math.cos(a) * 80 * RING_SCALE,
+                    Math.sin(a) * 30 * RING_SCALE,
+                    ((i % 5) - 2) * 30 * RING_SCALE,
+                ] as [number, number, number],
+                position2d: [
+                    Math.cos(a) * 80 * RING_SCALE,
+                    Math.sin(a) * 30 * RING_SCALE,
+                ] as [number, number],
+                community: sub,
+                communityLabel: `Sub ${sub}`,
+                communityPath: [top, sub],
+                communityPathLabels: [`Top ${top}`, `Sub ${sub}`],
+            })
+        }
+        for (let i = 1; i < 24; i++)
+            edges.push({ from: 'n0', to: `n${i}`, kind: 'link' as const })
+        return { nodes, edges }
+    }
+
+    function mountTwoLevel(): Mounted {
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        const zooms: number[] = []
+        r.mount(host, () => {})
+        r.setZoomCallback(p => zooms.push(p))
+        r.setConfig({ ...CONFIG, viewMode: '2d' })
+        r.render(twoLevelGraph())
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame()
+        return {
+            r,
+            viewport: host.firstElementChild as HTMLElement,
+            clicks: [],
+            hovers: [],
+            zooms,
+        }
+    }
+
+    it("shows only the COARSEST level's names at fit (100%)", () => {
+        const { r } = mountTwoLevel()
+        expect(
+            ctx.fills.some(f => f.text === 'TOP 0' || f.text === 'TOP 1'),
+        ).toBe(true)
+        expect(ctx.fills.some(f => f.text.startsWith('SUB '))).toBe(false)
+        r.destroy()
+    })
+
+    it("steps down to the sub-level's names on zooming in, before file names appear", () => {
+        const { r, viewport } = mountTwoLevel()
+        // Anchor the wheel zoom ON a real node (n0), not the screen centre: this fixture is a pure RING
+        // with every member at roughly the same radius and NOTHING near the origin (unlike lodGraph's
+        // co-located blobs), so a centre-anchored zoom shrinks the visible window away from every
+        // member simultaneously — with masses off (the default) that leaves layoutClusterNames zero
+        // onGrid members for ANY community, so it draws nothing. Anchoring on n0 instead recentres the
+        // camera toward its neighbourhood as the ladder steps in, keeping its own sub-cluster (and, on
+        // this fixture, every sub-cluster) genuinely on the field to name — the leaf pass now always
+        // runs, so real nodes' screen positions are available right after mount.
+        const n0 = (
+            r as unknown as {
+                nodes: { node: { id: string }; sx: number; sy: number }[]
+            }
+        ).nodes.find(n => n.node.id === 'n0')!
+        // Four notches = 100% -> 60%, i.e. t = 0.4 — past the 2-level boundary of the LOD ladder
+        // (levelBoundaries splits [0, FILE_LABEL_REVEAL_T=0.75) evenly, so it sits at 0.375), where the
+        // SUB level owns the field outright and the TOP level has fully crossfaded away.
+        wheelIn(viewport, 4, { x: n0.sx, y: n0.sy })
+        settle(200)
+        // The settle() glide paints every intermediate frame too (including ones still mid-crossfade
+        // from TOP to SUB), so only the FINAL settled frame answers "what does 80% look like" — force
+        // one more repaint at the now-converged camera via a harmless no-op mutation.
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        r.setSearchMatches(new Set())
+        frame()
+        expect(ctx.fills.some(f => f.text.startsWith('SUB '))).toBe(true)
+        expect(
+            ctx.fills.some(f => f.text === 'TOP 0' || f.text === 'TOP 1'),
+        ).toBe(false)
+        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(false) // still well before the file reveal
+        r.destroy()
+    })
+
+    it('eventually crossfades all the way to file names, same as the single-level case', () => {
+        const { r, viewport } = mountTwoLevel()
+        r.frameSubset(['n0'])
+        wheelIn(viewport, 30)
+        settle(200)
+        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(true)
+        r.destroy()
+    })
+})
+
+describe('Task 9 — clusterVisual wiring: community colours are RANK-based, cluster names are HUB-anchored', () => {
+    /** `sizeById[c]` notes tagged `community: c` (finest-level only, no hierarchy) — no edges needed,
+     *  getCommunityCentroids() only reads community membership + colour. */
+    function communitySizeGraph(sizeById: number[]) {
+        const nodes: unknown[] = []
+        let i = 0
+        for (let c = 0; c < sizeById.length; c++) {
+            for (let k = 0; k < sizeById[c]; k++) {
+                nodes.push({
+                    id: `n${i}`,
+                    label: `note ${i}`,
+                    kind: 'note' as const,
+                    position: [i * 5, 0, 0] as [number, number, number],
+                    position2d: [i * 5, 0] as [number, number],
+                    community: c,
+                    communityLabel: `Cluster ${c}`,
+                })
+                i++
+            }
+        }
+        return { nodes: nodes as never, edges: [] }
+    }
+
+    it('the LARGEST community always resolves to the same colour, regardless of which id happens to be biggest (rank, not hash)', () => {
+        // id 2 is the biggest (10 members) here...
+        const a = mountRenderer('3d', communitySizeGraph([2, 3, 10]))
+        const colorABiggest = a.r.getCommunityCentroids().get(2)!.color
+        a.r.destroy()
+
+        // ...id 0 is the biggest (10 members) here — same size DISTRIBUTION, different id<->size mapping.
+        const b = mountRenderer('3d', communitySizeGraph([10, 3, 2]))
+        const colorBBiggest = b.r.getCommunityCentroids().get(0)!.color
+        b.r.destroy()
+
+        // A hash of the community id would almost certainly give these two a DIFFERENT colour (id 2 vs
+        // id 0 hash differently); rank-by-size gives the biggest community the same palette slot no
+        // matter which id it happens to carry.
+        expect(colorABiggest).toBe(colorBBiggest)
+
+        // ...and the three communities within ONE graph are still visually distinct from each other —
+        // ranking isn't collapsing everything onto one colour either.
+        const c = mountRenderer('3d', communitySizeGraph([2, 3, 10]))
+        const colors = new Set(
+            [...c.r.getCommunityCentroids().values()].map(cl => cl.color),
+        )
+        expect(colors.size).toBe(3)
+        c.r.destroy()
+    })
+
+    // --- the `pathOf` level clamp, `path[Math.min(L, path.length - 1)]` -------------------------
+    // Three independent per-level tables apply it (exemplar NAMES, the COLOUR tally, and the HUB
+    // race) and all three must agree, or a shallow node belongs to different communities depending on
+    // which table you ask. There is one test per table below; the names one is further down. Round 1
+    // of this task deleted the colour one, and deleting either production clamp then passed the whole
+    // suite — coverage a fix round dropped on the way past.
+
+    it("a node with only a finest-level community (no communityPath) still counts toward a DEEPER level's COLOUR tally — the pathOf level clamp", () => {
+        // Two-level hierarchy: top is uniformly 0, sub varies 0/1/2. Sub sizes 2/4/3 — sub 0 is the
+        // STRICT smallest among the three deep-only sizes. One extra SHALLOW node (community: 0, no
+        // communityPath at all) should count toward sub 0's tally too (clamped to its own deepest known
+        // community), tying it with sub 2 at 3 — and buildColorSlots' tie-break (lowest id) then ranks
+        // sub 0 ABOVE sub 2. Drop the clamp and sub 0 stays strictly smallest, changing its rank (and
+        // therefore its colour) entirely.
+        const nodes: unknown[] = []
+        let i = 0
+        const subSizes = [2, 4, 3]
+        for (let sub = 0; sub < subSizes.length; sub++) {
+            for (let k = 0; k < subSizes[sub]; k++) {
+                nodes.push({
+                    id: `d${sub}_${k}`,
+                    label: `deep ${sub} ${k}`,
+                    kind: 'note' as const,
+                    position: [i * 5, sub * 50, 0] as [number, number, number],
+                    position2d: [i * 5, sub * 50] as [number, number],
+                    community: sub,
+                    communityLabel: `Sub ${sub}`,
+                    communityPath: [0, sub],
+                    communityPathLabels: ['Top 0', `Sub ${sub}`],
+                })
+                i++
+            }
+        }
         nodes.push({
-          id: `b${b}k${k}`, label: `note ${b}${k}`, kind: "note" as const,
-          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-          community: b, communityLabel: `Real Cluster ${b}`,
-        });
-      }
-      for (let k = 1; k < 8; k++) edges.push({ from: `b${b}k0`, to: `b${b}k${k}`, kind: "link" as const });
+            id: 'shallow',
+            label: 'shallow',
+            kind: 'note' as const,
+            position: [i * 5, -50, 0] as [number, number, number],
+            position2d: [i * 5, -50] as [number, number],
+            community: 0,
+            communityLabel: 'Sub 0',
+        })
+        const { r } = mountRenderer('3d', { nodes: nodes as never, edges: [] })
+
+        // Independently reconstruct what the CORRECTLY-clamped per-level tally should be (sub 0 = 2 deep
+        // + 1 clamped shallow = 3) and feed it through the real buildColorSlots — the same palette the
+        // renderer falls back to under happy-dom (no CSS vars resolved).
+        const expected = buildColorSlots(
+            new Map([
+                [0, 3],
+                [1, 4],
+                [2, 3],
+            ]),
+            RAMP_FALLBACK,
+        )
+        expect(r.getCommunityCentroids().get(0)!.color).toBe(expected.get(0))
+        r.destroy()
+    })
+
+    it("...and toward that deeper level's HUB race too — the same clamp, in clusterHubByLevel", () => {
+        // The colour test above cannot see this one: the tally and the hub race clamp INDEPENDENTLY, so
+        // deleting the clamp here leaves every colour correct while the name silently anchors on the
+        // wrong node. Fixture: deep community 5 has two degree-1 members; a SHALLOW node ("big",
+        // community 5, no communityPath) has degree 3. Clamped, "big" joins community 5 at level 1 and
+        // wins the hub race outright on degree. Unclamped, its `path[1]` is undefined, it falls out of
+        // level 1 entirely, and the hub becomes "d5a" (degree tie, lowest id).
+        const mk = (id: string, x: number, path?: number[]) => ({
+            id,
+            label: id,
+            kind: 'note' as const,
+            position: [x, 0, 0] as [number, number, number],
+            position2d: [x, 0] as [number, number],
+            community: path ? path[1] : 5,
+            communityLabel: path ? `C${path[1]}` : 'C5',
+            ...(path
+                ? {
+                      communityPath: path,
+                      communityPathLabels: ['Top', `C${path[1]}`],
+                  }
+                : {}),
+        })
+        const nodes = [
+            mk('d5a', 0, [0, 5]),
+            mk('d5b', 20, [0, 5]),
+            mk('f0', 40, [0, 6]),
+            mk('f1', 60, [0, 6]),
+            mk('f2', 80, [0, 6]),
+            mk('big', 100), // shallow: community 5, NO communityPath
+        ]
+        const edges = [
+            { from: 'd5a', to: 'd5b', kind: 'link' as const }, // d5a, d5b -> degree 1 each
+            { from: 'big', to: 'f0', kind: 'link' as const },
+            { from: 'big', to: 'f1', kind: 'link' as const },
+            { from: 'big', to: 'f2', kind: 'link' as const }, // big -> degree 3
+        ]
+        const { r } = mountRenderer('3d', { nodes: nodes as never, edges })
+        const priv = r as unknown as {
+            clusterHubByLevel: Map<number, string>[]
+            levelCount: number
+        }
+        expect(priv.levelCount).toBe(2) // sanity: there IS a deeper level than "big"'s own path
+        expect(priv.clusterHubByLevel[1]?.get(5)).toBe('big')
+        r.destroy()
+    })
+
+    /** Shared by the two hub-anchor tests below: one high-degree hub far to the RIGHT, four
+     *  low-degree leaves spread across the LEFT half, all in one community. The OLD centroid-of-all-
+     *  members anchor lands far to the LEFT (dragged there by the 4-vs-1 leaf majority); the hub
+     *  anchor must land at the hub's own (far-RIGHT) position instead.
+     *
+     *  The leaves are SPREAD (-300, -220, -140, -60), not stacked within 3 world units of each other:
+     *  co-located leaves enter and leave the viewport as a single block, so a fixture built that way
+     *  can never show what happens while a community is PARTIALLY visible — every member-set-dependent
+     *  quantity (the `clusterAgg` membership, and `clusterExtent`'s lift, which is fed visible-only
+     *  members by contract) stays constant right up until the whole community vanishes at once. The
+     *  leftmost leaf stays at -300 so the graph's bounding box — and therefore fit() and every column
+     *  the hub-anchor test below measures — is unchanged by the spread. */
+    function hubAndLeavesGraph() {
+        const nodes = [
+            {
+                id: 'hub',
+                label: 'Hub',
+                kind: 'note' as const,
+                position: [300, 0, 0] as [number, number, number],
+                position2d: [300, 0] as [number, number],
+                community: 0,
+                communityLabel: 'Group',
+            },
+            ...[0, 1, 2, 3].map(k => ({
+                id: `leaf${k}`,
+                label: `leaf${k}`,
+                kind: 'note' as const,
+                position: [-300 + k * 80, k % 2 === 0 ? -10 : 10, 0] as [
+                    number,
+                    number,
+                    number,
+                ],
+                position2d: [-300 + k * 80, k % 2 === 0 ? -10 : 10] as [
+                    number,
+                    number,
+                ],
+                community: 0,
+                communityLabel: 'Group',
+            })),
+        ]
+        const edges = [0, 1, 2, 3].map(k => ({
+            from: 'hub',
+            to: `leaf${k}`,
+            kind: 'link' as const,
+        }))
+        return { nodes, edges }
     }
-    for (let s = 0; s < STRAY_COUNT; s++) {
-      const x = (-420 + (s % 4) * 280) * RING_SCALE;
-      const y = (60 + Math.floor(s / 4) * 130) * RING_SCALE;
-      nodes.push({
-        id: `s${s}`, label: `stray ${s}`, kind: "note" as const,
-        position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-        community: 100 + s, communityLabel: `Stray ${s}`,
-      });
+
+    it("anchors a cluster name on the community's HUB (highest-degree member), not the member centroid", () => {
+        const { r } = mountRenderer('2d', hubAndLeavesGraph())
+        const priv = r as unknown as {
+            nodes: { node: { id: string }; col: number; row: number }[]
+            labels: {
+                text: string
+                col: number
+                row: number
+                eyebrow?: boolean
+            }[]
+        }
+        const hub = priv.nodes.find(n => n.node.id === 'hub')!
+        // The OLD formula: the plain average grid column over EVERY on-grid member of the community
+        // (hub included) — what layoutClusterNames used to anchor on.
+        const oldCentroidCol =
+            priv.nodes.reduce((s, n) => s + n.col, 0) / priv.nodes.length
+        const label = priv.labels.find(l => l.eyebrow)
+        expect(label).toBeDefined()
+        expect(Math.abs(label!.col - hub.col)).toBeLessThanOrEqual(4)
+        expect(Math.abs(label!.col - oldCentroidCol)).toBeGreaterThan(10)
+        r.destroy()
+    })
+
+    /**
+     * Sweeps a 2D pan in FINE steps and samples (hub column, cluster-label column) every frame.
+     *
+     * One continuous gesture, not a series of down/move/up drags: `onPointerMove` only starts panning
+     * once the pointer has travelled DRAG_THRESHOLD (5px) from where it went down, so a fresh gesture
+     * per 3px step would pan by exactly nothing. Prime past the threshold once, then every subsequent
+     * move pans by its own dx. (The test this replaced used one-shot `drag(500)`/`drag(200)` gestures,
+     * which is why it stepped clean over the field edge without ever sampling a frame near it — the
+     * boundary is the only place the placement rule can be discontinuous, and it never looked there.)
+     */
+    function panSweep(
+        dxPerStep: number,
+        steps: number,
+        graph = hubAndLeavesGraph(),
+    ) {
+        const { r, viewport } = mountRenderer('2d', graph)
+        const priv = r as unknown as {
+            nodes: { node: { id: string }; col: number }[]
+            labels: { col: number; widthCells: number; eyebrow?: boolean }[]
+            m: { cols: number }
+        }
+        let px = 400,
+            t = 100
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: px,
+                clientY: 300,
+            }),
+        )
+        px += 20 * Math.sign(dxPerStep) // prime past DRAG_THRESHOLD
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: px, clientY: 300 }),
+        )
+        frame((t += 16))
+
+        const samples: {
+            hubCol: number
+            labelCol: number | null
+            wCells: number | null
+        }[] = []
+        for (let i = 0; i <= steps; i++) {
+            if (i > 0) {
+                px += dxPerStep
+                window.dispatchEvent(
+                    new PointerEvent('pointermove', {
+                        clientX: px,
+                        clientY: 300,
+                    }),
+                )
+                frame((t += 16))
+            }
+            const label = priv.labels.find(l => l.eyebrow)
+            samples.push({
+                hubCol: priv.nodes.find(n => n.node.id === 'hub')!.col,
+                labelCol: label ? label.col : null,
+                wCells: label ? label.widthCells : null,
+            })
+        }
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: px, clientY: 300 }),
+        )
+        const cols = priv.m.cols
+        r.destroy()
+        return { samples, cols }
     }
-    return { nodes, edges };
-  }
 
-  const REAL_NAMES = ["REAL CLUSTER 0", "REAL CLUSTER 1", "REAL CLUSTER 2"];
-  const eyebrowNames = (r: AsciiGraphRenderer) =>
-    (r as unknown as { labels: { text: string; eyebrow?: boolean }[] }).labels
-      .filter((l) => l.eyebrow).map((l) => l.text).sort();
+    /** Asserts the two placement invariants over a fine pan sweep that genuinely crosses one field
+     *  edge. Shared by the left- and right-edge cases below so neither can drift from the other.
+     *
+     *  Both invariants are evaluated across the WHOLE sweep and asserted on the worst case, rather
+     *  than asserted inside the loop: an in-loop `expect` aborts at the first violation, which for
+     *  this failure mode is a marginal one-column overshoot several frames BEFORE the actual teleport
+     *  — so the diagnostic would name the symptom's foothills instead of the 99-column cliff. */
+    function assertEdgeCrossingIsContinuous(
+        dxPerStep: number,
+        steps: number,
+        graph?: ReturnType<typeof hubAndLeavesGraph>,
+    ) {
+        const { samples, cols } = panSweep(dxPerStep, steps, graph)
 
-  it("shows cluster names and NO file names at fit (100% zoom) — and names only REAL clusters, not one-note ones", () => {
-    const { r } = mountRenderer("3d", soupGraph());
-    // ABSOLUTE, not relative to the threshold: three names on the field, and they are these three.
-    // Unfixed this is fifteen — the twelve stray note titles as well.
-    expect(eyebrowNames(r)).toEqual([...REAL_NAMES].sort());
-    // Said again the other way round, because the failure output matters: a note title must never
-    // reach the field dressed as a cluster name.
-    expect(eyebrowNames(r).filter((t) => t.startsWith("STRAY"))).toEqual([]);
-    // ...and the file-label ladder is still shut at fit, exactly as in 2D. Asserted on BOTH sides of
-    // the alpha: nothing PAINTED (the 2D twin's assertion), and nothing LAID OUT either. At fit
-    // `fileLabelAlpha` is 0, so a file label that got past the budget is placed with alpha 0 and
-    // never reaches `ctx.fills` — the painted check alone cannot see a blown budget.
-    expect(ctx.fills.some((f) => f.text.includes("[["))).toBe(false);
-    const priv = r as unknown as { labels: { eyebrow?: boolean }[] };
-    expect(priv.labels.filter((l) => !l.eyebrow).length).toBe(0);
-    r.destroy();
-  });
+        // Sanity FIRST — every assertion below is vacuous if the sweep never reached the edge, or if the
+        // name was never drawn at all. A boundary test that never visits the boundary passes against
+        // anything, and a sweep whose community goes fully off-screen before its hub does silently stops
+        // testing the placement rule at all (which is why the left-edge case needs a MIRRORED fixture:
+        // with the hub on the right, panning left takes every leaf off the field before the hub, so the
+        // name is already gone for want of members by the time the edge matters).
+        expect(samples.some(s => s.hubCol >= 0 && s.hubCol < cols)).toBe(true) // anchor was on-grid...
+        expect(samples.some(s => s.hubCol < 0 || s.hubCol >= cols)).toBe(true) // ...and later was not
+        expect(samples.filter(s => s.labelCol != null).length).toBeGreaterThan(
+            5,
+        )
+        // The name must still be on the field on a frame where the hub is ALREADY off it, or neither
+        // invariant below ever gets to look at the far side of the boundary.
+        expect(
+            samples.some(
+                s => s.labelCol != null && (s.hubCol < 0 || s.hubCol >= cols),
+            ),
+        ).toBe(true)
 
-  it("lands on the SAME names 2D does at fit — the roster is not a property of which pass ran", () => {
-    // The two branches share nothing but the roster: 2D anchors an entity name under its mass from
-    // `entityLevels`, 3D anchors a hub name above its hub from `clusterHubByLevel`, through a
-    // different projection. Agreement here is a real measurement, not an identity — unfixed the two
-    // sides read 3 and 15 on this fixture.
-    const g = soupGraph();
-    const a = mountRenderer("2d", g, { showLodMasses: true });
-    const names2d = eyebrowNames(a.r);
-    a.r.destroy();
-    const b = mountRenderer("3d", g);
-    const names3d = eyebrowNames(b.r);
-    b.r.destroy();
-    expect(names2d).toEqual([...REAL_NAMES].sort()); // guard: neither side is empty
-    expect(names3d).toEqual(names2d);
-  });
-
-  it("crossfades to file names as the field zooms in — in 3D the camera really dollies in to get there", () => {
-    const { r, viewport } = mountRenderer("3d", soupGraph());
-    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(false); // where it starts
-    r.frameSubset(["b0k0"]);
-    wheelIn(viewport, 30);
-    settle(200);
-    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
-    r.destroy();
-  });
-
-  it("computeStats() reports zero label overlaps at fit in 3D, on the fixture that used to soup", () => {
-    const { r } = mountRenderer("3d", soupGraph());
-    const stats = r.computeStats();
-    expect(stats.labelsDrawn).toBe(REAL_NAMES.length);
-    expect(stats.labelOverlaps).toBe(0);
-    expect(stats.maxLabelChars).toBeLessThanOrEqual(CLUSTER_LABEL_MAX_CHARS);
-    expect(stats.entitiesDrawn).toBe(0); // 3D never draws entities — this is the non-LOD branch
-    r.destroy();
-  });
-});
-
-describe("N-level semantic labels — the zoom ladder walks communityPath, coarsest to finest", () => {
-  /** Two top-level super-clusters (TOP 0/TOP 1), each split into two finer sub-clusters (SUB
-   *  0..3) — a 2-level hierarchy, communityPath/communityPathLabels coarsest-first per graph.ts.
-   *  A FLATTENED ring (y radius 30 against x radius 80), for the same reason as lodGraph's CENTERS:
-   *  the two top halves are the upper/lower arcs, so their centroids sit at 0.62 of the y radius, and
-   *  at the sub-level boundary stop the field only shows the middle ~0.7 of the y extent. On the
-   *  circular ring this put every cluster centroid off the grid at that stop and no name could draw. */
-  function twoLevelGraph() {
-    const nodes = [];
-    const edges = [];
-    for (let i = 0; i < 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-      const top = i < 12 ? 0 : 1;
-      const sub = top * 2 + (i % 2);
-      nodes.push({
-        id: `n${i}`, label: `note ${i}`, kind: "note" as const,
-        position: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 30 * RING_SCALE, ((i % 5) - 2) * 30 * RING_SCALE] as [number, number, number],
-        position2d: [Math.cos(a) * 80 * RING_SCALE, Math.sin(a) * 30 * RING_SCALE] as [number, number],
-        community: sub,
-        communityLabel: `Sub ${sub}`,
-        communityPath: [top, sub],
-        communityPathLabels: [`Top ${top}`, `Sub ${sub}`],
-      });
+        // (A) ANCHOR TRACKING. The name is centred on its hub's cell (`col0 - floor(w/2)`), so the gap
+        // between the two is `floor(w/2)` — plus, inside the clamp's band, at most another
+        // `ceil(w/2) - 1` of legitimate nudge to keep an on-screen name inside the grid. `w` is
+        // therefore the exact ceiling, and it is what makes a FREEZE fail: an edge-parked label keeps an
+        // absolute column while its anchor slides on, so this gap grows without bound. It is also what
+        // makes a WRONG ANCHOR fail: the visible-member centroid sits ~117 columns from the hub in this
+        // fixture, by construction — that separation is the entire premise of hub-anchoring.
+        //
+        // (B) CONTINUITY. Frame to frame, the name may not move any further than its anchor did — except
+        // for the clamp switching on or off, which contributes at most its own maximum displacement,
+        // `ceil(w/2)`. This is the no-teleport bound: switching between two anchors that are far apart by
+        // construction blew it by ~99 columns of a 124-column field in ONE frame.
+        let worstGap = { v: 0, at: '' },
+            worstStep = { v: 0, at: '' }
+        for (let i = 1; i < samples.length; i++) {
+            const a = samples[i - 1],
+                b = samples[i]
+            if (b.labelCol == null || b.wCells == null) continue
+            const w = b.wCells
+            const gap = Math.abs(b.labelCol - b.hubCol) - w
+            if (gap > worstGap.v)
+                worstGap = {
+                    v: gap,
+                    at: `frame ${i}: labelCol ${b.labelCol} vs hubCol ${b.hubCol}, w=${w}`,
+                }
+            if (a.labelCol == null) continue // name was absent last frame — no delta to compare
+            const excess =
+                Math.abs(b.labelCol - a.labelCol - (b.hubCol - a.hubCol)) -
+                Math.ceil(w / 2)
+            if (excess > worstStep.v)
+                worstStep = {
+                    v: excess,
+                    at: `frame ${i}: labelCol ${a.labelCol}->${b.labelCol} while hubCol ${a.hubCol}->${b.hubCol}, w=${w}`,
+                }
+        }
+        // `v` is the amount by which the bound was EXCEEDED, so 0 means "within bound" and the message
+        // carries the offending frame.
+        expect(`gap ${worstGap.v} ${worstGap.at}`).toBe('gap 0 ')
+        expect(`step ${worstStep.v} ${worstStep.at}`).toBe('step 0 ')
     }
-    for (let i = 1; i < 24; i++) edges.push({ from: "n0", to: `n${i}`, kind: "link" as const });
-    return { nodes, edges };
-  }
 
-  function mountTwoLevel(): Mounted {
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    const zooms: number[] = [];
-    r.mount(host, () => {});
-    r.setZoomCallback((p) => zooms.push(p));
-    r.setConfig({ ...CONFIG, viewMode: "2d" });
-    r.render(twoLevelGraph());
-    ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-    frame();
-    return { r, viewport: host.firstElementChild as HTMLElement, clicks: [], hovers: [], zooms };
-  }
+    it('BOUNDARY CONTINUITY (right edge) — the name never teleports and never freezes as its hub pans across the field edge', () => {
+        assertEdgeCrossingIsContinuous(3, 40)
+    })
 
-  it("shows only the COARSEST level's names at fit (100%)", () => {
-    const { r } = mountTwoLevel();
-    expect(ctx.fills.some((f) => f.text === "TOP 0" || f.text === "TOP 1")).toBe(true);
-    expect(ctx.fills.some((f) => f.text.startsWith("SUB "))).toBe(false);
-    r.destroy();
-  });
+    it('BOUNDARY CONTINUITY (left edge) — same, in the other direction (the left clamp is a separate branch)', () => {
+        // MIRRORED fixture — see the sanity block in the helper for why the right-edge one cannot test
+        // this direction: x is negated so the hub leads the community off the LEFT edge, leaving its
+        // leaves on the field behind it, which is the arrangement that makes an off-grid anchor
+        // observable at all.
+        const g = hubAndLeavesGraph()
+        for (const n of g.nodes) {
+            n.position[0] *= -1
+            n.position2d[0] *= -1
+        }
+        assertEdgeCrossingIsContinuous(-3, 40, g)
+    })
 
-  it("steps down to the sub-level's names on zooming in, before file names appear", () => {
-    const { r, viewport } = mountTwoLevel();
-    // Anchor the wheel zoom ON a real node (n0), not the screen centre: this fixture is a pure RING
-    // with every member at roughly the same radius and NOTHING near the origin (unlike lodGraph's
-    // co-located blobs), so a centre-anchored zoom shrinks the visible window away from every
-    // member simultaneously — with masses off (the default) that leaves layoutClusterNames zero
-    // onGrid members for ANY community, so it draws nothing. Anchoring on n0 instead recentres the
-    // camera toward its neighbourhood as the ladder steps in, keeping its own sub-cluster (and, on
-    // this fixture, every sub-cluster) genuinely on the field to name — the leaf pass now always
-    // runs, so real nodes' screen positions are available right after mount.
-    const n0 = (r as unknown as { nodes: { node: { id: string }; sx: number; sy: number }[] })
-      .nodes.find((n) => n.node.id === "n0")!;
-    // Four notches = 100% -> 60%, i.e. t = 0.4 — past the 2-level boundary of the LOD ladder
-    // (levelBoundaries splits [0, FILE_LABEL_REVEAL_T=0.75) evenly, so it sits at 0.375), where the
-    // SUB level owns the field outright and the TOP level has fully crossfaded away.
-    wheelIn(viewport, 4, { x: n0.sx, y: n0.sy });
-    settle(200);
-    // The settle() glide paints every intermediate frame too (including ones still mid-crossfade
-    // from TOP to SUB), so only the FINAL settled frame answers "what does 80% look like" — force
-    // one more repaint at the now-converged camera via a harmless no-op mutation.
-    ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-    r.setSearchMatches(new Set());
-    frame();
-    expect(ctx.fills.some((f) => f.text.startsWith("SUB "))).toBe(true);
-    expect(ctx.fills.some((f) => f.text === "TOP 0" || f.text === "TOP 1")).toBe(false);
-    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(false); // still well before the file reveal
-    r.destroy();
-  });
+    it('ACCEPTED COST — a community whose hub has left the field loses its name entirely rather than parking it at the edge', () => {
+        // This is a REGRESSION against the pre-task centroid anchor, and it is deliberate: it is the
+        // price of having exactly one anchor rule. See layoutClusterNames' doc for why a quiet omission
+        // beats the alternatives (a frozen label captioning whatever drifts under it, or a ~99-column
+        // one-frame teleport when switching to a second, screen-derived anchor). Asserted explicitly so
+        // the trade-off is recorded in the suite rather than only in a commit message — and so that
+        // anyone who later restores a fallback has to come here and delete this on purpose.
+        // Swept LEFTWARD: at fit the hub already sits at column ~122 of 124, so a rightward sweep leaves
+        // only about three on-grid frames to sample — too few to tell "drawn while on-grid" from noise.
+        // Going the other way it crosses the whole field first, then exits past column 0.
+        const { samples, cols } = panSweep(-3, 300)
+        const wellOff = samples.filter(s => s.hubCol <= -4)
+        expect(wellOff.length).toBeGreaterThan(3) // the sweep really did leave the hub far off-grid
+        expect(wellOff.every(s => s.labelCol == null)).toBe(true)
+        // ...and while the hub WAS on the grid, the name was drawn — the omission is scoped to the hub
+        // being gone, not a blanket "cluster names stopped working".
+        const onGridDrawn = samples.filter(
+            s => s.hubCol >= 0 && s.hubCol < cols && s.labelCol != null,
+        )
+        expect(onGridDrawn.length).toBeGreaterThan(50)
+    })
 
-  it("eventually crossfades all the way to file names, same as the single-level case", () => {
-    const { r, viewport } = mountTwoLevel();
-    r.frameSubset(["n0"]);
-    wheelIn(viewport, 30);
-    settle(200);
-    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(true);
-    r.destroy();
-  });
-});
-
-describe("Task 9 — clusterVisual wiring: community colours are RANK-based, cluster names are HUB-anchored", () => {
-  /** `sizeById[c]` notes tagged `community: c` (finest-level only, no hierarchy) — no edges needed,
-   *  getCommunityCentroids() only reads community membership + colour. */
-  function communitySizeGraph(sizeById: number[]) {
-    const nodes: unknown[] = [];
-    let i = 0;
-    for (let c = 0; c < sizeById.length; c++) {
-      for (let k = 0; k < sizeById[c]; k++) {
-        nodes.push({
-          id: `n${i}`, label: `note ${i}`, kind: "note" as const,
-          position: [i * 5, 0, 0] as [number, number, number], position2d: [i * 5, 0] as [number, number],
-          community: c, communityLabel: `Cluster ${c}`,
-        });
-        i++;
-      }
-    }
-    return { nodes: nodes as never, edges: [] };
-  }
-
-  it("the LARGEST community always resolves to the same colour, regardless of which id happens to be biggest (rank, not hash)", () => {
-    // id 2 is the biggest (10 members) here...
-    const a = mountRenderer("3d", communitySizeGraph([2, 3, 10]));
-    const colorABiggest = a.r.getCommunityCentroids().get(2)!.color;
-    a.r.destroy();
-
-    // ...id 0 is the biggest (10 members) here — same size DISTRIBUTION, different id<->size mapping.
-    const b = mountRenderer("3d", communitySizeGraph([10, 3, 2]));
-    const colorBBiggest = b.r.getCommunityCentroids().get(0)!.color;
-    b.r.destroy();
-
-    // A hash of the community id would almost certainly give these two a DIFFERENT colour (id 2 vs
-    // id 0 hash differently); rank-by-size gives the biggest community the same palette slot no
-    // matter which id it happens to carry.
-    expect(colorABiggest).toBe(colorBBiggest);
-
-    // ...and the three communities within ONE graph are still visually distinct from each other —
-    // ranking isn't collapsing everything onto one colour either.
-    const c = mountRenderer("3d", communitySizeGraph([2, 3, 10]));
-    const colors = new Set([...c.r.getCommunityCentroids().values()].map((cl) => cl.color));
-    expect(colors.size).toBe(3);
-    c.r.destroy();
-  });
-
-  // --- the `pathOf` level clamp, `path[Math.min(L, path.length - 1)]` -------------------------
-  // Three independent per-level tables apply it (exemplar NAMES, the COLOUR tally, and the HUB
-  // race) and all three must agree, or a shallow node belongs to different communities depending on
-  // which table you ask. There is one test per table below; the names one is further down. Round 1
-  // of this task deleted the colour one, and deleting either production clamp then passed the whole
-  // suite — coverage a fix round dropped on the way past.
-
-  it("a node with only a finest-level community (no communityPath) still counts toward a DEEPER level's COLOUR tally — the pathOf level clamp", () => {
-    // Two-level hierarchy: top is uniformly 0, sub varies 0/1/2. Sub sizes 2/4/3 — sub 0 is the
-    // STRICT smallest among the three deep-only sizes. One extra SHALLOW node (community: 0, no
-    // communityPath at all) should count toward sub 0's tally too (clamped to its own deepest known
-    // community), tying it with sub 2 at 3 — and buildColorSlots' tie-break (lowest id) then ranks
-    // sub 0 ABOVE sub 2. Drop the clamp and sub 0 stays strictly smallest, changing its rank (and
-    // therefore its colour) entirely.
-    const nodes: unknown[] = [];
-    let i = 0;
-    const subSizes = [2, 4, 3];
-    for (let sub = 0; sub < subSizes.length; sub++) {
-      for (let k = 0; k < subSizes[sub]; k++) {
-        nodes.push({
-          id: `d${sub}_${k}`, label: `deep ${sub} ${k}`, kind: "note" as const,
-          position: [i * 5, sub * 50, 0] as [number, number, number], position2d: [i * 5, sub * 50] as [number, number],
-          community: sub, communityLabel: `Sub ${sub}`,
-          communityPath: [0, sub], communityPathLabels: ["Top 0", `Sub ${sub}`],
-        });
-        i++;
-      }
-    }
-    nodes.push({
-      id: "shallow", label: "shallow", kind: "note" as const,
-      position: [i * 5, -50, 0] as [number, number, number], position2d: [i * 5, -50] as [number, number],
-      community: 0, communityLabel: "Sub 0",
-    });
-    const { r } = mountRenderer("3d", { nodes: nodes as never, edges: [] });
-
-    // Independently reconstruct what the CORRECTLY-clamped per-level tally should be (sub 0 = 2 deep
-    // + 1 clamped shallow = 3) and feed it through the real buildColorSlots — the same palette the
-    // renderer falls back to under happy-dom (no CSS vars resolved).
-    const expected = buildColorSlots(new Map([[0, 3], [1, 4], [2, 3]]), RAMP_FALLBACK);
-    expect(r.getCommunityCentroids().get(0)!.color).toBe(expected.get(0));
-    r.destroy();
-  });
-
-  it("...and toward that deeper level's HUB race too — the same clamp, in clusterHubByLevel", () => {
-    // The colour test above cannot see this one: the tally and the hub race clamp INDEPENDENTLY, so
-    // deleting the clamp here leaves every colour correct while the name silently anchors on the
-    // wrong node. Fixture: deep community 5 has two degree-1 members; a SHALLOW node ("big",
-    // community 5, no communityPath) has degree 3. Clamped, "big" joins community 5 at level 1 and
-    // wins the hub race outright on degree. Unclamped, its `path[1]` is undefined, it falls out of
-    // level 1 entirely, and the hub becomes "d5a" (degree tie, lowest id).
-    const mk = (id: string, x: number, path?: number[]) => ({
-      id, label: id, kind: "note" as const,
-      position: [x, 0, 0] as [number, number, number], position2d: [x, 0] as [number, number],
-      community: path ? path[1] : 5, communityLabel: path ? `C${path[1]}` : "C5",
-      ...(path ? { communityPath: path, communityPathLabels: ["Top", `C${path[1]}`] } : {}),
-    });
-    const nodes = [
-      mk("d5a", 0, [0, 5]), mk("d5b", 20, [0, 5]),
-      mk("f0", 40, [0, 6]), mk("f1", 60, [0, 6]), mk("f2", 80, [0, 6]),
-      mk("big", 100), // shallow: community 5, NO communityPath
-    ];
-    const edges = [
-      { from: "d5a", to: "d5b", kind: "link" as const },       // d5a, d5b -> degree 1 each
-      { from: "big", to: "f0", kind: "link" as const },
-      { from: "big", to: "f1", kind: "link" as const },
-      { from: "big", to: "f2", kind: "link" as const },        // big -> degree 3
-    ];
-    const { r } = mountRenderer("3d", { nodes: nodes as never, edges });
-    const priv = r as unknown as { clusterHubByLevel: Map<number, string>[]; levelCount: number };
-    expect(priv.levelCount).toBe(2); // sanity: there IS a deeper level than "big"'s own path
-    expect(priv.clusterHubByLevel[1]?.get(5)).toBe("big");
-    r.destroy();
-  });
-
-  /** Shared by the two hub-anchor tests below: one high-degree hub far to the RIGHT, four
-   *  low-degree leaves spread across the LEFT half, all in one community. The OLD centroid-of-all-
-   *  members anchor lands far to the LEFT (dragged there by the 4-vs-1 leaf majority); the hub
-   *  anchor must land at the hub's own (far-RIGHT) position instead.
-   *
-   *  The leaves are SPREAD (-300, -220, -140, -60), not stacked within 3 world units of each other:
-   *  co-located leaves enter and leave the viewport as a single block, so a fixture built that way
-   *  can never show what happens while a community is PARTIALLY visible — every member-set-dependent
-   *  quantity (the `clusterAgg` membership, and `clusterExtent`'s lift, which is fed visible-only
-   *  members by contract) stays constant right up until the whole community vanishes at once. The
-   *  leftmost leaf stays at -300 so the graph's bounding box — and therefore fit() and every column
-   *  the hub-anchor test below measures — is unchanged by the spread. */
-  function hubAndLeavesGraph() {
-    const nodes = [
-      {
-        id: "hub", label: "Hub", kind: "note" as const,
-        position: [300, 0, 0] as [number, number, number], position2d: [300, 0] as [number, number],
-        community: 0, communityLabel: "Group",
-      },
-      ...[0, 1, 2, 3].map((k) => ({
-        id: `leaf${k}`, label: `leaf${k}`, kind: "note" as const,
-        position: [-300 + k * 80, k % 2 === 0 ? -10 : 10, 0] as [number, number, number],
-        position2d: [-300 + k * 80, k % 2 === 0 ? -10 : 10] as [number, number],
-        community: 0, communityLabel: "Group",
-      })),
-    ];
-    const edges = [0, 1, 2, 3].map((k) => ({ from: "hub", to: `leaf${k}`, kind: "link" as const }));
-    return { nodes, edges };
-  }
-
-  it("anchors a cluster name on the community's HUB (highest-degree member), not the member centroid", () => {
-    const { r } = mountRenderer("2d", hubAndLeavesGraph());
-    const priv = r as unknown as {
-      nodes: { node: { id: string }; col: number; row: number }[];
-      labels: { text: string; col: number; row: number; eyebrow?: boolean }[];
-    };
-    const hub = priv.nodes.find((n) => n.node.id === "hub")!;
-    // The OLD formula: the plain average grid column over EVERY on-grid member of the community
-    // (hub included) — what layoutClusterNames used to anchor on.
-    const oldCentroidCol = priv.nodes.reduce((s, n) => s + n.col, 0) / priv.nodes.length;
-    const label = priv.labels.find((l) => l.eyebrow);
-    expect(label).toBeDefined();
-    expect(Math.abs(label!.col - hub.col)).toBeLessThanOrEqual(4);
-    expect(Math.abs(label!.col - oldCentroidCol)).toBeGreaterThan(10);
-    r.destroy();
-  });
-
-  /**
-   * Sweeps a 2D pan in FINE steps and samples (hub column, cluster-label column) every frame.
-   *
-   * One continuous gesture, not a series of down/move/up drags: `onPointerMove` only starts panning
-   * once the pointer has travelled DRAG_THRESHOLD (5px) from where it went down, so a fresh gesture
-   * per 3px step would pan by exactly nothing. Prime past the threshold once, then every subsequent
-   * move pans by its own dx. (The test this replaced used one-shot `drag(500)`/`drag(200)` gestures,
-   * which is why it stepped clean over the field edge without ever sampling a frame near it — the
-   * boundary is the only place the placement rule can be discontinuous, and it never looked there.)
-   */
-  function panSweep(dxPerStep: number, steps: number, graph = hubAndLeavesGraph()) {
-    const { r, viewport } = mountRenderer("2d", graph);
-    const priv = r as unknown as {
-      nodes: { node: { id: string }; col: number }[];
-      labels: { col: number; widthCells: number; eyebrow?: boolean }[];
-      m: { cols: number };
-    };
-    let px = 400, t = 100;
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: px, clientY: 300 }));
-    px += 20 * Math.sign(dxPerStep); // prime past DRAG_THRESHOLD
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: px, clientY: 300 }));
-    frame((t += 16));
-
-    const samples: { hubCol: number; labelCol: number | null; wCells: number | null }[] = [];
-    for (let i = 0; i <= steps; i++) {
-      if (i > 0) {
-        px += dxPerStep;
-        window.dispatchEvent(new PointerEvent("pointermove", { clientX: px, clientY: 300 }));
-        frame((t += 16));
-      }
-      const label = priv.labels.find((l) => l.eyebrow);
-      samples.push({
-        hubCol: priv.nodes.find((n) => n.node.id === "hub")!.col,
-        labelCol: label ? label.col : null,
-        wCells: label ? label.widthCells : null,
-      });
-    }
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: px, clientY: 300 }));
-    const cols = priv.m.cols;
-    r.destroy();
-    return { samples, cols };
-  }
-
-  /** Asserts the two placement invariants over a fine pan sweep that genuinely crosses one field
-   *  edge. Shared by the left- and right-edge cases below so neither can drift from the other.
-   *
-   *  Both invariants are evaluated across the WHOLE sweep and asserted on the worst case, rather
-   *  than asserted inside the loop: an in-loop `expect` aborts at the first violation, which for
-   *  this failure mode is a marginal one-column overshoot several frames BEFORE the actual teleport
-   *  — so the diagnostic would name the symptom's foothills instead of the 99-column cliff. */
-  function assertEdgeCrossingIsContinuous(dxPerStep: number, steps: number, graph?: ReturnType<typeof hubAndLeavesGraph>) {
-    const { samples, cols } = panSweep(dxPerStep, steps, graph);
-
-    // Sanity FIRST — every assertion below is vacuous if the sweep never reached the edge, or if the
-    // name was never drawn at all. A boundary test that never visits the boundary passes against
-    // anything, and a sweep whose community goes fully off-screen before its hub does silently stops
-    // testing the placement rule at all (which is why the left-edge case needs a MIRRORED fixture:
-    // with the hub on the right, panning left takes every leaf off the field before the hub, so the
-    // name is already gone for want of members by the time the edge matters).
-    expect(samples.some((s) => s.hubCol >= 0 && s.hubCol < cols)).toBe(true); // anchor was on-grid...
-    expect(samples.some((s) => s.hubCol < 0 || s.hubCol >= cols)).toBe(true); // ...and later was not
-    expect(samples.filter((s) => s.labelCol != null).length).toBeGreaterThan(5);
-    // The name must still be on the field on a frame where the hub is ALREADY off it, or neither
-    // invariant below ever gets to look at the far side of the boundary.
-    expect(samples.some((s) => s.labelCol != null && (s.hubCol < 0 || s.hubCol >= cols))).toBe(true);
-
-    // (A) ANCHOR TRACKING. The name is centred on its hub's cell (`col0 - floor(w/2)`), so the gap
-    // between the two is `floor(w/2)` — plus, inside the clamp's band, at most another
-    // `ceil(w/2) - 1` of legitimate nudge to keep an on-screen name inside the grid. `w` is
-    // therefore the exact ceiling, and it is what makes a FREEZE fail: an edge-parked label keeps an
-    // absolute column while its anchor slides on, so this gap grows without bound. It is also what
-    // makes a WRONG ANCHOR fail: the visible-member centroid sits ~117 columns from the hub in this
-    // fixture, by construction — that separation is the entire premise of hub-anchoring.
-    //
-    // (B) CONTINUITY. Frame to frame, the name may not move any further than its anchor did — except
-    // for the clamp switching on or off, which contributes at most its own maximum displacement,
-    // `ceil(w/2)`. This is the no-teleport bound: switching between two anchors that are far apart by
-    // construction blew it by ~99 columns of a 124-column field in ONE frame.
-    let worstGap = { v: 0, at: "" }, worstStep = { v: 0, at: "" };
-    for (let i = 1; i < samples.length; i++) {
-      const a = samples[i - 1], b = samples[i];
-      if (b.labelCol == null || b.wCells == null) continue;
-      const w = b.wCells;
-      const gap = Math.abs(b.labelCol - b.hubCol) - w;
-      if (gap > worstGap.v) worstGap = { v: gap, at: `frame ${i}: labelCol ${b.labelCol} vs hubCol ${b.hubCol}, w=${w}` };
-      if (a.labelCol == null) continue; // name was absent last frame — no delta to compare
-      const excess = Math.abs((b.labelCol - a.labelCol) - (b.hubCol - a.hubCol)) - Math.ceil(w / 2);
-      if (excess > worstStep.v) worstStep = { v: excess, at: `frame ${i}: labelCol ${a.labelCol}->${b.labelCol} while hubCol ${a.hubCol}->${b.hubCol}, w=${w}` };
-    }
-    // `v` is the amount by which the bound was EXCEEDED, so 0 means "within bound" and the message
-    // carries the offending frame.
-    expect(`gap ${worstGap.v} ${worstGap.at}`).toBe("gap 0 ");
-    expect(`step ${worstStep.v} ${worstStep.at}`).toBe("step 0 ");
-  }
-
-  it("BOUNDARY CONTINUITY (right edge) — the name never teleports and never freezes as its hub pans across the field edge", () => {
-    assertEdgeCrossingIsContinuous(3, 40);
-  });
-
-  it("BOUNDARY CONTINUITY (left edge) — same, in the other direction (the left clamp is a separate branch)", () => {
-    // MIRRORED fixture — see the sanity block in the helper for why the right-edge one cannot test
-    // this direction: x is negated so the hub leads the community off the LEFT edge, leaving its
-    // leaves on the field behind it, which is the arrangement that makes an off-grid anchor
-    // observable at all.
-    const g = hubAndLeavesGraph();
-    for (const n of g.nodes) { n.position[0] *= -1; n.position2d[0] *= -1; }
-    assertEdgeCrossingIsContinuous(-3, 40, g);
-  });
-
-  it("ACCEPTED COST — a community whose hub has left the field loses its name entirely rather than parking it at the edge", () => {
-    // This is a REGRESSION against the pre-task centroid anchor, and it is deliberate: it is the
-    // price of having exactly one anchor rule. See layoutClusterNames' doc for why a quiet omission
-    // beats the alternatives (a frozen label captioning whatever drifts under it, or a ~99-column
-    // one-frame teleport when switching to a second, screen-derived anchor). Asserted explicitly so
-    // the trade-off is recorded in the suite rather than only in a commit message — and so that
-    // anyone who later restores a fallback has to come here and delete this on purpose.
-    // Swept LEFTWARD: at fit the hub already sits at column ~122 of 124, so a rightward sweep leaves
-    // only about three on-grid frames to sample — too few to tell "drawn while on-grid" from noise.
-    // Going the other way it crosses the whole field first, then exits past column 0.
-    const { samples, cols } = panSweep(-3, 300);
-    const wellOff = samples.filter((s) => s.hubCol <= -4);
-    expect(wellOff.length).toBeGreaterThan(3); // the sweep really did leave the hub far off-grid
-    expect(wellOff.every((s) => s.labelCol == null)).toBe(true);
-    // ...and while the hub WAS on the grid, the name was drawn — the omission is scoped to the hub
-    // being gone, not a blanket "cluster names stopped working".
-    const onGridDrawn = samples.filter((s) => s.hubCol >= 0 && s.hubCol < cols && s.labelCol != null);
-    expect(onGridDrawn.length).toBeGreaterThan(50);
-  });
-
-  it("the pathOf level clamp is applied consistently in the exemplar-NAME table too, not just the colour tally and hub race — a shallow-only community still gets its real name at a deeper level, not the 'cluster N' placeholder", () => {
-    // Two ordinary 2-level nodes establish levelCount=2. A THIRD, SHALLOW node (community only, no
-    // communityPath) carries community id 99 — a community with NO deep member at all, so its name
-    // can only ever reach level 1 via the SAME clamp (`path[Math.min(L, path.length-1)]`) the colour
-    // tally and hub race already use. Drop the clamp here specifically and level 1 never learns
-    // community 99's name at all, even though the colour/hub tables (independently clamped) still
-    // happily rank and anchor it — an inconsistency invisible to any test that only checks colour.
-    const nodes = [
-      {
-        id: "d0", label: "d0", kind: "note" as const, position: [0, 0, 0] as [number, number, number], position2d: [0, 0] as [number, number],
-        community: 0, communityLabel: "Sub Zero", communityPath: [0, 0], communityPathLabels: ["Top", "Sub Zero"],
-      },
-      {
-        id: "d1", label: "d1", kind: "note" as const, position: [10, 0, 0] as [number, number, number], position2d: [10, 0] as [number, number],
-        community: 1, communityLabel: "Sub One", communityPath: [0, 1], communityPathLabels: ["Top", "Sub One"],
-      },
-      {
-        id: "shallow", label: "shallow", kind: "note" as const, position: [20, 0, 0] as [number, number, number], position2d: [20, 0] as [number, number],
-        community: 99, communityLabel: "Shallow Only",
-      },
-    ];
-    const { r } = mountRenderer("3d", { nodes, edges: [] });
-    const priv = r as unknown as { communityNamesByLevel: Map<number, string>[] };
-    expect(priv.communityNamesByLevel[1]?.get(99)).toBe("Shallow Only");
-    r.destroy();
-  });
-});
+    it("the pathOf level clamp is applied consistently in the exemplar-NAME table too, not just the colour tally and hub race — a shallow-only community still gets its real name at a deeper level, not the 'cluster N' placeholder", () => {
+        // Two ordinary 2-level nodes establish levelCount=2. A THIRD, SHALLOW node (community only, no
+        // communityPath) carries community id 99 — a community with NO deep member at all, so its name
+        // can only ever reach level 1 via the SAME clamp (`path[Math.min(L, path.length-1)]`) the colour
+        // tally and hub race already use. Drop the clamp here specifically and level 1 never learns
+        // community 99's name at all, even though the colour/hub tables (independently clamped) still
+        // happily rank and anchor it — an inconsistency invisible to any test that only checks colour.
+        const nodes = [
+            {
+                id: 'd0',
+                label: 'd0',
+                kind: 'note' as const,
+                position: [0, 0, 0] as [number, number, number],
+                position2d: [0, 0] as [number, number],
+                community: 0,
+                communityLabel: 'Sub Zero',
+                communityPath: [0, 0],
+                communityPathLabels: ['Top', 'Sub Zero'],
+            },
+            {
+                id: 'd1',
+                label: 'd1',
+                kind: 'note' as const,
+                position: [10, 0, 0] as [number, number, number],
+                position2d: [10, 0] as [number, number],
+                community: 1,
+                communityLabel: 'Sub One',
+                communityPath: [0, 1],
+                communityPathLabels: ['Top', 'Sub One'],
+            },
+            {
+                id: 'shallow',
+                label: 'shallow',
+                kind: 'note' as const,
+                position: [20, 0, 0] as [number, number, number],
+                position2d: [20, 0] as [number, number],
+                community: 99,
+                communityLabel: 'Shallow Only',
+            },
+        ]
+        const { r } = mountRenderer('3d', { nodes, edges: [] })
+        const priv = r as unknown as {
+            communityNamesByLevel: Map<number, string>[]
+        }
+        expect(priv.communityNamesByLevel[1]?.get(99)).toBe('Shallow Only')
+        r.destroy()
+    })
+})
 
 describe("Task 9 — LOD entity masses share the node glyphs' colour (the invariant colorLevelsFor's doc claims)", () => {
-  it("an entity mass's colour slot is the EXACT SAME per-level community slot its member nodes would show at that level", () => {
-    // lodGraph() (see its own describe block above): a 2-level hierarchy, TOP 0 = blobs 0+1, TOP 1 =
-    // blobs 2+3. At fit with LOD masses on, only the coarsest (TOP) entities are on the field.
-    const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
-    const priv = r as unknown as {
-      entityFlat: { level: number; community: number; color: number }[];
-      nodes: { node: { id: string }; colorByLevel: number[] }[];
-    };
-    const topEntity0 = priv.entityFlat.find((e) => e.level === 0 && e.community === 0);
-    const topEntity1 = priv.entityFlat.find((e) => e.level === 0 && e.community === 1);
-    expect(topEntity0).toBeDefined();
-    expect(topEntity1).toBeDefined();
-    const memberOf0 = priv.nodes.find((n) => n.node.id === "b0k0")!; // blob 0 -> TOP community 0
-    const memberOf1 = priv.nodes.find((n) => n.node.id === "b2k0")!; // blob 2 -> TOP community 1
-    // Level 0 (TOP) is the COARSEST of this fixture's 2 levels, i.e. colorByLevel[0].
-    expect(memberOf0.colorByLevel[0]).toBe(topEntity0!.color);
-    expect(memberOf1.colorByLevel[0]).toBe(topEntity1!.color);
-    // ...and the two top-level communities are still coloured DIFFERENTLY from each other.
-    expect(topEntity0!.color).not.toBe(topEntity1!.color);
-    r.destroy();
-  });
+    it("an entity mass's colour slot is the EXACT SAME per-level community slot its member nodes would show at that level", () => {
+        // lodGraph() (see its own describe block above): a 2-level hierarchy, TOP 0 = blobs 0+1, TOP 1 =
+        // blobs 2+3. At fit with LOD masses on, only the coarsest (TOP) entities are on the field.
+        const { r } = mountRenderer('2d', lodGraph(), { showLodMasses: true })
+        const priv = r as unknown as {
+            entityFlat: { level: number; community: number; color: number }[]
+            nodes: { node: { id: string }; colorByLevel: number[] }[]
+        }
+        const topEntity0 = priv.entityFlat.find(
+            e => e.level === 0 && e.community === 0,
+        )
+        const topEntity1 = priv.entityFlat.find(
+            e => e.level === 0 && e.community === 1,
+        )
+        expect(topEntity0).toBeDefined()
+        expect(topEntity1).toBeDefined()
+        const memberOf0 = priv.nodes.find(n => n.node.id === 'b0k0')! // blob 0 -> TOP community 0
+        const memberOf1 = priv.nodes.find(n => n.node.id === 'b2k0')! // blob 2 -> TOP community 1
+        // Level 0 (TOP) is the COARSEST of this fixture's 2 levels, i.e. colorByLevel[0].
+        expect(memberOf0.colorByLevel[0]).toBe(topEntity0!.color)
+        expect(memberOf1.colorByLevel[0]).toBe(topEntity1!.color)
+        // ...and the two top-level communities are still coloured DIFFERENTLY from each other.
+        expect(topEntity0!.color).not.toBe(topEntity1!.color)
+        r.destroy()
+    })
 
-  it("...and those slots resolve to the ACTUAL PAINTED colours — asserted on ctx.fills, on the app's default 2D view", () => {
-    // The test above compares two private numeric slot INDICES read out of the same map, so it
-    // proves they agree with each other and nothing about what reaches the canvas: swap the slot ->
-    // colour resolution wholesale and it stays green. This one reads the paint output. It is also
-    // the suite's only paint-COLOUR assertion on the configuration the app actually ships by
-    // default — 2D with LOD masses on, which routes through layoutEntityNames/entity rasterization,
-    // not the layoutClusterNames path every other Task 9 test exercises.
-    const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
-    const priv = r as unknown as {
-      entityFlat: { level: number; community: number; col: number; row: number }[];
-      m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
-    };
-    const m = priv.m;
-    // Glyph runs are painted at (padX + runCol*cellW, padY + row*cellH + cellH/2) — see paint()'s
-    // per-row run flusher — so a cell maps back to the run covering it.
-    const paintedColorAtCell = (col: number, row: number) => {
-      const y = m.padY + row * m.cellH + m.cellH / 2;
-      const hit = ctx.fills.find((f) => {
-        if (Math.abs(f.y - y) > 0.01 || !/^[.o@ ]+$/.test(f.text)) return false;
-        const c0 = Math.round((f.x - m.padX) / m.cellW);
-        return col >= c0 && col < c0 + f.text.length;
-      });
-      return hit?.color;
-    };
+    it("...and those slots resolve to the ACTUAL PAINTED colours — asserted on ctx.fills, on the app's default 2D view", () => {
+        // The test above compares two private numeric slot INDICES read out of the same map, so it
+        // proves they agree with each other and nothing about what reaches the canvas: swap the slot ->
+        // colour resolution wholesale and it stays green. This one reads the paint output. It is also
+        // the suite's only paint-COLOUR assertion on the configuration the app actually ships by
+        // default — 2D with LOD masses on, which routes through layoutEntityNames/entity rasterization,
+        // not the layoutClusterNames path every other Task 9 test exercises.
+        const { r } = mountRenderer('2d', lodGraph(), { showLodMasses: true })
+        const priv = r as unknown as {
+            entityFlat: {
+                level: number
+                community: number
+                col: number
+                row: number
+            }[]
+            m: {
+                cols: number
+                rows: number
+                cellW: number
+                cellH: number
+                padX: number
+                padY: number
+            }
+        }
+        const m = priv.m
+        // Glyph runs are painted at (padX + runCol*cellW, padY + row*cellH + cellH/2) — see paint()'s
+        // per-row run flusher — so a cell maps back to the run covering it.
+        const paintedColorAtCell = (col: number, row: number) => {
+            const y = m.padY + row * m.cellH + m.cellH / 2
+            const hit = ctx.fills.find(f => {
+                if (Math.abs(f.y - y) > 0.01 || !/^[.o@ ]+$/.test(f.text))
+                    return false
+                const c0 = Math.round((f.x - m.padX) / m.cellW)
+                return col >= c0 && col < c0 + f.text.length
+            })
+            return hit?.color
+        }
 
-    // lodGraph's two TOP communities are a 12-member size TIE (blobs 0+1 and blobs 2+3, 6 notes
-    // each), so buildColorSlots ranks them by id ascending — 0 -> rank 0, 1 -> rank 1, both inside
-    // the palette's first cycle (2 < 5, no hue rotation). Computed through the REAL buildColorSlots
-    // against the same fallback ramp the renderer uses under happy-dom, not hand-copied hexes.
-    const expected = buildColorSlots(new Map([[0, 12], [1, 12]]), RAMP_FALLBACK);
-    expect(expected.get(0)).not.toBe(expected.get(1)); // guard: the check below is vacuous if equal
+        // lodGraph's two TOP communities are a 12-member size TIE (blobs 0+1 and blobs 2+3, 6 notes
+        // each), so buildColorSlots ranks them by id ascending — 0 -> rank 0, 1 -> rank 1, both inside
+        // the palette's first cycle (2 < 5, no hue rotation). Computed through the REAL buildColorSlots
+        // against the same fallback ramp the renderer uses under happy-dom, not hand-copied hexes.
+        const expected = buildColorSlots(
+            new Map([
+                [0, 12],
+                [1, 12],
+            ]),
+            RAMP_FALLBACK,
+        )
+        expect(expected.get(0)).not.toBe(expected.get(1)) // guard: the check below is vacuous if equal
 
-    // Asserted as a MAPPING (community -> painted hex), not as a set of hexes: the two communities
-    // sit at adjacent slots in `commColors`, so an off-by-one in the slot -> colour lookup SWAPS
-    // them, and a set comparison — or any assertion that sorts — cannot see a swap. Verified: that
-    // exact mutation passes a sorted-set version of this test and fails this one.
-    let checked = 0;
-    for (const ev of priv.entityFlat.filter((e) => e.level === 0)) {
-      const painted = paintedColorAtCell(ev.col, ev.row);
-      expect(painted).toBe(expected.get(ev.community));
-      checked++;
-    }
-    expect(checked).toBe(2); // guard: both TOP masses were actually on the field and inspected
-    r.destroy();
-  });
-});
+        // Asserted as a MAPPING (community -> painted hex), not as a set of hexes: the two communities
+        // sit at adjacent slots in `commColors`, so an off-by-one in the slot -> colour lookup SWAPS
+        // them, and a set comparison — or any assertion that sorts — cannot see a swap. Verified: that
+        // exact mutation passes a sorted-set version of this test and fails this one.
+        let checked = 0
+        for (const ev of priv.entityFlat.filter(e => e.level === 0)) {
+            const painted = paintedColorAtCell(ev.col, ev.row)
+            expect(painted).toBe(expected.get(ev.community))
+            checked++
+        }
+        expect(checked).toBe(2) // guard: both TOP masses were actually on the field and inspected
+        r.destroy()
+    })
+})
 
-describe("Task 9 — trimDanglingWord wired into the live cluster-name pass", () => {
-  it("a cluster name ending on a dangling word (\"AND\") loses it, on the field, not just in the pure helper", () => {
-    // The exemplar name is short enough that clusterLabelText's char-cap truncation never fires —
-    // this exercises trimDanglingWord as wired into layoutClusterNames itself, not the pure function
-    // in isolation (already covered in clusterVisual.test.ts).
-    //
-    // FOUR members, not the two this started with: a community only earns a name once it is on the
-    // level's name roster (`namableByLevel` — LOD_MIN_CLUSTER, Task 15), and a 2-note community is
-    // not a cluster the layout placed either. Nothing about what this test asserts changed; the
-    // fixture just has to be a real community for the pass under test to run at all.
-    const nodes = [0, 1, 2, 3].map((k) => ({
-      id: `n${k}`, label: `n${k}`, kind: "note" as const,
-      position: [k * 40, 0, 0] as [number, number, number], position2d: [k * 40, 0] as [number, number],
-      community: 0, communityLabel: "Ludwig Feuerbach and",
-    }));
-    const { r } = mountRenderer("2d", { nodes, edges: [] });
-    const priv = r as unknown as { labels: { text: string; eyebrow?: boolean }[] };
-    const label = priv.labels.find((l) => l.eyebrow);
-    expect(label).toBeDefined();
-    expect(label!.text).toBe("LUDWIG FEUERBACH");
-    expect(label!.text.endsWith("AND")).toBe(false);
-    r.destroy();
-  });
+describe('Task 9 — trimDanglingWord wired into the live cluster-name pass', () => {
+    it('a cluster name ending on a dangling word ("AND") loses it, on the field, not just in the pure helper', () => {
+        // The exemplar name is short enough that clusterLabelText's char-cap truncation never fires —
+        // this exercises trimDanglingWord as wired into layoutClusterNames itself, not the pure function
+        // in isolation (already covered in clusterVisual.test.ts).
+        //
+        // FOUR members, not the two this started with: a community only earns a name once it is on the
+        // level's name roster (`namableByLevel` — LOD_MIN_CLUSTER, Task 15), and a 2-note community is
+        // not a cluster the layout placed either. Nothing about what this test asserts changed; the
+        // fixture just has to be a real community for the pass under test to run at all.
+        const nodes = [0, 1, 2, 3].map(k => ({
+            id: `n${k}`,
+            label: `n${k}`,
+            kind: 'note' as const,
+            position: [k * 40, 0, 0] as [number, number, number],
+            position2d: [k * 40, 0] as [number, number],
+            community: 0,
+            communityLabel: 'Ludwig Feuerbach and',
+        }))
+        const { r } = mountRenderer('2d', { nodes, edges: [] })
+        const priv = r as unknown as {
+            labels: { text: string; eyebrow?: boolean }[]
+        }
+        const label = priv.labels.find(l => l.eyebrow)
+        expect(label).toBeDefined()
+        expect(label!.text).toBe('LUDWIG FEUERBACH')
+        expect(label!.text.endsWith('AND')).toBe(false)
+        r.destroy()
+    })
 
-  it("...and on the LOD MASS name pass too — the path the app's default 2D view actually uses", () => {
-    // layoutEntityNames is a SECOND, independent name site (masses, not per-node communities), and
-    // it is the one the default 2D view shows. Canvas applies trimDanglingWord at its single name
-    // site; trimming only ASCII's non-LOD site left mass names keeping their dangling word.
-    const g = lodGraph();
-    for (const n of g.nodes as { communityPathLabels?: string[] }[]) {
-      if (n.communityPathLabels) n.communityPathLabels[0] = "Ludwig Feuerbach and";
-    }
-    const { r } = mountRenderer("2d", g, { showLodMasses: true });
-    const priv = r as unknown as { labels: { text: string; eyebrow?: boolean }[] };
-    const names = priv.labels.filter((l) => l.eyebrow).map((l) => l.text);
-    expect(names.length).toBeGreaterThan(0); // guard: no mass names drawn => nothing was tested
-    expect(names).toContain("LUDWIG FEUERBACH");
-    expect(names.some((t) => t.endsWith("AND"))).toBe(false);
-    r.destroy();
-  });
-});
+    it("...and on the LOD MASS name pass too — the path the app's default 2D view actually uses", () => {
+        // layoutEntityNames is a SECOND, independent name site (masses, not per-node communities), and
+        // it is the one the default 2D view shows. Canvas applies trimDanglingWord at its single name
+        // site; trimming only ASCII's non-LOD site left mass names keeping their dangling word.
+        const g = lodGraph()
+        for (const n of g.nodes as { communityPathLabels?: string[] }[]) {
+            if (n.communityPathLabels)
+                n.communityPathLabels[0] = 'Ludwig Feuerbach and'
+        }
+        const { r } = mountRenderer('2d', g, { showLodMasses: true })
+        const priv = r as unknown as {
+            labels: { text: string; eyebrow?: boolean }[]
+        }
+        const names = priv.labels.filter(l => l.eyebrow).map(l => l.text)
+        expect(names.length).toBeGreaterThan(0) // guard: no mass names drawn => nothing was tested
+        expect(names).toContain('LUDWIG FEUERBACH')
+        expect(names.some(t => t.endsWith('AND'))).toBe(false)
+        r.destroy()
+    })
+})
 
 describe("cluster label occupancy — no two eyebrow labels ever overlap (the 'soup' regression)", () => {
-  /** Many small clusters packed TIGHTLY along one horizontal band — dense enough that greedy
-   *  placement genuinely contends for cells. A wide margin between clusters would never exercise
-   *  the bug: reservation and real DRAWN width only diverge once labels actually compete for the
-   *  same row. Names are long enough to land past `CLUSTER_LABEL_MAX_CHARS`, so clusterLabelText's
-   *  truncation is exercised too. */
-  function denseClusterGraph() {
-    const nodes = [];
-    const edges = [];
-    const N = 10;
-    for (let b = 0; b < N; b++) {
-      const cx = (b - (N - 1) / 2) * 40 * RING_SCALE;
-      for (let k = 0; k < 4; k++) {
-        const a = (k / 4) * Math.PI * 2;
-        const x = cx + Math.cos(a) * 4 * RING_SCALE;
-        const y = Math.sin(a) * 4 * RING_SCALE;
-        nodes.push({
-          id: `b${b}k${k}`, label: `note ${b}${k}`, kind: "note" as const,
-          position: [x, y, 0] as [number, number, number],
-          position2d: [x, y] as [number, number],
-          community: b,
-          communityLabel: `Cluster Number ${b} About Something Long`,
-        });
-      }
-    }
-    for (let b = 0; b < N; b++) for (let k = 1; k < 4; k++) edges.push({ from: `b${b}k0`, to: `b${b}k${k}`, kind: "link" as const });
-    return { nodes, edges };
-  }
-
-  it("keeps every drawn cluster label's DRAWN span disjoint from every other on the same row", () => {
-    const { r } = mountRenderer("2d", denseClusterGraph());
-    const priv = r as unknown as {
-      labels: { text: string; col: number; row: number; widthCells: number; eyebrow?: boolean }[];
-    };
-    const eyebrows = priv.labels.filter((l) => l.eyebrow);
-    expect(eyebrows.length).toBeGreaterThan(1); // the fixture must actually produce contention
-    const byRow = new Map<number, typeof eyebrows>();
-    for (const l of eyebrows) {
-      const arr = byRow.get(l.row) ?? [];
-      arr.push(l);
-      byRow.set(l.row, arr);
-    }
-    let sameRowPairs = 0;
-    for (const arr of byRow.values()) {
-      for (let i = 0; i < arr.length; i++) {
-        for (let j = i + 1; j < arr.length; j++) {
-          sameRowPairs++;
-          const a = arr[i], b = arr[j];
-          const overlaps = a.col <= b.col + b.widthCells && b.col <= a.col + a.widthCells;
-          expect(overlaps).toBe(false);
+    /** Many small clusters packed TIGHTLY along one horizontal band — dense enough that greedy
+     *  placement genuinely contends for cells. A wide margin between clusters would never exercise
+     *  the bug: reservation and real DRAWN width only diverge once labels actually compete for the
+     *  same row. Names are long enough to land past `CLUSTER_LABEL_MAX_CHARS`, so clusterLabelText's
+     *  truncation is exercised too. */
+    function denseClusterGraph() {
+        const nodes = []
+        const edges = []
+        const N = 10
+        for (let b = 0; b < N; b++) {
+            const cx = (b - (N - 1) / 2) * 40 * RING_SCALE
+            for (let k = 0; k < 4; k++) {
+                const a = (k / 4) * Math.PI * 2
+                const x = cx + Math.cos(a) * 4 * RING_SCALE
+                const y = Math.sin(a) * 4 * RING_SCALE
+                nodes.push({
+                    id: `b${b}k${k}`,
+                    label: `note ${b}${k}`,
+                    kind: 'note' as const,
+                    position: [x, y, 0] as [number, number, number],
+                    position2d: [x, y] as [number, number],
+                    community: b,
+                    communityLabel: `Cluster Number ${b} About Something Long`,
+                })
+            }
         }
-      }
+        for (let b = 0; b < N; b++)
+            for (let k = 1; k < 4; k++)
+                edges.push({
+                    from: `b${b}k0`,
+                    to: `b${b}k${k}`,
+                    kind: 'link' as const,
+                })
+        return { nodes, edges }
     }
-    expect(sameRowPairs).toBeGreaterThan(0); // the assertion above must actually have run at least once
-    r.destroy();
-  });
 
-  it("computeStats() reports zero label overlaps and a capped max label length on the same dense fixture", () => {
-    const { r } = mountRenderer("2d", denseClusterGraph());
-    const stats = r.computeStats();
-    expect(stats.labelsDrawn).toBeGreaterThan(1);
-    expect(stats.labelOverlaps).toBe(0);
-    expect(stats.maxLabelChars).toBeLessThanOrEqual(CLUSTER_LABEL_MAX_CHARS);
-    // LOD masses are OFF by default — the leaf pass always runs (see "renders every individual node
-    // as a glyph, even at fit" below), so real notes ARE on screen at fit and no aggregate entity is
-    // drawn at all.
-    expect(stats.notesOnScreen).toBeGreaterThan(0);
-    expect(stats.entitiesDrawn).toBe(0);
-    r.destroy();
-  });
+    it("keeps every drawn cluster label's DRAWN span disjoint from every other on the same row", () => {
+        const { r } = mountRenderer('2d', denseClusterGraph())
+        const priv = r as unknown as {
+            labels: {
+                text: string
+                col: number
+                row: number
+                widthCells: number
+                eyebrow?: boolean
+            }[]
+        }
+        const eyebrows = priv.labels.filter(l => l.eyebrow)
+        expect(eyebrows.length).toBeGreaterThan(1) // the fixture must actually produce contention
+        const byRow = new Map<number, typeof eyebrows>()
+        for (const l of eyebrows) {
+            const arr = byRow.get(l.row) ?? []
+            arr.push(l)
+            byRow.set(l.row, arr)
+        }
+        let sameRowPairs = 0
+        for (const arr of byRow.values()) {
+            for (let i = 0; i < arr.length; i++) {
+                for (let j = i + 1; j < arr.length; j++) {
+                    sameRowPairs++
+                    const a = arr[i],
+                        b = arr[j]
+                    const overlaps =
+                        a.col <= b.col + b.widthCells &&
+                        b.col <= a.col + a.widthCells
+                    expect(overlaps).toBe(false)
+                }
+            }
+        }
+        expect(sameRowPairs).toBeGreaterThan(0) // the assertion above must actually have run at least once
+        r.destroy()
+    })
 
-  it("computeStats() shows aggregate entities instead of real notes at fit when LOD masses are opted into", () => {
-    const { r } = mountRenderer("2d", denseClusterGraph(), { showLodMasses: true });
-    const stats = r.computeStats();
-    expect(stats.notesOnScreen).toBe(0);
-    expect(stats.entitiesDrawn).toBeGreaterThan(0);
-    r.destroy();
-  });
-});
+    it('computeStats() reports zero label overlaps and a capped max label length on the same dense fixture', () => {
+        const { r } = mountRenderer('2d', denseClusterGraph())
+        const stats = r.computeStats()
+        expect(stats.labelsDrawn).toBeGreaterThan(1)
+        expect(stats.labelOverlaps).toBe(0)
+        expect(stats.maxLabelChars).toBeLessThanOrEqual(CLUSTER_LABEL_MAX_CHARS)
+        // LOD masses are OFF by default — the leaf pass always runs (see "renders every individual node
+        // as a glyph, even at fit" below), so real notes ARE on screen at fit and no aggregate entity is
+        // drawn at all.
+        expect(stats.notesOnScreen).toBeGreaterThan(0)
+        expect(stats.entitiesDrawn).toBe(0)
+        r.destroy()
+    })
 
-describe("tiny panel — an eyebrow label wider than the whole grid must not overflow it", () => {
-  it("drops a cluster/entity name instead of clamping it to col 0 and spilling past the grid", () => {
-    const [w0, h0] = [BOX.width, BOX.height];
-    // Small enough that a tracked cluster name ("CLUSTER 0" etc.) is wider than the whole grid —
-    // reproduces a graph pane shrunk into a small split/corner. gridMetrics with these dims and the
-    // default CELL_W/CELL_H yields well under ten columns.
-    BOX.width = 90; BOX.height = 260;
-    try {
-      const { r } = mountRenderer("2d");
-      const priv = r as unknown as {
-        labels: { text: string; col: number; row: number; widthCells: number; eyebrow?: boolean }[];
-        m: { cols: number; rows: number };
-      };
-      const eyebrows = priv.labels.filter((l) => l.eyebrow);
-      // The bug: `col = Math.max(0, m.cols - wCells)` still parks an over-wide label at column 0
-      // and draws it, so `col + widthCells` runs far past `m.cols`. Every label actually drawn must
-      // fit ENTIRELY inside the grid — one that doesn't fit must be dropped, not clamped-and-spilled.
-      for (const l of eyebrows) {
-        expect(l.col).toBeGreaterThanOrEqual(0);
-        expect(l.col + l.widthCells).toBeLessThanOrEqual(priv.m.cols);
-      }
-      r.destroy();
-    } finally {
-      BOX.width = w0; BOX.height = h0;
-    }
-  });
-});
+    it('computeStats() shows aggregate entities instead of real notes at fit when LOD masses are opted into', () => {
+        const { r } = mountRenderer('2d', denseClusterGraph(), {
+            showLodMasses: true,
+        })
+        const stats = r.computeStats()
+        expect(stats.notesOnScreen).toBe(0)
+        expect(stats.entitiesDrawn).toBeGreaterThan(0)
+        r.destroy()
+    })
+})
 
-describe("THE LAW — zoom is resolution, never scale", () => {
-  it("keeps the type size byte-identical across a wheel zoom", () => {
-    const { r, viewport } = mountRenderer("2d");
-    const fontBefore = ctx.font;
-    ctx.fonts.length = 0;
-    wheelIn(viewport, 12);
-    settle();
-    expect(ctx.font).toBe(fontBefore);
-    expect(ctx.fonts.every((f) => f === fontBefore)).toBe(true);
-    r.destroy();
-  });
+describe('tiny panel — an eyebrow label wider than the whole grid must not overflow it', () => {
+    it('drops a cluster/entity name instead of clamping it to col 0 and spilling past the grid', () => {
+        const [w0, h0] = [BOX.width, BOX.height]
+        // Small enough that a tracked cluster name ("CLUSTER 0" etc.) is wider than the whole grid —
+        // reproduces a graph pane shrunk into a small split/corner. gridMetrics with these dims and the
+        // default CELL_W/CELL_H yields well under ten columns.
+        BOX.width = 90
+        BOX.height = 260
+        try {
+            const { r } = mountRenderer('2d')
+            const priv = r as unknown as {
+                labels: {
+                    text: string
+                    col: number
+                    row: number
+                    widthCells: number
+                    eyebrow?: boolean
+                }[]
+                m: { cols: number; rows: number }
+            }
+            const eyebrows = priv.labels.filter(l => l.eyebrow)
+            // The bug: `col = Math.max(0, m.cols - wCells)` still parks an over-wide label at column 0
+            // and draws it, so `col + widthCells` runs far past `m.cols`. Every label actually drawn must
+            // fit ENTIRELY inside the grid — one that doesn't fit must be dropped, not clamped-and-spilled.
+            for (const l of eyebrows) {
+                expect(l.col).toBeGreaterThanOrEqual(0)
+                expect(l.col + l.widthCells).toBeLessThanOrEqual(priv.m.cols)
+            }
+            r.destroy()
+        } finally {
+            BOX.width = w0
+            BOX.height = h0
+        }
+    })
+})
 
-  it("re-rasterizes the field at the finer grid (more glyphs, same cell)", () => {
-    const { r, viewport } = mountRenderer("2d");
-    const before = allText();
-    wheelIn(viewport, 12);
-    settle();
-    ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-    frame(9999);
-    expect(allText()).not.toBe(before);
-    r.destroy();
-  });
+describe('THE LAW — zoom is resolution, never scale', () => {
+    it('keeps the type size byte-identical across a wheel zoom', () => {
+        const { r, viewport } = mountRenderer('2d')
+        const fontBefore = ctx.font
+        ctx.fonts.length = 0
+        wheelIn(viewport, 12)
+        settle()
+        expect(ctx.font).toBe(fontBefore)
+        expect(ctx.fonts.every(f => f === fontBefore)).toBe(true)
+        r.destroy()
+    })
 
-  it("pins the character advance to the design's cell width via letterSpacing", () => {
-    const { r } = mountRenderer("2d");
-    expect(parseFloat(ctx.letterSpacing)).toBeCloseTo(CELL_W - 11.5 * 0.6, 3);
-    r.destroy();
-  });
+    it('re-rasterizes the field at the finer grid (more glyphs, same cell)', () => {
+        const { r, viewport } = mountRenderer('2d')
+        const before = allText()
+        wheelIn(viewport, 12)
+        settle()
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame(9999)
+        expect(allText()).not.toBe(before)
+        r.destroy()
+    })
 
-  it("reads 100% at fit and drops toward 0% as the wheel zooms in (10% steps)", () => {
-    const { r, viewport, zooms } = mountRenderer("2d");
-    expect(zooms.at(-1)).toBe(100);
-    wheelIn(viewport, 1); // exactly one notch = one ZOOM_STEP_PCT step
-    settle();
-    expect(zooms.at(-1)).toBe(90);
-    wheelIn(viewport, 9); // saturate at the 0% (deepest) floor
-    settle();
-    expect(zooms.at(-1)).toBe(0);
-    r.destroy();
-  });
+    it("pins the character advance to the design's cell width via letterSpacing", () => {
+        const { r } = mountRenderer('2d')
+        expect(parseFloat(ctx.letterSpacing)).toBeCloseTo(
+            CELL_W - 11.5 * 0.6,
+            3,
+        )
+        r.destroy()
+    })
 
-  /**
-   * REGRESSION (the stepped-zoom ladder collapsing to a single point).
-   *
-   * `RING_SCALE` above exists precisely to give the fixture enough bounding radius to have zoom
-   * range — which means every other test in this file dodges the case that actually shipped broken:
-   * a graph whose OWN fit resolution already meets the fixed absolute 0% target
-   * (`DEEPEST_WORLD_PER_CELL`). That is not exotic — it is any compact graph, and it is the real
-   * 2251-note vault the moment the field is ~2200px wide (a maximized window on a large display).
-   *
-   * There, `maxResFor`'s floor pinned `maxRes` to exactly 1, and BOTH directions of the percent
-   * mapping degenerate at `maxRes <= 1`: `resFromPercent` returns 1 for every step and
-   * `resolutionPercent` returns 100 for every res. So a wheel notch moved `zoomPct` to 90 while
-   * `goalRes` stayed at the fit resolution — the field never re-rasterized, the HUD stayed pinned
-   * at "100%", and every further notch did nothing. The whole 11-stop ladder collapsed onto one
-   * stop. This test drives the REAL wheel path (one 120px notch) on a natural-scale graph and pins
-   * the three things that were wrong: the ladder has range, the field still draws, and the HUD
-   * reports the step the user actually selected.
-   */
-  it("keeps a live ladder on a graph whose own fit already meets the absolute 0% target", () => {
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    const zooms: number[] = [];
-    r.mount(host, () => {});
-    r.setZoomCallback((p) => zooms.push(p));
-    r.setConfig({ ...CONFIG, viewMode: "2d" });
-    // sampleGraph() WITHOUT the RING_SCALE blow-up: an ordinary compact ring, whose fit scale is
-    // already finer than DEEPEST_WORLD_PER_CELL in an 800x600 field.
-    r.render({
-      nodes: sampleGraph().nodes.map((n) => ({
-        ...n,
-        position: n.position.map((v) => v / RING_SCALE) as [number, number, number],
-        position2d: n.position2d.map((v) => v / RING_SCALE) as [number, number],
-      })),
-      edges: sampleGraph().edges,
-    });
-    const viewport = host.firstElementChild as HTMLElement;
-    ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-    frame();
-    expect(zooms.at(-1)).toBe(100); // sanity: we start at fit
+    it('reads 100% at fit and drops toward 0% as the wheel zooms in (10% steps)', () => {
+        const { r, viewport, zooms } = mountRenderer('2d')
+        expect(zooms.at(-1)).toBe(100)
+        wheelIn(viewport, 1) // exactly one notch = one ZOOM_STEP_PCT step
+        settle()
+        expect(zooms.at(-1)).toBe(90)
+        wheelIn(viewport, 9) // saturate at the 0% (deepest) floor
+        settle()
+        expect(zooms.at(-1)).toBe(0)
+        r.destroy()
+    })
 
-    // The camera internals are private; this is the one place the test needs to see the ladder
-    // itself rather than only its symptoms.
-    const cam = r as unknown as { res: number; goalRes: number; maxRes: number };
-    const fitRes = cam.res;
+    /**
+     * REGRESSION (the stepped-zoom ladder collapsing to a single point).
+     *
+     * `RING_SCALE` above exists precisely to give the fixture enough bounding radius to have zoom
+     * range — which means every other test in this file dodges the case that actually shipped broken:
+     * a graph whose OWN fit resolution already meets the fixed absolute 0% target
+     * (`DEEPEST_WORLD_PER_CELL`). That is not exotic — it is any compact graph, and it is the real
+     * 2251-note vault the moment the field is ~2200px wide (a maximized window on a large display).
+     *
+     * There, `maxResFor`'s floor pinned `maxRes` to exactly 1, and BOTH directions of the percent
+     * mapping degenerate at `maxRes <= 1`: `resFromPercent` returns 1 for every step and
+     * `resolutionPercent` returns 100 for every res. So a wheel notch moved `zoomPct` to 90 while
+     * `goalRes` stayed at the fit resolution — the field never re-rasterized, the HUD stayed pinned
+     * at "100%", and every further notch did nothing. The whole 11-stop ladder collapsed onto one
+     * stop. This test drives the REAL wheel path (one 120px notch) on a natural-scale graph and pins
+     * the three things that were wrong: the ladder has range, the field still draws, and the HUD
+     * reports the step the user actually selected.
+     */
+    it('keeps a live ladder on a graph whose own fit already meets the absolute 0% target', () => {
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        const zooms: number[] = []
+        r.mount(host, () => {})
+        r.setZoomCallback(p => zooms.push(p))
+        r.setConfig({ ...CONFIG, viewMode: '2d' })
+        // sampleGraph() WITHOUT the RING_SCALE blow-up: an ordinary compact ring, whose fit scale is
+        // already finer than DEEPEST_WORLD_PER_CELL in an 800x600 field.
+        r.render({
+            nodes: sampleGraph().nodes.map(n => ({
+                ...n,
+                position: n.position.map(v => v / RING_SCALE) as [
+                    number,
+                    number,
+                    number,
+                ],
+                position2d: n.position2d.map(v => v / RING_SCALE) as [
+                    number,
+                    number,
+                ],
+            })),
+            edges: sampleGraph().edges,
+        })
+        const viewport = host.firstElementChild as HTMLElement
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame()
+        expect(zooms.at(-1)).toBe(100) // sanity: we start at fit
 
-    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, cancelable: true })); // ONE notch
-    expect(Number.isFinite(cam.goalRes)).toBe(true);
-    expect(cam.goalRes).toBeGreaterThan(fitRes); // the step must actually move the resolution
+        // The camera internals are private; this is the one place the test needs to see the ladder
+        // itself rather than only its symptoms.
+        const cam = r as unknown as {
+            res: number
+            goalRes: number
+            maxRes: number
+        }
+        const fitRes = cam.res
 
-    settle();
-    expect(cam.res).toBe(cam.goalRes);                 // the glide LANDS on the step, exactly
-    expect(zooms.at(-1)).toBe(90);                     // ...so the HUD reads the step the user picked
-    expect(nodeRuns().length).toBeGreaterThan(0);      // ...and the field is still on the grid
-    r.destroy();
-  });
+        viewport.dispatchEvent(
+            new WheelEvent('wheel', { deltaY: -120, cancelable: true }),
+        ) // ONE notch
+        expect(Number.isFinite(cam.goalRes)).toBe(true)
+        expect(cam.goalRes).toBeGreaterThan(fitRes) // the step must actually move the resolution
 
-  it("resetView glides back to 100% (fit)", () => {
-    const { r, viewport, zooms } = mountRenderer("2d");
-    wheelIn(viewport, 10);
-    settle();
-    r.resetView();
-    settle(200);
-    expect(zooms.at(-1)).toBe(100);
-    r.destroy();
-  });
+        settle()
+        expect(cam.res).toBe(cam.goalRes) // the glide LANDS on the step, exactly
+        expect(zooms.at(-1)).toBe(90) // ...so the HUD reads the step the user picked
+        expect(nodeRuns().length).toBeGreaterThan(0) // ...and the field is still on the grid
+        r.destroy()
+    })
 
-  it("frameSubset raises the resolution (drops the percent toward 0%) instead of scaling anything", () => {
-    const { r, zooms } = mountRenderer("2d");
-    const fontBefore = ctx.font;
-    r.frameSubset(["n0", "n1", "n2"]);
-    settle(200);
-    expect(zooms.at(-1)!).toBeLessThan(100);
-    expect(ctx.font).toBe(fontBefore);
-    r.destroy();
-  });
+    it('resetView glides back to 100% (fit)', () => {
+        const { r, viewport, zooms } = mountRenderer('2d')
+        wheelIn(viewport, 10)
+        settle()
+        r.resetView()
+        settle(200)
+        expect(zooms.at(-1)).toBe(100)
+        r.destroy()
+    })
 
-  /**
-   * REQUIRED (round-1 review) — THE NINTH TEST. Every LAW test above mounts once and only ever
-   * wheel-zooms afterward; none calls setConfig() a SECOND time, so (now that setConfig's very
-   * first call settles inertly — see `hasConfigured`/`noViewYet`) none of them ever enters the
-   * 2D<->3D mode morph at all. THE LAW held throughout it regardless (independently measured), but
-   * no test here actually exercised that path — a future change that made the morph "look better"
-   * by scaling a glyph into place mid-transition would have shipped with every one of the eight
-   * tests above still green. This one flips `viewMode`, pumps every frame of the transition, and
-   * checks the font string and the label-halo stroke width directly: both are ONE distinct value
-   * across the entire 500ms, not just at the two settled ends.
-   */
-  it("holds across the animated 2D<->3D morph itself, not just across a wheel zoom", () => {
-    const { r } = mountRenderer("3d", sampleGraph(), { showGraphLabels: true } as never);
-    settle(60);
-    const fontBefore = ctx.font;
-    ctx.fonts.length = 0; ctx.strokeTexts.length = 0;
+    it('frameSubset raises the resolution (drops the percent toward 0%) instead of scaling anything', () => {
+        const { r, zooms } = mountRenderer('2d')
+        const fontBefore = ctx.font
+        r.frameSubset(['n0', 'n1', 'n2'])
+        settle(200)
+        expect(zooms.at(-1)!).toBeLessThan(100)
+        expect(ctx.font).toBe(fontBefore)
+        r.destroy()
+    })
 
-    r.setConfig({ ...CONFIG, viewMode: "2d", showGraphLabels: true } as never);
-    let t = 2000;
-    for (let i = 0; i <= 40; i++) { frame(t); t += 16; } // > MODE_MORPH_MS (500ms) of frames
+    /**
+     * REQUIRED (round-1 review) — THE NINTH TEST. Every LAW test above mounts once and only ever
+     * wheel-zooms afterward; none calls setConfig() a SECOND time, so (now that setConfig's very
+     * first call settles inertly — see `hasConfigured`/`noViewYet`) none of them ever enters the
+     * 2D<->3D mode morph at all. THE LAW held throughout it regardless (independently measured), but
+     * no test here actually exercised that path — a future change that made the morph "look better"
+     * by scaling a glyph into place mid-transition would have shipped with every one of the eight
+     * tests above still green. This one flips `viewMode`, pumps every frame of the transition, and
+     * checks the font string and the label-halo stroke width directly: both are ONE distinct value
+     * across the entire 500ms, not just at the two settled ends.
+     */
+    it('holds across the animated 2D<->3D morph itself, not just across a wheel zoom', () => {
+        const { r } = mountRenderer('3d', sampleGraph(), {
+            showGraphLabels: true,
+        } as never)
+        settle(60)
+        const fontBefore = ctx.font
+        ctx.fonts.length = 0
+        ctx.strokeTexts.length = 0
 
-    // Sanity: the transition actually drew something to check, across more than one frame.
-    expect(ctx.fonts.length).toBeGreaterThan(1);
-    expect(new Set(ctx.fonts).size).toBe(1);
-    expect([...new Set(ctx.fonts)][0]).toBe(fontBefore);
+        r.setConfig({
+            ...CONFIG,
+            viewMode: '2d',
+            showGraphLabels: true,
+        } as never)
+        let t = 2000
+        for (let i = 0; i <= 40; i++) {
+            frame(t)
+            t += 16
+        } // > MODE_MORPH_MS (500ms) of frames
 
-    expect(ctx.strokeTexts.length).toBeGreaterThan(0);
-    expect(new Set(ctx.strokeTexts.map((s) => s.width)).size).toBe(1);
-    r.destroy();
-  });
-});
+        // Sanity: the transition actually drew something to check, across more than one frame.
+        expect(ctx.fonts.length).toBeGreaterThan(1)
+        expect(new Set(ctx.fonts).size).toBe(1)
+        expect([...new Set(ctx.fonts)][0]).toBe(fontBefore)
+
+        expect(ctx.strokeTexts.length).toBeGreaterThan(0)
+        expect(new Set(ctx.strokeTexts.map(s => s.width)).size).toBe(1)
+        r.destroy()
+    })
+})
 
 /**
  * Task 11 — the 3D camera dolly, DERIVED from the resolution ladder (AsciiGraphRenderer.cameraDolly
@@ -1492,1424 +2013,1953 @@ describe("THE LAW — zoom is resolution, never scale", () => {
  * — every test asserts its own precondition, so a fixture that drifts across that line fails loudly
  * instead of quietly testing the other branch).
  */
-describe("Task 11 — the 3D camera dolly is derived from the resolution ladder", () => {
-  /** A filled 3D ball of notes. Unlike sampleGraph's ring — whose interior is EMPTY, so a camera that
-   *  moves toward the centre sees nothing regardless of whether it works — every direction from the
-   *  target here has neighbours, which is what makes "what does the field show at maximum zoom" a
-   *  question about the camera rather than about the fixture. Deterministic LCG, no Math.random. */
-  function ballGraph(n = 300) {
-    const nodes = [];
-    const edges = [];
-    let seed = 12345;
-    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-    for (let i = 0; i < n; i++) {
-      const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2, rr = Math.cbrt(rnd()) * 300;
-      const sp = Math.sqrt(1 - u * u);
-      const x = rr * sp * Math.cos(th), y = rr * sp * Math.sin(th), z = rr * u;
-      nodes.push({
-        id: `n${i}`, label: `note ${i}`, kind: "note" as const,
-        position: [x, y, z] as [number, number, number], position2d: [x, y] as [number, number],
-        community: i % 5, communityLabel: `Cluster ${i % 5}`,
-      });
-    }
-    for (let i = 1; i < n; i++) edges.push({ from: `n${i - 1}`, to: `n${i}`, kind: "link" as const });
-    return { nodes, edges };
-  }
-  // Same admission-list construction as SAMPLE_GRAPH_COMMUNITY_COLORS above, for the ball's five
-  // equal-sized communities (300 nodes, i % 5 → a five-way size tie → ranks 0..4, no hue rotation).
-  const BALL_COMMUNITY_COLORS = new Set(
-    buildColorSlots(new Map([[0, 60], [1, 60], [2, 60], [3, 60], [4, 60]]), RAMP_FALLBACK).values(),
-  );
-  const ballNodeRuns = () => ctx.fills.filter((f) => BALL_COMMUNITY_COLORS.has(f.color) && /^[.o@ ]+$/.test(f.text));
-
-  /** The camera state the assertions below read. Cast-only — the public surface stays GraphRenderer. */
-  interface CamPriv {
-    nodes: {
-      p3: [number, number, number]; sx: number; sy: number; depth: number;
-      projValid: boolean; onGrid: boolean; node: { id: string };
-    }[];
-    m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
-    pxPerWorld: number; res: number; maxRes: number; P: number;
-    rx: number; ry: number; panXQ: number; panYQ: number; target: [number, number, number];
-  }
-  const camPriv = (r: AsciiGraphRenderer) => r as unknown as CamPriv;
-
-  /**
-   * The camera-space depth `z2` a node would have with the world at its FIT scale — i.e. with the
-   * resolution factored OUT. Independent of the renderer's own projection loop (it re-derives the
-   * yaw/pitch from `rx`/`ry` rather than reading anything the loop wrote), which is what lets the
-   * tests below recover the dolly the renderer actually applied: `dolly = nv.depth - fitFrameZ(nv)`.
-   */
-  function fitFrameZ(p: CamPriv, i: number): number {
-    const nv = p.nodes[i];
-    const S = p.pxPerWorld;
-    const x = (nv.p3[0] - p.target[0]) * S, y = (nv.p3[1] - p.target[1]) * S, z = (nv.p3[2] - p.target[2]) * S;
-    const z1 = -x * Math.sin(p.ry) + z * Math.cos(p.ry);
-    return y * Math.sin(p.rx) + z1 * Math.cos(p.rx);
-  }
-
-  /** Every node's recovered dolly. A dolly is a property of the CAMERA, so these must all agree — the
-   *  spread is asserted, not assumed, in the tests that use the mean. */
-  const recoveredDollies = (p: CamPriv) => p.nodes.map((nv, i) => nv.depth - fitFrameZ(p, i));
-
-  /**
-   * The projection AS IT WAS before the camera became explicit: world scaled by `pxPerWorld * res`,
-   * camera pinned at `zc = z2`, clip planes at the literal `persp > 0.05` / `zc < P * 0.985`. Lifted
-   * from the pre-Task-11 `projectNodes` and kept here as an INDEPENDENT oracle, because the whole
-   * no-regression claim is that wherever the camera ceiling does not bind, the explicit dolly
-   * reproduces this term for term — positions AND cull.
-   */
-  function preDollyProjection(p: CamPriv) {
-    const S = p.pxPerWorld * p.res;
-    const cyr = Math.cos(p.ry), syr = Math.sin(p.ry), cxr = Math.cos(p.rx), sxr = Math.sin(p.rx);
-    const ox = p.m.padX + (p.m.cols / 2) * p.m.cellW + p.panXQ;
-    const oy = p.m.padY + (p.m.rows / 2) * p.m.cellH + p.panYQ;
-    return p.nodes.map((nv) => {
-      const x = (nv.p3[0] - p.target[0]) * S, y = (nv.p3[1] - p.target[1]) * S, z = (nv.p3[2] - p.target[2]) * S;
-      const x1 = x * cyr + z * syr, z1 = -x * syr + z * cyr;
-      const y2 = y * cxr - z1 * sxr, z2 = y * sxr + z1 * cxr;
-      const persp = p.P / Math.max(1, p.P - z2);
-      return {
-        sx: ox + x1 * persp, sy: oy + y2 * persp,
-        projValid: persp > 0.05 && z2 < p.P * 0.985,
-      };
-    });
-  }
-
-  /** The dolly ceiling `cameraModel` imposes at this perspective — Canvas's MAX_ZOOM_FRAC clamp. */
-  const ceilingMag = (P: number) => P / Math.max(1, P - MAX_ZOOM_FRAC * P);
-
-  /** Preconditions. A fixture that drifts across the ceiling silently tests the OTHER branch — these
-   *  make that a failure with a readable message rather than a vacuous pass. */
-  function assertDeepLadder(p: CamPriv) {
-    expect(p.maxRes).toBeGreaterThan(ceilingMag(p.P));   // measured 19.7 vs 16.67 — the ceiling binds
-  }
-  function assertShallowLadder(p: CamPriv) {
-    expect(p.maxRes).toBeLessThanOrEqual(ceilingMag(p.P)); // measured 8.0 (the MIN_ZOOM_SPAN floor)
-  }
-
-  /** Mount the ball in 3D, optionally in a smaller host box (which is what pushes `maxRes` past the
-   *  camera ceiling: maxRes ∝ 1/pxPerWorld ∝ 1/boxPx). Restores BOX like the resize test above. */
-  /**
-   * `body` runs with the ball mounted; the renderer is destroyed and BOX restored in a `finally`
-   * WHATEVER happens. Both matter: a renderer left alive by a failing assertion keeps its rAF loop
-   * pumping into this file's SHARED recording context, so one broken test in here silently corrupts
-   * the stroke/fill counts of unrelated tests later in the file (observed exactly that, once).
-   */
-  function withBall(
-    box: { width: number; height: number } | null,
-    body: (m: { r: AsciiGraphRenderer; viewport: HTMLElement; painted: number[]; p: CamPriv }) => void,
-    n = 300,
-  ) {
-    const restoreBox = { ...BOX };
-    if (box) Object.assign(BOX, box);
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    try {
-      const painted: number[] = [];
-      r.mount(host, () => {}, () => {});
-      r.setPaintCallback((c) => painted.push(c));
-      r.setConfig({ ...CONFIG, viewMode: "3d" });
-      r.render(ballGraph(n));
-      ctx.fills.length = 0; ctx.strokes.length = 0;
-      frame();
-      settle();
-      body({ r, viewport: host.firstElementChild as HTMLElement, painted, p: camPriv(r) });
-    } finally {
-      r.destroy();
-      host.remove();
-      Object.assign(BOX, restoreBox);
-    }
-  }
-  /** The zoom-in stop: 10 wheel notches is 100% → 0% (ZOOM_STEP_PCT is 10). */
-  function toDeepestStop(viewport: HTMLElement) {
-    wheelIn(viewport, 10, { x: BOX.width / 2, y: BOX.height / 2 });
-    settle(200);
-  }
-
-  it("still paints real note glyphs at MAXIMUM zoom in 3D — a live field at the deepest stop", () => {
-    // A guard, and honestly labelled as one: it fires on a BLANK deep end, which is the catastrophic
-    // shape, but it is NOT what separates this camera from the naive `zc = z2 + dollyForT(t, P)`
-    // stacked on the res-scaled world. That was measured rather than assumed, and the prediction did
-    // not hold: the naive double-dolly does not blank a 3D field, it DEGRADES it — 33 nodes on grid
-    // against this camera's 43 on the ball below, and 2 against 3 on the 24-note ring, because the
-    // half of a cloud that is behind the camera compresses toward the vanishing point instead of
-    // disappearing. What actually separates the two is the ~17x over-magnification, and the test that
-    // catches it is "caps the approach at the camera ceiling" below (which fails under both the naive
-    // form and every partial version of it). Kept because a blank deep end is still the failure worth
-    // a named gate, and because a bare paint count is what the camera step was asked to prove.
-    withBall({ width: 320, height: 220 }, ({ viewport, painted, p }) => {
-      assertDeepLadder(p);
-      ctx.fills.length = 0;
-      toDeepestStop(viewport);
-      expect(p.res).toBeCloseTo(p.maxRes, 6);            // we really are at the 0% stop
-      const onGrid = p.nodes.filter((nv) => nv.onGrid).length;
-      expect(onGrid).toBeGreaterThan(20);                // measured 43 of 300
-      // Measured 19 node CELLS, and the number MOVED from 40 in Task 21 without the picture changing
-      // by a pixel. `painted` is what paint()'s row loop drew, and labels used to be given their
-      // ground by an opaque rect painted OVER that loop's output; they now take their cells before it
-      // runs (reserveLabelCells blanks charBuf) so the same glyphs are never drawn instead of being
-      // drawn and covered. On this deliberately tiny 320x220 field, 22 labels claim 21 of the 40 node
-      // cells — measured directly, both counts, on the old code and the new. So the two numbers are
-      // "rasterized" and "visible", and 19 is the honest one.
-      expect(painted.at(-1)!).toBeGreaterThan(15);
-      expect(ballNodeRuns().length).toBeGreaterThan(0);  // ...and they are real note glyphs, in a community colour
-    });
-  });
-
-  it("caps the approach at the camera ceiling on a deep ladder — the ladder alone would stand on the near plane", () => {
-    // maxRes 19.7 asks for 19.7x at the deepest stop, which is a dolly of P*(1 - 1/19.7) = 0.949*P —
-    // past the 0.94*P Canvas's own wheel clamp stopped at, and heading for the P*0.985 singularity.
-    // dollyForT is that clamp: the achieved magnification is MAX_MAGNIFICATION, not maxRes.
-    withBall({ width: 320, height: 220 }, ({ viewport, p }) => {
-      assertDeepLadder(p);
-      toDeepestStop(viewport);
-      const dollies = recoveredDollies(p);
-      const spread = Math.max(...dollies) - Math.min(...dollies);
-      expect(spread).toBeLessThan(1e-6);                 // one camera, not a per-node fudge
-      const mag = p.P / (p.P - dollies[0]);
-      expect(mag).toBeCloseTo(ceilingMag(p.P), 6);       // 16.667x — Canvas's stop
-      expect(mag).toBeCloseTo(MAX_MAGNIFICATION, 6);     // ...which at this P is the asymptotic value
-      expect(mag).toBeLessThan(p.maxRes);                // ...strictly short of what the ladder asked for
-      expect(dollies[0]).toBeLessThan(p.P * MAX_ZOOM_FRAC + 1e-9);
-    });
-  });
-
-  it("approaches MONOTONICALLY across the ladder — every stop moves the camera further in, none past the ceiling", () => {
-    // The endpoint tests either side of this one pin where the approach STARTS and STOPS; this pins
-    // that it is an approach at all rather than a jump. It is also the only thing standing between a
-    // correct camera and one that ignores `t` and applies the full ceiling at every stop — which is
-    // invisible at the deepest stop (where the full ceiling is the right answer) and invisible on a
-    // shallow ladder (where `res` caps it anyway), i.e. invisible to every other test here.
-    withBall({ width: 320, height: 220 }, ({ viewport, p }) => {
-      assertDeepLadder(p);
-      let prevDolly = -Infinity, prevShortfall = -Infinity;
-      for (let step = 0; step <= 10; step++) {
-        if (step > 0) { wheelIn(viewport, 1, { x: BOX.width / 2, y: BOX.height / 2 }); settle(200); }
-        const dolly = recoveredDollies(p)[0];
-        expect(dolly).toBeGreaterThan(prevDolly);
-        prevDolly = dolly;
-        const mag = p.P / (p.P - dolly);
-        expect(mag).toBeLessThanOrEqual(ceilingMag(p.P) + 1e-9);   // never past Canvas's stop
-        expect(mag).toBeLessThanOrEqual(p.res + 1e-9);             // never more than the ladder asked for
-        // On a ladder DEEPER than the ceiling, the shortfall between what the ladder asks for and
-        // what a perspective camera can safely give must open GRADUALLY, one stop at a time — a
-        // camera that saturates at its stop early and then sits there gives a shortfall that is flat
-        // and then jumps, and reads as the approach simply ending partway down the wheel. (This is
-        // also the only assertion in the file that separates a `t`-driven ceiling from a constant
-        // one: at the deepest stop, and anywhere on a shallow ladder, the two agree exactly.)
-        if (step > 0) expect(p.res / mag).toBeGreaterThan(prevShortfall);
-        prevShortfall = p.res / mag;
-      }
-      expect(prevShortfall).toBeGreaterThan(1.1);   // measured 1.18 = maxRes / MAX_MAGNIFICATION
-    });
-  });
-
-  it("takes the LADDER's magnification, not the ceiling's, wherever the ladder asks for less", () => {
-    // The same graph in a full-size box: maxRes falls to the MIN_ZOOM_SPAN floor of 8, well under the
-    // 16.667x ceiling, so the camera must deliver exactly 8x at the deepest stop — NOT 16.667x, which
-    // would zoom a small graph past its own 0% resolution law for no reason.
-    withBall(null, ({ viewport, p }) => {
-      assertShallowLadder(p);
-      toDeepestStop(viewport);
-      const mag = p.P / (p.P - recoveredDollies(p)[0]);
-      expect(mag).toBeCloseTo(p.res, 6);
-      expect(mag).toBeLessThan(ceilingMag(p.P));
-    });
-  });
-
-  it("reproduces the pre-camera projection EXACTLY on a shallow ladder — every drawn position and every cull", () => {
-    // The no-regression claim, against an independent re-implementation of the projection as it was
-    // (see preDollyProjection). Scaling the world by k about the target IS a dolly of P*(1 - 1/k), so
-    // where the ceiling does not bind the two must agree to the last few bits — including projValid,
-    // which is the half a near plane pinned to P (instead of to the camera's working distance) would
-    // silently tighten as the camera comes in.
-    //
-    // POSITIONS are compared only for nodes the renderer considers drawable. Past the near plane both
-    // projections saturate on `Math.max(1, P - zc)`, a clamp that is NOT scale-equivariant, so the two
-    // legitimately diverge there — on coordinates no glyph, edge or label ever reads. `projValid`
-    // itself is compared over EVERY node, so "drawable" cannot quietly shrink to nothing.
-    withBall(null, ({ viewport, p }) => {
-      assertShallowLadder(p);
-      let comparedTotal = 0;
-      for (let step = 0; step <= 10; step++) {
-        if (step > 0) { wheelIn(viewport, 1, { x: BOX.width / 2, y: BOX.height / 2 }); settle(200); }
-        const want = preDollyProjection(p);
-        let maxDelta = 0, cullMismatches = 0, compared = 0;
-        for (let i = 0; i < p.nodes.length; i++) {
-          if (p.nodes[i].projValid !== want[i].projValid) cullMismatches++;
-          if (!want[i].projValid) continue;
-          compared++;
-          // Off-screen-but-valid nodes carry large coordinates, so compare RELATIVE to their own size.
-          const scale = Math.max(1, Math.abs(want[i].sx), Math.abs(want[i].sy));
-          maxDelta = Math.max(maxDelta, Math.abs(p.nodes[i].sx - want[i].sx) / scale,
-            Math.abs(p.nodes[i].sy - want[i].sy) / scale);
+describe('Task 11 — the 3D camera dolly is derived from the resolution ladder', () => {
+    /** A filled 3D ball of notes. Unlike sampleGraph's ring — whose interior is EMPTY, so a camera that
+     *  moves toward the centre sees nothing regardless of whether it works — every direction from the
+     *  target here has neighbours, which is what makes "what does the field show at maximum zoom" a
+     *  question about the camera rather than about the fixture. Deterministic LCG, no Math.random. */
+    function ballGraph(n = 300) {
+        const nodes = []
+        const edges = []
+        let seed = 12345
+        const rnd = () =>
+            (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff
+        for (let i = 0; i < n; i++) {
+            const u = rnd() * 2 - 1,
+                th = rnd() * Math.PI * 2,
+                rr = Math.cbrt(rnd()) * 300
+            const sp = Math.sqrt(1 - u * u)
+            const x = rr * sp * Math.cos(th),
+                y = rr * sp * Math.sin(th),
+                z = rr * u
+            nodes.push({
+                id: `n${i}`,
+                label: `note ${i}`,
+                kind: 'note' as const,
+                position: [x, y, z] as [number, number, number],
+                position2d: [x, y] as [number, number],
+                community: i % 5,
+                communityLabel: `Cluster ${i % 5}`,
+            })
         }
-        expect(cullMismatches).toBe(0);
-        expect(maxDelta).toBeLessThan(1e-9);
-        expect(compared).toBeGreaterThan(150);           // measured 207-300 of 300 across the ladder
-        comparedTotal += compared;
-      }
-      expect(comparedTotal).toBeGreaterThan(2000);
-    });
-  });
-
-  it("THE LAW through the approach: the camera moves a long way in, the type does not move at all", () => {
-    // A dolly moves POSITIONS. The THE LAW tests above pin type size across a wheel zoom in 2D, where
-    // there is no camera at all; this pins it across the 3D approach, and pins in the same breath that
-    // the camera really did travel (otherwise "the type didn't change" is satisfied by a camera that
-    // never moved, which is the state this task started from).
-    withBall({ width: 320, height: 220 }, ({ viewport, p }) => {
-      expect(recoveredDollies(p)[0]).toBeCloseTo(0, 6);   // fit: no dolly, by construction
-      const fontAtFit = ctx.font;
-      const spacingAtFit = ctx.letterSpacing;
-      const fontsBefore = ctx.fonts.length;
-      toDeepestStop(viewport);
-      expect(recoveredDollies(p)[0]).toBeGreaterThan(p.P * 0.9); // the camera crossed 90% of the way in
-      expect(ctx.font).toBe(fontAtFit);
-      expect(ctx.letterSpacing).toBe(spacingAtFit);
-      // ...and no DIFFERENT size was ever set mid-glide, only the same one re-asserted.
-      expect(new Set(ctx.fonts.slice(fontsBefore))).toEqual(new Set([fontAtFit]));
-    });
-  });
-
-  it("frameSubset asks for a MAGNIFICATION and gets it in 3D, not merely the matching resolution stop", () => {
-    // Canvas's frameSubset set a dolly; ASCII's set a resolution. Unified, the request is a
-    // magnification and each mode converts. On a deep ladder the two conversions differ: the
-    // resolution stop that NUMERICALLY equals the wanted magnification delivers LESS than it, because
-    // the camera ceiling caps `maxRes^t` at `maxZs^t`. Routing through zoomT (cameraModel's exact
-    // inverse of dollyForT) is what closes that gap.
-    withBall({ width: 320, height: 220 }, ({ r, p }) => {
-      assertDeepLadder(p);
-      // A SPATIALLY TIGHT subset — the 6 notes nearest n0, on a DENSER ball (700, see the trailing arg) — so the framing request is a real
-      // magnification. (A subset sampled across the whole ball has the ball's own radius, i.e. asks
-      // to zoom OUT, which would make this test pass on any implementation at all.)
-      const anchor = p.nodes[0].p3;
-      const subset = [...p.nodes]
-        .sort((a, b) => Math.hypot(a.p3[0] - anchor[0], a.p3[1] - anchor[1], a.p3[2] - anchor[2])
-          - Math.hypot(b.p3[0] - anchor[0], b.p3[1] - anchor[1], b.p3[2] - anchor[2]))
-        .slice(0, 6);
-      const pts = subset.map((nv) => nv.p3);
-      const c = [0, 1, 2].map((k) => pts.reduce((a, q) => a + q[k], 0) / pts.length);
-      let rad = 1e-6;
-      for (const q of pts) rad = Math.max(rad, Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]));
-      // `whole` mirrors graphFit's boundingRadius (max |p3|) — the same quantity frameSubset divides by.
-      const whole = Math.max(...p.nodes.map((nv) => Math.hypot(nv.p3[0], nv.p3[1], nv.p3[2])));
-      const wantMag = (whole / rad) * 0.55;
-      // Measured 3.36x on this fixture (700 notes, maxRes 26.4) — a real zoom-IN request.
-      expect(wantMag).toBeGreaterThan(2);                 // a real zoom-IN request
-      expect(wantMag).toBeLessThan(ceilingMag(p.P));      // ...and reachable, so a shortfall is a bug, not a clamp
-
-      r.frameSubset(subset.map((nv) => nv.node.id));
-      settle(300);
-      const mag = p.P / (p.P - recoveredDollies(p)[0]);
-      // The only slack is the resolution glide's own settle epsilon; a systematic shortfall (the
-      // resolution-only conversion) is ~20% here, an order of magnitude outside this band.
-      expect(mag / wantMag).toBeGreaterThan(0.98);
-      expect(mag / wantMag).toBeLessThan(1.02);
-    }, 700);
-  });
-
-  it("resetView returns the camera to the fit distance — the dolly has no state of its own to strand", () => {
-    withBall({ width: 320, height: 220 }, ({ r, viewport, p }) => {
-      toDeepestStop(viewport);
-      expect(recoveredDollies(p)[0]).toBeGreaterThan(p.P * 0.9);
-      r.resetView();
-      settle(300);
-      expect(recoveredDollies(p)[0]).toBeCloseTo(0, 6);
-      expect(p.res).toBeCloseTo(1, 6);
-    });
-  });
-});
-
-describe("respace wiring (Task 10) — node-count-independent resting spacing on the deep-zoom ladder", () => {
-  /** Independent (re-implemented, NOT imported from respace.ts) median nearest-neighbour distance
-   *  over raw 3-tuples — mirrors respace.test.ts's own `measuredSpacing()`, so a bug shared between
-   *  the implementation and a test that imported the same helper can't hide from both. */
-  function measuredSpacing3(points: readonly [number, number, number][]): number {
-    const nn = points.map((p, i) => {
-      let best = Infinity;
-      points.forEach((q, j) => {
-        if (j === i) return;
-        const d = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-        if (d < best) best = d;
-      });
-      return best;
-    });
-    const s = [...nn].sort((a, b) => a - b);
-    const mid = s.length >> 1;
-    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-  }
-
-  /** Deterministic jittered square lattice (locally uniform density; the jitter breaks the exact
-   *  distance ties a bare lattice would have, so a nearest-neighbour swap can't hide behind a tie)
-   *  scaled by `unit`. Two calls whose `unit`s differ by a factor model two vaults whose BACKEND
-   *  absolute coordinate scale differs by that same factor — exactly what respace.ts's targetSpacing
-   *  exists to normalise away (see respace.ts's own header: "regardless of node count or which layout
-   *  algorithm produced the input").
-   *
-   *  `position` (3D) carries a real per-node Z (a checkerboard stagger + its own jitter, both scaled
-   *  by `unit`) that `position2d` (always flat, z omitted) does NOT share — so the 3D cloud's own
-   *  median nearest-neighbour distance is genuinely LARGER than the 2D cloud's, not just the same XY
-   *  shape with a trailing zero. Without this, `raw3` and `raw2` are numerically identical (z=0 for
-   *  every node either way), which makes AsciiGraphRenderer.ts's two independent spacing caches
-   *  (`p3SpacingCache`/`p2SpacingCache`) indistinguishable from one shared cache — a copy-paste bug
-   *  routing the 2D line through `p3SpacingCache` would silently return the (numerically identical)
-   *  right answer. With a real Z, that bug instead hands 2D the 3D cloud's positions verbatim
-   *  (col 2 code review, task-10 round 2, finding F2). */
-  function jitterGrid(size: number, unit: number): ReturnType<typeof sampleGraph> {
-    const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
-    const edges: ReturnType<typeof sampleGraph>["edges"] = [];
-    const half = (size - 1) / 2;
-    const pseudo = (a: number, b: number) => {
-      const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
-      return v - Math.floor(v);
-    };
-    for (let row = 0; row < size; row++) {
-      for (let col = 0; col < size; col++) {
-        const jx = (pseudo(col, row) - 0.5) * 0.3 * unit;
-        const jy = (pseudo(row, col + 1000) - 0.5) * 0.3 * unit;
-        const jz = (pseudo(col + 2000, row + 2000) - 0.5) * 0.3 * unit;
-        const zStagger = ((row + col) % 2) * 0.5 * unit; // checkerboard — 3D's nearest neighbour is
-                                                           // still the same grid-adjacent pair as 2D's
-                                                           // (diagonal neighbours stay farther even
-                                                           // with this added), just at a genuinely
-                                                           // larger 3D distance than the flat 2D one.
-        const x = (col - half) * unit + jx;
-        const y = (row - half) * unit + jy;
-        const z = zStagger + jz;
-        nodes.push({
-          id: `g${row}_${col}`, label: `note ${row} ${col}`, kind: "note" as const,
-          position: [x, y, z] as [number, number, number],
-          position2d: [x, y] as [number, number],
-          community: 0, communityLabel: "grid",
-        });
-        if (col > 0) edges.push({ from: `g${row}_${col - 1}`, to: `g${row}_${col}`, kind: "link" as const });
-        if (row > 0) edges.push({ from: `g${row - 1}_${col}`, to: `g${row}_${col}`, kind: "link" as const });
-      }
+        for (let i = 1; i < n; i++)
+            edges.push({
+                from: `n${i - 1}`,
+                to: `n${i}`,
+                kind: 'link' as const,
+            })
+        return { nodes, edges }
     }
-    return { nodes, edges };
-  }
+    // Same admission-list construction as SAMPLE_GRAPH_COMMUNITY_COLORS above, for the ball's five
+    // equal-sized communities (300 nodes, i % 5 → a five-way size tie → ranks 0..4, no hue rotation).
+    const BALL_COMMUNITY_COLORS = new Set(
+        buildColorSlots(
+            new Map([
+                [0, 60],
+                [1, 60],
+                [2, 60],
+                [3, 60],
+                [4, 60],
+            ]),
+            RAMP_FALLBACK,
+        ).values(),
+    )
+    const ballNodeRuns = () =>
+        ctx.fills.filter(
+            f => BALL_COMMUNITY_COLORS.has(f.color) && /^[.o@ ]+$/.test(f.text),
+        )
 
-  /** Median nearest-neighbour separation IN GRID CELLS among the currently on-grid nodes (private
-   *  per-frame state — see lodPriv()). "cells" is (col,row) distance, the literal grid coordinate
-   *  every glyph/label/hit-test in this renderer already keys off. */
-  function medianOnGridCellSpacing(p: LodPriv): { count: number; median: number } {
-    const onGrid = p.nodes.filter((nv) => nv.onGrid);
-    const nn = onGrid.map((a, i) => {
-      let best = Infinity;
-      onGrid.forEach((b, j) => { if (i === j) return; const d = Math.hypot(a.col - b.col, a.row - b.row); if (d < best) best = d; });
-      return best;
-    });
-    const s = [...nn].sort((x, y) => x - y);
-    const mid = s.length >> 1;
-    return { count: onGrid.length, median: s.length ? (s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2) : NaN };
-  }
+    /** The camera state the assertions below read. Cast-only — the public surface stays GraphRenderer. */
+    interface CamPriv {
+        nodes: {
+            p3: [number, number, number]
+            sx: number
+            sy: number
+            depth: number
+            projValid: boolean
+            onGrid: boolean
+            node: { id: string }
+        }[]
+        m: {
+            cols: number
+            rows: number
+            cellW: number
+            cellH: number
+            padX: number
+            padY: number
+        }
+        pxPerWorld: number
+        res: number
+        maxRes: number
+        P: number
+        rx: number
+        ry: number
+        panXQ: number
+        panYQ: number
+        target: [number, number, number]
+    }
+    const camPriv = (r: AsciiGraphRenderer) => r as unknown as CamPriv
 
-  /** Same idea as `measuredSpacing3` but over the XY plane only (`p2` always carries z=0) — a
-   *  SEPARATE measurement function (not `measuredSpacing3` fed z-zeroed input) for the same
-   *  independent-reimplementation reason. */
-  function measuredSpacing2(points: readonly [number, number][]): number {
-    const nn = points.map((p, i) => {
-      let best = Infinity;
-      points.forEach((q, j) => {
-        if (j === i) return;
-        const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
-        if (d < best) best = d;
-      });
-      return best;
-    });
-    const s = [...nn].sort((a, b) => a - b);
-    const mid = s.length >> 1;
-    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-  }
+    /**
+     * The camera-space depth `z2` a node would have with the world at its FIT scale — i.e. with the
+     * resolution factored OUT. Independent of the renderer's own projection loop (it re-derives the
+     * yaw/pitch from `rx`/`ry` rather than reading anything the loop wrote), which is what lets the
+     * tests below recover the dolly the renderer actually applied: `dolly = nv.depth - fitFrameZ(nv)`.
+     */
+    function fitFrameZ(p: CamPriv, i: number): number {
+        const nv = p.nodes[i]
+        const S = p.pxPerWorld
+        const x = (nv.p3[0] - p.target[0]) * S,
+            y = (nv.p3[1] - p.target[1]) * S,
+            z = (nv.p3[2] - p.target[2]) * S
+        const z1 = -x * Math.sin(p.ry) + z * Math.cos(p.ry)
+        return y * Math.sin(p.rx) + z1 * Math.cos(p.rx)
+    }
 
-  it("rescales the resting spacing to the 14.0-world-unit calibration target, regardless of the backend's raw density — independently for BOTH p3 and p2", () => {
-    // Pins the ABSOLUTE calibration value, not just "consistent across fixtures" — a wrong constant
-    // (e.g. targetSpacing 1 instead of 14) would still make two differently-scaled fixtures agree WITH
-    // EACH OTHER (any uniform target cancels a uniform input scale identically — see respace.ts's own
-    // header), so a test that only compares two fixtures to each other can't catch a wrong absolute
-    // number. This measures the OUTPUT's own median nearest-neighbour distance directly against the
-    // literal 14.0 the brief requires (asciiGrid.ts DEEPEST_WORLD_PER_CELL's calibration input),
-    // independent of anything imported from respace.ts or AsciiGraphRenderer.ts.
-    //
-    // Checks p2 as well as p3 (not just p3) for the same reason jitterGrid() now carries a real Z: a
-    // bug that routes the 2D line through `p3SpacingCache` (task-10 round 2 finding F2) is invisible
-    // to a test that only compares two SAME-BUG-affected fixtures to each other (the bug is applied
-    // uniformly to both, so they still agree — see the fixture-agreement test's own doc for why that
-    // one structurally can't catch this either). p3's own median NN is 14 BY CONSTRUCTION regardless
-    // of the bug (scaleToSpacing always hits its target on whatever it's actually given); what the bug
-    // corrupts is p2, which would inherit p3's positions (including its z-driven spread) and so measure
-    // BELOW 14 on its own XY-only distance once z is dropped — a real, cheap discriminator.
-    const graph = jitterGrid(12, 37); // an arbitrary raw scale far from 14 — a no-op wiring bug shows up loudly
-    const { r } = mountRenderer("3d", graph); // build() computes BOTH p3 and p2 regardless of viewMode
-    const priv = r as unknown as { nodes: { p3: [number, number, number]; p2: [number, number, number] }[] };
-    const spacing3 = measuredSpacing3(priv.nodes.map((nv) => nv.p3));
-    const spacing2 = measuredSpacing2(priv.nodes.map((nv) => [nv.p2[0], nv.p2[1]]));
-    expect(spacing3).toBeCloseTo(14, 0);
-    expect(spacing2).toBeCloseTo(14, 0);
-    r.destroy();
-  });
+    /** Every node's recovered dolly. A dolly is a property of the CAMERA, so these must all agree — the
+     *  spread is asserted, not assumed, in the tests that use the mean. */
+    const recoveredDollies = (p: CamPriv) =>
+        p.nodes.map((nv, i) => nv.depth - fitFrameZ(p, i))
 
-  it("two fixtures whose RAW backend density differs ~10x land on the SAME median neighbour cell-separation at the deepest (0%) zoom stop", () => {
-    // The task's actual acceptance gate (task-10-brief.md): NOT a screenshot. ASCII's fit divides by
-    // the cloud's own extents, so it exactly cancels a uniform scale — a fit-zoom (100%) screenshot is
-    // byte-identical whether this task is wired or not. What differs, and what this measures, is the
-    // DEEP-ZOOM ladder, anchored to the fixed absolute DEEPEST_WORLD_PER_CELL constant.
-    const SIZE = 45;
-    const dense = jitterGrid(SIZE, 1.4);
-    const sparse = jitterGrid(SIZE, 14); // exactly 10x the dense fixture's raw lattice spacing
-    expect(14 / 1.4).toBeCloseTo(10, 6); // sanity: the fixtures really are ~10x apart before any rescale
+    /**
+     * The projection AS IT WAS before the camera became explicit: world scaled by `pxPerWorld * res`,
+     * camera pinned at `zc = z2`, clip planes at the literal `persp > 0.05` / `zc < P * 0.985`. Lifted
+     * from the pre-Task-11 `projectNodes` and kept here as an INDEPENDENT oracle, because the whole
+     * no-regression claim is that wherever the camera ceiling does not bind, the explicit dolly
+     * reproduces this term for term — positions AND cull.
+     */
+    function preDollyProjection(p: CamPriv) {
+        const S = p.pxPerWorld * p.res
+        const cyr = Math.cos(p.ry),
+            syr = Math.sin(p.ry),
+            cxr = Math.cos(p.rx),
+            sxr = Math.sin(p.rx)
+        const ox = p.m.padX + (p.m.cols / 2) * p.m.cellW + p.panXQ
+        const oy = p.m.padY + (p.m.rows / 2) * p.m.cellH + p.panYQ
+        return p.nodes.map(nv => {
+            const x = (nv.p3[0] - p.target[0]) * S,
+                y = (nv.p3[1] - p.target[1]) * S,
+                z = (nv.p3[2] - p.target[2]) * S
+            const x1 = x * cyr + z * syr,
+                z1 = -x * syr + z * cyr
+            const y2 = y * cxr - z1 * sxr,
+                z2 = y * sxr + z1 * cxr
+            const persp = p.P / Math.max(1, p.P - z2)
+            return {
+                sx: ox + x1 * persp,
+                sy: oy + y2 * persp,
+                projValid: persp > 0.05 && z2 < p.P * 0.985,
+            }
+        })
+    }
 
-    const { r: rDense, viewport: vDense } = mountRenderer("2d", dense);
-    const { r: rSparse, viewport: vSparse } = mountRenderer("2d", sparse);
-    wheelIn(vDense, 20); settle(400);   // saturate at the 0% (deepest) floor
-    wheelIn(vSparse, 20); settle(400);
+    /** The dolly ceiling `cameraModel` imposes at this perspective — Canvas's MAX_ZOOM_FRAC clamp. */
+    const ceilingMag = (P: number) => P / Math.max(1, P - MAX_ZOOM_FRAC * P)
 
-    const camDense = rDense as unknown as { zoomPct: number };
-    const camSparse = rSparse as unknown as { zoomPct: number };
-    expect(camDense.zoomPct).toBe(0);   // sanity: both actually reached the deepest stop
-    expect(camSparse.zoomPct).toBe(0);
+    /** Preconditions. A fixture that drifts across the ceiling silently tests the OTHER branch — these
+     *  make that a failure with a readable message rather than a vacuous pass. */
+    function assertDeepLadder(p: CamPriv) {
+        expect(p.maxRes).toBeGreaterThan(ceilingMag(p.P)) // measured 19.7 vs 16.67 — the ceiling binds
+    }
+    function assertShallowLadder(p: CamPriv) {
+        expect(p.maxRes).toBeLessThanOrEqual(ceilingMag(p.P)) // measured 8.0 (the MIN_ZOOM_SPAN floor)
+    }
 
-    const spacingDense = medianOnGridCellSpacing(lodPriv(rDense));
-    const spacingSparse = medianOnGridCellSpacing(lodPriv(rSparse));
-    expect(spacingDense.count).toBeGreaterThan(2);   // enough on-grid neighbours for a real median
-    expect(spacingSparse.count).toBeGreaterThan(2);
+    /** Mount the ball in 3D, optionally in a smaller host box (which is what pushes `maxRes` past the
+     *  camera ceiling: maxRes ∝ 1/pxPerWorld ∝ 1/boxPx). Restores BOX like the resize test above. */
+    /**
+     * `body` runs with the ball mounted; the renderer is destroyed and BOX restored in a `finally`
+     * WHATEVER happens. Both matter: a renderer left alive by a failing assertion keeps its rAF loop
+     * pumping into this file's SHARED recording context, so one broken test in here silently corrupts
+     * the stroke/fill counts of unrelated tests later in the file (observed exactly that, once).
+     */
+    function withBall(
+        box: { width: number; height: number } | null,
+        body: (m: {
+            r: AsciiGraphRenderer
+            viewport: HTMLElement
+            painted: number[]
+            p: CamPriv
+        }) => void,
+        n = 300,
+    ) {
+        const restoreBox = { ...BOX }
+        if (box) Object.assign(BOX, box)
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        try {
+            const painted: number[] = []
+            r.mount(
+                host,
+                () => {},
+                () => {},
+            )
+            r.setPaintCallback(c => painted.push(c))
+            r.setConfig({ ...CONFIG, viewMode: '3d' })
+            r.render(ballGraph(n))
+            ctx.fills.length = 0
+            ctx.strokes.length = 0
+            frame()
+            settle()
+            body({
+                r,
+                viewport: host.firstElementChild as HTMLElement,
+                painted,
+                p: camPriv(r),
+            })
+        } finally {
+            r.destroy()
+            host.remove()
+            Object.assign(BOX, restoreBox)
+        }
+    }
+    /** The zoom-in stop: 10 wheel notches is 100% → 0% (ZOOM_STEP_PCT is 10). */
+    function toDeepestStop(viewport: HTMLElement) {
+        wheelIn(viewport, 10, { x: BOX.width / 2, y: BOX.height / 2 })
+        settle(200)
+    }
 
-    expect(spacingSparse.median).toBeCloseTo(spacingDense.median, 6);
+    it('still paints real note glyphs at MAXIMUM zoom in 3D — a live field at the deepest stop', () => {
+        // A guard, and honestly labelled as one: it fires on a BLANK deep end, which is the catastrophic
+        // shape, but it is NOT what separates this camera from the naive `zc = z2 + dollyForT(t, P)`
+        // stacked on the res-scaled world. That was measured rather than assumed, and the prediction did
+        // not hold: the naive double-dolly does not blank a 3D field, it DEGRADES it — 33 nodes on grid
+        // against this camera's 43 on the ball below, and 2 against 3 on the 24-note ring, because the
+        // half of a cloud that is behind the camera compresses toward the vanishing point instead of
+        // disappearing. What actually separates the two is the ~17x over-magnification, and the test that
+        // catches it is "caps the approach at the camera ceiling" below (which fails under both the naive
+        // form and every partial version of it). Kept because a blank deep end is still the failure worth
+        // a named gate, and because a bare paint count is what the camera step was asked to prove.
+        withBall({ width: 320, height: 220 }, ({ viewport, painted, p }) => {
+            assertDeepLadder(p)
+            ctx.fills.length = 0
+            toDeepestStop(viewport)
+            expect(p.res).toBeCloseTo(p.maxRes, 6) // we really are at the 0% stop
+            const onGrid = p.nodes.filter(nv => nv.onGrid).length
+            expect(onGrid).toBeGreaterThan(20) // measured 43 of 300
+            // Measured 19 node CELLS, and the number MOVED from 40 in Task 21 without the picture changing
+            // by a pixel. `painted` is what paint()'s row loop drew, and labels used to be given their
+            // ground by an opaque rect painted OVER that loop's output; they now take their cells before it
+            // runs (reserveLabelCells blanks charBuf) so the same glyphs are never drawn instead of being
+            // drawn and covered. On this deliberately tiny 320x220 field, 22 labels claim 21 of the 40 node
+            // cells — measured directly, both counts, on the old code and the new. So the two numbers are
+            // "rasterized" and "visible", and 19 is the honest one.
+            expect(painted.at(-1)!).toBeGreaterThan(15)
+            expect(ballNodeRuns().length).toBeGreaterThan(0) // ...and they are real note glyphs, in a community colour
+        })
+    })
 
-    rDense.destroy(); rSparse.destroy();
-  });
+    it('caps the approach at the camera ceiling on a deep ladder — the ladder alone would stand on the near plane', () => {
+        // maxRes 19.7 asks for 19.7x at the deepest stop, which is a dolly of P*(1 - 1/19.7) = 0.949*P —
+        // past the 0.94*P Canvas's own wheel clamp stopped at, and heading for the P*0.985 singularity.
+        // dollyForT is that clamp: the achieved magnification is MAX_MAGNIFICATION, not maxRes.
+        withBall({ width: 320, height: 220 }, ({ viewport, p }) => {
+            assertDeepLadder(p)
+            toDeepestStop(viewport)
+            const dollies = recoveredDollies(p)
+            const spread = Math.max(...dollies) - Math.min(...dollies)
+            expect(spread).toBeLessThan(1e-6) // one camera, not a per-node fudge
+            const mag = p.P / (p.P - dollies[0])
+            expect(mag).toBeCloseTo(ceilingMag(p.P), 6) // 16.667x — Canvas's stop
+            expect(mag).toBeCloseTo(MAX_MAGNIFICATION, 6) // ...which at this P is the asymptotic value
+            expect(mag).toBeLessThan(p.maxRes) // ...strictly short of what the ladder asked for
+            expect(dollies[0]).toBeLessThan(p.P * MAX_ZOOM_FRAC + 1e-9)
+        })
+    })
 
-  it("wires the per-signature spacing cache with a real clone, not identity — a later hit is unaffected by mutating an earlier return", () => {
-    // The specific footgun respace.ts's own docs call out by name: passing an identity clone for a
-    // reference type (Vec3[]) silently reinstates the exact position-corruption hazard the cache
-    // exists to prevent (the 2D<->3D morph a future task wires would lerp p2/p3 in place every frame).
-    // This exercises the ACTUAL cache instance AsciiGraphRenderer constructs (not a fresh
-    // createSpacingCache() call of the test's own), so a wiring bug — e.g.
-    // createSpacingCache((v) => v) instead of createSpacingCache(cloneVec3Array) — fails HERE.
-    const { r } = mountRenderer("3d", sampleGraph());
-    const priv = r as unknown as {
-      p3SpacingCache: { getOrCompute(sig: string, compute: () => [number, number, number][]): [number, number, number][] };
-    };
-    const sig = "respace-wiring-probe";
-    const first = priv.p3SpacingCache.getOrCompute(sig, () => [[1, 2, 3]]);
-    first[0][0] = -9999; // mutate the CALLER's own copy, as a future per-frame morph would
-    const second = priv.p3SpacingCache.getOrCompute(sig, () => { throw new Error("must be a cache hit"); });
-    expect(second).toEqual([[1, 2, 3]]); // untouched by the mutation above
-    r.destroy();
-  });
+    it('approaches MONOTONICALLY across the ladder — every stop moves the camera further in, none past the ceiling', () => {
+        // The endpoint tests either side of this one pin where the approach STARTS and STOPS; this pins
+        // that it is an approach at all rather than a jump. It is also the only thing standing between a
+        // correct camera and one that ignores `t` and applies the full ceiling at every stop — which is
+        // invisible at the deepest stop (where the full ceiling is the right answer) and invisible on a
+        // shallow ladder (where `res` caps it anyway), i.e. invisible to every other test here.
+        withBall({ width: 320, height: 220 }, ({ viewport, p }) => {
+            assertDeepLadder(p)
+            let prevDolly = -Infinity,
+                prevShortfall = -Infinity
+            for (let step = 0; step <= 10; step++) {
+                if (step > 0) {
+                    wheelIn(viewport, 1, {
+                        x: BOX.width / 2,
+                        y: BOX.height / 2,
+                    })
+                    settle(200)
+                }
+                const dolly = recoveredDollies(p)[0]
+                expect(dolly).toBeGreaterThan(prevDolly)
+                prevDolly = dolly
+                const mag = p.P / (p.P - dolly)
+                expect(mag).toBeLessThanOrEqual(ceilingMag(p.P) + 1e-9) // never past Canvas's stop
+                expect(mag).toBeLessThanOrEqual(p.res + 1e-9) // never more than the ladder asked for
+                // On a ladder DEEPER than the ceiling, the shortfall between what the ladder asks for and
+                // what a perspective camera can safely give must open GRADUALLY, one stop at a time — a
+                // camera that saturates at its stop early and then sits there gives a shortfall that is flat
+                // and then jumps, and reads as the approach simply ending partway down the wheel. (This is
+                // also the only assertion in the file that separates a `t`-driven ceiling from a constant
+                // one: at the deepest stop, and anywhere on a shallow ladder, the two agree exactly.)
+                if (step > 0) expect(p.res / mag).toBeGreaterThan(prevShortfall)
+                prevShortfall = p.res / mag
+            }
+            expect(prevShortfall).toBeGreaterThan(1.1) // measured 1.18 = maxRes / MAX_MAGNIFICATION
+        })
+    })
 
-  it("build() actually ROUTES THROUGH the spacing cache — revisiting a structural signature is a cache hit, not a recompute", () => {
-    // The previous test proves the CACHE OBJECT clones correctly in isolation (calling getOrCompute
-    // directly with a synthetic signature) — it does NOT prove build() itself ever calls getOrCompute
-    // at all. A wiring regression that constructs the caches but calls scaleToSpacing directly
-    // (bypassing them entirely) produces the exact same final positions every time, so it passes every
-    // other test in this file — the brief's own words: "wire it behind the existing structural
-    // signature ... do not call it uncached in a per-frame path" (task-10-brief.md). This counts real
-    // scaleToSpacing invocations by wrapping the ACTUAL cache instances' getOrCompute, then revisits a
-    // structural signature (A -> B -> A) across three render()s: only the FIRST two should ever reach
-    // a genuine compute — the third, revisiting A, must be a hit.
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    r.mount(host, () => {});
-    r.setConfig({ ...CONFIG, viewMode: "3d" });
+    it("takes the LADDER's magnification, not the ceiling's, wherever the ladder asks for less", () => {
+        // The same graph in a full-size box: maxRes falls to the MIN_ZOOM_SPAN floor of 8, well under the
+        // 16.667x ceiling, so the camera must deliver exactly 8x at the deepest stop — NOT 16.667x, which
+        // would zoom a small graph past its own 0% resolution law for no reason.
+        withBall(null, ({ viewport, p }) => {
+            assertShallowLadder(p)
+            toDeepestStop(viewport)
+            const mag = p.P / (p.P - recoveredDollies(p)[0])
+            expect(mag).toBeCloseTo(p.res, 6)
+            expect(mag).toBeLessThan(ceilingMag(p.P))
+        })
+    })
 
-    const priv = r as unknown as {
-      p3SpacingCache: { getOrCompute(sig: string, compute: () => unknown): unknown };
-      p2SpacingCache: { getOrCompute(sig: string, compute: () => unknown): unknown };
-    };
-    let p3Computes = 0, p2Computes = 0;
-    const countCompute = (
-      cache: { getOrCompute(sig: string, compute: () => unknown): unknown },
-      onCompute: () => void,
+    it('reproduces the pre-camera projection EXACTLY on a shallow ladder — every drawn position and every cull', () => {
+        // The no-regression claim, against an independent re-implementation of the projection as it was
+        // (see preDollyProjection). Scaling the world by k about the target IS a dolly of P*(1 - 1/k), so
+        // where the ceiling does not bind the two must agree to the last few bits — including projValid,
+        // which is the half a near plane pinned to P (instead of to the camera's working distance) would
+        // silently tighten as the camera comes in.
+        //
+        // POSITIONS are compared only for nodes the renderer considers drawable. Past the near plane both
+        // projections saturate on `Math.max(1, P - zc)`, a clamp that is NOT scale-equivariant, so the two
+        // legitimately diverge there — on coordinates no glyph, edge or label ever reads. `projValid`
+        // itself is compared over EVERY node, so "drawable" cannot quietly shrink to nothing.
+        withBall(null, ({ viewport, p }) => {
+            assertShallowLadder(p)
+            let comparedTotal = 0
+            for (let step = 0; step <= 10; step++) {
+                if (step > 0) {
+                    wheelIn(viewport, 1, {
+                        x: BOX.width / 2,
+                        y: BOX.height / 2,
+                    })
+                    settle(200)
+                }
+                const want = preDollyProjection(p)
+                let maxDelta = 0,
+                    cullMismatches = 0,
+                    compared = 0
+                for (let i = 0; i < p.nodes.length; i++) {
+                    if (p.nodes[i].projValid !== want[i].projValid)
+                        cullMismatches++
+                    if (!want[i].projValid) continue
+                    compared++
+                    // Off-screen-but-valid nodes carry large coordinates, so compare RELATIVE to their own size.
+                    const scale = Math.max(
+                        1,
+                        Math.abs(want[i].sx),
+                        Math.abs(want[i].sy),
+                    )
+                    maxDelta = Math.max(
+                        maxDelta,
+                        Math.abs(p.nodes[i].sx - want[i].sx) / scale,
+                        Math.abs(p.nodes[i].sy - want[i].sy) / scale,
+                    )
+                }
+                expect(cullMismatches).toBe(0)
+                expect(maxDelta).toBeLessThan(1e-9)
+                expect(compared).toBeGreaterThan(150) // measured 207-300 of 300 across the ladder
+                comparedTotal += compared
+            }
+            expect(comparedTotal).toBeGreaterThan(2000)
+        })
+    })
+
+    it('THE LAW through the approach: the camera moves a long way in, the type does not move at all', () => {
+        // A dolly moves POSITIONS. The THE LAW tests above pin type size across a wheel zoom in 2D, where
+        // there is no camera at all; this pins it across the 3D approach, and pins in the same breath that
+        // the camera really did travel (otherwise "the type didn't change" is satisfied by a camera that
+        // never moved, which is the state this task started from).
+        withBall({ width: 320, height: 220 }, ({ viewport, p }) => {
+            expect(recoveredDollies(p)[0]).toBeCloseTo(0, 6) // fit: no dolly, by construction
+            const fontAtFit = ctx.font
+            const spacingAtFit = ctx.letterSpacing
+            const fontsBefore = ctx.fonts.length
+            toDeepestStop(viewport)
+            expect(recoveredDollies(p)[0]).toBeGreaterThan(p.P * 0.9) // the camera crossed 90% of the way in
+            expect(ctx.font).toBe(fontAtFit)
+            expect(ctx.letterSpacing).toBe(spacingAtFit)
+            // ...and no DIFFERENT size was ever set mid-glide, only the same one re-asserted.
+            expect(new Set(ctx.fonts.slice(fontsBefore))).toEqual(
+                new Set([fontAtFit]),
+            )
+        })
+    })
+
+    it('frameSubset asks for a MAGNIFICATION and gets it in 3D, not merely the matching resolution stop', () => {
+        // Canvas's frameSubset set a dolly; ASCII's set a resolution. Unified, the request is a
+        // magnification and each mode converts. On a deep ladder the two conversions differ: the
+        // resolution stop that NUMERICALLY equals the wanted magnification delivers LESS than it, because
+        // the camera ceiling caps `maxRes^t` at `maxZs^t`. Routing through zoomT (cameraModel's exact
+        // inverse of dollyForT) is what closes that gap.
+        withBall(
+            { width: 320, height: 220 },
+            ({ r, p }) => {
+                assertDeepLadder(p)
+                // A SPATIALLY TIGHT subset — the 6 notes nearest n0, on a DENSER ball (700, see the trailing arg) — so the framing request is a real
+                // magnification. (A subset sampled across the whole ball has the ball's own radius, i.e. asks
+                // to zoom OUT, which would make this test pass on any implementation at all.)
+                const anchor = p.nodes[0].p3
+                const subset = [...p.nodes]
+                    .sort(
+                        (a, b) =>
+                            Math.hypot(
+                                a.p3[0] - anchor[0],
+                                a.p3[1] - anchor[1],
+                                a.p3[2] - anchor[2],
+                            ) -
+                            Math.hypot(
+                                b.p3[0] - anchor[0],
+                                b.p3[1] - anchor[1],
+                                b.p3[2] - anchor[2],
+                            ),
+                    )
+                    .slice(0, 6)
+                const pts = subset.map(nv => nv.p3)
+                const c = [0, 1, 2].map(
+                    k => pts.reduce((a, q) => a + q[k], 0) / pts.length,
+                )
+                let rad = 1e-6
+                for (const q of pts)
+                    rad = Math.max(
+                        rad,
+                        Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]),
+                    )
+                // `whole` mirrors graphFit's boundingRadius (max |p3|) — the same quantity frameSubset divides by.
+                const whole = Math.max(
+                    ...p.nodes.map(nv =>
+                        Math.hypot(nv.p3[0], nv.p3[1], nv.p3[2]),
+                    ),
+                )
+                const wantMag = (whole / rad) * 0.55
+                // Measured 3.36x on this fixture (700 notes, maxRes 26.4) — a real zoom-IN request.
+                expect(wantMag).toBeGreaterThan(2) // a real zoom-IN request
+                expect(wantMag).toBeLessThan(ceilingMag(p.P)) // ...and reachable, so a shortfall is a bug, not a clamp
+
+                r.frameSubset(subset.map(nv => nv.node.id))
+                settle(300)
+                const mag = p.P / (p.P - recoveredDollies(p)[0])
+                // The only slack is the resolution glide's own settle epsilon; a systematic shortfall (the
+                // resolution-only conversion) is ~20% here, an order of magnitude outside this band.
+                expect(mag / wantMag).toBeGreaterThan(0.98)
+                expect(mag / wantMag).toBeLessThan(1.02)
+            },
+            700,
+        )
+    })
+
+    it('resetView returns the camera to the fit distance — the dolly has no state of its own to strand', () => {
+        withBall({ width: 320, height: 220 }, ({ r, viewport, p }) => {
+            toDeepestStop(viewport)
+            expect(recoveredDollies(p)[0]).toBeGreaterThan(p.P * 0.9)
+            r.resetView()
+            settle(300)
+            expect(recoveredDollies(p)[0]).toBeCloseTo(0, 6)
+            expect(p.res).toBeCloseTo(1, 6)
+        })
+    })
+})
+
+describe('respace wiring (Task 10) — node-count-independent resting spacing on the deep-zoom ladder', () => {
+    /** Independent (re-implemented, NOT imported from respace.ts) median nearest-neighbour distance
+     *  over raw 3-tuples — mirrors respace.test.ts's own `measuredSpacing()`, so a bug shared between
+     *  the implementation and a test that imported the same helper can't hide from both. */
+    function measuredSpacing3(
+        points: readonly [number, number, number][],
+    ): number {
+        const nn = points.map((p, i) => {
+            let best = Infinity
+            points.forEach((q, j) => {
+                if (j === i) return
+                const d = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])
+                if (d < best) best = d
+            })
+            return best
+        })
+        const s = [...nn].sort((a, b) => a - b)
+        const mid = s.length >> 1
+        return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
+    }
+
+    /** Deterministic jittered square lattice (locally uniform density; the jitter breaks the exact
+     *  distance ties a bare lattice would have, so a nearest-neighbour swap can't hide behind a tie)
+     *  scaled by `unit`. Two calls whose `unit`s differ by a factor model two vaults whose BACKEND
+     *  absolute coordinate scale differs by that same factor — exactly what respace.ts's targetSpacing
+     *  exists to normalise away (see respace.ts's own header: "regardless of node count or which layout
+     *  algorithm produced the input").
+     *
+     *  `position` (3D) carries a real per-node Z (a checkerboard stagger + its own jitter, both scaled
+     *  by `unit`) that `position2d` (always flat, z omitted) does NOT share — so the 3D cloud's own
+     *  median nearest-neighbour distance is genuinely LARGER than the 2D cloud's, not just the same XY
+     *  shape with a trailing zero. Without this, `raw3` and `raw2` are numerically identical (z=0 for
+     *  every node either way), which makes AsciiGraphRenderer.ts's two independent spacing caches
+     *  (`p3SpacingCache`/`p2SpacingCache`) indistinguishable from one shared cache — a copy-paste bug
+     *  routing the 2D line through `p3SpacingCache` would silently return the (numerically identical)
+     *  right answer. With a real Z, that bug instead hands 2D the 3D cloud's positions verbatim
+     *  (col 2 code review, task-10 round 2, finding F2). */
+    function jitterGrid(
+        size: number,
+        unit: number,
+    ): ReturnType<typeof sampleGraph> {
+        const nodes: ReturnType<typeof sampleGraph>['nodes'] = []
+        const edges: ReturnType<typeof sampleGraph>['edges'] = []
+        const half = (size - 1) / 2
+        const pseudo = (a: number, b: number) => {
+            const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453
+            return v - Math.floor(v)
+        }
+        for (let row = 0; row < size; row++) {
+            for (let col = 0; col < size; col++) {
+                const jx = (pseudo(col, row) - 0.5) * 0.3 * unit
+                const jy = (pseudo(row, col + 1000) - 0.5) * 0.3 * unit
+                const jz = (pseudo(col + 2000, row + 2000) - 0.5) * 0.3 * unit
+                const zStagger = ((row + col) % 2) * 0.5 * unit // checkerboard — 3D's nearest neighbour is
+                // still the same grid-adjacent pair as 2D's
+                // (diagonal neighbours stay farther even
+                // with this added), just at a genuinely
+                // larger 3D distance than the flat 2D one.
+                const x = (col - half) * unit + jx
+                const y = (row - half) * unit + jy
+                const z = zStagger + jz
+                nodes.push({
+                    id: `g${row}_${col}`,
+                    label: `note ${row} ${col}`,
+                    kind: 'note' as const,
+                    position: [x, y, z] as [number, number, number],
+                    position2d: [x, y] as [number, number],
+                    community: 0,
+                    communityLabel: 'grid',
+                })
+                if (col > 0)
+                    edges.push({
+                        from: `g${row}_${col - 1}`,
+                        to: `g${row}_${col}`,
+                        kind: 'link' as const,
+                    })
+                if (row > 0)
+                    edges.push({
+                        from: `g${row - 1}_${col}`,
+                        to: `g${row}_${col}`,
+                        kind: 'link' as const,
+                    })
+            }
+        }
+        return { nodes, edges }
+    }
+
+    /** Median nearest-neighbour separation IN GRID CELLS among the currently on-grid nodes (private
+     *  per-frame state — see lodPriv()). "cells" is (col,row) distance, the literal grid coordinate
+     *  every glyph/label/hit-test in this renderer already keys off. */
+    function medianOnGridCellSpacing(p: LodPriv): {
+        count: number
+        median: number
+    } {
+        const onGrid = p.nodes.filter(nv => nv.onGrid)
+        const nn = onGrid.map((a, i) => {
+            let best = Infinity
+            onGrid.forEach((b, j) => {
+                if (i === j) return
+                const d = Math.hypot(a.col - b.col, a.row - b.row)
+                if (d < best) best = d
+            })
+            return best
+        })
+        const s = [...nn].sort((x, y) => x - y)
+        const mid = s.length >> 1
+        return {
+            count: onGrid.length,
+            median: s.length
+                ? s.length % 2
+                    ? s[mid]
+                    : (s[mid - 1] + s[mid]) / 2
+                : NaN,
+        }
+    }
+
+    /** Same idea as `measuredSpacing3` but over the XY plane only (`p2` always carries z=0) — a
+     *  SEPARATE measurement function (not `measuredSpacing3` fed z-zeroed input) for the same
+     *  independent-reimplementation reason. */
+    function measuredSpacing2(points: readonly [number, number][]): number {
+        const nn = points.map((p, i) => {
+            let best = Infinity
+            points.forEach((q, j) => {
+                if (j === i) return
+                const d = Math.hypot(p[0] - q[0], p[1] - q[1])
+                if (d < best) best = d
+            })
+            return best
+        })
+        const s = [...nn].sort((a, b) => a - b)
+        const mid = s.length >> 1
+        return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
+    }
+
+    it("rescales the resting spacing to the 14.0-world-unit calibration target, regardless of the backend's raw density — independently for BOTH p3 and p2", () => {
+        // Pins the ABSOLUTE calibration value, not just "consistent across fixtures" — a wrong constant
+        // (e.g. targetSpacing 1 instead of 14) would still make two differently-scaled fixtures agree WITH
+        // EACH OTHER (any uniform target cancels a uniform input scale identically — see respace.ts's own
+        // header), so a test that only compares two fixtures to each other can't catch a wrong absolute
+        // number. This measures the OUTPUT's own median nearest-neighbour distance directly against the
+        // literal 14.0 the brief requires (asciiGrid.ts DEEPEST_WORLD_PER_CELL's calibration input),
+        // independent of anything imported from respace.ts or AsciiGraphRenderer.ts.
+        //
+        // Checks p2 as well as p3 (not just p3) for the same reason jitterGrid() now carries a real Z: a
+        // bug that routes the 2D line through `p3SpacingCache` (task-10 round 2 finding F2) is invisible
+        // to a test that only compares two SAME-BUG-affected fixtures to each other (the bug is applied
+        // uniformly to both, so they still agree — see the fixture-agreement test's own doc for why that
+        // one structurally can't catch this either). p3's own median NN is 14 BY CONSTRUCTION regardless
+        // of the bug (scaleToSpacing always hits its target on whatever it's actually given); what the bug
+        // corrupts is p2, which would inherit p3's positions (including its z-driven spread) and so measure
+        // BELOW 14 on its own XY-only distance once z is dropped — a real, cheap discriminator.
+        const graph = jitterGrid(12, 37) // an arbitrary raw scale far from 14 — a no-op wiring bug shows up loudly
+        const { r } = mountRenderer('3d', graph) // build() computes BOTH p3 and p2 regardless of viewMode
+        const priv = r as unknown as {
+            nodes: {
+                p3: [number, number, number]
+                p2: [number, number, number]
+            }[]
+        }
+        const spacing3 = measuredSpacing3(priv.nodes.map(nv => nv.p3))
+        const spacing2 = measuredSpacing2(
+            priv.nodes.map(nv => [nv.p2[0], nv.p2[1]]),
+        )
+        expect(spacing3).toBeCloseTo(14, 0)
+        expect(spacing2).toBeCloseTo(14, 0)
+        r.destroy()
+    })
+
+    it('two fixtures whose RAW backend density differs ~10x land on the SAME median neighbour cell-separation at the deepest (0%) zoom stop', () => {
+        // The task's actual acceptance gate (task-10-brief.md): NOT a screenshot. ASCII's fit divides by
+        // the cloud's own extents, so it exactly cancels a uniform scale — a fit-zoom (100%) screenshot is
+        // byte-identical whether this task is wired or not. What differs, and what this measures, is the
+        // DEEP-ZOOM ladder, anchored to the fixed absolute DEEPEST_WORLD_PER_CELL constant.
+        const SIZE = 45
+        const dense = jitterGrid(SIZE, 1.4)
+        const sparse = jitterGrid(SIZE, 14) // exactly 10x the dense fixture's raw lattice spacing
+        expect(14 / 1.4).toBeCloseTo(10, 6) // sanity: the fixtures really are ~10x apart before any rescale
+
+        const { r: rDense, viewport: vDense } = mountRenderer('2d', dense)
+        const { r: rSparse, viewport: vSparse } = mountRenderer('2d', sparse)
+        wheelIn(vDense, 20)
+        settle(400) // saturate at the 0% (deepest) floor
+        wheelIn(vSparse, 20)
+        settle(400)
+
+        const camDense = rDense as unknown as { zoomPct: number }
+        const camSparse = rSparse as unknown as { zoomPct: number }
+        expect(camDense.zoomPct).toBe(0) // sanity: both actually reached the deepest stop
+        expect(camSparse.zoomPct).toBe(0)
+
+        const spacingDense = medianOnGridCellSpacing(lodPriv(rDense))
+        const spacingSparse = medianOnGridCellSpacing(lodPriv(rSparse))
+        expect(spacingDense.count).toBeGreaterThan(2) // enough on-grid neighbours for a real median
+        expect(spacingSparse.count).toBeGreaterThan(2)
+
+        expect(spacingSparse.median).toBeCloseTo(spacingDense.median, 6)
+
+        rDense.destroy()
+        rSparse.destroy()
+    })
+
+    it('wires the per-signature spacing cache with a real clone, not identity — a later hit is unaffected by mutating an earlier return', () => {
+        // The specific footgun respace.ts's own docs call out by name: passing an identity clone for a
+        // reference type (Vec3[]) silently reinstates the exact position-corruption hazard the cache
+        // exists to prevent (the 2D<->3D morph a future task wires would lerp p2/p3 in place every frame).
+        // This exercises the ACTUAL cache instance AsciiGraphRenderer constructs (not a fresh
+        // createSpacingCache() call of the test's own), so a wiring bug — e.g.
+        // createSpacingCache((v) => v) instead of createSpacingCache(cloneVec3Array) — fails HERE.
+        const { r } = mountRenderer('3d', sampleGraph())
+        const priv = r as unknown as {
+            p3SpacingCache: {
+                getOrCompute(
+                    sig: string,
+                    compute: () => [number, number, number][],
+                ): [number, number, number][]
+            }
+        }
+        const sig = 'respace-wiring-probe'
+        const first = priv.p3SpacingCache.getOrCompute(sig, () => [[1, 2, 3]])
+        first[0][0] = -9999 // mutate the CALLER's own copy, as a future per-frame morph would
+        const second = priv.p3SpacingCache.getOrCompute(sig, () => {
+            throw new Error('must be a cache hit')
+        })
+        expect(second).toEqual([[1, 2, 3]]) // untouched by the mutation above
+        r.destroy()
+    })
+
+    it('build() actually ROUTES THROUGH the spacing cache — revisiting a structural signature is a cache hit, not a recompute', () => {
+        // The previous test proves the CACHE OBJECT clones correctly in isolation (calling getOrCompute
+        // directly with a synthetic signature) — it does NOT prove build() itself ever calls getOrCompute
+        // at all. A wiring regression that constructs the caches but calls scaleToSpacing directly
+        // (bypassing them entirely) produces the exact same final positions every time, so it passes every
+        // other test in this file — the brief's own words: "wire it behind the existing structural
+        // signature ... do not call it uncached in a per-frame path" (task-10-brief.md). This counts real
+        // scaleToSpacing invocations by wrapping the ACTUAL cache instances' getOrCompute, then revisits a
+        // structural signature (A -> B -> A) across three render()s: only the FIRST two should ever reach
+        // a genuine compute — the third, revisiting A, must be a hit.
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        r.mount(host, () => {})
+        r.setConfig({ ...CONFIG, viewMode: '3d' })
+
+        const priv = r as unknown as {
+            p3SpacingCache: {
+                getOrCompute(sig: string, compute: () => unknown): unknown
+            }
+            p2SpacingCache: {
+                getOrCompute(sig: string, compute: () => unknown): unknown
+            }
+        }
+        let p3Computes = 0,
+            p2Computes = 0
+        const countCompute = (
+            cache: {
+                getOrCompute(sig: string, compute: () => unknown): unknown
+            },
+            onCompute: () => void,
+        ) => {
+            const orig = cache.getOrCompute.bind(cache)
+            cache.getOrCompute = (sig, compute) =>
+                orig(sig, () => {
+                    onCompute()
+                    return compute()
+                })
+        }
+        countCompute(priv.p3SpacingCache, () => {
+            p3Computes++
+        })
+        countCompute(priv.p2SpacingCache, () => {
+            p2Computes++
+        })
+
+        const graphA = sampleGraph()
+        const graphB = lodGraph() // a genuinely different structural signature
+        r.render(graphA)
+        r.render(graphB)
+        r.render(graphA) // revisits A's signature — must be a Map lookup, not an O(n²) remeasure
+        expect(p3Computes).toBe(2) // A (miss) + B (miss) — NOT a third for revisiting A
+        expect(p2Computes).toBe(2)
+        r.destroy()
+    })
+
+    /** A single horizontal chain (evenly-spaced along X, Y and Z both flat) scaled by `unit`. Every
+     *  interior node's nearest neighbour is unambiguous and lies purely along the COLUMN axis, so the
+     *  grid Δcol between neighbours at the deepest zoom stop is a clean, directly-computable number —
+     *  the exact join between respace.ts's RESPACE_TARGET_SPACING and asciiGrid.ts's
+     *  DEEPEST_WORLD_PER_CELL (see the test below). */
+    function chainGraph(
+        n: number,
+        unit: number,
+    ): ReturnType<typeof sampleGraph> {
+        const nodes: ReturnType<typeof sampleGraph>['nodes'] = []
+        const edges: ReturnType<typeof sampleGraph>['edges'] = []
+        const half = (n - 1) / 2
+        for (let i = 0; i < n; i++) {
+            const x = (i - half) * unit
+            nodes.push({
+                id: `c${i}`,
+                label: `note ${i}`,
+                kind: 'note' as const,
+                position: [x, 0, 0] as [number, number, number],
+                position2d: [x, 0] as [number, number],
+                community: 0,
+                communityLabel: 'chain',
+            })
+            if (i > 0)
+                edges.push({
+                    from: `c${i - 1}`,
+                    to: `c${i}`,
+                    kind: 'link' as const,
+                })
+        }
+        return { nodes, edges }
+    }
+
+    it("pins the calibration JOIN between RESPACE_TARGET_SPACING and asciiGrid.ts's DEEPEST_WORLD_PER_CELL: median neighbour Δcol at the deepest stop is 35", () => {
+        // task-10 round 2, finding F3: the previous two tests each pin ONE end of the calibration link
+        // (the fixture-agreement test compares two fixtures only to each other; the absolute-14 test
+        // measures p3/p2 WORLD coordinates with no reference to asciiGrid.ts at all) — neither references
+        // the deep-zoom ladder itself, so the actual JOIN (RESPACE_TARGET_SPACING=14.0 divided by
+        // asciiGrid.ts's DEEPEST_WORLD_PER_CELL=0.4, the whole reason 14.0 was chosen) was untested.
+        // Mutating DEEPEST_WORLD_PER_CELL (0.4 -> 0.8, halving deep-zoom detail — the exact regression its
+        // own comment warns about) previously left every existing test green.
+        //
+        // 35 is a LITERAL, independently-hardcoded expectation (14.0 / 0.4 computed by hand, NOT by
+        // importing and dividing the live source constants) — deliberately not derived from
+        // DEEPEST_WORLD_PER_CELL at test time, because computing "expected" from the very constant a
+        // mutation changes would make expected drift together with actual and the test could never fail
+        // (the exact self-referential trap this whole test exists to avoid). If either constant
+        // intentionally moves, this literal must be updated by hand in lockstep — same discipline
+        // asciiGrid.ts:293's own comment already demands of MIN_ZOOM_SPAN and the RING_SCALE test const.
+        const CHAIN_N = 100 // long enough that maxRes is derived from the ABSOLUTE target, not floored
+        // at MIN_ZOOM_SPAN (verified empirically — see the maxRes sanity check below)
+        const graph = chainGraph(CHAIN_N, 37) // raw unit is arbitrary; respace normalises it away
+        const { r, viewport } = mountRenderer('2d', graph)
+        // try/finally: this test's whole POINT is to fail under a live mutation (see the mutation-testing
+        // note in task-10-report.md). A renderer whose `destroy()` never runs (because an assertion above
+        // it threw first) leaves its window-level listeners AND its self-re-arming rAF tick alive for the
+        // rest of the file's test run — a real cross-test pollution hazard verified while writing this
+        // test (a mutated DEEPEST_WORLD_PER_CELL made an unrelated LATER "vector-edge fidelity" hover test
+        // see 4 batched strokes instead of 2, from this test's own never-destroyed renderer still reacting
+        // to a later window pointermove and repainting into the shared fake canvas context). Every other
+        // `it()` in this file destroys at the very end with no such guarantee — harmless there only because
+        // none of them are EXPECTED to fail under a deliberate mutation the way this one specifically is.
+        try {
+            const cam = r as unknown as { maxRes: number }
+            expect(cam.maxRes).toBeGreaterThan(8) // sanity: NOT floored at MIN_ZOOM_SPAN (asciiGrid.ts's floor)
+
+            wheelIn(viewport, 12)
+            settle(300) // saturate at the 0% (deepest) floor
+            expect((r as unknown as { zoomPct: number }).zoomPct).toBe(0)
+
+            const p = lodPriv(r)
+            const onGridCols = p.nodes
+                .filter(nv => nv.onGrid)
+                .map(nv => nv.col)
+                .sort((a, b) => a - b)
+            expect(onGridCols.length).toBeGreaterThan(2) // enough neighbours for a real median
+            const deltas = onGridCols.slice(1).map((c, i) => c - onGridCols[i])
+            const sorted = [...deltas].sort((a, b) => a - b)
+            const mid = sorted.length >> 1
+            const medianDeltaCol =
+                sorted.length % 2
+                    ? sorted[mid]
+                    : (sorted[mid - 1] + sorted[mid]) / 2
+            expect(medianDeltaCol).toBeCloseTo(35, 0)
+        } finally {
+            r.destroy()
+        }
+    })
+
+    it("honours respace.ts's OTHER caller-side contract: daemon/cron/process graphs are recentred but NOT rescaled", () => {
+        // respace.ts's header names two caller-side contracts. The self-pin is moot (dead code — see the
+        // comment above raw3/raw2's construction in AsciiGraphRenderer.ts). The SECOND one — "don't call
+        // scaleToSpacing at all for a graph that arrived pre-laid-out" — was initially skipped without
+        // comment (task-10 round 2 review). CanvasGraphRenderer.ts's hasIntentionalLayoutKind() (`:667-668`)
+        // skips its OWN rescale for agent/daemon/cron/process graphs: their absolute spacing is chosen by
+        // their own layout (a hub-and-spoke daemon tree sized to read at a specific zoom), not the
+        // backend's PivotMDS packing scaleToSpacing's 14.0 target was calibrated against. Honoured here by
+        // feeding scaleToSpacing a non-positive targetSpacing for those graphs — its own documented
+        // "recenter only, scale=1" fallback — rather than skipping the call outright (one call site, one
+        // cache, instead of forking a second code path).
+        const RAW_UNIT = 5 // deliberately far from RESPACE_TARGET_SPACING (14) — a rescale bug is loud
+        const cronGraph = {
+            nodes: [
+                {
+                    id: 'd0',
+                    label: 'daemon',
+                    kind: 'cron',
+                    position: [0, 0, 0],
+                    position2d: [0, 0],
+                },
+                {
+                    id: 'd1',
+                    label: 'cron a',
+                    kind: 'cron',
+                    position: [RAW_UNIT, 0, 0],
+                    position2d: [RAW_UNIT, 0],
+                },
+                {
+                    id: 'd2',
+                    label: 'cron b',
+                    kind: 'cron',
+                    position: [0, RAW_UNIT, 0],
+                    position2d: [0, RAW_UNIT],
+                },
+                {
+                    id: 'd3',
+                    label: 'cron c',
+                    kind: 'cron',
+                    position: [-RAW_UNIT, 0, 0],
+                    position2d: [-RAW_UNIT, 0],
+                },
+            ],
+            edges: [
+                { from: 'd0', to: 'd1', kind: 'supervises' },
+                { from: 'd0', to: 'd2', kind: 'supervises' },
+                { from: 'd0', to: 'd3', kind: 'supervises' },
+            ],
+        }
+        const { r } = mountRenderer(
+            '3d',
+            cronGraph as unknown as ReturnType<typeof sampleGraph>,
+        )
+        try {
+            const priv = r as unknown as {
+                nodes: { p3: [number, number, number] }[]
+            }
+            const spacing = measuredSpacing3(priv.nodes.map(nv => nv.p3))
+            // NOT rescaled to 14 — stays at (close to) the RAW unit, since these nodes arrived pre-laid-out.
+            expect(spacing).toBeCloseTo(RAW_UNIT, 0)
+            expect(spacing).not.toBeCloseTo(14, 0)
+            // Still RECENTRED, though — the hub (originally at the origin) should sit near the cloud's own
+            // centroid-relative origin, same as any other graph (respace's degenerate-target fallback still
+            // subtracts the mean, it just skips the scale).
+            let cx = 0,
+                cy = 0,
+                cz = 0
+            for (const nv of priv.nodes) {
+                cx += nv.p3[0]
+                cy += nv.p3[1]
+                cz += nv.p3[2]
+            }
+            cx /= priv.nodes.length
+            cy /= priv.nodes.length
+            cz /= priv.nodes.length
+            expect(cx).toBeCloseTo(0, 6)
+            expect(cy).toBeCloseTo(0, 6)
+            expect(cz).toBeCloseTo(0, 6)
+        } finally {
+            r.destroy()
+        }
+    })
+})
+
+describe('LEVEL OF DETAIL (opt-in, GraphConfig.showLodMasses) — coarse stops rasterize aggregate entities, deep stops the real graph', () => {
+    it('renders every individual node as a glyph even at fit — LOD masses are OFF by default', () => {
+        const { r } = mountRenderer('2d', lodGraph())
+        const p = lodPriv(r)
+        // No aggregate entity anywhere on the field...
+        expect([...p.cellEntity].every(v => v < 0)).toBe(true)
+        // ...every real note IS on the field instead (the leaf pass always runs).
+        expect([...p.cellNode].some(v => v >= 0)).toBe(true)
+        expect(r.computeStats().notesOnScreen).toBe(24) // all 4 blobs × 6 notes
+        r.destroy()
+    })
+
+    it('renders ONE named entity per coarsest community at fit — and no individual notes at all', () => {
+        const { r } = mountRenderer('2d', lodGraph(), { showLodMasses: true })
+        const p = lodPriv(r)
+        // No leaf raster work ran: no note occupies any cell.
+        expect([...p.cellNode].every(v => v < 0)).toBe(true)
+        // Exactly the two TOP communities, one entity each, left and right of centre, at their
+        // members' centroids.
+        const flats = new Set<number>()
+        for (const v of p.cellEntity) if (v >= 0) flats.add(v)
+        const ents = [...flats].map(f => p.entityFlat[f])
+        expect(ents.length).toBe(2)
+        expect(new Set(ents.map(e => e.level))).toEqual(new Set([0]))
+        expect(ents.map(e => e.count).sort()).toEqual([12, 12])
+        const left = ents.find(e => e.community === 0)!
+        const right = ents.find(e => e.community === 1)!
+        expect(left.col).toBeLessThan(p.m.cols / 2)
+        expect(right.col).toBeGreaterThan(p.m.cols / 2)
+        // The auto names ride along in eyebrow register.
+        expect(ctx.fills.some(f => f.text === 'TOP 0')).toBe(true)
+        expect(ctx.fills.some(f => f.text === 'TOP 1')).toBe(true)
+        r.destroy()
+    })
+
+    // WAS: "draws aggregate connectors between entities at fit — the leaf edge pass never ran",
+    // asserting `layerBuf` held at least one LAYER_EDGE cell. Aggregate connectors are VECTOR strokes
+    // now (see the GROUP LINES block in AsciiGraphRenderer.ts) — a character is an order of magnitude
+    // more ink than a hairline, and at the default 2D view the reference vault's connectors read as a
+    // stair-stepped grey scribble across the field. The connectors themselves are unchanged (same
+    // pairs, same log-scaled weights, same anchors), so this asserts the same behaviour through the
+    // new medium — and strictly more of it: a cell count could not tell WHICH cells, so it passed
+    // for any Bresenham line anywhere, whereas this pins the exact endpoints and the exact count.
+    it('draws aggregate connectors between entities at fit — vector strokes anchored on the two masses, no grid characters', () => {
+        const { r } = mountRenderer('2d', lodGraph(), { showLodMasses: true })
+        const p = lodPriv(r)
+        // The leaf passes never ran at fit, so every line on the field is an aggregate connector...
+        expect([...p.cellNode].every(v => v < 0)).toBe(true)
+        // ...and lodGraph's two TOP communities are joined by 6 real links, i.e. exactly ONE connector.
+        const segs = strokeSegs()
+        expect(segs.length).toBe(1)
+        // It runs between the two masses' own cell centres — where their ink actually sits — pulled back
+        // from both by the shared endpoint clearance, exactly as a member edge is: a group line ends on
+        // a mass's `@` core glyph, and running through its interior muddies it. The expectation composes
+        // the real `trimSegmentForClearance` (unit-tested separately) rather than re-deriving it.
+        const flats = new Set<number>()
+        for (const v of p.cellEntity) if (v >= 0) flats.add(v)
+        const ents = [...flats].map(f => p.entityFlat[f])
+        expect(ents.length).toBe(2)
+        const key = (x: number, y: number) => `${x.toFixed(2)},${y.toFixed(2)}`
+        const cxOf = (e: { col: number }) =>
+            p.m.padX + e.col * p.m.cellW + p.m.cellW / 2
+        const cyOf = (e: { row: number }) =>
+            p.m.padY + e.row * p.m.cellH + p.m.cellH / 2
+        const [ax, ay, bx, by] = trimSegmentForClearance(
+            cxOf(ents[0]),
+            cyOf(ents[0]),
+            cxOf(ents[1]),
+            cyOf(ents[1]),
+            0.55 * p.m.cellW,
+        )
+        expect(
+            [key(segs[0][0], segs[0][1]), key(segs[0][2], segs[0][3])].sort(),
+        ).toEqual([key(ax, ay), key(bx, by)].sort())
+        // ...and the trim really moved both ends: an untrimmed line would land ON the cell centres.
+        expect(
+            [key(segs[0][0], segs[0][1]), key(segs[0][2], segs[0][3])].sort(),
+        ).not.toEqual(
+            [
+                key(cxOf(ents[0]), cyOf(ents[0])),
+                key(cxOf(ents[1]), cyOf(ents[1])),
+            ].sort(),
+        )
+        // And NO edge of any kind occupies a cell any more — the edge layer is never written.
+        expect([...p.layerBuf].every(v => v !== LAYER_EDGE)).toBe(true)
+        r.destroy()
+    })
+
+    it("stepping in over an entity expands it into its CHILDREN near the parent's position", () => {
+        const { r, viewport } = mountRenderer('2d', lodGraph(), {
+            showLodMasses: true,
+        })
+        const p = lodPriv(r)
+        expect(entityLevelsOnGrid(p)).toEqual(new Set([0]))
+        // Wheel ANCHORED on the left top-level mass (community 0 = blobs 0+1).
+        const leftFlat = p.entityFlat.findIndex(
+            e => e.level === 0 && e.community === 0,
+        )
+        const i = p.cellEntity.findIndex(v => v === leftFlat)
+        expect(i).toBeGreaterThanOrEqual(0)
+        const at = cellPx(p, i)
+        wheelIn(viewport, 4, at) // 100% -> 60% = t 0.4: past the 2-level boundary (0.375) — level 1 owns it
+        settle(200)
+        expect(entityLevelsOnGrid(p)).toEqual(new Set([1]))
+        // The children on the field are the anchored parent's OWN blobs (0 and 1) — expansion happens
+        // in place; the other half of the graph has left the anchored view.
+        const comms = new Set<number>()
+        for (const v of p.cellEntity)
+            if (v >= 0) comms.add(p.entityFlat[v].community)
+        expect(comms.size).toBeGreaterThan(0)
+        expect([...comms].every(c => c === 0 || c === 1)).toBe(true)
+        // WAS: "Still no real notes this far out" (`cellNode` all < 0). 60% is t ≈ 0.4, which sits
+        // inside the mass→glyph crossfade [BACKBONE_START_T, +BACKBONE_FADE_SPAN] = [0.32, 0.46]: the
+        // children's own MEMBERS have begun emerging through the dissolving masses, which is exactly
+        // what drawEntityMasses' "members emerge through the dissolving parent" always described — it
+        // just used to happen at FILE_LABEL_REVEAL_T, because masses owned the field until then.
+        expect([...p.cellNode].some(v => v >= 0)).toBe(true)
+        // File NAMES are still far off, though — the crossfade to them starts at 0.75.
+        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(false)
+        r.destroy()
+    })
+
+    it('only the real graph rasterizes at the deep stops — entities are gone, real notes and edges draw', () => {
+        const { r, viewport } = mountRenderer('2d', lodGraph(), {
+            showLodMasses: true,
+        })
+        const p = lodPriv(r)
+        // Phase 1: into the left top cluster (level 1 active).
+        const leftFlat = p.entityFlat.findIndex(
+            e => e.level === 0 && e.community === 0,
+        )
+        const at0 = cellPx(
+            p,
+            p.cellEntity.findIndex(v => v === leftFlat),
+        )
+        wheelIn(viewport, 3, at0)
+        settle(200)
+        // Phase 2: follow ONE child mass down to 0% (the anchor keeps it under the cursor).
+        const childIdx = p.cellEntity.findIndex(v => v >= 0)
+        expect(childIdx).toBeGreaterThanOrEqual(0)
+        wheelIn(viewport, 7, cellPx(p, childIdx))
+        settle(300)
+        expect([...p.cellEntity].every(v => v < 0)).toBe(true) // entities fully dissolved
+        expect([...p.cellNode].some(v => v >= 0)).toBe(true) // real notes on the field
+        r.destroy()
+    })
+
+    it('keeps the world point under the cursor fixed through zoom steps (within a cell)', () => {
+        const { r, viewport } = mountRenderer('2d', lodGraph(), {
+            showLodMasses: true,
+        })
+        const p = lodPriv(r)
+        const m = p.m
+        // A deliberately off-centre cursor point: over the left mass.
+        const at = cellPx(
+            p,
+            p.cellEntity.findIndex(v => v >= 0),
+        )
+        const screenOf = (wx: number, wy: number) => {
+            const s = p.pxPerWorld * p.res
+            return {
+                x:
+                    m.padX +
+                    (m.cols / 2) * m.cellW +
+                    p.panX +
+                    (wx - p.target[0]) * s,
+                y:
+                    m.padY +
+                    (m.rows / 2) * m.cellH +
+                    p.panY +
+                    (wy - p.target[1]) * s,
+            }
+        }
+        // The world point under the cursor, from the settled fit camera.
+        const s0 = p.pxPerWorld * p.res
+        const wx =
+            p.target[0] +
+            (at.x - (m.padX + (m.cols / 2) * m.cellW + p.panX)) / s0
+        const wy =
+            p.target[1] +
+            (at.y - (m.padY + (m.rows / 2) * m.cellH + p.panY)) / s0
+
+        wheelIn(viewport, 1, at)
+        settle(300)
+        const p1 = screenOf(wx, wy)
+        expect(Math.abs(p1.x - at.x)).toBeLessThanOrEqual(m.cellW)
+        expect(Math.abs(p1.y - at.y)).toBeLessThanOrEqual(m.cellH)
+
+        wheelIn(viewport, 1, at) // consecutive steps must compose without drift
+        settle(300)
+        const p2 = screenOf(wx, wy)
+        expect(Math.abs(p2.x - at.x)).toBeLessThanOrEqual(m.cellW)
+        expect(Math.abs(p2.y - at.y)).toBeLessThanOrEqual(m.cellH)
+        r.destroy()
+    })
+
+    it('3D keeps its full-detail path untouched — no entities, ever (even with showLodMasses on)', () => {
+        const { r, viewport } = mountRenderer('3d', lodGraph(), {
+            showLodMasses: true,
+        })
+        const p = lodPriv(r)
+        expect([...p.cellEntity].every(v => v < 0)).toBe(true)
+        expect([...p.cellNode].some(v => v >= 0)).toBe(true)
+        wheelIn(viewport, 1) // one step in — the 3D camera still rasterizes the REAL graph
+        settle(200)
+        expect([...p.cellEntity].every(v => v < 0)).toBe(true)
+        expect([...p.cellNode].some(v => v >= 0)).toBe(true)
+        r.destroy()
+    })
+})
+
+describe('THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub backbone, near = glyphs + member edges', () => {
+    /**
+     * A strictly NESTED 4-level hierarchy: 16 leaf groups of 4 notes, whose paths are the group index
+     * shifted (`[g>>3, g>>2, g>>1, g]`), giving 2 / 4 / 8 / 16 communities down the ladder. Four levels
+     * specifically, because the level BOUNDARIES are `k · revealT / levelCount`: at 4 levels the
+     * level-2/3 boundary sits at 0.5625 under `FILE_LABEL_REVEAL_T` (0.75) but at 0.465 under
+     * `computeEdgeLevelWeights`' ported Canvas default (0.62), and the whole gap between them lands
+     * inside the mid band's plateau — which is what makes "did the caller pass the right revealT?"
+     * observable at all. At 2 levels the same disagreement window (0.31 … 0.375) sits under the mass
+     * band, where the backbone is barely drawn.
+     *
+     * The cross-group links are chosen so the connected-PAIR count differs level to level (1 / 3 / 8 /
+     * 11) — a backbone drawn at the wrong level then has a different segment count, which is what the
+     * revealT test reads. The test asserts that difference rather than trusting it.
+     */
+    function fourLevelGraph() {
+        const nodes = []
+        const edges = []
+        for (let g = 0; g < 16; g++) {
+            const path = [g >> 3, g >> 2, g >> 1, g]
+            const labels = [
+                `Lzero ${path[0]}`,
+                `Lone ${path[1]}`,
+                `Ltwo ${path[2]}`,
+                `Lthree ${path[3]}`,
+            ]
+            // Each group is a HUB plus three satellites, and the hubs are deliberately packed into the
+            // middle while the satellites sit out on a wide ring. Zoom is RESOLUTION on a fixed ladder, so
+            // the mid band always shows about the central third of the graph's bounding box, whatever the
+            // fixture's absolute scale — the satellites are what set that box, and putting the hubs inside
+            // its middle third is the only way to have more than one hub-to-hub line on screen there to
+            // assert against. (Inflating the box with far-off outliers does NOT work: maxResFor derives
+            // the ladder from the fit scale, so a bigger box buys proportionally more magnification and
+            // the clusters come out SMALLER at the same t, not bigger.)
+            const hx = ((g % 4) - 1.5) * 11,
+                hy = (Math.floor(g / 4) - 1.5) * 11
+            for (let k = 0; k < 4; k++) {
+                const a = ((g * 3 + k) / 48) * Math.PI * 2
+                const x = k === 0 ? hx : Math.cos(a) * 100
+                const y = k === 0 ? hy : Math.sin(a) * 100
+                nodes.push({
+                    id: `g${g}n${k}`,
+                    label: `note ${g}-${k}`,
+                    kind: 'note' as const,
+                    position: [x, y, 0] as [number, number, number],
+                    position2d: [x, y] as [number, number],
+                    community: g,
+                    communityLabel: `Leaf ${g}`,
+                    communityPath: path,
+                    communityPathLabels: labels,
+                })
+            }
+            for (let k = 1; k < 4; k++)
+                edges.push({
+                    from: `g${g}n0`,
+                    to: `g${g}n${k}`,
+                    kind: 'link' as const,
+                })
+        }
+        const cross: [number, number][] = [
+            [0, 1],
+            [0, 2],
+            [0, 4],
+            [0, 8],
+            [1, 3],
+            [2, 6],
+            [4, 12],
+            [5, 13],
+            [3, 11],
+            [7, 15],
+            [9, 10],
+        ]
+        for (const [a, b] of cross)
+            edges.push({
+                from: `g${a}n0`,
+                to: `g${b}n1`,
+                kind: 'link' as const,
+            })
+        return { nodes, edges }
+    }
+
+    interface BandPriv {
+        res: number
+        goalRes: number
+        maxRes: number
+        cellNode: Int32Array
+        cellEntity: Int32Array
+        colors: string[]
+        edgeBaseAlpha: number
+        memberEdgeAlpha: number
+        levelPairs: {
+            a: { col: number; row: number; onGrid: boolean }
+            b: { col: number; row: number; onGrid: boolean }
+            count: number
+        }[][]
+        m: {
+            cols: number
+            rows: number
+            cellW: number
+            cellH: number
+            padX: number
+            padY: number
+        }
+    }
+
+    /** Park the camera at an EXACT resolution progress `t` and repaint once. The band boundaries are
+     *  constants in `t`, while a wheel notch is a 10% ZOOM STOP — the two do not line up, so wheeling
+     *  to "about the mid band" would make every assertion below depend on where the nearest stop
+     *  happens to fall. Sets `res` and `goalRes` together so tick()'s glide has nothing left to do. */
+    function parkAtT(r: AsciiGraphRenderer, t: number) {
+        const cam = r as unknown as {
+            res: number
+            goalRes: number
+            maxRes: number
+            dirty: boolean
+        }
+        cam.res = cam.goalRes = resFromT(t, cam.maxRes)
+        cam.dirty = true
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame(9999)
+    }
+
+    /** Segments stroked in the --graph-edge colour: the GROUP LINES (aggregate connectors + backbone)
+     *  and the real member edges. Deliberately not `strokeSegs()` — the intra-cluster mesh strokes in
+     *  each cluster's own colour, and counting it here would blur exactly the distinction under test. */
+    const edgeColorSegs = (priv: BandPriv) =>
+        ctx.strokes.filter(s => s.color === priv.colors[9]).flatMap(s => s.segs)
+    /** The exact segment a group line between two CELLS should produce: the two cell centres, pulled
+     *  back by the shared endpoint clearance. Composed from the real, separately-unit-tested
+     *  `trimSegmentForClearance` rather than re-deriving the arithmetic. */
+    const groupSegKey = (
+        priv: BandPriv,
+        aCol: number,
+        aRow: number,
+        bCol: number,
+        bRow: number,
     ) => {
-      const orig = cache.getOrCompute.bind(cache);
-      cache.getOrCompute = (sig, compute) => orig(sig, () => { onCompute(); return compute(); });
-    };
-    countCompute(priv.p3SpacingCache, () => { p3Computes++; });
-    countCompute(priv.p2SpacingCache, () => { p2Computes++; });
-
-    const graphA = sampleGraph();
-    const graphB = lodGraph(); // a genuinely different structural signature
-    r.render(graphA);
-    r.render(graphB);
-    r.render(graphA); // revisits A's signature — must be a Map lookup, not an O(n²) remeasure
-    expect(p3Computes).toBe(2); // A (miss) + B (miss) — NOT a third for revisiting A
-    expect(p2Computes).toBe(2);
-    r.destroy();
-  });
-
-  /** A single horizontal chain (evenly-spaced along X, Y and Z both flat) scaled by `unit`. Every
-   *  interior node's nearest neighbour is unambiguous and lies purely along the COLUMN axis, so the
-   *  grid Δcol between neighbours at the deepest zoom stop is a clean, directly-computable number —
-   *  the exact join between respace.ts's RESPACE_TARGET_SPACING and asciiGrid.ts's
-   *  DEEPEST_WORLD_PER_CELL (see the test below). */
-  function chainGraph(n: number, unit: number): ReturnType<typeof sampleGraph> {
-    const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
-    const edges: ReturnType<typeof sampleGraph>["edges"] = [];
-    const half = (n - 1) / 2;
-    for (let i = 0; i < n; i++) {
-      const x = (i - half) * unit;
-      nodes.push({
-        id: `c${i}`, label: `note ${i}`, kind: "note" as const,
-        position: [x, 0, 0] as [number, number, number],
-        position2d: [x, 0] as [number, number],
-        community: 0, communityLabel: "chain",
-      });
-      if (i > 0) edges.push({ from: `c${i - 1}`, to: `c${i}`, kind: "link" as const });
+        const cx = (c: number) =>
+            priv.m.padX + c * priv.m.cellW + priv.m.cellW / 2
+        const cy = (rw: number) =>
+            priv.m.padY + rw * priv.m.cellH + priv.m.cellH / 2
+        const [ax, ay, bx, by] = trimSegmentForClearance(
+            cx(aCol),
+            cy(aRow),
+            cx(bCol),
+            cy(bRow),
+            0.55 * priv.m.cellW,
+        )
+        return [
+            `${ax.toFixed(2)},${ay.toFixed(2)}`,
+            `${bx.toFixed(2)},${by.toFixed(2)}`,
+        ]
+            .sort()
+            .join(' -> ')
     }
-    return { nodes, edges };
-  }
+    /** The hub-to-hub segments level `L`'s backbone SHOULD have drawn this frame: one per connected
+     *  community pair whose two hubs are both on the grid. */
+    const expectedBackbone = (priv: BandPriv, L: number) =>
+        priv.levelPairs[L].filter(p => p.a.onGrid && p.b.onGrid)
+            .map(p => groupSegKey(priv, p.a.col, p.a.row, p.b.col, p.b.row))
+            .sort()
+    /** ...and the ones it actually did. Edge-colour strokes only — the intra-cluster mesh strokes in
+     *  each cluster's own colour, and folding it in here would blur the distinction under test. */
+    const drawnBackbone = (priv: BandPriv) =>
+        edgeColorSegs(priv)
+            .map(s =>
+                [
+                    `${s[0].toFixed(2)},${s[1].toFixed(2)}`,
+                    `${s[2].toFixed(2)},${s[3].toFixed(2)}`,
+                ]
+                    .sort()
+                    .join(' -> '),
+            )
+            .sort()
 
-  it("pins the calibration JOIN between RESPACE_TARGET_SPACING and asciiGrid.ts's DEEPEST_WORLD_PER_CELL: median neighbour Δcol at the deepest stop is 35", () => {
-    // task-10 round 2, finding F3: the previous two tests each pin ONE end of the calibration link
-    // (the fixture-agreement test compares two fixtures only to each other; the absolute-14 test
-    // measures p3/p2 WORLD coordinates with no reference to asciiGrid.ts at all) — neither references
-    // the deep-zoom ladder itself, so the actual JOIN (RESPACE_TARGET_SPACING=14.0 divided by
-    // asciiGrid.ts's DEEPEST_WORLD_PER_CELL=0.4, the whole reason 14.0 was chosen) was untested.
-    // Mutating DEEPEST_WORLD_PER_CELL (0.4 -> 0.8, halving deep-zoom detail — the exact regression its
-    // own comment warns about) previously left every existing test green.
-    //
-    // 35 is a LITERAL, independently-hardcoded expectation (14.0 / 0.4 computed by hand, NOT by
-    // importing and dividing the live source constants) — deliberately not derived from
-    // DEEPEST_WORLD_PER_CELL at test time, because computing "expected" from the very constant a
-    // mutation changes would make expected drift together with actual and the test could never fail
-    // (the exact self-referential trap this whole test exists to avoid). If either constant
-    // intentionally moves, this literal must be updated by hand in lockstep — same discipline
-    // asciiGrid.ts:293's own comment already demands of MIN_ZOOM_SPAN and the RING_SCALE test const.
-    const CHAIN_N = 100; // long enough that maxRes is derived from the ABSOLUTE target, not floored
-                          // at MIN_ZOOM_SPAN (verified empirically — see the maxRes sanity check below)
-    const graph = chainGraph(CHAIN_N, 37); // raw unit is arbitrary; respace normalises it away
-    const { r, viewport } = mountRenderer("2d", graph);
-    // try/finally: this test's whole POINT is to fail under a live mutation (see the mutation-testing
-    // note in task-10-report.md). A renderer whose `destroy()` never runs (because an assertion above
-    // it threw first) leaves its window-level listeners AND its self-re-arming rAF tick alive for the
-    // rest of the file's test run — a real cross-test pollution hazard verified while writing this
-    // test (a mutated DEEPEST_WORLD_PER_CELL made an unrelated LATER "vector-edge fidelity" hover test
-    // see 4 batched strokes instead of 2, from this test's own never-destroyed renderer still reacting
-    // to a later window pointermove and repainting into the shared fake canvas context). Every other
-    // `it()` in this file destroys at the very end with no such guarantee — harmless there only because
-    // none of them are EXPECTED to fail under a deliberate mutation the way this one specifically is.
-    try {
-      const cam = r as unknown as { maxRes: number };
-      expect(cam.maxRes).toBeGreaterThan(8); // sanity: NOT floored at MIN_ZOOM_SPAN (asciiGrid.ts's floor)
+    // t = 0.48 sits inside the mid band's PLATEAU (bandsForT → {mass: 0, backbone: 1, member: 0}),
+    // and inside the revealT disagreement window described on the fixture above.
+    const MID_T = 0.48
 
-      wheelIn(viewport, 12); settle(300); // saturate at the 0% (deepest) floor
-      expect((r as unknown as { zoomPct: number }).zoomPct).toBe(0);
+    it('REQUIRED — the mid band rasterizes individual GLYPHS, with no masses left on the field', () => {
+        const { r } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv
+        // At fit the far band owns everything: masses, no glyphs. (Establishes that the fixture really
+        // does take the LOD path, so the mid-band assertion below is a CHANGE, not the status quo.)
+        expect([...priv.cellEntity].some(v => v >= 0)).toBe(true)
+        expect([...priv.cellNode].every(v => v < 0)).toBe(true)
 
-      const p = lodPriv(r);
-      const onGridCols = p.nodes.filter((nv) => nv.onGrid).map((nv) => nv.col).sort((a, b) => a - b);
-      expect(onGridCols.length).toBeGreaterThan(2); // enough neighbours for a real median
-      const deltas = onGridCols.slice(1).map((c, i) => c - onGridCols[i]);
-      const sorted = [...deltas].sort((a, b) => a - b);
-      const mid = sorted.length >> 1;
-      const medianDeltaCol = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-      expect(medianDeltaCol).toBeCloseTo(35, 0);
-    } finally {
-      r.destroy();
-    }
-  });
+        parkAtT(r, MID_T)
+        // A GLYPH count, not a paint count: `cellNode` is written only by rasterize()'s leaf node pass,
+        // one entry per individual note actually on the grid. Masses paint `. o @` too — an ink or fill
+        // count would be satisfied by the far band and prove nothing.
+        const glyphCells = [...priv.cellNode].filter(v => v >= 0).length
+        expect(glyphCells).toBeGreaterThan(0)
+        // ...and the masses really are gone, which is the other half of "this is the mid band".
+        expect([...priv.cellEntity].every(v => v < 0)).toBe(true)
+        r.destroy()
+    })
 
-  it("honours respace.ts's OTHER caller-side contract: daemon/cron/process graphs are recentred but NOT rescaled", () => {
-    // respace.ts's header names two caller-side contracts. The self-pin is moot (dead code — see the
-    // comment above raw3/raw2's construction in AsciiGraphRenderer.ts). The SECOND one — "don't call
-    // scaleToSpacing at all for a graph that arrived pre-laid-out" — was initially skipped without
-    // comment (task-10 round 2 review). CanvasGraphRenderer.ts's hasIntentionalLayoutKind() (`:667-668`)
-    // skips its OWN rescale for agent/daemon/cron/process graphs: their absolute spacing is chosen by
-    // their own layout (a hub-and-spoke daemon tree sized to read at a specific zoom), not the
-    // backend's PivotMDS packing scaleToSpacing's 14.0 target was calibrated against. Honoured here by
-    // feeding scaleToSpacing a non-positive targetSpacing for those graphs — its own documented
-    // "recenter only, scale=1" fallback — rather than skipping the call outright (one call site, one
-    // cache, instead of forking a second code path).
-    const RAW_UNIT = 5; // deliberately far from RESPACE_TARGET_SPACING (14) — a rescale bug is loud
-    const cronGraph = {
-      nodes: [
-        { id: "d0", label: "daemon", kind: "cron", position: [0, 0, 0], position2d: [0, 0] },
-        { id: "d1", label: "cron a", kind: "cron", position: [RAW_UNIT, 0, 0], position2d: [RAW_UNIT, 0] },
-        { id: "d2", label: "cron b", kind: "cron", position: [0, RAW_UNIT, 0], position2d: [0, RAW_UNIT] },
-        { id: "d3", label: "cron c", kind: "cron", position: [-RAW_UNIT, 0, 0], position2d: [-RAW_UNIT, 0] },
-      ],
-      edges: [
-        { from: "d0", to: "d1", kind: "supervises" },
-        { from: "d0", to: "d2", kind: "supervises" },
-        { from: "d0", to: "d3", kind: "supervises" },
-      ],
-    };
-    const { r } = mountRenderer("3d", cronGraph as unknown as ReturnType<typeof sampleGraph>);
-    try {
-      const priv = r as unknown as { nodes: { p3: [number, number, number] }[] };
-      const spacing = measuredSpacing3(priv.nodes.map((nv) => nv.p3));
-      // NOT rescaled to 14 — stays at (close to) the RAW unit, since these nodes arrived pre-laid-out.
-      expect(spacing).toBeCloseTo(RAW_UNIT, 0);
-      expect(spacing).not.toBeCloseTo(14, 0);
-      // Still RECENTRED, though — the hub (originally at the origin) should sit near the cloud's own
-      // centroid-relative origin, same as any other graph (respace's degenerate-target fallback still
-      // subtracts the mean, it just skips the scale).
-      let cx = 0, cy = 0, cz = 0;
-      for (const nv of priv.nodes) { cx += nv.p3[0]; cy += nv.p3[1]; cz += nv.p3[2]; }
-      cx /= priv.nodes.length; cy /= priv.nodes.length; cz /= priv.nodes.length;
-      expect(cx).toBeCloseTo(0, 6);
-      expect(cy).toBeCloseTo(0, 6);
-      expect(cz).toBeCloseTo(0, 6);
-    } finally {
-      r.destroy();
-    }
-  });
-});
+    it('the mid band draws the hub-to-hub BACKBONE instead of the member hairball', () => {
+        const { r } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv
+        parkAtT(r, MID_T)
 
-describe("LEVEL OF DETAIL (opt-in, GraphConfig.showLodMasses) — coarse stops rasterize aggregate entities, deep stops the real graph", () => {
-  it("renders every individual node as a glyph even at fit — LOD masses are OFF by default", () => {
-    const { r } = mountRenderer("2d", lodGraph());
-    const p = lodPriv(r);
-    // No aggregate entity anywhere on the field...
-    expect([...p.cellEntity].every((v) => v < 0)).toBe(true);
-    // ...every real note IS on the field instead (the leaf pass always runs).
-    expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
-    expect(r.computeStats().notesOnScreen).toBe(24); // all 4 blobs × 6 notes
-    r.destroy();
-  });
+        // Level 2 owns the field at this t (asserted independently in the revealT test below): its
+        // connected community pairs, one line each, hub to hub — minus the ones the both-hubs-on-grid
+        // cull drops (a group line to an off-frame hub is a line to nowhere; see queueBackbone).
+        expect(priv.levelPairs[2].length).toBe(8)
+        const visible = expectedBackbone(priv, 2)
+        expect(visible.length).toBe(8) // every hub is on the grid at this stop
+        // Every line runs between two HUBS — not between arbitrary members, and not the filtered
+        // member-crossing edges the first attempt at this drew (see buildLevelEdges' doc comment).
+        expect(drawnBackbone(priv)).toEqual(visible)
+        // The graph has 48 intra-group spokes + 11 cross links = 59 real edges. If the member pass had
+        // leaked into this band there would be an order of magnitude more lines here than this — that
+        // hairball is precisely what the backbone stands in for.
+        expect(edgeColorSegs(priv).length).toBeLessThan(20)
+        r.destroy()
+    })
 
-  it("renders ONE named entity per coarsest community at fit — and no individual notes at all", () => {
-    const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
-    const p = lodPriv(r);
-    // No leaf raster work ran: no note occupies any cell.
-    expect([...p.cellNode].every((v) => v < 0)).toBe(true);
-    // Exactly the two TOP communities, one entity each, left and right of centre, at their
-    // members' centroids.
-    const flats = new Set<number>();
-    for (const v of p.cellEntity) if (v >= 0) flats.add(v);
-    const ents = [...flats].map((f) => p.entityFlat[f]);
-    expect(ents.length).toBe(2);
-    expect(new Set(ents.map((e) => e.level))).toEqual(new Set([0]));
-    expect(ents.map((e) => e.count).sort()).toEqual([12, 12]);
-    const left = ents.find((e) => e.community === 0)!;
-    const right = ents.find((e) => e.community === 1)!;
-    expect(left.col).toBeLessThan(p.m.cols / 2);
-    expect(right.col).toBeGreaterThan(p.m.cols / 2);
-    // The auto names ride along in eyebrow register.
-    expect(ctx.fills.some((f) => f.text === "TOP 0")).toBe(true);
-    expect(ctx.fills.some((f) => f.text === "TOP 1")).toBe(true);
-    r.destroy();
-  });
+    it('a group line whose hub has left the grid is not drawn — a line to nowhere, unlike a member edge', () => {
+        // The member-edge pass deliberately keeps an edge with ONE endpoint off-frame (the "edges vanish
+        // at deep zoom" fix): the relationship is still readable from the part that crosses the field.
+        // A GROUP line is different — it summarizes a whole community that isn't there — and the finest
+        // hierarchy levels have hundreds of them, so keeping them fans long lines off every edge of the
+        // field. Measured on the reference vault at 50%: ~620 such lines, which is the field-crossing
+        // noise the mid band exists to remove.
+        const { r, viewport } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv
+        parkAtT(r, MID_T)
+        const before = drawnBackbone(priv)
+        expect(before.length).toBe(8)
 
-  // WAS: "draws aggregate connectors between entities at fit — the leaf edge pass never ran",
-  // asserting `layerBuf` held at least one LAYER_EDGE cell. Aggregate connectors are VECTOR strokes
-  // now (see the GROUP LINES block in AsciiGraphRenderer.ts) — a character is an order of magnitude
-  // more ink than a hairline, and at the default 2D view the reference vault's connectors read as a
-  // stair-stepped grey scribble across the field. The connectors themselves are unchanged (same
-  // pairs, same log-scaled weights, same anchors), so this asserts the same behaviour through the
-  // new medium — and strictly more of it: a cell count could not tell WHICH cells, so it passed
-  // for any Bresenham line anywhere, whereas this pins the exact endpoints and the exact count.
-  it("draws aggregate connectors between entities at fit — vector strokes anchored on the two masses, no grid characters", () => {
-    const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
-    const p = lodPriv(r);
-    // The leaf passes never ran at fit, so every line on the field is an aggregate connector...
-    expect([...p.cellNode].every((v) => v < 0)).toBe(true);
-    // ...and lodGraph's two TOP communities are joined by 6 real links, i.e. exactly ONE connector.
-    const segs = strokeSegs();
-    expect(segs.length).toBe(1);
-    // It runs between the two masses' own cell centres — where their ink actually sits — pulled back
-    // from both by the shared endpoint clearance, exactly as a member edge is: a group line ends on
-    // a mass's `@` core glyph, and running through its interior muddies it. The expectation composes
-    // the real `trimSegmentForClearance` (unit-tested separately) rather than re-deriving it.
-    const flats = new Set<number>();
-    for (const v of p.cellEntity) if (v >= 0) flats.add(v);
-    const ents = [...flats].map((f) => p.entityFlat[f]);
-    expect(ents.length).toBe(2);
-    const key = (x: number, y: number) => `${x.toFixed(2)},${y.toFixed(2)}`;
-    const cxOf = (e: { col: number }) => p.m.padX + e.col * p.m.cellW + p.m.cellW / 2;
-    const cyOf = (e: { row: number }) => p.m.padY + e.row * p.m.cellH + p.m.cellH / 2;
-    const [ax, ay, bx, by] = trimSegmentForClearance(
-      cxOf(ents[0]), cyOf(ents[0]), cxOf(ents[1]), cyOf(ents[1]), 0.55 * p.m.cellW,
-    );
-    expect([key(segs[0][0], segs[0][1]), key(segs[0][2], segs[0][3])].sort())
-      .toEqual([key(ax, ay), key(bx, by)].sort());
-    // ...and the trim really moved both ends: an untrimmed line would land ON the cell centres.
-    expect([key(segs[0][0], segs[0][1]), key(segs[0][2], segs[0][3])].sort())
-      .not.toEqual([key(cxOf(ents[0]), cyOf(ents[0])), key(cxOf(ents[1]), cyOf(ents[1]))].sort());
-    // And NO edge of any kind occupies a cell any more — the edge layer is never written.
-    expect([...p.layerBuf].every((v) => v !== LAYER_EDGE)).toBe(true);
-    r.destroy();
-  });
+        // Pan far enough that some hubs leave the grid, but not so far that they all do.
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: 400,
+                clientY: 300,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: 420, clientY: 300 }),
+        ) // prime past DRAG_THRESHOLD
+        frame(10016)
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: 720, clientY: 300 }),
+        )
+        ctx.strokes.length = 0 // only the POST-pan frame's strokes; the recording ctx accumulates
+        frame(10032)
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: 720, clientY: 300 }),
+        )
 
-  it("stepping in over an entity expands it into its CHILDREN near the parent's position", () => {
-    const { r, viewport } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
-    const p = lodPriv(r);
-    expect(entityLevelsOnGrid(p)).toEqual(new Set([0]));
-    // Wheel ANCHORED on the left top-level mass (community 0 = blobs 0+1).
-    const leftFlat = p.entityFlat.findIndex((e) => e.level === 0 && e.community === 0);
-    const i = p.cellEntity.findIndex((v) => v === leftFlat);
-    expect(i).toBeGreaterThanOrEqual(0);
-    const at = cellPx(p, i);
-    wheelIn(viewport, 4, at); // 100% -> 60% = t 0.4: past the 2-level boundary (0.375) — level 1 owns it
-    settle(200);
-    expect(entityLevelsOnGrid(p)).toEqual(new Set([1]));
-    // The children on the field are the anchored parent's OWN blobs (0 and 1) — expansion happens
-    // in place; the other half of the graph has left the anchored view.
-    const comms = new Set<number>();
-    for (const v of p.cellEntity) if (v >= 0) comms.add(p.entityFlat[v].community);
-    expect(comms.size).toBeGreaterThan(0);
-    expect([...comms].every((c) => c === 0 || c === 1)).toBe(true);
-    // WAS: "Still no real notes this far out" (`cellNode` all < 0). 60% is t ≈ 0.4, which sits
-    // inside the mass→glyph crossfade [BACKBONE_START_T, +BACKBONE_FADE_SPAN] = [0.32, 0.46]: the
-    // children's own MEMBERS have begun emerging through the dissolving masses, which is exactly
-    // what drawEntityMasses' "members emerge through the dissolving parent" always described — it
-    // just used to happen at FILE_LABEL_REVEAL_T, because masses owned the field until then.
-    expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
-    // File NAMES are still far off, though — the crossfade to them starts at 0.75.
-    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(false);
-    r.destroy();
-  });
+        const offGrid = priv.levelPairs[2].filter(
+            p => !p.a.onGrid || !p.b.onGrid,
+        )
+        expect(offGrid.length).toBeGreaterThan(0) // the pan really did push hubs off...
+        expect(offGrid.length).toBeLessThan(8) // ...but not all of them
+        // Exactly the surviving pairs, and nothing else.
+        expect(drawnBackbone(priv)).toEqual(expectedBackbone(priv, 2))
+        expect(drawnBackbone(priv).length).toBe(8 - offGrid.length)
+        r.destroy()
+    })
 
-  it("only the real graph rasterizes at the deep stops — entities are gone, real notes and edges draw", () => {
-    const { r, viewport } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
-    const p = lodPriv(r);
-    // Phase 1: into the left top cluster (level 1 active).
-    const leftFlat = p.entityFlat.findIndex((e) => e.level === 0 && e.community === 0);
-    const at0 = cellPx(p, p.cellEntity.findIndex((v) => v === leftFlat));
-    wheelIn(viewport, 3, at0);
-    settle(200);
-    // Phase 2: follow ONE child mass down to 0% (the anchor keeps it under the cursor).
-    const childIdx = p.cellEntity.findIndex((v) => v >= 0);
-    expect(childIdx).toBeGreaterThanOrEqual(0);
-    wheelIn(viewport, 7, cellPx(p, childIdx));
-    settle(300);
-    expect([...p.cellEntity].every((v) => v < 0)).toBe(true); // entities fully dissolved
-    expect([...p.cellNode].some((v) => v >= 0)).toBe(true);   // real notes on the field
-    r.destroy();
-  });
+    it('the NEAR band gives the field back to the real member edges, and the backbone stands down', () => {
+        const { r } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv & {
+            edgesTransitingDroppedFrame: number
+        }
+        // t = 0.85, not 0.99. `memberAlpha` is pinned at 1 from t ≈ 0.75 onward, so both stops are equally
+        // "the near band" as far as the handover under test is concerned — but the near band also runs the
+        // LOCALITY GATE (see the "Task 19" block below), and by 0.99 this fixture's magnification has
+        // pushed some of its 16 leaf communities off the field, so the gate legitimately drops the edges
+        // reaching them. Measuring the HANDOVER at a stop where the gate is also active would conflate the
+        // two; 0.85 still shows every community, which is asserted rather than assumed.
+        parkAtT(r, 0.85)
+        expect(r.computeStats().edgesTransitingDropped).toBe(0)
+        // 59 real edges, every one of them stroked (the budget is 6000 — nothing is thinned here).
+        expect(edgeColorSegs(priv).length).toBe(59)
+        r.destroy()
+    })
 
-  it("keeps the world point under the cursor fixed through zoom steps (within a cell)", () => {
-    const { r, viewport } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
-    const p = lodPriv(r);
-    const m = p.m;
-    // A deliberately off-centre cursor point: over the left mass.
-    const at = cellPx(p, p.cellEntity.findIndex((v) => v >= 0));
-    const screenOf = (wx: number, wy: number) => {
-      const s = p.pxPerWorld * p.res;
-      return {
-        x: m.padX + (m.cols / 2) * m.cellW + p.panX + (wx - p.target[0]) * s,
-        y: m.padY + (m.rows / 2) * m.cellH + p.panY + (wy - p.target[1]) * s,
-      };
-    };
-    // The world point under the cursor, from the settled fit camera.
-    const s0 = p.pxPerWorld * p.res;
-    const wx = p.target[0] + (at.x - (m.padX + (m.cols / 2) * m.cellW + p.panX)) / s0;
-    const wy = p.target[1] + (at.y - (m.padY + (m.rows / 2) * m.cellH + p.panY)) / s0;
+    it('the backbone rewires to the finer grouping on the SAME frame node colour and cluster names do — computeEdgeLevelWeights must be passed FILE_LABEL_REVEAL_T, not its ported default', () => {
+        const { r } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv
+        parkAtT(r, MID_T)
 
-    wheelIn(viewport, 1, at);
-    settle(300);
-    const p1 = screenOf(wx, wy);
-    expect(Math.abs(p1.x - at.x)).toBeLessThanOrEqual(m.cellW);
-    expect(Math.abs(p1.y - at.y)).toBeLessThanOrEqual(m.cellH);
+        // Which level the COLOUR + NAME ladder says owns the field here, from the very function the
+        // renderer's colour block and label pass call — not a hardcoded number.
+        const alphas = clusterLevelAlphas(MID_T, 4)
+        const colourLevel = alphas.indexOf(Math.max(...alphas))
+        // The ported Canvas default puts a DIFFERENT level in charge at this t. Without this, the test
+        // would pass for either constant and prove nothing — it is what makes MID_T a discriminating
+        // sample rather than an arbitrary one.
+        const ported = clusterLevelAlphas(MID_T, 4, DEFAULT_LEVEL_REVEAL_T)
+        const portedLevel = ported.indexOf(Math.max(...ported))
+        expect(portedLevel).not.toBe(colourLevel)
+        // ...and the two levels' visible pair sets genuinely differ, so one can be told from the other.
+        expect(expectedBackbone(priv, colourLevel).length).toBeGreaterThan(0)
+        expect(expectedBackbone(priv, portedLevel)).not.toEqual(
+            expectedBackbone(priv, colourLevel),
+        )
 
-    wheelIn(viewport, 1, at); // consecutive steps must compose without drift
-    settle(300);
-    const p2 = screenOf(wx, wy);
-    expect(Math.abs(p2.x - at.x)).toBeLessThanOrEqual(m.cellW);
-    expect(Math.abs(p2.y - at.y)).toBeLessThanOrEqual(m.cellH);
-    r.destroy();
-  });
+        // The backbone drew the COLOUR ladder's level, on this frame — compared as the exact SET of
+        // hub-to-hub segments, not a count, so two levels that happened to share a count could not pass
+        // for each other.
+        expect(drawnBackbone(priv)).toEqual(expectedBackbone(priv, colourLevel))
+        expect(drawnBackbone(priv)).not.toEqual(
+            expectedBackbone(priv, portedLevel),
+        )
+        r.destroy()
+    })
 
-  it("3D keeps its full-detail path untouched — no entities, ever (even with showLodMasses on)", () => {
-    const { r, viewport } = mountRenderer("3d", lodGraph(), { showLodMasses: true });
-    const p = lodPriv(r);
-    expect([...p.cellEntity].every((v) => v < 0)).toBe(true);
-    expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
-    wheelIn(viewport, 1); // one step in — the 3D camera still rasterizes the REAL graph
-    settle(200);
-    expect([...p.cellEntity].every((v) => v < 0)).toBe(true);
-    expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
-    r.destroy();
-  });
-});
+    it("the INTRA-CLUSTER MESH strokes each cluster's own colour at INTRA_EDGE_ALPHA, one batch per colour", () => {
+        const { r } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv
+        parkAtT(r, MID_T)
 
-describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub backbone, near = glyphs + member edges", () => {
-  /**
-   * A strictly NESTED 4-level hierarchy: 16 leaf groups of 4 notes, whose paths are the group index
-   * shifted (`[g>>3, g>>2, g>>1, g]`), giving 2 / 4 / 8 / 16 communities down the ladder. Four levels
-   * specifically, because the level BOUNDARIES are `k · revealT / levelCount`: at 4 levels the
-   * level-2/3 boundary sits at 0.5625 under `FILE_LABEL_REVEAL_T` (0.75) but at 0.465 under
-   * `computeEdgeLevelWeights`' ported Canvas default (0.62), and the whole gap between them lands
-   * inside the mid band's plateau — which is what makes "did the caller pass the right revealT?"
-   * observable at all. At 2 levels the same disagreement window (0.31 … 0.375) sits under the mass
-   * band, where the backbone is barely drawn.
-   *
-   * The cross-group links are chosen so the connected-PAIR count differs level to level (1 / 3 / 8 /
-   * 11) — a backbone drawn at the wrong level then has a different segment count, which is what the
-   * revealT test reads. The test asserts that difference rather than trusting it.
-   */
-  function fourLevelGraph() {
-    const nodes = [];
-    const edges = [];
-    for (let g = 0; g < 16; g++) {
-      const path = [g >> 3, g >> 2, g >> 1, g];
-      const labels = [`Lzero ${path[0]}`, `Lone ${path[1]}`, `Ltwo ${path[2]}`, `Lthree ${path[3]}`];
-      // Each group is a HUB plus three satellites, and the hubs are deliberately packed into the
-      // middle while the satellites sit out on a wide ring. Zoom is RESOLUTION on a fixed ladder, so
-      // the mid band always shows about the central third of the graph's bounding box, whatever the
-      // fixture's absolute scale — the satellites are what set that box, and putting the hubs inside
-      // its middle third is the only way to have more than one hub-to-hub line on screen there to
-      // assert against. (Inflating the box with far-off outliers does NOT work: maxResFor derives
-      // the ladder from the fit scale, so a bigger box buys proportionally more magnification and
-      // the clusters come out SMALLER at the same t, not bigger.)
-      const hx = ((g % 4) - 1.5) * 11, hy = (Math.floor(g / 4) - 1.5) * 11;
-      for (let k = 0; k < 4; k++) {
-        const a = ((g * 3 + k) / 48) * Math.PI * 2;
-        const x = k === 0 ? hx : Math.cos(a) * 100;
-        const y = k === 0 ? hy : Math.sin(a) * 100;
-        nodes.push({
-          id: `g${g}n${k}`, label: `note ${g}-${k}`, kind: "note" as const,
-          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-          community: g, communityLabel: `Leaf ${g}`, communityPath: path, communityPathLabels: labels,
-        });
-      }
-      for (let k = 1; k < 4; k++) edges.push({ from: `g${g}n0`, to: `g${g}n${k}`, kind: "link" as const });
-    }
-    const cross: [number, number][] = [[0, 1], [0, 2], [0, 4], [0, 8], [1, 3], [2, 6], [4, 12], [5, 13], [3, 11], [7, 15], [9, 10]];
-    for (const [a, b] of cross) edges.push({ from: `g${a}n0`, to: `g${b}n1`, kind: "link" as const });
-    return { nodes, edges };
-  }
+        const mesh = ctx.strokes.filter(
+            s => s.color !== priv.colors[9] && s.segs.length > 0,
+        )
+        expect(mesh.length).toBeGreaterThan(1) // batched BY COLOUR, not one bucket for all
+        // Exactly one batch per distinct colour — the batching claim, which "some strokes exist" misses.
+        expect(new Set(mesh.map(s => s.color)).size).toBe(mesh.length)
+        for (const s of mesh)
+            expect(s.alpha).toBeCloseTo(0.22 * priv.edgeBaseAlpha, 6)
+        // Every mesh line is INTRA-community at the level being shown: its endpoints share a colour, and
+        // that colour is the batch's own. (A mesh that also drew cross-group edges would be the between-
+        // group story told twice, which the group lines above already own.)
+        // 49 = the 16 leaf groups' 3 spokes each (48), PLUS exactly one of the 11 cross-group links:
+        // g0–g1, the only one whose endpoints fall in the same community AT LEVEL 2 (`g >> 1`, so
+        // groups 0 and 1 are both community 0 there). That single edge is what makes the count pin the
+        // mesh's LEVEL-sensitivity rather than just its existence — keyed off the leaf level it would be
+        // 48, and off no level at all (every edge) it would be 59.
+        const meshSegs = mesh.flatMap(s => s.segs)
+        expect(meshSegs.length).toBe(49)
+        r.destroy()
+    })
 
-  interface BandPriv {
-    res: number; goalRes: number; maxRes: number;
-    cellNode: Int32Array; cellEntity: Int32Array;
-    colors: string[]; edgeBaseAlpha: number; memberEdgeAlpha: number;
-    levelPairs: { a: { col: number; row: number; onGrid: boolean }; b: { col: number; row: number; onGrid: boolean }; count: number }[][];
-    m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
-  }
+    it('mass NAMES keep tracking the field through the mid band, where their masses no longer draw', () => {
+        // The cluster-name ladder and the mass band are no longer the same ladder: names ride
+        // `clusterLevelAlphas × clusterLabelAlpha` and run until the file-name reveal at 0.75, while the
+        // masses themselves are gone by 0.46. `layoutEntityNames` anchors on the ENTITY's projected
+        // position, so a level still being NAMED has to still be PROJECTED even though nothing about it
+        // is drawn — otherwise the name is placed from a screen position frames or seconds old and sits
+        // frozen while the field pans under it.
+        const { r, viewport } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv & {
+            labels: { text: string; col: number; eyebrow?: boolean }[]
+            nodes: { node: { id: string }; col: number }[]
+        }
+        // Centre on ONE level-2 community first: the mid band's magnification (~2.7x on this fixture's
+        // ladder) shows about a third of the graph, and this fixture's level-2 centroids all sit outside
+        // that window from the fit camera — with no entity on the grid there is no name to track.
+        r.frameSubset(['g4n0', 'g5n0'])
+        settle(300)
+        parkAtT(r, MID_T)
+        const name = () =>
+            priv.labels.find(l => l.eyebrow && l.text.startsWith('LTWO '))!
+        const ref = () => priv.nodes.find(n => n.node.id === 'g5n0')!.col
+        expect(name()).toBeDefined() // a level-2 name really is on the field at this stop...
+        expect([...priv.cellEntity].every(v => v < 0)).toBe(true) // ...with no mass under it
+        const label0 = name().col,
+            node0 = ref()
 
-  /** Park the camera at an EXACT resolution progress `t` and repaint once. The band boundaries are
-   *  constants in `t`, while a wheel notch is a 10% ZOOM STOP — the two do not line up, so wheeling
-   *  to "about the mid band" would make every assertion below depend on where the nearest stop
-   *  happens to fall. Sets `res` and `goalRes` together so tick()'s glide has nothing left to do. */
-  function parkAtT(r: AsciiGraphRenderer, t: number) {
-    const cam = r as unknown as { res: number; goalRes: number; maxRes: number; dirty: boolean };
-    cam.res = cam.goalRes = resFromT(t, cam.maxRes);
-    cam.dirty = true;
-    ctx.fills.length = 0;
-    ctx.strokes.length = 0;
-    frame(9999);
-  }
+        // One continuous pan (prime past DRAG_THRESHOLD, then move) — the whole-cell part of which every
+        // projection in the frame shares, so the name and the note glyphs must shift by the same amount.
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: 400,
+                clientY: 300,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: 420, clientY: 300 }),
+        )
+        frame(10016)
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: 470, clientY: 300 }),
+        )
+        frame(10032)
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: 470, clientY: 300 }),
+        )
 
-  /** Segments stroked in the --graph-edge colour: the GROUP LINES (aggregate connectors + backbone)
-   *  and the real member edges. Deliberately not `strokeSegs()` — the intra-cluster mesh strokes in
-   *  each cluster's own colour, and counting it here would blur exactly the distinction under test. */
-  const edgeColorSegs = (priv: BandPriv) =>
-    ctx.strokes.filter((s) => s.color === priv.colors[9]).flatMap((s) => s.segs);
-  /** The exact segment a group line between two CELLS should produce: the two cell centres, pulled
-   *  back by the shared endpoint clearance. Composed from the real, separately-unit-tested
-   *  `trimSegmentForClearance` rather than re-deriving the arithmetic. */
-  const groupSegKey = (priv: BandPriv, aCol: number, aRow: number, bCol: number, bRow: number) => {
-    const cx = (c: number) => priv.m.padX + c * priv.m.cellW + priv.m.cellW / 2;
-    const cy = (rw: number) => priv.m.padY + rw * priv.m.cellH + priv.m.cellH / 2;
-    const [ax, ay, bx, by] = trimSegmentForClearance(cx(aCol), cy(aRow), cx(bCol), cy(bRow), 0.55 * priv.m.cellW);
-    return [`${ax.toFixed(2)},${ay.toFixed(2)}`, `${bx.toFixed(2)},${by.toFixed(2)}`].sort().join(" -> ");
-  };
-  /** The hub-to-hub segments level `L`'s backbone SHOULD have drawn this frame: one per connected
-   *  community pair whose two hubs are both on the grid. */
-  const expectedBackbone = (priv: BandPriv, L: number) => priv.levelPairs[L]
-    .filter((p) => p.a.onGrid && p.b.onGrid)
-    .map((p) => groupSegKey(priv, p.a.col, p.a.row, p.b.col, p.b.row))
-    .sort();
-  /** ...and the ones it actually did. Edge-colour strokes only — the intra-cluster mesh strokes in
-   *  each cluster's own colour, and folding it in here would blur the distinction under test. */
-  const drawnBackbone = (priv: BandPriv) => edgeColorSegs(priv)
-    .map((s) => [`${s[0].toFixed(2)},${s[1].toFixed(2)}`, `${s[2].toFixed(2)},${s[3].toFixed(2)}`].sort().join(" -> "))
-    .sort();
+        expect(ref() - node0).toBeGreaterThan(0) // the field really moved
+        expect(name().col - label0).toBe(ref() - node0) // ...and the name moved exactly with it
+        r.destroy()
+    })
 
-  // t = 0.48 sits inside the mid band's PLATEAU (bandsForT → {mass: 0, backbone: 1, member: 0}),
-  // and inside the revealT disagreement window described on the fixture above.
-  const MID_T = 0.48;
+    it('a FORCED file label still draws in the mid band — the file-name pass is gated on glyphs, not on member edges', () => {
+        // `layoutLabels`' early return exists because a far-band frame has no note glyphs for a label to
+        // point at. Key it off the member-edge alpha instead and the whole file-label pass — including
+        // the forced active/hovered/search labels, which draw at alpha 1 regardless of the crossfade —
+        // disappears across the entire mid band, where the glyphs it names are plainly on screen.
+        const { r } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        r.setActiveFile('g5n0')
+        parkAtT(r, MID_T)
+        // The unforced crossfade has not started here (fileLabelAlpha(0.48) === 0), so this label is on
+        // the field only because it is forced — which is exactly the path the gate would have killed.
+        expect(ctx.fills.some(f => f.text === '[[note 5-0]]')).toBe(true)
+        expect(ctx.fills.filter(f => f.text.startsWith('[[note ')).length).toBe(
+            1,
+        )
+        r.destroy()
+    })
 
-  it("REQUIRED — the mid band rasterizes individual GLYPHS, with no masses left on the field", () => {
-    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    // At fit the far band owns everything: masses, no glyphs. (Establishes that the fixture really
-    // does take the LOD path, so the mid-band assertion below is a CHANGE, not the status quo.)
-    expect([...priv.cellEntity].some((v) => v >= 0)).toBe(true);
-    expect([...priv.cellNode].every((v) => v < 0)).toBe(true);
-
-    parkAtT(r, MID_T);
-    // A GLYPH count, not a paint count: `cellNode` is written only by rasterize()'s leaf node pass,
-    // one entry per individual note actually on the grid. Masses paint `. o @` too — an ink or fill
-    // count would be satisfied by the far band and prove nothing.
-    const glyphCells = [...priv.cellNode].filter((v) => v >= 0).length;
-    expect(glyphCells).toBeGreaterThan(0);
-    // ...and the masses really are gone, which is the other half of "this is the mid band".
-    expect([...priv.cellEntity].every((v) => v < 0)).toBe(true);
-    r.destroy();
-  });
-
-  it("the mid band draws the hub-to-hub BACKBONE instead of the member hairball", () => {
-    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    parkAtT(r, MID_T);
-
-    // Level 2 owns the field at this t (asserted independently in the revealT test below): its
-    // connected community pairs, one line each, hub to hub — minus the ones the both-hubs-on-grid
-    // cull drops (a group line to an off-frame hub is a line to nowhere; see queueBackbone).
-    expect(priv.levelPairs[2].length).toBe(8);
-    const visible = expectedBackbone(priv, 2);
-    expect(visible.length).toBe(8);                     // every hub is on the grid at this stop
-    // Every line runs between two HUBS — not between arbitrary members, and not the filtered
-    // member-crossing edges the first attempt at this drew (see buildLevelEdges' doc comment).
-    expect(drawnBackbone(priv)).toEqual(visible);
-    // The graph has 48 intra-group spokes + 11 cross links = 59 real edges. If the member pass had
-    // leaked into this band there would be an order of magnitude more lines here than this — that
-    // hairball is precisely what the backbone stands in for.
-    expect(edgeColorSegs(priv).length).toBeLessThan(20);
-    r.destroy();
-  });
-
-  it("a group line whose hub has left the grid is not drawn — a line to nowhere, unlike a member edge", () => {
-    // The member-edge pass deliberately keeps an edge with ONE endpoint off-frame (the "edges vanish
-    // at deep zoom" fix): the relationship is still readable from the part that crosses the field.
-    // A GROUP line is different — it summarizes a whole community that isn't there — and the finest
-    // hierarchy levels have hundreds of them, so keeping them fans long lines off every edge of the
-    // field. Measured on the reference vault at 50%: ~620 such lines, which is the field-crossing
-    // noise the mid band exists to remove.
-    const { r, viewport } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    parkAtT(r, MID_T);
-    const before = drawnBackbone(priv);
-    expect(before.length).toBe(8);
-
-    // Pan far enough that some hubs leave the grid, but not so far that they all do.
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 420, clientY: 300 })); // prime past DRAG_THRESHOLD
-    frame(10016);
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 720, clientY: 300 }));
-    ctx.strokes.length = 0;  // only the POST-pan frame's strokes; the recording ctx accumulates
-    frame(10032);
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 720, clientY: 300 }));
-
-    const offGrid = priv.levelPairs[2].filter((p) => !p.a.onGrid || !p.b.onGrid);
-    expect(offGrid.length).toBeGreaterThan(0);          // the pan really did push hubs off...
-    expect(offGrid.length).toBeLessThan(8);             // ...but not all of them
-    // Exactly the surviving pairs, and nothing else.
-    expect(drawnBackbone(priv)).toEqual(expectedBackbone(priv, 2));
-    expect(drawnBackbone(priv).length).toBe(8 - offGrid.length);
-    r.destroy();
-  });
-
-  it("the NEAR band gives the field back to the real member edges, and the backbone stands down", () => {
-    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv & { edgesTransitingDroppedFrame: number };
-    // t = 0.85, not 0.99. `memberAlpha` is pinned at 1 from t ≈ 0.75 onward, so both stops are equally
-    // "the near band" as far as the handover under test is concerned — but the near band also runs the
-    // LOCALITY GATE (see the "Task 19" block below), and by 0.99 this fixture's magnification has
-    // pushed some of its 16 leaf communities off the field, so the gate legitimately drops the edges
-    // reaching them. Measuring the HANDOVER at a stop where the gate is also active would conflate the
-    // two; 0.85 still shows every community, which is asserted rather than assumed.
-    parkAtT(r, 0.85);
-    expect(r.computeStats().edgesTransitingDropped).toBe(0);
-    // 59 real edges, every one of them stroked (the budget is 6000 — nothing is thinned here).
-    expect(edgeColorSegs(priv).length).toBe(59);
-    r.destroy();
-  });
-
-  it("the backbone rewires to the finer grouping on the SAME frame node colour and cluster names do — computeEdgeLevelWeights must be passed FILE_LABEL_REVEAL_T, not its ported default", () => {
-    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    parkAtT(r, MID_T);
-
-    // Which level the COLOUR + NAME ladder says owns the field here, from the very function the
-    // renderer's colour block and label pass call — not a hardcoded number.
-    const alphas = clusterLevelAlphas(MID_T, 4);
-    const colourLevel = alphas.indexOf(Math.max(...alphas));
-    // The ported Canvas default puts a DIFFERENT level in charge at this t. Without this, the test
-    // would pass for either constant and prove nothing — it is what makes MID_T a discriminating
-    // sample rather than an arbitrary one.
-    const ported = clusterLevelAlphas(MID_T, 4, DEFAULT_LEVEL_REVEAL_T);
-    const portedLevel = ported.indexOf(Math.max(...ported));
-    expect(portedLevel).not.toBe(colourLevel);
-    // ...and the two levels' visible pair sets genuinely differ, so one can be told from the other.
-    expect(expectedBackbone(priv, colourLevel).length).toBeGreaterThan(0);
-    expect(expectedBackbone(priv, portedLevel)).not.toEqual(expectedBackbone(priv, colourLevel));
-
-    // The backbone drew the COLOUR ladder's level, on this frame — compared as the exact SET of
-    // hub-to-hub segments, not a count, so two levels that happened to share a count could not pass
-    // for each other.
-    expect(drawnBackbone(priv)).toEqual(expectedBackbone(priv, colourLevel));
-    expect(drawnBackbone(priv)).not.toEqual(expectedBackbone(priv, portedLevel));
-    r.destroy();
-  });
-
-  it("the INTRA-CLUSTER MESH strokes each cluster's own colour at INTRA_EDGE_ALPHA, one batch per colour", () => {
-    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    parkAtT(r, MID_T);
-
-    const mesh = ctx.strokes.filter((s) => s.color !== priv.colors[9] && s.segs.length > 0);
-    expect(mesh.length).toBeGreaterThan(1);              // batched BY COLOUR, not one bucket for all
-    // Exactly one batch per distinct colour — the batching claim, which "some strokes exist" misses.
-    expect(new Set(mesh.map((s) => s.color)).size).toBe(mesh.length);
-    for (const s of mesh) expect(s.alpha).toBeCloseTo(0.22 * priv.edgeBaseAlpha, 6);
-    // Every mesh line is INTRA-community at the level being shown: its endpoints share a colour, and
-    // that colour is the batch's own. (A mesh that also drew cross-group edges would be the between-
-    // group story told twice, which the group lines above already own.)
-    // 49 = the 16 leaf groups' 3 spokes each (48), PLUS exactly one of the 11 cross-group links:
-    // g0–g1, the only one whose endpoints fall in the same community AT LEVEL 2 (`g >> 1`, so
-    // groups 0 and 1 are both community 0 there). That single edge is what makes the count pin the
-    // mesh's LEVEL-sensitivity rather than just its existence — keyed off the leaf level it would be
-    // 48, and off no level at all (every edge) it would be 59.
-    const meshSegs = mesh.flatMap((s) => s.segs);
-    expect(meshSegs.length).toBe(49);
-    r.destroy();
-  });
-
-  it("mass NAMES keep tracking the field through the mid band, where their masses no longer draw", () => {
-    // The cluster-name ladder and the mass band are no longer the same ladder: names ride
-    // `clusterLevelAlphas × clusterLabelAlpha` and run until the file-name reveal at 0.75, while the
-    // masses themselves are gone by 0.46. `layoutEntityNames` anchors on the ENTITY's projected
-    // position, so a level still being NAMED has to still be PROJECTED even though nothing about it
-    // is drawn — otherwise the name is placed from a screen position frames or seconds old and sits
-    // frozen while the field pans under it.
-    const { r, viewport } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv & {
-      labels: { text: string; col: number; eyebrow?: boolean }[];
-      nodes: { node: { id: string }; col: number }[];
-    };
-    // Centre on ONE level-2 community first: the mid band's magnification (~2.7x on this fixture's
-    // ladder) shows about a third of the graph, and this fixture's level-2 centroids all sit outside
-    // that window from the fit camera — with no entity on the grid there is no name to track.
-    r.frameSubset(["g4n0", "g5n0"]);
-    settle(300);
-    parkAtT(r, MID_T);
-    const name = () => priv.labels.find((l) => l.eyebrow && l.text.startsWith("LTWO "))!;
-    const ref = () => priv.nodes.find((n) => n.node.id === "g5n0")!.col;
-    expect(name()).toBeDefined();           // a level-2 name really is on the field at this stop...
-    expect([...priv.cellEntity].every((v) => v < 0)).toBe(true); // ...with no mass under it
-    const label0 = name().col, node0 = ref();
-
-    // One continuous pan (prime past DRAG_THRESHOLD, then move) — the whole-cell part of which every
-    // projection in the frame shares, so the name and the note glyphs must shift by the same amount.
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 420, clientY: 300 }));
-    frame(10016);
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 470, clientY: 300 }));
-    frame(10032);
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 470, clientY: 300 }));
-
-    expect(ref() - node0).toBeGreaterThan(0);              // the field really moved
-    expect(name().col - label0).toBe(ref() - node0);       // ...and the name moved exactly with it
-    r.destroy();
-  });
-
-  it("a FORCED file label still draws in the mid band — the file-name pass is gated on glyphs, not on member edges", () => {
-    // `layoutLabels`' early return exists because a far-band frame has no note glyphs for a label to
-    // point at. Key it off the member-edge alpha instead and the whole file-label pass — including
-    // the forced active/hovered/search labels, which draw at alpha 1 regardless of the crossfade —
-    // disappears across the entire mid band, where the glyphs it names are plainly on screen.
-    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    r.setActiveFile("g5n0");
-    parkAtT(r, MID_T);
-    // The unforced crossfade has not started here (fileLabelAlpha(0.48) === 0), so this label is on
-    // the field only because it is forced — which is exactly the path the gate would have killed.
-    expect(ctx.fills.some((f) => f.text === "[[note 5-0]]")).toBe(true);
-    expect(ctx.fills.filter((f) => f.text.startsWith("[[note ")).length).toBe(1);
-    r.destroy();
-  });
-
-  /** `n` notes with no community at all (so the band ladder degenerates to "member edges own every
-   *  stop") and `m` deterministically-chosen edges between them — the dense-graph thinning fixture. */
-  function denseEdgeGraph(n: number, m: number) {
-    const nodes = [];
-    const edges = [];
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      nodes.push({
-        id: `n${i}`, label: `note ${i}`, kind: "note" as const,
-        position: [Math.cos(a) * 400, Math.sin(a) * 400, 0] as [number, number, number],
-        position2d: [Math.cos(a) * 400, Math.sin(a) * 400] as [number, number],
-      });
-    }
-    // A fixed stride walk, so the edge SET is identical between the 2D and 3D mounts below (the
-    // per-edge keep rank is a hash of the endpoint ids — the comparison is only meaningful if both
-    // renderers are ranking the same edges).
-    for (let e = 0; e < m; e++) edges.push({ from: `n${e % n}`, to: `n${(e * 7 + 1 + Math.floor(e / n)) % n}`, kind: "link" as const });
-    return { nodes, edges };
-  }
-
-  it("adopts the 6000-edge budget: a 4000-edge vault draws every edge, where the old 2600 budget thinned it to ~65%", () => {
-    const { r } = mountRenderer("2d", denseEdgeGraph(600, 4000));
-    // 4000 < EDGE_BUDGET_2D (6000) → keepFrac is 1 and nothing is thinned. Under the old pair
-    // (2600 / 0.12) keepFrac would be max(0.12, 2600/4000) = 0.65, i.e. ~1400 edges silently gone.
-    const drawn = r.computeStats().edgesClassified;
-    expect(drawn).toBe(4000);
-    r.destroy();
-  });
-
-  it("...and thins 3D LESS than 2D past the budget — one shared floor could not express that", () => {
-    const g = denseEdgeGraph(600, 30000);
-    const a = mountRenderer("2d", g);
-    const in2d = a.r.computeStats().edgesClassified;
-    a.r.destroy();
-    const b = mountRenderer("3d", g);
-    const in3d = b.r.computeStats().edgesClassified;
-    b.r.destroy();
-    // 3D's depth-band falloff already thins the far half of the cloud optically, so dropping the
-    // same fraction structurally on top of it reads as holes — hence the higher floor.
-    // 30000 edges puts 2D on its BUDGET (6000/30000 = 0.2, above EDGE_FLOOR_2D = 0.06) and 3D on its
-    // FLOOR (0.45), a 2.25x split. Deliberately not a size where the two land close together: the
-    // keep rank is a 1000-bucket hash, so a small gap would be swamped by its ~2% sampling bias, and
-    // the test would be asserting noise. Windows are ±8% relative, comfortably wider than that bias
-    // and far narrower than the gap between the two constants.
-    expect(in2d / 30000).toBeGreaterThan(0.2 * 0.92);
-    expect(in2d / 30000).toBeLessThan(0.2 * 1.08);
-    expect(in3d / 30000).toBeGreaterThan(0.45 * 0.92);
-    expect(in3d / 30000).toBeLessThan(0.45 * 1.08);
-    // Restore ONE shared floor (either value) and this inequality is the assertion that goes red:
-    // both dimensions would then thin the same graph identically.
-    expect(in3d).toBeGreaterThan(in2d * 2);
-  });
-
-  it("the intra-cluster MESH fades in WITH the glyphs — it does not pop on at full strength over near-solid masses", () => {
-    // `intraOn` only asks whether the leaf pass ran at all, and its threshold (LOD_ALPHA_EPS) is
-    // crossed at t ≈ 0.330 — where massAlpha is still 0.985. Stroked at a flat INTRA_EDGE_ALPHA from
-    // that instant, the mesh is a full-strength colour-tinted web over near-solid territory masses
-    // with no visible glyphs anywhere: a cobweb across the field, exactly the noise the far band
-    // exists NOT to have, persisting the whole way across [0.33, 0.46].
-    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    const meshAlpha = () => {
-      const m = ctx.strokes.filter((st) => st.color !== priv.colors[9] && st.segs.length > 0);
-      return m.length ? m[0].alpha : 0;
-    };
-    // EARLY_T is deep in the far side of the mass→glyph crossfade — the masses still own ~88% of the
-    // field there, which is the whole point of the sample. Asserted, not assumed.
-    const EARLY_T = 0.35;
-    expect(bandsForT(EARLY_T, 4).massAlpha).toBeGreaterThan(0.8);
-
-    parkAtT(r, EARLY_T);
-    const early = meshAlpha();
-    parkAtT(r, MID_T);
-    const plateau = meshAlpha();
-
-    // Both exact, against `bandsForT` — the band authority — not against anything the renderer says.
-    expect(plateau).toBeCloseTo(0.22 * priv.edgeBaseAlpha, 6);
-    expect(early).toBeCloseTo(0.22 * priv.edgeBaseAlpha * (1 - bandsForT(EARLY_T, 4).massAlpha), 6);
-    // The killer: with no band term these are the SAME number. The mesh is still drawn (it is fading
-    // in, not gated off), just far too faint to read as a web over the masses.
-    expect(early).toBeGreaterThan(0);
-    expect(early).toBeLessThan(plateau * 0.25);
-    r.destroy();
-  });
-
-  it("computeStats separates edges CLASSIFIED from edges STROKED — in the mid band they are nowhere near each other", () => {
-    // The classification loop runs before anything reaches strokeEdges(), and the member tier then
-    // returns early on `base <= 0.004`. Reporting one number for both is how a QA hook ends up
-    // claiming ~4566 lines on a frame that drew ~18.
-    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    parkAtT(r, MID_T);
-    const stats = r.computeStats();
-    // All 59 real edges survive the budget rank (59 << 6000) and every 2D node is projValid.
-    expect(stats.edgesClassified).toBe(59);
-    // ...but not one of them is stroked here: 8 backbone lines + the 49 intra-community mesh lines.
-    expect(stats.edgesStroked).toBe(8 + 49);
-    expect(edgeColorSegs(priv).length).toBe(8);
-    // And in the NEAR band the member tier is back, so the two converge on the same order. At 0.99
-    // this fixture's magnification has taken some leaf communities off the field, so the LOCALITY GATE
-    // (the "Task 19" block below) drops the edges reaching them — `edgesClassified` counts what
-    // survived the gate, so the total is asserted as the PARTITION it now is rather than as 59.
-    parkAtT(r, 0.99);
-    const deep = r.computeStats();
-    expect(deep.edgesClassified + deep.edgesTransitingDropped).toBe(59);
-    expect(deep.edgesTransitingDropped).toBeGreaterThan(0);        // the gate really is engaged here
-    expect(deep.edgesStroked).toBeGreaterThan(deep.edgesClassified); // members + mesh, both drawn
-    r.destroy();
-  });
-
-  it("group-line and mesh WIDTHS ride the resolution stop, and the mesh honours its ceiling", () => {
-    // `lineWidthScale()` is 1 at fit by construction and rises to EDGE_W_MAX / EDGE_W_GAIN at the
-    // deepest stop; every ported width constant multiplies it, which is how Canvas's relative
-    // weights survive a renderer whose zoom is RESOLUTION and has no magnification scalar at all.
-    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    const meshWidth = () => ctx.strokes.filter((st) => st.color !== priv.colors[9] && st.segs.length > 0)[0]?.width;
-    const scaleAt = (t: number) => (EDGE_W_GAIN + (EDGE_W_MAX - EDGE_W_GAIN) * t) / EDGE_W_GAIN;
-
-    parkAtT(r, MID_T);
-    expect(meshWidth()).toBeCloseTo(0.3 * scaleAt(MID_T), 6);   // 0.3 = CanvasGraphRenderer.ts:1298
-    const midMesh = meshWidth();
-    // Deeper: strictly thicker, and then pinned at the 1.1 ceiling rather than running away.
-    parkAtT(r, 0.99);
-    expect(meshWidth()).toBeGreaterThan(midMesh);
-    expect(meshWidth()).toBe(1.1);
-    expect(0.3 * scaleAt(0.99)).toBeGreaterThan(1.1);            // the clamp really is what is binding
-
-    // Backbone buckets: `(0.35 + 0.55·wb) × scale`, clamped to [0.25, 2.4], one batch per bucket that
-    // actually has a pair in it. Which buckets those are is derived from the real (unit-tested)
-    // `edgeWeightBucketRange` against the level's own counts, not assumed.
-    parkAtT(r, MID_T);
-    const groupWidths = ctx.strokes
-      .filter((st) => st.color === priv.colors[9] && st.segs.length > 0)
-      .map((st) => st.width).sort((x, y) => x - y);
-    const visiblePairs = priv.levelPairs[2].filter((p) => p.a.onGrid && p.b.onGrid);
-    const maxCount = priv.levelPairs[2][0].count;
-    const wantWidths: number[] = [];
-    for (let wb = 0; wb < EDGE_WEIGHT_BUCKETS; wb++) {
-      const { lo, hi } = edgeWeightBucketRange(wb, maxCount);
-      if (!visiblePairs.some((p) => p.count >= lo && p.count < hi)) continue;
-      wantWidths.push(Math.max(0.25, Math.min(2.4, (0.35 + wb * 0.55) * scaleAt(MID_T))));
-    }
-    expect(wantWidths.length).toBeGreaterThan(1);                // more than one bucket drew
-    expect(groupWidths.length).toBe(wantWidths.length);
-    groupWidths.forEach((w, i) => expect(w).toBeCloseTo(wantWidths.sort((x, y) => x - y)[i], 6));
-    r.destroy();
-  });
-
-  /** Three fat communities at fit, wired so ONE connector is heavy (`aggEdgeWeight` ≥
-   *  AGG_EDGE_DOUBLE_W) and one is light — the two-tier width the doubled Bresenham trace became. */
-  function heavyAndLightConnectorGraph() {
-    const nodes = [];
-    const edges = [];
-    for (let c = 0; c < 3; c++) {
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
-        nodes.push({
-          id: `c${c}n${k}`, label: `note ${c}-${k}`, kind: "note" as const,
-          position: [(c - 1) * 90 + Math.cos(a) * 12, Math.sin(a) * 12, 0] as [number, number, number],
-          position2d: [(c - 1) * 90 + Math.cos(a) * 12, Math.sin(a) * 12] as [number, number],
-          community: c, communityLabel: `Group ${c}`,
-        });
-      }
-    }
-    // 20 links c0–c1 (the level's maximum, so w = 1), 1 link c1–c2 (w = log1p(1)/log1p(20) ≈ 0.23).
-    for (let k = 0; k < 20; k++) edges.push({ from: `c0n${k % 8}`, to: `c1n${(k * 3) % 8}`, kind: "link" as const });
-    edges.push({ from: `c1n0`, to: `c2n0`, kind: "link" as const });
-    return { nodes, edges };
-  }
-
-  it("the heaviest aggregate connector strokes at DOUBLE width — the vector form of the old parallel trace", () => {
-    const { r } = mountRenderer("2d", heavyAndLightConnectorGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    // At fit, `lineWidthScale()` is exactly 1, so the widths are the raw constants.
-    const batches = ctx.strokes.filter((st) => st.color === priv.colors[9] && st.segs.length > 0);
-    expect(batches.length).toBe(2);                              // one heavy connector, one light
-    const widths = batches.map((b) => b.width).sort((x, y) => x - y);
-    expect(widths).toEqual([0.35, 0.7]);                         // GROUP_W_BASE, and its double
-    // The doubling follows the WEIGHT, not the draw order: the wide line is the heavier connector,
-    // so it also carries the higher alpha off `AGG_EDGE_ALPHA_MIN`'s ramp.
-    const heavy = batches.find((b) => b.width === 0.7)!;
-    const light = batches.find((b) => b.width === 0.35)!;
-    expect(heavy.alpha).toBeGreaterThan(light.alpha);
-    // w = 1 → the ramp's full value. Within one batching step: group-line ALPHAS are deliberately
-    // quantized to GROUP_ALPHA_STEPS so a continuous per-connector ramp stays a handful of strokes.
-    expect(Math.abs(heavy.alpha - priv.edgeBaseAlpha)).toBeLessThanOrEqual(1 / 24);
-    expect(light.alpha).toBeCloseTo(priv.edgeBaseAlpha * (0.35 + 0.65 * (Math.log1p(1) / Math.log1p(20))), 1);
-    r.destroy();
-  });
-
-  it("clicking a mass lands where its children are STRONGEST — which on a deep hierarchy is a glyph view, not more masses", () => {
-    // `clickEntity` targets `levelBoundaries()[childLevel]`, which is both the minimum resolution
-    // that reveals the child grouping and (massAlpha being non-increasing) the strongest its masses
-    // ever get. On a 4-level hierarchy that means two genuinely different outcomes, and the doc used
-    // to claim only the first:
-    //   click level 0 → t = 0.1875, massAlpha 1     → child masses
-    //   click level 2 → t = 0.5625, massAlpha 0     → glyphs + the child level's names and backbone
-    // Both are asserted here so neither can quietly change, and the alphas come from `bandsForT`
-    // rather than being asserted as literals.
-    const bounds = [0, 0.1875, 0.375, 0.5625, 0.75];
-    expect(bandsForT(bounds[1], 4).massAlpha).toBe(1);
-    expect(bandsForT(bounds[3], 4).massAlpha).toBe(0);
-
-    // --- shallow click: the children ARE masses ------------------------------------------------
-    {
-      const { r, viewport } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-      const p = lodPriv(r);
-      expect(entityLevelsOnGrid(p)).toEqual(new Set([0]));
-      const i = p.cellEntity.findIndex((v) => v >= 0);
-      const at = cellPx(p, i);
-      viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: at.x, clientY: at.y }));
-      window.dispatchEvent(new PointerEvent("pointerup", { clientX: at.x, clientY: at.y }));
-      settle(300);
-      expect(entityLevelsOnGrid(p)).toEqual(new Set([1]));       // child masses, drawn
-      r.destroy();
+    /** `n` notes with no community at all (so the band ladder degenerates to "member edges own every
+     *  stop") and `m` deterministically-chosen edges between them — the dense-graph thinning fixture. */
+    function denseEdgeGraph(n: number, m: number) {
+        const nodes = []
+        const edges = []
+        for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2
+            nodes.push({
+                id: `n${i}`,
+                label: `note ${i}`,
+                kind: 'note' as const,
+                position: [Math.cos(a) * 400, Math.sin(a) * 400, 0] as [
+                    number,
+                    number,
+                    number,
+                ],
+                position2d: [Math.cos(a) * 400, Math.sin(a) * 400] as [
+                    number,
+                    number,
+                ],
+            })
+        }
+        // A fixed stride walk, so the edge SET is identical between the 2D and 3D mounts below (the
+        // per-edge keep rank is a hash of the endpoint ids — the comparison is only meaningful if both
+        // renderers are ranking the same edges).
+        for (let e = 0; e < m; e++)
+            edges.push({
+                from: `n${e % n}`,
+                to: `n${(e * 7 + 1 + Math.floor(e / n)) % n}`,
+                kind: 'link' as const,
+            })
+        return { nodes, edges }
     }
 
-    // --- deep click: there is no stop at which the children can be masses -----------------------
-    {
-      const { r, viewport } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-      const p = lodPriv(r);
-      const priv = r as unknown as BandPriv;
-      // Park where LEVEL 2's own masses are drawn (its window starts at 0.375, still inside the
-      // mass band) so there is a level-2 mass to click in the first place.
-      parkAtT(r, 0.40);
-      expect(entityLevelsOnGrid(p)).toEqual(new Set([2]));
-      const i = p.cellEntity.findIndex((v) => v >= 0);
-      expect(i).toBeGreaterThanOrEqual(0);
-      const at = cellPx(p, i);
-      viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: at.x, clientY: at.y }));
-      window.dispatchEvent(new PointerEvent("pointerup", { clientX: at.x, clientY: at.y }));
-      settle(300);
-      // The glide paints every intermediate frame into the recording ctx, including ones still
-      // mid-crossfade from LTWO to LTHREE, so only the FINAL settled frame answers "what does this
-      // stop look like" — force one repaint at the converged camera (the pattern the rest of this
-      // file uses).
-      ctx.fills.length = 0;
-      ctx.strokes.length = 0;
-      r.setSearchMatches(new Set());
-      frame(99999);
-      // The click zoomed in, and NOTHING is a mass at the stop it landed on...
-      expect(r.computeStats().zoomPct).toBeLessThan(60);
-      expect([...p.cellEntity].every((v) => v < 0)).toBe(true);
-      expect(r.computeStats().entitiesDrawn).toBe(0);
-      // ...but the child grouping is still revealed: individual members on the field, and the
-      // FINEST level's names in place of the level-2 ones. That is the honest contract.
-      expect([...p.cellNode].some((v) => v >= 0)).toBe(true);
-      expect(ctx.fills.some((f) => f.text.startsWith("LTHREE "))).toBe(true);
-      expect(ctx.fills.some((f) => f.text.startsWith("LTWO "))).toBe(false);
-      expect(priv.memberEdgeAlpha).toBe(0);                      // still the mid band, not the near one
-      r.destroy();
+    it('adopts the 6000-edge budget: a 4000-edge vault draws every edge, where the old 2600 budget thinned it to ~65%', () => {
+        const { r } = mountRenderer('2d', denseEdgeGraph(600, 4000))
+        // 4000 < EDGE_BUDGET_2D (6000) → keepFrac is 1 and nothing is thinned. Under the old pair
+        // (2600 / 0.12) keepFrac would be max(0.12, 2600/4000) = 0.65, i.e. ~1400 edges silently gone.
+        const drawn = r.computeStats().edgesClassified
+        expect(drawn).toBe(4000)
+        r.destroy()
+    })
+
+    it('...and thins 3D LESS than 2D past the budget — one shared floor could not express that', () => {
+        const g = denseEdgeGraph(600, 30000)
+        const a = mountRenderer('2d', g)
+        const in2d = a.r.computeStats().edgesClassified
+        a.r.destroy()
+        const b = mountRenderer('3d', g)
+        const in3d = b.r.computeStats().edgesClassified
+        b.r.destroy()
+        // 3D's depth-band falloff already thins the far half of the cloud optically, so dropping the
+        // same fraction structurally on top of it reads as holes — hence the higher floor.
+        // 30000 edges puts 2D on its BUDGET (6000/30000 = 0.2, above EDGE_FLOOR_2D = 0.06) and 3D on its
+        // FLOOR (0.45), a 2.25x split. Deliberately not a size where the two land close together: the
+        // keep rank is a 1000-bucket hash, so a small gap would be swamped by its ~2% sampling bias, and
+        // the test would be asserting noise. Windows are ±8% relative, comfortably wider than that bias
+        // and far narrower than the gap between the two constants.
+        expect(in2d / 30000).toBeGreaterThan(0.2 * 0.92)
+        expect(in2d / 30000).toBeLessThan(0.2 * 1.08)
+        expect(in3d / 30000).toBeGreaterThan(0.45 * 0.92)
+        expect(in3d / 30000).toBeLessThan(0.45 * 1.08)
+        // Restore ONE shared floor (either value) and this inequality is the assertion that goes red:
+        // both dimensions would then thin the same graph identically.
+        expect(in3d).toBeGreaterThan(in2d * 2)
+    })
+
+    it('the intra-cluster MESH fades in WITH the glyphs — it does not pop on at full strength over near-solid masses', () => {
+        // `intraOn` only asks whether the leaf pass ran at all, and its threshold (LOD_ALPHA_EPS) is
+        // crossed at t ≈ 0.330 — where massAlpha is still 0.985. Stroked at a flat INTRA_EDGE_ALPHA from
+        // that instant, the mesh is a full-strength colour-tinted web over near-solid territory masses
+        // with no visible glyphs anywhere: a cobweb across the field, exactly the noise the far band
+        // exists NOT to have, persisting the whole way across [0.33, 0.46].
+        const { r } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv
+        const meshAlpha = () => {
+            const m = ctx.strokes.filter(
+                st => st.color !== priv.colors[9] && st.segs.length > 0,
+            )
+            return m.length ? m[0].alpha : 0
+        }
+        // EARLY_T is deep in the far side of the mass→glyph crossfade — the masses still own ~88% of the
+        // field there, which is the whole point of the sample. Asserted, not assumed.
+        const EARLY_T = 0.35
+        expect(bandsForT(EARLY_T, 4).massAlpha).toBeGreaterThan(0.8)
+
+        parkAtT(r, EARLY_T)
+        const early = meshAlpha()
+        parkAtT(r, MID_T)
+        const plateau = meshAlpha()
+
+        // Both exact, against `bandsForT` — the band authority — not against anything the renderer says.
+        expect(plateau).toBeCloseTo(0.22 * priv.edgeBaseAlpha, 6)
+        expect(early).toBeCloseTo(
+            0.22 * priv.edgeBaseAlpha * (1 - bandsForT(EARLY_T, 4).massAlpha),
+            6,
+        )
+        // The killer: with no band term these are the SAME number. The mesh is still drawn (it is fading
+        // in, not gated off), just far too faint to read as a web over the masses.
+        expect(early).toBeGreaterThan(0)
+        expect(early).toBeLessThan(plateau * 0.25)
+        r.destroy()
+    })
+
+    it('computeStats separates edges CLASSIFIED from edges STROKED — in the mid band they are nowhere near each other', () => {
+        // The classification loop runs before anything reaches strokeEdges(), and the member tier then
+        // returns early on `base <= 0.004`. Reporting one number for both is how a QA hook ends up
+        // claiming ~4566 lines on a frame that drew ~18.
+        const { r } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv
+        parkAtT(r, MID_T)
+        const stats = r.computeStats()
+        // All 59 real edges survive the budget rank (59 << 6000) and every 2D node is projValid.
+        expect(stats.edgesClassified).toBe(59)
+        // ...but not one of them is stroked here: 8 backbone lines + the 49 intra-community mesh lines.
+        expect(stats.edgesStroked).toBe(8 + 49)
+        expect(edgeColorSegs(priv).length).toBe(8)
+        // And in the NEAR band the member tier is back, so the two converge on the same order. At 0.99
+        // this fixture's magnification has taken some leaf communities off the field, so the LOCALITY GATE
+        // (the "Task 19" block below) drops the edges reaching them — `edgesClassified` counts what
+        // survived the gate, so the total is asserted as the PARTITION it now is rather than as 59.
+        parkAtT(r, 0.99)
+        const deep = r.computeStats()
+        expect(deep.edgesClassified + deep.edgesTransitingDropped).toBe(59)
+        expect(deep.edgesTransitingDropped).toBeGreaterThan(0) // the gate really is engaged here
+        expect(deep.edgesStroked).toBeGreaterThan(deep.edgesClassified) // members + mesh, both drawn
+        r.destroy()
+    })
+
+    it('group-line and mesh WIDTHS ride the resolution stop, and the mesh honours its ceiling', () => {
+        // `lineWidthScale()` is 1 at fit by construction and rises to EDGE_W_MAX / EDGE_W_GAIN at the
+        // deepest stop; every ported width constant multiplies it, which is how Canvas's relative
+        // weights survive a renderer whose zoom is RESOLUTION and has no magnification scalar at all.
+        const { r } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv
+        const meshWidth = () =>
+            ctx.strokes.filter(
+                st => st.color !== priv.colors[9] && st.segs.length > 0,
+            )[0]?.width
+        const scaleAt = (t: number) =>
+            (EDGE_W_GAIN + (EDGE_W_MAX - EDGE_W_GAIN) * t) / EDGE_W_GAIN
+
+        parkAtT(r, MID_T)
+        expect(meshWidth()).toBeCloseTo(0.3 * scaleAt(MID_T), 6) // 0.3 = CanvasGraphRenderer.ts:1298
+        const midMesh = meshWidth()
+        // Deeper: strictly thicker, and then pinned at the 1.1 ceiling rather than running away.
+        parkAtT(r, 0.99)
+        expect(meshWidth()).toBeGreaterThan(midMesh)
+        expect(meshWidth()).toBe(1.1)
+        expect(0.3 * scaleAt(0.99)).toBeGreaterThan(1.1) // the clamp really is what is binding
+
+        // Backbone buckets: `(0.35 + 0.55·wb) × scale`, clamped to [0.25, 2.4], one batch per bucket that
+        // actually has a pair in it. Which buckets those are is derived from the real (unit-tested)
+        // `edgeWeightBucketRange` against the level's own counts, not assumed.
+        parkAtT(r, MID_T)
+        const groupWidths = ctx.strokes
+            .filter(st => st.color === priv.colors[9] && st.segs.length > 0)
+            .map(st => st.width)
+            .sort((x, y) => x - y)
+        const visiblePairs = priv.levelPairs[2].filter(
+            p => p.a.onGrid && p.b.onGrid,
+        )
+        const maxCount = priv.levelPairs[2][0].count
+        const wantWidths: number[] = []
+        for (let wb = 0; wb < EDGE_WEIGHT_BUCKETS; wb++) {
+            const { lo, hi } = edgeWeightBucketRange(wb, maxCount)
+            if (!visiblePairs.some(p => p.count >= lo && p.count < hi)) continue
+            wantWidths.push(
+                Math.max(
+                    0.25,
+                    Math.min(2.4, (0.35 + wb * 0.55) * scaleAt(MID_T)),
+                ),
+            )
+        }
+        expect(wantWidths.length).toBeGreaterThan(1) // more than one bucket drew
+        expect(groupWidths.length).toBe(wantWidths.length)
+        groupWidths.forEach((w, i) =>
+            expect(w).toBeCloseTo(wantWidths.sort((x, y) => x - y)[i], 6),
+        )
+        r.destroy()
+    })
+
+    /** Three fat communities at fit, wired so ONE connector is heavy (`aggEdgeWeight` ≥
+     *  AGG_EDGE_DOUBLE_W) and one is light — the two-tier width the doubled Bresenham trace became. */
+    function heavyAndLightConnectorGraph() {
+        const nodes = []
+        const edges = []
+        for (let c = 0; c < 3; c++) {
+            for (let k = 0; k < 8; k++) {
+                const a = (k / 8) * Math.PI * 2
+                nodes.push({
+                    id: `c${c}n${k}`,
+                    label: `note ${c}-${k}`,
+                    kind: 'note' as const,
+                    position: [
+                        (c - 1) * 90 + Math.cos(a) * 12,
+                        Math.sin(a) * 12,
+                        0,
+                    ] as [number, number, number],
+                    position2d: [
+                        (c - 1) * 90 + Math.cos(a) * 12,
+                        Math.sin(a) * 12,
+                    ] as [number, number],
+                    community: c,
+                    communityLabel: `Group ${c}`,
+                })
+            }
+        }
+        // 20 links c0–c1 (the level's maximum, so w = 1), 1 link c1–c2 (w = log1p(1)/log1p(20) ≈ 0.23).
+        for (let k = 0; k < 20; k++)
+            edges.push({
+                from: `c0n${k % 8}`,
+                to: `c1n${(k * 3) % 8}`,
+                kind: 'link' as const,
+            })
+        edges.push({ from: `c1n0`, to: `c2n0`, kind: 'link' as const })
+        return { nodes, edges }
     }
-  });
 
-  it("the far band is unchanged: masses own the field at fit, and no glyph or member edge is drawn", () => {
-    const { r } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv;
-    expect([...priv.cellEntity].some((v) => v >= 0)).toBe(true);
-    expect([...priv.cellNode].every((v) => v < 0)).toBe(true);
-    // The only lines at fit are the level-0 aggregate connectors — one per connected pair of the
-    // coarsest level's communities, which for this fixture is exactly one.
-    expect(edgeColorSegs(priv).length).toBe(1);
-    // ...and no mesh, because there are no glyph clouds to give substance to yet.
-    expect(ctx.strokes.filter((s) => s.color !== priv.colors[9] && s.segs.length > 0)).toEqual([]);
-    r.destroy();
-  });
+    it('the heaviest aggregate connector strokes at DOUBLE width — the vector form of the old parallel trace', () => {
+        const { r } = mountRenderer('2d', heavyAndLightConnectorGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv
+        // At fit, `lineWidthScale()` is exactly 1, so the widths are the raw constants.
+        const batches = ctx.strokes.filter(
+            st => st.color === priv.colors[9] && st.segs.length > 0,
+        )
+        expect(batches.length).toBe(2) // one heavy connector, one light
+        const widths = batches.map(b => b.width).sort((x, y) => x - y)
+        expect(widths).toEqual([0.35, 0.7]) // GROUP_W_BASE, and its double
+        // The doubling follows the WEIGHT, not the draw order: the wide line is the heavier connector,
+        // so it also carries the higher alpha off `AGG_EDGE_ALPHA_MIN`'s ramp.
+        const heavy = batches.find(b => b.width === 0.7)!
+        const light = batches.find(b => b.width === 0.35)!
+        expect(heavy.alpha).toBeGreaterThan(light.alpha)
+        // w = 1 → the ramp's full value. Within one batching step: group-line ALPHAS are deliberately
+        // quantized to GROUP_ALPHA_STEPS so a continuous per-connector ramp stays a handful of strokes.
+        expect(Math.abs(heavy.alpha - priv.edgeBaseAlpha)).toBeLessThanOrEqual(
+            1 / 24,
+        )
+        expect(light.alpha).toBeCloseTo(
+            priv.edgeBaseAlpha *
+                (0.35 + 0.65 * (Math.log1p(1) / Math.log1p(20))),
+            1,
+        )
+        r.destroy()
+    })
 
-  it("an aggregate connector to a mass that is no longer on the field is dropped, not left trailing off the edge", () => {
-    // Same rule as the backbone's, and the same reason: a connector to a mass with no ink on the
-    // grid can only read as a stray diagonal leaving the frame. This is the FAR band, i.e. the app's
-    // default 2D view once it is panned at all.
-    const { r, viewport } = mountRenderer("2d", fourLevelGraph(), { showLodMasses: true });
-    const priv = r as unknown as BandPriv & { entityFlat: { level: number; onGrid: boolean }[] };
-    expect(edgeColorSegs(priv).length).toBe(1);
-    expect(priv.entityFlat.filter((e) => e.level === 0).every((e) => e.onGrid)).toBe(true);
+    it('clicking a mass lands where its children are STRONGEST — which on a deep hierarchy is a glyph view, not more masses', () => {
+        // `clickEntity` targets `levelBoundaries()[childLevel]`, which is both the minimum resolution
+        // that reveals the child grouping and (massAlpha being non-increasing) the strongest its masses
+        // ever get. On a 4-level hierarchy that means two genuinely different outcomes, and the doc used
+        // to claim only the first:
+        //   click level 0 → t = 0.1875, massAlpha 1     → child masses
+        //   click level 2 → t = 0.5625, massAlpha 0     → glyphs + the child level's names and backbone
+        // Both are asserted here so neither can quietly change, and the alphas come from `bandsForT`
+        // rather than being asserted as literals.
+        const bounds = [0, 0.1875, 0.375, 0.5625, 0.75]
+        expect(bandsForT(bounds[1], 4).massAlpha).toBe(1)
+        expect(bandsForT(bounds[3], 4).massAlpha).toBe(0)
 
-    // Pan DOWNWARD until one of the two coarsest masses has left the field entirely. Vertically,
-    // because this fixture's two level-0 centroids are separated almost purely in y — a horizontal
-    // pan takes them off together and there is nothing left to compare against.
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 400, clientY: 320 }));
-    frame(10016);
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 400, clientY: 520 }));
-    ctx.strokes.length = 0;
-    frame(10032);
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 400, clientY: 520 }));
+        // --- shallow click: the children ARE masses ------------------------------------------------
+        {
+            const { r, viewport } = mountRenderer('2d', fourLevelGraph(), {
+                showLodMasses: true,
+            })
+            const p = lodPriv(r)
+            expect(entityLevelsOnGrid(p)).toEqual(new Set([0]))
+            const i = p.cellEntity.findIndex(v => v >= 0)
+            const at = cellPx(p, i)
+            viewport.dispatchEvent(
+                new PointerEvent('pointerdown', {
+                    button: 0,
+                    clientX: at.x,
+                    clientY: at.y,
+                }),
+            )
+            window.dispatchEvent(
+                new PointerEvent('pointerup', { clientX: at.x, clientY: at.y }),
+            )
+            settle(300)
+            expect(entityLevelsOnGrid(p)).toEqual(new Set([1])) // child masses, drawn
+            r.destroy()
+        }
 
-    const level0 = priv.entityFlat.filter((e) => e.level === 0);
-    expect(level0.some((e) => !e.onGrid)).toBe(true);   // one really did leave...
-    expect(level0.some((e) => e.onGrid)).toBe(true);    // ...and one really is still there
-    expect(edgeColorSegs(priv).length).toBe(0);         // ...so the connector between them is gone
-    r.destroy();
-  });
-});
+        // --- deep click: there is no stop at which the children can be masses -----------------------
+        {
+            const { r, viewport } = mountRenderer('2d', fourLevelGraph(), {
+                showLodMasses: true,
+            })
+            const p = lodPriv(r)
+            const priv = r as unknown as BandPriv
+            // Park where LEVEL 2's own masses are drawn (its window starts at 0.375, still inside the
+            // mass band) so there is a level-2 mass to click in the first place.
+            parkAtT(r, 0.4)
+            expect(entityLevelsOnGrid(p)).toEqual(new Set([2]))
+            const i = p.cellEntity.findIndex(v => v >= 0)
+            expect(i).toBeGreaterThanOrEqual(0)
+            const at = cellPx(p, i)
+            viewport.dispatchEvent(
+                new PointerEvent('pointerdown', {
+                    button: 0,
+                    clientX: at.x,
+                    clientY: at.y,
+                }),
+            )
+            window.dispatchEvent(
+                new PointerEvent('pointerup', { clientX: at.x, clientY: at.y }),
+            )
+            settle(300)
+            // The glide paints every intermediate frame into the recording ctx, including ones still
+            // mid-crossfade from LTWO to LTHREE, so only the FINAL settled frame answers "what does this
+            // stop look like" — force one repaint at the converged camera (the pattern the rest of this
+            // file uses).
+            ctx.fills.length = 0
+            ctx.strokes.length = 0
+            r.setSearchMatches(new Set())
+            frame(99999)
+            // The click zoomed in, and NOTHING is a mass at the stop it landed on...
+            expect(r.computeStats().zoomPct).toBeLessThan(60)
+            expect([...p.cellEntity].every(v => v < 0)).toBe(true)
+            expect(r.computeStats().entitiesDrawn).toBe(0)
+            // ...but the child grouping is still revealed: individual members on the field, and the
+            // FINEST level's names in place of the level-2 ones. That is the honest contract.
+            expect([...p.cellNode].some(v => v >= 0)).toBe(true)
+            expect(ctx.fills.some(f => f.text.startsWith('LTHREE '))).toBe(true)
+            expect(ctx.fills.some(f => f.text.startsWith('LTWO '))).toBe(false)
+            expect(priv.memberEdgeAlpha).toBe(0) // still the mid band, not the near one
+            r.destroy()
+        }
+    })
+
+    it('the far band is unchanged: masses own the field at fit, and no glyph or member edge is drawn', () => {
+        const { r } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv
+        expect([...priv.cellEntity].some(v => v >= 0)).toBe(true)
+        expect([...priv.cellNode].every(v => v < 0)).toBe(true)
+        // The only lines at fit are the level-0 aggregate connectors — one per connected pair of the
+        // coarsest level's communities, which for this fixture is exactly one.
+        expect(edgeColorSegs(priv).length).toBe(1)
+        // ...and no mesh, because there are no glyph clouds to give substance to yet.
+        expect(
+            ctx.strokes.filter(
+                s => s.color !== priv.colors[9] && s.segs.length > 0,
+            ),
+        ).toEqual([])
+        r.destroy()
+    })
+
+    it('an aggregate connector to a mass that is no longer on the field is dropped, not left trailing off the edge', () => {
+        // Same rule as the backbone's, and the same reason: a connector to a mass with no ink on the
+        // grid can only read as a stray diagonal leaving the frame. This is the FAR band, i.e. the app's
+        // default 2D view once it is panned at all.
+        const { r, viewport } = mountRenderer('2d', fourLevelGraph(), {
+            showLodMasses: true,
+        })
+        const priv = r as unknown as BandPriv & {
+            entityFlat: { level: number; onGrid: boolean }[]
+        }
+        expect(edgeColorSegs(priv).length).toBe(1)
+        expect(
+            priv.entityFlat.filter(e => e.level === 0).every(e => e.onGrid),
+        ).toBe(true)
+
+        // Pan DOWNWARD until one of the two coarsest masses has left the field entirely. Vertically,
+        // because this fixture's two level-0 centroids are separated almost purely in y — a horizontal
+        // pan takes them off together and there is nothing left to compare against.
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: 400,
+                clientY: 300,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: 400, clientY: 320 }),
+        )
+        frame(10016)
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: 400, clientY: 520 }),
+        )
+        ctx.strokes.length = 0
+        frame(10032)
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: 400, clientY: 520 }),
+        )
+
+        const level0 = priv.entityFlat.filter(e => e.level === 0)
+        expect(level0.some(e => !e.onGrid)).toBe(true) // one really did leave...
+        expect(level0.some(e => e.onGrid)).toBe(true) // ...and one really is still there
+        expect(edgeColorSegs(priv).length).toBe(0) // ...so the connector between them is gone
+        r.destroy()
+    })
+})
 
 /**
  * THE NEAR BAND'S LOCALITY GATE (Task 19).
@@ -2926,427 +3976,607 @@ describe("THE THREE-BAND LADDER — far = masses, mid = glyphs + hub-to-hub back
  * asserted below rather than assumed, since it is the whole reason the predicate is a member count of
  * ONE rather than a share.
  */
-describe("the near band draws only the neighbourhood on screen (Task 19)", () => {
-  /**
-   * FOUR tight blobs strung out along the x axis, plus one node with no community at all, in a 2-level
-   * hierarchy — a named edge for every case the gate has to separate:
-   *
-   *   FAR (x=-600)            HOME (x=0) u0 NEXT (x=+9)              OTHER (x=+600)
-   *
-   *   - HOME's own spokes and NEXT's own spokes: intra-cluster, both clusters on screen → keep.
-   *   - `h0–x0`: CROSS-cluster with both endpoints on screen → keep (the may-not-lie case).
-   *   - `h1–f0`, `h2–f1`: one endpoint on screen, the other in a cluster with nothing on screen → drop.
-   *   - `f2–o0`, `f3–o1`: NEITHER endpoint on screen, and the segment runs straight through x=0, i.e.
-   *     across the middle of the viewport → drop. This is the user's actual complaint, and it is the
-   *     case a fixture of well-separated blobs would MISS if the off-screen clusters sat off the same
-   *     side: the lines have to genuinely cross the frame for their removal to mean anything.
-   *   - FAR's and OTHER's own spokes: entirely off screen → drop.
-   *   - `u0–f4`: `u0` carries no community, so no hub-to-hub backbone line could ever stand in for
-   *     this edge → keep, even though f4's cluster is off screen.
-   *
-   * THE TOP-LEVEL SPLIT IS DELIBERATELY LOPSIDED — HOME, NEXT **and FAR** are all under Top 0, only
-   * OTHER is under Top 1. Split it the obvious way (the two visible blobs against the two off-screen
-   * ones) and the fixture cannot tell WHICH hierarchy level the gate read: reading the coarsest level
-   * would give the same answer as reading the finest. With FAR sharing HOME's top-level community, a
-   * gate keyed off level 0 would find Top 0 "in view" and keep `h1–f0` and all five of FAR's own
-   * spokes. It must read the level the field is actually showing (`colorL0`, the finest here).
-   *
-   * The blobs are ellipses, not circles: at the deep stop this block parks at, the field is ~50 world
-   * units wide but only ~13 tall (a 800x600 box of 6.3x18 cells), so a circular blob big enough to be
-   * interesting in x would run off the top and bottom and the "both endpoints visible" cases would
-   * stop being visible at all.
-   */
-  const HOME_X = 0, NEXT_X = 9, FAR_X = -600, OTHER_X = 600;
-  function localityGraph() {
-    const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
-    const edges: ReturnType<typeof sampleGraph>["edges"] = [];
-    // [prefix, centre x, member count, TOP-level community] — see the lopsided split above.
-    const blobs: [string, number, number, number][] = [
-      ["h", HOME_X, 6, 0], ["x", NEXT_X, 5, 0], ["f", FAR_X, 6, 0], ["o", OTHER_X, 6, 1],
-    ];
-    blobs.forEach(([prefix, cx, n, top], b) => {
-      for (let k = 0; k < n; k++) {
-        const a = (k / n) * Math.PI * 2;
-        const x = cx + Math.cos(a) * 4, y = Math.sin(a) * 2;
+describe('the near band draws only the neighbourhood on screen (Task 19)', () => {
+    /**
+     * FOUR tight blobs strung out along the x axis, plus one node with no community at all, in a 2-level
+     * hierarchy — a named edge for every case the gate has to separate:
+     *
+     *   FAR (x=-600)            HOME (x=0) u0 NEXT (x=+9)              OTHER (x=+600)
+     *
+     *   - HOME's own spokes and NEXT's own spokes: intra-cluster, both clusters on screen → keep.
+     *   - `h0–x0`: CROSS-cluster with both endpoints on screen → keep (the may-not-lie case).
+     *   - `h1–f0`, `h2–f1`: one endpoint on screen, the other in a cluster with nothing on screen → drop.
+     *   - `f2–o0`, `f3–o1`: NEITHER endpoint on screen, and the segment runs straight through x=0, i.e.
+     *     across the middle of the viewport → drop. This is the user's actual complaint, and it is the
+     *     case a fixture of well-separated blobs would MISS if the off-screen clusters sat off the same
+     *     side: the lines have to genuinely cross the frame for their removal to mean anything.
+     *   - FAR's and OTHER's own spokes: entirely off screen → drop.
+     *   - `u0–f4`: `u0` carries no community, so no hub-to-hub backbone line could ever stand in for
+     *     this edge → keep, even though f4's cluster is off screen.
+     *
+     * THE TOP-LEVEL SPLIT IS DELIBERATELY LOPSIDED — HOME, NEXT **and FAR** are all under Top 0, only
+     * OTHER is under Top 1. Split it the obvious way (the two visible blobs against the two off-screen
+     * ones) and the fixture cannot tell WHICH hierarchy level the gate read: reading the coarsest level
+     * would give the same answer as reading the finest. With FAR sharing HOME's top-level community, a
+     * gate keyed off level 0 would find Top 0 "in view" and keep `h1–f0` and all five of FAR's own
+     * spokes. It must read the level the field is actually showing (`colorL0`, the finest here).
+     *
+     * The blobs are ellipses, not circles: at the deep stop this block parks at, the field is ~50 world
+     * units wide but only ~13 tall (a 800x600 box of 6.3x18 cells), so a circular blob big enough to be
+     * interesting in x would run off the top and bottom and the "both endpoints visible" cases would
+     * stop being visible at all.
+     */
+    const HOME_X = 0,
+        NEXT_X = 9,
+        FAR_X = -600,
+        OTHER_X = 600
+    function localityGraph() {
+        const nodes: ReturnType<typeof sampleGraph>['nodes'] = []
+        const edges: ReturnType<typeof sampleGraph>['edges'] = []
+        // [prefix, centre x, member count, TOP-level community] — see the lopsided split above.
+        const blobs: [string, number, number, number][] = [
+            ['h', HOME_X, 6, 0],
+            ['x', NEXT_X, 5, 0],
+            ['f', FAR_X, 6, 0],
+            ['o', OTHER_X, 6, 1],
+        ]
+        blobs.forEach(([prefix, cx, n, top], b) => {
+            for (let k = 0; k < n; k++) {
+                const a = (k / n) * Math.PI * 2
+                const x = cx + Math.cos(a) * 4,
+                    y = Math.sin(a) * 2
+                nodes.push({
+                    id: `${prefix}${k}`,
+                    label: `note ${prefix}${k}`,
+                    kind: 'note' as const,
+                    position: [x, y, 0] as [number, number, number],
+                    position2d: [x, y] as [number, number],
+                    community: b,
+                    communityLabel: `Blob ${prefix}`,
+                    communityPath: [top, b],
+                    communityPathLabels: [`Top ${top}`, `Blob ${prefix}`],
+                })
+            }
+            for (let k = 1; k < n; k++)
+                edges.push({
+                    from: `${prefix}0`,
+                    to: `${prefix}${k}`,
+                    kind: 'link' as const,
+                })
+        })
+        // The community-less node: no `community`, no `communityPath` (the self/daemon/cron case, and any
+        // graph mode that never stamps one). It sits between HOME and NEXT so it is plainly on screen.
         nodes.push({
-          id: `${prefix}${k}`, label: `note ${prefix}${k}`, kind: "note" as const,
-          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-          community: b, communityLabel: `Blob ${prefix}`,
-          communityPath: [top, b], communityPathLabels: [`Top ${top}`, `Blob ${prefix}`],
-        });
-      }
-      for (let k = 1; k < n; k++) edges.push({ from: `${prefix}0`, to: `${prefix}${k}`, kind: "link" as const });
-    });
-    // The community-less node: no `community`, no `communityPath` (the self/daemon/cron case, and any
-    // graph mode that never stamps one). It sits between HOME and NEXT so it is plainly on screen.
-    nodes.push({
-      id: "u0", label: "note u0", kind: "note" as const,
-      position: [5, 0, 0] as [number, number, number], position2d: [5, 0] as [number, number],
-    } as (typeof nodes)[number]);
-    edges.push({ from: "h0", to: "x0", kind: "link" as const });   // cross-cluster, both ends visible
-    edges.push({ from: "h1", to: "f0", kind: "link" as const });   // one end visible, other cluster gone
-    edges.push({ from: "h2", to: "f1", kind: "link" as const });
-    edges.push({ from: "f2", to: "o0", kind: "link" as const });   // pure transit across the viewport
-    edges.push({ from: "f3", to: "o1", kind: "link" as const });
-    edges.push({ from: "u0", to: "f4", kind: "link" as const });   // no community → no backbone stand-in
-    return { nodes, edges };
-  }
-  /** The edges `localityGraph` builds, by name, so every assertion below names the case it means. */
-  const HOME_SPOKES = [["h0", "h1"], ["h0", "h2"], ["h0", "h3"], ["h0", "h4"], ["h0", "h5"]];
-  const NEXT_SPOKES = [["x0", "x1"], ["x0", "x2"], ["x0", "x3"], ["x0", "x4"]];
-  const BRIDGE = [["h0", "x0"]];
-  const NO_COMMUNITY = [["u0", "f4"]];
-  const REACHING_OFF = [["h1", "f0"], ["h2", "f1"]];
-  const TRANSITING = [["f2", "o0"], ["f3", "o1"]];
-  const OFFSCREEN_SPOKES = [
-    ["f0", "f1"], ["f0", "f2"], ["f0", "f3"], ["f0", "f4"], ["f0", "f5"],
-    ["o0", "o1"], ["o0", "o2"], ["o0", "o3"], ["o0", "o4"], ["o0", "o5"],
-  ];
-  const KEPT = [...HOME_SPOKES, ...NEXT_SPOKES, ...BRIDGE, ...NO_COMMUNITY];
-  const DROPPED = [...REACHING_OFF, ...TRANSITING, ...OFFSCREEN_SPOKES];
-  const ALL_EDGES = [...KEPT, ...DROPPED];
-
-  // colorBuf's fixed role slots (AsciiGraphRenderer.ts) — the member tier strokes C_EDGE, the
-  // hovered-incident tier C_ACCENT.
-  const C_ACCENT_SLOT = 8, C_EDGE_SLOT = 9;
-  interface GatePriv {
-    m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
-    nodes: { node: { id: string }; col: number; row: number; sx: number; sy: number; projValid: boolean }[];
-    colors: string[]; memberEdgeAlpha: number; inViewClusters: Set<number>;
-    W: number; H: number;
-  }
-  const gatePriv = (r: AsciiGraphRenderer) => r as unknown as GatePriv;
-
-  /** Which member edges, BY NAME, the field actually stroked this paint. Segments are matched back to
-   *  node pairs through the very geometry strokeEdges() draws them with (both endpoints' cell centres,
-   *  pulled back by the shared clearance via the separately-unit-tested `trimSegmentForClearance`), so
-   *  this reads the picture rather than any renderer bookkeeping — a gate that miscounted its own
-   *  stats while drawing the wrong lines could not pass. */
-  function strokedEdgeNames(priv: GatePriv, colors: string[] = [priv.colors[C_EDGE_SLOT]]): string[] {
-    const cx = (c: number) => priv.m.padX + c * priv.m.cellW + priv.m.cellW / 2;
-    const cy = (rw: number) => priv.m.padY + rw * priv.m.cellH + priv.m.cellH / 2;
-    const key = (ax: number, ay: number, bx: number, by: number) =>
-      [`${ax.toFixed(2)},${ay.toFixed(2)}`, `${bx.toFixed(2)},${by.toFixed(2)}`].sort().join(" -> ");
-    const wanted = new Map<string, string>();
-    for (const [a, b] of ALL_EDGES) {
-      const na = priv.nodes.find((n) => n.node.id === a)!, nb = priv.nodes.find((n) => n.node.id === b)!;
-      const [ax, ay, bx, by] = trimSegmentForClearance(cx(na.col), cy(na.row), cx(nb.col), cy(nb.row), 0.55 * priv.m.cellW);
-      wanted.set(key(ax, ay, bx, by), `${a}-${b}`);
+            id: 'u0',
+            label: 'note u0',
+            kind: 'note' as const,
+            position: [5, 0, 0] as [number, number, number],
+            position2d: [5, 0] as [number, number],
+        } as (typeof nodes)[number])
+        edges.push({ from: 'h0', to: 'x0', kind: 'link' as const }) // cross-cluster, both ends visible
+        edges.push({ from: 'h1', to: 'f0', kind: 'link' as const }) // one end visible, other cluster gone
+        edges.push({ from: 'h2', to: 'f1', kind: 'link' as const })
+        edges.push({ from: 'f2', to: 'o0', kind: 'link' as const }) // pure transit across the viewport
+        edges.push({ from: 'f3', to: 'o1', kind: 'link' as const })
+        edges.push({ from: 'u0', to: 'f4', kind: 'link' as const }) // no community → no backbone stand-in
+        return { nodes, edges }
     }
-    const out = new Set<string>();
-    // The member tier strokes in --graph-edge; the intra-cluster MESH strokes the same lines again in
-    // each cluster's own colour, and is deliberately NOT gated (it is a mid-AND-near band tier). Only
-    // the edge-coloured strokes answer "what did the member pass draw" — EXCEPT under a hover, where
-    // the incident tier strokes in --accent (an intentional deviation from the ported renderer, see
-    // strokeEdges()), which is why the colour list is a parameter rather than a constant: reading only
-    // --graph-edge would report a hovered node's own edges as missing.
-    for (const s of ctx.strokes.filter((st) => colors.includes(st.color))) {
-      for (const [ax, ay, bx, by] of s.segs) {
-        const name = wanted.get(key(ax, ay, bx, by));
-        if (name) out.add(name);
-      }
+    /** The edges `localityGraph` builds, by name, so every assertion below names the case it means. */
+    const HOME_SPOKES = [
+        ['h0', 'h1'],
+        ['h0', 'h2'],
+        ['h0', 'h3'],
+        ['h0', 'h4'],
+        ['h0', 'h5'],
+    ]
+    const NEXT_SPOKES = [
+        ['x0', 'x1'],
+        ['x0', 'x2'],
+        ['x0', 'x3'],
+        ['x0', 'x4'],
+    ]
+    const BRIDGE = [['h0', 'x0']]
+    const NO_COMMUNITY = [['u0', 'f4']]
+    const REACHING_OFF = [
+        ['h1', 'f0'],
+        ['h2', 'f1'],
+    ]
+    const TRANSITING = [
+        ['f2', 'o0'],
+        ['f3', 'o1'],
+    ]
+    const OFFSCREEN_SPOKES = [
+        ['f0', 'f1'],
+        ['f0', 'f2'],
+        ['f0', 'f3'],
+        ['f0', 'f4'],
+        ['f0', 'f5'],
+        ['o0', 'o1'],
+        ['o0', 'o2'],
+        ['o0', 'o3'],
+        ['o0', 'o4'],
+        ['o0', 'o5'],
+    ]
+    const KEPT = [...HOME_SPOKES, ...NEXT_SPOKES, ...BRIDGE, ...NO_COMMUNITY]
+    const DROPPED = [...REACHING_OFF, ...TRANSITING, ...OFFSCREEN_SPOKES]
+    const ALL_EDGES = [...KEPT, ...DROPPED]
+
+    // colorBuf's fixed role slots (AsciiGraphRenderer.ts) — the member tier strokes C_EDGE, the
+    // hovered-incident tier C_ACCENT.
+    const C_ACCENT_SLOT = 8,
+        C_EDGE_SLOT = 9
+    interface GatePriv {
+        m: {
+            cols: number
+            rows: number
+            cellW: number
+            cellH: number
+            padX: number
+            padY: number
+        }
+        nodes: {
+            node: { id: string }
+            col: number
+            row: number
+            sx: number
+            sy: number
+            projValid: boolean
+        }[]
+        colors: string[]
+        memberEdgeAlpha: number
+        inViewClusters: Set<number>
+        W: number
+        H: number
     }
-    return [...out].sort();
-  }
-  const names = (pairs: string[][]) => pairs.map(([a, b]) => `${a}-${b}`).sort();
+    const gatePriv = (r: AsciiGraphRenderer) => r as unknown as GatePriv
 
-  /** Centre on `ids`, park at a DEEP near-band stop, repaint once. `memberAlpha` is pinned at 1 from
-   *  t ≈ 0.75 all the way to 1, so 0.85 and "maximum zoom" are the same band as far as this gate is
-   *  concerned — 0.85 is used because it still leaves room on the field for two clusters at once,
-   *  which several cases below need. `frameSubset` alone would land at t ≈ 0.62, still short of the
-   *  band, so the resolution is set explicitly (the same private poke `parkAtT` uses above). */
-  const DEEP_T = 0.85;
-  const HOME_IDS = ["h0", "h1", "h2", "h3", "h4", "h5"];
-  const NEXT_IDS = ["x0", "x1", "x2", "x3", "x4"];
-  const FAR_IDS = ["f0", "f1", "f2", "f3", "f4", "f5"];
-  function parkDeepOn(r: AsciiGraphRenderer, ids: string[]) {
-    r.frameSubset(ids);
-    settle(400);
-    const cam = r as unknown as { res: number; goalRes: number; maxRes: number; dirty: boolean };
-    cam.res = cam.goalRes = resFromT(DEEP_T, cam.maxRes);
-    cam.dirty = true;
-    ctx.fills.length = 0;
-    ctx.strokes.length = 0;
-    frame(99999);
-  }
-  const zoomToNeighbourhood = (r: AsciiGraphRenderer) => parkDeepOn(r, [...HOME_IDS, ...NEXT_IDS]);
-
-  it("drops the lines transiting from clusters that are off screen, and keeps everything local", () => {
-    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
-    const priv = gatePriv(r);
-    // Before: at fit the far band owns the field and no member edge is drawn at all, so "the gate
-    // removed them" has to be measured at the deep stop, not here.
-    zoomToNeighbourhood(r);
-    // This really is the near band (member edges own the field) — asserted, not assumed, so a future
-    // retune of the band constants makes this test fail loudly rather than silently measure nothing.
-    expect(priv.memberEdgeAlpha).toBeGreaterThan(0.99);
-
-    // HOME and NEXT are what is on screen; FAR and OTHER are not. Read off the renderer's own
-    // per-frame roster, so the fixture's geometry claim is checked rather than trusted.
-    const onScreen = new Set(priv.nodes
-      .filter((n) => n.projValid && n.sx >= -40 && n.sx <= priv.W + 40 && n.sy >= -40 && n.sy <= priv.H + 40)
-      .map((n) => n.node.id));
-    expect([...onScreen].every((id) => id[0] === "h" || id[0] === "x" || id === "u0")).toBe(true);
-    expect(onScreen.has("h0")).toBe(true);
-    expect(onScreen.has("x0")).toBe(true);
-    expect(priv.inViewClusters.size).toBe(2);            // exactly HOME and NEXT — not `u0`, which has none
-
-    // THE PICTURE: HOME's spokes, NEXT's spokes, the one cross-cluster bridge between two visible
-    // glyphs, and the community-less edge nothing could stand in for. Nothing reaching off to FAR,
-    // and neither transiting FAR–OTHER line.
-    expect(strokedEdgeNames(priv)).toEqual(names(KEPT));
-    // Spelled out per case, so a failure says WHICH rule broke rather than "the set differs".
-    for (const n of names(REACHING_OFF)) expect(strokedEdgeNames(priv)).not.toContain(n);
-    for (const n of names(TRANSITING)) expect(strokedEdgeNames(priv)).not.toContain(n);
-    for (const n of names(OFFSCREEN_SPOKES)) expect(strokedEdgeNames(priv)).not.toContain(n);
-    // The community-less endpoint's edge, called out on its own: it reaches f4, whose cluster is off
-    // screen, and every OTHER edge doing that was dropped. It survives because `u0` has no community
-    // and so no hub-to-hub backbone line could ever represent this connection.
-    expect(strokedEdgeNames(priv)).toContain("u0-f4");
-
-    // ...and the transiting lines really did cross the frame before the gate removed them, rather
-    // than having been off-screen anyway (which the projection alone would have handled and this
-    // whole task would be pointless). A segment crosses the field if its endpoints straddle it in x
-    // while the crossing point sits inside the vertical span.
-    const f2 = priv.nodes.find((n) => n.node.id === "f2")!, o0 = priv.nodes.find((n) => n.node.id === "o0")!;
-    expect(f2.sx).toBeLessThan(0);
-    expect(o0.sx).toBeGreaterThan(priv.W);
-    const yAtMid = f2.sy + ((o0.sy - f2.sy) * (priv.W / 2 - f2.sx)) / (o0.sx - f2.sx);
-    expect(yAtMid).toBeGreaterThan(0);
-    expect(yAtMid).toBeLessThan(priv.H);
-    r.destroy();
-  });
-
-  it("counts what it dropped: the three-way split is a partition of the edges that reached the gate", () => {
-    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
-    zoomToNeighbourhood(r);
-    const s = r.computeStats();
-    // Nothing is thinned (25 edges << the 6000 budget) and every 2D node is projValid, so every edge
-    // in the fixture reached the gate — which is what makes the partition below total.
-    expect(s.edgesClassified + s.edgesTransitingDropped).toBe(ALL_EDGES.length);
-    expect(s.edgesIntraVisible + s.edgesCrossVisible).toBe(s.edgesClassified);
-    // HOME's 5 + NEXT's 4 spokes are intra; the h0–x0 bridge and the community-less u0–f4 are the
-    // cross-cluster survivors (`u0` shares a community with nobody, so it can never be intra).
-    expect(s.edgesIntraVisible).toBe(HOME_SPOKES.length + NEXT_SPOKES.length);
-    expect(s.edgesCrossVisible).toBe(BRIDGE.length + NO_COMMUNITY.length);
-    expect(s.edgesTransitingDropped).toBe(DROPPED.length);
-    r.destroy();
-  });
-
-  it("reads the hierarchy level the FIELD is showing, not the coarsest one", () => {
-    // FAR shares HOME's TOP-level community (the fixture's lopsided split, see its doc). A gate that
-    // asked "is Top 0 in view" would find it is — HOME and NEXT are both under it — and would keep
-    // `h1–f0` and all five of FAR's own spokes, none of which have anything on screen at the level the
-    // user is actually looking at. Only a gate reading the frame's DOMINANT level (`colorL0`, the
-    // finest at this stop, the same level the intra-cluster mesh and the node colours read) drops them.
-    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
-    const priv = gatePriv(r);
-    zoomToNeighbourhood(r);
-    // The two levels really do disagree here — otherwise this test proves nothing.
-    const topLevelOf = (id: string) => (id === "o0" || id[0] === "o" ? 1 : 0);
-    expect(topLevelOf("h1")).toBe(topLevelOf("f0"));
-    const drawn = strokedEdgeNames(priv);
-    expect(drawn).not.toContain("h1-f0");
-    for (const n of names(OFFSCREEN_SPOKES.filter(([a]) => a[0] === "f"))) expect(drawn).not.toContain(n);
-    r.destroy();
-  });
-
-  it("rebuilds the roster every frame — a cluster you have panned away from stops counting", () => {
-    // `inViewClusters` is ADDED to, never reassigned (the same reuse discipline as the stroke
-    // buckets), so without the unconditional clear at the top of rasterize() it accumulates: every
-    // cluster the camera ever passed over stays "in view" for the rest of the session, and the gate
-    // quietly stops gating. Fly from HOME to FAR at the same depth — the roster must SWAP.
-    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
-    const priv = gatePriv(r);
-    zoomToNeighbourhood(r);
-    expect(strokedEdgeNames(priv)).toContain("h0-h1");
-    expect(strokedEdgeNames(priv)).not.toContain("f0-f1");
-
-    parkDeepOn(r, FAR_IDS);
-    expect(priv.inViewClusters.size).toBe(1);            // FAR alone, not FAR ∪ everything before it
-    expect(strokedEdgeNames(priv)).toContain("f0-f1");   // ...FAR's own structure is what draws now
-    expect(strokedEdgeNames(priv)).not.toContain("h0-h1");
-    expect(strokedEdgeNames(priv)).not.toContain("h0-x0");
-    r.destroy();
-  });
-
-  it("counts a cluster whose only member on screen sits in the label pad — the padded viewport, not the grid's own bounds", () => {
-    // The roster is built with `inViewport(…, VIEWPORT_LABEL_PAD)` — deliberately the SAME predicate
-    // `layoutClusterNames` aggregates `clusterAgg` with, so "on screen" means one thing in this
-    // renderer rather than two. `NodeView.onGrid` is the nearby alternative and is strictly tighter
-    // (exact cell bounds, no pad); swapped in, a cluster hanging off the edge stops counting a little
-    // sooner and its own internal structure vanishes while its glyphs are still being drawn.
-    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
-    const priv = gatePriv(r);
-    zoomToNeighbourhood(r);
-    const home = () => priv.nodes.filter((n) => n.node.id[0] === "h");
-    // Slide HOME off the left edge until its RIGHTMOST member is barely inside the pad. Every HOME
-    // glyph is then off the grid, so the cluster's presence rests on the pad alone. Poking `panX` is
-    // exactly what a drag writes, and lets the offset be computed from the measured frame rather than
-    // guessed at through pointer coordinates.
-    const cam = r as unknown as { panX: number; dirty: boolean };
-    cam.panX -= Math.max(...home().map((n) => n.sx)) + 20;
-    cam.dirty = true;
-    ctx.strokes.length = 0;
-    frame(99999);
-
-    expect(home().every((n) => !n.onGrid)).toBe(true);                    // nothing on the grid...
-    const inPad = home().filter((n) => n.sx >= -40 && n.sx <= priv.W + 40);
-    expect(inPad.length).toBeGreaterThan(0);                              // ...but something in the pad
-    // ...so HOME still counts, and its own wiring still draws. On `onGrid` this list is empty.
-    expect(strokedEdgeNames(priv).filter((n) => n.startsWith("h0-h")).sort()).toEqual(names(HOME_SPOKES));
-    r.destroy();
-  });
-
-  it("a persistent HIGHLIGHT keeps its own edges, but a hover does not spare its neighbours' edges", () => {
-    // Two different exemptions with deliberately different reach.
-    //
-    // A search/daemon-list highlight is a selection the user is holding open, so an edge touching it
-    // is exempt: `f0`'s spokes come back even though FAR has nothing on screen.
-    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
-    const priv = gatePriv(r);
-    zoomToNeighbourhood(r);
-    expect(strokedEdgeNames(priv)).not.toContain("f0-f1");
-    r.highlightNodes(["f0"]);
-    ctx.strokes.length = 0;
-    frame(99999);
-    expect(strokedEdgeNames(priv)).toContain("f0-f1");
-    expect(strokedEdgeNames(priv)).toContain("h1-f0");
-    r.clearHighlight();
-    ctx.strokes.length = 0;
-    frame(99999);
-    expect(strokedEdgeNames(priv)).not.toContain("f0-f1");
-
-    // A HOVER is exempt only by STRICT INCIDENCE. `focusSet()` widens a hover to the hovered node's
-    // neighbours, and h1's neighbours include f0 — exempting on that widened set would drag f0's whole
-    // off-screen neighbourhood back onto the field, which is the same over-broad reach this loop's own
-    // dim/accent split records as a past bug.
-    const h1 = priv.nodes.find((n) => n.node.id === "h1")!;
-    ctx.strokes.length = 0;
-    window.dispatchEvent(new PointerEvent("pointermove", {
-      clientX: priv.m.padX + h1.col * priv.m.cellW + 1,
-      clientY: priv.m.padY + h1.row * priv.m.cellH + priv.m.cellH / 2,
-    }));
-    frame(99999);
-    expect((r as unknown as { hoveredId: string | null }).hoveredId).toBe("h1");
-    const both = [priv.colors[C_EDGE_SLOT], priv.colors[C_ACCENT_SLOT]];
-    expect(strokedEdgeNames(priv, both)).toContain("h1-f0");    // incident: back on the field
-    expect(strokedEdgeNames(priv, both)).not.toContain("f0-f1"); // its neighbour's own spokes: still gone
-    r.destroy();
-  });
-
-  it("never hides a relationship whose two ends are both on screen — the graph may not lie", () => {
-    // The h0–x0 bridge crosses a cluster boundary, and its endpoints are in two DIFFERENT communities.
-    // It survives for one reason only: both of them are on screen, so both communities are in view.
-    // This is the property the "≥1 visible member" predicate makes structural — under a share-based
-    // bar (clusterLabelThreshold's max(6, 1.5% of visible), say) HOME's 6 and NEXT's 5 members would
-    // both fail and this edge, between two glyphs the user is looking straight at, would vanish.
-    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
-    const priv = gatePriv(r);
-    zoomToNeighbourhood(r);
-    const h0 = priv.nodes.find((n) => n.node.id === "h0")!, x0 = priv.nodes.find((n) => n.node.id === "x0")!;
-    const visible = (n: typeof h0) => n.projValid && n.sx > 0 && n.sx < priv.W && n.sy > 0 && n.sy < priv.H;
-    expect(visible(h0)).toBe(true);
-    expect(visible(x0)).toBe(true);
-    expect(strokedEdgeNames(priv)).toContain("h0-x0");
-    // Stronger than "the bridge survived": EVERY edge of the fixture with two visible endpoints is
-    // drawn, so the property is asserted over the whole graph rather than one hand-picked pair.
-    for (const [a, b] of ALL_EDGES) {
-      const na = priv.nodes.find((n) => n.node.id === a)!, nb = priv.nodes.find((n) => n.node.id === b)!;
-      if (visible(na) && visible(nb)) expect(strokedEdgeNames(priv)).toContain(`${a}-${b}`);
+    /** Which member edges, BY NAME, the field actually stroked this paint. Segments are matched back to
+     *  node pairs through the very geometry strokeEdges() draws them with (both endpoints' cell centres,
+     *  pulled back by the shared clearance via the separately-unit-tested `trimSegmentForClearance`), so
+     *  this reads the picture rather than any renderer bookkeeping — a gate that miscounted its own
+     *  stats while drawing the wrong lines could not pass. */
+    function strokedEdgeNames(
+        priv: GatePriv,
+        colors: string[] = [priv.colors[C_EDGE_SLOT]],
+    ): string[] {
+        const cx = (c: number) =>
+            priv.m.padX + c * priv.m.cellW + priv.m.cellW / 2
+        const cy = (rw: number) =>
+            priv.m.padY + rw * priv.m.cellH + priv.m.cellH / 2
+        const key = (ax: number, ay: number, bx: number, by: number) =>
+            [
+                `${ax.toFixed(2)},${ay.toFixed(2)}`,
+                `${bx.toFixed(2)},${by.toFixed(2)}`,
+            ]
+                .sort()
+                .join(' -> ')
+        const wanted = new Map<string, string>()
+        for (const [a, b] of ALL_EDGES) {
+            const na = priv.nodes.find(n => n.node.id === a)!,
+                nb = priv.nodes.find(n => n.node.id === b)!
+            const [ax, ay, bx, by] = trimSegmentForClearance(
+                cx(na.col),
+                cy(na.row),
+                cx(nb.col),
+                cy(nb.row),
+                0.55 * priv.m.cellW,
+            )
+            wanted.set(key(ax, ay, bx, by), `${a}-${b}`)
+        }
+        const out = new Set<string>()
+        // The member tier strokes in --graph-edge; the intra-cluster MESH strokes the same lines again in
+        // each cluster's own colour, and is deliberately NOT gated (it is a mid-AND-near band tier). Only
+        // the edge-coloured strokes answer "what did the member pass draw" — EXCEPT under a hover, where
+        // the incident tier strokes in --accent (an intentional deviation from the ported renderer, see
+        // strokeEdges()), which is why the colour list is a parameter rather than a constant: reading only
+        // --graph-edge would report a hovered node's own edges as missing.
+        for (const s of ctx.strokes.filter(st => colors.includes(st.color))) {
+            for (const [ax, ay, bx, by] of s.segs) {
+                const name = wanted.get(key(ax, ay, bx, by))
+                if (name) out.add(name)
+            }
+        }
+        return [...out].sort()
     }
-    r.destroy();
-  });
+    const names = (pairs: string[][]) =>
+        pairs.map(([a, b]) => `${a}-${b}`).sort()
 
-  it("hovering a node still shows every edge it has, including the ones the gate would drop", () => {
-    // Hover is the user asking this exact node what it connects to. `h1–f0` reaches a cluster with
-    // nothing on screen and is dropped on an idle frame (asserted in the first test); with h1 hovered
-    // it must come back, or hover answers the question wrongly.
-    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
-    const priv = gatePriv(r);
-    zoomToNeighbourhood(r);
-    expect(strokedEdgeNames(priv, [priv.colors[C_EDGE_SLOT], priv.colors[C_ACCENT_SLOT]])).not.toContain("h1-f0");
-
-    const h1 = priv.nodes.find((n) => n.node.id === "h1")!;
-    ctx.strokes.length = 0;
-    window.dispatchEvent(new PointerEvent("pointermove", {
-      clientX: priv.m.padX + h1.col * priv.m.cellW + 1,
-      clientY: priv.m.padY + h1.row * priv.m.cellH + priv.m.cellH / 2,
-    }));
-    frame(99999);
-    // The hover landed on h1 (a mis-aimed pointer would make the rest of this vacuous)...
-    expect((r as unknown as { hoveredId: string | null }).hoveredId).toBe("h1");
-    // ...and BOTH of h1's edges are on the field: its local spoke and the one reaching off screen.
-    // Hovered-incident edges stroke in --accent, not --graph-edge, so both tiers are read here.
-    const drawn = strokedEdgeNames(priv, [priv.colors[C_EDGE_SLOT], priv.colors[C_ACCENT_SLOT]]);
-    expect(drawn).toContain("h1-f0");
-    expect(drawn).toContain("h0-h1");
-    r.destroy();
-  });
-
-  it("keeps every edge where no backbone could stand in for the ones it would drop", () => {
-    // The gate's whole justification is that a between-cluster connection it removes is still told by
-    // the hub-to-hub backbone. Turn the band ladder off — "local" mode, a community-less graph, 3D —
-    // and there is no backbone at all, so nothing may be dropped. Same fixture, same camera, so the
-    // ONLY difference is the ladder.
-    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: false });
-    const priv = gatePriv(r);
-    zoomToNeighbourhood(r);
-    expect(priv.inViewClusters.size).toBe(0);            // the roster is never even built
-    const s = r.computeStats();
-    expect(s.edgesTransitingDropped).toBe(0);
-    expect(s.edgesClassified).toBe(ALL_EDGES.length);
-    expect(strokedEdgeNames(priv)).toEqual(ALL_EDGES.map(([a, b]) => `${a}-${b}`).sort());
-    r.destroy();
-  });
-
-  it("changes nothing the FAR or MID band DRAWS — this is a near-band change only", () => {
-    // The between-cluster story at mid zoom is settled design (backbone.ts's three-band header): the
-    // backbone owns it. So nothing with INK on the field above the near band may move.
-    //
-    // Note the shape of the claim. The gate is not band-scoped (see rasterize()) — at mid zoom it
-    // does classify fewer edges, because on this deliberately 1200-unit-wide fixture even mid zoom
-    // leaves FAR and OTHER off screen. That is invisible: `memberEdgeAlpha` is 0 there, so not one of
-    // those edges was going to be stroked either way. What WOULD have been visible is the
-    // intra-cluster MESH, a mid-AND-near tier which is bucketed BEFORE the gate for exactly this
-    // reason — so the assertion is that the mesh still carries every intra-cluster edge in the graph,
-    // including all ten belonging to the two clusters the gate considers off screen.
-    const { r } = mountRenderer("2d", localityGraph(), { showLodMasses: true });
-    const priv = gatePriv(r) as unknown as GatePriv & { cellEntity: Int32Array };
-    // FAR band (fit): masses own the field, and no member edge is classified at all because the leaf
-    // pass does not even run — so there is nothing for the gate to have touched.
-    expect([...priv.cellEntity].some((v) => v >= 0)).toBe(true);
-    expect(r.computeStats().edgesTransitingDropped).toBe(0);
-    expect(r.computeStats().edgesClassified).toBe(0);
-
-    // MID band. (`parkAtT` lives in the band block above; re-derived here off the same public ladder
-    // so this block stands on its own.)
-    const cam = r as unknown as { res: number; goalRes: number; maxRes: number; dirty: boolean };
-    cam.res = cam.goalRes = resFromT(0.5, cam.maxRes);
-    cam.dirty = true;
-    ctx.strokes.length = 0;
-    frame(99999);
-    expect(priv.memberEdgeAlpha).toBe(0);                // genuinely the mid band...
-    expect(priv.inViewClusters.size).toBe(2);            // ...and the gate IS live here, dropping...
-    expect(r.computeStats().edgesTransitingDropped).toBeGreaterThan(0);   // ...edges nothing would draw.
-    // Not one member line on the field, gate or no gate — `memberEdgeAlpha === 0` makes strokeEdges()
-    // return before its member passes (`base <= 0.004`), so every edge-coloured stroke here is a GROUP
-    // line. One of them is unavoidably ambiguous to a geometric matcher: HOME's and NEXT's hubs ARE h0
-    // and x0, so their hub-to-hub backbone line lands on exactly the two cells the h0–x0 member edge
-    // would. Every other member edge — every spoke, everything reaching off, everything transiting —
-    // is absent, which is the part that can be told apart.
-    expect(strokedEdgeNames(priv)).toEqual(["h0-x0"]);
-    for (const n of names([...HOME_SPOKES, ...NEXT_SPOKES, ...REACHING_OFF, ...TRANSITING, ...OFFSCREEN_SPOKES])) {
-      expect(strokedEdgeNames(priv)).not.toContain(n);
+    /** Centre on `ids`, park at a DEEP near-band stop, repaint once. `memberAlpha` is pinned at 1 from
+     *  t ≈ 0.75 all the way to 1, so 0.85 and "maximum zoom" are the same band as far as this gate is
+     *  concerned — 0.85 is used because it still leaves room on the field for two clusters at once,
+     *  which several cases below need. `frameSubset` alone would land at t ≈ 0.62, still short of the
+     *  band, so the resolution is set explicitly (the same private poke `parkAtT` uses above). */
+    const DEEP_T = 0.85
+    const HOME_IDS = ['h0', 'h1', 'h2', 'h3', 'h4', 'h5']
+    const NEXT_IDS = ['x0', 'x1', 'x2', 'x3', 'x4']
+    const FAR_IDS = ['f0', 'f1', 'f2', 'f3', 'f4', 'f5']
+    function parkDeepOn(r: AsciiGraphRenderer, ids: string[]) {
+        r.frameSubset(ids)
+        settle(400)
+        const cam = r as unknown as {
+            res: number
+            goalRes: number
+            maxRes: number
+            dirty: boolean
+        }
+        cam.res = cam.goalRes = resFromT(DEEP_T, cam.maxRes)
+        cam.dirty = true
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame(99999)
     }
-    // And the mesh is whole: all 19 intra-cluster spokes, INCLUDING FAR's and OTHER's ten, whose
-    // clusters the gate has already ruled off screen. Move the mesh bucketing below the gate and this
-    // drops to 9 — the mid band silently losing two clusters' worth of body.
-    const meshSegs = ctx.strokes.filter((s) => s.color !== priv.colors[C_EDGE_SLOT]).flatMap((s) => s.segs);
-    expect(meshSegs.length).toBe(HOME_SPOKES.length + NEXT_SPOKES.length + OFFSCREEN_SPOKES.length);
-    r.destroy();
-  });
-});
+    const zoomToNeighbourhood = (r: AsciiGraphRenderer) =>
+        parkDeepOn(r, [...HOME_IDS, ...NEXT_IDS])
+
+    it('drops the lines transiting from clusters that are off screen, and keeps everything local', () => {
+        const { r } = mountRenderer('2d', localityGraph(), {
+            showLodMasses: true,
+        })
+        const priv = gatePriv(r)
+        // Before: at fit the far band owns the field and no member edge is drawn at all, so "the gate
+        // removed them" has to be measured at the deep stop, not here.
+        zoomToNeighbourhood(r)
+        // This really is the near band (member edges own the field) — asserted, not assumed, so a future
+        // retune of the band constants makes this test fail loudly rather than silently measure nothing.
+        expect(priv.memberEdgeAlpha).toBeGreaterThan(0.99)
+
+        // HOME and NEXT are what is on screen; FAR and OTHER are not. Read off the renderer's own
+        // per-frame roster, so the fixture's geometry claim is checked rather than trusted.
+        const onScreen = new Set(
+            priv.nodes
+                .filter(
+                    n =>
+                        n.projValid &&
+                        n.sx >= -40 &&
+                        n.sx <= priv.W + 40 &&
+                        n.sy >= -40 &&
+                        n.sy <= priv.H + 40,
+                )
+                .map(n => n.node.id),
+        )
+        expect(
+            [...onScreen].every(
+                id => id[0] === 'h' || id[0] === 'x' || id === 'u0',
+            ),
+        ).toBe(true)
+        expect(onScreen.has('h0')).toBe(true)
+        expect(onScreen.has('x0')).toBe(true)
+        expect(priv.inViewClusters.size).toBe(2) // exactly HOME and NEXT — not `u0`, which has none
+
+        // THE PICTURE: HOME's spokes, NEXT's spokes, the one cross-cluster bridge between two visible
+        // glyphs, and the community-less edge nothing could stand in for. Nothing reaching off to FAR,
+        // and neither transiting FAR–OTHER line.
+        expect(strokedEdgeNames(priv)).toEqual(names(KEPT))
+        // Spelled out per case, so a failure says WHICH rule broke rather than "the set differs".
+        for (const n of names(REACHING_OFF))
+            expect(strokedEdgeNames(priv)).not.toContain(n)
+        for (const n of names(TRANSITING))
+            expect(strokedEdgeNames(priv)).not.toContain(n)
+        for (const n of names(OFFSCREEN_SPOKES))
+            expect(strokedEdgeNames(priv)).not.toContain(n)
+        // The community-less endpoint's edge, called out on its own: it reaches f4, whose cluster is off
+        // screen, and every OTHER edge doing that was dropped. It survives because `u0` has no community
+        // and so no hub-to-hub backbone line could ever represent this connection.
+        expect(strokedEdgeNames(priv)).toContain('u0-f4')
+
+        // ...and the transiting lines really did cross the frame before the gate removed them, rather
+        // than having been off-screen anyway (which the projection alone would have handled and this
+        // whole task would be pointless). A segment crosses the field if its endpoints straddle it in x
+        // while the crossing point sits inside the vertical span.
+        const f2 = priv.nodes.find(n => n.node.id === 'f2')!,
+            o0 = priv.nodes.find(n => n.node.id === 'o0')!
+        expect(f2.sx).toBeLessThan(0)
+        expect(o0.sx).toBeGreaterThan(priv.W)
+        const yAtMid =
+            f2.sy + ((o0.sy - f2.sy) * (priv.W / 2 - f2.sx)) / (o0.sx - f2.sx)
+        expect(yAtMid).toBeGreaterThan(0)
+        expect(yAtMid).toBeLessThan(priv.H)
+        r.destroy()
+    })
+
+    it('counts what it dropped: the three-way split is a partition of the edges that reached the gate', () => {
+        const { r } = mountRenderer('2d', localityGraph(), {
+            showLodMasses: true,
+        })
+        zoomToNeighbourhood(r)
+        const s = r.computeStats()
+        // Nothing is thinned (25 edges << the 6000 budget) and every 2D node is projValid, so every edge
+        // in the fixture reached the gate — which is what makes the partition below total.
+        expect(s.edgesClassified + s.edgesTransitingDropped).toBe(
+            ALL_EDGES.length,
+        )
+        expect(s.edgesIntraVisible + s.edgesCrossVisible).toBe(
+            s.edgesClassified,
+        )
+        // HOME's 5 + NEXT's 4 spokes are intra; the h0–x0 bridge and the community-less u0–f4 are the
+        // cross-cluster survivors (`u0` shares a community with nobody, so it can never be intra).
+        expect(s.edgesIntraVisible).toBe(
+            HOME_SPOKES.length + NEXT_SPOKES.length,
+        )
+        expect(s.edgesCrossVisible).toBe(BRIDGE.length + NO_COMMUNITY.length)
+        expect(s.edgesTransitingDropped).toBe(DROPPED.length)
+        r.destroy()
+    })
+
+    it('reads the hierarchy level the FIELD is showing, not the coarsest one', () => {
+        // FAR shares HOME's TOP-level community (the fixture's lopsided split, see its doc). A gate that
+        // asked "is Top 0 in view" would find it is — HOME and NEXT are both under it — and would keep
+        // `h1–f0` and all five of FAR's own spokes, none of which have anything on screen at the level the
+        // user is actually looking at. Only a gate reading the frame's DOMINANT level (`colorL0`, the
+        // finest at this stop, the same level the intra-cluster mesh and the node colours read) drops them.
+        const { r } = mountRenderer('2d', localityGraph(), {
+            showLodMasses: true,
+        })
+        const priv = gatePriv(r)
+        zoomToNeighbourhood(r)
+        // The two levels really do disagree here — otherwise this test proves nothing.
+        const topLevelOf = (id: string) =>
+            id === 'o0' || id[0] === 'o' ? 1 : 0
+        expect(topLevelOf('h1')).toBe(topLevelOf('f0'))
+        const drawn = strokedEdgeNames(priv)
+        expect(drawn).not.toContain('h1-f0')
+        for (const n of names(OFFSCREEN_SPOKES.filter(([a]) => a[0] === 'f')))
+            expect(drawn).not.toContain(n)
+        r.destroy()
+    })
+
+    it('rebuilds the roster every frame — a cluster you have panned away from stops counting', () => {
+        // `inViewClusters` is ADDED to, never reassigned (the same reuse discipline as the stroke
+        // buckets), so without the unconditional clear at the top of rasterize() it accumulates: every
+        // cluster the camera ever passed over stays "in view" for the rest of the session, and the gate
+        // quietly stops gating. Fly from HOME to FAR at the same depth — the roster must SWAP.
+        const { r } = mountRenderer('2d', localityGraph(), {
+            showLodMasses: true,
+        })
+        const priv = gatePriv(r)
+        zoomToNeighbourhood(r)
+        expect(strokedEdgeNames(priv)).toContain('h0-h1')
+        expect(strokedEdgeNames(priv)).not.toContain('f0-f1')
+
+        parkDeepOn(r, FAR_IDS)
+        expect(priv.inViewClusters.size).toBe(1) // FAR alone, not FAR ∪ everything before it
+        expect(strokedEdgeNames(priv)).toContain('f0-f1') // ...FAR's own structure is what draws now
+        expect(strokedEdgeNames(priv)).not.toContain('h0-h1')
+        expect(strokedEdgeNames(priv)).not.toContain('h0-x0')
+        r.destroy()
+    })
+
+    it("counts a cluster whose only member on screen sits in the label pad — the padded viewport, not the grid's own bounds", () => {
+        // The roster is built with `inViewport(…, VIEWPORT_LABEL_PAD)` — deliberately the SAME predicate
+        // `layoutClusterNames` aggregates `clusterAgg` with, so "on screen" means one thing in this
+        // renderer rather than two. `NodeView.onGrid` is the nearby alternative and is strictly tighter
+        // (exact cell bounds, no pad); swapped in, a cluster hanging off the edge stops counting a little
+        // sooner and its own internal structure vanishes while its glyphs are still being drawn.
+        const { r } = mountRenderer('2d', localityGraph(), {
+            showLodMasses: true,
+        })
+        const priv = gatePriv(r)
+        zoomToNeighbourhood(r)
+        const home = () => priv.nodes.filter(n => n.node.id[0] === 'h')
+        // Slide HOME off the left edge until its RIGHTMOST member is barely inside the pad. Every HOME
+        // glyph is then off the grid, so the cluster's presence rests on the pad alone. Poking `panX` is
+        // exactly what a drag writes, and lets the offset be computed from the measured frame rather than
+        // guessed at through pointer coordinates.
+        const cam = r as unknown as { panX: number; dirty: boolean }
+        cam.panX -= Math.max(...home().map(n => n.sx)) + 20
+        cam.dirty = true
+        ctx.strokes.length = 0
+        frame(99999)
+
+        expect(home().every(n => !n.onGrid)).toBe(true) // nothing on the grid...
+        const inPad = home().filter(n => n.sx >= -40 && n.sx <= priv.W + 40)
+        expect(inPad.length).toBeGreaterThan(0) // ...but something in the pad
+        // ...so HOME still counts, and its own wiring still draws. On `onGrid` this list is empty.
+        expect(
+            strokedEdgeNames(priv)
+                .filter(n => n.startsWith('h0-h'))
+                .sort(),
+        ).toEqual(names(HOME_SPOKES))
+        r.destroy()
+    })
+
+    it("a persistent HIGHLIGHT keeps its own edges, but a hover does not spare its neighbours' edges", () => {
+        // Two different exemptions with deliberately different reach.
+        //
+        // A search/daemon-list highlight is a selection the user is holding open, so an edge touching it
+        // is exempt: `f0`'s spokes come back even though FAR has nothing on screen.
+        const { r } = mountRenderer('2d', localityGraph(), {
+            showLodMasses: true,
+        })
+        const priv = gatePriv(r)
+        zoomToNeighbourhood(r)
+        expect(strokedEdgeNames(priv)).not.toContain('f0-f1')
+        r.highlightNodes(['f0'])
+        ctx.strokes.length = 0
+        frame(99999)
+        expect(strokedEdgeNames(priv)).toContain('f0-f1')
+        expect(strokedEdgeNames(priv)).toContain('h1-f0')
+        r.clearHighlight()
+        ctx.strokes.length = 0
+        frame(99999)
+        expect(strokedEdgeNames(priv)).not.toContain('f0-f1')
+
+        // A HOVER is exempt only by STRICT INCIDENCE. `focusSet()` widens a hover to the hovered node's
+        // neighbours, and h1's neighbours include f0 — exempting on that widened set would drag f0's whole
+        // off-screen neighbourhood back onto the field, which is the same over-broad reach this loop's own
+        // dim/accent split records as a past bug.
+        const h1 = priv.nodes.find(n => n.node.id === 'h1')!
+        ctx.strokes.length = 0
+        window.dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: priv.m.padX + h1.col * priv.m.cellW + 1,
+                clientY: priv.m.padY + h1.row * priv.m.cellH + priv.m.cellH / 2,
+            }),
+        )
+        frame(99999)
+        expect((r as unknown as { hoveredId: string | null }).hoveredId).toBe(
+            'h1',
+        )
+        const both = [priv.colors[C_EDGE_SLOT], priv.colors[C_ACCENT_SLOT]]
+        expect(strokedEdgeNames(priv, both)).toContain('h1-f0') // incident: back on the field
+        expect(strokedEdgeNames(priv, both)).not.toContain('f0-f1') // its neighbour's own spokes: still gone
+        r.destroy()
+    })
+
+    it('never hides a relationship whose two ends are both on screen — the graph may not lie', () => {
+        // The h0–x0 bridge crosses a cluster boundary, and its endpoints are in two DIFFERENT communities.
+        // It survives for one reason only: both of them are on screen, so both communities are in view.
+        // This is the property the "≥1 visible member" predicate makes structural — under a share-based
+        // bar (clusterLabelThreshold's max(6, 1.5% of visible), say) HOME's 6 and NEXT's 5 members would
+        // both fail and this edge, between two glyphs the user is looking straight at, would vanish.
+        const { r } = mountRenderer('2d', localityGraph(), {
+            showLodMasses: true,
+        })
+        const priv = gatePriv(r)
+        zoomToNeighbourhood(r)
+        const h0 = priv.nodes.find(n => n.node.id === 'h0')!,
+            x0 = priv.nodes.find(n => n.node.id === 'x0')!
+        const visible = (n: typeof h0) =>
+            n.projValid &&
+            n.sx > 0 &&
+            n.sx < priv.W &&
+            n.sy > 0 &&
+            n.sy < priv.H
+        expect(visible(h0)).toBe(true)
+        expect(visible(x0)).toBe(true)
+        expect(strokedEdgeNames(priv)).toContain('h0-x0')
+        // Stronger than "the bridge survived": EVERY edge of the fixture with two visible endpoints is
+        // drawn, so the property is asserted over the whole graph rather than one hand-picked pair.
+        for (const [a, b] of ALL_EDGES) {
+            const na = priv.nodes.find(n => n.node.id === a)!,
+                nb = priv.nodes.find(n => n.node.id === b)!
+            if (visible(na) && visible(nb))
+                expect(strokedEdgeNames(priv)).toContain(`${a}-${b}`)
+        }
+        r.destroy()
+    })
+
+    it('hovering a node still shows every edge it has, including the ones the gate would drop', () => {
+        // Hover is the user asking this exact node what it connects to. `h1–f0` reaches a cluster with
+        // nothing on screen and is dropped on an idle frame (asserted in the first test); with h1 hovered
+        // it must come back, or hover answers the question wrongly.
+        const { r } = mountRenderer('2d', localityGraph(), {
+            showLodMasses: true,
+        })
+        const priv = gatePriv(r)
+        zoomToNeighbourhood(r)
+        expect(
+            strokedEdgeNames(priv, [
+                priv.colors[C_EDGE_SLOT],
+                priv.colors[C_ACCENT_SLOT],
+            ]),
+        ).not.toContain('h1-f0')
+
+        const h1 = priv.nodes.find(n => n.node.id === 'h1')!
+        ctx.strokes.length = 0
+        window.dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: priv.m.padX + h1.col * priv.m.cellW + 1,
+                clientY: priv.m.padY + h1.row * priv.m.cellH + priv.m.cellH / 2,
+            }),
+        )
+        frame(99999)
+        // The hover landed on h1 (a mis-aimed pointer would make the rest of this vacuous)...
+        expect((r as unknown as { hoveredId: string | null }).hoveredId).toBe(
+            'h1',
+        )
+        // ...and BOTH of h1's edges are on the field: its local spoke and the one reaching off screen.
+        // Hovered-incident edges stroke in --accent, not --graph-edge, so both tiers are read here.
+        const drawn = strokedEdgeNames(priv, [
+            priv.colors[C_EDGE_SLOT],
+            priv.colors[C_ACCENT_SLOT],
+        ])
+        expect(drawn).toContain('h1-f0')
+        expect(drawn).toContain('h0-h1')
+        r.destroy()
+    })
+
+    it('keeps every edge where no backbone could stand in for the ones it would drop', () => {
+        // The gate's whole justification is that a between-cluster connection it removes is still told by
+        // the hub-to-hub backbone. Turn the band ladder off — "local" mode, a community-less graph, 3D —
+        // and there is no backbone at all, so nothing may be dropped. Same fixture, same camera, so the
+        // ONLY difference is the ladder.
+        const { r } = mountRenderer('2d', localityGraph(), {
+            showLodMasses: false,
+        })
+        const priv = gatePriv(r)
+        zoomToNeighbourhood(r)
+        expect(priv.inViewClusters.size).toBe(0) // the roster is never even built
+        const s = r.computeStats()
+        expect(s.edgesTransitingDropped).toBe(0)
+        expect(s.edgesClassified).toBe(ALL_EDGES.length)
+        expect(strokedEdgeNames(priv)).toEqual(
+            ALL_EDGES.map(([a, b]) => `${a}-${b}`).sort(),
+        )
+        r.destroy()
+    })
+
+    it('changes nothing the FAR or MID band DRAWS — this is a near-band change only', () => {
+        // The between-cluster story at mid zoom is settled design (backbone.ts's three-band header): the
+        // backbone owns it. So nothing with INK on the field above the near band may move.
+        //
+        // Note the shape of the claim. The gate is not band-scoped (see rasterize()) — at mid zoom it
+        // does classify fewer edges, because on this deliberately 1200-unit-wide fixture even mid zoom
+        // leaves FAR and OTHER off screen. That is invisible: `memberEdgeAlpha` is 0 there, so not one of
+        // those edges was going to be stroked either way. What WOULD have been visible is the
+        // intra-cluster MESH, a mid-AND-near tier which is bucketed BEFORE the gate for exactly this
+        // reason — so the assertion is that the mesh still carries every intra-cluster edge in the graph,
+        // including all ten belonging to the two clusters the gate considers off screen.
+        const { r } = mountRenderer('2d', localityGraph(), {
+            showLodMasses: true,
+        })
+        const priv = gatePriv(r) as unknown as GatePriv & {
+            cellEntity: Int32Array
+        }
+        // FAR band (fit): masses own the field, and no member edge is classified at all because the leaf
+        // pass does not even run — so there is nothing for the gate to have touched.
+        expect([...priv.cellEntity].some(v => v >= 0)).toBe(true)
+        expect(r.computeStats().edgesTransitingDropped).toBe(0)
+        expect(r.computeStats().edgesClassified).toBe(0)
+
+        // MID band. (`parkAtT` lives in the band block above; re-derived here off the same public ladder
+        // so this block stands on its own.)
+        const cam = r as unknown as {
+            res: number
+            goalRes: number
+            maxRes: number
+            dirty: boolean
+        }
+        cam.res = cam.goalRes = resFromT(0.5, cam.maxRes)
+        cam.dirty = true
+        ctx.strokes.length = 0
+        frame(99999)
+        expect(priv.memberEdgeAlpha).toBe(0) // genuinely the mid band...
+        expect(priv.inViewClusters.size).toBe(2) // ...and the gate IS live here, dropping...
+        expect(r.computeStats().edgesTransitingDropped).toBeGreaterThan(0) // ...edges nothing would draw.
+        // Not one member line on the field, gate or no gate — `memberEdgeAlpha === 0` makes strokeEdges()
+        // return before its member passes (`base <= 0.004`), so every edge-coloured stroke here is a GROUP
+        // line. One of them is unavoidably ambiguous to a geometric matcher: HOME's and NEXT's hubs ARE h0
+        // and x0, so their hub-to-hub backbone line lands on exactly the two cells the h0–x0 member edge
+        // would. Every other member edge — every spoke, everything reaching off, everything transiting —
+        // is absent, which is the part that can be told apart.
+        expect(strokedEdgeNames(priv)).toEqual(['h0-x0'])
+        for (const n of names([
+            ...HOME_SPOKES,
+            ...NEXT_SPOKES,
+            ...REACHING_OFF,
+            ...TRANSITING,
+            ...OFFSCREEN_SPOKES,
+        ])) {
+            expect(strokedEdgeNames(priv)).not.toContain(n)
+        }
+        // And the mesh is whole: all 19 intra-cluster spokes, INCLUDING FAR's and OTHER's ten, whose
+        // clusters the gate has already ruled off screen. Move the mesh bucketing below the gate and this
+        // drops to 9 — the mid band silently losing two clusters' worth of body.
+        const meshSegs = ctx.strokes
+            .filter(s => s.color !== priv.colors[C_EDGE_SLOT])
+            .flatMap(s => s.segs)
+        expect(meshSegs.length).toBe(
+            HOME_SPOKES.length + NEXT_SPOKES.length + OFFSCREEN_SPOKES.length,
+        )
+        r.destroy()
+    })
+})
 
 /**
  * A LABEL MUST NOT ERASE THE FIELD BEHIND IT (Task 21).
@@ -3372,181 +4602,233 @@ describe("the near band draws only the neighbourhood on screen (Task 19)", () =>
  * point at many angles, with a long forced label lying along the hub's own row.
  */
 describe("a label never erases the field behind it (Task 21 — 'it splits')", () => {
-  /** One community; a hub with spokes at fixed angles, several of them SHALLOW so they run along
-   *  the hub's own label row for a long way (the flat cut), plus steeper ones just above it (the
-   *  wedge). Radius is uniform so the star is unambiguous, and the label is long by construction
-   *  (the hub's own name), which is what makes the plate wide. */
-  function starGraph() {
-    const DEGS = [0, 6, 12, 20, 32, 48, 70, 90, 118, 150, 180, 210, 250, 290, 320, 340, 348, 354];
-    type N = {
-      id: string; label: string; kind: "note"; position: [number, number, number];
-      position2d: [number, number]; community: number; communityLabel: string;
-    };
-    const at = (id: string, label: string, x: number, y: number): N => ({
-      id, label, kind: "note", position: [x, y, 0], position2d: [x, y], community: 0, communityLabel: "Star",
-    });
-    const nodes: N[] = [at("hub", "Violent Acts and Urban Space", 0, 0)];
-    const edges: { from: string; to: string; kind: "link" }[] = [];
-    DEGS.forEach((d, i) => {
-      const a = (d * Math.PI) / 180;
-      nodes.push(at(`s${i}`, `spoke ${i}`, Math.cos(a) * 90, Math.sin(a) * 90));
-      edges.push({ from: "hub", to: `s${i}`, kind: "link" });
-    });
-    // CLOSE-IN NEIGHBOURS along +x, i.e. along the row the hub's own label is placed on. At the near
-    // stop the outer ring is ~1600px out, so these land in the label's first ~200px — they are what
-    // puts FIELD GLYPHS under the name's cells, which is the other half of what the opaque plate used
-    // to cover and what the "still separates every name" A/B measures. Without them that test is
-    // vacuous (it passed with the glyph suppression deleted, which is how this was caught).
-    for (let k = 0; k < 14; k++) {
-      nodes.push(at(`c${k}`, `close ${k}`, 1.5 + k * 0.8, 0));
-      edges.push({ from: "hub", to: `c${k}`, kind: "link" });
+    /** One community; a hub with spokes at fixed angles, several of them SHALLOW so they run along
+     *  the hub's own label row for a long way (the flat cut), plus steeper ones just above it (the
+     *  wedge). Radius is uniform so the star is unambiguous, and the label is long by construction
+     *  (the hub's own name), which is what makes the plate wide. */
+    function starGraph() {
+        const DEGS = [
+            0, 6, 12, 20, 32, 48, 70, 90, 118, 150, 180, 210, 250, 290, 320,
+            340, 348, 354,
+        ]
+        type N = {
+            id: string
+            label: string
+            kind: 'note'
+            position: [number, number, number]
+            position2d: [number, number]
+            community: number
+            communityLabel: string
+        }
+        const at = (id: string, label: string, x: number, y: number): N => ({
+            id,
+            label,
+            kind: 'note',
+            position: [x, y, 0],
+            position2d: [x, y],
+            community: 0,
+            communityLabel: 'Star',
+        })
+        const nodes: N[] = [at('hub', 'Violent Acts and Urban Space', 0, 0)]
+        const edges: { from: string; to: string; kind: 'link' }[] = []
+        DEGS.forEach((d, i) => {
+            const a = (d * Math.PI) / 180
+            nodes.push(
+                at(`s${i}`, `spoke ${i}`, Math.cos(a) * 90, Math.sin(a) * 90),
+            )
+            edges.push({ from: 'hub', to: `s${i}`, kind: 'link' })
+        })
+        // CLOSE-IN NEIGHBOURS along +x, i.e. along the row the hub's own label is placed on. At the near
+        // stop the outer ring is ~1600px out, so these land in the label's first ~200px — they are what
+        // puts FIELD GLYPHS under the name's cells, which is the other half of what the opaque plate used
+        // to cover and what the "still separates every name" A/B measures. Without them that test is
+        // vacuous (it passed with the glyph suppression deleted, which is how this was caught).
+        for (let k = 0; k < 14; k++) {
+            nodes.push(at(`c${k}`, `close ${k}`, 1.5 + k * 0.8, 0))
+            edges.push({ from: 'hub', to: `c${k}`, kind: 'link' })
+        }
+        return { nodes, edges, degs: DEGS }
     }
-    return { nodes, edges, degs: DEGS };
-  }
 
-  interface StarPriv {
-    m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
-    labels: { text: string; col: number; row: number; alpha: number; widthCells: number }[];
-    memberEdgeAlpha: number;
-    res: number; goalRes: number; maxRes: number; dirty: boolean;
-  }
-  const starPriv = (r: AsciiGraphRenderer) => r as unknown as StarPriv;
-
-  /** Centre on the star and park in the NEAR band, where member edges own the field — the same
-   *  private poke `parkDeepOn` uses in the locality-gate block, and for the same reason
-   *  (`frameSubset` alone lands short of the band). Buffers are cleared so exactly ONE paint is
-   *  measured. */
-  const DEEP_T = 0.85;
-  function parkOnStar(r: AsciiGraphRenderer, ids: string[]) {
-    r.frameSubset(ids);
-    settle(400);
-    const p = starPriv(r);
-    p.res = p.goalRes = resFromT(DEEP_T, p.maxRes);
-    p.dirty = true;
-    ctx.fills.length = 0;
-    ctx.strokes.length = 0;
-    ctx.fillRects.length = 0;
-    ctx.strokeTexts.length = 0;
-    frame(99999);
-  }
-
-  /** Sampled length of `seg` that falls inside `rect`, in px. Sampling (rather than a clip solve)
-   *  because what is being measured is INK: how much of the drawn line the plate covered. */
-  function coveredPx(seg: [number, number, number, number], r: { x: number; y: number; w: number; h: number }) {
-    const [x1, y1, x2, y2] = seg;
-    const len = Math.hypot(x2 - x1, y2 - y1);
-    const n = Math.max(2, Math.ceil(len));
-    let inside = 0;
-    for (let i = 0; i <= n; i++) {
-      const t = i / n, px = x1 + (x2 - x1) * t, py = y1 + (y2 - y1) * t;
-      if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) inside++;
+    interface StarPriv {
+        m: {
+            cols: number
+            rows: number
+            cellW: number
+            cellH: number
+            padX: number
+            padY: number
+        }
+        labels: {
+            text: string
+            col: number
+            row: number
+            alpha: number
+            widthCells: number
+        }[]
+        memberEdgeAlpha: number
+        res: number
+        goalRes: number
+        maxRes: number
+        dirty: boolean
     }
-    return (inside / (n + 1)) * len;
-  }
+    const starPriv = (r: AsciiGraphRenderer) => r as unknown as StarPriv
 
-  function mountStar(showGraphLabels = true) {
-    const g = starGraph();
-    const { r } = mountRenderer("2d", g as unknown as ReturnType<typeof sampleGraph>, { showLodMasses: true, showGraphLabels });
-    // The hub's label is FORCED (active file), so it draws at alpha 1 at any zoom — the label the
-    // user's screenshot has lying across the fan.
-    r.setActiveFile("hub");
-    // Centre on the HUB itself, not on the star's centroid: the fan is not angularly uniform, so
-    // its centroid sits off the hub, and at near-band resolution that offset is magnified into
-    // pushing the hub clean off the field. The user's view is centred on the hub.
-    parkOnStar(r, ["hub"]);
-    return { r, priv: starPriv(r), g };
-  }
-
-  /** Which grid cells a text run drawn at (x, y) by paint()'s row loop covers — the inverse of that
-   *  loop's own `padX + col * cellW` / `padY + row * cellH + cellH / 2` placement. Spaces are the
-   *  run's own gap filler (`if (run) run += " "`), not ink, so they are skipped. */
-  function cellsOfFill(f: { text: string; x: number; y: number }, m: StarPriv["m"]) {
-    const row = Math.round((f.y - m.cellH / 2 - m.padY) / m.cellH);
-    const col0 = Math.round((f.x - m.padX) / m.cellW);
-    const out: string[] = [];
-    for (let k = 0; k < f.text.length; k++) if (f.text[k] !== " ") out.push(`${col0 + k},${row}`);
-    return out;
-  }
-
-  it("the setup really does put a long label across a fan of stroked spokes", () => {
-    const { r, priv } = mountStar();
-    // Near band: member edges are actually being drawn, so there IS line work to erase. Asserted,
-    // not assumed — a retune of the band constants must fail loudly rather than quietly measure a
-    // frame with no edges in it.
-    expect(priv.memberEdgeAlpha).toBeGreaterThan(0.99);
-    const hubLabel = priv.labels.find((l) => l.text === "[[Violent Acts and Urban Space]]");
-    expect(hubLabel).toBeDefined();
-    expect(hubLabel!.alpha).toBe(1);
-    // The plate the OLD code would paint for that label, computed from the label's own placement.
-    const plate = {
-      x: priv.m.padX + hubLabel!.col * priv.m.cellW - priv.m.cellW * 0.5,
-      y: priv.m.padY + hubLabel!.row * priv.m.cellH,
-      w: (hubLabel!.text.length + 1) * priv.m.cellW,
-      h: priv.m.cellH,
-    };
-    expect(plate.w).toBeGreaterThan(150); // a long name — this is why the channel is long, not a nick
-    const segs = ctx.strokes.flatMap((s) => s.segs);
-    expect(segs.length).toBeGreaterThan(10);
-    const wouldCover = segs.reduce((a, s) => a + coveredPx(s, plate), 0);
-    // Several spokes really do run through where that label sits. Without this the headline
-    // assertion below could pass on a frame that simply had nothing behind the name.
-    expect(wouldCover).toBeGreaterThan(40);
-    r.destroy();
-  });
-
-  it("paints no opaque plate over any stroked edge — the fan is never cut", () => {
-    const { r } = mountStar();
-    const segs = ctx.strokes.flatMap((s) => s.segs);
-    let erased = 0;
-    for (const s of segs) for (const rect of ctx.fillRects) erased += coveredPx(s, rect);
-    expect(erased).toBe(0);
-    r.destroy();
-  });
-
-  it("gives every name a ground halo instead — the plate's legibility job, at glyph scale", () => {
-    const { r, priv } = mountStar();
-    expect(priv.labels.length).toBeGreaterThan(0);
-    expect(ctx.strokeTexts.length).toBe(priv.labels.length);
-    for (const l of priv.labels) {
-      const halo = ctx.strokeTexts.find((h) => h.text === l.text);
-      expect(halo).toBeDefined();
-      // Wide enough to actually separate a glyph from a line crossing it...
-      expect(halo!.width).toBeGreaterThan(1);
-      // ...and carrying the label's OWN alpha, so a crossfading name leaves no dark ghost stroked at
-      // full strength over the field it is fading out of.
-      expect(halo!.alpha).toBeLessThanOrEqual(l.alpha + 1e-9);
+    /** Centre on the star and park in the NEAR band, where member edges own the field — the same
+     *  private poke `parkDeepOn` uses in the locality-gate block, and for the same reason
+     *  (`frameSubset` alone lands short of the band). Buffers are cleared so exactly ONE paint is
+     *  measured. */
+    const DEEP_T = 0.85
+    function parkOnStar(r: AsciiGraphRenderer, ids: string[]) {
+        r.frameSubset(ids)
+        settle(400)
+        const p = starPriv(r)
+        p.res = p.goalRes = resFromT(DEEP_T, p.maxRes)
+        p.dirty = true
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        ctx.fillRects.length = 0
+        ctx.strokeTexts.length = 0
+        frame(99999)
     }
-    r.destroy();
-  });
 
-  it("suppresses the field glyphs under a name at the source, where the plate used to cover them", () => {
-    // A/B on the SAME camera: the plate's other job was hiding the field behind a name, so deleting
-    // it without replacement would leave `o`s painted inside the letters. Measured by rendering the
-    // identical frame with labels OFF and asking what the field draws in the very cells the labelled
-    // frame reserves.
-    const labelled = mountStar(true);
-    const cellsUnder = new Set<string>();
-    for (const l of labelled.priv.labels) {
-      for (let c = l.col - 1; c <= l.col + l.widthCells; c++) cellsUnder.add(`${c},${l.row}`);
+    /** Sampled length of `seg` that falls inside `rect`, in px. Sampling (rather than a clip solve)
+     *  because what is being measured is INK: how much of the drawn line the plate covered. */
+    function coveredPx(
+        seg: [number, number, number, number],
+        r: { x: number; y: number; w: number; h: number },
+    ) {
+        const [x1, y1, x2, y2] = seg
+        const len = Math.hypot(x2 - x1, y2 - y1)
+        const n = Math.max(2, Math.ceil(len))
+        let inside = 0
+        for (let i = 0; i <= n; i++) {
+            const t = i / n,
+                px = x1 + (x2 - x1) * t,
+                py = y1 + (y2 - y1) * t
+            if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h)
+                inside++
+        }
+        return (inside / (n + 1)) * len
     }
-    const labelTexts = new Set(labelled.priv.labels.map((l) => l.text));
-    const withLabels = ctx.fills
-      .filter((f) => !labelTexts.has(f.text))
-      .flatMap((f) => cellsOfFill(f, labelled.priv.m))
-      .filter((k) => cellsUnder.has(k));
-    labelled.r.destroy();
 
-    const bare = mountStar(false);
-    expect(bare.priv.labels.length).toBe(0); // labels really are off
-    const withoutLabels = ctx.fills.flatMap((f) => cellsOfFill(f, bare.priv.m)).filter((k) => cellsUnder.has(k));
-    bare.r.destroy();
+    function mountStar(showGraphLabels = true) {
+        const g = starGraph()
+        const { r } = mountRenderer(
+            '2d',
+            g as unknown as ReturnType<typeof sampleGraph>,
+            { showLodMasses: true, showGraphLabels },
+        )
+        // The hub's label is FORCED (active file), so it draws at alpha 1 at any zoom — the label the
+        // user's screenshot has lying across the fan.
+        r.setActiveFile('hub')
+        // Centre on the HUB itself, not on the star's centroid: the fan is not angularly uniform, so
+        // its centroid sits off the hub, and at near-band resolution that offset is magnified into
+        // pushing the hub clean off the field. The user's view is centred on the hub.
+        parkOnStar(r, ['hub'])
+        return { r, priv: starPriv(r), g }
+    }
 
-    // The fixture's close-in neighbours really do put glyphs there — without this the assertion
-    // below is vacuous, which is exactly how deleting the suppression first slipped through.
-    expect(withoutLabels.length).toBeGreaterThan(0);
-    expect(withLabels).toEqual([]);
-  });
-});
+    /** Which grid cells a text run drawn at (x, y) by paint()'s row loop covers — the inverse of that
+     *  loop's own `padX + col * cellW` / `padY + row * cellH + cellH / 2` placement. Spaces are the
+     *  run's own gap filler (`if (run) run += " "`), not ink, so they are skipped. */
+    function cellsOfFill(
+        f: { text: string; x: number; y: number },
+        m: StarPriv['m'],
+    ) {
+        const row = Math.round((f.y - m.cellH / 2 - m.padY) / m.cellH)
+        const col0 = Math.round((f.x - m.padX) / m.cellW)
+        const out: string[] = []
+        for (let k = 0; k < f.text.length; k++)
+            if (f.text[k] !== ' ') out.push(`${col0 + k},${row}`)
+        return out
+    }
+
+    it('the setup really does put a long label across a fan of stroked spokes', () => {
+        const { r, priv } = mountStar()
+        // Near band: member edges are actually being drawn, so there IS line work to erase. Asserted,
+        // not assumed — a retune of the band constants must fail loudly rather than quietly measure a
+        // frame with no edges in it.
+        expect(priv.memberEdgeAlpha).toBeGreaterThan(0.99)
+        const hubLabel = priv.labels.find(
+            l => l.text === '[[Violent Acts and Urban Space]]',
+        )
+        expect(hubLabel).toBeDefined()
+        expect(hubLabel!.alpha).toBe(1)
+        // The plate the OLD code would paint for that label, computed from the label's own placement.
+        const plate = {
+            x: priv.m.padX + hubLabel!.col * priv.m.cellW - priv.m.cellW * 0.5,
+            y: priv.m.padY + hubLabel!.row * priv.m.cellH,
+            w: (hubLabel!.text.length + 1) * priv.m.cellW,
+            h: priv.m.cellH,
+        }
+        expect(plate.w).toBeGreaterThan(150) // a long name — this is why the channel is long, not a nick
+        const segs = ctx.strokes.flatMap(s => s.segs)
+        expect(segs.length).toBeGreaterThan(10)
+        const wouldCover = segs.reduce((a, s) => a + coveredPx(s, plate), 0)
+        // Several spokes really do run through where that label sits. Without this the headline
+        // assertion below could pass on a frame that simply had nothing behind the name.
+        expect(wouldCover).toBeGreaterThan(40)
+        r.destroy()
+    })
+
+    it('paints no opaque plate over any stroked edge — the fan is never cut', () => {
+        const { r } = mountStar()
+        const segs = ctx.strokes.flatMap(s => s.segs)
+        let erased = 0
+        for (const s of segs)
+            for (const rect of ctx.fillRects) erased += coveredPx(s, rect)
+        expect(erased).toBe(0)
+        r.destroy()
+    })
+
+    it("gives every name a ground halo instead — the plate's legibility job, at glyph scale", () => {
+        const { r, priv } = mountStar()
+        expect(priv.labels.length).toBeGreaterThan(0)
+        expect(ctx.strokeTexts.length).toBe(priv.labels.length)
+        for (const l of priv.labels) {
+            const halo = ctx.strokeTexts.find(h => h.text === l.text)
+            expect(halo).toBeDefined()
+            // Wide enough to actually separate a glyph from a line crossing it...
+            expect(halo!.width).toBeGreaterThan(1)
+            // ...and carrying the label's OWN alpha, so a crossfading name leaves no dark ghost stroked at
+            // full strength over the field it is fading out of.
+            expect(halo!.alpha).toBeLessThanOrEqual(l.alpha + 1e-9)
+        }
+        r.destroy()
+    })
+
+    it('suppresses the field glyphs under a name at the source, where the plate used to cover them', () => {
+        // A/B on the SAME camera: the plate's other job was hiding the field behind a name, so deleting
+        // it without replacement would leave `o`s painted inside the letters. Measured by rendering the
+        // identical frame with labels OFF and asking what the field draws in the very cells the labelled
+        // frame reserves.
+        const labelled = mountStar(true)
+        const cellsUnder = new Set<string>()
+        for (const l of labelled.priv.labels) {
+            for (let c = l.col - 1; c <= l.col + l.widthCells; c++)
+                cellsUnder.add(`${c},${l.row}`)
+        }
+        const labelTexts = new Set(labelled.priv.labels.map(l => l.text))
+        const withLabels = ctx.fills
+            .filter(f => !labelTexts.has(f.text))
+            .flatMap(f => cellsOfFill(f, labelled.priv.m))
+            .filter(k => cellsUnder.has(k))
+        labelled.r.destroy()
+
+        const bare = mountStar(false)
+        expect(bare.priv.labels.length).toBe(0) // labels really are off
+        const withoutLabels = ctx.fills
+            .flatMap(f => cellsOfFill(f, bare.priv.m))
+            .filter(k => cellsUnder.has(k))
+        bare.r.destroy()
+
+        // The fixture's close-in neighbours really do put glyphs there — without this the assertion
+        // below is vacuous, which is exactly how deleting the suppression first slipped through.
+        expect(withoutLabels.length).toBeGreaterThan(0)
+        expect(withLabels).toEqual([])
+    })
+})
 
 /**
  * THE PHOSPHOR BLOOM ACROSS THE BAND LADDER.
@@ -3563,556 +4845,672 @@ describe("a label never erases the field behind it (Task 21 — 'it splits')", (
  * never takes the LOD path at all, and its one assertion (`max === 1`) is what `normalise` pins for
  * ANY non-empty field. Everything below is on a LOD fixture, in 2D, with masses on.
  */
-describe("the phosphor bloom is emitted by whichever pass owns the field (Task 17)", () => {
-  /**
-   * ONE community of 275 notes on a deterministic 25x11 lattice, deliberately ANISOTROPIC (x spread
-   * ~3x y spread) and deliberately WIDE — a cluster whose members cover much more of the field than
-   * the bloom's own blur kernel can smooth over is exactly the regime where emitting a summary as a
-   * point and emitting it as the cloud it stands for diverge. The anisotropy means an x/y swap
-   * anywhere in the spread wiring is visible rather than symmetric.
-   *
-   * One community, not four, on purpose: with `showLodMasses` on at fit this graph is exactly ONE
-   * aggregate mass, and with it off it is exactly the 275 leaves that mass summarizes — the
-   * cleanest possible A/B of "does the summary carry the same light, in the same place, at the same
-   * size".
-   *
-   * DENSE and ODD-sized on purpose too, both to keep the A/B's un-summarized side a usable
-   * REFERENCE rather than noise. A sparse lattice's glyph field lurches as individual notes cross
-   * the frame edge on the deep half of the ladder (measured: a 40-note version swung 488 -> 1768
-   * lit cells between two adjacent stops, entirely a fixture artifact), and an even-sized one has
-   * no member at the origin, so the deepest stop — which frames a few world units around (0, 0) —
-   * can come back empty on BOTH sides and prove nothing.
-   */
-  function spreadClusterGraph() {
-    const nodes = [];
-    const edges = [];
-    const COLS = 25, ROWS = 11;
-    for (let i = 0; i < COLS * ROWS; i++) {
-      const x = ((i % COLS) - (COLS - 1) / 2) * 36 * RING_SCALE;
-      const y = (Math.floor(i / COLS) - (ROWS - 1) / 2) * 27 * RING_SCALE;
-      nodes.push({
-        id: `s${i}`, label: `note ${i}`, kind: "note" as const,
-        position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-        community: 0, communityLabel: "Spread", communityPath: [0], communityPathLabels: ["Spread"],
-      });
-    }
-    for (let i = 1; i < COLS * ROWS; i++) edges.push({ from: "s0", to: `s${i}`, kind: "link" as const });
-    return { nodes, edges };
-  }
-  const SPREAD_COUNT = 275;
-
-  interface BloomPriv {
-    res: number; goalRes: number; maxRes: number; dirty: boolean;
-    levelCount: number; cellNode: Int32Array; glyphAlpha: number;
-  }
-
-  /** Every renderer mounted by this block, torn down in afterEach — NOT by a `r.destroy()` at the
-   *  end of each test body. A failing `expect` throws, the trailing destroy never runs, and the
-   *  abandoned renderer keeps answering the shared rAF pump: its ticks then paint this fixture's
-   *  `[[note N]]` labels into the shared recording ctx and fail an unrelated later test, which
-   *  turns one honest failure into a confusing cascade (it did, while mutation-testing this block). */
-  const mounted: AsciiGraphRenderer[] = [];
-  afterEach(() => { for (const r of mounted.splice(0)) r.destroy(); });
-
-  /** Mount with a bloom sink attached, returning the LAST field emitted. Not `mountRenderer` — that
-   *  helper has no way to wire `setBloomCallback` before the first frame. */
-  function mountBloom(graph: ReturnType<typeof spreadClusterGraph>, lod: boolean) {
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    mounted.push(r);
-    let last: Float32Array | null = null;
-    r.mount(host, () => {});
-    r.setBloomCallback((f) => { last = f; });
-    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: lod });
-    r.render(graph);
-    ctx.fills.length = 0;
-    ctx.strokes.length = 0;
-    frame();
-    return { r, priv: r as unknown as BloomPriv, field: () => last as Float32Array | null };
-  }
-
-  /** Park a bloom-sinked renderer at an exact resolution progress `t` and repaint once (the band
-   *  boundaries are constants in `t`; a wheel notch is a 10% zoom stop and the two do not line up).
-   *  Clears the recording ctx first, as `parkAtT` does — 275 nodes x 41 stops x 2 renderers is a lot
-   *  of fills to keep around, and nothing here reads them. */
-  function park(priv: BloomPriv, t: number) {
-    priv.res = priv.goalRes = resFromT(t, priv.maxRes);
-    priv.dirty = true;
-    ctx.fills.length = 0;
-    ctx.strokes.length = 0;
-    frame(9999);
-  }
-
-  /** Cells bright enough to survive the atmosphere's own v^4 alpha curve (GraphAtmosphere.tsx) at
-   *  all: `255·v^4 > 5` ⇔ `v > (5/255)^(1/4)`. This is "is anything visible", NOT "is the array
-   *  non-zero" — `normalise` pins every non-empty field's peak to exactly 1, so a field built from a
-   *  single point is just as "bright" by that measure as one built from the whole vault. */
-  const VISIBLE_V = Math.pow(5 / 255, 0.25);
-  const litCells = (f: Float32Array | null) => (f ? f.filter((v) => v > VISIBLE_V).length : 0);
-
-  /** Ink-weighted centroid and per-axis spread of a field, in FIELD CELLS. Scale-invariant, so the
-   *  `normalise` step cannot affect it. */
-  function fieldMoments(f: Float32Array) {
-    let w = 0, sx = 0, sy = 0, sxx = 0, syy = 0;
-    for (let row = 0; row < FIELD_H; row++) {
-      for (let col = 0; col < FIELD_W; col++) {
-        const v = f[row * FIELD_W + col];
-        if (v <= 0) continue;
-        w += v; sx += v * col; sy += v * row; sxx += v * col * col; syy += v * row * row;
-      }
-    }
-    const mx = sx / w, my = sy / w;
-    return {
-      mx, my,
-      sdx: Math.sqrt(Math.max(0, sxx / w - mx * mx)),
-      sdy: Math.sqrt(Math.max(0, syy / w - my * my)),
-    };
-  }
-
-  it("REQUIRED — the atmosphere is LIT at fit, where NOTHING is projected and the masses own the field", () => {
-    const { r, priv, field } = mountBloom(spreadClusterGraph(), true);
-
-    // First: establish that this really is the broken configuration. The far band owns fit
-    // outright, so rasterize() skips the whole leaf pass — no node is projected, and every
-    // `nv.projValid` the OLD emitBloom read is false.
-    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1);
-    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);              // LOD_ALPHA_EPS
-    expect([...priv.cellNode].every((v) => v < 0)).toBe(true);       // no glyph rasterized at all
-
-    // ...and the atmosphere is lit anyway, because the MASSES are emitting it.
-    const f = field();
-    expect(f).not.toBeNull();
-    expect(litCells(f)).toBeGreaterThan(0);
-
-    // The input side, which is where the honest measure lives: buildBloom normalises its peak to
-    // exactly 1, so `max === 1` is true of a field built from one stray point. `bloomWeight` is
-    // the pre-normalisation total, and at fit it is the summarized member count — all 40 notes.
-    const stats = r.computeStats();
-    expect(stats.bloomPoints).toBeGreaterThan(0);
-    expect(stats.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6);
-  });
-
-  it("REQUIRED — the far band's atmosphere sits where the members are, at their size (not a spike at the centroid)", () => {
-    // The A/B: the SAME camera, the same 40 notes, summarized (masses own the field) vs not
-    // (glyphs own it). The summary must land in the same place with the same spread — a mass
-    // emitted as a bare point at its centroid has the right place and a collapsed spread, which is
-    // what blacked out the mid-crossfade the first time this was fixed.
-    const g = spreadClusterGraph();
-    const masses = mountBloom(g, true);
-    const leaves = mountBloom(g, false);
-    expect(masses.priv.glyphAlpha).toBeLessThanOrEqual(0.02);   // masses own it
-    expect(leaves.priv.glyphAlpha).toBe(1);                     // glyphs own it
-    expect([...leaves.priv.cellNode].some((v) => v >= 0)).toBe(true);
-
-    // THE EMITTED POINTS, before buildBloom. This is where the size is actually checkable: `blur`
-    // adds a fixed ~5.3-cell variance to whatever it is handed, and on this fixture that swamps the
-    // y spread — a quarter-scale per-axis error (converting y through W instead of H, say) survives
-    // the field comparison below entirely.
-    //
-    // Task 24b: the two are no longer expected to agree to FLOATING-POINT. Pre-24b, `masses` emitted
-    // one synthesized ellipse reproducing the members' EXACT population second moment (pushCloud's
-    // own exact-moment identity, sized directly off `sdx`/`sdy`); now it emits real k-means
-    // REPRESENTATIVE points (lod.ts's `LodCluster.reps`), and averaging away WITHIN-rep variance is
-    // an intrinsic, expected property of that summary (a rep is a real sub-population's centroid,
-    // not the population itself — see lod.ts's own `reps` doc comment). What must still hold is that
-    // the reps' own weighted second moment is a reasonable stand-in for the true one, checked here
-    // against an INDEPENDENT reference (`ls`, computed via the un-summarized leaf pass over the same
-    // 275 world positions — never via lod.ts's k-means, so this is not self-certifying). Measured on
-    // this fixture: sdx off by 0.7%, sdy by 6.2% — a 10% relative bound is still comfortable headroom
-    // above that (1.6x the worse axis) while catching a real regression far tighter than the 20% a
-    // looser bound would (an x/y swap here is off by ~59% either way).
-    const ms = masses.r.computeStats(), ls = leaves.r.computeStats();
-    const REP_MOMENT_TOL = 0.1;
-    expect(Math.abs(ms.bloomSdx - ls.bloomSdx) / ls.bloomSdx).toBeLessThan(REP_MOMENT_TOL);
-    expect(Math.abs(ms.bloomSdy - ls.bloomSdy) / ls.bloomSdy).toBeLessThan(REP_MOMENT_TOL);
-    expect(ls.bloomSdx / ls.bloomSdy).toBeGreaterThan(1.5);     // the fixture really is anisotropic
-    expect(ms.bloomSdy).toBeGreaterThan(0);                     // ...and neither axis is degenerate
-
-    // The FIELD, after buildBloom — the same claim about what actually reaches the screen, at the
-    // (much lower) resolution the convolution leaves. Kept as well as, not instead of: the pair
-    // above cannot see a mistake made after the point list is built.
-    const mm = fieldMoments(masses.field()!);
-    const lm = fieldMoments(leaves.field()!);
-    expect(mm.mx).toBeCloseTo(lm.mx, 0);                        // same place, within a field cell
-    expect(mm.my).toBeCloseTo(lm.my, 0);
-    expect(mm.sdx / lm.sdx).toBeGreaterThan(0.85);
-    expect(mm.sdx / lm.sdx).toBeLessThan(1.15);
-    expect(mm.sdy / lm.sdy).toBeGreaterThan(0.85);
-    expect(mm.sdy / lm.sdy).toBeLessThan(1.15);
-  });
-
-  it("REQUIRED — EVERY active hierarchy level emits, not just the first: a level crossfade keeps its whole weight", () => {
-    // The far band is a ladder of levels, and mid-crossfade TWO of them are simultaneously above
-    // LOD_ALPHA_EPS and both have to contribute. `spreadClusterGraph` deliberately has one
-    // community, so its `entityLevels` loop body runs once and could not tell a one-level emitter
-    // from a correct one; `lodGraph` is 2-level (2 tops of 12, 4 blobs of 6), which is what makes
-    // this checkable at all.
-    const { r, priv } = mountBloom(lodGraph(), true);
-    expect(priv.levelCount).toBe(2);
-
-    // The stop where BOTH levels own part of the field — read off `clusterLevelAlphas`, not
-    // assumed. On a 2-level graph the level-0/1 handover CENTRES near t = 0.29 (it is done by
-    // 0.375, which is why that is the wrong stop to sample), and `massAlpha` is still 1 there, so
-    // the mass band owns the field outright and every point emitted is a mass.
-    const CROSS_T = 0.29;
-    const levels = clusterLevelAlphas(CROSS_T, 2);
-    expect(levels[0]).toBeGreaterThan(0.3);                     // well clear of LOD_ALPHA_EPS...
-    expect(levels[1]).toBeGreaterThan(0.3);                     // ...on BOTH levels at once
-    expect(bandsForT(CROSS_T, 2).massAlpha).toBe(1);
-
-    // Every member of the graph is in a >= LOD_MIN_CLUSTER community at BOTH levels, so the
-    // conservation law says the emitted weight is the whole membership however the mass band is
-    // split across levels — and it only holds if every active level actually emits. Drop the
-    // second and this reads massAlpha*12 short.
-    park(priv, CROSS_T);
-    expect(r.computeStats().bloomWeight).toBeCloseTo(24, 6);
-
-    // The control: at a stop where ONE level owns the mass band outright the same total appears, so
-    // the assertion above is doing work at the crossfade specifically, not passing everywhere.
-    const soloLevels = clusterLevelAlphas(0.1, 2);
-    expect(soloLevels[0]).toBeGreaterThan(0.98);
-    expect(soloLevels[1]).toBeLessThan(0.02);
-    park(priv, 0.1);
-    expect(r.computeStats().bloomWeight).toBeCloseTo(24, 6);
-  });
-
-  it("REQUIRED — no dark window and no pop anywhere on the ladder: the summarized field tracks the un-summarized one", () => {
-    // Swept against a REFERENCE rather than against a constant: at each stop, the same graph with
-    // masses on vs masses off, same camera. Below the handover one is masses and the other is
-    // glyphs; above it they are the same pass and agree exactly. Either failure mode shows up as
-    // the ratio falling — the original bug takes it to 0 at fit, and emitting a mass as a point
-    // takes it down mid-crossfade (normalise crushes the field around the spike).
-    const g = spreadClusterGraph();
-    const masses = mountBloom(g, true);
-    const leaves = mountBloom(g, false);
-
-    const ratios: { t: number; lod: number; plain: number; ratio: number }[] = [];
-    for (let i = 0; i <= 40; i++) {
-      const t = i / 40;
-      park(masses.priv, t);
-      park(leaves.priv, t);
-      const lod = litCells(masses.field()), plain = litCells(leaves.field());
-      expect(plain).toBeGreaterThan(0);                          // the reference itself is alive
-      ratios.push({ t, lod, plain, ratio: lod / plain });
-    }
-    for (const s of ratios) {
-      expect(s.lod).toBeGreaterThan(0);                          // NO dark window, at any stop
-      expect(s.ratio).toBeGreaterThan(0.5);                      // ...and no collapse either
-      expect(s.ratio).toBeLessThan(2);                           // ...nor a blowout
-    }
-    // Deliberately NOT also a stop-to-stop jump bound on the raw counts: past the handover the two
-    // sides ARE the same pass, so the biggest jump on the ladder is the reference's own (a lattice
-    // row crossing the frame edge), and any bound loose enough to admit that is satisfied by
-    // construction. What "no pop" actually needs — that the handover is a genuine blend of the two
-    // contributions rather than a switch — is pinned mechanically in the next test.
-    // Measured range on this fixture: 0.69 .. 1.47.
-  });
-
-  it("REQUIRED — the atmosphere dims when the density leaves, instead of re-scaling to whatever is left", () => {
-    // The "things glow randomly" defect. `normalise` pins EVERY non-empty field's peak to exactly 1,
-    // so brightness was purely relative: pan the dense core off the field and the sparse remnant —
-    // a handful of stragglers — was promoted to full brightness, and each camera move re-scaled the
-    // whole ground again. The renderer now carries a reference peak across frames (bloomPeakRef).
-    const { priv, field } = mountBloom(spreadClusterGraph(), false);
-    const peak = () => { const f = field(); return f ? Math.max(...Array.from(f)) : 0; };
-
-    park(priv, 0);                                    // fit: the whole dense graph owns the field
-    expect(peak()).toBeCloseTo(1, 6);                 // first frame adopts its own peak — full bright
-
-    // Same graph, same zoom; only the camera moves, far enough that the field empties out.
-    // Off to the lattice's far corner — most of it leaves the field, a sparse fringe stays. (Not
-    // all the way off: an EMPTY field has no density to be relative to and correctly stays black,
-    // which would not test anything.)
-    const cam = priv as unknown as { target: number[]; goalTarget: number[] };
-    const away = [8 * 36 * RING_SCALE, 0, 0];
-    cam.target = away.slice();
-    cam.goalTarget = away.slice();
-    priv.dirty = true;
-    frame(9999);
-    const dimmed = peak();
-    expect(dimmed).toBeLessThan(0.9);                 // dimmed, NOT re-scaled back up to full
-    expect(dimmed).toBeGreaterThan(0.39);             // ...but bounded: the ground never goes out
-
-    // And it recovers: bring the graph back and the very next frame is bright again (the reference
-    // rises immediately, so a denser region appearing is never held back).
-    cam.target = [0, 0, 0];
-    cam.goalTarget = [0, 0, 0];
-    priv.dirty = true;
-    frame(9999);
-    expect(peak()).toBeCloseTo(1, 6);
-  });
-
-  it("the handover is a BLEND: both contributions are in the point list mid-crossfade, neither is outside it", () => {
-    // The mechanism behind "no pop", pinned where it can be read exactly rather than inferred from
-    // ink. Three stops, one per band, checked against `bandsForT` — the band authority — not
-    // against numbers copied out of the renderer.
-    const { r, priv } = mountBloom(spreadClusterGraph(), true);
-    const bands = (t: number) => bandsForT(t, priv.levelCount);
-
-    // FAR: masses only. No node is projected at all, yet points are emitted.
-    park(priv, 0.2);
-    expect(bands(0.2).massAlpha).toBe(1);
-    expect([...priv.cellNode].every((v) => v < 0)).toBe(true);
-    const far = r.computeStats();
-    expect(far.bloomPoints).toBeGreaterThan(0);
-    expect(far.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6);
-
-    // CROSSFADE: both. The point list is the glyphs PLUS at least one aggregate's cloud, and the
-    // total weight is still the whole membership — that conservation is what makes the handover
-    // continuous instead of a step.
-    const MIX_T = 0.39;
-    expect(bands(MIX_T).massAlpha).toBeGreaterThan(0.2);
-    expect(bands(MIX_T).massAlpha).toBeLessThan(0.8);
-    park(priv, MIX_T);
-    const mid = r.computeStats();
-    expect([...priv.cellNode].some((v) => v >= 0)).toBe(true);    // glyphs really are rasterizing
-    expect(mid.bloomPoints).toBeGreaterThan(SPREAD_COUNT);        // ...and the mass cloud is ALSO in
-    expect(mid.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6);
-
-    // MID: glyphs only. The mass contribution is gone — one point per node, nothing else.
-    park(priv, 0.55);
-    expect(bands(0.55).massAlpha).toBe(0);
-    const near = r.computeStats();
-    expect(near.bloomPoints).toBe(SPREAD_COUNT);
-    expect(near.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6);
-  });
-
-  it("with no mass band in play the emitter is byte-for-byte the original glyph-only pass", () => {
-    // 3D (and "local" mode, and community-less graphs) must be untouched by any of this: no mass
-    // level is active, so the far-band loop contributes nothing and every point comes from
-    // `this.nodes`, exactly as before. Pinned against the plain node count.
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    mounted.push(r);                                // teardown is afterEach's job — see `mounted`
-    r.mount(host, () => {});
-    r.setBloomCallback(() => {});
-    r.setConfig({ ...CONFIG, viewMode: "3d", showLodMasses: true });
-    r.render(spreadClusterGraph());
-    ctx.fills.length = 0;
-    ctx.strokes.length = 0;
-    frame();
-    const stats = r.computeStats();
-    expect(stats.bloomPoints).toBe(SPREAD_COUNT);   // one point per node, no clouds
-    expect(stats.bloomWeight).toBeGreaterThan(0);
-    expect(stats.bloomWeight).toBeLessThanOrEqual(SPREAD_COUNT); // depthAlpha <= 1 per node
-  });
-
-  /**
-   * TASK 24b. ONE community whose 300 members form TWO tight, well-separated blobs (not one blob —
-   * every other fixture in this block) — the exact shape `LodCluster.reps` exists for (lod.ts's own
-   * doc comment: "two well-separated blobs summarized by one ellipse invents mass in the empty gap
-   * between them"). 300 > `LOD_REP_POINTS_K` (24), so `representativePoints()` really does run its
-   * k-means, not the `n <= k` exact-passthrough case — and because the two blobs are FAR apart
-   * relative to their own width, farthest-first seeding cannot avoid putting real seeds in both (a
-   * seed placed only in one blob leaves the other, ~500 world units away, the single farthest
-   * remaining point every round). So the reps this cluster gets are known, structurally, to cover
-   * BOTH blobs, not just one — the fixture is non-vacuous for what this test checks, not merely
-   * plausible.
-   */
-  function twinBlobGraph() {
-    const nodes = [];
-    const edges = [];
-    const COLS = 10, ROWS = 15; // 150 members per blob, 300 total
-    const SPACING = 6 * RING_SCALE;
-    const SEP = 350 * RING_SCALE; // blob-centre-to-blob-centre half-distance — ~13x the blob's own
-                                   // width (COLS*SPACING = 90 vs SEP*2 = 1050·RING_SCALE-normalised),
-                                   // i.e. genuinely "tight blobs, far apart", not a gradient between them.
-    let i = 0;
-    for (const cx of [-SEP, SEP]) {
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const x = cx + (c - (COLS - 1) / 2) * SPACING;
-          const y = (r - (ROWS - 1) / 2) * SPACING;
-          nodes.push({
-            id: `t${i}`, label: `note ${i}`, kind: "note" as const,
-            position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-            community: 0, communityLabel: "Twin", communityPath: [0], communityPathLabels: ["Twin"],
-          });
-          i++;
+describe('the phosphor bloom is emitted by whichever pass owns the field (Task 17)', () => {
+    /**
+     * ONE community of 275 notes on a deterministic 25x11 lattice, deliberately ANISOTROPIC (x spread
+     * ~3x y spread) and deliberately WIDE — a cluster whose members cover much more of the field than
+     * the bloom's own blur kernel can smooth over is exactly the regime where emitting a summary as a
+     * point and emitting it as the cloud it stands for diverge. The anisotropy means an x/y swap
+     * anywhere in the spread wiring is visible rather than symmetric.
+     *
+     * One community, not four, on purpose: with `showLodMasses` on at fit this graph is exactly ONE
+     * aggregate mass, and with it off it is exactly the 275 leaves that mass summarizes — the
+     * cleanest possible A/B of "does the summary carry the same light, in the same place, at the same
+     * size".
+     *
+     * DENSE and ODD-sized on purpose too, both to keep the A/B's un-summarized side a usable
+     * REFERENCE rather than noise. A sparse lattice's glyph field lurches as individual notes cross
+     * the frame edge on the deep half of the ladder (measured: a 40-note version swung 488 -> 1768
+     * lit cells between two adjacent stops, entirely a fixture artifact), and an even-sized one has
+     * no member at the origin, so the deepest stop — which frames a few world units around (0, 0) —
+     * can come back empty on BOTH sides and prove nothing.
+     */
+    function spreadClusterGraph() {
+        const nodes = []
+        const edges = []
+        const COLS = 25,
+            ROWS = 11
+        for (let i = 0; i < COLS * ROWS; i++) {
+            const x = ((i % COLS) - (COLS - 1) / 2) * 36 * RING_SCALE
+            const y = (Math.floor(i / COLS) - (ROWS - 1) / 2) * 27 * RING_SCALE
+            nodes.push({
+                id: `s${i}`,
+                label: `note ${i}`,
+                kind: 'note' as const,
+                position: [x, y, 0] as [number, number, number],
+                position2d: [x, y] as [number, number],
+                community: 0,
+                communityLabel: 'Spread',
+                communityPath: [0],
+                communityPathLabels: ['Spread'],
+            })
         }
-      }
+        for (let i = 1; i < COLS * ROWS; i++)
+            edges.push({ from: 's0', to: `s${i}`, kind: 'link' as const })
+        return { nodes, edges }
     }
-    for (let k = 1; k < i; k++) edges.push({ from: "t0", to: `t${k}`, kind: "link" as const });
-    return { nodes, edges };
-  }
+    const SPREAD_COUNT = 275
 
-  /** Per-COLUMN summed field weight — collapses the y axis so a left/right bimodal shape shows up
-   *  as a two-hump profile regardless of how each blob is spread vertically. */
-  function columnProfile(f: Float32Array): number[] {
-    const cols = new Array<number>(FIELD_W).fill(0);
-    for (let row = 0; row < FIELD_H; row++) {
-      for (let col = 0; col < FIELD_W; col++) cols[col] += f[row * FIELD_W + col];
+    interface BloomPriv {
+        res: number
+        goalRes: number
+        maxRes: number
+        dirty: boolean
+        levelCount: number
+        cellNode: Int32Array
+        glyphAlpha: number
     }
-    return cols;
-  }
 
-  it("REQUIRED — a clumped, anisotropic (two-blob) cluster lights the blobs, not the empty gap between them", () => {
-    // The regression this pins: emitting a mass as one ellipse sized off sdx/sdy places its BRIGHTEST
-    // light at the CENTROID — which for two symmetric, well-separated blobs is the empty gap exactly
-    // halfway between them, a place with zero real members. Representative points instead land where
-    // the members actually are: two peaks flanking a dark trough.
-    const { priv, field } = mountBloom(twinBlobGraph(), true);
-    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1); // fit — masses own the field outright
-    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);
+    /** Every renderer mounted by this block, torn down in afterEach — NOT by a `r.destroy()` at the
+     *  end of each test body. A failing `expect` throws, the trailing destroy never runs, and the
+     *  abandoned renderer keeps answering the shared rAF pump: its ticks then paint this fixture's
+     *  `[[note N]]` labels into the shared recording ctx and fail an unrelated later test, which
+     *  turns one honest failure into a confusing cascade (it did, while mutation-testing this block). */
+    const mounted: AsciiGraphRenderer[] = []
+    afterEach(() => {
+        for (const r of mounted.splice(0)) r.destroy()
+    })
 
-    const f = field();
-    expect(f).not.toBeNull();
-    const cols = columnProfile(f!);
-
-    // Recentring (build()'s bounding-box centre step) puts the gap's midpoint at world x=0, and fit
-    // centres world x=0 on the field — so the trough is expected near the middle column, and the two
-    // peaks flank it left and right. Locate them by scanning rather than assuming an exact index: the
-    // fit's own padding/box math is a different subsystem than the one this test checks.
-    const mid = FIELD_W / 2;
-    let leftPeakCol = 0, leftPeakV = -1;
-    for (let c = 0; c < mid - 2; c++) if (cols[c] > leftPeakV) { leftPeakV = cols[c]; leftPeakCol = c; }
-    let rightPeakCol = 0, rightPeakV = -1;
-    for (let c = Math.ceil(mid) + 2; c < FIELD_W; c++) if (cols[c] > rightPeakV) { rightPeakV = cols[c]; rightPeakCol = c; }
-    const centerV = (cols[Math.floor(mid)] + cols[Math.ceil(mid) - 1]) / 2;
-
-    // Non-vacuous: two REAL, separated peaks exist at all (not e.g. one degenerate blob because the
-    // fixture collapsed) and each carries real weight.
-    expect(leftPeakCol).toBeLessThan(mid);
-    expect(rightPeakCol).toBeGreaterThan(mid);
-    expect(leftPeakV).toBeGreaterThan(0);
-    expect(rightPeakV).toBeGreaterThan(0);
-
-    // THE CHECK: the gap is dark relative to the blobs it separates — the property a single
-    // synthesized ellipse (sized to span both blobs) cannot have, because its peak sits AT the
-    // centroid, i.e. in the gap. A generous factor (not "basically zero") because blur still leaks
-    // some light across a >40-cell separation; the pre-fix ellipse fails this by a wide margin
-    // regardless (see this test run against the pre-24b implementation, below).
-    expect(centerV).toBeLessThan(0.5 * Math.min(leftPeakV, rightPeakV));
-  });
-
-  /**
-   * TASK 24b — THE WEIGHTING DECISION. lod.ts's `reps` doc comment measures `reps` as MASS-BLIND: a
-   * dense core can earn as few as 4 of 24 reps (each standing for ~70 members) while lone, scattered
-   * strays earn one rep EACH (standing for 1) — rep COUNT does not track member density. This fixture
-   * reproduces that shape directly (a 280-member dense core plus 20 lone, widely-scattered strays, one
-   * community) to make the choice this test is named for checkable: weight each emitted point by
-   * `rep.weight` (how many real members it stands for — correct for MASS) or by an equal 1/reps.length
-   * split (correct only if rep COUNT tracked member count, which the mass-blind property says it does
-   * not). The two predict OPPOSITE outcomes here: by `rep.weight`, the dense core (93% of the real
-   * membership) must dominate the field; by equal count-split, the ~20 single-member stray reps would
-   * outnumber the core's handful of reps and could plausibly outshine it instead.
-   */
-  function denseCoreWithStraysGraph() {
-    const nodes = [];
-    const edges = [];
-    const CORE_SIDE = 17; // 289 grid points, trimmed to 280 below
-    const CORE_SPACING = 3 * RING_SCALE;
-    let i = 0;
-    for (let r = 0; r < CORE_SIDE && i < 280; r++) {
-      for (let c = 0; c < CORE_SIDE && i < 280; c++) {
-        const x = (c - (CORE_SIDE - 1) / 2) * CORE_SPACING;
-        const y = (r - (CORE_SIDE - 1) / 2) * CORE_SPACING;
-        nodes.push({
-          id: `d${i}`, label: `note ${i}`, kind: "note" as const,
-          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-          community: 0, communityLabel: "Dense", communityPath: [0], communityPathLabels: ["Dense"],
-        });
-        i++;
-      }
+    /** Mount with a bloom sink attached, returning the LAST field emitted. Not `mountRenderer` — that
+     *  helper has no way to wire `setBloomCallback` before the first frame. */
+    function mountBloom(
+        graph: ReturnType<typeof spreadClusterGraph>,
+        lod: boolean,
+    ) {
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        mounted.push(r)
+        let last: Float32Array | null = null
+        r.mount(host, () => {})
+        r.setBloomCallback(f => {
+            last = f
+        })
+        r.setConfig({ ...CONFIG, viewMode: '2d', showLodMasses: lod })
+        r.render(graph)
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame()
+        return {
+            r,
+            priv: r as unknown as BloomPriv,
+            field: () => last as Float32Array | null,
+        }
     }
-    const STRAYS = 20, STRAY_RADIUS = 900 * RING_SCALE;
-    for (let s = 0; s < STRAYS; s++) {
-      const a = (s / STRAYS) * Math.PI * 2;
-      const x = Math.cos(a) * STRAY_RADIUS, y = Math.sin(a) * STRAY_RADIUS;
-      nodes.push({
-        id: `d${i}`, label: `stray ${s}`, kind: "note" as const,
-        position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-        community: 0, communityLabel: "Dense", communityPath: [0], communityPathLabels: ["Dense"],
-      });
-      i++;
+
+    /** Park a bloom-sinked renderer at an exact resolution progress `t` and repaint once (the band
+     *  boundaries are constants in `t`; a wheel notch is a 10% zoom stop and the two do not line up).
+     *  Clears the recording ctx first, as `parkAtT` does — 275 nodes x 41 stops x 2 renderers is a lot
+     *  of fills to keep around, and nothing here reads them. */
+    function park(priv: BloomPriv, t: number) {
+        priv.res = priv.goalRes = resFromT(t, priv.maxRes)
+        priv.dirty = true
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame(9999)
     }
-    for (let k = 1; k < i; k++) edges.push({ from: "d0", to: `d${k}`, kind: "link" as const });
-    return { nodes, edges };
-  }
 
-  it("REQUIRED — weighting by rep.weight (not rep count) reproduces the true population spread; weighting by rep count would not", () => {
-    // Why this checks the SPREAD rather than the FIELD directly: at this field resolution (64x40)
-    // the blur kernel's reach (radius 6, tripled) is wide enough relative to the fixture's own
-    // geometry that the dense core's own halo floods almost the entire post-blur field regardless of
-    // weighting scheme — the post-normalise picture alone can't distinguish the two hypotheses here.
-    // The weighted SECOND MOMENT can: it is computed by emitBloom's own generic, resolution- and
-    // blur-independent moment pass (the same `mx/my/mxx/myy` loop over `pts` that every other bloom
-    // test in this file already trusts — see e.g. the anisotropic-spread test above), straight off
-    // the pre-blur point list.
-    const { r, priv } = mountBloom(denseCoreWithStraysGraph(), true);
-    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1);
-    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);
+    /** Cells bright enough to survive the atmosphere's own v^4 alpha curve (GraphAtmosphere.tsx) at
+     *  all: `255·v^4 > 5` ⇔ `v > (5/255)^(1/4)`. This is "is anything visible", NOT "is the array
+     *  non-zero" — `normalise` pins every non-empty field's peak to exactly 1, so a field built from a
+     *  single point is just as "bright" by that measure as one built from the whole vault. */
+    const VISIBLE_V = Math.pow(5 / 255, 0.25)
+    const litCells = (f: Float32Array | null) =>
+        f ? f.filter(v => v > VISIBLE_V).length : 0
 
-    interface RepsPriv {
-      entityLevels: { reps: { x: number; y: number; weight: number }[]; count: number; wx: number; wy: number }[][];
-      W: number; H: number;
-      cameraFrame(): { s: number };
+    /** Ink-weighted centroid and per-axis spread of a field, in FIELD CELLS. Scale-invariant, so the
+     *  `normalise` step cannot affect it. */
+    function fieldMoments(f: Float32Array) {
+        let w = 0,
+            sx = 0,
+            sy = 0,
+            sxx = 0,
+            syy = 0
+        for (let row = 0; row < FIELD_H; row++) {
+            for (let col = 0; col < FIELD_W; col++) {
+                const v = f[row * FIELD_W + col]
+                if (v <= 0) continue
+                w += v
+                sx += v * col
+                sy += v * row
+                sxx += v * col * col
+                syy += v * row * row
+            }
+        }
+        const mx = sx / w,
+            my = sy / w
+        return {
+            mx,
+            my,
+            sdx: Math.sqrt(Math.max(0, sxx / w - mx * mx)),
+            sdy: Math.sqrt(Math.max(0, syy / w - my * my)),
+        }
     }
-    const rp = r as unknown as RepsPriv;
-    expect(rp.entityLevels[0]?.length).toBe(1); // one community — the field's entire cloud
-    const ev = rp.entityLevels[0][0];
-    const reps = ev.reps;
-    expect(ev.count).toBe(300); // 280 core + 20 strays
 
-    // A rep can only carry `weight > 1` if it summarizes more than one member — and only the DENSE
-    // CORE has co-located members at all (every stray is, by construction, isolated from every other
-    // member by ~900x the core's own spacing), so a multi-weight rep can only be a core rep.
-    const coreReps = reps.filter((rp2) => rp2.weight > 1);
-    const strayReps = reps.filter((rp2) => rp2.weight === 1);
-    expect(coreReps.length).toBeGreaterThan(0);
-    expect(strayReps.length).toBeGreaterThan(0);
-    // The mass-blind property itself, non-vacuously present in THIS fixture: the core's real 280
-    // members are NOT represented by 280/300 of the reps — count and mass diverge, which is exactly
-    // what makes "weight by rep.weight" and "weight by rep count" different claims here.
-    expect(coreReps.length / reps.length).toBeLessThan(280 / 300);
-    const coreWeight = coreReps.reduce((s, rp2) => s + rp2.weight, 0);
-    expect(coreWeight).toBeGreaterThanOrEqual(270); // the core's real members really did land as core reps
+    it('REQUIRED — the atmosphere is LIT at fit, where NOTHING is projected and the masses own the field', () => {
+        const { r, priv, field } = mountBloom(spreadClusterGraph(), true)
 
-    // THE TWO HYPOTHESES, computed directly from `reps` (never by calling emitBloom): the per-axis
-    // variance about the TRUE population centroid (`ev.wx`/`ev.wy` — exact by lod.ts's own
-    // weight-conservation guarantee, independent of how emitBloom might split light across reps) if
-    // every rep's share of the light is `rep.weight` (correct) versus an equal 1/reps.length share
-    // (rep-count-based, i.e. what this task's brief calls "wrong for this shape"). Both strays and
-    // core sit near-symmetrically around the centroid (a full circle of strays around a centred
-    // core), so the two hypotheses' MEANS coincide — it is the SPREAD that diverges, because a
-    // FRACTION OF WEIGHT (6.7% by mass vs 83% by count) sitting a long way out dominates a
-    // squared-distance sum either way, just by very different amounts.
-    function axisVar(mean: number, axis: "x" | "y", weightFn: (p: { weight: number }) => number): number {
-      let sw = 0, swdd = 0;
-      for (const rp2 of reps) { const w = weightFn(rp2); const d = rp2[axis] - mean; sw += w; swdd += w * d * d; }
-      return swdd / sw;
+        // First: establish that this really is the broken configuration. The far band owns fit
+        // outright, so rasterize() skips the whole leaf pass — no node is projected, and every
+        // `nv.projValid` the OLD emitBloom read is false.
+        expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1)
+        expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02) // LOD_ALPHA_EPS
+        expect([...priv.cellNode].every(v => v < 0)).toBe(true) // no glyph rasterized at all
+
+        // ...and the atmosphere is lit anyway, because the MASSES are emitting it.
+        const f = field()
+        expect(f).not.toBeNull()
+        expect(litCells(f)).toBeGreaterThan(0)
+
+        // The input side, which is where the honest measure lives: buildBloom normalises its peak to
+        // exactly 1, so `max === 1` is true of a field built from one stray point. `bloomWeight` is
+        // the pre-normalisation total, and at fit it is the summarized member count — all 40 notes.
+        const stats = r.computeStats()
+        expect(stats.bloomPoints).toBeGreaterThan(0)
+        expect(stats.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6)
+    })
+
+    it("REQUIRED — the far band's atmosphere sits where the members are, at their size (not a spike at the centroid)", () => {
+        // The A/B: the SAME camera, the same 40 notes, summarized (masses own the field) vs not
+        // (glyphs own it). The summary must land in the same place with the same spread — a mass
+        // emitted as a bare point at its centroid has the right place and a collapsed spread, which is
+        // what blacked out the mid-crossfade the first time this was fixed.
+        const g = spreadClusterGraph()
+        const masses = mountBloom(g, true)
+        const leaves = mountBloom(g, false)
+        expect(masses.priv.glyphAlpha).toBeLessThanOrEqual(0.02) // masses own it
+        expect(leaves.priv.glyphAlpha).toBe(1) // glyphs own it
+        expect([...leaves.priv.cellNode].some(v => v >= 0)).toBe(true)
+
+        // THE EMITTED POINTS, before buildBloom. This is where the size is actually checkable: `blur`
+        // adds a fixed ~5.3-cell variance to whatever it is handed, and on this fixture that swamps the
+        // y spread — a quarter-scale per-axis error (converting y through W instead of H, say) survives
+        // the field comparison below entirely.
+        //
+        // Task 24b: the two are no longer expected to agree to FLOATING-POINT. Pre-24b, `masses` emitted
+        // one synthesized ellipse reproducing the members' EXACT population second moment (pushCloud's
+        // own exact-moment identity, sized directly off `sdx`/`sdy`); now it emits real k-means
+        // REPRESENTATIVE points (lod.ts's `LodCluster.reps`), and averaging away WITHIN-rep variance is
+        // an intrinsic, expected property of that summary (a rep is a real sub-population's centroid,
+        // not the population itself — see lod.ts's own `reps` doc comment). What must still hold is that
+        // the reps' own weighted second moment is a reasonable stand-in for the true one, checked here
+        // against an INDEPENDENT reference (`ls`, computed via the un-summarized leaf pass over the same
+        // 275 world positions — never via lod.ts's k-means, so this is not self-certifying). Measured on
+        // this fixture: sdx off by 0.7%, sdy by 6.2% — a 10% relative bound is still comfortable headroom
+        // above that (1.6x the worse axis) while catching a real regression far tighter than the 20% a
+        // looser bound would (an x/y swap here is off by ~59% either way).
+        const ms = masses.r.computeStats(),
+            ls = leaves.r.computeStats()
+        const REP_MOMENT_TOL = 0.1
+        expect(Math.abs(ms.bloomSdx - ls.bloomSdx) / ls.bloomSdx).toBeLessThan(
+            REP_MOMENT_TOL,
+        )
+        expect(Math.abs(ms.bloomSdy - ls.bloomSdy) / ls.bloomSdy).toBeLessThan(
+            REP_MOMENT_TOL,
+        )
+        expect(ls.bloomSdx / ls.bloomSdy).toBeGreaterThan(1.5) // the fixture really is anisotropic
+        expect(ms.bloomSdy).toBeGreaterThan(0) // ...and neither axis is degenerate
+
+        // The FIELD, after buildBloom — the same claim about what actually reaches the screen, at the
+        // (much lower) resolution the convolution leaves. Kept as well as, not instead of: the pair
+        // above cannot see a mistake made after the point list is built.
+        const mm = fieldMoments(masses.field()!)
+        const lm = fieldMoments(leaves.field()!)
+        expect(mm.mx).toBeCloseTo(lm.mx, 0) // same place, within a field cell
+        expect(mm.my).toBeCloseTo(lm.my, 0)
+        expect(mm.sdx / lm.sdx).toBeGreaterThan(0.85)
+        expect(mm.sdx / lm.sdx).toBeLessThan(1.15)
+        expect(mm.sdy / lm.sdy).toBeGreaterThan(0.85)
+        expect(mm.sdy / lm.sdy).toBeLessThan(1.15)
+    })
+
+    it('REQUIRED — EVERY active hierarchy level emits, not just the first: a level crossfade keeps its whole weight', () => {
+        // The far band is a ladder of levels, and mid-crossfade TWO of them are simultaneously above
+        // LOD_ALPHA_EPS and both have to contribute. `spreadClusterGraph` deliberately has one
+        // community, so its `entityLevels` loop body runs once and could not tell a one-level emitter
+        // from a correct one; `lodGraph` is 2-level (2 tops of 12, 4 blobs of 6), which is what makes
+        // this checkable at all.
+        const { r, priv } = mountBloom(lodGraph(), true)
+        expect(priv.levelCount).toBe(2)
+
+        // The stop where BOTH levels own part of the field — read off `clusterLevelAlphas`, not
+        // assumed. On a 2-level graph the level-0/1 handover CENTRES near t = 0.29 (it is done by
+        // 0.375, which is why that is the wrong stop to sample), and `massAlpha` is still 1 there, so
+        // the mass band owns the field outright and every point emitted is a mass.
+        const CROSS_T = 0.29
+        const levels = clusterLevelAlphas(CROSS_T, 2)
+        expect(levels[0]).toBeGreaterThan(0.3) // well clear of LOD_ALPHA_EPS...
+        expect(levels[1]).toBeGreaterThan(0.3) // ...on BOTH levels at once
+        expect(bandsForT(CROSS_T, 2).massAlpha).toBe(1)
+
+        // Every member of the graph is in a >= LOD_MIN_CLUSTER community at BOTH levels, so the
+        // conservation law says the emitted weight is the whole membership however the mass band is
+        // split across levels — and it only holds if every active level actually emits. Drop the
+        // second and this reads massAlpha*12 short.
+        park(priv, CROSS_T)
+        expect(r.computeStats().bloomWeight).toBeCloseTo(24, 6)
+
+        // The control: at a stop where ONE level owns the mass band outright the same total appears, so
+        // the assertion above is doing work at the crossfade specifically, not passing everywhere.
+        const soloLevels = clusterLevelAlphas(0.1, 2)
+        expect(soloLevels[0]).toBeGreaterThan(0.98)
+        expect(soloLevels[1]).toBeLessThan(0.02)
+        park(priv, 0.1)
+        expect(r.computeStats().bloomWeight).toBeCloseTo(24, 6)
+    })
+
+    it('REQUIRED — no dark window and no pop anywhere on the ladder: the summarized field tracks the un-summarized one', () => {
+        // Swept against a REFERENCE rather than against a constant: at each stop, the same graph with
+        // masses on vs masses off, same camera. Below the handover one is masses and the other is
+        // glyphs; above it they are the same pass and agree exactly. Either failure mode shows up as
+        // the ratio falling — the original bug takes it to 0 at fit, and emitting a mass as a point
+        // takes it down mid-crossfade (normalise crushes the field around the spike).
+        const g = spreadClusterGraph()
+        const masses = mountBloom(g, true)
+        const leaves = mountBloom(g, false)
+
+        const ratios: {
+            t: number
+            lod: number
+            plain: number
+            ratio: number
+        }[] = []
+        for (let i = 0; i <= 40; i++) {
+            const t = i / 40
+            park(masses.priv, t)
+            park(leaves.priv, t)
+            const lod = litCells(masses.field()),
+                plain = litCells(leaves.field())
+            expect(plain).toBeGreaterThan(0) // the reference itself is alive
+            ratios.push({ t, lod, plain, ratio: lod / plain })
+        }
+        for (const s of ratios) {
+            expect(s.lod).toBeGreaterThan(0) // NO dark window, at any stop
+            expect(s.ratio).toBeGreaterThan(0.5) // ...and no collapse either
+            expect(s.ratio).toBeLessThan(2) // ...nor a blowout
+        }
+        // Deliberately NOT also a stop-to-stop jump bound on the raw counts: past the handover the two
+        // sides ARE the same pass, so the biggest jump on the ladder is the reference's own (a lattice
+        // row crossing the frame edge), and any bound loose enough to admit that is satisfied by
+        // construction. What "no pop" actually needs — that the handover is a genuine blend of the two
+        // contributions rather than a switch — is pinned mechanically in the next test.
+        // Measured range on this fixture: 0.69 .. 1.47.
+    })
+
+    it('REQUIRED — the atmosphere dims when the density leaves, instead of re-scaling to whatever is left', () => {
+        // The "things glow randomly" defect. `normalise` pins EVERY non-empty field's peak to exactly 1,
+        // so brightness was purely relative: pan the dense core off the field and the sparse remnant —
+        // a handful of stragglers — was promoted to full brightness, and each camera move re-scaled the
+        // whole ground again. The renderer now carries a reference peak across frames (bloomPeakRef).
+        const { priv, field } = mountBloom(spreadClusterGraph(), false)
+        const peak = () => {
+            const f = field()
+            return f ? Math.max(...Array.from(f)) : 0
+        }
+
+        park(priv, 0) // fit: the whole dense graph owns the field
+        expect(peak()).toBeCloseTo(1, 6) // first frame adopts its own peak — full bright
+
+        // Same graph, same zoom; only the camera moves, far enough that the field empties out.
+        // Off to the lattice's far corner — most of it leaves the field, a sparse fringe stays. (Not
+        // all the way off: an EMPTY field has no density to be relative to and correctly stays black,
+        // which would not test anything.)
+        const cam = priv as unknown as {
+            target: number[]
+            goalTarget: number[]
+        }
+        const away = [8 * 36 * RING_SCALE, 0, 0]
+        cam.target = away.slice()
+        cam.goalTarget = away.slice()
+        priv.dirty = true
+        frame(9999)
+        const dimmed = peak()
+        expect(dimmed).toBeLessThan(0.9) // dimmed, NOT re-scaled back up to full
+        expect(dimmed).toBeGreaterThan(0.39) // ...but bounded: the ground never goes out
+
+        // And it recovers: bring the graph back and the very next frame is bright again (the reference
+        // rises immediately, so a denser region appearing is never held back).
+        cam.target = [0, 0, 0]
+        cam.goalTarget = [0, 0, 0]
+        priv.dirty = true
+        frame(9999)
+        expect(peak()).toBeCloseTo(1, 6)
+    })
+
+    it('the handover is a BLEND: both contributions are in the point list mid-crossfade, neither is outside it', () => {
+        // The mechanism behind "no pop", pinned where it can be read exactly rather than inferred from
+        // ink. Three stops, one per band, checked against `bandsForT` — the band authority — not
+        // against numbers copied out of the renderer.
+        const { r, priv } = mountBloom(spreadClusterGraph(), true)
+        const bands = (t: number) => bandsForT(t, priv.levelCount)
+
+        // FAR: masses only. No node is projected at all, yet points are emitted.
+        park(priv, 0.2)
+        expect(bands(0.2).massAlpha).toBe(1)
+        expect([...priv.cellNode].every(v => v < 0)).toBe(true)
+        const far = r.computeStats()
+        expect(far.bloomPoints).toBeGreaterThan(0)
+        expect(far.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6)
+
+        // CROSSFADE: both. The point list is the glyphs PLUS at least one aggregate's cloud, and the
+        // total weight is still the whole membership — that conservation is what makes the handover
+        // continuous instead of a step.
+        const MIX_T = 0.39
+        expect(bands(MIX_T).massAlpha).toBeGreaterThan(0.2)
+        expect(bands(MIX_T).massAlpha).toBeLessThan(0.8)
+        park(priv, MIX_T)
+        const mid = r.computeStats()
+        expect([...priv.cellNode].some(v => v >= 0)).toBe(true) // glyphs really are rasterizing
+        expect(mid.bloomPoints).toBeGreaterThan(SPREAD_COUNT) // ...and the mass cloud is ALSO in
+        expect(mid.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6)
+
+        // MID: glyphs only. The mass contribution is gone — one point per node, nothing else.
+        park(priv, 0.55)
+        expect(bands(0.55).massAlpha).toBe(0)
+        const near = r.computeStats()
+        expect(near.bloomPoints).toBe(SPREAD_COUNT)
+        expect(near.bloomWeight).toBeCloseTo(SPREAD_COUNT, 6)
+    })
+
+    it('with no mass band in play the emitter is byte-for-byte the original glyph-only pass', () => {
+        // 3D (and "local" mode, and community-less graphs) must be untouched by any of this: no mass
+        // level is active, so the far-band loop contributes nothing and every point comes from
+        // `this.nodes`, exactly as before. Pinned against the plain node count.
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        mounted.push(r) // teardown is afterEach's job — see `mounted`
+        r.mount(host, () => {})
+        r.setBloomCallback(() => {})
+        r.setConfig({ ...CONFIG, viewMode: '3d', showLodMasses: true })
+        r.render(spreadClusterGraph())
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame()
+        const stats = r.computeStats()
+        expect(stats.bloomPoints).toBe(SPREAD_COUNT) // one point per node, no clouds
+        expect(stats.bloomWeight).toBeGreaterThan(0)
+        expect(stats.bloomWeight).toBeLessThanOrEqual(SPREAD_COUNT) // depthAlpha <= 1 per node
+    })
+
+    /**
+     * TASK 24b. ONE community whose 300 members form TWO tight, well-separated blobs (not one blob —
+     * every other fixture in this block) — the exact shape `LodCluster.reps` exists for (lod.ts's own
+     * doc comment: "two well-separated blobs summarized by one ellipse invents mass in the empty gap
+     * between them"). 300 > `LOD_REP_POINTS_K` (24), so `representativePoints()` really does run its
+     * k-means, not the `n <= k` exact-passthrough case — and because the two blobs are FAR apart
+     * relative to their own width, farthest-first seeding cannot avoid putting real seeds in both (a
+     * seed placed only in one blob leaves the other, ~500 world units away, the single farthest
+     * remaining point every round). So the reps this cluster gets are known, structurally, to cover
+     * BOTH blobs, not just one — the fixture is non-vacuous for what this test checks, not merely
+     * plausible.
+     */
+    function twinBlobGraph() {
+        const nodes = []
+        const edges = []
+        const COLS = 10,
+            ROWS = 15 // 150 members per blob, 300 total
+        const SPACING = 6 * RING_SCALE
+        const SEP = 350 * RING_SCALE // blob-centre-to-blob-centre half-distance — ~13x the blob's own
+        // width (COLS*SPACING = 90 vs SEP*2 = 1050·RING_SCALE-normalised),
+        // i.e. genuinely "tight blobs, far apart", not a gradient between them.
+        let i = 0
+        for (const cx of [-SEP, SEP]) {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const x = cx + (c - (COLS - 1) / 2) * SPACING
+                    const y = (r - (ROWS - 1) / 2) * SPACING
+                    nodes.push({
+                        id: `t${i}`,
+                        label: `note ${i}`,
+                        kind: 'note' as const,
+                        position: [x, y, 0] as [number, number, number],
+                        position2d: [x, y] as [number, number],
+                        community: 0,
+                        communityLabel: 'Twin',
+                        communityPath: [0],
+                        communityPathLabels: ['Twin'],
+                    })
+                    i++
+                }
+            }
+        }
+        for (let k = 1; k < i; k++)
+            edges.push({ from: 't0', to: `t${k}`, kind: 'link' as const })
+        return { nodes, edges }
     }
-    const varWeightedX = axisVar(ev.wx, "x", (p) => p.weight), varCountX = axisVar(ev.wx, "x", () => 1);
-    const varWeightedY = axisVar(ev.wy, "y", (p) => p.weight), varCountY = axisVar(ev.wy, "y", () => 1);
 
-    // Non-vacuous: the two hypotheses really do predict substantially different spreads for this
-    // fixture (measured: ~12x apart) — if they didn't, the check below couldn't distinguish them.
-    expect(varCountX).toBeGreaterThan(varWeightedX * 3);
-    expect(varCountY).toBeGreaterThan(varWeightedY * 3);
+    /** Per-COLUMN summed field weight — collapses the y axis so a left/right bimodal shape shows up
+     *  as a two-hump profile regardless of how each blob is spread vertically. */
+    function columnProfile(f: Float32Array): number[] {
+        const cols = new Array<number>(FIELD_W).fill(0)
+        for (let row = 0; row < FIELD_H; row++) {
+            for (let col = 0; col < FIELD_W; col++)
+                cols[col] += f[row * FIELD_W + col]
+        }
+        return cols
+    }
 
-    // THE CHECK: the ACTUAL renderer's measured spread (`computeStats().bloomSdx`/`bloomSdy`, screen
-    // fractions) converted back to world units via the SAME per-axis scale `emitBloom` itself applies
-    // to every rep offset (`cameraFrame().s` — the scale is not what is under test here, only the
-    // weighting is; reusing it to convert units is the same pattern the "MINOR" bloom-scale test
-    // above already establishes) sits close to the WEIGHT-based prediction and clearly below the
-    // COUNT-based one.
-    const { s } = rp.cameraFrame();
-    const stats = r.computeStats();
-    const worldSdxFromStats = (stats.bloomSdx * rp.W) / s;
-    const worldSdyFromStats = (stats.bloomSdy * rp.H) / s;
-    expect(worldSdxFromStats * worldSdxFromStats).toBeLessThan(varCountX * 0.5);
-    expect(worldSdyFromStats * worldSdyFromStats).toBeLessThan(varCountY * 0.5);
-    // ...and it is in the right ballpark of the CORRECT hypothesis, not just "smaller than the wrong
-    // one" by coincidence (glyphAlpha's small nonzero residual and the level's own mass alpha are the
-    // only things that could still move it a little, hence a band rather than an exact match).
-    expect(worldSdxFromStats * worldSdxFromStats).toBeGreaterThan(varWeightedX * 0.5);
-    expect(worldSdxFromStats * worldSdxFromStats).toBeLessThan(varWeightedX * 2);
-    expect(worldSdyFromStats * worldSdyFromStats).toBeGreaterThan(varWeightedY * 0.5);
-    expect(worldSdyFromStats * worldSdyFromStats).toBeLessThan(varWeightedY * 2);
-  });
-});
+    it('REQUIRED — a clumped, anisotropic (two-blob) cluster lights the blobs, not the empty gap between them', () => {
+        // The regression this pins: emitting a mass as one ellipse sized off sdx/sdy places its BRIGHTEST
+        // light at the CENTROID — which for two symmetric, well-separated blobs is the empty gap exactly
+        // halfway between them, a place with zero real members. Representative points instead land where
+        // the members actually are: two peaks flanking a dark trough.
+        const { priv, field } = mountBloom(twinBlobGraph(), true)
+        expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1) // fit — masses own the field outright
+        expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02)
+
+        const f = field()
+        expect(f).not.toBeNull()
+        const cols = columnProfile(f!)
+
+        // Recentring (build()'s bounding-box centre step) puts the gap's midpoint at world x=0, and fit
+        // centres world x=0 on the field — so the trough is expected near the middle column, and the two
+        // peaks flank it left and right. Locate them by scanning rather than assuming an exact index: the
+        // fit's own padding/box math is a different subsystem than the one this test checks.
+        const mid = FIELD_W / 2
+        let leftPeakCol = 0,
+            leftPeakV = -1
+        for (let c = 0; c < mid - 2; c++)
+            if (cols[c] > leftPeakV) {
+                leftPeakV = cols[c]
+                leftPeakCol = c
+            }
+        let rightPeakCol = 0,
+            rightPeakV = -1
+        for (let c = Math.ceil(mid) + 2; c < FIELD_W; c++)
+            if (cols[c] > rightPeakV) {
+                rightPeakV = cols[c]
+                rightPeakCol = c
+            }
+        const centerV = (cols[Math.floor(mid)] + cols[Math.ceil(mid) - 1]) / 2
+
+        // Non-vacuous: two REAL, separated peaks exist at all (not e.g. one degenerate blob because the
+        // fixture collapsed) and each carries real weight.
+        expect(leftPeakCol).toBeLessThan(mid)
+        expect(rightPeakCol).toBeGreaterThan(mid)
+        expect(leftPeakV).toBeGreaterThan(0)
+        expect(rightPeakV).toBeGreaterThan(0)
+
+        // THE CHECK: the gap is dark relative to the blobs it separates — the property a single
+        // synthesized ellipse (sized to span both blobs) cannot have, because its peak sits AT the
+        // centroid, i.e. in the gap. A generous factor (not "basically zero") because blur still leaks
+        // some light across a >40-cell separation; the pre-fix ellipse fails this by a wide margin
+        // regardless (see this test run against the pre-24b implementation, below).
+        expect(centerV).toBeLessThan(0.5 * Math.min(leftPeakV, rightPeakV))
+    })
+
+    /**
+     * TASK 24b — THE WEIGHTING DECISION. lod.ts's `reps` doc comment measures `reps` as MASS-BLIND: a
+     * dense core can earn as few as 4 of 24 reps (each standing for ~70 members) while lone, scattered
+     * strays earn one rep EACH (standing for 1) — rep COUNT does not track member density. This fixture
+     * reproduces that shape directly (a 280-member dense core plus 20 lone, widely-scattered strays, one
+     * community) to make the choice this test is named for checkable: weight each emitted point by
+     * `rep.weight` (how many real members it stands for — correct for MASS) or by an equal 1/reps.length
+     * split (correct only if rep COUNT tracked member count, which the mass-blind property says it does
+     * not). The two predict OPPOSITE outcomes here: by `rep.weight`, the dense core (93% of the real
+     * membership) must dominate the field; by equal count-split, the ~20 single-member stray reps would
+     * outnumber the core's handful of reps and could plausibly outshine it instead.
+     */
+    function denseCoreWithStraysGraph() {
+        const nodes = []
+        const edges = []
+        const CORE_SIDE = 17 // 289 grid points, trimmed to 280 below
+        const CORE_SPACING = 3 * RING_SCALE
+        let i = 0
+        for (let r = 0; r < CORE_SIDE && i < 280; r++) {
+            for (let c = 0; c < CORE_SIDE && i < 280; c++) {
+                const x = (c - (CORE_SIDE - 1) / 2) * CORE_SPACING
+                const y = (r - (CORE_SIDE - 1) / 2) * CORE_SPACING
+                nodes.push({
+                    id: `d${i}`,
+                    label: `note ${i}`,
+                    kind: 'note' as const,
+                    position: [x, y, 0] as [number, number, number],
+                    position2d: [x, y] as [number, number],
+                    community: 0,
+                    communityLabel: 'Dense',
+                    communityPath: [0],
+                    communityPathLabels: ['Dense'],
+                })
+                i++
+            }
+        }
+        const STRAYS = 20,
+            STRAY_RADIUS = 900 * RING_SCALE
+        for (let s = 0; s < STRAYS; s++) {
+            const a = (s / STRAYS) * Math.PI * 2
+            const x = Math.cos(a) * STRAY_RADIUS,
+                y = Math.sin(a) * STRAY_RADIUS
+            nodes.push({
+                id: `d${i}`,
+                label: `stray ${s}`,
+                kind: 'note' as const,
+                position: [x, y, 0] as [number, number, number],
+                position2d: [x, y] as [number, number],
+                community: 0,
+                communityLabel: 'Dense',
+                communityPath: [0],
+                communityPathLabels: ['Dense'],
+            })
+            i++
+        }
+        for (let k = 1; k < i; k++)
+            edges.push({ from: 'd0', to: `d${k}`, kind: 'link' as const })
+        return { nodes, edges }
+    }
+
+    it('REQUIRED — weighting by rep.weight (not rep count) reproduces the true population spread; weighting by rep count would not', () => {
+        // Why this checks the SPREAD rather than the FIELD directly: at this field resolution (64x40)
+        // the blur kernel's reach (radius 6, tripled) is wide enough relative to the fixture's own
+        // geometry that the dense core's own halo floods almost the entire post-blur field regardless of
+        // weighting scheme — the post-normalise picture alone can't distinguish the two hypotheses here.
+        // The weighted SECOND MOMENT can: it is computed by emitBloom's own generic, resolution- and
+        // blur-independent moment pass (the same `mx/my/mxx/myy` loop over `pts` that every other bloom
+        // test in this file already trusts — see e.g. the anisotropic-spread test above), straight off
+        // the pre-blur point list.
+        const { r, priv } = mountBloom(denseCoreWithStraysGraph(), true)
+        expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1)
+        expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02)
+
+        interface RepsPriv {
+            entityLevels: {
+                reps: { x: number; y: number; weight: number }[]
+                count: number
+                wx: number
+                wy: number
+            }[][]
+            W: number
+            H: number
+            cameraFrame(): { s: number }
+        }
+        const rp = r as unknown as RepsPriv
+        expect(rp.entityLevels[0]?.length).toBe(1) // one community — the field's entire cloud
+        const ev = rp.entityLevels[0][0]
+        const reps = ev.reps
+        expect(ev.count).toBe(300) // 280 core + 20 strays
+
+        // A rep can only carry `weight > 1` if it summarizes more than one member — and only the DENSE
+        // CORE has co-located members at all (every stray is, by construction, isolated from every other
+        // member by ~900x the core's own spacing), so a multi-weight rep can only be a core rep.
+        const coreReps = reps.filter(rp2 => rp2.weight > 1)
+        const strayReps = reps.filter(rp2 => rp2.weight === 1)
+        expect(coreReps.length).toBeGreaterThan(0)
+        expect(strayReps.length).toBeGreaterThan(0)
+        // The mass-blind property itself, non-vacuously present in THIS fixture: the core's real 280
+        // members are NOT represented by 280/300 of the reps — count and mass diverge, which is exactly
+        // what makes "weight by rep.weight" and "weight by rep count" different claims here.
+        expect(coreReps.length / reps.length).toBeLessThan(280 / 300)
+        const coreWeight = coreReps.reduce((s, rp2) => s + rp2.weight, 0)
+        expect(coreWeight).toBeGreaterThanOrEqual(270) // the core's real members really did land as core reps
+
+        // THE TWO HYPOTHESES, computed directly from `reps` (never by calling emitBloom): the per-axis
+        // variance about the TRUE population centroid (`ev.wx`/`ev.wy` — exact by lod.ts's own
+        // weight-conservation guarantee, independent of how emitBloom might split light across reps) if
+        // every rep's share of the light is `rep.weight` (correct) versus an equal 1/reps.length share
+        // (rep-count-based, i.e. what this task's brief calls "wrong for this shape"). Both strays and
+        // core sit near-symmetrically around the centroid (a full circle of strays around a centred
+        // core), so the two hypotheses' MEANS coincide — it is the SPREAD that diverges, because a
+        // FRACTION OF WEIGHT (6.7% by mass vs 83% by count) sitting a long way out dominates a
+        // squared-distance sum either way, just by very different amounts.
+        function axisVar(
+            mean: number,
+            axis: 'x' | 'y',
+            weightFn: (p: { weight: number }) => number,
+        ): number {
+            let sw = 0,
+                swdd = 0
+            for (const rp2 of reps) {
+                const w = weightFn(rp2)
+                const d = rp2[axis] - mean
+                sw += w
+                swdd += w * d * d
+            }
+            return swdd / sw
+        }
+        const varWeightedX = axisVar(ev.wx, 'x', p => p.weight),
+            varCountX = axisVar(ev.wx, 'x', () => 1)
+        const varWeightedY = axisVar(ev.wy, 'y', p => p.weight),
+            varCountY = axisVar(ev.wy, 'y', () => 1)
+
+        // Non-vacuous: the two hypotheses really do predict substantially different spreads for this
+        // fixture (measured: ~12x apart) — if they didn't, the check below couldn't distinguish them.
+        expect(varCountX).toBeGreaterThan(varWeightedX * 3)
+        expect(varCountY).toBeGreaterThan(varWeightedY * 3)
+
+        // THE CHECK: the ACTUAL renderer's measured spread (`computeStats().bloomSdx`/`bloomSdy`, screen
+        // fractions) converted back to world units via the SAME per-axis scale `emitBloom` itself applies
+        // to every rep offset (`cameraFrame().s` — the scale is not what is under test here, only the
+        // weighting is; reusing it to convert units is the same pattern the "MINOR" bloom-scale test
+        // above already establishes) sits close to the WEIGHT-based prediction and clearly below the
+        // COUNT-based one.
+        const { s } = rp.cameraFrame()
+        const stats = r.computeStats()
+        const worldSdxFromStats = (stats.bloomSdx * rp.W) / s
+        const worldSdyFromStats = (stats.bloomSdy * rp.H) / s
+        expect(worldSdxFromStats * worldSdxFromStats).toBeLessThan(
+            varCountX * 0.5,
+        )
+        expect(worldSdyFromStats * worldSdyFromStats).toBeLessThan(
+            varCountY * 0.5,
+        )
+        // ...and it is in the right ballpark of the CORRECT hypothesis, not just "smaller than the wrong
+        // one" by coincidence (glyphAlpha's small nonzero residual and the level's own mass alpha are the
+        // only things that could still move it a little, hence a band rather than an exact match).
+        expect(worldSdxFromStats * worldSdxFromStats).toBeGreaterThan(
+            varWeightedX * 0.5,
+        )
+        expect(worldSdxFromStats * worldSdxFromStats).toBeLessThan(
+            varWeightedX * 2,
+        )
+        expect(worldSdyFromStats * worldSdyFromStats).toBeGreaterThan(
+            varWeightedY * 0.5,
+        )
+        expect(worldSdyFromStats * worldSdyFromStats).toBeLessThan(
+            varWeightedY * 2,
+        )
+    })
+})
 
 /**
  * TASK 24a ROUND-2 REVIEW, CARRIED FORWARD — pinned here because the real cost driver is downstream,
@@ -4129,688 +5527,991 @@ describe("the phosphor bloom is emitted by whichever pass owns the field (Task 1
  * `representativePoints()` really does run its k-means, not the `n <= k` exact passthrough; the
  * `expect(cluster.count).toBe(250)` calls below prove that precondition rather than assume it.
  */
-describe("LOD rep-count downstream cost ceiling (Task 24a round-2 review, pinned here — Task 24b consumes it)", () => {
-  /** ONE point set — 8 communities x 250 members, non-collinear grids so k-means has room to place up
-   *  to 64 distinct centroids without degenerating — that BOTH fixture shapes below derive from, so
-   *  the pure (`LodNodeInput`) and rendered (`GraphNode`-shaped) versions can never drift apart. */
-  function coarseMembers(): { id: string; community: number; x: number; y: number }[] {
-    const out: { id: string; community: number; x: number; y: number }[] = [];
-    const COLS = 20; // 250 members -> 13 rows of 20, last row partial
-    for (let c = 0; c < 8; c++) {
-      for (let m = 0; m < 250; m++) {
-        const col = m % COLS, row = Math.floor(m / COLS);
-        out.push({ id: `c${c}n${m}`, community: c, x: c * 5000 + col * 7, y: row * 7 });
-      }
-    }
-    return out;
-  }
-
-  function coarseFixture(): LodNodeInput[] {
-    return coarseMembers().map((p) => ({ id: p.id, path: [p.community], x: p.x, y: p.y }));
-  }
-
-  /** The SAME point set, as a mountable graph — one hierarchy level (`communityPath` length 1), so
-   *  `showLodMasses` puts the whole thing on the far band at fit, exactly like `coarseFixture()`'s
-   *  single-level `buildLodIndex` call. Edges are a cheap per-community star; LOD grouping only reads
-   *  `community`/`communityPath`, never edges, so they don't affect `reps` at all. */
-  function coarseGraphFixture() {
-    const nodes = coarseMembers().map((p) => ({
-      id: p.id, label: p.id, kind: "note" as const,
-      position: [p.x, p.y, 0] as [number, number, number], position2d: [p.x, p.y] as [number, number],
-      community: p.community, communityLabel: `Group ${p.community}`, communityPath: [p.community],
-      communityPathLabels: [`Group ${p.community}`],
-    }));
-    const edges: { from: string; to: string; kind: "link" }[] = [];
-    for (let c = 0; c < 8; c++) {
-      for (let m = 1; m < 250; m++) edges.push({ from: `c${c}n0`, to: `c${c}n${m}`, kind: "link" as const });
-    }
-    return { nodes, edges };
-  }
-
-  /** Sum of `reps.length` over the coarsest (only) level's clusters, for a given `k` — the exact
-   *  quantity `emitBloom()` turns into that many `pts.push()` calls once that level owns the field. */
-  function totalRepsFor(nodes: LodNodeInput[], k: number): number {
-    const levels = buildLodIndex(nodes, [], LOD_MIN_CLUSTER, k);
-    expect(levels[0]?.clusters.length).toBe(8);              // non-vacuous: still 8 real communities...
-    for (const c of levels[0].clusters) expect(c.count).toBe(250); // ...of 250 members each, every k
-    return levels[0].clusters.reduce((s, c) => s + c.reps.length, 0);
-  }
-
-  it("REQUIRED — total reps (this emission's real per-frame cost) scales with k exactly as measured, and a fixed budget separates the shipped band from a bad choice", () => {
-    const nodes = coarseFixture();
-
-    // Exact counts, derived independently (8 clusters * min(k, 250) each — valid once k-means fully
-    // uses every centroid, which the non-vacuous checks inside totalRepsFor confirm held here), not
-    // copied from a prior run of buildLodIndex itself.
-    expect(totalRepsFor(nodes, 16)).toBe(128);
-    expect(totalRepsFor(nodes, 32)).toBe(256);
-    expect(totalRepsFor(nodes, 64)).toBe(512);
-    expect(totalRepsFor(nodes, 256)).toBe(2000);  // 250 <= 256: the n<=k exact regime, every member
-    expect(totalRepsFor(nodes, 10000)).toBe(2000); // ...same, unbounded k can't exceed real membership
-
-    // THE CEILING — one ABSOLUTE bare literal, not phrased relative to LOD_REP_POINTS_K, so retuning
-    // the constant can't keep this green by construction. Passes at the shipped band (16/32), fails
-    // from 64 up — the same three-way split the reviewer measured, now behind a real number instead
-    // of a range check both 15 and 33 would also have passed.
-    const BLOOM_MASS_FRAME_BUDGET = 300;
-    expect(totalRepsFor(nodes, 16)).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET);
-    expect(totalRepsFor(nodes, 32)).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET);
-    expect(totalRepsFor(nodes, 64)).toBeGreaterThan(BLOOM_MASS_FRAME_BUDGET);
-    expect(totalRepsFor(nodes, 256)).toBeGreaterThan(BLOOM_MASS_FRAME_BUDGET);
-    expect(totalRepsFor(nodes, 10000)).toBeGreaterThan(BLOOM_MASS_FRAME_BUDGET);
-
-    // THE ACTUAL BINDING (round-1 review): every assertion above sweeps EXPLICIT k literals — none of
-    // them read the shipped `LOD_REP_POINTS_K` constant, so this whole test would stay green even if
-    // that constant were raised to a value the sweep above already proves is over budget. Import and
-    // check it directly, so a future retune of the shipped constant is what this test is actually
-    // about, not incidentally about it.
-    const shippedTotal = totalRepsFor(nodes, LOD_REP_POINTS_K);
-    expect(shippedTotal).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET);
-
-    // THE CONNECTION TO emitBloom (round-1 review): everything above calls `buildLodIndex` directly —
-    // it never exercises `emitBloom` at all, so it would pass unchanged against the pre-24b ellipse
-    // implementation too. Mount the SAME point set as a real graph and confirm the renderer's actual
-    // per-frame `bloomPoints` (mass band only — glyphAlpha is ~0 at fit here, same as every other
-    // fixture in the "phosphor bloom" block above) equals `shippedTotal` exactly. That equality IS
-    // this method's "one BloomPoint per rep, not a per-rep ring-sampled cloud" design, checked rather
-    // than only asserted in a comment: if a future edit made it one `pushCloud` per rep instead (what
-    // `cloudGrid` would spend — up to 8 rings x 16 per ring = 128x this), `bloomPoints` would blow far
-    // past `shippedTotal` and this assertion would catch it even though the 300 budget alone could
-    // not (a per-rep-cloud regression wouldn't change `reps.length`, only what emitBloom does with it).
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    let lastField: Float32Array | null = null;
-    r.mount(host, () => {});
-    r.setBloomCallback((f) => { lastField = f; });
-    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
-    r.render(coarseGraphFixture());
-    frame();
-    interface CostPriv { levelCount: number; glyphAlpha: number }
-    const priv = r as unknown as CostPriv;
-    expect(priv.levelCount).toBe(1);
-    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1); // fit — masses own the field outright
-    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);       // LOD_ALPHA_EPS — no glyph contribution
-    expect(lastField).not.toBeNull();
-    const stats = r.computeStats();
-    expect(stats.bloomPoints).toBe(shippedTotal);
-  });
-});
-
-describe("LOD mass names — the CONDITIONAL edge clamp (the parked-label defect on the DEFAULT 2D path)", () => {
-  /**
-   * Two fat, spatially separated communities. Sizes are chosen deliberately: `massRadii(200, …)`
-   * gives `rowR = 3` and `colR = round(3 × CELL_H/CELL_W) = 9`, so `projectEntities`' `onGrid` test
-   * (`col >= -drawnColR && col < cols + drawnColR`) admits a mass whose CENTRE is up to NINE columns
-   * off the grid. That nine-column band is the entire bug surface: it is where an unconditional
-   * clamp parks the name at the edge column while the field keeps sliding under it. A small fixture
-   * (`lodGraph`'s 6-note blobs → `colR = 2`) leaves a two-column band, too narrow to sample.
-   */
-  function fatClusterGraph(mirrored = false) {
-    const nodes = [];
-    const edges = [];
-    const NAMES = ["Region A", "Region B"];
-    for (let c = 0; c < 2; c++) {
-      for (let k = 0; k < 200; k++) {
-        const x = ((c === 0 ? -300 : 300) + (k % 20) * 4) * (mirrored ? -1 : 1);
-        const y = Math.floor(k / 20) * 4;
-        nodes.push({
-          id: `c${c}n${k}`, label: `note ${c}-${k}`, kind: "note" as const,
-          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-          community: c, communityLabel: NAMES[c],
-        });
-      }
-      // A hub-and-spoke wiring so the community has real degree structure (and so the aggregate
-      // connector between the two has something to summarize).
-      for (let k = 1; k < 200; k++) edges.push({ from: `c${c}n0`, to: `c${c}n${k}`, kind: "link" as const });
-    }
-    for (let k = 0; k < 5; k++) edges.push({ from: `c0n${k}`, to: `c1n${k}`, kind: "link" as const });
-    return { nodes, edges };
-  }
-
-  interface NamePriv {
-    entityFlat: { level: number; community: number; col: number; row: number; drawnColR: number }[];
-    labels: { text: string; col: number; widthCells: number; eyebrow?: boolean }[];
-    m: { cols: number };
-  }
-
-  /**
-   * One continuous 2D pan gesture in FINE steps (the same technique the hub-anchored path's boundary
-   * tests use, and for the same reason: `onPointerMove` only starts panning past DRAG_THRESHOLD, and
-   * the field edge is the ONLY place the placement rule can be discontinuous, so a coarse gesture
-   * steps clean over it without ever sampling there). Samples the named mass's anchor column and its
-   * label's column every frame.
-   */
-  function massPanSweep(dxPerStep: number, steps: number, community: number, text: string) {
-    const { r, viewport } = mountRenderer("2d", fatClusterGraph(dxPerStep < 0), { showLodMasses: true });
-    const priv = r as unknown as NamePriv;
-    let px = 400, t = 100;
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: px, clientY: 300 }));
-    px += 20 * Math.sign(dxPerStep); // prime past DRAG_THRESHOLD
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: px, clientY: 300 }));
-    frame((t += 16));
-
-    const samples: { anchorCol: number; labelCol: number | null; w: number | null }[] = [];
-    for (let i = 0; i <= steps; i++) {
-      if (i > 0) {
-        px += dxPerStep;
-        window.dispatchEvent(new PointerEvent("pointermove", { clientX: px, clientY: 300 }));
-        frame((t += 16));
-      }
-      const ev = priv.entityFlat.find((e) => e.community === community)!;
-      const label = priv.labels.find((l) => l.eyebrow && l.text === text);
-      samples.push({ anchorCol: ev.col, labelCol: label ? label.col : null, w: label ? label.widthCells : null });
-    }
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: px, clientY: 300 }));
-    const cols = priv.m.cols;
-    const drawnColR = priv.entityFlat.find((e) => e.community === community)!.drawnColR;
-    r.destroy();
-    return { samples, cols, drawnColR };
-  }
-
-  function assertMassNameClampIsConditional(dxPerStep: number, steps: number, community: number, text: string) {
-    const { samples, cols, drawnColR } = massPanSweep(dxPerStep, steps, community, text);
-
-    // SANITY FIRST — every invariant below is vacuous if the sweep never reached the band. The
-    // fixture is sized so `drawnColR` is wide enough for the band to be sampled at all; assert the
-    // size the reasoning depends on rather than trusting massRadii not to be retuned underneath it.
-    expect(drawnColR).toBeGreaterThanOrEqual(6);
-    expect(samples.some((s) => s.anchorCol >= 0 && s.anchorCol < cols)).toBe(true);   // anchor was on-grid...
-    expect(samples.some((s) => s.anchorCol < 0 || s.anchorCol >= cols)).toBe(true);   // ...and later was not
-    expect(samples.filter((s) => s.labelCol != null).length).toBeGreaterThan(5);
-    const offGridDrawn = samples.filter((s) => s.labelCol != null && (s.anchorCol < 0 || s.anchorCol >= cols));
-    expect(offGridDrawn.length).toBeGreaterThan(0); // the far side of the boundary really was sampled
-
-    // (A) OFF-GRID ANCHORS ARE NOT CLAMPED. Past the edge the name keeps its raw centred column and
-    // clips — exactly `anchorCol - floor(w/2)`, no nudging. This is the assertion the unconditional
-    // clamp fails: it pins the name to 0 (or cols - w) and holds it there while the anchor slides on.
-    for (const s of offGridDrawn) {
-      expect(`at anchor ${s.anchorCol}: label ${s.labelCol}`)
-        .toBe(`at anchor ${s.anchorCol}: label ${s.anchorCol - Math.floor(s.w! / 2)}`);
+describe('LOD rep-count downstream cost ceiling (Task 24a round-2 review, pinned here — Task 24b consumes it)', () => {
+    /** ONE point set — 8 communities x 250 members, non-collinear grids so k-means has room to place up
+     *  to 64 distinct centroids without degenerating — that BOTH fixture shapes below derive from, so
+     *  the pure (`LodNodeInput`) and rendered (`GraphNode`-shaped) versions can never drift apart. */
+    function coarseMembers(): {
+        id: string
+        community: number
+        x: number
+        y: number
+    }[] {
+        const out: { id: string; community: number; x: number; y: number }[] =
+            []
+        const COLS = 20 // 250 members -> 13 rows of 20, last row partial
+        for (let c = 0; c < 8; c++) {
+            for (let m = 0; m < 250; m++) {
+                const col = m % COLS,
+                    row = Math.floor(m / COLS)
+                out.push({
+                    id: `c${c}n${m}`,
+                    community: c,
+                    x: c * 5000 + col * 7,
+                    y: row * 7,
+                })
+            }
+        }
+        return out
     }
 
-    // (B) ON-GRID ANCHORS ARE STILL CLAMPED — the clamp's legitimate job, which (A) must not have
-    // deleted. Every drawn name whose anchor is on the grid lies fully inside it.
-    const onGridDrawn = samples.filter((s) => s.labelCol != null && s.anchorCol >= 0 && s.anchorCol < cols);
-    expect(onGridDrawn.length).toBeGreaterThan(5);
-    for (const s of onGridDrawn) {
-      expect(s.labelCol!).toBeGreaterThanOrEqual(0);
-      expect(s.labelCol! + s.w!).toBeLessThanOrEqual(cols);
+    function coarseFixture(): LodNodeInput[] {
+        return coarseMembers().map(p => ({
+            id: p.id,
+            path: [p.community],
+            x: p.x,
+            y: p.y,
+        }))
     }
 
-    // (C) CONTINUITY. Frame to frame the name may not move further than its anchor did, except for
-    // the clamp switching on or off — at most `ceil(w/2)`. The no-teleport bound.
-    let worst = { v: 0, at: "" };
-    for (let i = 1; i < samples.length; i++) {
-      const a = samples[i - 1], b = samples[i];
-      if (a.labelCol == null || b.labelCol == null) continue;
-      const excess = Math.abs((b.labelCol - a.labelCol) - (b.anchorCol - a.anchorCol)) - Math.ceil(b.w! / 2);
-      if (excess > worst.v) worst = { v: excess, at: `frame ${i}: label ${a.labelCol}->${b.labelCol}, anchor ${a.anchorCol}->${b.anchorCol}` };
+    /** The SAME point set, as a mountable graph — one hierarchy level (`communityPath` length 1), so
+     *  `showLodMasses` puts the whole thing on the far band at fit, exactly like `coarseFixture()`'s
+     *  single-level `buildLodIndex` call. Edges are a cheap per-community star; LOD grouping only reads
+     *  `community`/`communityPath`, never edges, so they don't affect `reps` at all. */
+    function coarseGraphFixture() {
+        const nodes = coarseMembers().map(p => ({
+            id: p.id,
+            label: p.id,
+            kind: 'note' as const,
+            position: [p.x, p.y, 0] as [number, number, number],
+            position2d: [p.x, p.y] as [number, number],
+            community: p.community,
+            communityLabel: `Group ${p.community}`,
+            communityPath: [p.community],
+            communityPathLabels: [`Group ${p.community}`],
+        }))
+        const edges: { from: string; to: string; kind: 'link' }[] = []
+        for (let c = 0; c < 8; c++) {
+            for (let m = 1; m < 250; m++)
+                edges.push({
+                    from: `c${c}n0`,
+                    to: `c${c}n${m}`,
+                    kind: 'link' as const,
+                })
+        }
+        return { nodes, edges }
     }
-    expect(`step ${worst.v} ${worst.at}`).toBe("step 0 ");
-  }
 
-  it("BOUNDARY CONTINUITY (right edge) — a mass name is never parked at the edge column while its mass keeps panning", () => {
-    assertMassNameClampIsConditional(2, 90, 1, "REGION B");
-  });
-
-  it("BOUNDARY CONTINUITY (left edge) — same, in the other direction (the left clamp is a separate branch)", () => {
-    // MIRRORED fixture, exactly as the hub-anchored pair does it: negating x makes community 1 the
-    // one that leads off the LEFT edge, so the `col < 0` branch is the one under test.
-    assertMassNameClampIsConditional(-2, 90, 1, "REGION B");
-  });
-});
-
-describe("interaction", () => {
-  /** Screen px of a node glyph the renderer actually drew (identified by its cluster colour). */
-  function nodeHit(): { x: number; y: number } {
-    const run = nodeRuns().find((f) => /[.o@]/.test(f.text));
-    expect(run).toBeDefined();
-    return { x: run!.x + run!.text.search(/[.o@]/) * CELL_W + 1, y: run!.y };
-  }
-
-  it("hovers the node under the cursor, and a click opens it (at a deep stop, where notes are on the field)", () => {
-    const { r, viewport, clicks, hovers } = mountRenderer("2d");
-    // At fit the 2D field shows aggregate entities (LOD) — frame a note first so real note glyphs
-    // are on the grid to hit.
-    r.frameSubset(["n0"]);
-    settle(200);
-    // The settled loop is idle (dirty=false) — force one repaint so nodeHit() reads a fresh frame.
-    ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-    r.setSearchMatches(new Set());
-    frame(9999);
-    const p = nodeHit();
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: p.x, clientY: p.y }));
-    expect(hovers.filter(Boolean).length).toBeGreaterThan(0);
-
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: p.x, clientY: p.y }));
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: p.x, clientY: p.y }));
-    expect(clicks.length).toBe(1);
-    r.destroy();
-  });
-
-  it("clicking an AGGREGATE ENTITY at fit expands it (zooms toward its members) instead of opening a note", () => {
-    const { r, viewport, clicks, zooms } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
-    const p = lodPriv(r);
-    const i = p.cellEntity.findIndex((v) => v >= 0);
-    expect(i).toBeGreaterThanOrEqual(0);
-    const { x, y } = cellPx(p, i);
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: x, clientY: y }));
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x, clientY: y }));
-    settle(200);
-    expect(clicks).toEqual([]);                 // a cluster is not a note
-    expect(zooms.at(-1)!).toBeLessThan(100);    // the field zoomed toward the cluster's members
-    r.destroy();
-  });
-
-  /**
-   * A cluster whose members are LOPSIDED and SPREAD: a tight nine-note core plus one lone stray far
-   * above it, with a counterweight cluster on the right so the graph's own bounding box is wider
-   * than the clicked cluster's. Two properties the other LOD fixtures don't have, both of them the
-   * geometry a real vault produces and the reason clicking a cluster used to throw its own members
-   * off the field:
-   *   - the member CENTROID (y ≈ -240, dragged down by the core) and the member bounding-box CENTRE
-   *     (y = 0) are 240 world units apart, so centring on the wrong one puts the stray off-grid;
-   *   - the cluster is TALL relative to the field, so the child-level boundary — which knows nothing
-   *     about extent — magnifies past what the grid can hold.
-   */
-  function lopsidedGraph() {
-    const nodes = [];
-    const edges = [];
-    const push = (id: string, x: number, y: number, top: number, blob: number) => nodes.push({
-      id, label: `note ${id}`, kind: "note" as const,
-      position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-      community: blob, communityLabel: `Blob ${blob}`,
-      communityPath: [top, blob], communityPathLabels: [`Top ${top}`, `Blob ${blob}`],
-    });
-    for (let k = 0; k < 9; k++) push(`a${k}`, -600 + (k % 3) * 10, -300 + Math.floor(k / 3) * 10, 0, k < 5 ? 0 : 1);
-    push("astray", -600, 300, 0, 1);
-    for (let k = 0; k < 10; k++) push(`b${k}`, 600 + (k % 5) * 10, -20 + Math.floor(k / 5) * 10, 1, k < 5 ? 2 : 3);
-    for (let k = 1; k < 9; k++) edges.push({ from: "a0", to: `a${k}`, kind: "link" as const });
-    edges.push({ from: "a0", to: "astray", kind: "link" as const });
-    for (let k = 1; k < 10; k++) edges.push({ from: "b0", to: `b${k}`, kind: "link" as const });
-    edges.push({ from: "a0", to: "b0", kind: "link" as const });
-    return { nodes, edges };
-  }
-
-  it("clicking a cluster centres on its members' BOX, and never zooms so far in that it loses them", () => {
-    const { r, viewport } = mountRenderer("2d", lopsidedGraph(), { showLodMasses: true });
-    const p = lodPriv(r);
-    // Click the LEFT (lopsided) top-level mass specifically — the counterweight on the right is
-    // there to shape the fit, not to be clicked.
-    const cell = [...p.cellEntity].findIndex((v) => v >= 0 && p.entityFlat[v].level === 0 && p.entityFlat[v].community === 0);
-    expect(cell).toBeGreaterThanOrEqual(0);
-    const at = cellPx(p, cell);
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: at.x, clientY: at.y }));
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: at.x, clientY: at.y }));
-    settle(300);
-
-    const members = p.nodes.filter((n) => n.node.id.startsWith("a"));
-    expect(members.length).toBe(10);
-    const ys = members.map((n) => (n as unknown as { p2: number[] }).p2[1]);
-    const boxCy = (Math.min(...ys) + Math.max(...ys)) / 2;
-    const centroidCy = ys.reduce((a, b) => a + b, 0) / ys.length;
-    // The fixture is only meaningful if the two anchors actually disagree — assert that, so a future
-    // fixture edit that quietly collapses them can't turn this into a test of nothing.
-    expect(Math.abs(boxCy - centroidCy)).toBeGreaterThan(100);
-    // The camera went to the BOX centre. (Pre-fix it went to `ev.wy`, the centroid.)
-    expect(Math.abs(p.target[1] - boxCy)).toBeLessThan(Math.abs(boxCy - centroidCy) / 2);
-
-    // ...and it stopped short of the stop that would have lost the cluster: at the resolution it
-    // landed on, the members' box still covers no more than CLUSTER_CLICK_MAX_COVER of the field.
-    // Measured against the projector's own 2D scale law (pxPerWorld * res), so this fails if the
-    // ceiling is removed OR if it stops matching how the field is actually projected.
-    const halfSpanPx = (Math.max(...ys) - Math.min(...ys)) / 2 * p.pxPerWorld * p.res;
-    expect(halfSpanPx).toBeLessThanOrEqual((p.m.rows * p.m.cellH / 2) * 1.5 * 1.02);
-    // The click still zoomed IN — a ceiling that fires by refusing to move is not a fix.
-    expect(r.computeStats().zoomPct).toBeLessThan(100);
-    r.destroy();
-  });
-
-  it("clicking a COARSEST entity centres on it and expands exactly ONE level in — children on-grid, not the leaves yet", () => {
-    const { r, viewport, clicks } = mountRenderer("2d", lodGraph(), { showLodMasses: true });
-    const p = lodPriv(r);
-    // At fit only the coarsest (TOP) level is on-grid — see the LOD describe block above.
-    expect(entityLevelsOnGrid(p)).toEqual(new Set([0]));
-    const i = p.cellEntity.findIndex((v) => v >= 0);
-    const { x, y } = cellPx(p, i);
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: x, clientY: y }));
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x, clientY: y }));
-    settle(300);
-    expect(clicks).toEqual([]);
-    // The child level now owns the field — the coarsest level has fully crossfaded away...
-    expect(entityLevelsOnGrid(p)).toEqual(new Set([1]));
-    // ...and the click landed ONE level in, not at the leaves. WAS asserted as `cellNode` all < 0,
-    // which stopped meaning "not the leaves" once the mass→glyph crossfade moved to [0.32, 0.46]:
-    // individual glyphs legitimately emerge through a dissolving mass at this stop. What still
-    // separates "one level in" from "straight to the leaves" is the LABEL ladder — file names do
-    // not begin crossfading in until FILE_LABEL_REVEAL_T (0.75), well past this boundary.
-    expect(ctx.fills.some((f) => f.text.includes("[[note "))).toBe(false);
-    expect(ctx.fills.some((f) => f.text.startsWith("BLOB "))).toBe(true);
-    r.destroy();
-  });
-
-  it("orbiting in 3D re-rasterizes the field, and a drag never opens a note", () => {
-    const { r, viewport, clicks } = mountRenderer("3d");
-    const before = allText();
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 500, clientY: 340 }));
-    ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-    frame(32);
-    const after = allText();
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 500, clientY: 340 }));
-    expect(after.length).toBeGreaterThan(0);
-    expect(after).not.toBe(before);
-    expect(clicks).toEqual([]);
-    r.destroy();
-  });
-
-  it("panning in 2D moves the field", () => {
-    const { r, viewport, clicks } = mountRenderer("2d");
-    // At fit the 2D field is a handful of entity masses whose TEXT is identical wherever they sit —
-    // a pan shows up in the fills' positions, so snapshot text AND coordinates.
-    const snap = () => ctx.fills.map((f) => `${f.text}@${f.x.toFixed(1)},${f.y.toFixed(1)}`).join("|");
-    const before = snap();
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 300, clientY: 250 }));
-    ctx.fills.length = 0;
-  ctx.strokes.length = 0;
-    frame(32);
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 300, clientY: 250 }));
-    expect(snap()).not.toBe(before);
-    expect(clicks).toEqual([]);
-    r.destroy();
-  });
-
-  it("an empty-space click drops a persistent cluster highlight", () => {
-    const { r, viewport } = mountRenderer("2d");
-    let cleared = false;
-    r.onHighlightCleared = () => { cleared = true; };
-    r.highlightNodes(["n0", "n1"]);
-    frame();
-    // The very top-left corner of the field is padding — no node can be there.
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 1, clientY: 1 }));
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 1, clientY: 1 }));
-    expect(cleared).toBe(true);
-    r.destroy();
-  });
-});
-
-describe("UI data accessors", () => {
-  it("exposes clusters with a colour + member ids, and the nodes the search list needs", () => {
-    const { r } = mountRenderer("3d");
-    const clusters = r.getCommunityCentroids();
-    expect(clusters.size).toBe(3);
-    for (const c of clusters.values()) {
-      expect(c.count).toBeGreaterThan(1);
-      expect(c.ids.length).toBe(c.count);
-      expect(c.color).toBeTruthy();
+    /** Sum of `reps.length` over the coarsest (only) level's clusters, for a given `k` — the exact
+     *  quantity `emitBloom()` turns into that many `pts.push()` calls once that level owns the field. */
+    function totalRepsFor(nodes: LodNodeInput[], k: number): number {
+        const levels = buildLodIndex(nodes, [], LOD_MIN_CLUSTER, k)
+        expect(levels[0]?.clusters.length).toBe(8) // non-vacuous: still 8 real communities...
+        for (const c of levels[0].clusters) expect(c.count).toBe(250) // ...of 250 members each, every k
+        return levels[0].clusters.reduce((s, c) => s + c.reps.length, 0)
     }
-    expect(r.getNodesForUI().length).toBe(24);
-    r.destroy();
-  });
 
-  it("survives an empty graph — nothing is painted at all, no nodes, no clusters", () => {
-    // POSITIVE CONTROL first. The assertion below is a "nothing was drawn" one, and those are
-    // exactly the assertions that rot into always-true: this proves the instrument reads non-zero
-    // on a graph that DOES have nodes, in this same harness, immediately before it is used to claim
-    // zero. (It replaces `expect(nodeRuns()).toEqual([])`, which could not fail — nodeRuns() filters
-    // on a whitelist of the SAMPLE graph's community colours, and a graph with no communities paints
-    // nothing that could ever match, so the assertion was true by construction rather than by
-    // behaviour.)
-    const control = mountRenderer("2d");
-    expect(ctx.fills.length).toBeGreaterThan(0);
-    control.r.destroy();
+    it("REQUIRED — total reps (this emission's real per-frame cost) scales with k exactly as measured, and a fixed budget separates the shipped band from a bad choice", () => {
+        const nodes = coarseFixture()
 
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    const painted: number[] = [];
-    r.mount(host, () => {});
-    r.setPaintCallback((n) => painted.push(n));
-    r.setConfig({ ...CONFIG });
-    r.render({ nodes: [], edges: [] });
-    ctx.fills.length = 0;
-    ctx.strokes.length = 0;
-    frame();
-    expect(painted.at(-1)).toBe(0);
-    // An empty graph paints NOTHING — measured: no glyph runs, no labels, and no noise texture
-    // either (hence the renamed title; the old one said "noise field only", which the paint output
-    // does not bear out). Asserted on the raw fill list so ANY regression that paints anything at
-    // all trips it, whatever colour or glyph it comes out as.
-    expect(ctx.fills).toEqual([]);
-    expect(r.getCommunityCentroids().size).toBe(0);
-    r.destroy();
-  });
-});
+        // Exact counts, derived independently (8 clusters * min(k, 250) each — valid once k-means fully
+        // uses every centroid, which the non-vacuous checks inside totalRepsFor confirm held here), not
+        // copied from a prior run of buildLodIndex itself.
+        expect(totalRepsFor(nodes, 16)).toBe(128)
+        expect(totalRepsFor(nodes, 32)).toBe(256)
+        expect(totalRepsFor(nodes, 64)).toBe(512)
+        expect(totalRepsFor(nodes, 256)).toBe(2000) // 250 <= 256: the n<=k exact regime, every member
+        expect(totalRepsFor(nodes, 10000)).toBe(2000) // ...same, unbounded k can't exceed real membership
 
-describe("edge clipping — an edge with an off-field endpoint still strokes (a vector line needs no grid clip)", () => {
-  it("keeps n0's local edges numerous at maximum zoom, even though most neighbours project off the tiny visible field", () => {
-    const { r, viewport } = mountRenderer("2d");
-    // frameSubset on n0 ALONE zooms to the maximum resolution centred exactly on it (a 1-point
-    // subset has ~zero radius, so the frame ratio saturates at maxRes) — the same deterministic
-    // "reach 0%" pattern other tests in this file use. n0 is the 24-spoke hub; every one of its 23
-    // neighbours has a real edge to it, and at this resolution almost all of them project well off
-    // the field. The OLD rule ("skip an edge unless BOTH endpoints are on-grid") dropped every one
-    // of those — QA measured 2 surviving edges at 0%. Edges are vector strokes now, gated on `projValid`
-    // alone (exactly the pre-redesign renderer's `onScreen`) — the canvas's own paint-time clip
-    // handles the off-field portion, so n0's own local edges should still be numerous.
-    r.frameSubset(["n0"]);
-    wheelIn(viewport, 30);
-    settle(300);
-    const stats = r.computeStats();
-    expect(stats.zoomPct).toBe(0);
-    expect(stats.notesOnScreen).toBeGreaterThanOrEqual(1); // at least the hub itself is on the field
-    expect(stats.edgesClassified).toBeGreaterThan(5);
-    expect(strokeSegs().length).toBeGreaterThan(5);
-    r.destroy();
-  });
-});
+        // THE CEILING — one ABSOLUTE bare literal, not phrased relative to LOD_REP_POINTS_K, so retuning
+        // the constant can't keep this green by construction. Passes at the shipped band (16/32), fails
+        // from 64 up — the same three-way split the reviewer measured, now behind a real number instead
+        // of a range check both 15 and 33 would also have passed.
+        const BLOOM_MASS_FRAME_BUDGET = 300
+        expect(totalRepsFor(nodes, 16)).toBeLessThanOrEqual(
+            BLOOM_MASS_FRAME_BUDGET,
+        )
+        expect(totalRepsFor(nodes, 32)).toBeLessThanOrEqual(
+            BLOOM_MASS_FRAME_BUDGET,
+        )
+        expect(totalRepsFor(nodes, 64)).toBeGreaterThan(BLOOM_MASS_FRAME_BUDGET)
+        expect(totalRepsFor(nodes, 256)).toBeGreaterThan(
+            BLOOM_MASS_FRAME_BUDGET,
+        )
+        expect(totalRepsFor(nodes, 10000)).toBeGreaterThan(
+            BLOOM_MASS_FRAME_BUDGET,
+        )
 
-describe("pan anchoring — the raster is WORLD-anchored, not screen-anchored (the pan-jitter fix)", () => {
-  it("keeps the field's discrete char raster byte-identical across several different sub-cell pans", () => {
-    const { r, viewport } = mountRenderer("2d");
-    const priv = r as unknown as { charBuf: Uint16Array };
+        // THE ACTUAL BINDING (round-1 review): every assertion above sweeps EXPLICIT k literals — none of
+        // them read the shipped `LOD_REP_POINTS_K` constant, so this whole test would stay green even if
+        // that constant were raised to a value the sweep above already proves is over budget. Import and
+        // check it directly, so a future retune of the shipped constant is what this test is actually
+        // about, not incidentally about it.
+        const shippedTotal = totalRepsFor(nodes, LOD_REP_POINTS_K)
+        expect(shippedTotal).toBeLessThanOrEqual(BLOOM_MASS_FRAME_BUDGET)
 
-    // Engage dragging (crosses DRAG_THRESHOLD) with one bigger move, then snapshot.
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 410, clientY: 300 }));
-    frame(32);
-    const snapshot = Array.from(priv.charBuf);
+        // THE CONNECTION TO emitBloom (round-1 review): everything above calls `buildLodIndex` directly —
+        // it never exercises `emitBloom` at all, so it would pass unchanged against the pre-24b ellipse
+        // implementation too. Mount the SAME point set as a real graph and confirm the renderer's actual
+        // per-frame `bloomPoints` (mass band only — glyphAlpha is ~0 at fit here, same as every other
+        // fixture in the "phosphor bloom" block above) equals `shippedTotal` exactly. That equality IS
+        // this method's "one BloomPoint per rep, not a per-rep ring-sampled cloud" design, checked rather
+        // than only asserted in a comment: if a future edit made it one `pushCloud` per rep instead (what
+        // `cloudGrid` would spend — up to 8 rings x 16 per ring = 128x this), `bloomPoints` would blow far
+        // past `shippedTotal` and this assertion would catch it even though the 300 budget alone could
+        // not (a per-rep-cloud regression wouldn't change `reps.length`, only what emitBloom does with it).
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        let lastField: Float32Array | null = null
+        r.mount(host, () => {})
+        r.setBloomCallback(f => {
+            lastField = f
+        })
+        r.setConfig({ ...CONFIG, viewMode: '2d', showLodMasses: true })
+        r.render(coarseGraphFixture())
+        frame()
+        interface CostPriv {
+            levelCount: number
+            glyphAlpha: number
+        }
+        const priv = r as unknown as CostPriv
+        expect(priv.levelCount).toBe(1)
+        expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1) // fit — masses own the field outright
+        expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02) // LOD_ALPHA_EPS — no glyph contribution
+        expect(lastField).not.toBeNull()
+        const stats = r.computeStats()
+        expect(stats.bloomPoints).toBe(shippedTotal)
+    })
+})
 
-    // Several FOLLOW-UP sub-cell moves (well under one cell — CELL_W ~6.3px / CELL_H 18px), all
-    // landing in the SAME whole-cell pan bucket as the snapshot above. Under the old screen-anchored
-    // grid every one of these re-phased the world->cell rounding and reshaped every Bresenham line on
-    // the field — "dragging makes lines wiggle". Quantizing pan to whole cells means the RASTER must
-    // not change at all here; only a paint-time canvas translate (not exercised by this fake 2D
-    // context) would move.
-    let x = 410, y = 300;
-    for (const [dx, dy] of [[1, 0], [1, 1], [-1, -1], [-1, 1]] as const) {
-      x += dx; y += dy;
-      window.dispatchEvent(new PointerEvent("pointermove", { clientX: x, clientY: y }));
-      frame(32);
-      expect(Array.from(priv.charBuf)).toEqual(snapshot);
+describe('LOD mass names — the CONDITIONAL edge clamp (the parked-label defect on the DEFAULT 2D path)', () => {
+    /**
+     * Two fat, spatially separated communities. Sizes are chosen deliberately: `massRadii(200, …)`
+     * gives `rowR = 3` and `colR = round(3 × CELL_H/CELL_W) = 9`, so `projectEntities`' `onGrid` test
+     * (`col >= -drawnColR && col < cols + drawnColR`) admits a mass whose CENTRE is up to NINE columns
+     * off the grid. That nine-column band is the entire bug surface: it is where an unconditional
+     * clamp parks the name at the edge column while the field keeps sliding under it. A small fixture
+     * (`lodGraph`'s 6-note blobs → `colR = 2`) leaves a two-column band, too narrow to sample.
+     */
+    function fatClusterGraph(mirrored = false) {
+        const nodes = []
+        const edges = []
+        const NAMES = ['Region A', 'Region B']
+        for (let c = 0; c < 2; c++) {
+            for (let k = 0; k < 200; k++) {
+                const x =
+                    ((c === 0 ? -300 : 300) + (k % 20) * 4) *
+                    (mirrored ? -1 : 1)
+                const y = Math.floor(k / 20) * 4
+                nodes.push({
+                    id: `c${c}n${k}`,
+                    label: `note ${c}-${k}`,
+                    kind: 'note' as const,
+                    position: [x, y, 0] as [number, number, number],
+                    position2d: [x, y] as [number, number],
+                    community: c,
+                    communityLabel: NAMES[c],
+                })
+            }
+            // A hub-and-spoke wiring so the community has real degree structure (and so the aggregate
+            // connector between the two has something to summarize).
+            for (let k = 1; k < 200; k++)
+                edges.push({
+                    from: `c${c}n0`,
+                    to: `c${c}n${k}`,
+                    kind: 'link' as const,
+                })
+        }
+        for (let k = 0; k < 5; k++)
+            edges.push({
+                from: `c0n${k}`,
+                to: `c1n${k}`,
+                kind: 'link' as const,
+            })
+        return { nodes, edges }
     }
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: x, clientY: y }));
-    r.destroy();
-  });
 
-  it("shifts the raster by an exact whole cell when panned by one cell width — same shape, translated", () => {
-    const { r, viewport } = mountRenderer("2d");
-    const priv = r as unknown as { charBuf: Uint16Array; m: { cols: number; rows: number } };
-    const { cols } = priv.m;
-
-    viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 400, clientY: 300 }));
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 410, clientY: 300 })); // engage
-    frame(32);
-    const before = Array.from(priv.charBuf);
-
-    // One more whole CELL_W of horizontal pan (rounds to +1 column), no vertical change.
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 410 + Math.round(CELL_W), clientY: 300 }));
-    frame(32);
-    const after = Array.from(priv.charBuf);
-
-    // Every non-empty cell should have moved exactly one column right (dropping whatever scrolled
-    // off the left edge, and leaving the new rightmost column however it lands) — the same discrete
-    // SHAPE, not a reshaped line.
-    let matched = 0, checked = 0;
-    for (let r2 = 0; r2 < priv.m.rows; r2++) {
-      for (let c = 0; c < cols - 1; c++) {
-        const i = r2 * cols + c;
-        if (!before[i]) continue;
-        checked++;
-        if (after[i + 1] === before[i]) matched++;
-      }
+    interface NamePriv {
+        entityFlat: {
+            level: number
+            community: number
+            col: number
+            row: number
+            drawnColR: number
+        }[]
+        labels: {
+            text: string
+            col: number
+            widthCells: number
+            eyebrow?: boolean
+        }[]
+        m: { cols: number }
     }
-    expect(checked).toBeGreaterThan(0);
-    expect(matched).toBe(checked);
-    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 410, clientY: 300 }));
-    r.destroy();
-  });
-});
+
+    /**
+     * One continuous 2D pan gesture in FINE steps (the same technique the hub-anchored path's boundary
+     * tests use, and for the same reason: `onPointerMove` only starts panning past DRAG_THRESHOLD, and
+     * the field edge is the ONLY place the placement rule can be discontinuous, so a coarse gesture
+     * steps clean over it without ever sampling there). Samples the named mass's anchor column and its
+     * label's column every frame.
+     */
+    function massPanSweep(
+        dxPerStep: number,
+        steps: number,
+        community: number,
+        text: string,
+    ) {
+        const { r, viewport } = mountRenderer(
+            '2d',
+            fatClusterGraph(dxPerStep < 0),
+            { showLodMasses: true },
+        )
+        const priv = r as unknown as NamePriv
+        let px = 400,
+            t = 100
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: px,
+                clientY: 300,
+            }),
+        )
+        px += 20 * Math.sign(dxPerStep) // prime past DRAG_THRESHOLD
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: px, clientY: 300 }),
+        )
+        frame((t += 16))
+
+        const samples: {
+            anchorCol: number
+            labelCol: number | null
+            w: number | null
+        }[] = []
+        for (let i = 0; i <= steps; i++) {
+            if (i > 0) {
+                px += dxPerStep
+                window.dispatchEvent(
+                    new PointerEvent('pointermove', {
+                        clientX: px,
+                        clientY: 300,
+                    }),
+                )
+                frame((t += 16))
+            }
+            const ev = priv.entityFlat.find(e => e.community === community)!
+            const label = priv.labels.find(l => l.eyebrow && l.text === text)
+            samples.push({
+                anchorCol: ev.col,
+                labelCol: label ? label.col : null,
+                w: label ? label.widthCells : null,
+            })
+        }
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: px, clientY: 300 }),
+        )
+        const cols = priv.m.cols
+        const drawnColR = priv.entityFlat.find(
+            e => e.community === community,
+        )!.drawnColR
+        r.destroy()
+        return { samples, cols, drawnColR }
+    }
+
+    function assertMassNameClampIsConditional(
+        dxPerStep: number,
+        steps: number,
+        community: number,
+        text: string,
+    ) {
+        const { samples, cols, drawnColR } = massPanSweep(
+            dxPerStep,
+            steps,
+            community,
+            text,
+        )
+
+        // SANITY FIRST — every invariant below is vacuous if the sweep never reached the band. The
+        // fixture is sized so `drawnColR` is wide enough for the band to be sampled at all; assert the
+        // size the reasoning depends on rather than trusting massRadii not to be retuned underneath it.
+        expect(drawnColR).toBeGreaterThanOrEqual(6)
+        expect(samples.some(s => s.anchorCol >= 0 && s.anchorCol < cols)).toBe(
+            true,
+        ) // anchor was on-grid...
+        expect(samples.some(s => s.anchorCol < 0 || s.anchorCol >= cols)).toBe(
+            true,
+        ) // ...and later was not
+        expect(samples.filter(s => s.labelCol != null).length).toBeGreaterThan(
+            5,
+        )
+        const offGridDrawn = samples.filter(
+            s => s.labelCol != null && (s.anchorCol < 0 || s.anchorCol >= cols),
+        )
+        expect(offGridDrawn.length).toBeGreaterThan(0) // the far side of the boundary really was sampled
+
+        // (A) OFF-GRID ANCHORS ARE NOT CLAMPED. Past the edge the name keeps its raw centred column and
+        // clips — exactly `anchorCol - floor(w/2)`, no nudging. This is the assertion the unconditional
+        // clamp fails: it pins the name to 0 (or cols - w) and holds it there while the anchor slides on.
+        for (const s of offGridDrawn) {
+            expect(`at anchor ${s.anchorCol}: label ${s.labelCol}`).toBe(
+                `at anchor ${s.anchorCol}: label ${s.anchorCol - Math.floor(s.w! / 2)}`,
+            )
+        }
+
+        // (B) ON-GRID ANCHORS ARE STILL CLAMPED — the clamp's legitimate job, which (A) must not have
+        // deleted. Every drawn name whose anchor is on the grid lies fully inside it.
+        const onGridDrawn = samples.filter(
+            s => s.labelCol != null && s.anchorCol >= 0 && s.anchorCol < cols,
+        )
+        expect(onGridDrawn.length).toBeGreaterThan(5)
+        for (const s of onGridDrawn) {
+            expect(s.labelCol!).toBeGreaterThanOrEqual(0)
+            expect(s.labelCol! + s.w!).toBeLessThanOrEqual(cols)
+        }
+
+        // (C) CONTINUITY. Frame to frame the name may not move further than its anchor did, except for
+        // the clamp switching on or off — at most `ceil(w/2)`. The no-teleport bound.
+        let worst = { v: 0, at: '' }
+        for (let i = 1; i < samples.length; i++) {
+            const a = samples[i - 1],
+                b = samples[i]
+            if (a.labelCol == null || b.labelCol == null) continue
+            const excess =
+                Math.abs(
+                    b.labelCol - a.labelCol - (b.anchorCol - a.anchorCol),
+                ) - Math.ceil(b.w! / 2)
+            if (excess > worst.v)
+                worst = {
+                    v: excess,
+                    at: `frame ${i}: label ${a.labelCol}->${b.labelCol}, anchor ${a.anchorCol}->${b.anchorCol}`,
+                }
+        }
+        expect(`step ${worst.v} ${worst.at}`).toBe('step 0 ')
+    }
+
+    it('BOUNDARY CONTINUITY (right edge) — a mass name is never parked at the edge column while its mass keeps panning', () => {
+        assertMassNameClampIsConditional(2, 90, 1, 'REGION B')
+    })
+
+    it('BOUNDARY CONTINUITY (left edge) — same, in the other direction (the left clamp is a separate branch)', () => {
+        // MIRRORED fixture, exactly as the hub-anchored pair does it: negating x makes community 1 the
+        // one that leads off the LEFT edge, so the `col < 0` branch is the one under test.
+        assertMassNameClampIsConditional(-2, 90, 1, 'REGION B')
+    })
+})
+
+describe('interaction', () => {
+    /** Screen px of a node glyph the renderer actually drew (identified by its cluster colour). */
+    function nodeHit(): { x: number; y: number } {
+        const run = nodeRuns().find(f => /[.o@]/.test(f.text))
+        expect(run).toBeDefined()
+        return { x: run!.x + run!.text.search(/[.o@]/) * CELL_W + 1, y: run!.y }
+    }
+
+    it('hovers the node under the cursor, and a click opens it (at a deep stop, where notes are on the field)', () => {
+        const { r, viewport, clicks, hovers } = mountRenderer('2d')
+        // At fit the 2D field shows aggregate entities (LOD) — frame a note first so real note glyphs
+        // are on the grid to hit.
+        r.frameSubset(['n0'])
+        settle(200)
+        // The settled loop is idle (dirty=false) — force one repaint so nodeHit() reads a fresh frame.
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        r.setSearchMatches(new Set())
+        frame(9999)
+        const p = nodeHit()
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: p.x, clientY: p.y }),
+        )
+        expect(hovers.filter(Boolean).length).toBeGreaterThan(0)
+
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: p.x,
+                clientY: p.y,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: p.x, clientY: p.y }),
+        )
+        expect(clicks.length).toBe(1)
+        r.destroy()
+    })
+
+    it('clicking an AGGREGATE ENTITY at fit expands it (zooms toward its members) instead of opening a note', () => {
+        const { r, viewport, clicks, zooms } = mountRenderer('2d', lodGraph(), {
+            showLodMasses: true,
+        })
+        const p = lodPriv(r)
+        const i = p.cellEntity.findIndex(v => v >= 0)
+        expect(i).toBeGreaterThanOrEqual(0)
+        const { x, y } = cellPx(p, i)
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: x,
+                clientY: y,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: x, clientY: y }),
+        )
+        settle(200)
+        expect(clicks).toEqual([]) // a cluster is not a note
+        expect(zooms.at(-1)!).toBeLessThan(100) // the field zoomed toward the cluster's members
+        r.destroy()
+    })
+
+    /**
+     * A cluster whose members are LOPSIDED and SPREAD: a tight nine-note core plus one lone stray far
+     * above it, with a counterweight cluster on the right so the graph's own bounding box is wider
+     * than the clicked cluster's. Two properties the other LOD fixtures don't have, both of them the
+     * geometry a real vault produces and the reason clicking a cluster used to throw its own members
+     * off the field:
+     *   - the member CENTROID (y ≈ -240, dragged down by the core) and the member bounding-box CENTRE
+     *     (y = 0) are 240 world units apart, so centring on the wrong one puts the stray off-grid;
+     *   - the cluster is TALL relative to the field, so the child-level boundary — which knows nothing
+     *     about extent — magnifies past what the grid can hold.
+     */
+    function lopsidedGraph() {
+        const nodes = []
+        const edges = []
+        const push = (
+            id: string,
+            x: number,
+            y: number,
+            top: number,
+            blob: number,
+        ) =>
+            nodes.push({
+                id,
+                label: `note ${id}`,
+                kind: 'note' as const,
+                position: [x, y, 0] as [number, number, number],
+                position2d: [x, y] as [number, number],
+                community: blob,
+                communityLabel: `Blob ${blob}`,
+                communityPath: [top, blob],
+                communityPathLabels: [`Top ${top}`, `Blob ${blob}`],
+            })
+        for (let k = 0; k < 9; k++)
+            push(
+                `a${k}`,
+                -600 + (k % 3) * 10,
+                -300 + Math.floor(k / 3) * 10,
+                0,
+                k < 5 ? 0 : 1,
+            )
+        push('astray', -600, 300, 0, 1)
+        for (let k = 0; k < 10; k++)
+            push(
+                `b${k}`,
+                600 + (k % 5) * 10,
+                -20 + Math.floor(k / 5) * 10,
+                1,
+                k < 5 ? 2 : 3,
+            )
+        for (let k = 1; k < 9; k++)
+            edges.push({ from: 'a0', to: `a${k}`, kind: 'link' as const })
+        edges.push({ from: 'a0', to: 'astray', kind: 'link' as const })
+        for (let k = 1; k < 10; k++)
+            edges.push({ from: 'b0', to: `b${k}`, kind: 'link' as const })
+        edges.push({ from: 'a0', to: 'b0', kind: 'link' as const })
+        return { nodes, edges }
+    }
+
+    it("clicking a cluster centres on its members' BOX, and never zooms so far in that it loses them", () => {
+        const { r, viewport } = mountRenderer('2d', lopsidedGraph(), {
+            showLodMasses: true,
+        })
+        const p = lodPriv(r)
+        // Click the LEFT (lopsided) top-level mass specifically — the counterweight on the right is
+        // there to shape the fit, not to be clicked.
+        const cell = [...p.cellEntity].findIndex(
+            v =>
+                v >= 0 &&
+                p.entityFlat[v].level === 0 &&
+                p.entityFlat[v].community === 0,
+        )
+        expect(cell).toBeGreaterThanOrEqual(0)
+        const at = cellPx(p, cell)
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: at.x,
+                clientY: at.y,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: at.x, clientY: at.y }),
+        )
+        settle(300)
+
+        const members = p.nodes.filter(n => n.node.id.startsWith('a'))
+        expect(members.length).toBe(10)
+        const ys = members.map(n => (n as unknown as { p2: number[] }).p2[1])
+        const boxCy = (Math.min(...ys) + Math.max(...ys)) / 2
+        const centroidCy = ys.reduce((a, b) => a + b, 0) / ys.length
+        // The fixture is only meaningful if the two anchors actually disagree — assert that, so a future
+        // fixture edit that quietly collapses them can't turn this into a test of nothing.
+        expect(Math.abs(boxCy - centroidCy)).toBeGreaterThan(100)
+        // The camera went to the BOX centre. (Pre-fix it went to `ev.wy`, the centroid.)
+        expect(Math.abs(p.target[1] - boxCy)).toBeLessThan(
+            Math.abs(boxCy - centroidCy) / 2,
+        )
+
+        // ...and it stopped short of the stop that would have lost the cluster: at the resolution it
+        // landed on, the members' box still covers no more than CLUSTER_CLICK_MAX_COVER of the field.
+        // Measured against the projector's own 2D scale law (pxPerWorld * res), so this fails if the
+        // ceiling is removed OR if it stops matching how the field is actually projected.
+        const halfSpanPx =
+            ((Math.max(...ys) - Math.min(...ys)) / 2) * p.pxPerWorld * p.res
+        expect(halfSpanPx).toBeLessThanOrEqual(
+            ((p.m.rows * p.m.cellH) / 2) * 1.5 * 1.02,
+        )
+        // The click still zoomed IN — a ceiling that fires by refusing to move is not a fix.
+        expect(r.computeStats().zoomPct).toBeLessThan(100)
+        r.destroy()
+    })
+
+    it('clicking a COARSEST entity centres on it and expands exactly ONE level in — children on-grid, not the leaves yet', () => {
+        const { r, viewport, clicks } = mountRenderer('2d', lodGraph(), {
+            showLodMasses: true,
+        })
+        const p = lodPriv(r)
+        // At fit only the coarsest (TOP) level is on-grid — see the LOD describe block above.
+        expect(entityLevelsOnGrid(p)).toEqual(new Set([0]))
+        const i = p.cellEntity.findIndex(v => v >= 0)
+        const { x, y } = cellPx(p, i)
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: x,
+                clientY: y,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: x, clientY: y }),
+        )
+        settle(300)
+        expect(clicks).toEqual([])
+        // The child level now owns the field — the coarsest level has fully crossfaded away...
+        expect(entityLevelsOnGrid(p)).toEqual(new Set([1]))
+        // ...and the click landed ONE level in, not at the leaves. WAS asserted as `cellNode` all < 0,
+        // which stopped meaning "not the leaves" once the mass→glyph crossfade moved to [0.32, 0.46]:
+        // individual glyphs legitimately emerge through a dissolving mass at this stop. What still
+        // separates "one level in" from "straight to the leaves" is the LABEL ladder — file names do
+        // not begin crossfading in until FILE_LABEL_REVEAL_T (0.75), well past this boundary.
+        expect(ctx.fills.some(f => f.text.includes('[[note '))).toBe(false)
+        expect(ctx.fills.some(f => f.text.startsWith('BLOB '))).toBe(true)
+        r.destroy()
+    })
+
+    it('orbiting in 3D re-rasterizes the field, and a drag never opens a note', () => {
+        const { r, viewport, clicks } = mountRenderer('3d')
+        const before = allText()
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: 400,
+                clientY: 300,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: 500, clientY: 340 }),
+        )
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame(32)
+        const after = allText()
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: 500, clientY: 340 }),
+        )
+        expect(after.length).toBeGreaterThan(0)
+        expect(after).not.toBe(before)
+        expect(clicks).toEqual([])
+        r.destroy()
+    })
+
+    it('panning in 2D moves the field', () => {
+        const { r, viewport, clicks } = mountRenderer('2d')
+        // At fit the 2D field is a handful of entity masses whose TEXT is identical wherever they sit —
+        // a pan shows up in the fills' positions, so snapshot text AND coordinates.
+        const snap = () =>
+            ctx.fills
+                .map(f => `${f.text}@${f.x.toFixed(1)},${f.y.toFixed(1)}`)
+                .join('|')
+        const before = snap()
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: 400,
+                clientY: 300,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: 300, clientY: 250 }),
+        )
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame(32)
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: 300, clientY: 250 }),
+        )
+        expect(snap()).not.toBe(before)
+        expect(clicks).toEqual([])
+        r.destroy()
+    })
+
+    it('an empty-space click drops a persistent cluster highlight', () => {
+        const { r, viewport } = mountRenderer('2d')
+        let cleared = false
+        r.onHighlightCleared = () => {
+            cleared = true
+        }
+        r.highlightNodes(['n0', 'n1'])
+        frame()
+        // The very top-left corner of the field is padding — no node can be there.
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: 1,
+                clientY: 1,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: 1, clientY: 1 }),
+        )
+        expect(cleared).toBe(true)
+        r.destroy()
+    })
+})
+
+describe('UI data accessors', () => {
+    it('exposes clusters with a colour + member ids, and the nodes the search list needs', () => {
+        const { r } = mountRenderer('3d')
+        const clusters = r.getCommunityCentroids()
+        expect(clusters.size).toBe(3)
+        for (const c of clusters.values()) {
+            expect(c.count).toBeGreaterThan(1)
+            expect(c.ids.length).toBe(c.count)
+            expect(c.color).toBeTruthy()
+        }
+        expect(r.getNodesForUI().length).toBe(24)
+        r.destroy()
+    })
+
+    it('survives an empty graph — nothing is painted at all, no nodes, no clusters', () => {
+        // POSITIVE CONTROL first. The assertion below is a "nothing was drawn" one, and those are
+        // exactly the assertions that rot into always-true: this proves the instrument reads non-zero
+        // on a graph that DOES have nodes, in this same harness, immediately before it is used to claim
+        // zero. (It replaces `expect(nodeRuns()).toEqual([])`, which could not fail — nodeRuns() filters
+        // on a whitelist of the SAMPLE graph's community colours, and a graph with no communities paints
+        // nothing that could ever match, so the assertion was true by construction rather than by
+        // behaviour.)
+        const control = mountRenderer('2d')
+        expect(ctx.fills.length).toBeGreaterThan(0)
+        control.r.destroy()
+
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        const painted: number[] = []
+        r.mount(host, () => {})
+        r.setPaintCallback(n => painted.push(n))
+        r.setConfig({ ...CONFIG })
+        r.render({ nodes: [], edges: [] })
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame()
+        expect(painted.at(-1)).toBe(0)
+        // An empty graph paints NOTHING — measured: no glyph runs, no labels, and no noise texture
+        // either (hence the renamed title; the old one said "noise field only", which the paint output
+        // does not bear out). Asserted on the raw fill list so ANY regression that paints anything at
+        // all trips it, whatever colour or glyph it comes out as.
+        expect(ctx.fills).toEqual([])
+        expect(r.getCommunityCentroids().size).toBe(0)
+        r.destroy()
+    })
+})
+
+describe('edge clipping — an edge with an off-field endpoint still strokes (a vector line needs no grid clip)', () => {
+    it("keeps n0's local edges numerous at maximum zoom, even though most neighbours project off the tiny visible field", () => {
+        const { r, viewport } = mountRenderer('2d')
+        // frameSubset on n0 ALONE zooms to the maximum resolution centred exactly on it (a 1-point
+        // subset has ~zero radius, so the frame ratio saturates at maxRes) — the same deterministic
+        // "reach 0%" pattern other tests in this file use. n0 is the 24-spoke hub; every one of its 23
+        // neighbours has a real edge to it, and at this resolution almost all of them project well off
+        // the field. The OLD rule ("skip an edge unless BOTH endpoints are on-grid") dropped every one
+        // of those — QA measured 2 surviving edges at 0%. Edges are vector strokes now, gated on `projValid`
+        // alone (exactly the pre-redesign renderer's `onScreen`) — the canvas's own paint-time clip
+        // handles the off-field portion, so n0's own local edges should still be numerous.
+        r.frameSubset(['n0'])
+        wheelIn(viewport, 30)
+        settle(300)
+        const stats = r.computeStats()
+        expect(stats.zoomPct).toBe(0)
+        expect(stats.notesOnScreen).toBeGreaterThanOrEqual(1) // at least the hub itself is on the field
+        expect(stats.edgesClassified).toBeGreaterThan(5)
+        expect(strokeSegs().length).toBeGreaterThan(5)
+        r.destroy()
+    })
+})
+
+describe('pan anchoring — the raster is WORLD-anchored, not screen-anchored (the pan-jitter fix)', () => {
+    it("keeps the field's discrete char raster byte-identical across several different sub-cell pans", () => {
+        const { r, viewport } = mountRenderer('2d')
+        const priv = r as unknown as { charBuf: Uint16Array }
+
+        // Engage dragging (crosses DRAG_THRESHOLD) with one bigger move, then snapshot.
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: 400,
+                clientY: 300,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: 410, clientY: 300 }),
+        )
+        frame(32)
+        const snapshot = Array.from(priv.charBuf)
+
+        // Several FOLLOW-UP sub-cell moves (well under one cell — CELL_W ~6.3px / CELL_H 18px), all
+        // landing in the SAME whole-cell pan bucket as the snapshot above. Under the old screen-anchored
+        // grid every one of these re-phased the world->cell rounding and reshaped every Bresenham line on
+        // the field — "dragging makes lines wiggle". Quantizing pan to whole cells means the RASTER must
+        // not change at all here; only a paint-time canvas translate (not exercised by this fake 2D
+        // context) would move.
+        let x = 410,
+            y = 300
+        for (const [dx, dy] of [
+            [1, 0],
+            [1, 1],
+            [-1, -1],
+            [-1, 1],
+        ] as const) {
+            x += dx
+            y += dy
+            window.dispatchEvent(
+                new PointerEvent('pointermove', { clientX: x, clientY: y }),
+            )
+            frame(32)
+            expect(Array.from(priv.charBuf)).toEqual(snapshot)
+        }
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: x, clientY: y }),
+        )
+        r.destroy()
+    })
+
+    it('shifts the raster by an exact whole cell when panned by one cell width — same shape, translated', () => {
+        const { r, viewport } = mountRenderer('2d')
+        const priv = r as unknown as {
+            charBuf: Uint16Array
+            m: { cols: number; rows: number }
+        }
+        const { cols } = priv.m
+
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: 400,
+                clientY: 300,
+            }),
+        )
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: 410, clientY: 300 }),
+        ) // engage
+        frame(32)
+        const before = Array.from(priv.charBuf)
+
+        // One more whole CELL_W of horizontal pan (rounds to +1 column), no vertical change.
+        window.dispatchEvent(
+            new PointerEvent('pointermove', {
+                clientX: 410 + Math.round(CELL_W),
+                clientY: 300,
+            }),
+        )
+        frame(32)
+        const after = Array.from(priv.charBuf)
+
+        // Every non-empty cell should have moved exactly one column right (dropping whatever scrolled
+        // off the left edge, and leaving the new rightmost column however it lands) — the same discrete
+        // SHAPE, not a reshaped line.
+        let matched = 0,
+            checked = 0
+        for (let r2 = 0; r2 < priv.m.rows; r2++) {
+            for (let c = 0; c < cols - 1; c++) {
+                const i = r2 * cols + c
+                if (!before[i]) continue
+                checked++
+                if (after[i + 1] === before[i]) matched++
+            }
+        }
+        expect(checked).toBeGreaterThan(0)
+        expect(matched).toBe(checked)
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: 410, clientY: 300 }),
+        )
+        r.destroy()
+    })
+})
 
 // ---- vector-edge fidelity (the batched-stroke edge pass ported from CanvasGraphRenderer) --------
 // These cover the adversarial-review fixes to strokeEdges()/its bucket classification: the pure
 // helpers get direct unit tests (no DOM needed); the DOM-dependent ones reuse mountRenderer() above.
 
-describe("vector-edge fidelity — deriveEdgeBaseAlpha (a flat EDGE_BASE_ALPHA=1 was wrong on light themes)", () => {
-  // The SAME background strokeEdges() actually composites onto — readTokens() prefers --graph-bg
-  // (ColorTokens.graphBg) over --bg when present, exactly like this helper.
-  const alphaFor = (name: keyof typeof THEMES) => {
-    const t = THEMES[name];
-    return deriveEdgeBaseAlpha(t.neutral, t.graphBg ?? t.background, t.graphEdge ?? t.neutral);
-  };
+describe('vector-edge fidelity — deriveEdgeBaseAlpha (a flat EDGE_BASE_ALPHA=1 was wrong on light themes)', () => {
+    // The SAME background strokeEdges() actually composites onto — readTokens() prefers --graph-bg
+    // (ColorTokens.graphBg) over --bg when present, exactly like this helper.
+    const alphaFor = (name: keyof typeof THEMES) => {
+        const t = THEMES[name]
+        return deriveEdgeBaseAlpha(
+            t.neutral,
+            t.graphBg ?? t.background,
+            t.graphEdge ?? t.neutral,
+        )
+    }
 
-  it("keeps ~full strength on the two DARK ascii themes (ink, cathode) — --graph-edge already composites close to the original's neutral-at-opacity weight", () => {
-    expect(alphaFor("ink")).toBeCloseTo(0.92, 2);
-    expect(alphaFor("cathode")).toBe(1); // raw ratio computes slightly ABOVE 1 (~1.06) — clamped
-  });
+    it("keeps ~full strength on the two DARK ascii themes (ink, cathode) — --graph-edge already composites close to the original's neutral-at-opacity weight", () => {
+        expect(alphaFor('ink')).toBeCloseTo(0.92, 2)
+        expect(alphaFor('cathode')).toBe(1) // raw ratio computes slightly ABOVE 1 (~1.06) — clamped
+    })
 
-  it("attenuates the two LIGHT ascii themes (paper, riso) — the original dampened light-theme lines far more (a colour mix toward background + a lower opacity) than a flat alpha of 1 would", () => {
-    const paper = alphaFor("paper"), riso = alphaFor("riso");
-    expect(paper).toBeCloseTo(0.47, 2);
-    expect(riso).toBeCloseTo(0.34, 2);
-    // Both meaningfully below the dark themes' ~1 — this gap is exactly the bug finding #3 fixes.
-    expect(paper).toBeLessThan(0.6);
-    expect(riso).toBeLessThan(0.6);
-  });
+    it('attenuates the two LIGHT ascii themes (paper, riso) — the original dampened light-theme lines far more (a colour mix toward background + a lower opacity) than a flat alpha of 1 would', () => {
+        const paper = alphaFor('paper'),
+            riso = alphaFor('riso')
+        expect(paper).toBeCloseTo(0.47, 2)
+        expect(riso).toBeCloseTo(0.34, 2)
+        // Both meaningfully below the dark themes' ~1 — this gap is exactly the bug finding #3 fixes.
+        expect(paper).toBeLessThan(0.6)
+        expect(riso).toBeLessThan(0.6)
+    })
 
-  it("classifies light/dark from the resolved background's OWN luminance, not a theme-name lookup — a hypothetical future light theme gets the same dampening with no code change", () => {
-    const hypotheticalLightTheme = deriveEdgeBaseAlpha("#665544", "#f0ede6", "#c8c0b0");
-    expect(hypotheticalLightTheme).toBeGreaterThan(0);
-    expect(hypotheticalLightTheme).toBeLessThan(1);
-  });
+    it("classifies light/dark from the resolved background's OWN luminance, not a theme-name lookup — a hypothetical future light theme gets the same dampening with no code change", () => {
+        const hypotheticalLightTheme = deriveEdgeBaseAlpha(
+            '#665544',
+            '#f0ede6',
+            '#c8c0b0',
+        )
+        expect(hypotheticalLightTheme).toBeGreaterThan(0)
+        expect(hypotheticalLightTheme).toBeLessThan(1)
+    })
 
-  it("clamps to [0,1] and never NaNs, even on unparsuable or fully degenerate input", () => {
-    expect(deriveEdgeBaseAlpha("not-a-color", "#000000", "#3C4048")).toBe(1); // unparsable → fallback
-    const degenerate = deriveEdgeBaseAlpha("#000000", "#000000", "#000000"); // neutral==bg==edge
-    expect(Number.isFinite(degenerate)).toBe(true);
-    expect(degenerate).toBeGreaterThanOrEqual(0);
-    expect(degenerate).toBeLessThanOrEqual(1);
-  });
-});
+    it('clamps to [0,1] and never NaNs, even on unparsuable or fully degenerate input', () => {
+        expect(deriveEdgeBaseAlpha('not-a-color', '#000000', '#3C4048')).toBe(1) // unparsable → fallback
+        const degenerate = deriveEdgeBaseAlpha('#000000', '#000000', '#000000') // neutral==bg==edge
+        expect(Number.isFinite(degenerate)).toBe(true)
+        expect(degenerate).toBeGreaterThanOrEqual(0)
+        expect(degenerate).toBeLessThanOrEqual(1)
+    })
+})
 
-describe("vector-edge fidelity — trimSegmentForClearance (a line ran straight through its endpoint glyph)", () => {
-  it("pulls a horizontal segment's endpoints back by the clearance, keeping its direction", () => {
-    expect(trimSegmentForClearance(0, 0, 100, 0, 10)).toEqual([10, 0, 90, 0]);
-  });
+describe('vector-edge fidelity — trimSegmentForClearance (a line ran straight through its endpoint glyph)', () => {
+    it("pulls a horizontal segment's endpoints back by the clearance, keeping its direction", () => {
+        expect(trimSegmentForClearance(0, 0, 100, 0, 10)).toEqual([
+            10, 0, 90, 0,
+        ])
+    })
 
-  it("pulls a diagonal segment back along its OWN unit vector, not axis-aligned (3-4-5 triangle, len 50)", () => {
-    const [ax, ay, bx, by] = trimSegmentForClearance(0, 0, 30, 40, 5);
-    expect(ax).toBeCloseTo(3, 5);  // 5 * (30/50)
-    expect(ay).toBeCloseTo(4, 5);  // 5 * (40/50)
-    expect(bx).toBeCloseTo(27, 5);
-    expect(by).toBeCloseTo(36, 5);
-  });
+    it('pulls a diagonal segment back along its OWN unit vector, not axis-aligned (3-4-5 triangle, len 50)', () => {
+        const [ax, ay, bx, by] = trimSegmentForClearance(0, 0, 30, 40, 5)
+        expect(ax).toBeCloseTo(3, 5) // 5 * (30/50)
+        expect(ay).toBeCloseTo(4, 5) // 5 * (40/50)
+        expect(bx).toBeCloseTo(27, 5)
+        expect(by).toBeCloseTo(36, 5)
+    })
 
-  it("leaves a segment no more than twice the clearance apart UNTRIMMED, rather than inverting its direction", () => {
-    expect(trimSegmentForClearance(0, 0, 10, 0, 6)).toEqual([0, 0, 10, 0]);   // len 10 < 2*6
-    expect(trimSegmentForClearance(0, 0, 12, 0, 6)).toEqual([0, 0, 12, 0]);   // len 12 == 2*6, the boundary
-  });
+    it('leaves a segment no more than twice the clearance apart UNTRIMMED, rather than inverting its direction', () => {
+        expect(trimSegmentForClearance(0, 0, 10, 0, 6)).toEqual([0, 0, 10, 0]) // len 10 < 2*6
+        expect(trimSegmentForClearance(0, 0, 12, 0, 6)).toEqual([0, 0, 12, 0]) // len 12 == 2*6, the boundary
+    })
 
-  it("handles a zero-length (coincident-node) segment without dividing by zero into NaN", () => {
-    const result = trimSegmentForClearance(5, 5, 5, 5, 3);
-    expect(result).toEqual([5, 5, 5, 5]);
-    expect(result.every(Number.isFinite)).toBe(true);
-  });
-});
+    it('handles a zero-length (coincident-node) segment without dividing by zero into NaN', () => {
+        const result = trimSegmentForClearance(5, 5, 5, 5, 3)
+        expect(result).toEqual([5, 5, 5, 5])
+        expect(result.every(Number.isFinite)).toBe(true)
+    })
+})
 
-describe("vector-edge fidelity — safeDepthBand (a NaN band index threw inside the rAF tick and froze the field)", () => {
-  it("clamps a normal 0..1 midpoint into the band range", () => {
-    expect(safeDepthBand(0, 6)).toBe(0);
-    expect(safeDepthBand(0.999, 6)).toBe(5);
-    expect(safeDepthBand(0.5, 6)).toBe(3);
-  });
+describe('vector-edge fidelity — safeDepthBand (a NaN band index threw inside the rAF tick and froze the field)', () => {
+    it('clamps a normal 0..1 midpoint into the band range', () => {
+        expect(safeDepthBand(0, 6)).toBe(0)
+        expect(safeDepthBand(0.999, 6)).toBe(5)
+        expect(safeDepthBand(0.5, 6)).toBe(3)
+    })
 
-  it("falls back to band 0 for a non-finite midpoint instead of indexing an array with NaN", () => {
-    expect(safeDepthBand(NaN, 6)).toBe(0);
-    expect(safeDepthBand(Infinity, 6)).toBe(0);
-    expect(safeDepthBand(-Infinity, 6)).toBe(0);
-  });
+    it('falls back to band 0 for a non-finite midpoint instead of indexing an array with NaN', () => {
+        expect(safeDepthBand(NaN, 6)).toBe(0)
+        expect(safeDepthBand(Infinity, 6)).toBe(0)
+        expect(safeDepthBand(-Infinity, 6)).toBe(0)
+    })
 
-  it("clamps an out-of-[0,1] but finite midpoint too", () => {
-    expect(safeDepthBand(-1, 6)).toBe(0);
-    expect(safeDepthBand(5, 6)).toBe(5);
-  });
-});
+    it('clamps an out-of-[0,1] but finite midpoint too', () => {
+        expect(safeDepthBand(-1, 6)).toBe(0)
+        expect(safeDepthBand(5, 6)).toBe(5)
+    })
+})
 
 describe("vector-edge fidelity — hover dims by strict incidence, at the EDGE constant (not the node's, and not focusSet()'s neighbour-expanded set)", () => {
-  it("dims every edge not directly incident to the hovered hub — including 2nd-degree ring edges between two of its own neighbours — at EDGE_DIM_ALPHA, and strokes the hovered-incident tier at `base`", () => {
-    const { r } = mountRenderer("2d");
-    const priv = r as unknown as {
-      m: { cols: number; rows: number; cellW: number; cellH: number; padX: number; padY: number };
-      nodes: { col: number; row: number; node: { id: string } }[];
-      edgeBaseAlpha: number; memberEdgeAlpha: number;
-    };
-    const hub = priv.nodes.find((n) => n.node.id === "n0")!;
-    const x = priv.m.padX + hub.col * priv.m.cellW + 1;
-    const y = priv.m.padY + hub.row * priv.m.cellH + priv.m.cellH / 2;
-    ctx.strokes.length = 0;
-    window.dispatchEvent(new PointerEvent("pointermove", { clientX: x, clientY: y }));
-    frame();
+    it('dims every edge not directly incident to the hovered hub — including 2nd-degree ring edges between two of its own neighbours — at EDGE_DIM_ALPHA, and strokes the hovered-incident tier at `base`', () => {
+        const { r } = mountRenderer('2d')
+        const priv = r as unknown as {
+            m: {
+                cols: number
+                rows: number
+                cellW: number
+                cellH: number
+                padX: number
+                padY: number
+            }
+            nodes: { col: number; row: number; node: { id: string } }[]
+            edgeBaseAlpha: number
+            memberEdgeAlpha: number
+        }
+        const hub = priv.nodes.find(n => n.node.id === 'n0')!
+        const x = priv.m.padX + hub.col * priv.m.cellW + 1
+        const y = priv.m.padY + hub.row * priv.m.cellH + priv.m.cellH / 2
+        ctx.strokes.length = 0
+        window.dispatchEvent(
+            new PointerEvent('pointermove', { clientX: x, clientY: y }),
+        )
+        frame()
 
-    // n0 is the 24-spoke hub — sampleGraph()'s ring edges (n1-n2 .. n22-n23) have NEITHER endpoint
-    // equal to the hovered id, but BOTH endpoints ARE n0's neighbours (n0 links to every note):
-    // exactly the case `focusSet()`'s neighbour-expanded set used to spare from dimming. With no
-    // persistent highlight in play, hover now produces exactly two batched strokes — dim, then
-    // accent (edgeMain/the depth bands are unreachable while hovering; see rasterize()'s edge loop).
-    expect(ctx.strokes.length).toBe(2);
-    const [dimStroke, accentStroke] = ctx.strokes;
-    expect(dimStroke.segs.length).toBeGreaterThan(0); // the ring edges actually landed in the dim bucket
-    const base = priv.edgeBaseAlpha * priv.memberEdgeAlpha;
-    expect(dimStroke.alpha).toBeCloseTo(Math.min(1, base * EDGE_DIM_ALPHA), 5);
-    // ...and specifically NOT the node constant (0.28, a past bug reused it — 5.6x too strong).
-    expect(dimStroke.alpha).toBeLessThan(base * DIM_ALPHA);
+        // n0 is the 24-spoke hub — sampleGraph()'s ring edges (n1-n2 .. n22-n23) have NEITHER endpoint
+        // equal to the hovered id, but BOTH endpoints ARE n0's neighbours (n0 links to every note):
+        // exactly the case `focusSet()`'s neighbour-expanded set used to spare from dimming. With no
+        // persistent highlight in play, hover now produces exactly two batched strokes — dim, then
+        // accent (edgeMain/the depth bands are unreachable while hovering; see rasterize()'s edge loop).
+        expect(ctx.strokes.length).toBe(2)
+        const [dimStroke, accentStroke] = ctx.strokes
+        expect(dimStroke.segs.length).toBeGreaterThan(0) // the ring edges actually landed in the dim bucket
+        const base = priv.edgeBaseAlpha * priv.memberEdgeAlpha
+        expect(dimStroke.alpha).toBeCloseTo(
+            Math.min(1, base * EDGE_DIM_ALPHA),
+            5,
+        )
+        // ...and specifically NOT the node constant (0.28, a past bug reused it — 5.6x too strong).
+        expect(dimStroke.alpha).toBeLessThan(base * DIM_ALPHA)
 
-    // The accent (hovered-incident) pass strokes at `base`, not the bare memberEdgeAlpha — they're
-    // equal only while edgeBaseAlpha is 1. happy-dom resolves no CSS vars, so this renderer's
-    // edgeBaseAlpha is computed off the FALLBACK token table (not 1 — see deriveEdgeBaseAlpha),
-    // which is exactly what makes this assertion meaningful: the old bug read alpha===the band alpha
-    // (here, exactly 1).
-    expect(priv.edgeBaseAlpha).toBeLessThan(1);
-    expect(accentStroke.alpha).toBeCloseTo(Math.min(1, base), 5);
-    expect(accentStroke.alpha).not.toBeCloseTo(priv.memberEdgeAlpha, 3);
-    expect(accentStroke.alpha).toBeGreaterThan(dimStroke.alpha);
-    r.destroy();
-  });
-});
+        // The accent (hovered-incident) pass strokes at `base`, not the bare memberEdgeAlpha — they're
+        // equal only while edgeBaseAlpha is 1. happy-dom resolves no CSS vars, so this renderer's
+        // edgeBaseAlpha is computed off the FALLBACK token table (not 1 — see deriveEdgeBaseAlpha),
+        // which is exactly what makes this assertion meaningful: the old bug read alpha===the band alpha
+        // (here, exactly 1).
+        expect(priv.edgeBaseAlpha).toBeLessThan(1)
+        expect(accentStroke.alpha).toBeCloseTo(Math.min(1, base), 5)
+        expect(accentStroke.alpha).not.toBeCloseTo(priv.memberEdgeAlpha, 3)
+        expect(accentStroke.alpha).toBeGreaterThan(dimStroke.alpha)
+        r.destroy()
+    })
+})
 
-describe("vector-edge fidelity — edge width follows the resolution STOP, not raw `res`", () => {
-  it("reaches EDGE_W_MAX only at the deepest zoom stop, not almost immediately", () => {
-    const { r, viewport } = mountRenderer("2d");
-    r.frameSubset(["n0"]);
-    wheelIn(viewport, 30); // saturate toward the deepest (0%) stop
-    settle(300);
-    ctx.strokes.length = 0;
-    r.setSearchMatches(new Set()); // harmless dirty-forcing mutation (same pattern used elsewhere)
-    frame(9999);
-    expect(ctx.strokes[0]?.width).toBeCloseTo(EDGE_W_MAX, 1);
-    r.destroy();
-  });
-});
-
+describe('vector-edge fidelity — edge width follows the resolution STOP, not raw `res`', () => {
+    it('reaches EDGE_W_MAX only at the deepest zoom stop, not almost immediately', () => {
+        const { r, viewport } = mountRenderer('2d')
+        r.frameSubset(['n0'])
+        wheelIn(viewport, 30) // saturate toward the deepest (0%) stop
+        settle(300)
+        ctx.strokes.length = 0
+        r.setSearchMatches(new Set()) // harmless dirty-forcing mutation (same pattern used elsewhere)
+        frame(9999)
+        expect(ctx.strokes[0]?.width).toBeCloseTo(EDGE_W_MAX, 1)
+        r.destroy()
+    })
+})
 
 // ---------------------------------------------------------------------------------------------
 // INTRO FRAMING + THE TWO NON-KNOWLEDGE-GRAPH CONSUMERS
@@ -4830,194 +6531,246 @@ describe("vector-edge fidelity — edge width follows the resolution STOP, not r
  *  exactly linear in the fit scale — 3D's perspective divide is not, so a ratio assertion there
  *  would be approximate for reasons that have nothing to do with fitMargin. */
 function screenHalfExtent(r: AsciiGraphRenderer): number {
-  const p = lodPriv(r) as unknown as { nodes: { sx: number; sy: number }[] };
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const nv of p.nodes) {
-    minX = Math.min(minX, nv.sx); maxX = Math.max(maxX, nv.sx);
-    minY = Math.min(minY, nv.sy); maxY = Math.max(maxY, nv.sy);
-  }
-  return Math.max(maxX - minX, maxY - minY) / 2;
+    const p = lodPriv(r) as unknown as { nodes: { sx: number; sy: number }[] }
+    let minX = Infinity,
+        maxX = -Infinity,
+        minY = Infinity,
+        maxY = -Infinity
+    for (const nv of p.nodes) {
+        minX = Math.min(minX, nv.sx)
+        maxX = Math.max(maxX, nv.sx)
+        minY = Math.min(minY, nv.sy)
+        maxY = Math.max(maxY, nv.sy)
+    }
+    return Math.max(maxX - minX, maxY - minY) / 2
 }
 
-describe("intro framing — setFitMargin / setFrameOffsetY (ported from CanvasGraphRenderer)", () => {
-  it("setFitMargin divides the fit scale, so the cloud reads that much smaller", () => {
-    const plain = mountRenderer("2d");
-    const wide = mountRenderer("2d");
-    wide.r.setFitMargin(1.55);
-    frame(); frame();
-    const before = screenHalfExtent(plain.r);
-    const after = screenHalfExtent(wide.r);
-    expect(before).toBeGreaterThan(0);
-    // The whole point: 1.55 is a zoom-OUT of exactly that factor, not "a bit smaller".
-    expect(before / after).toBeCloseTo(1.55, 2);
-    plain.r.destroy(); wide.r.destroy();
-  });
+describe('intro framing — setFitMargin / setFrameOffsetY (ported from CanvasGraphRenderer)', () => {
+    it('setFitMargin divides the fit scale, so the cloud reads that much smaller', () => {
+        const plain = mountRenderer('2d')
+        const wide = mountRenderer('2d')
+        wide.r.setFitMargin(1.55)
+        frame()
+        frame()
+        const before = screenHalfExtent(plain.r)
+        const after = screenHalfExtent(wide.r)
+        expect(before).toBeGreaterThan(0)
+        // The whole point: 1.55 is a zoom-OUT of exactly that factor, not "a bit smaller".
+        expect(before / after).toBeCloseTo(1.55, 2)
+        plain.r.destroy()
+        wide.r.destroy()
+    })
 
-  it("clamps a degenerate margin instead of dividing the fit scale away", () => {
-    const { r } = mountRenderer("2d");
-    const base = screenHalfExtent(r);
-    r.setFitMargin(0);          // would be a divide-by-zero -> Infinity/NaN screen coords
-    frame(); frame();
-    const clamped = screenHalfExtent(r);
-    expect(Number.isFinite(clamped)).toBe(true);
-    expect(base / clamped).toBeCloseTo(0.2, 2); // Canvas's own Math.max(0.2, m) floor
-    r.setFitMargin(Number.NaN);
-    frame(); frame();
-    expect(screenHalfExtent(r)).toBeCloseTo(base, 4); // non-finite -> back to the plain fit
-    r.destroy();
-  });
+    it('clamps a degenerate margin instead of dividing the fit scale away', () => {
+        const { r } = mountRenderer('2d')
+        const base = screenHalfExtent(r)
+        r.setFitMargin(0) // would be a divide-by-zero -> Infinity/NaN screen coords
+        frame()
+        frame()
+        const clamped = screenHalfExtent(r)
+        expect(Number.isFinite(clamped)).toBe(true)
+        expect(base / clamped).toBeCloseTo(0.2, 2) // Canvas's own Math.max(0.2, m) floor
+        r.setFitMargin(Number.NaN)
+        frame()
+        frame()
+        expect(screenHalfExtent(r)).toBeCloseTo(base, 4) // non-finite -> back to the plain fit
+        r.destroy()
+    })
 
-  it("setFrameOffsetY slides the projected graph down by that fraction of the host height", () => {
-    // Per-NODE displacement, not a mean over the on-grid set: the shift pushes nodes off the grid,
-    // so a mean over "what's still on the grid" measures the clipping, not the offset (it reads
-    // ~7px of the real 72). Every node must move by exactly the same amount — that IS the property.
-    const { r } = mountRenderer("2d");
-    const p = lodPriv(r) as unknown as { nodes: { sx: number; sy: number; node: { id: string } }[] };
-    const before = new Map(p.nodes.map((n) => [n.node.id, { sx: n.sx, sy: n.sy }]));
-    r.setFrameOffsetY(0.12);
-    frame(); frame();
-    expect(p.nodes.length).toBeGreaterThan(0);
-    for (const nv of p.nodes) {
-      const was = before.get(nv.node.id)!;
-      // 0.12 of the 600px box — an exact px displacement, not merely "lower".
-      expect(nv.sy - was.sy).toBeCloseTo(0.12 * BOX.height, 6);
-      expect(nv.sx).toBeCloseTo(was.sx, 6); // horizontally untouched
-    }
-    r.destroy();
-  });
+    it('setFrameOffsetY slides the projected graph down by that fraction of the host height', () => {
+        // Per-NODE displacement, not a mean over the on-grid set: the shift pushes nodes off the grid,
+        // so a mean over "what's still on the grid" measures the clipping, not the offset (it reads
+        // ~7px of the real 72). Every node must move by exactly the same amount — that IS the property.
+        const { r } = mountRenderer('2d')
+        const p = lodPriv(r) as unknown as {
+            nodes: { sx: number; sy: number; node: { id: string } }[]
+        }
+        const before = new Map(
+            p.nodes.map(n => [n.node.id, { sx: n.sx, sy: n.sy }]),
+        )
+        r.setFrameOffsetY(0.12)
+        frame()
+        frame()
+        expect(p.nodes.length).toBeGreaterThan(0)
+        for (const nv of p.nodes) {
+            const was = before.get(nv.node.id)!
+            // 0.12 of the 600px box — an exact px displacement, not merely "lower".
+            expect(nv.sy - was.sy).toBeCloseTo(0.12 * BOX.height, 6)
+            expect(nv.sx).toBeCloseTo(was.sx, 6) // horizontally untouched
+        }
+        r.destroy()
+    })
 
-  it("shifts the LOD masses by the SAME offset the nodes get", () => {
-    // There are two projection origins (projectNodes and projectEntities) and NEITHER caller this
-    // knob exists for exercises the second one (the intro is 3D, the graph block has no
-    // communities). Applying the offset to one and not the other would leave every mass floating
-    // off the notes it summarizes, with nothing in either caller to show it. Asserted at fit, which
-    // is the far band: the leaf projection deliberately doesn't run there, so this is the entity
-    // half alone, against the same 0.12 * H the test above pins for the node half.
-    const { r } = mountRenderer("2d", lodGraph(), { showLodMasses: true } as never);
-    const p = lodPriv(r) as unknown as { entityFlat: { sy: number }[] };
-    const before = p.entityFlat.map((e) => e.sy);
-    expect(before.filter((y) => Number.isFinite(y) && y !== 0).length).toBeGreaterThan(0);
-    r.setFrameOffsetY(0.12);
-    frame(); frame();
-    let checked = 0;
-    for (let i = 0; i < p.entityFlat.length; i++) {
-      if (!Number.isFinite(before[i]) || before[i] === 0) continue; // never-projected level
-      expect(p.entityFlat[i].sy - before[i]).toBeCloseTo(0.12 * BOX.height, 6);
-      checked++;
-    }
-    expect(checked).toBeGreaterThan(0);
-    r.destroy();
-  });
-});
+    it('shifts the LOD masses by the SAME offset the nodes get', () => {
+        // There are two projection origins (projectNodes and projectEntities) and NEITHER caller this
+        // knob exists for exercises the second one (the intro is 3D, the graph block has no
+        // communities). Applying the offset to one and not the other would leave every mass floating
+        // off the notes it summarizes, with nothing in either caller to show it. Asserted at fit, which
+        // is the far band: the leaf projection deliberately doesn't run there, so this is the entity
+        // half alone, against the same 0.12 * H the test above pins for the node half.
+        const { r } = mountRenderer('2d', lodGraph(), {
+            showLodMasses: true,
+        } as never)
+        const p = lodPriv(r) as unknown as { entityFlat: { sy: number }[] }
+        const before = p.entityFlat.map(e => e.sy)
+        expect(
+            before.filter(y => Number.isFinite(y) && y !== 0).length,
+        ).toBeGreaterThan(0)
+        r.setFrameOffsetY(0.12)
+        frame()
+        frame()
+        let checked = 0
+        for (let i = 0; i < p.entityFlat.length; i++) {
+            if (!Number.isFinite(before[i]) || before[i] === 0) continue // never-projected level
+            expect(p.entityFlat[i].sy - before[i]).toBeCloseTo(
+                0.12 * BOX.height,
+                6,
+            )
+            checked++
+        }
+        expect(checked).toBeGreaterThan(0)
+        r.destroy()
+    })
+})
 
 describe("GraphConfig.transparent — the intro's see-through ground", () => {
-  it("suppresses the field's opaque --graph-bg only when asked", () => {
-    const opaque = mountRenderer("3d");
-    expect(opaque.viewport.style.background).toBe("");
-    const clear = mountRenderer("3d", sampleGraph(), { transparent: true } as never);
-    expect(clear.viewport.style.background).toBe("transparent");
-    // ...and it follows a live setConfig, which is how a theme switch reaches the renderer.
-    clear.r.setConfig({ ...CONFIG, viewMode: "3d" });
-    expect(clear.viewport.style.background).toBe("");
-    opaque.r.destroy(); clear.r.destroy();
-  });
-});
+    it("suppresses the field's opaque --graph-bg only when asked", () => {
+        const opaque = mountRenderer('3d')
+        expect(opaque.viewport.style.background).toBe('')
+        const clear = mountRenderer('3d', sampleGraph(), {
+            transparent: true,
+        } as never)
+        expect(clear.viewport.style.background).toBe('transparent')
+        // ...and it follows a live setConfig, which is how a theme switch reaches the renderer.
+        clear.r.setConfig({ ...CONFIG, viewMode: '3d' })
+        expect(clear.viewport.style.background).toBe('')
+        opaque.r.destroy()
+        clear.r.destroy()
+    })
+})
 
 describe("GraphConfig.labelEveryNode — the graph block's all-labels mode", () => {
-  /** Every file label (i.e. non-eyebrow) drawn this frame. */
-  const fileLabels = (r: AsciiGraphRenderer) =>
-    (r as unknown as { labels: { text: string; eyebrow?: boolean; alpha: number }[] })
-      .labels.filter((l) => !l.eyebrow);
+    /** Every file label (i.e. non-eyebrow) drawn this frame. */
+    const fileLabels = (r: AsciiGraphRenderer) =>
+        (
+            r as unknown as {
+                labels: { text: string; eyebrow?: boolean; alpha: number }[]
+            }
+        ).labels.filter(l => !l.eyebrow)
 
-  it("names every node at FIT, where the zoom-driven ladder names none", () => {
-    // The ladder's two gates (fileLabelBudget, fileLabelAlpha) are BOTH zero at/below
-    // FILE_LABEL_REVEAL_T, and fit is t = 0 — so this is the state a ```graph block opens in.
-    const ladder = mountRenderer("2d");
-    expect(fileLabels(ladder.r).length).toBe(0);
+    it('names every node at FIT, where the zoom-driven ladder names none', () => {
+        // The ladder's two gates (fileLabelBudget, fileLabelAlpha) are BOTH zero at/below
+        // FILE_LABEL_REVEAL_T, and fit is t = 0 — so this is the state a ```graph block opens in.
+        const ladder = mountRenderer('2d')
+        expect(fileLabels(ladder.r).length).toBe(0)
 
-    const all = mountRenderer("2d", sampleGraph(), { labelEveryNode: true } as never);
-    const labels = fileLabels(all.r);
-    const onGrid = lodPriv(all.r).nodes.filter((n) => n.onGrid).length;
-    expect(onGrid).toBeGreaterThan(0);
-    expect(labels.length).toBe(onGrid);
-    // Drawn at full strength, not at the ladder's alpha (0 here) — a label the paint pass skips.
-    expect(labels.every((l) => l.alpha === 1)).toBe(true);
-    // And they are the real note names, not placeholders.
-    expect(labels.some((l) => l.text === "[[note 0]]")).toBe(true);
-    ladder.r.destroy(); all.r.destroy();
-  });
+        const all = mountRenderer('2d', sampleGraph(), {
+            labelEveryNode: true,
+        } as never)
+        const labels = fileLabels(all.r)
+        const onGrid = lodPriv(all.r).nodes.filter(n => n.onGrid).length
+        expect(onGrid).toBeGreaterThan(0)
+        expect(labels.length).toBe(onGrid)
+        // Drawn at full strength, not at the ladder's alpha (0 here) — a label the paint pass skips.
+        expect(labels.every(l => l.alpha === 1)).toBe(true)
+        // And they are the real note names, not placeholders.
+        expect(labels.some(l => l.text === '[[note 0]]')).toBe(true)
+        ladder.r.destroy()
+        all.r.destroy()
+    })
 
-  it("reaches the canvas — the names are actually painted, not just laid out", () => {
-    const { r } = mountRenderer("2d", sampleGraph(), { labelEveryNode: true } as never);
-    frame(9999);
-    expect(ctx.fills.some((f) => f.text === "[[note 7]]")).toBe(true);
-    r.destroy();
-  });
+    it('reaches the canvas — the names are actually painted, not just laid out', () => {
+        const { r } = mountRenderer('2d', sampleGraph(), {
+            labelEveryNode: true,
+        } as never)
+        frame(9999)
+        expect(ctx.fills.some(f => f.text === '[[note 7]]')).toBe(true)
+        r.destroy()
+    })
 
-  it("flips a blocked label to the node's other side rather than overprinting", () => {
-    // Two long-named nodes on the SAME grid row, close enough that the second one's default
-    // placement (2 cells to its right) runs into the first one's reserved span. `anchorL`/`anchorR`
-    // are inert corner nodes that pin the 2D bounding box, so the two contested nodes' columns don't
-    // move when the fixture is edited. Degrees put "aaa…" first in the placement order.
-    const long = (ch: string) => ch.repeat(13);
-    const at = (id: string, x: number, y: number) => ({
-      id, label: id, kind: "note" as const,
-      position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-    });
-    const g = {
-      nodes: [
-        at("anchorL", -300, -300), at("anchorR", 300, 300),
-        at(long("a"), 200, 0), at(long("b"), 100, 0), at(long("d"), 130, 0),
-        at("c", 200, 150),
-      ],
-      edges: [
-        { from: long("a"), to: long("b"), kind: "link" as const },
-        { from: "c", to: long("a"), kind: "link" as const },
-      ],
-    };
-    const { r } = mountRenderer("2d", g as never, { labelEveryNode: true } as never);
-    const p = lodPriv(r) as unknown as {
-      nodes: { col: number; row: number; node: { id: string } }[];
-      labels: { text: string; col: number; row: number; widthCells: number }[];
-    };
-    const nodeOf = (id: string) => p.nodes.find((n) => n.node.id === id)!;
-    const labelOf = (id: string) => p.labels.find((l) => l.text === `[[${id}]]`)!;
-    const a = nodeOf(long("a")), b = nodeOf(long("b"));
-    expect(a.row).toBe(b.row);                 // the fixture really does contest one row
-    expect(b.col).toBeLessThan(a.col);
-    const la = labelOf(long("a")), lb = labelOf(long("b"));
-    expect(la.col).toBe(a.col + 2);            // first placed: the default right-hand span
-    // ...and the second is pushed to the LEFT of its node, not stacked on top of the first.
-    expect(lb.col).toBe(b.col - 2 - lb.widthCells);
-    expect(lb.col + lb.widthCells).toBeLessThan(la.col);
-    // "d" sits between them with BOTH sides contested (right runs into a's span, left into b's
-    // flipped one). It stays on its own default side rather than flipping into b's label — a name
-    // that has to overprint should at least overprint next to the node it names.
-    const d = nodeOf(long("d")), ld = labelOf(long("d"));
-    expect(d.row).toBe(a.row);
-    expect(d.col).toBeGreaterThan(b.col);
-    expect(d.col).toBeLessThan(a.col);
-    expect(ld.col).toBe(d.col + 2);
-    r.destroy();
-  });
+    it("flips a blocked label to the node's other side rather than overprinting", () => {
+        // Two long-named nodes on the SAME grid row, close enough that the second one's default
+        // placement (2 cells to its right) runs into the first one's reserved span. `anchorL`/`anchorR`
+        // are inert corner nodes that pin the 2D bounding box, so the two contested nodes' columns don't
+        // move when the fixture is edited. Degrees put "aaa…" first in the placement order.
+        const long = (ch: string) => ch.repeat(13)
+        const at = (id: string, x: number, y: number) => ({
+            id,
+            label: id,
+            kind: 'note' as const,
+            position: [x, y, 0] as [number, number, number],
+            position2d: [x, y] as [number, number],
+        })
+        const g = {
+            nodes: [
+                at('anchorL', -300, -300),
+                at('anchorR', 300, 300),
+                at(long('a'), 200, 0),
+                at(long('b'), 100, 0),
+                at(long('d'), 130, 0),
+                at('c', 200, 150),
+            ],
+            edges: [
+                { from: long('a'), to: long('b'), kind: 'link' as const },
+                { from: 'c', to: long('a'), kind: 'link' as const },
+            ],
+        }
+        const { r } = mountRenderer(
+            '2d',
+            g as never,
+            { labelEveryNode: true } as never,
+        )
+        const p = lodPriv(r) as unknown as {
+            nodes: { col: number; row: number; node: { id: string } }[]
+            labels: {
+                text: string
+                col: number
+                row: number
+                widthCells: number
+            }[]
+        }
+        const nodeOf = (id: string) => p.nodes.find(n => n.node.id === id)!
+        const labelOf = (id: string) =>
+            p.labels.find(l => l.text === `[[${id}]]`)!
+        const a = nodeOf(long('a')),
+            b = nodeOf(long('b'))
+        expect(a.row).toBe(b.row) // the fixture really does contest one row
+        expect(b.col).toBeLessThan(a.col)
+        const la = labelOf(long('a')),
+            lb = labelOf(long('b'))
+        expect(la.col).toBe(a.col + 2) // first placed: the default right-hand span
+        // ...and the second is pushed to the LEFT of its node, not stacked on top of the first.
+        expect(lb.col).toBe(b.col - 2 - lb.widthCells)
+        expect(lb.col + lb.widthCells).toBeLessThan(la.col)
+        // "d" sits between them with BOTH sides contested (right runs into a's span, left into b's
+        // flipped one). It stays on its own default side rather than flipping into b's label — a name
+        // that has to overprint should at least overprint next to the node it names.
+        const d = nodeOf(long('d')),
+            ld = labelOf(long('d'))
+        expect(d.row).toBe(a.row)
+        expect(d.col).toBeGreaterThan(b.col)
+        expect(d.col).toBeLessThan(a.col)
+        expect(ld.col).toBe(d.col + 2)
+        r.destroy()
+    })
 
-  it("still curates when the flag is off — the knowledge graph's ladder is untouched", () => {
-    // One notch past the file-label reveal point with the flag OFF: the ladder has started naming
-    // files, and it names them at a FADING alpha out of a growing budget — not all of them at 1.
-    // (frameSubset+wheel is the file's own deterministic way to reach a deep stop on this fixture.)
-    const { r, viewport } = mountRenderer("2d");
-    r.frameSubset(["n0"]);
-    wheelIn(viewport, 30);
-    settle(300);
-    frame(9999);
-    const named = fileLabels(r);
-    expect(named.length).toBeGreaterThan(0);
-    // The ladder alpha is what labelEveryNode overrides; with the flag off, non-forced labels
-    // still carry it. (n0 itself may be forced by hover/active — assert on the population.)
-    expect(named.length).toBeLessThan(lodPriv(r).nodes.length);
-    r.destroy();
-  });
-});
+    it("still curates when the flag is off — the knowledge graph's ladder is untouched", () => {
+        // One notch past the file-label reveal point with the flag OFF: the ladder has started naming
+        // files, and it names them at a FADING alpha out of a growing budget — not all of them at 1.
+        // (frameSubset+wheel is the file's own deterministic way to reach a deep stop on this fixture.)
+        const { r, viewport } = mountRenderer('2d')
+        r.frameSubset(['n0'])
+        wheelIn(viewport, 30)
+        settle(300)
+        frame(9999)
+        const named = fileLabels(r)
+        expect(named.length).toBeGreaterThan(0)
+        // The ladder alpha is what labelEveryNode overrides; with the flag off, non-forced labels
+        // still carry it. (n0 itself may be forced by hover/active — assert on the population.)
+        expect(named.length).toBeLessThan(lodPriv(r).nodes.length)
+        r.destroy()
+    })
+})
 
 /**
  * THE ATMOSPHERE'S TERRITORY COLOUR.
@@ -5034,278 +6787,390 @@ describe("GraphConfig.labelEveryNode — the graph block's all-labels mode", () 
  * change exists to replace and which nothing else in the suite would notice.
  */
 describe("the phosphor bloom carries each cluster's own territory colour (Task 20)", () => {
-  /**
-   * TWO single-level communities, far apart on x, DELIBERATELY UNEQUAL IN SIZE and with the size
-   * order disagreeing with the community-id order: the LEFT blob is community 0 with 8 members, the
-   * RIGHT is community 1 with 20. `buildColorSlots` ranks by member count, so the right blob takes
-   * palette slot 0 and the left slot 1 — the opposite of what indexing by community id would give.
-   * A bloom that invented its own palette, or keyed off the id, paints them the other way round.
-   *
-   * Single-level on purpose: with one level there is exactly one active colour level, so the hue
-   * over a cluster is one slot rather than a crossfade of two, and can be checked against an exact
-   * hex instead of a range.
-   */
-  function twoTerritoryGraph() {
-    const nodes = [];
-    const edges = [];
-    const SPEC = [{ c: 0, n: 8, cx: -600 }, { c: 1, n: 20, cx: 600 }];
-    for (const { c, n, cx } of SPEC) {
-      for (let k = 0; k < n; k++) {
-        const a = (k / n) * Math.PI * 2;
-        nodes.push({
-          id: `c${c}k${k}`, label: `note ${c}${k}`, kind: "note" as const,
-          position: [(cx + Math.cos(a) * 40) * RING_SCALE, Math.sin(a) * 40 * RING_SCALE, 0] as [number, number, number],
-          position2d: [(cx + Math.cos(a) * 40) * RING_SCALE, Math.sin(a) * 40 * RING_SCALE] as [number, number],
-          community: c, communityLabel: `Territory ${c}`,
-          communityPath: [c], communityPathLabels: [`Territory ${c}`],
-        });
-      }
-      for (let k = 1; k < n; k++) edges.push({ from: `c${c}k0`, to: `c${c}k${k}`, kind: "link" as const });
+    /**
+     * TWO single-level communities, far apart on x, DELIBERATELY UNEQUAL IN SIZE and with the size
+     * order disagreeing with the community-id order: the LEFT blob is community 0 with 8 members, the
+     * RIGHT is community 1 with 20. `buildColorSlots` ranks by member count, so the right blob takes
+     * palette slot 0 and the left slot 1 — the opposite of what indexing by community id would give.
+     * A bloom that invented its own palette, or keyed off the id, paints them the other way round.
+     *
+     * Single-level on purpose: with one level there is exactly one active colour level, so the hue
+     * over a cluster is one slot rather than a crossfade of two, and can be checked against an exact
+     * hex instead of a range.
+     */
+    function twoTerritoryGraph() {
+        const nodes = []
+        const edges = []
+        const SPEC = [
+            { c: 0, n: 8, cx: -600 },
+            { c: 1, n: 20, cx: 600 },
+        ]
+        for (const { c, n, cx } of SPEC) {
+            for (let k = 0; k < n; k++) {
+                const a = (k / n) * Math.PI * 2
+                nodes.push({
+                    id: `c${c}k${k}`,
+                    label: `note ${c}${k}`,
+                    kind: 'note' as const,
+                    position: [
+                        (cx + Math.cos(a) * 40) * RING_SCALE,
+                        Math.sin(a) * 40 * RING_SCALE,
+                        0,
+                    ] as [number, number, number],
+                    position2d: [
+                        (cx + Math.cos(a) * 40) * RING_SCALE,
+                        Math.sin(a) * 40 * RING_SCALE,
+                    ] as [number, number],
+                    community: c,
+                    communityLabel: `Territory ${c}`,
+                    communityPath: [c],
+                    communityPathLabels: [`Territory ${c}`],
+                })
+            }
+            for (let k = 1; k < n; k++)
+                edges.push({
+                    from: `c${c}k0`,
+                    to: `c${c}k${k}`,
+                    kind: 'link' as const,
+                })
+        }
+        edges.push({ from: 'c0k0', to: 'c1k0', kind: 'link' as const })
+        return { nodes, edges }
     }
-    edges.push({ from: "c0k0", to: "c1k0", kind: "link" as const });
-    return { nodes, edges };
-  }
 
-  /** The same fixture with every trace of community stripped — what an embedded graph block
-   *  (EmbeddedGraph.tsx) and the intro's cloud actually hand the renderer. */
-  function communitylessGraph() {
-    const g = twoTerritoryGraph();
-    return {
-      nodes: g.nodes.map(({ community, communityLabel, communityPath, communityPathLabels, ...n }) => n),
-      edges: g.edges,
-    };
-  }
-
-  interface ColorPriv {
-    W: number; H: number; res: number; goalRes: number; maxRes: number; dirty: boolean;
-    glyphAlpha: number; levelCount: number;
-    entityLevels: { sx: number; sy: number; community: number }[][];
-    nodes: { sx: number; sy: number; projValid: boolean; node: { id: string } }[];
-  }
-
-  const mounted: AsciiGraphRenderer[] = [];
-  afterEach(() => { for (const r of mounted.splice(0)) r.destroy(); });
-
-  function mountBloom(graph: { nodes: unknown[]; edges: unknown[] }, lod: boolean) {
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    mounted.push(r);
-    let last: DensityField | null = null;
-    r.mount(host, () => {});
-    r.setBloomCallback((f) => { last = f; });
-    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: lod });
-    r.render(graph as Parameters<AsciiGraphRenderer["render"]>[0]);
-    ctx.fills.length = 0;
-    ctx.strokes.length = 0;
-    frame();
-    return { r, priv: r as unknown as ColorPriv, field: () => last as DensityField | null };
-  }
-
-  /** The field's mean emitter colour at a screen fraction. */
-  function hueAt(f: DensityField, fx: number, fy: number): [number, number, number] {
-    const i = Math.min(FIELD_H - 1, Math.floor(fy * FIELD_H)) * FIELD_W
-      + Math.min(FIELD_W - 1, Math.floor(fx * FIELD_W));
-    return [f.rgb!.r[i], f.rgb!.g[i], f.rgb!.b[i]];
-  }
-
-  /** Where each community's light is actually being emitted from this frame, in screen fractions —
-   *  read off the projected entities rather than assumed from the fixture's world coordinates, so
-   *  the sample follows the camera instead of pinning a layout constant. */
-  function centresByCommunity(priv: ColorPriv): Map<number, [number, number]> {
-    const out = new Map<number, [number, number]>();
-    for (const ev of priv.entityLevels[0] ?? []) out.set(ev.community, [ev.sx / priv.W, ev.sy / priv.H]);
-    return out;
-  }
-
-  /** The exact hex `buildColorSlots` assigns each community for this fixture — computed with the
-   *  real function against the real fallback palette, never hand-copied. */
-  function expectedSlots(sizes: [number, number][]): Map<number, [number, number, number]> {
-    const hexes = buildColorSlots(new Map(sizes), RAMP_FALLBACK);
-    const out = new Map<number, [number, number, number]>();
-    for (const [c, hex] of hexes) out.set(c, parseHexColor(hex)!);
-    return out;
-  }
-
-  it("REQUIRED — two clusters emit two DIFFERENT hues, and each is its own size-ranked slot", () => {
-    const { priv, field } = mountBloom(twoTerritoryGraph(), true);
-    expect(priv.levelCount).toBe(1);
-    expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1);   // the MASSES own the field at fit
-    expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02);
-
-    const f = field()!;
-    expect(f.rgb).toBeDefined();                                // ...and it came back coloured
-
-    const centres = centresByCommunity(priv);
-    expect(centres.size).toBe(2);
-    const [lx, ly] = centres.get(0)!, [rx, ry] = centres.get(1)!;
-    expect(Math.abs(lx - rx)).toBeGreaterThan(0.3);             // the two really are far apart
-
-    const left = hueAt(f, lx, ly), right = hueAt(f, rx, ry);
-    // ONE shared hue for both territories is the regression this whole task undoes.
-    expect(left).not.toEqual(right);
-
-    // ...and not merely different: each is its community's own slot, to within the blur's bleed.
-    const want = expectedSlots([[0, 8], [1, 20]]);
-    for (const [c, [sx, sy]] of [[0, [lx, ly]], [1, [rx, ry]]] as [number, [number, number]][]) {
-      const got = hueAt(f, sx, sy), exp = want.get(c)!;
-      for (let ch = 0; ch < 3; ch++) expect(got[ch]).toBeCloseTo(exp[ch], -1);
+    /** The same fixture with every trace of community stripped — what an embedded graph block
+     *  (EmbeddedGraph.tsx) and the intro's cloud actually hand the renderer. */
+    function communitylessGraph() {
+        const g = twoTerritoryGraph()
+        return {
+            nodes: g.nodes.map(
+                ({
+                    community,
+                    communityLabel,
+                    communityPath,
+                    communityPathLabels,
+                    ...n
+                }) => n,
+            ),
+            edges: g.edges,
+        }
     }
-    // ...and the SIZE ranking is what picked them, not the community id: swap which community is
-    // the bigger one and the two hues above swap with it. (The slots are saturation/lightness
-    // boosted derivatives of the palette, not the palette entries themselves — see
-    // clusterVisual.buildColorSlots — so this is checked by the swap, not against a raw token.)
-    const swapped = expectedSlots([[0, 20], [1, 8]]);
-    expect(swapped.get(0)).toEqual(want.get(1)!);
-    expect(swapped.get(1)).toEqual(want.get(0)!);
-    expect(want.get(0)).not.toEqual(want.get(1));
-  });
 
-  it("REQUIRED — the mass -> glyph handover changes the SHAPE of the light, never its hue", () => {
-    // The same camera and the same notes, summarized (masses own the field) vs not (the glyphs
-    // that replace them do). If the two bands read different colour sources — a mass its entity
-    // slot, a glyph something else — the atmosphere flashes a hue change as the band crosses over,
-    // which no density or geometry assertion in this file would see.
-    const g = twoTerritoryGraph();
-    const masses = mountBloom(g, true);
-    const leaves = mountBloom(g, false);
-    expect(masses.priv.glyphAlpha).toBeLessThanOrEqual(0.02);   // masses own it
-    expect(leaves.priv.glyphAlpha).toBe(1);                     // glyphs own it
-
-    const centres = centresByCommunity(masses.priv);
-    for (const [c, [fx, fy]] of centres) {
-      const m = hueAt(masses.field()!, fx, fy);
-      const l = hueAt(leaves.field()!, fx, fy);
-      for (let ch = 0; ch < 3; ch++) expect(m[ch]).toBeCloseTo(l[ch], -1);
-      expect(c).toBeGreaterThanOrEqual(0);
+    interface ColorPriv {
+        W: number
+        H: number
+        res: number
+        goalRes: number
+        maxRes: number
+        dirty: boolean
+        glyphAlpha: number
+        levelCount: number
+        entityLevels: { sx: number; sy: number; community: number }[][]
+        nodes: {
+            sx: number
+            sy: number
+            projValid: boolean
+            node: { id: string }
+        }[]
     }
-  });
 
+    const mounted: AsciiGraphRenderer[] = []
+    afterEach(() => {
+        for (const r of mounted.splice(0)) r.destroy()
+    })
 
-  /**
-   * A 2-level hierarchy in which a blob's rank at the COARSE level disagrees with its rank at the
-   * FINE one, which is the only shape that can tell the two apart. Blob 0 is TINY (2 notes) inside a
-   * top cluster that is joint-largest: at level 0 it inherits top 0's rank-0 slot; at level 1 it is
-   * the smallest of four and takes rank 3. So the light its members emit has to change colour
-   * completely — measured pink `#f261a5` -> cyan `#22d9ed` — as the zoom ladder hands the field from
-   * one colour level to the next.
-   *
-   * Blob 0 sits at the graph's CENTRE so it stays on the field while the ladder magnifies; the other
-   * three run off it, which is what leaves the deep stop showing blob 0's colour and nothing else.
-   */
-  function skewedHierarchyGraph() {
-    const nodes = [];
-    const edges = [];
-    const SPEC = [
-      { b: 0, top: 0, n: 2, cx: 0, cy: 0 }, { b: 1, top: 0, n: 10, cx: -400, cy: 0 },
-      { b: 2, top: 1, n: 6, cx: 400, cy: -250 }, { b: 3, top: 1, n: 6, cx: 400, cy: 250 },
-    ];
-    for (const { b, top, n, cx, cy } of SPEC) {
-      for (let k = 0; k < n; k++) {
-        const a = (k / n) * Math.PI * 2;
-        const x = (cx + Math.cos(a) * 25) * RING_SCALE, y = (cy + Math.sin(a) * 25) * RING_SCALE;
-        nodes.push({
-          id: `b${b}k${k}`, label: `note ${b}${k}`, kind: "note" as const,
-          position: [x, y, 0] as [number, number, number], position2d: [x, y] as [number, number],
-          community: b, communityLabel: `Blob ${b}`,
-          communityPath: [top, b], communityPathLabels: [`Top ${top}`, `Blob ${b}`],
-        });
-      }
-      for (let k = 1; k < n; k++) edges.push({ from: `b${b}k0`, to: `b${b}k${k}`, kind: "link" as const });
+    function mountBloom(
+        graph: { nodes: unknown[]; edges: unknown[] },
+        lod: boolean,
+    ) {
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        mounted.push(r)
+        let last: DensityField | null = null
+        r.mount(host, () => {})
+        r.setBloomCallback(f => {
+            last = f
+        })
+        r.setConfig({ ...CONFIG, viewMode: '2d', showLodMasses: lod })
+        r.render(graph as Parameters<AsciiGraphRenderer['render']>[0])
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame()
+        return {
+            r,
+            priv: r as unknown as ColorPriv,
+            field: () => last as DensityField | null,
+        }
     }
-    edges.push({ from: "b0k0", to: "b2k0", kind: "link" as const }, { from: "b1k0", to: "b3k0", kind: "link" as const });
-    return { nodes, edges };
-  }
 
-  it("REQUIRED — a glyph's light is its community colour at the level OWNING the frame, not a fixed one", () => {
-    // The near band's hue has to track the same hierarchy level the glyphs themselves are recoloured
-    // by as the camera descends (rasterize()'s LEVEL-DRIVEN COLOR block) — otherwise the atmosphere
-    // and the notes sitting on it disagree about which grouping the picture is currently about, and
-    // the far band's masses hand over to a near band of a different colour. Glyphs own the field at
-    // every stop here (`showLodMasses: false`), so this isolates the LEVEL choice from the band mix.
-    const m = mountBloom(skewedHierarchyGraph(), false);
-    const priv = m.priv;
-    expect(priv.levelCount).toBe(2);
-    expect(priv.glyphAlpha).toBe(1);
-
-    const coarse = expectedSlots([[0, 12], [1, 12]]);          // level 0: the two TOPS, joint-largest
-    const fine = expectedSlots([[0, 2], [1, 10], [2, 6], [3, 6]]); // level 1: the four BLOBS
-    // The fixture is only worth anything if these two disagree for blob 0 — its whole job.
-    expect(fine.get(0)).not.toEqual(coarse.get(0));
-
-    const hueOverBlob0 = (t: number) => {
-      priv.res = priv.goalRes = resFromT(t, priv.maxRes);
-      priv.dirty = true;
-      ctx.fills.length = 0;
-      ctx.strokes.length = 0;
-      frame(9999);
-      const nv = priv.nodes.find((n) => n.node.id === "b0k0")!;
-      expect(nv.projValid).toBe(true);
-      return hueAt(m.field()!, nv.sx / priv.W, nv.sy / priv.H);
-    };
-
-    // Fit: level 0 owns the colour, so blob 0's light is TOP 0's slot (which it shares with blob 1).
-    expect(clusterLevelAlphas(0, 2)[0]).toBe(1);
-    const atFit = hueOverBlob0(0);
-    for (let ch = 0; ch < 3; ch++) expect(atFit[ch]).toBeCloseTo(coarse.get(0)![ch], -1);
-
-    // Past the level boundary: level 1 owns it, and blob 0's light becomes BLOB 0's own slot — the
-    // rank-3 one it earns as the smallest of the four, nothing like the rank-0 colour above.
-    expect(clusterLevelAlphas(0.4, 2)[1]).toBe(1);
-    const atDepth = hueOverBlob0(0.4);
-    for (let ch = 0; ch < 3; ch++) expect(atDepth[ch]).toBeCloseTo(fine.get(0)![ch], -1);
-  });
-
-  it("REQUIRED — a graph with NO communities still glows, in the plain base hue", () => {
-    // Embedded graph blocks (EmbeddedGraph.tsx) strip communities entirely and the intro's cloud
-    // can too. There is no territory to colour there, and the atmosphere must not go dark over it.
-    for (const lod of [true, false]) {
-      const { field } = mountBloom(communitylessGraph(), lod);
-      const f = field()!;
-      expect(f.rgb).toBeUndefined();                            // nothing to colour...
-      expect(Math.max(...f)).toBeCloseTo(1, 6);                 // ...and it is lit anyway
-      expect(f.filter((v) => v > Math.pow(5 / 255, 0.25)).length).toBeGreaterThan(0);
+    /** The field's mean emitter colour at a screen fraction. */
+    function hueAt(
+        f: DensityField,
+        fx: number,
+        fy: number,
+    ): [number, number, number] {
+        const i =
+            Math.min(FIELD_H - 1, Math.floor(fy * FIELD_H)) * FIELD_W +
+            Math.min(FIELD_W - 1, Math.floor(fx * FIELD_W))
+        return [f.rgb!.r[i], f.rgb!.g[i], f.rgb!.b[i]]
     }
-  });
 
-  it("REQUIRED — 3D emits a coloured field too, and its geometry is untouched by carrying colour", () => {
-    // 3D has no mass band, so this is the leaf pass alone. There is no separate 3D code path for
-    // colour and there must not be one: the check is that the orbit view still emits a lit,
-    // normalised field with its territories on it.
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    mounted.push(r);
-    let last: DensityField | null = null;
-    r.mount(host, () => {});
-    r.setBloomCallback((f) => { last = f; });
-    r.setConfig({ ...CONFIG, viewMode: "3d", showLodMasses: true });
-    r.render(twoTerritoryGraph());
-    frame();
+    /** Where each community's light is actually being emitted from this frame, in screen fractions —
+     *  read off the projected entities rather than assumed from the fixture's world coordinates, so
+     *  the sample follows the camera instead of pinning a layout constant. */
+    function centresByCommunity(
+        priv: ColorPriv,
+    ): Map<number, [number, number]> {
+        const out = new Map<number, [number, number]>()
+        for (const ev of priv.entityLevels[0] ?? [])
+            out.set(ev.community, [ev.sx / priv.W, ev.sy / priv.H])
+        return out
+    }
 
-    const priv = r as unknown as ColorPriv;
-    expect(priv.glyphAlpha).toBe(1);                            // no mass band in 3D
-    const f = last as unknown as DensityField;
-    expect(f).not.toBeNull();
-    expect(Math.max(...f)).toBeCloseTo(1, 6);
-    expect(f.rgb).toBeDefined();
-    // Both territories are present in it — 3D is not a single-hue special case.
-    // BOTH territories are present in it — 3D is not a single-hue special case. Measured on this
-    // fixture: 6 distinct mean colours over the 485 cells above v = 0.3, resolving to the two
-    // community slots plus their blur boundary. (Only the DOMINANT one survives above v = 0.5,
-    // which is the shape of the finding that 3D barely changes: one core fills the halo.)
-    const want = expectedSlots([[0, 8], [1, 20]]);
-    const seen = [0, 1].map((c) => {
-      const exp = want.get(c)!;
-      for (let i = 0; i < FIELD_W * FIELD_H; i++) {
-        if (f[i] > 0.3 && [0, 1, 2].every((ch) =>
-          Math.abs([f.rgb!.r, f.rgb!.g, f.rgb!.b][ch][i] - exp[ch]) < 6)) return true;
-      }
-      return false;
-    });
-    expect(seen).toEqual([true, true]);
-  });
-});
+    /** The exact hex `buildColorSlots` assigns each community for this fixture — computed with the
+     *  real function against the real fallback palette, never hand-copied. */
+    function expectedSlots(
+        sizes: [number, number][],
+    ): Map<number, [number, number, number]> {
+        const hexes = buildColorSlots(new Map(sizes), RAMP_FALLBACK)
+        const out = new Map<number, [number, number, number]>()
+        for (const [c, hex] of hexes) out.set(c, parseHexColor(hex)!)
+        return out
+    }
+
+    it('REQUIRED — two clusters emit two DIFFERENT hues, and each is its own size-ranked slot', () => {
+        const { priv, field } = mountBloom(twoTerritoryGraph(), true)
+        expect(priv.levelCount).toBe(1)
+        expect(bandsForT(0, priv.levelCount).massAlpha).toBe(1) // the MASSES own the field at fit
+        expect(priv.glyphAlpha).toBeLessThanOrEqual(0.02)
+
+        const f = field()!
+        expect(f.rgb).toBeDefined() // ...and it came back coloured
+
+        const centres = centresByCommunity(priv)
+        expect(centres.size).toBe(2)
+        const [lx, ly] = centres.get(0)!,
+            [rx, ry] = centres.get(1)!
+        expect(Math.abs(lx - rx)).toBeGreaterThan(0.3) // the two really are far apart
+
+        const left = hueAt(f, lx, ly),
+            right = hueAt(f, rx, ry)
+        // ONE shared hue for both territories is the regression this whole task undoes.
+        expect(left).not.toEqual(right)
+
+        // ...and not merely different: each is its community's own slot, to within the blur's bleed.
+        const want = expectedSlots([
+            [0, 8],
+            [1, 20],
+        ])
+        for (const [c, [sx, sy]] of [
+            [0, [lx, ly]],
+            [1, [rx, ry]],
+        ] as [number, [number, number]][]) {
+            const got = hueAt(f, sx, sy),
+                exp = want.get(c)!
+            for (let ch = 0; ch < 3; ch++)
+                expect(got[ch]).toBeCloseTo(exp[ch], -1)
+        }
+        // ...and the SIZE ranking is what picked them, not the community id: swap which community is
+        // the bigger one and the two hues above swap with it. (The slots are saturation/lightness
+        // boosted derivatives of the palette, not the palette entries themselves — see
+        // clusterVisual.buildColorSlots — so this is checked by the swap, not against a raw token.)
+        const swapped = expectedSlots([
+            [0, 20],
+            [1, 8],
+        ])
+        expect(swapped.get(0)).toEqual(want.get(1)!)
+        expect(swapped.get(1)).toEqual(want.get(0)!)
+        expect(want.get(0)).not.toEqual(want.get(1))
+    })
+
+    it('REQUIRED — the mass -> glyph handover changes the SHAPE of the light, never its hue', () => {
+        // The same camera and the same notes, summarized (masses own the field) vs not (the glyphs
+        // that replace them do). If the two bands read different colour sources — a mass its entity
+        // slot, a glyph something else — the atmosphere flashes a hue change as the band crosses over,
+        // which no density or geometry assertion in this file would see.
+        const g = twoTerritoryGraph()
+        const masses = mountBloom(g, true)
+        const leaves = mountBloom(g, false)
+        expect(masses.priv.glyphAlpha).toBeLessThanOrEqual(0.02) // masses own it
+        expect(leaves.priv.glyphAlpha).toBe(1) // glyphs own it
+
+        const centres = centresByCommunity(masses.priv)
+        for (const [c, [fx, fy]] of centres) {
+            const m = hueAt(masses.field()!, fx, fy)
+            const l = hueAt(leaves.field()!, fx, fy)
+            for (let ch = 0; ch < 3; ch++) expect(m[ch]).toBeCloseTo(l[ch], -1)
+            expect(c).toBeGreaterThanOrEqual(0)
+        }
+    })
+
+    /**
+     * A 2-level hierarchy in which a blob's rank at the COARSE level disagrees with its rank at the
+     * FINE one, which is the only shape that can tell the two apart. Blob 0 is TINY (2 notes) inside a
+     * top cluster that is joint-largest: at level 0 it inherits top 0's rank-0 slot; at level 1 it is
+     * the smallest of four and takes rank 3. So the light its members emit has to change colour
+     * completely — measured pink `#f261a5` -> cyan `#22d9ed` — as the zoom ladder hands the field from
+     * one colour level to the next.
+     *
+     * Blob 0 sits at the graph's CENTRE so it stays on the field while the ladder magnifies; the other
+     * three run off it, which is what leaves the deep stop showing blob 0's colour and nothing else.
+     */
+    function skewedHierarchyGraph() {
+        const nodes = []
+        const edges = []
+        const SPEC = [
+            { b: 0, top: 0, n: 2, cx: 0, cy: 0 },
+            { b: 1, top: 0, n: 10, cx: -400, cy: 0 },
+            { b: 2, top: 1, n: 6, cx: 400, cy: -250 },
+            { b: 3, top: 1, n: 6, cx: 400, cy: 250 },
+        ]
+        for (const { b, top, n, cx, cy } of SPEC) {
+            for (let k = 0; k < n; k++) {
+                const a = (k / n) * Math.PI * 2
+                const x = (cx + Math.cos(a) * 25) * RING_SCALE,
+                    y = (cy + Math.sin(a) * 25) * RING_SCALE
+                nodes.push({
+                    id: `b${b}k${k}`,
+                    label: `note ${b}${k}`,
+                    kind: 'note' as const,
+                    position: [x, y, 0] as [number, number, number],
+                    position2d: [x, y] as [number, number],
+                    community: b,
+                    communityLabel: `Blob ${b}`,
+                    communityPath: [top, b],
+                    communityPathLabels: [`Top ${top}`, `Blob ${b}`],
+                })
+            }
+            for (let k = 1; k < n; k++)
+                edges.push({
+                    from: `b${b}k0`,
+                    to: `b${b}k${k}`,
+                    kind: 'link' as const,
+                })
+        }
+        edges.push(
+            { from: 'b0k0', to: 'b2k0', kind: 'link' as const },
+            { from: 'b1k0', to: 'b3k0', kind: 'link' as const },
+        )
+        return { nodes, edges }
+    }
+
+    it("REQUIRED — a glyph's light is its community colour at the level OWNING the frame, not a fixed one", () => {
+        // The near band's hue has to track the same hierarchy level the glyphs themselves are recoloured
+        // by as the camera descends (rasterize()'s LEVEL-DRIVEN COLOR block) — otherwise the atmosphere
+        // and the notes sitting on it disagree about which grouping the picture is currently about, and
+        // the far band's masses hand over to a near band of a different colour. Glyphs own the field at
+        // every stop here (`showLodMasses: false`), so this isolates the LEVEL choice from the band mix.
+        const m = mountBloom(skewedHierarchyGraph(), false)
+        const priv = m.priv
+        expect(priv.levelCount).toBe(2)
+        expect(priv.glyphAlpha).toBe(1)
+
+        const coarse = expectedSlots([
+            [0, 12],
+            [1, 12],
+        ]) // level 0: the two TOPS, joint-largest
+        const fine = expectedSlots([
+            [0, 2],
+            [1, 10],
+            [2, 6],
+            [3, 6],
+        ]) // level 1: the four BLOBS
+        // The fixture is only worth anything if these two disagree for blob 0 — its whole job.
+        expect(fine.get(0)).not.toEqual(coarse.get(0))
+
+        const hueOverBlob0 = (t: number) => {
+            priv.res = priv.goalRes = resFromT(t, priv.maxRes)
+            priv.dirty = true
+            ctx.fills.length = 0
+            ctx.strokes.length = 0
+            frame(9999)
+            const nv = priv.nodes.find(n => n.node.id === 'b0k0')!
+            expect(nv.projValid).toBe(true)
+            return hueAt(m.field()!, nv.sx / priv.W, nv.sy / priv.H)
+        }
+
+        // Fit: level 0 owns the colour, so blob 0's light is TOP 0's slot (which it shares with blob 1).
+        expect(clusterLevelAlphas(0, 2)[0]).toBe(1)
+        const atFit = hueOverBlob0(0)
+        for (let ch = 0; ch < 3; ch++)
+            expect(atFit[ch]).toBeCloseTo(coarse.get(0)![ch], -1)
+
+        // Past the level boundary: level 1 owns it, and blob 0's light becomes BLOB 0's own slot — the
+        // rank-3 one it earns as the smallest of the four, nothing like the rank-0 colour above.
+        expect(clusterLevelAlphas(0.4, 2)[1]).toBe(1)
+        const atDepth = hueOverBlob0(0.4)
+        for (let ch = 0; ch < 3; ch++)
+            expect(atDepth[ch]).toBeCloseTo(fine.get(0)![ch], -1)
+    })
+
+    it('REQUIRED — a graph with NO communities still glows, in the plain base hue', () => {
+        // Embedded graph blocks (EmbeddedGraph.tsx) strip communities entirely and the intro's cloud
+        // can too. There is no territory to colour there, and the atmosphere must not go dark over it.
+        for (const lod of [true, false]) {
+            const { field } = mountBloom(communitylessGraph(), lod)
+            const f = field()!
+            expect(f.rgb).toBeUndefined() // nothing to colour...
+            expect(Math.max(...f)).toBeCloseTo(1, 6) // ...and it is lit anyway
+            expect(
+                f.filter(v => v > Math.pow(5 / 255, 0.25)).length,
+            ).toBeGreaterThan(0)
+        }
+    })
+
+    it('REQUIRED — 3D emits a coloured field too, and its geometry is untouched by carrying colour', () => {
+        // 3D has no mass band, so this is the leaf pass alone. There is no separate 3D code path for
+        // colour and there must not be one: the check is that the orbit view still emits a lit,
+        // normalised field with its territories on it.
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        mounted.push(r)
+        let last: DensityField | null = null
+        r.mount(host, () => {})
+        r.setBloomCallback(f => {
+            last = f
+        })
+        r.setConfig({ ...CONFIG, viewMode: '3d', showLodMasses: true })
+        r.render(twoTerritoryGraph())
+        frame()
+
+        const priv = r as unknown as ColorPriv
+        expect(priv.glyphAlpha).toBe(1) // no mass band in 3D
+        const f = last as unknown as DensityField
+        expect(f).not.toBeNull()
+        expect(Math.max(...f)).toBeCloseTo(1, 6)
+        expect(f.rgb).toBeDefined()
+        // Both territories are present in it — 3D is not a single-hue special case.
+        // BOTH territories are present in it — 3D is not a single-hue special case. Measured on this
+        // fixture: 6 distinct mean colours over the 485 cells above v = 0.3, resolving to the two
+        // community slots plus their blur boundary. (Only the DOMINANT one survives above v = 0.5,
+        // which is the shape of the finding that 3D barely changes: one core fills the halo.)
+        const want = expectedSlots([
+            [0, 8],
+            [1, 20],
+        ])
+        const seen = [0, 1].map(c => {
+            const exp = want.get(c)!
+            for (let i = 0; i < FIELD_W * FIELD_H; i++) {
+                if (
+                    f[i] > 0.3 &&
+                    [0, 1, 2].every(
+                        ch =>
+                            Math.abs(
+                                [f.rgb!.r, f.rgb!.g, f.rgb!.b][ch][i] - exp[ch],
+                            ) < 6,
+                    )
+                )
+                    return true
+            }
+            return false
+        })
+        expect(seen).toEqual([true, true])
+    })
+})
 
 // ---------------------------------------------------------------------------------------------
 // Task 22 — the animated 2D<->3D morph (modeMorph.ts), restoring EPITAPH item 1.
@@ -5316,642 +7181,822 @@ describe("the phosphor bloom carries each cluster's own territory colour (Task 2
 // modeMorph.test.ts) and that the FINISHED transition still lands exactly where the old hard reset
 // used to — this is a transition, not a new camera.
 // ---------------------------------------------------------------------------------------------
-describe("the animated 2D<->3D morph (modeMorph.ts)", () => {
-  /** The private morph + camera state these tests read. Cast-only — the public surface stays
-   *  exactly GraphRenderer. */
-  interface MorphPriv {
-    nodes: { sx: number; sy: number; node: { id: string } }[];
-    rx: number; ry: number; panX: number; panY: number; res: number; goalRes: number; zoomPct: number;
-    target: [number, number, number];
-    modeMorph: {
-      fromFlatten: number; toFlatten: number;
-      fromRx: number; fromRy: number; toRx: number; toRy: number;
-      startT: number | null;
-    } | null;
-    morphFlatten: number;
-  }
-  const morphPriv = (r: AsciiGraphRenderer) => r as unknown as MorphPriv;
+describe('the animated 2D<->3D morph (modeMorph.ts)', () => {
+    /** The private morph + camera state these tests read. Cast-only — the public surface stays
+     *  exactly GraphRenderer. */
+    interface MorphPriv {
+        nodes: { sx: number; sy: number; node: { id: string } }[]
+        rx: number
+        ry: number
+        panX: number
+        panY: number
+        res: number
+        goalRes: number
+        zoomPct: number
+        target: [number, number, number]
+        modeMorph: {
+            fromFlatten: number
+            toFlatten: number
+            fromRx: number
+            fromRy: number
+            toRx: number
+            toRy: number
+            startT: number | null
+        } | null
+        morphFlatten: number
+    }
+    const morphPriv = (r: AsciiGraphRenderer) => r as unknown as MorphPriv
 
-  it("entering 2D: the first rendered frame continues the old 3D view exactly, the midpoint is genuinely partway, and the field keeps moving until it settles", () => {
-    const { r } = mountRenderer("3d");
-    settle(60); // fully settled in 3D — no glide left in flight
-    const priv = morphPriv(r);
-    const before = priv.nodes.map((n) => ({ id: n.node.id, sx: n.sx, sy: n.sy }));
+    it('entering 2D: the first rendered frame continues the old 3D view exactly, the midpoint is genuinely partway, and the field keeps moving until it settles', () => {
+        const { r } = mountRenderer('3d')
+        settle(60) // fully settled in 3D — no glide left in flight
+        const priv = morphPriv(r)
+        const before = priv.nodes.map(n => ({
+            id: n.node.id,
+            sx: n.sx,
+            sy: n.sy,
+        }))
 
-    r.setConfig({ ...CONFIG, viewMode: "2d" });
-    // The flip QUEUES a transition instead of cutting straight to the flat layout.
-    expect(priv.modeMorph).not.toBeNull();
+        r.setConfig({ ...CONFIG, viewMode: '2d' })
+        // The flip QUEUES a transition instead of cutting straight to the flat layout.
+        expect(priv.modeMorph).not.toBeNull()
 
-    // The very first frame actually rendered after the flip: this tick's own timestamp seeds
-    // modeMorph.startT, so elapsed is exactly 0 and flatten is exactly 0 — a continuation of the
-    // last 3D frame, not already the flattened 2D one.
-    frame(2000);
-    expect(priv.morphFlatten).toBe(0);
-    const justAfter = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
-    for (let i = 0; i < before.length; i++) {
-      expect(justAfter[i].sx).toBeCloseTo(before[i].sx, 6);
-      expect(justAfter[i].sy).toBeCloseTo(before[i].sy, 6);
+        // The very first frame actually rendered after the flip: this tick's own timestamp seeds
+        // modeMorph.startT, so elapsed is exactly 0 and flatten is exactly 0 — a continuation of the
+        // last 3D frame, not already the flattened 2D one.
+        frame(2000)
+        expect(priv.morphFlatten).toBe(0)
+        const justAfter = priv.nodes.map(n => ({ sx: n.sx, sy: n.sy }))
+        for (let i = 0; i < before.length; i++) {
+            expect(justAfter[i].sx).toBeCloseTo(before[i].sx, 6)
+            expect(justAfter[i].sy).toBeCloseTo(before[i].sy, 6)
+        }
+
+        // Halfway through MODE_MORPH_MS: easeInOutCubic(0.5) is exactly 0.5 (modeMorph.test.ts pins
+        // this identity independently), so flatten is exactly 0.5 here — genuinely partway, neither
+        // endpoint. Every node's screen position must have actually moved from the post-flip frame.
+        frame(2000 + MODE_MORPH_MS / 2)
+        expect(priv.morphFlatten).toBe(0.5)
+        const mid = priv.nodes.map(n => ({ sx: n.sx, sy: n.sy }))
+        for (let i = 0; i < before.length; i++) {
+            expect(
+                mid[i].sx !== justAfter[i].sx || mid[i].sy !== justAfter[i].sy,
+            ).toBe(true)
+        }
+
+        // Past the duration the transition finishes and stops tracking itself — and the field has kept
+        // moving since the midpoint (proving the animation runs all the way to its end, not just a
+        // single eased step at the start).
+        frame(2000 + MODE_MORPH_MS + 100)
+        expect(priv.modeMorph).toBeNull()
+        const settled = priv.nodes.map(n => ({ sx: n.sx, sy: n.sy }))
+        for (let i = 0; i < mid.length; i++) {
+            expect(
+                settled[i].sx !== mid[i].sx || settled[i].sy !== mid[i].sy,
+            ).toBe(true)
+        }
+    })
+
+    it('entering 2D: the finished transition lands EXACTLY where the old hard reset used to — a fresh 2D mount agrees on screen position and every camera field', () => {
+        const { r } = mountRenderer('3d')
+        settle(60)
+        r.setConfig({ ...CONFIG, viewMode: '2d' })
+        let t = 3000
+        for (let i = 0; i < 40; i++) {
+            frame(t)
+            t += 16
+        } // well past MODE_MORPH_MS
+        const priv = morphPriv(r)
+        expect(priv.modeMorph).toBeNull() // settled — no transition left in flight
+        const morphed = priv.nodes.map(n => ({
+            id: n.node.id,
+            sx: n.sx,
+            sy: n.sy,
+        }))
+
+        // Comparandum: a SEPARATE renderer mounted directly in 2D — no transition ever ran.
+        const { r: fresh } = mountRenderer('2d')
+        settle(60)
+        const freshPriv = morphPriv(fresh)
+        const freshById = new Map(
+            freshPriv.nodes.map(n => [n.node.id, { sx: n.sx, sy: n.sy }]),
+        )
+
+        expect(morphed.length).toBeGreaterThan(0)
+        for (const m of morphed) {
+            const f = freshById.get(m.id)!
+            expect(m.sx).toBeCloseTo(f.sx, 6)
+            expect(m.sy).toBeCloseTo(f.sy, 6)
+        }
+        // The camera bookkeeping itself matches the documented hard-reset values exactly. `rx` is 0,
+        // not the 3D resting `-0.5`: this.rx/this.ry are now the LIVE orbit actually on screen (round-1
+        // fix — see AsciiGraphRenderer.ts's `modeMorph` field doc), and the field is flat, so the
+        // rendered orbit — the only orbit that exists now — is level. `-0.5` is still where a
+        // SUBSEQUENT flip back to 3D would animate TO (setConfig's `toRx`), not a value parked here.
+        expect(priv.rx).toBe(0)
+        expect(priv.ry).toBe(0)
+        expect(priv.panX).toBe(0)
+        expect(priv.panY).toBe(0)
+        expect(priv.res).toBe(1)
+        expect(priv.goalRes).toBe(1)
+        expect(priv.zoomPct).toBe(100)
+        expect(priv.target).toEqual([0, 0, 0])
+    })
+
+    it('entering 3D (the reverse direction) also eases rather than cuts, and settles at the resting orbit', () => {
+        const { r } = mountRenderer('2d')
+        settle(60)
+        const priv = morphPriv(r)
+        r.setConfig({ ...CONFIG, viewMode: '3d' })
+        expect(priv.modeMorph).not.toBeNull()
+
+        frame(5000)
+        expect(priv.morphFlatten).toBe(1) // entering 3D: flatten STARTS at 1 (still fully flat) ...
+        frame(5000 + MODE_MORPH_MS / 2)
+        expect(priv.morphFlatten).toBe(0.5) // ... genuinely partway at the midpoint ...
+        frame(5000 + MODE_MORPH_MS + 100)
+        expect(priv.morphFlatten).toBe(0) // ... and ENDS at 0 (full 3D), not a jump either direction.
+        expect(priv.modeMorph).toBeNull()
+        expect(priv.rx).toBe(-0.5)
+        expect(priv.ry).toBe(0)
+    })
+
+    /**
+     * Three communities, each on its OWN ring at a distinct, CONSISTENT world-Z depth (+400/0/-400,
+     * not `sampleGraph()`'s per-node cyclic z, which averages ALMOST TO ZERO within a community —
+     * measured -11.25 world units for community 0 there, an order of magnitude too small to move a
+     * mass's centroid across a cell boundary once projected). Every member of one community shares
+     * (near enough) the same depth, so the community's p3 CENTROID carries that depth undiluted —
+     * exactly what a mass's `p3` field needs to make its blended position move by more than a
+     * sub-pixel amount as `flatten` runs 0..1.
+     */
+    function morphMassGraph() {
+        const nodes: ReturnType<typeof sampleGraph>['nodes'] = []
+        const edges: ReturnType<typeof sampleGraph>['edges'] = []
+        const RINGS = [
+            { c: 0, z: 400 },
+            { c: 1, z: 0 },
+            { c: 2, z: -400 },
+        ]
+        for (const { c, z } of RINGS) {
+            for (let k = 0; k < 8; k++) {
+                const a = (k / 8) * Math.PI * 2
+                nodes.push({
+                    id: `c${c}k${k}`,
+                    label: `note ${c}${k}`,
+                    kind: 'note' as const,
+                    position: [
+                        (c * 300 + Math.cos(a) * 80) * RING_SCALE,
+                        Math.sin(a) * 80 * RING_SCALE,
+                        z * RING_SCALE,
+                    ] as [number, number, number],
+                    position2d: [
+                        (c * 300 + Math.cos(a) * 80) * RING_SCALE,
+                        Math.sin(a) * 80 * RING_SCALE,
+                    ] as [number, number],
+                    community: c,
+                    communityLabel: `Cluster ${c}`,
+                })
+            }
+            for (let k = 1; k < 8; k++)
+                edges.push({
+                    from: `c${c}k0`,
+                    to: `c${c}k${k}`,
+                    kind: 'link' as const,
+                })
+        }
+        return { nodes, edges }
     }
 
-    // Halfway through MODE_MORPH_MS: easeInOutCubic(0.5) is exactly 0.5 (modeMorph.test.ts pins
-    // this identity independently), so flatten is exactly 0.5 here — genuinely partway, neither
-    // endpoint. Every node's screen position must have actually moved from the post-flip frame.
-    frame(2000 + MODE_MORPH_MS / 2);
-    expect(priv.morphFlatten).toBe(0.5);
-    const mid = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
-    for (let i = 0; i < before.length; i++) {
-      expect(mid[i].sx !== justAfter[i].sx || mid[i].sy !== justAfter[i].sy).toBe(true);
-    }
+    /**
+     * REQUIRED (round-1 review, Critical 1). `showLodMasses: true` is the app's SHIPPED default for
+     * any non-"local" graph mode (GraphView.tsx) — every test above uses bare `CONFIG`, which leaves
+     * it unset, and round-1 review found that was the ONE configuration where the whole task worked:
+     * with masses on, `res` resets to 1 on every flip (unchanged, out of this task's scope), pinning
+     * `resolutionT` at 0 for the entire transition, and `bandsForT(0, …)` gives `massAlpha = 1` —
+     * `glyphAlpha` is gated OFF (`<= LOD_ALPHA_EPS`) the WHOLE 500ms, so `projectNodes()` (this task's
+     * glyph blend) never runs at all. The only thing drawn is the far band's aggregate masses, and
+     * `projectEntities()` used to read `this.pxPerWorld`/`this.res`/`ev.wx`/`ev.wy` directly with no
+     * blend anywhere — so the user saw the 3D glyph field cut straight to the final, static 2D mass
+     * layout in one frame, no matter how correct the (invisible) glyph-level morph was underneath.
+     * This test drives that exact configuration and asserts the DRAWN field (what `paint()` actually
+     * issued to the canvas, not an internal `flatten` value) differs at each of five samples across
+     * the transition — the round-1 review's own methodology ("distinct frames: 1 of 5" before the
+     * fix, on this exact measurement).
+     */
+    it("REQUIRED — entering 2D with LOD masses on (the app's default configuration) moves the DRAWN field across the transition, not a cut to a frozen aggregate", () => {
+        const { r } = mountRenderer('3d', morphMassGraph(), {
+            showLodMasses: true,
+        })
+        settle(60)
 
-    // Past the duration the transition finishes and stops tracking itself — and the field has kept
-    // moving since the midpoint (proving the animation runs all the way to its end, not just a
-    // single eased step at the start).
-    frame(2000 + MODE_MORPH_MS + 100);
-    expect(priv.modeMorph).toBeNull();
-    const settled = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
-    for (let i = 0; i < mid.length; i++) {
-      expect(settled[i].sx !== mid[i].sx || settled[i].sy !== mid[i].sy).toBe(true);
-    }
-  });
+        r.setConfig({ ...CONFIG, viewMode: '2d', showLodMasses: true })
 
-  it("entering 2D: the finished transition lands EXACTLY where the old hard reset used to — a fresh 2D mount agrees on screen position and every camera field", () => {
-    const { r } = mountRenderer("3d");
-    settle(60);
-    r.setConfig({ ...CONFIG, viewMode: "2d" });
-    let t = 3000;
-    for (let i = 0; i < 40; i++) { frame(t); t += 16; } // well past MODE_MORPH_MS
-    const priv = morphPriv(r);
-    expect(priv.modeMorph).toBeNull(); // settled — no transition left in flight
-    const morphed = priv.nodes.map((n) => ({ id: n.node.id, sx: n.sx, sy: n.sy }));
+        const drawnAt = (tMs: number) => {
+            ctx.fills.length = 0
+            frame(tMs)
+            return ctx.fills
+                .map(f => `${f.text}@${f.x.toFixed(2)},${f.y.toFixed(2)}`)
+                .sort()
+                .join('|')
+        }
+        const t0 = 2000
+        const samples = [t0, t0 + 125, t0 + 250, t0 + 375, t0 + 500].map(
+            drawnAt,
+        )
+        // Sanity the fixture actually exercises the mass path at all (a vacuous "nothing ever drew
+        // anything" would trivially pass the distinctness assertion below for the wrong reason).
+        expect(samples.every(s => s.length > 0)).toBe(true)
+        // Distinct DRAWN output at every one of the five samples — not "at least one differs", the
+        // full "5 of 5" the round-1 review used to describe the fix (and measured as "1 of 5" on the
+        // pre-fix code — see the mutation-proof below and this task's report for the reproduction).
+        expect(new Set(samples).size).toBe(5)
+    })
 
-    // Comparandum: a SEPARATE renderer mounted directly in 2D — no transition ever ran.
-    const { r: fresh } = mountRenderer("2d");
-    settle(60);
-    const freshPriv = morphPriv(fresh);
-    const freshById = new Map(freshPriv.nodes.map((n) => [n.node.id, { sx: n.sx, sy: n.sy }]));
+    /**
+     * IMPORTANT (round-2 review) — not pinned by any test above, INCLUDING the "5 distinct drawn
+     * frames" test immediately above. `projectEntities()`'s `blendPosition(ev.p3, [ev.wx, ev.wy, 0],
+     * flatten)` call is what makes a mass's FIRST frame of a transition continue from wherever the
+     * pre-flip 3D camera actually showed it — the exact continuity the glyph test far above
+     * (":4858") pins for individual nodes. The distinctness test does NOT catch its removal:
+     * `cameraFrame()`'s shared rotation/dolly/scale keeps moving on its own for the whole 500ms
+     * regardless of whether any given ENTITY's own position is blended, so a mutation that drops just
+     * the per-entity p3 blend (masses parked at their final flat `[wx, wy, 0]` position, viewed
+     * through a still-rotating camera) still produces 5 distinct drawn frames — just ones where the
+     * masses are already fanned out to their final 2D layout instead of clustered where the tilted 3D
+     * camera actually had them.
+     *
+     * Masses never actually project while `is2d` is false (`lodOn`'s own gate — see rasterize()), so
+     * there is no LIVE "last pre-flip 3D frame" to read `entityLevels[…].sx/sy` off, the way the
+     * glyph test reads `nv.sx/sy` off for free (nodes always project). Calling `projectEntities()`
+     * itself (privately) to get that comparandum was tried and rejected: `before` and `after` would
+     * then both come from the SAME method with the SAME effective inputs (the settled pre-flip camera
+     * and the transition's first-frame camera are identical — flatten 0, rx -0.5, ry 0, no dolly,
+     * `res` pinned to 1 either way), so they would agree by construction for ANY deterministic
+     * `projectEntities()` implementation, correct or not — the comparison could never actually go red
+     * on a formula bug, only on a degenerate FIXTURE. Instead this computes the ground truth BY HAND,
+     * independently of `projectEntities()`, applying the exact projection formula the two projection
+     * passes share (`cameraFrame()`'s doc comment) directly to each entity's own `p3` at the captured
+     * pre-flip camera — so a regression in the METHOD under test can actually diverge from it.
+     */
+    it("IMPORTANT — first-frame mass continuity: entering 2D, a mass's first frame continues the pre-flip 3D projection, not the already-fanned-out 2D one", () => {
+        interface MassContinuityPriv {
+            entityLevels: { p3: [number, number, number]; sy: number }[][]
+            P: number
+            cameraFrame(): {
+                s: number
+                dolly: number
+                cyr: number
+                syr: number
+                cxr: number
+                sxr: number
+                tx: number
+                ty: number
+                tz: number
+                ox: number
+                oy: number
+            }
+        }
+        const massPriv = (r: AsciiGraphRenderer) =>
+            r as unknown as MassContinuityPriv
 
-    expect(morphed.length).toBeGreaterThan(0);
-    for (const m of morphed) {
-      const f = freshById.get(m.id)!;
-      expect(m.sx).toBeCloseTo(f.sx, 6);
-      expect(m.sy).toBeCloseTo(f.sy, 6);
-    }
-    // The camera bookkeeping itself matches the documented hard-reset values exactly. `rx` is 0,
-    // not the 3D resting `-0.5`: this.rx/this.ry are now the LIVE orbit actually on screen (round-1
-    // fix — see AsciiGraphRenderer.ts's `modeMorph` field doc), and the field is flat, so the
-    // rendered orbit — the only orbit that exists now — is level. `-0.5` is still where a
-    // SUBSEQUENT flip back to 3D would animate TO (setConfig's `toRx`), not a value parked here.
-    expect(priv.rx).toBe(0); expect(priv.ry).toBe(0);
-    expect(priv.panX).toBe(0); expect(priv.panY).toBe(0);
-    expect(priv.res).toBe(1); expect(priv.goalRes).toBe(1);
-    expect(priv.zoomPct).toBe(100);
-    expect(priv.target).toEqual([0, 0, 0]);
-  });
+        const { r } = mountRenderer('3d', morphMassGraph(), {
+            showLodMasses: true,
+        })
+        settle(60) // fully settled in 3D — this.morphFlatten === 0, this.rx === -0.5 (resting 3D tilt)
+        const priv = massPriv(r)
 
-  it("entering 3D (the reverse direction) also eases rather than cuts, and settles at the resting orbit", () => {
-    const { r } = mountRenderer("2d");
-    settle(60);
-    const priv = morphPriv(r);
-    r.setConfig({ ...CONFIG, viewMode: "3d" });
-    expect(priv.modeMorph).not.toBeNull();
+        // GROUND TRUTH: the shared projection formula (projectNodes()/projectEntities(), see
+        // cameraFrame()'s own doc comment), applied BY HAND to each entity's `p3` at the settled
+        // pre-flip 3D camera — computed independently of projectEntities() itself (see the "rejected"
+        // note above for why calling that method for this side of the comparison would be vacuous).
+        const cam = priv.cameraFrame()
+        const P = priv.P
+        const groundTruthSy = (p3: [number, number, number]) => {
+            const x = (p3[0] - cam.tx) * cam.s,
+                y = (p3[1] - cam.ty) * cam.s,
+                z = (p3[2] - cam.tz) * cam.s
+            const x1 = x * cam.cyr + z * cam.syr,
+                z1 = -x * cam.syr + z * cam.cyr
+            const y2 = y * cam.cxr - z1 * cam.sxr,
+                z2 = y * cam.sxr + z1 * cam.cxr
+            const persp = P / Math.max(1, P - (z2 + cam.dolly))
+            return cam.oy + y2 * persp
+        }
+        expect(priv.entityLevels[0].length).toBe(3) // morphMassGraph's three communities, one level
+        const before = priv.entityLevels[0].map(ev => groundTruthSy(ev.p3))
+        // Non-vacuous: the fixture's per-community z (morphMassGraph's own doc comment) genuinely
+        // separates the three masses' screen-y at this camera angle — a degenerate "already equal"
+        // fixture would make the continuity assertion below pass for the wrong reason.
+        expect(new Set(before.map(v => v.toFixed(1))).size).toBe(3)
 
-    frame(5000);
-    expect(priv.morphFlatten).toBe(1); // entering 3D: flatten STARTS at 1 (still fully flat) ...
-    frame(5000 + MODE_MORPH_MS / 2);
-    expect(priv.morphFlatten).toBe(0.5); // ... genuinely partway at the midpoint ...
-    frame(5000 + MODE_MORPH_MS + 100);
-    expect(priv.morphFlatten).toBe(0);   // ... and ENDS at 0 (full 3D), not a jump either direction.
-    expect(priv.modeMorph).toBeNull();
-    expect(priv.rx).toBe(-0.5); expect(priv.ry).toBe(0);
-  });
+        r.setConfig({ ...CONFIG, viewMode: '2d', showLodMasses: true })
+        // The first REAL frame rendered after the flip: elapsed 0, flatten exactly 0. Goes through the
+        // REAL projectEntities() — the method under test, not the hand-computed ground truth above.
+        frame(2000)
+        const after = priv.entityLevels[0].map(ev => ev.sy)
+        for (let i = 0; i < before.length; i++)
+            expect(after[i]).toBeCloseTo(before[i], 6)
+    })
 
-  /**
-   * Three communities, each on its OWN ring at a distinct, CONSISTENT world-Z depth (+400/0/-400,
-   * not `sampleGraph()`'s per-node cyclic z, which averages ALMOST TO ZERO within a community —
-   * measured -11.25 world units for community 0 there, an order of magnitude too small to move a
-   * mass's centroid across a cell boundary once projected). Every member of one community shares
-   * (near enough) the same depth, so the community's p3 CENTROID carries that depth undiluted —
-   * exactly what a mass's `p3` field needs to make its blended position move by more than a
-   * sub-pixel amount as `flatten` runs 0..1.
-   */
-  function morphMassGraph() {
-    const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
-    const edges: ReturnType<typeof sampleGraph>["edges"] = [];
-    const RINGS = [{ c: 0, z: 400 }, { c: 1, z: 0 }, { c: 2, z: -400 }];
-    for (const { c, z } of RINGS) {
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
-        nodes.push({
-          id: `c${c}k${k}`, label: `note ${c}${k}`, kind: "note" as const,
-          position: [(c * 300 + Math.cos(a) * 80) * RING_SCALE, Math.sin(a) * 80 * RING_SCALE, z * RING_SCALE] as [number, number, number],
-          position2d: [(c * 300 + Math.cos(a) * 80) * RING_SCALE, Math.sin(a) * 80 * RING_SCALE] as [number, number],
-          community: c, communityLabel: `Cluster ${c}`,
-        });
-      }
-      for (let k = 1; k < 8; k++) edges.push({ from: `c${c}k0`, to: `c${c}k${k}`, kind: "link" as const });
-    }
-    return { nodes, edges };
-  }
+    /**
+     * REQUIRED (round-1 review, Critical 2). Before this fix, a SECOND `viewMode` flip arriving
+     * before the first transition finished always restarted `flatten`'s sweep from a hardcoded far
+     * endpoint (entering 2D always started the new sweep at 0, entering 3D always at 1) regardless
+     * of where the field actually was, and separately captured the orbit to unwind FROM by reading
+     * `this.rx`/`this.ry` AFTER they had already been snapped to the resting default — never the
+     * orbit actually on screen. Both produced a visible jump AWAY from the new destination
+     * (round-1 review measured a 16.61px normal step vs. an 87.99px interrupt-frame step — 5.3x —
+     * on an interrupted 3D->2D transition). The fix (this file's `modeMorph` field + `tick()`) keeps
+     * `this.morphFlatten`/`this.rx`/`this.ry` LIVE for the full duration of any in-flight transition
+     * and has a NEW flip capture wherever they currently are as its own `from`, so an interruption's
+     * very first frame (elapsed 0 of the NEW transition) must reproduce the exact pre-interrupt state
+     * — this test checks that directly, then confirms the reversed transition still runs to
+     * completion and lands at the correct (opposite) resting state.
+     */
+    it("REQUIRED — interrupting a transition continues from the field's CURRENT position, not a jump to the opposite endpoint", () => {
+        const { r } = mountRenderer('3d')
+        settle(60)
+        const priv = morphPriv(r)
 
-  /**
-   * REQUIRED (round-1 review, Critical 1). `showLodMasses: true` is the app's SHIPPED default for
-   * any non-"local" graph mode (GraphView.tsx) — every test above uses bare `CONFIG`, which leaves
-   * it unset, and round-1 review found that was the ONE configuration where the whole task worked:
-   * with masses on, `res` resets to 1 on every flip (unchanged, out of this task's scope), pinning
-   * `resolutionT` at 0 for the entire transition, and `bandsForT(0, …)` gives `massAlpha = 1` —
-   * `glyphAlpha` is gated OFF (`<= LOD_ALPHA_EPS`) the WHOLE 500ms, so `projectNodes()` (this task's
-   * glyph blend) never runs at all. The only thing drawn is the far band's aggregate masses, and
-   * `projectEntities()` used to read `this.pxPerWorld`/`this.res`/`ev.wx`/`ev.wy` directly with no
-   * blend anywhere — so the user saw the 3D glyph field cut straight to the final, static 2D mass
-   * layout in one frame, no matter how correct the (invisible) glyph-level morph was underneath.
-   * This test drives that exact configuration and asserts the DRAWN field (what `paint()` actually
-   * issued to the canvas, not an internal `flatten` value) differs at each of five samples across
-   * the transition — the round-1 review's own methodology ("distinct frames: 1 of 5" before the
-   * fix, on this exact measurement).
-   */
-  it("REQUIRED — entering 2D with LOD masses on (the app's default configuration) moves the DRAWN field across the transition, not a cut to a frozen aggregate", () => {
-    const { r } = mountRenderer("3d", morphMassGraph(), { showLodMasses: true });
-    settle(60);
+        r.setConfig({ ...CONFIG, viewMode: '2d' })
+        frame(2000) // transition #1, elapsed 0 -> flatten exactly 0
+        frame(2000 + MODE_MORPH_MS / 2) // transition #1, elapsed 250 -> flatten exactly 0.5 (midpoint)
+        expect(priv.morphFlatten).toBe(0.5)
+        const before = priv.nodes.map(n => ({ sx: n.sx, sy: n.sy }))
 
-    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
+        // INTERRUPT: flip back to 3D before transition #1 finishes.
+        r.setConfig({ ...CONFIG, viewMode: '3d' })
+        expect(priv.modeMorph).not.toBeNull() // a NEW transition was queued, not a synchronous snap
 
-    const drawnAt = (tMs: number) => {
-      ctx.fills.length = 0;
-      frame(tMs);
-      return ctx.fills.map((f) => `${f.text}@${f.x.toFixed(2)},${f.y.toFixed(2)}`).sort().join("|");
-    };
-    const t0 = 2000;
-    const samples = [t0, t0 + 125, t0 + 250, t0 + 375, t0 + 500].map(drawnAt);
-    // Sanity the fixture actually exercises the mass path at all (a vacuous "nothing ever drew
-    // anything" would trivially pass the distinctness assertion below for the wrong reason).
-    expect(samples.every((s) => s.length > 0)).toBe(true);
-    // Distinct DRAWN output at every one of the five samples — not "at least one differs", the
-    // full "5 of 5" the round-1 review used to describe the fix (and measured as "1 of 5" on the
-    // pre-fix code — see the mutation-proof below and this task's report for the reproduction).
-    expect(new Set(samples).size).toBe(5);
-  });
+        // The very first frame of transition #2: ITS OWN elapsed is 0 (this tick seeds its startT), so
+        // it must reproduce the exact pre-interrupt flatten/position — not jump to flatten=1 (the far
+        // endpoint a naive "always sweep oriented by direction" implementation restarts from).
+        frame(2000 + MODE_MORPH_MS / 2 + 16)
+        expect(priv.morphFlatten).toBeCloseTo(0.5, 9)
+        for (let i = 0; i < before.length; i++) {
+            expect(priv.nodes[i].sx).toBeCloseTo(before[i].sx, 6)
+            expect(priv.nodes[i].sy).toBeCloseTo(before[i].sy, 6)
+        }
 
-  /**
-   * IMPORTANT (round-2 review) — not pinned by any test above, INCLUDING the "5 distinct drawn
-   * frames" test immediately above. `projectEntities()`'s `blendPosition(ev.p3, [ev.wx, ev.wy, 0],
-   * flatten)` call is what makes a mass's FIRST frame of a transition continue from wherever the
-   * pre-flip 3D camera actually showed it — the exact continuity the glyph test far above
-   * (":4858") pins for individual nodes. The distinctness test does NOT catch its removal:
-   * `cameraFrame()`'s shared rotation/dolly/scale keeps moving on its own for the whole 500ms
-   * regardless of whether any given ENTITY's own position is blended, so a mutation that drops just
-   * the per-entity p3 blend (masses parked at their final flat `[wx, wy, 0]` position, viewed
-   * through a still-rotating camera) still produces 5 distinct drawn frames — just ones where the
-   * masses are already fanned out to their final 2D layout instead of clustered where the tilted 3D
-   * camera actually had them.
-   *
-   * Masses never actually project while `is2d` is false (`lodOn`'s own gate — see rasterize()), so
-   * there is no LIVE "last pre-flip 3D frame" to read `entityLevels[…].sx/sy` off, the way the
-   * glyph test reads `nv.sx/sy` off for free (nodes always project). Calling `projectEntities()`
-   * itself (privately) to get that comparandum was tried and rejected: `before` and `after` would
-   * then both come from the SAME method with the SAME effective inputs (the settled pre-flip camera
-   * and the transition's first-frame camera are identical — flatten 0, rx -0.5, ry 0, no dolly,
-   * `res` pinned to 1 either way), so they would agree by construction for ANY deterministic
-   * `projectEntities()` implementation, correct or not — the comparison could never actually go red
-   * on a formula bug, only on a degenerate FIXTURE. Instead this computes the ground truth BY HAND,
-   * independently of `projectEntities()`, applying the exact projection formula the two projection
-   * passes share (`cameraFrame()`'s doc comment) directly to each entity's own `p3` at the captured
-   * pre-flip camera — so a regression in the METHOD under test can actually diverge from it.
-   */
-  it("IMPORTANT — first-frame mass continuity: entering 2D, a mass's first frame continues the pre-flip 3D projection, not the already-fanned-out 2D one", () => {
-    interface MassContinuityPriv {
-      entityLevels: { p3: [number, number, number]; sy: number }[][];
-      P: number;
-      cameraFrame(): {
-        s: number; dolly: number; cyr: number; syr: number; cxr: number; sxr: number;
-        tx: number; ty: number; tz: number; ox: number; oy: number;
-      };
-    }
-    const massPriv = (r: AsciiGraphRenderer) => r as unknown as MassContinuityPriv;
+        // ...and it genuinely reverses: flatten only DECREASES from here (heading back to full 3D)...
+        let t = 2000 + MODE_MORPH_MS / 2 + 16
+        let prevFlatten = priv.morphFlatten
+        for (let i = 0; i < 10; i++) {
+            t += 16
+            frame(t)
+            expect(priv.morphFlatten).toBeLessThanOrEqual(prevFlatten)
+            prevFlatten = priv.morphFlatten
+        }
+        // ...and lands EXACTLY at the 3D resting state once transition #2 completes.
+        frame(t + MODE_MORPH_MS)
+        expect(priv.modeMorph).toBeNull()
+        expect(priv.morphFlatten).toBe(0)
+        expect(priv.rx).toBe(-0.5)
+        expect(priv.ry).toBe(0)
+    })
 
-    const { r } = mountRenderer("3d", morphMassGraph(), { showLodMasses: true });
-    settle(60); // fully settled in 3D — this.morphFlatten === 0, this.rx === -0.5 (resting 3D tilt)
-    const priv = massPriv(r);
+    /**
+     * REQUIRED (round-1 review). `cameraFrame()`'s `dolly = this.cameraDolly(false) * (1 -
+     * flatten)` is identically 0 for the ENTIRE 500ms of every OTHER test in this file, because
+     * `setConfig` resets `res` to 1 synchronously on every flip (unrelated to this task, unchanged)
+     * and `cameraDolly` is itself 0 whenever `res === 1` — so a mutation collapsing the term to the
+     * plain `is2d`-gated `cameraDolly(this.cfg.viewMode === "2d")` (no flatten ramp at all) passes
+     * every other test in this file unchanged; round-1 review measured exactly that. The one
+     * scenario where the two formulas actually diverge is the user zooming WHILE the transition is
+     * still running — an ordinary interaction (scrolling before a flip settles), not a contrived
+     * one — because a later wheel event sets a fresh `goalRes` that tick()'s own (separate,
+     * pre-existing) res-glide then carries `res` away from 1 DURING the transition, independent of
+     * the mode-morph's own progress. This test drives exactly that and reads `cameraFrame()`
+     * directly (cast, like the private-field reads elsewhere in this file) rather than reverse
+     * engineering the dolly from node depth, since `cameraFrame()` already returns it named.
+     */
+    it('REQUIRED — the dolly ramp is real: zooming WHILE a transition is in flight gives a nonzero, decaying dolly, not always zero', () => {
+        interface DollyPriv {
+            res: number
+            cameraFrame(): { dolly: number; flatten: number }
+        }
+        const dollyPriv = (r: AsciiGraphRenderer) => r as unknown as DollyPriv
 
-    // GROUND TRUTH: the shared projection formula (projectNodes()/projectEntities(), see
-    // cameraFrame()'s own doc comment), applied BY HAND to each entity's `p3` at the settled
-    // pre-flip 3D camera — computed independently of projectEntities() itself (see the "rejected"
-    // note above for why calling that method for this side of the comparison would be vacuous).
-    const cam = priv.cameraFrame();
-    const P = priv.P;
-    const groundTruthSy = (p3: [number, number, number]) => {
-      const x = (p3[0] - cam.tx) * cam.s, y = (p3[1] - cam.ty) * cam.s, z = (p3[2] - cam.tz) * cam.s;
-      const x1 = x * cam.cyr + z * cam.syr, z1 = -x * cam.syr + z * cam.cyr;
-      const y2 = y * cam.cxr - z1 * cam.sxr, z2 = y * cam.sxr + z1 * cam.cxr;
-      const persp = P / Math.max(1, P - (z2 + cam.dolly));
-      return cam.oy + y2 * persp;
-    };
-    expect(priv.entityLevels[0].length).toBe(3); // morphMassGraph's three communities, one level
-    const before = priv.entityLevels[0].map((ev) => groundTruthSy(ev.p3));
-    // Non-vacuous: the fixture's per-community z (morphMassGraph's own doc comment) genuinely
-    // separates the three masses' screen-y at this camera angle — a degenerate "already equal"
-    // fixture would make the continuity assertion below pass for the wrong reason.
-    expect(new Set(before.map((v) => v.toFixed(1))).size).toBe(3);
+        const { r, viewport } = mountRenderer('3d')
+        settle(60)
+        r.setConfig({ ...CONFIG, viewMode: '2d' })
+        frame(2000) // elapsed 0 of the transition
+        wheelIn(viewport, 3) // zoom IN while the transition is running — sets a fresh, deeper goalRes
+        const priv = dollyPriv(r)
 
-    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
-    // The first REAL frame rendered after the flip: elapsed 0, flatten exactly 0. Goes through the
-    // REAL projectEntities() — the method under test, not the hand-computed ground truth above.
-    frame(2000);
-    const after = priv.entityLevels[0].map((ev) => ev.sy);
-    for (let i = 0; i < before.length; i++) expect(after[i]).toBeCloseTo(before[i], 6);
-  });
+        frame(2000 + MODE_MORPH_MS / 4) // the res-glide and the morph's own progress both move here
+        expect(priv.res).toBeGreaterThan(1.001) // sanity: the zoom actually moved `res` off 1 by now
+        const mid = priv.cameraFrame()
+        expect(mid.flatten).toBeGreaterThan(0)
+        expect(mid.flatten).toBeLessThan(1) // genuinely mid-transition, not settled at either end
+        expect(mid.dolly).toBeGreaterThan(0) // REQUIRED: the ramp term is not identically zero here
 
-  /**
-   * REQUIRED (round-1 review, Critical 2). Before this fix, a SECOND `viewMode` flip arriving
-   * before the first transition finished always restarted `flatten`'s sweep from a hardcoded far
-   * endpoint (entering 2D always started the new sweep at 0, entering 3D always at 1) regardless
-   * of where the field actually was, and separately captured the orbit to unwind FROM by reading
-   * `this.rx`/`this.ry` AFTER they had already been snapped to the resting default — never the
-   * orbit actually on screen. Both produced a visible jump AWAY from the new destination
-   * (round-1 review measured a 16.61px normal step vs. an 87.99px interrupt-frame step — 5.3x —
-   * on an interrupted 3D->2D transition). The fix (this file's `modeMorph` field + `tick()`) keeps
-   * `this.morphFlatten`/`this.rx`/`this.ry` LIVE for the full duration of any in-flight transition
-   * and has a NEW flip capture wherever they currently are as its own `from`, so an interruption's
-   * very first frame (elapsed 0 of the NEW transition) must reproduce the exact pre-interrupt state
-   * — this test checks that directly, then confirms the reversed transition still runs to
-   * completion and lands at the correct (opposite) resting state.
-   */
-  it("REQUIRED — interrupting a transition continues from the field's CURRENT position, not a jump to the opposite endpoint", () => {
-    const { r } = mountRenderer("3d");
-    settle(60);
-    const priv = morphPriv(r);
+        // ...and it decays as the field keeps flattening toward 2D (where the dolly must return to 0
+        // — a flat view has nothing to approach), rather than holding at whatever the zoom set it to.
+        frame(2000 + MODE_MORPH_MS / 4 + 150)
+        const later = dollyPriv(r).cameraFrame()
+        expect(later.flatten).toBeGreaterThan(mid.flatten)
+        expect(later.dolly).toBeLessThan(mid.dolly)
+    })
 
-    r.setConfig({ ...CONFIG, viewMode: "2d" });
-    frame(2000);                     // transition #1, elapsed 0 -> flatten exactly 0
-    frame(2000 + MODE_MORPH_MS / 2); // transition #1, elapsed 250 -> flatten exactly 0.5 (midpoint)
-    expect(priv.morphFlatten).toBe(0.5);
-    const before = priv.nodes.map((n) => ({ sx: n.sx, sy: n.sy }));
+    /**
+     * MINOR (round-2 review). `emitBloom()`'s far-band cloud spread used to read `this.pxPerWorld *
+     * this.res` under a comment claiming it was "the world→screen scale projectEntities() used this
+     * frame" — true only AT REST. `projectEntities()` actually places every mass at `cameraFrame()`'s
+     * BLENDED `s`, and the two diverge for the whole 500ms of a mode-morph transition whenever the 2D
+     * and 3D fits differ (the ordinary case — `this.pxPerWorld` only ever tracks the ARRIVAL mode's
+     * fit, since `fit()` runs synchronously on the flip before any transition frame renders). This is
+     * directly measurable with exactly ONE community on the field: `pushCloud`'s own doc comment
+     * (densityField.ts) guarantees the emitted cloud reproduces the REQUESTED per-axis standard
+     * deviation exactly, so `computeStats().bloomSdx`/`bloomSdy` (the pre-blur point stats) reflect
+     * whichever scale `emitBloom()` actually used, with no blur/field step in the way.
+     */
+    it("MINOR — the far band's bloom cloud is sized by the SAME blended scale projectEntities() placed the mass at, not the stale arrival-mode-only product", () => {
+        function oneMassGraph() {
+            const nodes: ReturnType<typeof sampleGraph>['nodes'] = []
+            const edges: ReturnType<typeof sampleGraph>['edges'] = []
+            for (let k = 0; k < 16; k++) {
+                const a = (k / 16) * Math.PI * 2
+                nodes.push({
+                    id: `o${k}`,
+                    label: `note ${k}`,
+                    kind: 'note' as const,
+                    position: [
+                        Math.cos(a) * 220 * RING_SCALE,
+                        Math.sin(a) * 80 * RING_SCALE,
+                        0,
+                    ] as [number, number, number],
+                    position2d: [
+                        Math.cos(a) * 220 * RING_SCALE,
+                        Math.sin(a) * 80 * RING_SCALE,
+                    ] as [number, number],
+                    community: 0,
+                    communityLabel: 'Only',
+                    communityPath: [0],
+                    communityPathLabels: ['Only'],
+                })
+            }
+            for (let k = 1; k < 16; k++)
+                edges.push({ from: 'o0', to: `o${k}`, kind: 'link' as const })
+            return { nodes, edges }
+        }
 
-    // INTERRUPT: flip back to 3D before transition #1 finishes.
-    r.setConfig({ ...CONFIG, viewMode: "3d" });
-    expect(priv.modeMorph).not.toBeNull(); // a NEW transition was queued, not a synchronous snap
+        interface BloomScalePriv {
+            entityLevels: { sdx: number; sdy: number }[][]
+            pxPerWorld: number
+            res: number
+            W: number
+            H: number
+            cameraFrame(): { flatten: number; s: number }
+        }
+        const bsPriv = (r: AsciiGraphRenderer) => r as unknown as BloomScalePriv
 
-    // The very first frame of transition #2: ITS OWN elapsed is 0 (this tick seeds its startT), so
-    // it must reproduce the exact pre-interrupt flatten/position — not jump to flatten=1 (the far
-    // endpoint a naive "always sweep oriented by direction" implementation restarts from).
-    frame(2000 + MODE_MORPH_MS / 2 + 16);
-    expect(priv.morphFlatten).toBeCloseTo(0.5, 9);
-    for (let i = 0; i < before.length; i++) {
-      expect(priv.nodes[i].sx).toBeCloseTo(before[i].sx, 6);
-      expect(priv.nodes[i].sy).toBeCloseTo(before[i].sy, 6);
-    }
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        r.mount(host, () => {})
+        r.setBloomCallback(() => {})
+        r.setConfig({ ...CONFIG, viewMode: '3d', showLodMasses: true })
+        r.render(oneMassGraph())
+        ctx.fills.length = 0
+        ctx.strokes.length = 0
+        frame()
+        settle(60)
 
-    // ...and it genuinely reverses: flatten only DECREASES from here (heading back to full 3D)...
-    let t = 2000 + MODE_MORPH_MS / 2 + 16;
-    let prevFlatten = priv.morphFlatten;
-    for (let i = 0; i < 10; i++) {
-      t += 16;
-      frame(t);
-      expect(priv.morphFlatten).toBeLessThanOrEqual(prevFlatten);
-      prevFlatten = priv.morphFlatten;
-    }
-    // ...and lands EXACTLY at the 3D resting state once transition #2 completes.
-    frame(t + MODE_MORPH_MS);
-    expect(priv.modeMorph).toBeNull();
-    expect(priv.morphFlatten).toBe(0);
-    expect(priv.rx).toBe(-0.5); expect(priv.ry).toBe(0);
-  });
+        r.setConfig({ ...CONFIG, viewMode: '2d', showLodMasses: true })
+        frame(2000)
+        frame(2000 + 150) // mid-transition: flatten in (0,1); res stays pinned at 1 (no zoom here), so
+        // masses own the far band outright (glyphAlpha ~0) for the whole transition.
 
-  /**
-   * REQUIRED (round-1 review). `cameraFrame()`'s `dolly = this.cameraDolly(false) * (1 -
-   * flatten)` is identically 0 for the ENTIRE 500ms of every OTHER test in this file, because
-   * `setConfig` resets `res` to 1 synchronously on every flip (unrelated to this task, unchanged)
-   * and `cameraDolly` is itself 0 whenever `res === 1` — so a mutation collapsing the term to the
-   * plain `is2d`-gated `cameraDolly(this.cfg.viewMode === "2d")` (no flatten ramp at all) passes
-   * every other test in this file unchanged; round-1 review measured exactly that. The one
-   * scenario where the two formulas actually diverge is the user zooming WHILE the transition is
-   * still running — an ordinary interaction (scrolling before a flip settles), not a contrived
-   * one — because a later wheel event sets a fresh `goalRes` that tick()'s own (separate,
-   * pre-existing) res-glide then carries `res` away from 1 DURING the transition, independent of
-   * the mode-morph's own progress. This test drives exactly that and reads `cameraFrame()`
-   * directly (cast, like the private-field reads elsewhere in this file) rather than reverse
-   * engineering the dolly from node depth, since `cameraFrame()` already returns it named.
-   */
-  it("REQUIRED — the dolly ramp is real: zooming WHILE a transition is in flight gives a nonzero, decaying dolly, not always zero", () => {
-    interface DollyPriv { res: number; cameraFrame(): { dolly: number; flatten: number } }
-    const dollyPriv = (r: AsciiGraphRenderer) => r as unknown as DollyPriv;
+        const priv = bsPriv(r)
+        expect(priv.entityLevels[0]?.length).toBe(1) // one community — the field's ENTIRE cloud
+        const ev = priv.entityLevels[0][0]
+        const { flatten, s: blendedS } = priv.cameraFrame()
+        expect(flatten).toBeGreaterThan(0)
+        expect(flatten).toBeLessThan(1) // genuinely mid-transition, not settled at either end
 
-    const { r, viewport } = mountRenderer("3d");
-    settle(60);
-    r.setConfig({ ...CONFIG, viewMode: "2d" });
-    frame(2000); // elapsed 0 of the transition
-    wheelIn(viewport, 3); // zoom IN while the transition is running — sets a fresh, deeper goalRes
-    const priv = dollyPriv(r);
+        const staleS = priv.pxPerWorld * priv.res
+        // Non-vacuous: the two scales actually differ at this sample — otherwise the assertion below
+        // would pass no matter which one emitBloom() reads.
+        expect(Math.abs(blendedS - staleS)).toBeGreaterThan(
+            Math.abs(blendedS) * 0.01,
+        )
 
-    frame(2000 + MODE_MORPH_MS / 4); // the res-glide and the morph's own progress both move here
-    expect(priv.res).toBeGreaterThan(1.001); // sanity: the zoom actually moved `res` off 1 by now
-    const mid = priv.cameraFrame();
-    expect(mid.flatten).toBeGreaterThan(0);
-    expect(mid.flatten).toBeLessThan(1); // genuinely mid-transition, not settled at either end
-    expect(mid.dolly).toBeGreaterThan(0); // REQUIRED: the ramp term is not identically zero here
+        const stats = r.computeStats()
+        const expectedSdx = (ev.sdx * blendedS) / priv.W
+        const expectedSdy = (ev.sdy * blendedS) / priv.H
+        expect(stats.bloomSdx).toBeCloseTo(expectedSdx, 6)
+        expect(stats.bloomSdy).toBeCloseTo(expectedSdy, 6)
 
-    // ...and it decays as the field keeps flattening toward 2D (where the dolly must return to 0
-    // — a flat view has nothing to approach), rather than holding at whatever the zoom set it to.
-    frame(2000 + MODE_MORPH_MS / 4 + 150);
-    const later = dollyPriv(r).cameraFrame();
-    expect(later.flatten).toBeGreaterThan(mid.flatten);
-    expect(later.dolly).toBeLessThan(mid.dolly);
-  });
-
-  /**
-   * MINOR (round-2 review). `emitBloom()`'s far-band cloud spread used to read `this.pxPerWorld *
-   * this.res` under a comment claiming it was "the world→screen scale projectEntities() used this
-   * frame" — true only AT REST. `projectEntities()` actually places every mass at `cameraFrame()`'s
-   * BLENDED `s`, and the two diverge for the whole 500ms of a mode-morph transition whenever the 2D
-   * and 3D fits differ (the ordinary case — `this.pxPerWorld` only ever tracks the ARRIVAL mode's
-   * fit, since `fit()` runs synchronously on the flip before any transition frame renders). This is
-   * directly measurable with exactly ONE community on the field: `pushCloud`'s own doc comment
-   * (densityField.ts) guarantees the emitted cloud reproduces the REQUESTED per-axis standard
-   * deviation exactly, so `computeStats().bloomSdx`/`bloomSdy` (the pre-blur point stats) reflect
-   * whichever scale `emitBloom()` actually used, with no blur/field step in the way.
-   */
-  it("MINOR — the far band's bloom cloud is sized by the SAME blended scale projectEntities() placed the mass at, not the stale arrival-mode-only product", () => {
-    function oneMassGraph() {
-      const nodes: ReturnType<typeof sampleGraph>["nodes"] = [];
-      const edges: ReturnType<typeof sampleGraph>["edges"] = [];
-      for (let k = 0; k < 16; k++) {
-        const a = (k / 16) * Math.PI * 2;
-        nodes.push({
-          id: `o${k}`, label: `note ${k}`, kind: "note" as const,
-          position: [Math.cos(a) * 220 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE, 0] as [number, number, number],
-          position2d: [Math.cos(a) * 220 * RING_SCALE, Math.sin(a) * 80 * RING_SCALE] as [number, number],
-          community: 0, communityLabel: "Only", communityPath: [0], communityPathLabels: ["Only"],
-        });
-      }
-      for (let k = 1; k < 16; k++) edges.push({ from: "o0", to: `o${k}`, kind: "link" as const });
-      return { nodes, edges };
-    }
-
-    interface BloomScalePriv {
-      entityLevels: { sdx: number; sdy: number }[][];
-      pxPerWorld: number; res: number; W: number; H: number;
-      cameraFrame(): { flatten: number; s: number };
-    }
-    const bsPriv = (r: AsciiGraphRenderer) => r as unknown as BloomScalePriv;
-
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    r.mount(host, () => {});
-    r.setBloomCallback(() => {});
-    r.setConfig({ ...CONFIG, viewMode: "3d", showLodMasses: true });
-    r.render(oneMassGraph());
-    ctx.fills.length = 0; ctx.strokes.length = 0;
-    frame();
-    settle(60);
-
-    r.setConfig({ ...CONFIG, viewMode: "2d", showLodMasses: true });
-    frame(2000);
-    frame(2000 + 150); // mid-transition: flatten in (0,1); res stays pinned at 1 (no zoom here), so
-                        // masses own the far band outright (glyphAlpha ~0) for the whole transition.
-
-    const priv = bsPriv(r);
-    expect(priv.entityLevels[0]?.length).toBe(1); // one community — the field's ENTIRE cloud
-    const ev = priv.entityLevels[0][0];
-    const { flatten, s: blendedS } = priv.cameraFrame();
-    expect(flatten).toBeGreaterThan(0);
-    expect(flatten).toBeLessThan(1); // genuinely mid-transition, not settled at either end
-
-    const staleS = priv.pxPerWorld * priv.res;
-    // Non-vacuous: the two scales actually differ at this sample — otherwise the assertion below
-    // would pass no matter which one emitBloom() reads.
-    expect(Math.abs(blendedS - staleS)).toBeGreaterThan(Math.abs(blendedS) * 0.01);
-
-    const stats = r.computeStats();
-    const expectedSdx = (ev.sdx * blendedS) / priv.W;
-    const expectedSdy = (ev.sdy * blendedS) / priv.H;
-    expect(stats.bloomSdx).toBeCloseTo(expectedSdx, 6);
-    expect(stats.bloomSdy).toBeCloseTo(expectedSdy, 6);
-
-    // ...and it does NOT match the stale, arrival-mode-only product — pinning the fix, not merely
-    // "close to something".
-    const staleSdx = (ev.sdx * staleS) / priv.W;
-    expect(Math.abs(stats.bloomSdx - staleSdx)).toBeGreaterThan(Math.abs(expectedSdx) * 0.01);
-  });
-});
+        // ...and it does NOT match the stale, arrival-mode-only product — pinning the fix, not merely
+        // "close to something".
+        const staleSdx = (ev.sdx * staleS) / priv.W
+        expect(Math.abs(stats.bloomSdx - staleSdx)).toBeGreaterThan(
+            Math.abs(expectedSdx) * 0.01,
+        )
+    })
+})
 
 describe("depth-ordered cell arbitration in 3D (Task 23) — the nearer node owns a shared cell's glyph AND its hit test", () => {
-  // EPITAPH item 2: `cellNode[idx] = i` used to be written in ARRAY order with no depth comparison —
-  // whichever node was LATER in `this.nodes` won a shared cell's glyph, and the hit test (`pick()`,
-  // asciiGrid.ts's `nearestCellNode`) resolves through that SAME buffer, so it stole the click too,
-  // regardless of which node was actually nearer the camera. Canvas drew far->near into a `drawOrder`
-  // array so a near dot always painted over a far one; this field has no second pass, so the fix has
-  // to arbitrate right at the single write site (AsciiGraphRenderer.ts's node-glyph loop).
-  interface DepthPriv {
-    rx: number; ry: number; dirty: boolean;
-    cellNode: Int32Array;
-    m: { cols: number; rows: number };
-    nodes: { sx: number; sy: number; dr: number; col: number; row: number; onGrid: boolean; node: { id: string } }[];
-  }
-  const depthPriv = (r: AsciiGraphRenderer) => r as unknown as DepthPriv;
+    // EPITAPH item 2: `cellNode[idx] = i` used to be written in ARRAY order with no depth comparison —
+    // whichever node was LATER in `this.nodes` won a shared cell's glyph, and the hit test (`pick()`,
+    // asciiGrid.ts's `nearestCellNode`) resolves through that SAME buffer, so it stole the click too,
+    // regardless of which node was actually nearer the camera. Canvas drew far->near into a `drawOrder`
+    // array so a near dot always painted over a far one; this field has no second pass, so the fix has
+    // to arbitrate right at the single write site (AsciiGraphRenderer.ts's node-glyph loop).
+    interface DepthPriv {
+        rx: number
+        ry: number
+        dirty: boolean
+        cellNode: Int32Array
+        m: { cols: number; rows: number }
+        nodes: {
+            sx: number
+            sy: number
+            dr: number
+            col: number
+            row: number
+            onGrid: boolean
+            node: { id: string }
+        }[]
+    }
+    const depthPriv = (r: AsciiGraphRenderer) => r as unknown as DepthPriv
 
-  /** Two notes facing the camera head-on — x = y = 0 for both, only z (world depth) differs — so
-   *  their SCREEN position is identical regardless of depth: a guaranteed cell collision that does
-   *  not depend on the resting camera's tilt or any grid-resolution luck. `this.nodes` mirrors
-   *  `g.nodes` index-for-index (build()'s `g.nodes.map((node, i) => ...)`), so which element of
-   *  `nodes` comes first fixes which node is LATER in array order — the exact axis the pre-fix bug
-   *  keyed off. Both orderings are exercised below so a passing suite proves the winner tracks DEPTH,
-   *  not "whichever happens to load first" or "whichever happens to load last". */
-  function facingPairGraph(order: "near-last" | "far-last") {
-    const near = {
-      id: "near", label: "near", kind: "note" as const,
-      position: [0, 0, 100] as [number, number, number], position2d: [0, 0] as [number, number],
-    };
-    const far = {
-      id: "far", label: "far", kind: "note" as const,
-      position: [0, 0, -100] as [number, number, number], position2d: [0, 0] as [number, number],
-    };
-    return { nodes: order === "near-last" ? [far, near] : [near, far], edges: [] };
-  }
+    /** Two notes facing the camera head-on — x = y = 0 for both, only z (world depth) differs — so
+     *  their SCREEN position is identical regardless of depth: a guaranteed cell collision that does
+     *  not depend on the resting camera's tilt or any grid-resolution luck. `this.nodes` mirrors
+     *  `g.nodes` index-for-index (build()'s `g.nodes.map((node, i) => ...)`), so which element of
+     *  `nodes` comes first fixes which node is LATER in array order — the exact axis the pre-fix bug
+     *  keyed off. Both orderings are exercised below so a passing suite proves the winner tracks DEPTH,
+     *  not "whichever happens to load first" or "whichever happens to load last". */
+    function facingPairGraph(order: 'near-last' | 'far-last') {
+        const near = {
+            id: 'near',
+            label: 'near',
+            kind: 'note' as const,
+            position: [0, 0, 100] as [number, number, number],
+            position2d: [0, 0] as [number, number],
+        }
+        const far = {
+            id: 'far',
+            label: 'far',
+            kind: 'note' as const,
+            position: [0, 0, -100] as [number, number, number],
+            position2d: [0, 0] as [number, number],
+        }
+        return {
+            nodes: order === 'near-last' ? [far, near] : [near, far],
+            edges: [],
+        }
+    }
 
-  /** Point the camera straight down the Z axis (rx = ry = 0) instead of the resting 3D tilt (-0.5,
-   *  0). With no rotation, x/y alone decide screen column/row and z alone decides depth — both this
-   *  fixture's x = y = 0 nodes land at the exact same pixel, and z's sign maps directly onto which
-   *  one is nearer, with no trigonometry needed to line the two up. Same pattern as this file's
-   *  existing `parkAtT`: mutate private camera state directly, mark dirty, force one repaint. */
-  function faceCameraOn(r: AsciiGraphRenderer) {
-    const p = depthPriv(r);
-    p.rx = 0; p.ry = 0; p.dirty = true;
-    frame();
-  }
+    /** Point the camera straight down the Z axis (rx = ry = 0) instead of the resting 3D tilt (-0.5,
+     *  0). With no rotation, x/y alone decide screen column/row and z alone decides depth — both this
+     *  fixture's x = y = 0 nodes land at the exact same pixel, and z's sign maps directly onto which
+     *  one is nearer, with no trigonometry needed to line the two up. Same pattern as this file's
+     *  existing `parkAtT`: mutate private camera state directly, mark dirty, force one repaint. */
+    function faceCameraOn(r: AsciiGraphRenderer) {
+        const p = depthPriv(r)
+        p.rx = 0
+        p.ry = 0
+        p.dirty = true
+        frame()
+    }
 
-  for (const order of ["near-last", "far-last"] as const) {
-    it(`3D: the NEARER node wins the shared cell's glyph and hit test, regardless of array order (${order})`, () => {
-      const { r, viewport, clicks, hovers } = mountRenderer("3d", facingPairGraph(order));
-      faceCameraOn(r);
-      const p = depthPriv(r);
-      const withIndex = p.nodes.map((n, i) => ({ ...n, i }));
-      const near = withIndex.find((n) => n.node.id === "near")!;
-      const far = withIndex.find((n) => n.node.id === "far")!;
+    for (const order of ['near-last', 'far-last'] as const) {
+        it(`3D: the NEARER node wins the shared cell's glyph and hit test, regardless of array order (${order})`, () => {
+            const { r, viewport, clicks, hovers } = mountRenderer(
+                '3d',
+                facingPairGraph(order),
+            )
+            faceCameraOn(r)
+            const p = depthPriv(r)
+            const withIndex = p.nodes.map((n, i) => ({ ...n, i }))
+            const near = withIndex.find(n => n.node.id === 'near')!
+            const far = withIndex.find(n => n.node.id === 'far')!
 
-      // Non-vacuous first: prove the fixture actually collides (same cell) and actually carries
-      // depth (different dr) — otherwise "the near one wins" would hold for ANY implementation,
-      // including the buggy one, and the test would prove nothing.
-      expect(near.onGrid).toBe(true);
-      expect(far.onGrid).toBe(true);
-      expect(near.col).toBe(far.col);
-      expect(near.row).toBe(far.row);
-      expect(near.dr).toBeGreaterThan(far.dr); // genuine depth separation, not a tie
+            // Non-vacuous first: prove the fixture actually collides (same cell) and actually carries
+            // depth (different dr) — otherwise "the near one wins" would hold for ANY implementation,
+            // including the buggy one, and the test would prove nothing.
+            expect(near.onGrid).toBe(true)
+            expect(far.onGrid).toBe(true)
+            expect(near.col).toBe(far.col)
+            expect(near.row).toBe(far.row)
+            expect(near.dr).toBeGreaterThan(far.dr) // genuine depth separation, not a tie
 
-      const idx = near.row * p.m.cols + near.col;
-      // THE GLYPH: whichever node the shared cell's buffer names is the one whose glyph is on
-      // screen there — this is the write `cellNode[idx] = i` writes.
-      expect(p.cellNode[idx]).toBe(near.i);
-      expect(p.cellNode[idx]).not.toBe(far.i);
+            const idx = near.row * p.m.cols + near.col
+            // THE GLYPH: whichever node the shared cell's buffer names is the one whose glyph is on
+            // screen there — this is the write `cellNode[idx] = i` writes.
+            expect(p.cellNode[idx]).toBe(near.i)
+            expect(p.cellNode[idx]).not.toBe(far.i)
 
-      // THE HIT TEST: pick() (asciiGrid.ts's nearestCellNode) resolves through this SAME cellNode
-      // buffer, so a pointer over the shared cell must hover/click the near node, never the far one,
-      // in EITHER array order.
-      window.dispatchEvent(new PointerEvent("pointermove", { clientX: near.sx, clientY: near.sy }));
-      expect(hovers.at(-1)).toBe("near");
-      viewport.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: near.sx, clientY: near.sy }));
-      window.dispatchEvent(new PointerEvent("pointerup", { clientX: near.sx, clientY: near.sy }));
-      expect(clicks).toEqual(["near"]);
-      r.destroy();
-    });
-  }
+            // THE HIT TEST: pick() (asciiGrid.ts's nearestCellNode) resolves through this SAME cellNode
+            // buffer, so a pointer over the shared cell must hover/click the near node, never the far one,
+            // in EITHER array order.
+            window.dispatchEvent(
+                new PointerEvent('pointermove', {
+                    clientX: near.sx,
+                    clientY: near.sy,
+                }),
+            )
+            expect(hovers.at(-1)).toBe('near')
+            viewport.dispatchEvent(
+                new PointerEvent('pointerdown', {
+                    button: 0,
+                    clientX: near.sx,
+                    clientY: near.sy,
+                }),
+            )
+            window.dispatchEvent(
+                new PointerEvent('pointerup', {
+                    clientX: near.sx,
+                    clientY: near.sy,
+                }),
+            )
+            expect(clicks).toEqual(['near'])
+            r.destroy()
+        })
+    }
 
-  for (const order of ["near-last", "far-last"] as const) {
-    it(`2D: arbitration is a NO-OP — the LAST node in array order still wins a shared cell, exactly as before this task (${order})`, () => {
-      // In 2D every node's `dr` is the SAME flat 1 (projectNodes()'s `flat` branch — 2D carries no
-      // depth at all, z is hard-zeroed via p2), so the new `>=` comparison ties on every contest and
-      // falls through to "whichever wrote last" — the untouched pre-fix behaviour. Reusing the exact
-      // same fixture (only the mount mode differs) is the point: it proves 2D is unaffected by this
-      // task's change, not merely that SOME 2D graph happens to still work.
-      const { r } = mountRenderer("2d", facingPairGraph(order));
-      const p = depthPriv(r);
-      const withIndex = p.nodes.map((n, i) => ({ ...n, i }));
-      const near = withIndex.find((n) => n.node.id === "near")!;
-      const far = withIndex.find((n) => n.node.id === "far")!;
+    for (const order of ['near-last', 'far-last'] as const) {
+        it(`2D: arbitration is a NO-OP — the LAST node in array order still wins a shared cell, exactly as before this task (${order})`, () => {
+            // In 2D every node's `dr` is the SAME flat 1 (projectNodes()'s `flat` branch — 2D carries no
+            // depth at all, z is hard-zeroed via p2), so the new `>=` comparison ties on every contest and
+            // falls through to "whichever wrote last" — the untouched pre-fix behaviour. Reusing the exact
+            // same fixture (only the mount mode differs) is the point: it proves 2D is unaffected by this
+            // task's change, not merely that SOME 2D graph happens to still work.
+            const { r } = mountRenderer('2d', facingPairGraph(order))
+            const p = depthPriv(r)
+            const withIndex = p.nodes.map((n, i) => ({ ...n, i }))
+            const near = withIndex.find(n => n.node.id === 'near')!
+            const far = withIndex.find(n => n.node.id === 'far')!
 
-      expect(near.onGrid).toBe(true);
-      expect(far.onGrid).toBe(true);
-      expect(near.col).toBe(far.col);
-      expect(near.row).toBe(far.row);
-      expect(near.dr).toBe(far.dr); // no depth in 2D — both flat at 1, a genuine tie
+            expect(near.onGrid).toBe(true)
+            expect(far.onGrid).toBe(true)
+            expect(near.col).toBe(far.col)
+            expect(near.row).toBe(far.row)
+            expect(near.dr).toBe(far.dr) // no depth in 2D — both flat at 1, a genuine tie
 
-      const idx = near.row * p.m.cols + near.col;
-      const lastIndex = p.nodes.length - 1; // "near-last" -> near is index 1; "far-last" -> far is index 1
-      expect(p.cellNode[idx]).toBe(lastIndex);
-      r.destroy();
-    });
-  }
+            const idx = near.row * p.m.cols + near.col
+            const lastIndex = p.nodes.length - 1 // "near-last" -> near is index 1; "far-last" -> far is index 1
+            expect(p.cellNode[idx]).toBe(lastIndex)
+            r.destroy()
+        })
+    }
 
-  // ---- ROUND-1 REVIEW GAPS ----------------------------------------------------------------------
-  // The four tests above all mount AT REST, with the camera forced to `rx = ry = 0` and exactly two
-  // contesting nodes. Three wrong implementations of the arbitration line survive every one of them
-  // (and the rest of the 530-test suite) unchanged:
-  //   - gating the comparison on `this.modeMorph == null` (arbitration silently OFF for the whole
-  //     500ms of any in-flight 2D<->3D transition) — never exercised, since every test above mounts
-  //     and reads before any transition starts;
-  //   - comparing `Math.round(nv.dr)` instead of `nv.dr` (depth rounded to its nearest EXTREME) —
-  //     invisible above because a bare two-node fixture forces `dr` to exactly {0, 1} via
-  //     `projectNodes()`'s own min/max normalization, which is already the extremes;
-  //   - comparing raw `nv.p3[2]` (world z) instead of `nv.dr` (camera depth) — invisible above
-  //     because `rx = ry = 0` is the one orientation where world-z order and camera-depth order
-  //     happen to coincide.
-  // These three probes close each gap: a rotated camera (world-z order and camera-depth order
-  // deliberately inverted), a paint sampled mid-transition (`morphFlatten` strictly inside (0, 1)),
-  // and a contesting pair placed strictly INTERIOR to the frame's depth range (spacer nodes own the
-  // 0/1 endpoints) so the pair's own `dr` is a real, small difference, not the normalization
-  // endpoints themselves.
-  interface Probe23Priv extends DepthPriv { morphFlatten: number }
-  const probe23Priv = (r: AsciiGraphRenderer) => r as unknown as Probe23Priv;
+    // ---- ROUND-1 REVIEW GAPS ----------------------------------------------------------------------
+    // The four tests above all mount AT REST, with the camera forced to `rx = ry = 0` and exactly two
+    // contesting nodes. Three wrong implementations of the arbitration line survive every one of them
+    // (and the rest of the 530-test suite) unchanged:
+    //   - gating the comparison on `this.modeMorph == null` (arbitration silently OFF for the whole
+    //     500ms of any in-flight 2D<->3D transition) — never exercised, since every test above mounts
+    //     and reads before any transition starts;
+    //   - comparing `Math.round(nv.dr)` instead of `nv.dr` (depth rounded to its nearest EXTREME) —
+    //     invisible above because a bare two-node fixture forces `dr` to exactly {0, 1} via
+    //     `projectNodes()`'s own min/max normalization, which is already the extremes;
+    //   - comparing raw `nv.p3[2]` (world z) instead of `nv.dr` (camera depth) — invisible above
+    //     because `rx = ry = 0` is the one orientation where world-z order and camera-depth order
+    //     happen to coincide.
+    // These three probes close each gap: a rotated camera (world-z order and camera-depth order
+    // deliberately inverted), a paint sampled mid-transition (`morphFlatten` strictly inside (0, 1)),
+    // and a contesting pair placed strictly INTERIOR to the frame's depth range (spacer nodes own the
+    // 0/1 endpoints) so the pair's own `dr` is a real, small difference, not the normalization
+    // endpoints themselves.
+    interface Probe23Priv extends DepthPriv {
+        morphFlatten: number
+    }
+    const probe23Priv = (r: AsciiGraphRenderer) => r as unknown as Probe23Priv
 
-  /** Two notes at x = y = 0, differing only in world z (`hiZz`/`loZz`) — named by which has the
-   *  LARGER world z, deliberately NOT "near"/"far": the rotated-camera probe below yaws 180 degrees
-   *  specifically so world-z order and camera-depth order invert, and a near/far label would be
-   *  backwards for exactly the case that probe exists to catch. `last` controls which one is LATER
-   *  in array order (`this.nodes` mirrors `g.nodes` index-for-index). `spacers`, when on, adds two
-   *  further-out nodes ("front"/"back") that own the frame's depth extremes, so `hiZ`/`loZ` — placed
-   *  close together relative to the spacers — land at an interior, non-extreme `dr` instead of
-   *  exactly {0, 1}; it also gives the graph real X extent, so the 2D layout a 3D->2D morph blends
-   *  toward isn't the single degenerate point `facingPairGraph`'s x = y = 0 pair collapses to. */
-  function depthPairGraph(last: "hiZ" | "loZ", spacers = false, hiZz = 100, loZz = -100) {
-    const mk = (id: string, x: number, y: number, z: number) => ({
-      id, label: id, kind: "note" as const,
-      position: [x, y, z] as [number, number, number], position2d: [x, y] as [number, number],
-    });
-    const hiZ = mk("hiZ", 0, 0, hiZz), loZ = mk("loZ", 0, 0, loZz);
-    const nodes = last === "hiZ" ? [loZ, hiZ] : [hiZ, loZ];
-    if (spacers) { nodes.push(mk("front", 900, 0, 200)); nodes.push(mk("back", -900, 0, -1000)); }
-    return { nodes, edges: [] as { from: string; to: string; kind: "link" }[] };
-  }
+    /** Two notes at x = y = 0, differing only in world z (`hiZz`/`loZz`) — named by which has the
+     *  LARGER world z, deliberately NOT "near"/"far": the rotated-camera probe below yaws 180 degrees
+     *  specifically so world-z order and camera-depth order invert, and a near/far label would be
+     *  backwards for exactly the case that probe exists to catch. `last` controls which one is LATER
+     *  in array order (`this.nodes` mirrors `g.nodes` index-for-index). `spacers`, when on, adds two
+     *  further-out nodes ("front"/"back") that own the frame's depth extremes, so `hiZ`/`loZ` — placed
+     *  close together relative to the spacers — land at an interior, non-extreme `dr` instead of
+     *  exactly {0, 1}; it also gives the graph real X extent, so the 2D layout a 3D->2D morph blends
+     *  toward isn't the single degenerate point `facingPairGraph`'s x = y = 0 pair collapses to. */
+    function depthPairGraph(
+        last: 'hiZ' | 'loZ',
+        spacers = false,
+        hiZz = 100,
+        loZz = -100,
+    ) {
+        const mk = (id: string, x: number, y: number, z: number) => ({
+            id,
+            label: id,
+            kind: 'note' as const,
+            position: [x, y, z] as [number, number, number],
+            position2d: [x, y] as [number, number],
+        })
+        const hiZ = mk('hiZ', 0, 0, hiZz),
+            loZ = mk('loZ', 0, 0, loZz)
+        const nodes = last === 'hiZ' ? [loZ, hiZ] : [hiZ, loZ]
+        if (spacers) {
+            nodes.push(mk('front', 900, 0, 200))
+            nodes.push(mk('back', -900, 0, -1000))
+        }
+        return {
+            nodes,
+            edges: [] as { from: string; to: string; kind: 'link' }[],
+        }
+    }
 
-  function readPair(r: AsciiGraphRenderer) {
-    const p = probe23Priv(r);
-    const withIdx = p.nodes.map((n, i) => ({ ...n, i }));
-    return { p, hiZ: withIdx.find((n) => n.node.id === "hiZ")!, loZ: withIdx.find((n) => n.node.id === "loZ")! };
-  }
+    function readPair(r: AsciiGraphRenderer) {
+        const p = probe23Priv(r)
+        const withIdx = p.nodes.map((n, i) => ({ ...n, i }))
+        return {
+            p,
+            hiZ: withIdx.find(n => n.node.id === 'hiZ')!,
+            loZ: withIdx.find(n => n.node.id === 'loZ')!,
+        }
+    }
 
-  for (const last of ["hiZ", "loZ"] as const) {
-    it(`PROBE — rotated camera (ry = PI): the CAMERA-nearer node wins even though the yaw inverted which world-z that is (${last} last)`, () => {
-      const { r } = mountRenderer("3d", depthPairGraph(last));
-      const p0 = probe23Priv(r); p0.rx = 0; p0.ry = Math.PI; p0.dirty = true; frame();
-      const { p, hiZ, loZ } = readPair(r);
-      expect(hiZ.onGrid).toBe(true); expect(loZ.onGrid).toBe(true);
-      expect(hiZ.col).toBe(loZ.col); expect(hiZ.row).toBe(loZ.row);
-      // Non-vacuous: the 180-degree yaw genuinely INVERTS which node is camera-nearer relative to
-      // raw world z — `loZ` (the smaller world z) is now nearer. A comparison keyed on `nv.p3[2]`
-      // instead of `nv.dr` would pick `hiZ` here, the wrong node.
-      expect(loZ.dr).toBeGreaterThan(hiZ.dr);
-      const idx = loZ.row * p.m.cols + loZ.col;
-      expect(p.cellNode[idx]).toBe(loZ.i);
-      expect(p.cellNode[idx]).not.toBe(hiZ.i);
-      r.destroy();
-    });
-  }
+    for (const last of ['hiZ', 'loZ'] as const) {
+        it(`PROBE — rotated camera (ry = PI): the CAMERA-nearer node wins even though the yaw inverted which world-z that is (${last} last)`, () => {
+            const { r } = mountRenderer('3d', depthPairGraph(last))
+            const p0 = probe23Priv(r)
+            p0.rx = 0
+            p0.ry = Math.PI
+            p0.dirty = true
+            frame()
+            const { p, hiZ, loZ } = readPair(r)
+            expect(hiZ.onGrid).toBe(true)
+            expect(loZ.onGrid).toBe(true)
+            expect(hiZ.col).toBe(loZ.col)
+            expect(hiZ.row).toBe(loZ.row)
+            // Non-vacuous: the 180-degree yaw genuinely INVERTS which node is camera-nearer relative to
+            // raw world z — `loZ` (the smaller world z) is now nearer. A comparison keyed on `nv.p3[2]`
+            // instead of `nv.dr` would pick `hiZ` here, the wrong node.
+            expect(loZ.dr).toBeGreaterThan(hiZ.dr)
+            const idx = loZ.row * p.m.cols + loZ.col
+            expect(p.cellNode[idx]).toBe(loZ.i)
+            expect(p.cellNode[idx]).not.toBe(hiZ.i)
+            r.destroy()
+        })
+    }
 
-  for (const last of ["hiZ", "loZ"] as const) {
-    it(`PROBE — mid 3D->2D transition: arbitration stays live while dr is still real, well before the morph settles (${last} last)`, () => {
-      const { r } = mountRenderer("3d", depthPairGraph(last, true));
-      const p0 = probe23Priv(r); p0.rx = 0; p0.ry = 0; p0.dirty = true; frame();
-      r.setConfig({ ...CONFIG, viewMode: "2d" });
-      frame(2000);
-      frame(2000 + MODE_MORPH_MS / 2);
-      const { p, hiZ, loZ } = readPair(r);
-      // Non-vacuous: genuinely mid-transition (neither endpoint)...
-      expect(p.morphFlatten).toBeGreaterThan(0);
-      expect(p.morphFlatten).toBeLessThan(1);
-      expect(hiZ.onGrid).toBe(true); expect(loZ.onGrid).toBe(true);
-      expect(hiZ.col).toBe(loZ.col); expect(hiZ.row).toBe(loZ.row);
-      // ...AND still genuinely depth-separated at this sample — a comparison gated on
-      // `this.modeMorph == null` would skip arbitration entirely here and fall back to array order.
-      expect(hiZ.dr).toBeGreaterThan(loZ.dr);
-      const idx = hiZ.row * p.m.cols + hiZ.col;
-      expect(p.cellNode[idx]).toBe(hiZ.i);
-      r.destroy();
-    });
-  }
+    for (const last of ['hiZ', 'loZ'] as const) {
+        it(`PROBE — mid 3D->2D transition: arbitration stays live while dr is still real, well before the morph settles (${last} last)`, () => {
+            const { r } = mountRenderer('3d', depthPairGraph(last, true))
+            const p0 = probe23Priv(r)
+            p0.rx = 0
+            p0.ry = 0
+            p0.dirty = true
+            frame()
+            r.setConfig({ ...CONFIG, viewMode: '2d' })
+            frame(2000)
+            frame(2000 + MODE_MORPH_MS / 2)
+            const { p, hiZ, loZ } = readPair(r)
+            // Non-vacuous: genuinely mid-transition (neither endpoint)...
+            expect(p.morphFlatten).toBeGreaterThan(0)
+            expect(p.morphFlatten).toBeLessThan(1)
+            expect(hiZ.onGrid).toBe(true)
+            expect(loZ.onGrid).toBe(true)
+            expect(hiZ.col).toBe(loZ.col)
+            expect(hiZ.row).toBe(loZ.row)
+            // ...AND still genuinely depth-separated at this sample — a comparison gated on
+            // `this.modeMorph == null` would skip arbitration entirely here and fall back to array order.
+            expect(hiZ.dr).toBeGreaterThan(loZ.dr)
+            const idx = hiZ.row * p.m.cols + hiZ.col
+            expect(p.cellNode[idx]).toBe(hiZ.i)
+            r.destroy()
+        })
+    }
 
-  for (const last of ["hiZ", "loZ"] as const) {
-    it(`PROBE — the contesting pair sits mid-range (dr close together, well off the 0/1 endpoints), not at the normalization extremes (${last} last)`, () => {
-      // Spacer nodes ("front"/"back") own the depth EXTREMES (dr 0 and 1); hiZ/loZ sit close
-      // together near the near end, so their OWN dr difference is small and interior — the shape a
-      // real vault's contested cell actually has, unlike the plain two-node fixture above where dr
-      // is necessarily exactly {0, 1} (there is nothing else to set the range).
-      const { r } = mountRenderer("3d", depthPairGraph(last, true, 100, 50));
-      const p0 = probe23Priv(r); p0.rx = 0; p0.ry = 0; p0.dirty = true; frame();
-      const { p, hiZ, loZ } = readPair(r);
-      expect(hiZ.col).toBe(loZ.col); expect(hiZ.row).toBe(loZ.row);
-      // Non-vacuous: both strictly interior, on the SAME side of 0.5, close together — a comparison
-      // that rounds `dr` to its nearest extreme (`Math.round(nv.dr) < Math.round(...)`) sees a TIE
-      // (1 < 1 is false either way) here instead of resolving the real, small difference between
-      // them, and would fall back to array order.
-      expect(loZ.dr).toBeGreaterThan(0.6);
-      expect(hiZ.dr).toBeLessThan(0.99);
-      expect(hiZ.dr - loZ.dr).toBeLessThan(0.2);
-      expect(hiZ.dr).toBeGreaterThan(loZ.dr);
-      const idx = hiZ.row * p.m.cols + hiZ.col;
-      expect(p.cellNode[idx]).toBe(hiZ.i);
-      r.destroy();
-    });
-  }
-});
+    for (const last of ['hiZ', 'loZ'] as const) {
+        it(`PROBE — the contesting pair sits mid-range (dr close together, well off the 0/1 endpoints), not at the normalization extremes (${last} last)`, () => {
+            // Spacer nodes ("front"/"back") own the depth EXTREMES (dr 0 and 1); hiZ/loZ sit close
+            // together near the near end, so their OWN dr difference is small and interior — the shape a
+            // real vault's contested cell actually has, unlike the plain two-node fixture above where dr
+            // is necessarily exactly {0, 1} (there is nothing else to set the range).
+            const { r } = mountRenderer(
+                '3d',
+                depthPairGraph(last, true, 100, 50),
+            )
+            const p0 = probe23Priv(r)
+            p0.rx = 0
+            p0.ry = 0
+            p0.dirty = true
+            frame()
+            const { p, hiZ, loZ } = readPair(r)
+            expect(hiZ.col).toBe(loZ.col)
+            expect(hiZ.row).toBe(loZ.row)
+            // Non-vacuous: both strictly interior, on the SAME side of 0.5, close together — a comparison
+            // that rounds `dr` to its nearest extreme (`Math.round(nv.dr) < Math.round(...)`) sees a TIE
+            // (1 < 1 is false either way) here instead of resolving the real, small difference between
+            // them, and would fall back to array order.
+            expect(loZ.dr).toBeGreaterThan(0.6)
+            expect(hiZ.dr).toBeLessThan(0.99)
+            expect(hiZ.dr - loZ.dr).toBeLessThan(0.2)
+            expect(hiZ.dr).toBeGreaterThan(loZ.dr)
+            const idx = hiZ.row * p.m.cols + hiZ.col
+            expect(p.cellNode[idx]).toBe(hiZ.i)
+            r.destroy()
+        })
+    }
+})
 
 // ---------------------------------------------------------------------------
 // SURVIVING A BAD FRAME / A REFUSED CONTEXT
@@ -5960,73 +8005,100 @@ describe("depth-ordered cell arbitration in 3D (Task 23) — the nearer node own
 // on one machine and not another — and neither leaves an ongoing trace: the loop is simply no
 // longer running, so no resize, re-render, theme change or tab switch ever brings the field back.
 // ---------------------------------------------------------------------------
-describe("render loop resilience", () => {
-  it("keeps animating after a frame throws, and paints again once the fault clears", () => {
-    const { r } = mountRenderer("2d");
-    const priv = lodPriv(r) as unknown as { dirty: boolean };
+describe('render loop resilience', () => {
+    it('keeps animating after a frame throws, and paints again once the fault clears', () => {
+        const { r } = mountRenderer('2d')
+        const priv = lodPriv(r) as unknown as { dirty: boolean }
 
-    const realFillText = ctx.fillText;
-    let thrown = 0;
-    // Behavioural sabotage: a real paint call fails, exactly as an unsupported/out-of-memory canvas
-    // operation would. Nothing about the renderer's own state is touched.
-    (ctx as unknown as { fillText: unknown }).fillText = () => { thrown++; throw new Error("canvas fault"); };
-    priv.dirty = true;
-    frame(32);
-    expect(thrown).toBeGreaterThan(0);
+        const realFillText = ctx.fillText
+        let thrown = 0
+        // Behavioural sabotage: a real paint call fails, exactly as an unsupported/out-of-memory canvas
+        // operation would. Nothing about the renderer's own state is touched.
+        ;(ctx as unknown as { fillText: unknown }).fillText = () => {
+            thrown++
+            throw new Error('canvas fault')
+        }
+        priv.dirty = true
+        frame(32)
+        expect(thrown).toBeGreaterThan(0)
 
-    (ctx as unknown as { fillText: unknown }).fillText = realFillText;
-    ctx.fills.length = 0;
-    priv.dirty = true;
-    // If the throw had ended the loop there would be no queued callback at all, so this frame
-    // would be a no-op and `fills` would stay empty.
-    frame(48);
-    expect(ctx.fills.length).toBeGreaterThan(0);
-    r.destroy();
-  });
+        ;(ctx as unknown as { fillText: unknown }).fillText = realFillText
+        ctx.fills.length = 0
+        priv.dirty = true
+        // If the throw had ended the loop there would be no queued callback at all, so this frame
+        // would be a no-op and `fills` would stay empty.
+        frame(48)
+        expect(ctx.fills.length).toBeGreaterThan(0)
+        r.destroy()
+    })
 
-  it("recovers when getContext('2d') refuses at mount and succeeds later", () => {
-    const canvasProto = (globalThis as unknown as { HTMLCanvasElement: { prototype: Record<string, unknown> } }).HTMLCanvasElement.prototype;
-    const realGetContext = canvasProto.getContext;
-    canvasProto.getContext = () => null;
+    it("recovers when getContext('2d') refuses at mount and succeeds later", () => {
+        const canvasProto = (
+            globalThis as unknown as {
+                HTMLCanvasElement: { prototype: Record<string, unknown> }
+            }
+        ).HTMLCanvasElement.prototype
+        const realGetContext = canvasProto.getContext
+        canvasProto.getContext = () => null
 
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const r = newRenderer();
-    r.mount(host, () => {}, () => {});
-    r.setConfig({ ...CONFIG, viewMode: "2d" });
-    r.render(sampleGraph());
-    ctx.fills.length = 0;
-    frame(16);
-    // Nothing can have been drawn — there was no context to draw with.
-    expect(ctx.fills.length).toBe(0);
+        const host = document.createElement('div')
+        document.body.appendChild(host)
+        const r = newRenderer()
+        r.mount(
+            host,
+            () => {},
+            () => {},
+        )
+        r.setConfig({ ...CONFIG, viewMode: '2d' })
+        r.render(sampleGraph())
+        ctx.fills.length = 0
+        frame(16)
+        // Nothing can have been drawn — there was no context to draw with.
+        expect(ctx.fills.length).toBe(0)
 
-    canvasProto.getContext = realGetContext;
-    frame(32);
-    frame(48);
-    expect(ctx.fills.length).toBeGreaterThan(0);
-    r.destroy();
-    canvasProto.getContext = realGetContext;
-  });
+        canvasProto.getContext = realGetContext
+        frame(32)
+        frame(48)
+        expect(ctx.fills.length).toBeGreaterThan(0)
+        r.destroy()
+        canvasProto.getContext = realGetContext
+    })
 
-  it("allocates a backing store within WebKit's canvas-area cap on a 5K display", () => {
-    // The wiring test for clampDprToCanvasArea (graphFit.test.ts covers the math). measure() is the
-    // ONLY place canvas.width is assigned, so a clamp that is computed and then not used would pass
-    // every pure test and still ship the blank canvas.
-    const realDpr = Object.getOwnPropertyDescriptor(globalThis.window, "devicePixelRatio");
-    Object.defineProperty(globalThis.window, "devicePixelRatio", { value: 2, configurable: true });
-    const [w0, h0] = [BOX.width, BOX.height];
-    BOX.width = 2560; BOX.height = 1440; // a 5K Studio Display's CSS box: 14.7M device px at 2x
-    try {
-      const { r } = mountRenderer("2d");
-      const canvas = (r as unknown as { canvas: HTMLCanvasElement }).canvas;
-      expect(canvas.width * canvas.height).toBeLessThanOrEqual(MAX_CANVAS_AREA_PX + 1);
-      // ...and it is still a real, full-size backing store, not a collapsed one.
-      expect(canvas.width).toBeGreaterThan(BOX.width);
-      expect(canvas.style.width).toBe(`${BOX.width}px`);
-      r.destroy();
-    } finally {
-      BOX.width = w0; BOX.height = h0;
-      if (realDpr) Object.defineProperty(globalThis.window, "devicePixelRatio", realDpr);
-    }
-  });
-});
+    it("allocates a backing store within WebKit's canvas-area cap on a 5K display", () => {
+        // The wiring test for clampDprToCanvasArea (graphFit.test.ts covers the math). measure() is the
+        // ONLY place canvas.width is assigned, so a clamp that is computed and then not used would pass
+        // every pure test and still ship the blank canvas.
+        const realDpr = Object.getOwnPropertyDescriptor(
+            globalThis.window,
+            'devicePixelRatio',
+        )
+        Object.defineProperty(globalThis.window, 'devicePixelRatio', {
+            value: 2,
+            configurable: true,
+        })
+        const [w0, h0] = [BOX.width, BOX.height]
+        BOX.width = 2560
+        BOX.height = 1440 // a 5K Studio Display's CSS box: 14.7M device px at 2x
+        try {
+            const { r } = mountRenderer('2d')
+            const canvas = (r as unknown as { canvas: HTMLCanvasElement })
+                .canvas
+            expect(canvas.width * canvas.height).toBeLessThanOrEqual(
+                MAX_CANVAS_AREA_PX + 1,
+            )
+            // ...and it is still a real, full-size backing store, not a collapsed one.
+            expect(canvas.width).toBeGreaterThan(BOX.width)
+            expect(canvas.style.width).toBe(`${BOX.width}px`)
+            r.destroy()
+        } finally {
+            BOX.width = w0
+            BOX.height = h0
+            if (realDpr)
+                Object.defineProperty(
+                    globalThis.window,
+                    'devicePixelRatio',
+                    realDpr,
+                )
+        }
+    })
+})

@@ -1,4 +1,4 @@
-import DOMPurify from "dompurify";
+import DOMPurify from 'dompurify'
 
 // Single shared sanitizer for every surface that renders raw HTML out of vault
 // markdown as innerHTML: the editor live-preview (htmlPreview.ts), card faces +
@@ -10,34 +10,40 @@ import DOMPurify from "dompurify";
 // sub/sup/div/details/img/a/table/…) and the `style`/`align`/`class` attributes
 // people actually use in notes.
 const CONFIG = {
-  // HTML + MathML + SVG profiles. HTML covers prose + KaTeX's visual output (plain styled
-  // <span>s). MathML lets KaTeX's accessibility island — the hidden <math> tree it
-  // emits alongside the visual HTML — survive for screen readers + correct copy/paste
-  // on reading surfaces (cards, transclusion, export). Without it the math still LOOKS
-  // right (the .katex-html part is kept) but the a11y/copy island is stripped. SVG lets
-  // inline icon glyphs through — the callout admonition icons (editor/callout.ts) are
-  // path/circle SVGs; DOMPurify's svg profile keeps those elements + their geometry attrs
-  // while still stripping <script>/<foreignObject>/event-handler XSS vectors.
-  USE_PROFILES: { html: true, mathMl: true, svg: true },
-  // Allow `<a target="_blank">` (DOMPurify drops unknown attrs otherwise).
-  ADD_ATTR: ["target"],
-};
+    // HTML + MathML + SVG profiles. HTML covers prose + KaTeX's visual output (plain styled
+    // <span>s). MathML lets KaTeX's accessibility island — the hidden <math> tree it
+    // emits alongside the visual HTML — survive for screen readers + correct copy/paste
+    // on reading surfaces (cards, transclusion, export). Without it the math still LOOKS
+    // right (the .katex-html part is kept) but the a11y/copy island is stripped. SVG lets
+    // inline icon glyphs through — the callout admonition icons (editor/callout.ts) are
+    // path/circle SVGs; DOMPurify's svg profile keeps those elements + their geometry attrs
+    // while still stripping <script>/<foreignObject>/event-handler XSS vectors.
+    USE_PROFILES: { html: true, mathMl: true, svg: true },
+    // Allow `<a target="_blank">` (DOMPurify drops unknown attrs otherwise).
+    ADD_ATTR: ['target'],
+}
 
 // DOMPurify's default export is a ready instance in the browser (window present
 // at import) but an uninitialized factory under a headless runtime (Bun tests /
 // SSR, no `window`). Resolve a working sanitizer once: the live instance if it
 // has `.sanitize`, else bind the factory to a real `window` if one exists.
 const purify: { sanitize: (s: string, c?: unknown) => unknown } | null =
-  typeof (DOMPurify as { sanitize?: unknown }).sanitize === "function"
-    ? (DOMPurify as unknown as { sanitize: (s: string, c?: unknown) => unknown })
-    : typeof window !== "undefined"
-      ? (DOMPurify as unknown as (w: Window) => { sanitize: (s: string, c?: unknown) => unknown })(window)
-      : null;
+    typeof (DOMPurify as { sanitize?: unknown }).sanitize === 'function'
+        ? (DOMPurify as unknown as {
+              sanitize: (s: string, c?: unknown) => unknown
+          })
+        : typeof window !== 'undefined'
+          ? (
+                DOMPurify as unknown as (w: Window) => {
+                    sanitize: (s: string, c?: unknown) => unknown
+                }
+            )(window)
+          : null
 
 /** Sanitize an HTML fragment for safe innerHTML injection. Sanitization needs a
  *  DOM; with none (headless tests/SSR, where nothing is injected) the input is
  *  passed through unchanged — every real innerHTML surface runs in the browser. */
 export function sanitizeHtml(dirty: string | null | undefined): string {
-  if (!purify) return dirty ?? "";
-  return purify.sanitize(dirty ?? "", CONFIG) as string;
+    if (!purify) return dirty ?? ''
+    return purify.sanitize(dirty ?? '', CONFIG) as string
 }

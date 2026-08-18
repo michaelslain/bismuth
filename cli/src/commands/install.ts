@@ -6,38 +6,51 @@
 // see core/src/agentBackends/mcpRegistrars.ts); `install --mcp <cli>` (or `--mcp all`)
 // registers Bismuth's MCP with those CLIs on demand — always opt-in, never automatic.
 // `uninstall` reverses everything. Does NOT touch the vault.
-import type { CommandMap } from "../types";
-import { bool, flag, out } from "../args";
+import type { CommandMap } from '../types'
+import { bool, flag, out } from '../args'
 import {
-  ensureBismuthInstalled,
-  getBismuthStatus,
-  registerAdditionalMcp,
-  uninstallBismuth,
-} from "../../../core/src/bismuthInstall";
+    ensureBismuthInstalled,
+    getBismuthStatus,
+    registerAdditionalMcp,
+    uninstallBismuth,
+} from '../../../core/src/bismuthInstall'
 
 export const commands: CommandMap = {
-  install: {
-    summary: "Install the bismuth CLI + MCP machine-wide (idempotent, version-gated)",
-    usage: "[--src <dir>] [--status] [--dry-run] [--mcp <cli>[,<cli>…]|all]",
-    run: async (args) => {
-      const mcpArg = flag(args, "mcp");
-      if (mcpArg) {
-        const ids = mcpArg === "all" ? ["all"] : mcpArg.split(",").map((s) => s.trim()).filter(Boolean);
-        out(await registerAdditionalMcp(ids), args);
-        return;
-      }
-      if (bool(args, "status")) {
-        out(await getBismuthStatus(), args);
-        return;
-      }
-      const src = flag(args, "src") ?? process.env.BISMUTH_INSTALL_SRC;
-      out(await ensureBismuthInstalled(src, undefined, { dryRun: bool(args, "dry-run") }), args);
+    install: {
+        summary:
+            'Install the bismuth CLI + MCP machine-wide (idempotent, version-gated)',
+        usage: '[--src <dir>] [--status] [--dry-run] [--mcp <cli>[,<cli>…]|all]',
+        run: async args => {
+            const mcpArg = flag(args, 'mcp')
+            if (mcpArg) {
+                const ids =
+                    mcpArg === 'all'
+                        ? ['all']
+                        : mcpArg
+                              .split(',')
+                              .map(s => s.trim())
+                              .filter(Boolean)
+                out(await registerAdditionalMcp(ids), args)
+                return
+            }
+            if (bool(args, 'status')) {
+                out(await getBismuthStatus(), args)
+                return
+            }
+            const src = flag(args, 'src') ?? process.env.BISMUTH_INSTALL_SRC
+            out(
+                await ensureBismuthInstalled(src, undefined, {
+                    dryRun: bool(args, 'dry-run'),
+                }),
+                args,
+            )
+        },
     },
-  },
-  uninstall: {
-    summary: "Remove the machine-wide bismuth CLI symlink, global MCP registration, and ~/.bismuth",
-    run: async (args) => {
-      out(await uninstallBismuth(), args);
+    uninstall: {
+        summary:
+            'Remove the machine-wide bismuth CLI symlink, global MCP registration, and ~/.bismuth',
+        run: async args => {
+            out(await uninstallBismuth(), args)
+        },
     },
-  },
-};
+}

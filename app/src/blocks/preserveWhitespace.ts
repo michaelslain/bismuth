@@ -25,24 +25,24 @@
 // we only fill a PURE-whitespace gap at the very START / END of the paragraph's content (i.e. the
 // affixes that have NO following/preceding content on their side), never an interior run.
 
-import { $remark } from "@milkdown/utils";
-import type { MilkdownPlugin } from "@milkdown/ctx";
+import { $remark } from '@milkdown/utils'
+import type { MilkdownPlugin } from '@milkdown/ctx'
 
 interface MdNode {
-  type: string;
-  value?: string;
-  children?: MdNode[];
-  position?: { start: { offset?: number }; end: { offset?: number } };
+    type: string
+    value?: string
+    children?: MdNode[]
+    position?: { start: { offset?: number }; end: { offset?: number } }
 }
 
 interface VFileLike {
-  value?: unknown;
+    value?: unknown
 }
 
 /** Only spaces + tabs (a CommonMark inline whitespace run). A newline would be a block boundary /
  *  hard break, never an affix we own — so it disqualifies the gap. */
 function isInlineWhitespace(s: string): boolean {
-  return s.length > 0 && /^[ \t]+$/.test(s);
+    return s.length > 0 && /^[ \t]+$/.test(s)
 }
 
 /** The offset of the start of the source LINE containing `offset` (walk back to a `\n` or BOL).
@@ -50,67 +50,75 @@ function isInlineWhitespace(s: string): boolean {
  *  AFTER its indent), so to find the leading affix we compare the first child's start against the
  *  start of its line — which, for this inline-only surface, is the start of the (single-line) source. */
 function lineStart(source: string, offset: number): number {
-  let i = offset;
-  while (i > 0 && source[i - 1] !== "\n") i--;
-  return i;
+    let i = offset
+    while (i > 0 && source[i - 1] !== '\n') i--
+    return i
 }
 
 /** Walk every paragraph and re-attach its stripped leading / trailing whitespace from `source`. */
 function recoverAffixes(tree: MdNode, source: string): void {
-  // A source that is ENTIRELY inline whitespace (`"   "`) parses to an EMPTY root — CommonMark
-  // drops a blank line — so there is no paragraph to fix. Re-seed a paragraph holding the verbatim
-  // whitespace so a whitespace-only block round-trips instead of collapsing to "".
-  if (tree.type === "root" && (!tree.children || tree.children.length === 0) && isInlineWhitespace(source)) {
-    tree.children = [{ type: "paragraph", children: [{ type: "text", value: source }] }];
-    return;
-  }
-  visit(tree);
+    // A source that is ENTIRELY inline whitespace (`"   "`) parses to an EMPTY root — CommonMark
+    // drops a blank line — so there is no paragraph to fix. Re-seed a paragraph holding the verbatim
+    // whitespace so a whitespace-only block round-trips instead of collapsing to "".
+    if (
+        tree.type === 'root' &&
+        (!tree.children || tree.children.length === 0) &&
+        isInlineWhitespace(source)
+    ) {
+        tree.children = [
+            { type: 'paragraph', children: [{ type: 'text', value: source }] },
+        ]
+        return
+    }
+    visit(tree)
 
-  function visit(node: MdNode): void {
-    if (node.type === "paragraph") restore(node, source);
-    if (node.children) for (const child of node.children) visit(child);
-  }
+    function visit(node: MdNode): void {
+        if (node.type === 'paragraph') restore(node, source)
+        if (node.children) for (const child of node.children) visit(child)
+    }
 }
 
 function restore(para: MdNode, source: string): void {
-  const kids = para.children;
-  if (!kids || kids.length === 0) return;
-  const paraEnd = para.position?.end.offset;
+    const kids = para.children
+    if (!kids || kids.length === 0) return
+    const paraEnd = para.position?.end.offset
 
-  // Trailing: gap between the last child's end and the paragraph's end (both incl. the affix).
-  const last = kids[kids.length - 1];
-  const lastEnd = last.position?.end.offset;
-  if (paraEnd !== undefined && lastEnd !== undefined && lastEnd < paraEnd) {
-    const gap = source.slice(lastEnd, paraEnd);
-    if (isInlineWhitespace(gap)) {
-      // Merge into a trailing text node if there already is one, else append a fresh leaf.
-      if (last.type === "text" && typeof last.value === "string") last.value += gap;
-      else kids.push({ type: "text", value: gap });
+    // Trailing: gap between the last child's end and the paragraph's end (both incl. the affix).
+    const last = kids[kids.length - 1]
+    const lastEnd = last.position?.end.offset
+    if (paraEnd !== undefined && lastEnd !== undefined && lastEnd < paraEnd) {
+        const gap = source.slice(lastEnd, paraEnd)
+        if (isInlineWhitespace(gap)) {
+            // Merge into a trailing text node if there already is one, else append a fresh leaf.
+            if (last.type === 'text' && typeof last.value === 'string')
+                last.value += gap
+            else kids.push({ type: 'text', value: gap })
+        }
     }
-  }
 
-  // Leading: gap between the first child's start and the start of ITS line (the paragraph's own
-  // start is already past the indent, so compare against the line start instead).
-  const first = kids[0];
-  const firstStart = first.position?.start.offset;
-  if (firstStart !== undefined) {
-    const gap = source.slice(lineStart(source, firstStart), firstStart);
-    if (isInlineWhitespace(gap)) {
-      if (first.type === "text" && typeof first.value === "string") first.value = gap + first.value;
-      else kids.unshift({ type: "text", value: gap });
+    // Leading: gap between the first child's start and the start of ITS line (the paragraph's own
+    // start is already past the indent, so compare against the line start instead).
+    const first = kids[0]
+    const firstStart = first.position?.start.offset
+    if (firstStart !== undefined) {
+        const gap = source.slice(lineStart(source, firstStart), firstStart)
+        if (isInlineWhitespace(gap)) {
+            if (first.type === 'text' && typeof first.value === 'string')
+                first.value = gap + first.value
+            else kids.unshift({ type: 'text', value: gap })
+        }
     }
-  }
 }
 
 /** The `$remark` plugin pair: recover paragraph affix whitespace from the source vfile. */
 export const preserveAffixWhitespace: MilkdownPlugin[] = $remark(
-  "bismuthPreserveAffixWhitespace",
-  () => () => (tree: unknown, file: unknown) => {
-    const source = (file as VFileLike | undefined)?.value;
-    if (typeof source !== "string") return; // no source (shouldn't happen) → no-op
-    recoverAffixes(tree as MdNode, source);
-  },
-) as unknown as MilkdownPlugin[];
+    'bismuthPreserveAffixWhitespace',
+    () => () => (tree: unknown, file: unknown) => {
+        const source = (file as VFileLike | undefined)?.value
+        if (typeof source !== 'string') return // no source (shouldn't happen) → no-op
+        recoverAffixes(tree as MdNode, source)
+    },
+) as unknown as MilkdownPlugin[]
 
 // Re-exported for the round-trip test.
-export { isInlineWhitespace };
+export { isInlineWhitespace }

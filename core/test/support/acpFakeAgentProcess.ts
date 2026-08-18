@@ -22,9 +22,9 @@
 // plain queue test's single closeChat loop) — it only owns the pid lifecycle: writing a stub that
 // records its own pid, waiting for that pid to be known, and proving every one of them is actually
 // gone before a test's teardown is allowed to succeed silently.
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 /** True iff `pid` still names a live process — an OWNED, exact-pid point check (never a machine-wide
  *  `pgrep -f` pattern match, which cannot distinguish a process a test started from an unrelated one
@@ -32,7 +32,7 @@ import { join } from "node:path";
  *  for orphan verification). Mirrors openclawMocked.test.ts's/opencodeMocked.test.ts's/
  *  acpAbortFakeAgent.test.ts's three (until now) separately-written identical copies. */
 export function pidAlive(pid: number): boolean {
-  return Bun.spawnSync(["ps", "-p", String(pid)]).exitCode === 0;
+    return Bun.spawnSync(['ps', '-p', String(pid)]).exitCode === 0
 }
 
 /**
@@ -43,27 +43,40 @@ export function pidAlive(pid: number): boolean {
  * what makes the pid captured here the SAME one `Bun.spawn` inside driver.ts holds a handle to.
  * Returns the temp dir (the caller prepends it onto PATH and is responsible for `rmSync`ing it).
  */
-export function makeAcpFakeAgentStubDir(tmpPrefix: string, binaryName: string, fakeAgentScript: string, pidFile: string): string {
-  const dir = mkdtempSync(join(tmpdir(), tmpPrefix));
-  const stubPath = join(dir, binaryName);
-  writeFileSync(stubPath, `#!/bin/bash\necho $$ > ${JSON.stringify(pidFile)}\nexec bun run ${JSON.stringify(fakeAgentScript)} "$@"\n`);
-  chmodSync(stubPath, 0o755);
-  return dir;
+export function makeAcpFakeAgentStubDir(
+    tmpPrefix: string,
+    binaryName: string,
+    fakeAgentScript: string,
+    pidFile: string,
+): string {
+    const dir = mkdtempSync(join(tmpdir(), tmpPrefix))
+    const stubPath = join(dir, binaryName)
+    writeFileSync(
+        stubPath,
+        `#!/bin/bash\necho $$ > ${JSON.stringify(pidFile)}\nexec bun run ${JSON.stringify(fakeAgentScript)} "$@"\n`,
+    )
+    chmodSync(stubPath, 0o755)
+    return dir
 }
 
 /** Poll `pidFile` until it holds a parseable positive integer, or throw after `timeoutMs`. */
-export async function waitForPidFile(pidFile: string, timeoutMs = 5_000): Promise<number> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const n = Number(readFileSync(pidFile, "utf8").trim());
-      if (Number.isFinite(n) && n > 0) return n;
-    } catch {
-      /* not written yet */
+export async function waitForPidFile(
+    pidFile: string,
+    timeoutMs = 5_000,
+): Promise<number> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+        try {
+            const n = Number(readFileSync(pidFile, 'utf8').trim())
+            if (Number.isFinite(n) && n > 0) return n
+        } catch {
+            /* not written yet */
+        }
+        await new Promise(r => setTimeout(r, 50))
     }
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  throw new Error(`timeout waiting for a fake agent's own pid file at ${pidFile}`);
+    throw new Error(
+        `timeout waiting for a fake agent's own pid file at ${pidFile}`,
+    )
 }
 
 /**
@@ -75,27 +88,35 @@ export async function waitForPidFile(pidFile: string, timeoutMs = 5_000): Promis
  * `assertProcessesGone` below rather than always throwing immediately. Polls every pid concurrently
  * against one shared deadline, so N simultaneously-alive pids cost max(timeoutMs), not N * timeoutMs.
  */
-export async function waitProcessesGone(pids: number[], timeoutMs = 5_000): Promise<number[]> {
-  const deadline = Date.now() + timeoutMs;
-  const results = await Promise.all(
-    pids.map(async (pid) => {
-      let alive = pidAlive(pid);
-      while (alive && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 100));
-        alive = pidAlive(pid);
-      }
-      return alive ? pid : undefined;
-    }),
-  );
-  return results.filter((pid): pid is number => pid !== undefined);
+export async function waitProcessesGone(
+    pids: number[],
+    timeoutMs = 5_000,
+): Promise<number[]> {
+    const deadline = Date.now() + timeoutMs
+    const results = await Promise.all(
+        pids.map(async pid => {
+            let alive = pidAlive(pid)
+            while (alive && Date.now() < deadline) {
+                await new Promise(r => setTimeout(r, 100))
+                alive = pidAlive(pid)
+            }
+            return alive ? pid : undefined
+        }),
+    )
+    return results.filter((pid): pid is number => pid !== undefined)
 }
 
 /** Convenience wrapper for a test file with no cleanup-ordering concerns of its own: polls (as
  *  `waitProcessesGone` does) and throws immediately if anything survived. Prefer
  *  `waitProcessesGone` directly when temp-dir cleanup must run before the test is allowed to fail. */
-export async function assertProcessesGone(pids: number[], timeoutMs = 5_000): Promise<void> {
-  const stillAlive = await waitProcessesGone(pids, timeoutMs);
-  if (stillAlive.length > 0) {
-    throw new Error(`fake-agent pid(s) ${stillAlive.join(", ")} still alive ${timeoutMs}ms after teardown — a real leak.`);
-  }
+export async function assertProcessesGone(
+    pids: number[],
+    timeoutMs = 5_000,
+): Promise<void> {
+    const stillAlive = await waitProcessesGone(pids, timeoutMs)
+    if (stillAlive.length > 0) {
+        throw new Error(
+            `fake-agent pid(s) ${stillAlive.join(', ')} still alive ${timeoutMs}ms after teardown — a real leak.`,
+        )
+    }
 }

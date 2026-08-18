@@ -38,14 +38,19 @@
  *  = the window's inner width in physical pixels (Tauri PhysicalSize). Snaps to exactly 1
  *  within a small epsilon so scrollbar/rounding noise never drifts coordinates; returns 1 on
  *  degenerate inputs (a wrong correction is worse than none). */
-export function nativeDropScale(dpr: number, cssInnerWidth: number, physicalInnerWidth: number): number {
-  if (!Number.isFinite(dpr) || dpr <= 0) return 1;
-  if (!Number.isFinite(cssInnerWidth) || cssInnerWidth <= 0) return 1;
-  if (!Number.isFinite(physicalInnerWidth) || physicalInnerWidth <= 0) return 1;
-  const factor = (dpr * cssInnerWidth) / physicalInnerWidth;
-  // Real zooms are ≥10% steps (zoom.ts STEPS); anything within 2% of 1 is measurement noise
-  // (overlay scrollbars, fractional device scale), not a zoom mismatch.
-  return Math.abs(factor - 1) < 0.02 ? 1 : factor;
+export function nativeDropScale(
+    dpr: number,
+    cssInnerWidth: number,
+    physicalInnerWidth: number,
+): number {
+    if (!Number.isFinite(dpr) || dpr <= 0) return 1
+    if (!Number.isFinite(cssInnerWidth) || cssInnerWidth <= 0) return 1
+    if (!Number.isFinite(physicalInnerWidth) || physicalInnerWidth <= 0)
+        return 1
+    const factor = (dpr * cssInnerWidth) / physicalInnerWidth
+    // Real zooms are ≥10% steps (zoom.ts STEPS); anything within 2% of 1 is measurement noise
+    // (overlay scrollbars, fractional device scale), not a zoom mismatch.
+    return Math.abs(factor - 1) < 0.02 ? 1 : factor
 }
 
 // ── The single-claim guard (#30 "double insert") ────────────────────────────────────
@@ -56,13 +61,13 @@ export function nativeDropScale(dpr: number, cssInnerWidth: number, physicalInne
 // of one dispatch, so it is the natural dedupe key: the first handler that DECIDES to
 // process the drop claims it here; any other handler sees the claim and skips. A WeakSet
 // holds no references alive and resets per dispatched detail.
-const claimedDrops = new WeakSet<object>();
+const claimedDrops = new WeakSet<object>()
 
 /** Claim a forwarded native-drop event for processing. Returns true exactly once per
  *  detail object — the caller that gets `true` handles the drop; `false` means another
  *  (possibly duplicated) handler already owns it. */
 export function claimNativeDrop(detail: object): boolean {
-  if (claimedDrops.has(detail)) return false;
-  claimedDrops.add(detail);
-  return true;
+    if (claimedDrops.has(detail)) return false
+    claimedDrops.add(detail)
+    return true
 }

@@ -7,7 +7,7 @@
 // Orientation uses only ROTATION and REFLECTION, which are isometries: every internal distance is
 // preserved exactly. Without it, cross-brain edges connect arbitrary points and read as spaghetti
 // rather than as a band.
-import type { Positions } from "./layout";
+import type { Positions } from './layout'
 
 /** Replace a non-finite number (NaN/±Infinity) with `fallback`. The single choke point that keeps
  *  one bad coordinate (a stale cache, a not-yet-settled layout, a diverged force tick) from
@@ -15,32 +15,34 @@ import type { Positions } from "./layout";
  *  running cursor, EVERY brain placed after it. Mirrors `app/src/graph/graphFit.ts`'s `finiteOr`,
  *  which exists for the identical reason on the render side. */
 function finiteOr(n: number, fallback = 0): number {
-  return Number.isFinite(n) ? n : fallback;
+    return Number.isFinite(n) ? n : fallback
 }
 
 const centroid = (pos: Positions, ids: string[]): [number, number] => {
-  let x = 0, y = 0, n = 0;
-  for (const id of ids) {
-    const p = pos[id];
-    if (!p) continue;
-    x += finiteOr(p[0]);
-    y += finiteOr(p[1]);
-    n++;
-  }
-  return n === 0 ? [0, 0] : [x / n, y / n];
-};
+    let x = 0,
+        y = 0,
+        n = 0
+    for (const id of ids) {
+        const p = pos[id]
+        if (!p) continue
+        x += finiteOr(p[0])
+        y += finiteOr(p[1])
+        n++
+    }
+    return n === 0 ? [0, 0] : [x / n, y / n]
+}
 
 /** Distance from the centroid to the furthest member. */
 export function boundingRadius(pos: Positions, ids: string[]): number {
-  const [cx, cy] = centroid(pos, ids);
-  let r = 0;
-  for (const id of ids) {
-    const p = pos[id];
-    if (!p) continue;
-    const d = Math.hypot(finiteOr(p[0]) - cx, finiteOr(p[1]) - cy);
-    if (d > r) r = d;
-  }
-  return r;
+    const [cx, cy] = centroid(pos, ids)
+    let r = 0
+    for (const id of ids) {
+        const p = pos[id]
+        if (!p) continue
+        const d = Math.hypot(finiteOr(p[0]) - cx, finiteOr(p[1]) - cy)
+        if (d > r) r = d
+    }
+    return r
 }
 
 /** Rotate an (already centroid-relative) offset by `angle`, optionally reflecting across X first.
@@ -48,9 +50,15 @@ export function boundingRadius(pos: Positions, ids: string[]): number {
  *  (transforms a whole brain, called once per orientation decision) and `bestOrientation`'s search
  *  loop (transforms only the handful of cross-linked points, many times), so there is exactly one
  *  formula to get right and both call sites move in lockstep if it ever changes. */
-function rotateOffset(dx: number, dy: number, cos: number, sin: number, flip: boolean): [number, number] {
-  const fy = (flip ? -1 : 1) * dy;
-  return [dx * cos - fy * sin, dx * sin + fy * cos];
+function rotateOffset(
+    dx: number,
+    dy: number,
+    cos: number,
+    sin: number,
+    flip: boolean,
+): [number, number] {
+    const fy = (flip ? -1 : 1) * dy
+    return [dx * cos - fy * sin, dx * sin + fy * cos]
 }
 
 /**
@@ -66,19 +74,25 @@ function rotateOffset(dx: number, dy: number, cos: number, sin: number, flip: bo
  * it end up", which is the only question `bestOrientation` is supposed to be answering — final
  * placement is `composeBrains`'s job, done separately, after orientation is decided.
  */
-export function applyOrientation(pos: Positions, ids: string[], angle: number, flip: boolean): Positions {
-  const [cx, cy] = centroid(pos, ids);
-  const cos = Math.cos(angle), sin = Math.sin(angle);
-  const out: Positions = { ...pos };
-  for (const id of ids) {
-    const p = pos[id];
-    if (!p) continue;
-    const dx = finiteOr(p[0]) - cx;
-    const dy = finiteOr(p[1]) - cy;
-    const [rx, ry] = rotateOffset(dx, dy, cos, sin, flip);
-    out[id] = [cx + rx, cy + ry, finiteOr(p[2])];
-  }
-  return out;
+export function applyOrientation(
+    pos: Positions,
+    ids: string[],
+    angle: number,
+    flip: boolean,
+): Positions {
+    const [cx, cy] = centroid(pos, ids)
+    const cos = Math.cos(angle),
+        sin = Math.sin(angle)
+    const out: Positions = { ...pos }
+    for (const id of ids) {
+        const p = pos[id]
+        if (!p) continue
+        const dx = finiteOr(p[0]) - cx
+        const dy = finiteOr(p[1]) - cy
+        const [rx, ry] = rotateOffset(dx, dy, cos, sin, flip)
+        out[id] = [cx + rx, cy + ry, finiteOr(p[2])]
+    }
+    return out
 }
 
 /**
@@ -91,34 +105,44 @@ export function applyOrientation(pos: Positions, ids: string[], angle: number, f
  * brain (via `applyOrientation`) on every candidate angle — this sits on the graph-rebuild path.
  */
 export function bestOrientation(
-  pos: Positions,
-  ownIds: string[],
-  links: { own: string; otherX: number; otherY: number }[],
-  steps = 360,
+    pos: Positions,
+    ownIds: string[],
+    links: { own: string; otherX: number; otherY: number }[],
+    steps = 360,
 ): { angle: number; flip: boolean } {
-  if (links.length === 0) return { angle: 0, flip: false };
-  const [cx, cy] = centroid(pos, ownIds);
-  const offsets = links
-    .map((link) => {
-      const p = pos[link.own];
-      if (!p) return null;
-      return { link, dx: finiteOr(p[0]) - cx, dy: finiteOr(p[1]) - cy };
-    })
-    .filter((o): o is { link: (typeof links)[number]; dx: number; dy: number } => o !== null);
-  let best = { angle: 0, flip: false }, bestCost = Infinity;
-  for (const flip of [false, true]) {
-    for (let s = 0; s < steps; s++) {
-      const angle = (s / steps) * Math.PI * 2;
-      const cos = Math.cos(angle), sin = Math.sin(angle);
-      let cost = 0;
-      for (const { link, dx, dy } of offsets) {
-        const [rx, ry] = rotateOffset(dx, dy, cos, sin, flip);
-        cost += Math.hypot(cx + rx - link.otherX, cy + ry - link.otherY);
-      }
-      if (cost < bestCost) { bestCost = cost; best = { angle, flip }; }
+    if (links.length === 0) return { angle: 0, flip: false }
+    const [cx, cy] = centroid(pos, ownIds)
+    const offsets = links
+        .map(link => {
+            const p = pos[link.own]
+            if (!p) return null
+            return { link, dx: finiteOr(p[0]) - cx, dy: finiteOr(p[1]) - cy }
+        })
+        .filter(
+            (
+                o,
+            ): o is { link: (typeof links)[number]; dx: number; dy: number } =>
+                o !== null,
+        )
+    let best = { angle: 0, flip: false },
+        bestCost = Infinity
+    for (const flip of [false, true]) {
+        for (let s = 0; s < steps; s++) {
+            const angle = (s / steps) * Math.PI * 2
+            const cos = Math.cos(angle),
+                sin = Math.sin(angle)
+            let cost = 0
+            for (const { link, dx, dy } of offsets) {
+                const [rx, ry] = rotateOffset(dx, dy, cos, sin, flip)
+                cost += Math.hypot(cx + rx - link.otherX, cy + ry - link.otherY)
+            }
+            if (cost < bestCost) {
+                bestCost = cost
+                best = { angle, flip }
+            }
+        }
     }
-  }
-  return best;
+    return best
 }
 
 /**
@@ -136,35 +160,43 @@ export function bestOrientation(
  * along X to clear the gap.
  */
 export function composeBrains(
-  brains: { ids: string[]; pos: Positions }[],
-  opts: { gapMult?: number; minGap?: number; maxGap?: number } = {},
+    brains: { ids: string[]; pos: Positions }[],
+    opts: { gapMult?: number; minGap?: number; maxGap?: number } = {},
 ): Positions {
-  const gapMult = opts.gapMult ?? 0.5;
-  const minGap = opts.minGap ?? 40;
-  const maxGap = opts.maxGap ?? 600;
-  const out: Positions = {};
-  let rightEdge = 0;
-  let prevR = 0;
-  let anchorCy = 0;
-  brains.forEach((brain, i) => {
-    const r = boundingRadius(brain.pos, brain.ids);
-    const [cx, cy] = centroid(brain.pos, brain.ids);
-    let shiftX = 0, shiftY = 0;
-    if (i === 0) {
-      anchorCy = cy;
-    } else {
-      const gap = Math.min(maxGap, Math.max(minGap, gapMult * (prevR + r)));
-      const targetCx = rightEdge + gap + r;
-      shiftX = targetCx - cx;
-      shiftY = anchorCy - cy;
-    }
-    for (const id of brain.ids) {
-      const p = brain.pos[id];
-      if (!p) continue;
-      out[id] = [finiteOr(p[0]) + shiftX, finiteOr(p[1]) + shiftY, finiteOr(p[2])];
-    }
-    rightEdge = cx + shiftX + r;
-    prevR = r;
-  });
-  return out;
+    const gapMult = opts.gapMult ?? 0.5
+    const minGap = opts.minGap ?? 40
+    const maxGap = opts.maxGap ?? 600
+    const out: Positions = {}
+    let rightEdge = 0
+    let prevR = 0
+    let anchorCy = 0
+    brains.forEach((brain, i) => {
+        const r = boundingRadius(brain.pos, brain.ids)
+        const [cx, cy] = centroid(brain.pos, brain.ids)
+        let shiftX = 0,
+            shiftY = 0
+        if (i === 0) {
+            anchorCy = cy
+        } else {
+            const gap = Math.min(
+                maxGap,
+                Math.max(minGap, gapMult * (prevR + r)),
+            )
+            const targetCx = rightEdge + gap + r
+            shiftX = targetCx - cx
+            shiftY = anchorCy - cy
+        }
+        for (const id of brain.ids) {
+            const p = brain.pos[id]
+            if (!p) continue
+            out[id] = [
+                finiteOr(p[0]) + shiftX,
+                finiteOr(p[1]) + shiftY,
+                finiteOr(p[2]),
+            ]
+        }
+        rightEdge = cx + shiftX + r
+        prevR = r
+    })
+    return out
 }

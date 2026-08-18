@@ -68,14 +68,14 @@
 /** Canvas's wheel-zoom clamp (`onWheel`, pre-merge): the dolly never goes further in than this
  *  fraction of the perspective distance `P`, at ordinary viewport scale. Reused here, unchanged, as
  *  the input `maxZsFor` derives the wheel-stop magnification from. */
-export const MAX_ZOOM_FRAC = 0.94;
+export const MAX_ZOOM_FRAC = 0.94
 
 /** The value `maxZsFor(P)` (below) converges to as `P` grows — Canvas's own measured "~17× at the
  *  stop" (`1 / (1 - MAX_ZOOM_FRAC)` ≈ 16.667×). Neither `dollyForT` nor `zoomT` uses this constant
  *  directly any more — see the module comment for why that used to be a bug — it is kept as a named
  *  reference value for documentation and for the golden-shape test in cameraModel.test.ts, which pins
  *  the mapping's log character independently of the round trip. */
-export const MAX_MAGNIFICATION = 1 / (1 - MAX_ZOOM_FRAC);
+export const MAX_MAGNIFICATION = 1 / (1 - MAX_ZOOM_FRAC)
 
 /** The magnification at the wheel's zoom-in stop (`t = 1`) for a GIVEN perspective distance — the one
  *  formula `dollyForT` and `zoomT` both call, so they cannot independently drift into disagreement
@@ -99,8 +99,8 @@ export const MAX_MAGNIFICATION = 1 / (1 - MAX_ZOOM_FRAC);
  *  — the worst failure shape available at this call site. The floor makes that unreachable by
  *  construction rather than by every caller remembering. */
 function maxZsFor(perspective: number): number {
-  const p = Math.max(1, perspective);
-  return p / Math.max(1, p - MAX_ZOOM_FRAC * p);
+    const p = Math.max(1, perspective)
+    return p / Math.max(1, p - MAX_ZOOM_FRAC * p)
 }
 
 /**
@@ -128,8 +128,8 @@ function maxZsFor(perspective: number): number {
  * progress gets the nearest valid dolly rather than an extrapolated one).
  */
 export function dollyForT(t: number, perspective: number): number {
-  const tc = t < 0 ? 0 : t > 1 ? 1 : t;
-  return perspective * (1 - Math.pow(maxZsFor(perspective), -tc));
+    const tc = t < 0 ? 0 : t > 1 ? 1 : t
+    return perspective * (1 - Math.pow(maxZsFor(perspective), -tc))
 }
 
 /**
@@ -144,9 +144,9 @@ export function dollyForT(t: number, perspective: number): number {
  * guard as the source. Clamped to `[0,1]` either way.
  */
 export function zoomT(zoom: number, perspective: number): number {
-  const zs = perspective / Math.max(1, perspective - zoom);
-  if (zs <= 1) return 0;
-  const maxZs = maxZsFor(perspective);
-  const t = Math.log(zs) / Math.log(Math.max(1.0001, maxZs));
-  return t < 0 ? 0 : t > 1 ? 1 : t;
+    const zs = perspective / Math.max(1, perspective - zoom)
+    if (zs <= 1) return 0
+    const maxZs = maxZsFor(perspective)
+    const t = Math.log(zs) / Math.log(Math.max(1.0001, maxZs))
+    return t < 0 ? 0 : t > 1 ? 1 : t
 }

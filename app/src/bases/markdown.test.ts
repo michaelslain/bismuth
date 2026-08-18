@@ -3,267 +3,293 @@
 // injected anchor HTML as visible text inside <code>), and that masking code never corrupts plain
 // text like a bare "5 apples".
 
-import { test, expect, describe } from "bun:test";
-import { renderNoteBody, renderMarkdown } from "./markdown";
+import { test, expect, describe } from 'bun:test'
+import { renderNoteBody, renderMarkdown } from './markdown'
 
 // Inline `$…$` math renders via the shared KaTeX loader. When KaTeX hasn't lazy-loaded yet
 // (as in a bun test with no live document) `renderMath` returns "", so `mathHtml` emits a
 // `<span class="bismuth-math" data-math="…">` placeholder — either way the span carrying the
 // math is present, which is what these assert (vs. the source left literal).
-describe("renderMarkdown — inline math", () => {
-  test("a single-line `$…$` renders as math (regression)", () => {
-    expect(renderMarkdown("$a + b$")).toContain("bismuth-math");
-  });
+describe('renderMarkdown — inline math', () => {
+    test('a single-line `$…$` renders as math (regression)', () => {
+        expect(renderMarkdown('$a + b$')).toContain('bismuth-math')
+    })
 
-  test("a `$…$` that wraps across lines renders as ONE inline math span", () => {
-    // Pre-fix this stayed literal (the single-line regex forbade the newline); now the
-    // whole `$a +\n   b$` is one KaTeX span (KaTeX ignores the interior indentation).
-    const html = renderMarkdown("$a +\n   b$");
-    expect(html).toContain("bismuth-math");
-    expect(html).not.toContain("$a");
-  });
+    test('a `$…$` that wraps across lines renders as ONE inline math span', () => {
+        // Pre-fix this stayed literal (the single-line regex forbade the newline); now the
+        // whole `$a +\n   b$` is one KaTeX span (KaTeX ignores the interior indentation).
+        const html = renderMarkdown('$a +\n   b$')
+        expect(html).toContain('bismuth-math')
+        expect(html).not.toContain('$a')
+    })
 
-  test("a lone `$5` price stays literal (no math span)", () => {
-    const html = renderMarkdown("I have $5 in my wallet");
-    expect(html).not.toContain("bismuth-math");
-    expect(html).toContain("$5");
-  });
+    test('a lone `$5` price stays literal (no math span)', () => {
+        const html = renderMarkdown('I have $5 in my wallet')
+        expect(html).not.toContain('bismuth-math')
+        expect(html).toContain('$5')
+    })
 
-  test("two stray `$` don't merge when the second is preceded by a space", () => {
-    const html = renderMarkdown("costs $5 today and $9 tomorrow");
-    expect(html).not.toContain("bismuth-math");
-  });
+    test("two stray `$` don't merge when the second is preceded by a space", () => {
+        const html = renderMarkdown('costs $5 today and $9 tomorrow')
+        expect(html).not.toContain('bismuth-math')
+    })
 
-  // Regression (ReDoS): a long unclosed `$…` paragraph full of `\`-escapes used to backtrack
-  // exponentially in the inline-math tokenizer. The disambiguated alternation is linear, so this
-  // renders effectively instantly and leaves the `$` literal (no closing `$` → not math). If the
-  // regex regressed, this test would hang rather than fail.
-  test("a long unclosed `$` paragraph with escapes renders fast and stays literal", () => {
-    const body = "$" + Array.from({ length: 60 }, () => "\\alpha ").join("");
-    const start = performance.now();
-    const html = renderMarkdown(body);
-    expect(performance.now() - start).toBeLessThan(500); // linear, not exponential
-    expect(html).not.toContain("bismuth-math");
-  });
+    // Regression (ReDoS): a long unclosed `$…` paragraph full of `\`-escapes used to backtrack
+    // exponentially in the inline-math tokenizer. The disambiguated alternation is linear, so this
+    // renders effectively instantly and leaves the `$` literal (no closing `$` → not math). If the
+    // regex regressed, this test would hang rather than fail.
+    test('a long unclosed `$` paragraph with escapes renders fast and stays literal', () => {
+        const body = '$' + Array.from({ length: 60 }, () => '\\alpha ').join('')
+        const start = performance.now()
+        const html = renderMarkdown(body)
+        expect(performance.now() - start).toBeLessThan(500) // linear, not exponential
+        expect(html).not.toContain('bismuth-math')
+    })
 
-  // #58 lock: bold/italic spans CONTAINING inline math must render as <strong>/<em> wrapping
-  // the math span — no literal **/* in the output. The reader path (marked + the math tokenizer
-  // extension) already handled this; these guard it while the editor-side fix lands.
-  test("bold containing inline math renders <strong> around the math span (#58)", () => {
-    for (const src of ["**($\\Rightarrow$)**", "**Case 1: $hk \\in H$.**", "**bold with $x$ math inside**"]) {
-      const html = renderMarkdown(src);
-      expect(html).toContain("<strong>");
-      expect(html).toContain("bismuth-math");
-      expect(html).not.toContain("**");
-    }
-  });
+    // #58 lock: bold/italic spans CONTAINING inline math must render as <strong>/<em> wrapping
+    // the math span — no literal **/* in the output. The reader path (marked + the math tokenizer
+    // extension) already handled this; these guard it while the editor-side fix lands.
+    test('bold containing inline math renders <strong> around the math span (#58)', () => {
+        for (const src of [
+            '**($\\Rightarrow$)**',
+            '**Case 1: $hk \\in H$.**',
+            '**bold with $x$ math inside**',
+        ]) {
+            const html = renderMarkdown(src)
+            expect(html).toContain('<strong>')
+            expect(html).toContain('bismuth-math')
+            expect(html).not.toContain('**')
+        }
+    })
 
-  test("italic + bold-italic containing inline math render <em>/<em><strong> (#58)", () => {
-    const it = renderMarkdown("*italic $x$ inside*");
-    expect(it).toContain("<em>");
-    expect(it).toContain("bismuth-math");
-    const bi = renderMarkdown("***bi $x$ bi***");
-    expect(bi).toContain("<em><strong>");
-    expect(bi).toContain("bismuth-math");
-    expect(bi).not.toContain("*");
-  });
-});
+    test('italic + bold-italic containing inline math render <em>/<em><strong> (#58)', () => {
+        const it = renderMarkdown('*italic $x$ inside*')
+        expect(it).toContain('<em>')
+        expect(it).toContain('bismuth-math')
+        const bi = renderMarkdown('***bi $x$ bi***')
+        expect(bi).toContain('<em><strong>')
+        expect(bi).toContain('bismuth-math')
+        expect(bi).not.toContain('*')
+    })
+})
 
 // A lone `<!-- pagebreak -->` becomes a zero-height `<div class="bismuth-page-break">` before
 // sanitize (DOMPurify strips comments). The div MUST be isolated by blank lines, else it opens a
 // CommonMark type-6 HTML block that swallows following lines as raw HTML (so markdown after the
 // marker would stop rendering). It must also stay literal inside a code fence.
-describe("renderMarkdown — page break marker", () => {
-  test("inserts the page-break div", () => {
-    expect(renderMarkdown("a\n<!-- pagebreak -->\nb")).toContain("bismuth-page-break");
-  });
+describe('renderMarkdown — page break marker', () => {
+    test('inserts the page-break div', () => {
+        expect(renderMarkdown('a\n<!-- pagebreak -->\nb')).toContain(
+            'bismuth-page-break',
+        )
+    })
 
-  test("does NOT swallow markdown right after the marker (heading + bold still render)", () => {
-    const html = renderMarkdown("Page one.\n<!-- pagebreak -->\n# Page Two\nSome **bold** text.");
-    expect(html).toMatch(/<h1[ >]/);
-    expect(html).toContain("Page Two");
-    expect(html).toContain("<strong>bold</strong>");
-  });
+    test('does NOT swallow markdown right after the marker (heading + bold still render)', () => {
+        const html = renderMarkdown(
+            'Page one.\n<!-- pagebreak -->\n# Page Two\nSome **bold** text.',
+        )
+        expect(html).toMatch(/<h1[ >]/)
+        expect(html).toContain('Page Two')
+        expect(html).toContain('<strong>bold</strong>')
+    })
 
-  test("a `<!-- pagebreak -->` inside a fenced code block stays literal (no div)", () => {
-    const html = renderMarkdown("```\n<!-- pagebreak -->\n```");
-    expect(html).not.toContain("bismuth-page-break");
-    expect(html).toContain("pagebreak");
-  });
-});
+    test('a `<!-- pagebreak -->` inside a fenced code block stays literal (no div)', () => {
+        const html = renderMarkdown('```\n<!-- pagebreak -->\n```')
+        expect(html).not.toContain('bismuth-page-break')
+        expect(html).toContain('pagebreak')
+    })
+})
 
 // Every whole-word "bismuth" is wrapped in a `.bismuth-word` span (the iridescent gradient),
 // but never inside code / URLs / wikilinks, and never mid-word. `class="bismuth-word"` is used
 // as the discriminator so it doesn't collide with `bismuth-wikilink` / `bismuth-tag` classes.
-describe("renderMarkdown — iridescent bismuth", () => {
-  test("wraps a whole-word 'bismuth' in prose, preserving case", () => {
-    expect(renderMarkdown("bismuth is a metal")).toContain('<span class="bismuth-word">bismuth</span>');
-    expect(renderMarkdown("Bismuth")).toContain('<span class="bismuth-word">Bismuth</span>');
-    expect(renderMarkdown("BISMUTH")).toContain('<span class="bismuth-word">BISMUTH</span>');
-  });
+describe('renderMarkdown — iridescent bismuth', () => {
+    test("wraps a whole-word 'bismuth' in prose, preserving case", () => {
+        expect(renderMarkdown('bismuth is a metal')).toContain(
+            '<span class="bismuth-word">bismuth</span>',
+        )
+        expect(renderMarkdown('Bismuth')).toContain(
+            '<span class="bismuth-word">Bismuth</span>',
+        )
+        expect(renderMarkdown('BISMUTH')).toContain(
+            '<span class="bismuth-word">BISMUTH</span>',
+        )
+    })
 
-  test("wraps every occurrence on a line", () => {
-    const html = renderMarkdown("bismuth and more bismuth");
-    expect(html.match(/class="bismuth-word"/g)?.length).toBe(2);
-  });
+    test('wraps every occurrence on a line', () => {
+        const html = renderMarkdown('bismuth and more bismuth')
+        expect(html.match(/class="bismuth-word"/g)?.length).toBe(2)
+    })
 
-  test("does not match a partial word", () => {
-    expect(renderMarkdown("bismuths are plural")).not.toContain('class="bismuth-word"');
-    expect(renderMarkdown("embismuth")).not.toContain('class="bismuth-word"');
-  });
+    test('does not match a partial word', () => {
+        expect(renderMarkdown('bismuths are plural')).not.toContain(
+            'class="bismuth-word"',
+        )
+        expect(renderMarkdown('embismuth')).not.toContain(
+            'class="bismuth-word"',
+        )
+    })
 
-  test("stays literal inside an inline code span", () => {
-    const html = renderMarkdown("use `bismuth` here");
-    expect(html).not.toContain('class="bismuth-word"');
-    expect(html).toContain("<code>bismuth</code>");
-  });
+    test('stays literal inside an inline code span', () => {
+        const html = renderMarkdown('use `bismuth` here')
+        expect(html).not.toContain('class="bismuth-word"')
+        expect(html).toContain('<code>bismuth</code>')
+    })
 
-  test("stays literal inside a fenced code block", () => {
-    expect(renderMarkdown("```\nbismuth\n```")).not.toContain('class="bismuth-word"');
-  });
+    test('stays literal inside a fenced code block', () => {
+        expect(renderMarkdown('```\nbismuth\n```')).not.toContain(
+            'class="bismuth-word"',
+        )
+    })
 
-  test("stays literal inside a bare URL", () => {
-    const html = renderMarkdown("see https://bismuth.example.com now");
-    expect(html).not.toContain('class="bismuth-word"');
-    expect(html).toContain("bismuth.example.com");
-  });
+    test('stays literal inside a bare URL', () => {
+        const html = renderMarkdown('see https://bismuth.example.com now')
+        expect(html).not.toContain('class="bismuth-word"')
+        expect(html).toContain('bismuth.example.com')
+    })
 
-  test("stays literal inside a wikilink label (renderNoteBody)", () => {
-    const html = renderNoteBody("[[bismuth crystals]]");
-    expect(html).not.toContain('class="bismuth-word"');
-    expect(html).toContain('class="bismuth-wikilink"');
-  });
-});
+    test('stays literal inside a wikilink label (renderNoteBody)', () => {
+        const html = renderNoteBody('[[bismuth crystals]]')
+        expect(html).not.toContain('class="bismuth-word"')
+        expect(html).toContain('class="bismuth-wikilink"')
+    })
+})
 
-describe("renderNoteBody — wikilinks/tags vs code", () => {
-  test("a wikilink in prose becomes an anchor", () => {
-    const html = renderNoteBody("see [[Another Note]] here");
-    expect(html).toContain('class="bismuth-wikilink"');
-    expect(html).toContain('data-href="Another Note.md"');
-  });
+describe('renderNoteBody — wikilinks/tags vs code', () => {
+    test('a wikilink in prose becomes an anchor', () => {
+        const html = renderNoteBody('see [[Another Note]] here')
+        expect(html).toContain('class="bismuth-wikilink"')
+        expect(html).toContain('data-href="Another Note.md"')
+    })
 
-  test("a wikilink inside an INLINE code span stays literal (no anchor)", () => {
-    const html = renderNoteBody("use `[[x]]` to link");
-    expect(html).not.toContain("bismuth-wikilink");
-    expect(html).toContain("<code>");
-    // The literal text survives (escaped) inside the code element.
-    expect(html).toContain("[[x]]");
-  });
+    test('a wikilink inside an INLINE code span stays literal (no anchor)', () => {
+        const html = renderNoteBody('use `[[x]]` to link')
+        expect(html).not.toContain('bismuth-wikilink')
+        expect(html).toContain('<code>')
+        // The literal text survives (escaped) inside the code element.
+        expect(html).toContain('[[x]]')
+    })
 
-  test("a wikilink inside a FENCED code block stays literal", () => {
-    const html = renderNoteBody("```\n[[x]]\n```");
-    expect(html).not.toContain("bismuth-wikilink");
-    expect(html).toContain("[[x]]");
-  });
+    test('a wikilink inside a FENCED code block stays literal', () => {
+        const html = renderNoteBody('```\n[[x]]\n```')
+        expect(html).not.toContain('bismuth-wikilink')
+        expect(html).toContain('[[x]]')
+    })
 
-  test("a #tag in prose becomes a styled span, but stays literal in code", () => {
-    expect(renderNoteBody("a #book here")).toContain('class="bismuth-tag"');
-    expect(renderNoteBody("the `#book` macro")).not.toContain("bismuth-tag");
-  });
+    test('a #tag in prose becomes a styled span, but stays literal in code', () => {
+        expect(renderNoteBody('a #book here')).toContain('class="bismuth-tag"')
+        expect(renderNoteBody('the `#book` macro')).not.toContain('bismuth-tag')
+    })
 
-  test("masking code never corrupts a bare space-delimited number", () => {
-    expect(renderNoteBody("I have 5 apples and 12 oranges")).toContain("5 apples and 12 oranges");
-  });
+    test('masking code never corrupts a bare space-delimited number', () => {
+        expect(renderNoteBody('I have 5 apples and 12 oranges')).toContain(
+            '5 apples and 12 oranges',
+        )
+    })
 
-  test("mixed: prose wikilink resolves, code wikilink does not, in one string", () => {
-    const html = renderNoteBody("[[Real]] vs `[[Fake]]`");
-    expect(html).toContain('data-href="Real.md"');
-    // Exactly one anchor — the code one is not linkified.
-    expect(html.match(/bismuth-wikilink/g)?.length).toBe(1);
-  });
-});
+    test('mixed: prose wikilink resolves, code wikilink does not, in one string', () => {
+        const html = renderNoteBody('[[Real]] vs `[[Fake]]`')
+        expect(html).toContain('data-href="Real.md"')
+        // Exactly one anchor — the code one is not linkified.
+        expect(html.match(/bismuth-wikilink/g)?.length).toBe(1)
+    })
+})
 
 // ── `??slug` memory references ────────────────────────────────────────────────────────────────
 // The 3rd-brain twin of a `[[wikilink]]`: `??slug` PERSISTS in the saved markdown and must resolve
 // to a clickable anchor pointing at the memory note's real vault path. The anchor deliberately
 // carries `bismuth-wikilink` too, so every existing `a.bismuth-wikilink[data-href]` click host (the
 // chat bubble's delegated handler, the reader) navigates it with no new wiring.
-describe("renderNoteBody — `??slug` memory references", () => {
-  test("a `??slug` becomes an anchor pointing at the memory note's real path", () => {
-    const html = renderNoteBody("see ??cron-run-preference for context");
-    expect(html).toContain('data-href=".daemon/memory/cron-run-preference.md"');
-    expect(html).toContain("bismuth-memory-ref");
-    // Reuses the wikilink class → the existing navigation hosts pick it up for free.
-    expect(html).toContain("bismuth-wikilink");
-    expect(html).not.toContain("??cron-run-preference"); // the raw syntax is consumed
-  });
+describe('renderNoteBody — `??slug` memory references', () => {
+    test("a `??slug` becomes an anchor pointing at the memory note's real path", () => {
+        const html = renderNoteBody('see ??cron-run-preference for context')
+        expect(html).toContain(
+            'data-href=".daemon/memory/cron-run-preference.md"',
+        )
+        expect(html).toContain('bismuth-memory-ref')
+        // Reuses the wikilink class → the existing navigation hosts pick it up for free.
+        expect(html).toContain('bismuth-wikilink')
+        expect(html).not.toContain('??cron-run-preference') // the raw syntax is consumed
+    })
 
-  test("`??` glued to a word stays literal prose — `really??` is punctuation, not a ref", () => {
-    const html = renderNoteBody("really?? that seems odd");
-    expect(html).not.toContain("bismuth-memory-ref");
-    expect(html).toContain("really??");
-  });
+    test('`??` glued to a word stays literal prose — `really??` is punctuation, not a ref', () => {
+        const html = renderNoteBody('really?? that seems odd')
+        expect(html).not.toContain('bismuth-memory-ref')
+        expect(html).toContain('really??')
+    })
 
-  test("a BARE `??` line stays literal (it is the SRS reverse-card separator)", () => {
-    const html = renderNoteBody("front\n\n??\n\nback");
-    expect(html).not.toContain("bismuth-memory-ref");
-  });
+    test('a BARE `??` line stays literal (it is the SRS reverse-card separator)', () => {
+        const html = renderNoteBody('front\n\n??\n\nback')
+        expect(html).not.toContain('bismuth-memory-ref')
+    })
 
-  test("a `??slug` inside a code span / fence stays LITERAL", () => {
-    expect(renderNoteBody("`??alpha`")).not.toContain("bismuth-memory-ref");
-    expect(renderNoteBody("```\n??alpha\n```")).not.toContain("bismuth-memory-ref");
-  });
+    test('a `??slug` inside a code span / fence stays LITERAL', () => {
+        expect(renderNoteBody('`??alpha`')).not.toContain('bismuth-memory-ref')
+        expect(renderNoteBody('```\n??alpha\n```')).not.toContain(
+            'bismuth-memory-ref',
+        )
+    })
 
-  test("a wikilink and a memory ref coexist on one line", () => {
-    const html = renderNoteBody("[[Some Note]] and ??alpha-beta");
-    expect(html).toContain('data-href="Some Note.md"');
-    expect(html).toContain('data-href=".daemon/memory/alpha-beta.md"');
-  });
+    test('a wikilink and a memory ref coexist on one line', () => {
+        const html = renderNoteBody('[[Some Note]] and ??alpha-beta')
+        expect(html).toContain('data-href="Some Note.md"')
+        expect(html).toContain('data-href=".daemon/memory/alpha-beta.md"')
+    })
 
-  test("the slug is escaped into the href/label (no HTML injection)", () => {
-    // The grammar can't match `<`/`"` anyway; assert the anchor is well-formed + sanitized.
-    const html = renderNoteBody("??a-b_c/d");
-    expect(html).toContain('data-href=".daemon/memory/a-b_c/d.md"');
-  });
-});
+    test('the slug is escaped into the href/label (no HTML injection)', () => {
+        // The grammar can't match `<`/`"` anyway; assert the anchor is well-formed + sanitized.
+        const html = renderNoteBody('??a-b_c/d')
+        expect(html).toContain('data-href=".daemon/memory/a-b_c/d.md"')
+    })
+})
 
 // ── Image embeds ─────────────────────────────────────────────────────────────
 // THE BUG THIS PINS: a picture dropped onto a kanban card was stored in the vault but appeared
 // NOWHERE ("the image is invisibly attached"). One half of the cause was here — `![[shot.png]]`
 // had no renderer, so renderMarkdown emitted it as literal text and renderNoteBody's wikilink
 // pass ate the inner `[[…]]` and left a stray `!` + a broken anchor. Neither is an image.
-describe("image embeds", () => {
-  test("renderMarkdown turns ![[shot.png]] into a real <img> on the /asset route", () => {
-    const html = renderMarkdown("![[shot.png]]");
-    expect(html).toContain("<img");
-    expect(html).toContain("/asset?path=shot.png");
-    expect(html).toContain('alt="shot.png"');
-    // The literal source must be GONE — that leftover text was the visible symptom.
-    expect(html).not.toContain("![[");
-  });
+describe('image embeds', () => {
+    test('renderMarkdown turns ![[shot.png]] into a real <img> on the /asset route', () => {
+        const html = renderMarkdown('![[shot.png]]')
+        expect(html).toContain('<img')
+        expect(html).toContain('/asset?path=shot.png')
+        expect(html).toContain('alt="shot.png"')
+        // The literal source must be GONE — that leftover text was the visible symptom.
+        expect(html).not.toContain('![[')
+    })
 
-  test("renderNoteBody renders the image instead of a stray '!' + broken wikilink", () => {
-    const html = renderNoteBody("![[shot.png]]");
-    expect(html).toContain("<img");
-    // The old output linkified the embed's target as a NOTE ("shot.png.md") behind a stray "!".
-    expect(html).not.toContain("shot.png.md");
-    expect(html).not.toContain("bismuth-wikilink");
-  });
+    test("renderNoteBody renders the image instead of a stray '!' + broken wikilink", () => {
+        const html = renderNoteBody('![[shot.png]]')
+        expect(html).toContain('<img')
+        // The old output linkified the embed's target as a NOTE ("shot.png.md") behind a stray "!".
+        expect(html).not.toContain('shot.png.md')
+        expect(html).not.toContain('bismuth-wikilink')
+    })
 
-  test("an embed's |WIDTH size alias is honored (same rule as the note editor)", () => {
-    const html = renderMarkdown("![[shot.png|300]]");
-    expect(html).toContain("width:300px");
-  });
+    test("an embed's |WIDTH size alias is honored (same rule as the note editor)", () => {
+        const html = renderMarkdown('![[shot.png|300]]')
+        expect(html).toContain('width:300px')
+    })
 
-  test("a real [[wikilink]] still linkifies — the `!` guard only spares embeds", () => {
-    const html = renderNoteBody("[[Some Note]] and ![[shot.png]]");
-    expect(html).toContain('data-href="Some Note.md"');
-    expect(html).toContain("<img");
-  });
+    test('a real [[wikilink]] still linkifies — the `!` guard only spares embeds', () => {
+        const html = renderNoteBody('[[Some Note]] and ![[shot.png]]')
+        expect(html).toContain('data-href="Some Note.md"')
+        expect(html).toContain('<img')
+    })
 
-  test("a NON-image embed is left alone (a card face is no place for an iframe/player)", () => {
-    // `![[Note]]` transclusion + pdf keep their prior behavior — no <img>, no crash.
-    expect(renderMarkdown("![[Some Note]]")).not.toContain("<img");
-    expect(renderMarkdown("![[paper.pdf]]")).not.toContain("<img");
-  });
+    test('a NON-image embed is left alone (a card face is no place for an iframe/player)', () => {
+        // `![[Note]]` transclusion + pdf keep their prior behavior — no <img>, no crash.
+        expect(renderMarkdown('![[Some Note]]')).not.toContain('<img')
+        expect(renderMarkdown('![[paper.pdf]]')).not.toContain('<img')
+    })
 
-  test("an embed inside code stays literal (masking still applies)", () => {
-    const html = renderMarkdown("`![[shot.png]]`");
-    expect(html).not.toContain("<img");
-    expect(html).toContain("![[shot.png]]");
-  });
+    test('an embed inside code stays literal (masking still applies)', () => {
+        const html = renderMarkdown('`![[shot.png]]`')
+        expect(html).not.toContain('<img')
+        expect(html).toContain('![[shot.png]]')
+    })
 
-  test("image extension matching is case-insensitive", () => {
-    expect(renderMarkdown("![[Photo.JPG]]")).toContain("<img");
-  });
-});
+    test('image extension matching is case-insensitive', () => {
+        expect(renderMarkdown('![[Photo.JPG]]')).toContain('<img')
+    })
+})

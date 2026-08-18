@@ -5,62 +5,71 @@
 // createMenuNav). This is the one Solid surface every menu-style popover renders,
 // so the chrome can't drift. The autocomplete can't use it (CodeMirror owns its
 // list DOM) — it matches via the shared tokens in popover.css instead.
-import { For, type JSX } from "solid-js";
-import { MenuRow } from "./MenuRow";
+import { For, type JSX } from 'solid-js'
+import { MenuRow } from './MenuRow'
 
 export type PopoverRow = {
-  label: string;
-  icon?: string;
-  /** A small custom element rendered before the label (e.g. a color swatch dot). */
-  prefix?: JSX.Element;
-  detail?: string;
-  /** A REAL keybinding, in the app's combo syntax ("Mod+Shift+D") — rendered right-aligned via
-   *  the shared Kbd primitive (ui/ascii/Kbd.tsx). Only set this from an actual
-   *  settings.keybindings entry (see CommandPalette.tsx's COMMAND_KEYBINDINGS map for the
-   *  pattern) — never a fabricated hint for a row with no real binding. */
-  shortcut?: string;
-  danger?: boolean;
-  disabled?: boolean;
-  separatorBefore?: boolean;
-  /** Show a right-side chevron marking this row opens a nested submenu. */
-  hasSubmenu?: boolean;
-};
+    label: string
+    icon?: string
+    /** A small custom element rendered before the label (e.g. a color swatch dot). */
+    prefix?: JSX.Element
+    detail?: string
+    /** A REAL keybinding, in the app's combo syntax ("Mod+Shift+D") — rendered right-aligned via
+     *  the shared Kbd primitive (ui/ascii/Kbd.tsx). Only set this from an actual
+     *  settings.keybindings entry (see CommandPalette.tsx's COMMAND_KEYBINDINGS map for the
+     *  pattern) — never a fabricated hint for a row with no real binding. */
+    shortcut?: string
+    danger?: boolean
+    disabled?: boolean
+    separatorBefore?: boolean
+    /** Show a right-side chevron marking this row opens a nested submenu. */
+    hasSubmenu?: boolean
+}
 
 export function PopoverList(props: {
-  items: PopoverRow[];
-  /** Index of the highlighted row (from createMenuNav). */
-  active?: number;
-  onActivate: (index: number) => void;
-  onHover?: (index: number) => void;
-  /** Inline style for the container (ContextMenu passes fixed x/y/z-index). */
-  style?: JSX.CSSProperties;
-  /** Extra class on the container (additive; e.g. Select's `.ui-select-list`). */
-  class?: string;
-  /** Ref to the container element (ContextMenu uses it to position a submenu flyout). */
-  ref?: (el: HTMLDivElement) => void;
+    items: PopoverRow[]
+    /** Index of the highlighted row (from createMenuNav). */
+    active?: number
+    onActivate: (index: number) => void
+    onHover?: (index: number) => void
+    /** Inline style for the container (ContextMenu passes fixed x/y/z-index). */
+    style?: JSX.CSSProperties
+    /** Extra class on the container (additive; e.g. Select's `.ui-select-list`). */
+    class?: string
+    /** Ref to the container element (ContextMenu uses it to position a submenu flyout). */
+    ref?: (el: HTMLDivElement) => void
 }) {
-  return (
-    <div ref={props.ref} class={`bismuth-popover ${props.class ?? ""}`} style={props.style} onClick={(e) => e.stopPropagation()}>
-      <For each={props.items}>
-        {(item, i) => (
-          <>
-            {item.separatorBefore && <div class="bismuth-popover-sep" />}
-            <MenuRow
-              label={item.label}
-              icon={item.icon}
-              prefix={item.prefix}
-              detail={item.detail}
-              shortcut={item.shortcut}
-              danger={item.danger}
-              disabled={item.disabled}
-              hasSubmenu={item.hasSubmenu}
-              selected={props.active === i()}
-              onMouseEnter={() => !item.disabled && props.onHover?.(i())}
-              onClick={() => props.onActivate(i())}
-            />
-          </>
-        )}
-      </For>
-    </div>
-  );
+    return (
+        <div
+            ref={props.ref}
+            class={`bismuth-popover ${props.class ?? ''}`}
+            style={props.style}
+            onClick={e => e.stopPropagation()}
+        >
+            <For each={props.items}>
+                {(item, i) => (
+                    <>
+                        {item.separatorBefore && (
+                            <div class="bismuth-popover-sep" />
+                        )}
+                        <MenuRow
+                            label={item.label}
+                            icon={item.icon}
+                            prefix={item.prefix}
+                            detail={item.detail}
+                            shortcut={item.shortcut}
+                            danger={item.danger}
+                            disabled={item.disabled}
+                            hasSubmenu={item.hasSubmenu}
+                            selected={props.active === i()}
+                            onMouseEnter={() =>
+                                !item.disabled && props.onHover?.(i())
+                            }
+                            onClick={() => props.onActivate(i())}
+                        />
+                    </>
+                )}
+            </For>
+        </div>
+    )
 }

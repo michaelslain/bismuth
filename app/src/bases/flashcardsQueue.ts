@@ -2,19 +2,24 @@
 // Pure review-queue logic for the flashcards view, split out from the component so
 // it can be unit-tested headlessly without importing FlashcardsView (which pulls in
 // lucide-solid icons and other Solid client-only code).
-import type { Row } from "../../../core/src/bases/types";
+import type { Row } from '../../../core/src/bases/types'
 
 /** A card's review direction. "rev" only appears for bidirectional decks. */
-export type CardDir = "fwd" | "rev";
+export type CardDir = 'fwd' | 'rev'
 
 // A queue entry: the row, its stable row `index`, the direction being reviewed, and
 // the due column that governs THIS direction's schedule. A bidirectional row yields
 // two entries (fwd + rev) sharing one `index` but with distinct `dir` / `dueField`.
-export type QueueItem = { r: Row; index: number; dir: CardDir; dueField: string };
+export type QueueItem = {
+    r: Row
+    index: number
+    dir: CardDir
+    dueField: string
+}
 
 /** Companion column for a forward field's reverse schedule: "due" -> "dueBack". */
 export function backField(field: string): string {
-  return field + "Back";
+    return field + 'Back'
 }
 
 /**
@@ -24,7 +29,7 @@ export function backField(field: string): string {
  * track which cards have been retired from the cram pool.
  */
 export function itemKey(it: QueueItem): string {
-  return `${it.index}:${it.dir}`;
+    return `${it.index}:${it.dir}`
 }
 
 /**
@@ -39,23 +44,23 @@ export function itemKey(it: QueueItem): string {
  * surface and schedule independently.
  */
 export function buildQueue(
-  rows: Row[],
-  dueField: string,
-  today: string,
-  cram: boolean,
-  bidirectional = false,
+    rows: Row[],
+    dueField: string,
+    today: string,
+    cram: boolean,
+    bidirectional = false,
 ): QueueItem[] {
-  const backDue = backField(dueField);
-  const all: QueueItem[] = [];
-  rows.forEach((r, index) => {
-    all.push({ r, index, dir: "fwd", dueField });
-    if (bidirectional) all.push({ r, index, dir: "rev", dueField: backDue });
-  });
-  if (cram) return all;
-  return all.filter((it) => {
-    const d = it.r.note[it.dueField];
-    return d == null || d === "" || String(d) <= today;
-  });
+    const backDue = backField(dueField)
+    const all: QueueItem[] = []
+    rows.forEach((r, index) => {
+        all.push({ r, index, dir: 'fwd', dueField })
+        if (bidirectional) all.push({ r, index, dir: 'rev', dueField: backDue })
+    })
+    if (cram) return all
+    return all.filter(it => {
+        const d = it.r.note[it.dueField]
+        return d == null || d === '' || String(d) <= today
+    })
 }
 
 /**
@@ -82,8 +87,12 @@ export function buildQueue(
  * anchored value removes both the growth and the flicker while keeping the intended
  * cram-vs-normal difference (all cards vs due cards).
  */
-export function progressTotal(queueLen: number, graded: number, cram: boolean): number {
-  return cram ? queueLen : graded + queueLen;
+export function progressTotal(
+    queueLen: number,
+    graded: number,
+    cram: boolean,
+): number {
+    return cram ? queueLen : graded + queueLen
 }
 
 /**
@@ -99,9 +108,12 @@ export function progressTotal(queueLen: number, graded: number, cram: boolean): 
  * by position to avoid re-showing it forever. Cram (no refetch) steps strictly
  * front-to-back (pos + 1).
  */
-export function nextPosAfterGrade(pos: number, opts: { cram: boolean; persisted: boolean }): number {
-  if (opts.cram) return pos + 1;
-  return opts.persisted ? pos : pos + 1;
+export function nextPosAfterGrade(
+    pos: number,
+    opts: { cram: boolean; persisted: boolean },
+): number {
+    if (opts.cram) return pos + 1
+    return opts.persisted ? pos : pos + 1
 }
 
 /**
@@ -121,13 +133,17 @@ export function nextPosAfterGrade(pos: number, opts: { cram: boolean; persisted:
  * (it is the only non-retired item), so it is shown again until finally rated easy.
  * `retired` holds `itemKey()`s of cards already rated easy this session.
  */
-export function nextCramPos(queue: QueueItem[], pos: number, retired: Set<string>): number {
-  const n = queue.length;
-  for (let step = 1; step <= n; step++) {
-    const i = (pos + step) % n;
-    if (!retired.has(itemKey(queue[i]))) return i;
-  }
-  return -1; // every card mastered → session complete
+export function nextCramPos(
+    queue: QueueItem[],
+    pos: number,
+    retired: Set<string>,
+): number {
+    const n = queue.length
+    for (let step = 1; step <= n; step++) {
+        const i = (pos + step) % n
+        if (!retired.has(itemKey(queue[i]))) return i
+    }
+    return -1 // every card mastered → session complete
 }
 
 /**
@@ -139,16 +155,19 @@ export function nextCramPos(queue: QueueItem[], pos: number, retired: Set<string
  * forever, so the session "completes" with cards unmastered) or match nothing (so
  * an already-easy card resurfaces). Returns a fresh array (stable signal identity).
  */
-export function reindexRetiredAfterDelete(retired: Iterable<string>, deletedIndex: number): string[] {
-  const out: string[] = [];
-  for (const key of retired) {
-    const sep = key.lastIndexOf(":");
-    const idx = Number(key.slice(0, sep));
-    const dir = key.slice(sep + 1);
-    if (idx === deletedIndex) continue; // the row being deleted — drop its keys
-    out.push(idx > deletedIndex ? `${idx - 1}:${dir}` : key);
-  }
-  return out;
+export function reindexRetiredAfterDelete(
+    retired: Iterable<string>,
+    deletedIndex: number,
+): string[] {
+    const out: string[] = []
+    for (const key of retired) {
+        const sep = key.lastIndexOf(':')
+        const idx = Number(key.slice(0, sep))
+        const dir = key.slice(sep + 1)
+        if (idx === deletedIndex) continue // the row being deleted — drop its keys
+        out.push(idx > deletedIndex ? `${idx - 1}:${dir}` : key)
+    }
+    return out
 }
 
 /**
@@ -162,8 +181,11 @@ export function reindexRetiredAfterDelete(retired: Iterable<string>, deletedInde
  * "sometimes pressing a flashcard skips it twice"). Gating on the in-flight
  * `grading` flag as well guarantees exactly one advance per grade.
  */
-export function canGrade(state: { revealed: boolean; grading: boolean }): boolean {
-  return state.revealed && !state.grading;
+export function canGrade(state: {
+    revealed: boolean
+    grading: boolean
+}): boolean {
+    return state.revealed && !state.grading
 }
 
 /**
@@ -179,41 +201,46 @@ export function canGrade(state: { revealed: boolean; grading: boolean }): boolea
  * lets a mid-cram tab switch resume with the mastered cards still retired.
  */
 export interface SessionState {
-  cram: boolean;
-  pos: number;
-  good: number;
-  hard: number;
-  easy: number;
-  retired: string[];
+    cram: boolean
+    pos: number
+    good: number
+    hard: number
+    easy: number
+    retired: string[]
 }
 
 /** A fresh, zeroed session (first open of a deck, or one with no saved state). */
 export function emptySession(): SessionState {
-  return { cram: false, pos: 0, good: 0, hard: 0, easy: 0, retired: [] };
+    return { cram: false, pos: 0, good: 0, hard: 0, easy: 0, retired: [] }
 }
 
 // Session store, keyed by the deck's base path. Module scope so it survives a
 // FlashcardsView unmount (tab switch) but not a full app reload — matching the
 // noteCache / RowCache pattern of in-memory, SSE-lived caches.
-const sessions = new Map<string, SessionState>();
+const sessions = new Map<string, SessionState>()
 
 /** Read the saved session for `key` (a deck's base path), or a fresh zeroed one.
  *  Returns a COPY — including a fresh `retired` array — so the caller's signal
  *  writes don't mutate the stored record. */
 export function loadSession(key: string | undefined): SessionState {
-  const saved = key ? sessions.get(key) : undefined;
-  return saved ? { ...saved, retired: [...(saved.retired ?? [])] } : emptySession();
+    const saved = key ? sessions.get(key) : undefined
+    return saved
+        ? { ...saved, retired: [...(saved.retired ?? [])] }
+        : emptySession()
 }
 
 /** Persist the session for `key`. A missing key is a no-op — an unsaved deck
  *  (e.g. an embedded query with no base path) has nothing to resume. Copies
  *  `retired` so later mutation of the caller's array can't reach the store. */
-export function saveSession(key: string | undefined, state: SessionState): void {
-  if (!key) return;
-  sessions.set(key, { ...state, retired: [...state.retired] });
+export function saveSession(
+    key: string | undefined,
+    state: SessionState,
+): void {
+    if (!key) return
+    sessions.set(key, { ...state, retired: [...state.retired] })
 }
 
 /** Drop a deck's saved session. Exposed for tests / explicit resets. */
 export function clearSession(key: string | undefined): void {
-  if (key) sessions.delete(key);
+    if (key) sessions.delete(key)
 }

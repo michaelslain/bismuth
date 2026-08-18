@@ -4,19 +4,26 @@
 // component (which pulls in CSS + the DOM). No Solid / DOM / localStorage here — just data.
 
 /** The permission modes Claude Code supports — the fixed protocol values (not a feature list). */
-export const PERMISSION_MODES = ["default", "plan", "acceptEdits", "bypassPermissions"] as const;
-export type PermissionMode = (typeof PERMISSION_MODES)[number];
+export const PERMISSION_MODES = [
+    'default',
+    'plan',
+    'acceptEdits',
+    'bypassPermissions',
+] as const
+export type PermissionMode = (typeof PERMISSION_MODES)[number]
 
 /** The APP-LEVEL default for the visual chat: every chat starts in Bypass so tool use isn't gated
  *  by an approval prompt by default (BUG #14). Persisted picks override it (FEATURE #35). */
-export const DEFAULT_PERMISSION_MODE: PermissionMode = "bypassPermissions";
+export const DEFAULT_PERMISSION_MODE: PermissionMode = 'bypassPermissions'
 
 /** Coerce a persisted / loaded value to a valid mode, falling back to the app default. Guards the
  *  localStorage read so a stale or garbage value can never seed the header with a bad mode. */
-export function sanitizePermissionMode(raw: string | null | undefined): PermissionMode {
-  return raw != null && (PERMISSION_MODES as readonly string[]).includes(raw)
-    ? (raw as PermissionMode)
-    : DEFAULT_PERMISSION_MODE;
+export function sanitizePermissionMode(
+    raw: string | null | undefined,
+): PermissionMode {
+    return raw != null && (PERMISSION_MODES as readonly string[]).includes(raw)
+        ? (raw as PermissionMode)
+        : DEFAULT_PERMISSION_MODE
 }
 
 /**
@@ -35,10 +42,10 @@ export function sanitizePermissionMode(raw: string | null | undefined): Permissi
  * Pure so the "don't let a manifest revert my choice" rule is unit-tested without a live session.
  */
 export function reconcilePermissionMode(
-  desired: string,
-  reported: string,
+    desired: string,
+    reported: string,
 ): { adopt: string } | { enforce: string } | null {
-  if (reported === desired) return null;
-  if (desired === "plan" && reported !== "plan") return { adopt: reported };
-  return { enforce: desired };
+    if (reported === desired) return null
+    if (desired === 'plan' && reported !== 'plan') return { adopt: reported }
+    return { enforce: desired }
 }

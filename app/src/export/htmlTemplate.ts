@@ -1,10 +1,10 @@
 // app/src/export/htmlTemplate.ts
-import { escapeHtml } from "../htmlEscape";
-import { DEFAULT_PALETTE } from "./exportTheme";
-import type { ThemePalette } from "./types";
-import { CALLOUT_TYPES } from "../editor/callout";
+import { escapeHtml } from '../htmlEscape'
+import { DEFAULT_PALETTE } from './exportTheme'
+import type { ThemePalette } from './types'
+import { CALLOUT_TYPES } from '../editor/callout'
 
-export { escapeHtml };
+export { escapeHtml }
 
 /** Position of the current document within a page-broken export (design/ascii-extended
  *  PORTING.md §3d's "Page footer: filename left, n / total right"). Callers that don't
@@ -13,15 +13,16 @@ export { escapeHtml };
  *  (exporters.ts), which already render one wrapHtmlDocument call per page, know a real
  *  index/total. */
 export interface PageInfo {
-  index: number;
-  total: number;
+    index: number
+    total: number
 }
 
 /** Ruled-paper HTML: filename left, "n / total" right, --faint-equivalent 9px. Sits on
  *  the SAME 22px ruling as the rest of the document (one 22px line box). */
 function pageFooterHtml(name: string, page?: PageInfo): string {
-  const pos = page && page.total > 1 ? `${page.index} / ${page.total}` : "1 / 1";
-  return `<div class="pagefoot"><span>${escapeHtml(name)}</span><span>${escapeHtml(pos)}</span></div>`;
+    const pos =
+        page && page.total > 1 ? `${page.index} / ${page.total}` : '1 / 1'
+    return `<div class="pagefoot"><span>${escapeHtml(name)}</span><span>${escapeHtml(pos)}</span></div>`
 }
 
 /** Render frontmatter data as the register's "fmatter" block (design/ascii-extended
@@ -30,25 +31,25 @@ function pageFooterHtml(name: string, page?: PageInfo): string {
  *  system. Callers skip this entirely when a note has no frontmatter (or the user
  *  excluded it via the Frontmatter chip) rather than emit an empty block. */
 export function frontmatterBlockHtml(data: Record<string, unknown>): string {
-  const keys = Object.keys(data);
-  if (!keys.length) return "";
-  const lines = keys.map((k) => {
-    const v = data[k];
-    const text = Array.isArray(v) ? v.join(", ") : String(v ?? "");
-    return `<span class="fm-k">${escapeHtml(k)}:</span> ${escapeHtml(text)}`;
-  });
-  return `<div class="fmatter">${lines.join("<br>")}</div>`;
+    const keys = Object.keys(data)
+    if (!keys.length) return ''
+    const lines = keys.map(k => {
+        const v = data[k]
+        const text = Array.isArray(v) ? v.join(', ') : String(v ?? '')
+        return `<span class="fm-k">${escapeHtml(k)}:</span> ${escapeHtml(text)}`
+    })
+    return `<div class="fmatter">${lines.join('<br>')}</div>`
 }
 
 /** Per-type callout accent rules, generated from the shared palette (editor/callout.ts) so the
  *  exported PDF/HTML uses the SAME colors as the in-app surfaces. */
 function calloutTypeCss(): string {
-  return Object.entries(CALLOUT_TYPES)
-    .map(
-      ([type, meta]) =>
-        `.callout-${type}{border-left-color:${meta.color}}.callout-${type}>.callout-title{color:${meta.color}}`,
-    )
-    .join("\n  ");
+    return Object.entries(CALLOUT_TYPES)
+        .map(
+            ([type, meta]) =>
+                `.callout-${type}{border-left-color:${meta.color}}.callout-${type}>.callout-title{color:${meta.color}}`,
+        )
+        .join('\n  ')
 }
 
 // The 22px text-baseline grid: every text-bearing block's line-height is RULE_PX or a whole
@@ -59,7 +60,7 @@ function calloutTypeCss(): string {
 // boundary can only ever land ON a line, never cut through the middle of one (GitHub issue
 // #9). Exported so pageGeometry.ts doesn't duplicate the literal 22 as a second copy that
 // could silently drift out of sync with this one.
-export const RULE_PX = 22;
+export const RULE_PX = 22
 
 // .callout's vertical footprint (border-top + padding-top + padding-bottom + border-bottom +
 // .callout-content's margin-top) must sum to a whole multiple of RULE_PX (see the ".callout"
@@ -68,21 +69,25 @@ export const RULE_PX = 22;
 // (.callout-content's margin-top) is DERIVED from it so the total is RULE_PX by construction —
 // correct by construction beats correct by arithmetic: change CALLOUT_PAD_V later and the sum
 // still lands on the grid automatically.
-const CALLOUT_BORDER_V = 1; // border-top/border-bottom width (border: 1px solid, unchanged design)
-const CALLOUT_PAD_V = 8; // padding-top/padding-bottom, px
-const CALLOUT_GAP_PX = RULE_PX - 2 * CALLOUT_BORDER_V - 2 * CALLOUT_PAD_V; // 22-2-16 = 4
+const CALLOUT_BORDER_V = 1 // border-top/border-bottom width (border: 1px solid, unchanged design)
+const CALLOUT_PAD_V = 8 // padding-top/padding-bottom, px
+const CALLOUT_GAP_PX = RULE_PX - 2 * CALLOUT_BORDER_V - 2 * CALLOUT_PAD_V // 22-2-16 = 4
 
-function styles(p: ThemePalette, fontSizePt?: number, showMarkdownSyntax = false): string {
-  // A concrete body font-size (pt) is emitted only when a caller asks for one (the PDF path,
-  // via the export UI). Left off, the document keeps its intrinsic browser sizing so the html
-  // and png exports are unchanged.
-  const fontSizeRule = fontSizePt ? `font-size: ${fontSizePt}pt;` : "";
-  // Opt-in (ExportOptions.showMarkdownSyntax, default false): the "## "/"### "/… markers before
-  // h2-h6, mirroring the app's own editor aesthetic. Off by default — the repo owner's export
-  // literally rendered "## Problem 1" as visible text, so clean/"nice formatting" is now the
-  // default and this becomes opt-in rather than deleted.
-  const markdownSyntaxRule = showMarkdownSyntax
-    ? `
+function styles(
+    p: ThemePalette,
+    fontSizePt?: number,
+    showMarkdownSyntax = false,
+): string {
+    // A concrete body font-size (pt) is emitted only when a caller asks for one (the PDF path,
+    // via the export UI). Left off, the document keeps its intrinsic browser sizing so the html
+    // and png exports are unchanged.
+    const fontSizeRule = fontSizePt ? `font-size: ${fontSizePt}pt;` : ''
+    // Opt-in (ExportOptions.showMarkdownSyntax, default false): the "## "/"### "/… markers before
+    // h2-h6, mirroring the app's own editor aesthetic. Off by default — the repo owner's export
+    // literally rendered "## Problem 1" as visible text, so clean/"nice formatting" is now the
+    // default and this becomes opt-in rather than deleted.
+    const markdownSyntaxRule = showMarkdownSyntax
+        ? `
   /* Headings below h1 keep their markdown marker, rendered in the muted tone — h1 is the
      document TITLE (no marker), same distinction the card draws. */
   h2::before { content: "## "; color: ${p.muted}; font-weight: 400; }
@@ -90,8 +95,8 @@ function styles(p: ThemePalette, fontSizePt?: number, showMarkdownSyntax = false
   h4::before { content: "#### "; color: ${p.muted}; font-weight: 400; }
   h5::before { content: "##### "; color: ${p.muted}; font-weight: 400; }
   h6::before { content: "###### "; color: ${p.muted}; font-weight: 400; }`
-    : "";
-  return `
+        : ''
+    return `
   :root { color-scheme: ${p.scheme}; }
   /* US Letter portrait with a 1in margin on every side. Governs a browser print/"Save as PDF"
      of the exported .html; the in-app PDF rasterizer (htmlToPdf.ts) enforces the same geometry
@@ -172,7 +177,7 @@ function styles(p: ThemePalette, fontSizePt?: number, showMarkdownSyntax = false
   /* Page footer: filename left, "n / total" right — the ONE footer per document. */
   .pagefoot { margin-top: ${RULE_PX}px; line-height: ${RULE_PX}px; font-size: 9px;
               color: ${p.muted}; letter-spacing: 0.04em; display: flex; justify-content: space-between; }
-`;
+`
 }
 
 /**
@@ -184,21 +189,21 @@ function styles(p: ThemePalette, fontSizePt?: number, showMarkdownSyntax = false
  * export path passes the user's chosen size; other callers leave it off for intrinsic sizing).
  */
 export function wrapHtmlDocument(
-  body: string,
-  title: string,
-  palette: ThemePalette = DEFAULT_PALETTE.dark,
-  extraHead = "",
-  fontSizePt?: number,
-  // Opt-in: only the rendered-prose paths (wrapBody, below) pass this, so a raw markdown/
-  // csv text dump or a single rasterized drawing image never grows an out-of-place footer.
-  page?: PageInfo,
-  // Opt-in: renders the raw markdown marker ("## ", "### ", …) before h2-h6 headings, mirroring
-  // the app's own editor aesthetic. Default false (clean formatting) — threaded from
-  // ExportOptions.showMarkdownSyntax via exporters.ts's wrapBody; the raw-markdown-dump and
-  // drawing-image call sites there never pass it, so they stay at this default.
-  showMarkdownSyntax = false,
+    body: string,
+    title: string,
+    palette: ThemePalette = DEFAULT_PALETTE.dark,
+    extraHead = '',
+    fontSizePt?: number,
+    // Opt-in: only the rendered-prose paths (wrapBody, below) pass this, so a raw markdown/
+    // csv text dump or a single rasterized drawing image never grows an out-of-place footer.
+    page?: PageInfo,
+    // Opt-in: renders the raw markdown marker ("## ", "### ", …) before h2-h6 headings, mirroring
+    // the app's own editor aesthetic. Default false (clean formatting) — threaded from
+    // ExportOptions.showMarkdownSyntax via exporters.ts's wrapBody; the raw-markdown-dump and
+    // drawing-image call sites there never pass it, so they stay at this default.
+    showMarkdownSyntax = false,
 ): string {
-  return `<!doctype html>
+    return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -208,7 +213,7 @@ export function wrapHtmlDocument(
 ${extraHead}</head>
 <body>
 ${body}
-${page ? pageFooterHtml(title, page) : ""}
+${page ? pageFooterHtml(title, page) : ''}
 </body>
-</html>`;
+</html>`
 }

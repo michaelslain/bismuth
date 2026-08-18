@@ -20,63 +20,72 @@
 //     reflow cements it. `view.scrollSnapshot()` records the position instead, and CodeMirror
 //     re-scrolls to it as it measures (applied via the new view's `scrollTo` config). Stored
 //     opaquely (StateEffect<unknown>) so this module stays framework-agnostic.
-import type { StateEffect } from "@codemirror/state";
+import type { StateEffect } from '@codemirror/state'
 
-const scrollByPath = new Map<string, number>();
-const snapshotByPath = new Map<string, StateEffect<unknown>>();
+const scrollByPath = new Map<string, number>()
+const snapshotByPath = new Map<string, StateEffect<unknown>>()
 
 /** Record a buffer's current scroll offset (called as its editor view is torn down). */
 export function saveScroll(path: string, scrollTop: number): void {
-  // 0 is a meaningful value (scrolled to top), so store it too — but skip negatives
-  // / NaN that a detached scroller can briefly report.
-  if (Number.isFinite(scrollTop) && scrollTop >= 0) scrollByPath.set(path, scrollTop);
+    // 0 is a meaningful value (scrolled to top), so store it too — but skip negatives
+    // / NaN that a detached scroller can briefly report.
+    if (Number.isFinite(scrollTop) && scrollTop >= 0)
+        scrollByPath.set(path, scrollTop)
 }
 
 /** The remembered scroll offset for a buffer, or undefined if none. */
 export function loadScroll(path: string): number | undefined {
-  return scrollByPath.get(path);
+    return scrollByPath.get(path)
 }
 
 /** Record a CodeMirror scroll snapshot (a `view.scrollSnapshot()` effect) for a buffer, so a
  *  freshly-recreated view for the same path restores to the exact document position — robust
  *  against CodeMirror's async height measurement, where a raw pixel offset lands at the bottom. */
-export function saveScrollSnapshot(path: string, snapshot: StateEffect<unknown>): void {
-  snapshotByPath.set(path, snapshot);
+export function saveScrollSnapshot(
+    path: string,
+    snapshot: StateEffect<unknown>,
+): void {
+    snapshotByPath.set(path, snapshot)
 }
 
 /** The remembered CodeMirror scroll snapshot for a buffer, or undefined if none. */
-export function loadScrollSnapshot(path: string): StateEffect<unknown> | undefined {
-  return snapshotByPath.get(path);
+export function loadScrollSnapshot(
+    path: string,
+): StateEffect<unknown> | undefined {
+    return snapshotByPath.get(path)
 }
 
 /** Forget a buffer's scroll (e.g. on delete) — exposed for callers that know a path is gone. */
 export function clearScroll(path: string): void {
-  scrollByPath.delete(path);
-  snapshotByPath.delete(path);
+    scrollByPath.delete(path)
+    snapshotByPath.delete(path)
 }
 
 /** Re-key a remembered scroll offset across a rename/move so the renamed note keeps its
  *  position instead of resetting to the top. No-op when nothing was stored for `from`. Moves
  *  BOTH the pixel offset and the CodeMirror snapshot (independently — either may be absent). */
 export function renameScroll(from: string, to: string): void {
-  const v = scrollByPath.get(from);
-  if (v !== undefined) {
-    scrollByPath.delete(from);
-    scrollByPath.set(to, v);
-  }
-  const s = snapshotByPath.get(from);
-  if (s !== undefined) {
-    snapshotByPath.delete(from);
-    snapshotByPath.set(to, s);
-  }
+    const v = scrollByPath.get(from)
+    if (v !== undefined) {
+        scrollByPath.delete(from)
+        scrollByPath.set(to, v)
+    }
+    const s = snapshotByPath.get(from)
+    if (s !== undefined) {
+        snapshotByPath.delete(from)
+        snapshotByPath.set(to, s)
+    }
 }
 
 // Keep a note's scroll offset attached across a rename/move: the FileTree + title-rename flows
 // dispatch `bismuth-moved {from,to}` before the editor remounts at the new path (same idiom as
 // noteCache's re-key), so a rename doesn't dump the reader back at the top.
-if (typeof window !== "undefined") {
-  window.addEventListener("bismuth-moved", (e) => {
-    const { from, to } = (e as CustomEvent).detail as { from: string; to: string };
-    renameScroll(from, to);
-  });
+if (typeof window !== 'undefined') {
+    window.addEventListener('bismuth-moved', e => {
+        const { from, to } = (e as CustomEvent).detail as {
+            from: string
+            to: string
+        }
+        renameScroll(from, to)
+    })
 }

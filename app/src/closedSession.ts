@@ -11,44 +11,50 @@
 //
 // Values are opaque serializeTabs() blobs (panes.ts) — this module never parses them.
 
-const KEY = "bismuth-closed-sessions-v1";
-const CAP = 10;
+const KEY = 'bismuth-closed-sessions-v1'
+const CAP = 10
 
 /** Pure stack push with a cap (oldest dropped). Exported for unit testing. */
-export function pushSession(stack: string[], item: string, cap = CAP): string[] {
-  const next = [...stack, item];
-  return next.length > cap ? next.slice(next.length - cap) : next;
+export function pushSession(
+    stack: string[],
+    item: string,
+    cap = CAP,
+): string[] {
+    const next = [...stack, item]
+    return next.length > cap ? next.slice(next.length - cap) : next
 }
 
 function read(): string[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
+    try {
+        const raw = localStorage.getItem(KEY)
+        if (!raw) return []
+        const arr = JSON.parse(raw)
+        return Array.isArray(arr)
+            ? arr.filter((x): x is string => typeof x === 'string')
+            : []
+    } catch {
+        return []
+    }
 }
 
 function write(stack: string[]): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(stack));
-  } catch {
-    // storage unavailable/full — reopen-across-windows just won't be available this run
-  }
+    try {
+        localStorage.setItem(KEY, JSON.stringify(stack))
+    } catch {
+        // storage unavailable/full — reopen-across-windows just won't be available this run
+    }
 }
 
 /** Stash a closed window's serialized tab layout (most-recent last). */
 export function pushClosedSession(serializedTabs: string): void {
-  write(pushSession(read(), serializedTabs));
+    write(pushSession(read(), serializedTabs))
 }
 
 /** Pop the most recently closed window session, or null if there are none. */
 export function popClosedSession(): string | null {
-  const stack = read();
-  const last = stack.pop();
-  if (last === undefined) return null;
-  write(stack);
-  return last;
+    const stack = read()
+    const last = stack.pop()
+    if (last === undefined) return null
+    write(stack)
+    return last
 }

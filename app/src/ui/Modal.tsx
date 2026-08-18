@@ -1,15 +1,15 @@
-import { onCleanup, onMount, type JSX } from "solid-js";
-import { Portal } from "solid-js/web";
-import "./ui.css";
+import { onCleanup, onMount, type JSX } from 'solid-js'
+import { Portal } from 'solid-js/web'
+import './ui.css'
 
 export type ModalProps = {
-  onClose: () => void;
-  /** Class for the inner panel (e.g. "event-modal", "recurrence-dialog"). */
-  class?: string;
-  /** Close when the backdrop (outside the panel) is clicked. Default true. */
-  closeOnBackdrop?: boolean;
-  children: JSX.Element;
-};
+    onClose: () => void
+    /** Class for the inner panel (e.g. "event-modal", "recurrence-dialog"). */
+    class?: string
+    /** Close when the backdrop (outside the panel) is clicked. Default true. */
+    closeOnBackdrop?: boolean
+    children: JSX.Element
+}
 
 /**
  * Shared overlay shell: a Portal-mounted backdrop that closes on Escape and
@@ -24,27 +24,30 @@ export type ModalProps = {
  * `.asc-modal` (higher specificity than a bare app-level class) rather than editing here.
  */
 export function Modal(props: ModalProps) {
-  const handleKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      props.onClose();
+    const handleKey = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+            e.stopPropagation()
+            props.onClose()
+        }
     }
-  };
-  onMount(() => window.addEventListener("keydown", handleKey));
-  onCleanup(() => window.removeEventListener("keydown", handleKey));
+    onMount(() => window.addEventListener('keydown', handleKey))
+    onCleanup(() => window.removeEventListener('keydown', handleKey))
 
-  return (
-    <Portal>
-      <div
-        class="ui-overlay"
-        onClick={() => {
-          if (props.closeOnBackdrop !== false) props.onClose();
-        }}
-      >
-        <div class={"asc-modal" + (props.class ? ` ${props.class}` : "")} onClick={(e) => e.stopPropagation()}>
-          {props.children}
-        </div>
-      </div>
-    </Portal>
-  );
+    return (
+        <Portal>
+            <div
+                class="ui-overlay"
+                onClick={() => {
+                    if (props.closeOnBackdrop !== false) props.onClose()
+                }}
+            >
+                <div
+                    class={'asc-modal' + (props.class ? ` ${props.class}` : '')}
+                    onClick={e => e.stopPropagation()}
+                >
+                    {props.children}
+                </div>
+            </div>
+        </Portal>
+    )
 }

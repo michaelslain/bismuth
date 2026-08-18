@@ -11,11 +11,18 @@
 //
 // One rule governs the cleanup below: a record is only ever DELETED on proof its owner is dead.
 // See the block comment above readRunRecords.
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { mkdirSync, writeFileSync, renameSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
-import { pidAlive } from "./daemonState";
-import { isTempPath } from "./tempPath";
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import {
+    mkdirSync,
+    writeFileSync,
+    renameSync,
+    readdirSync,
+    readFileSync,
+    unlinkSync,
+} from 'node:fs'
+import { pidAlive } from './daemonState'
+import { isTempPath } from './tempPath'
 
 /** One running-core record: which port serves which vault (+ pid, for future liveness checks).
  *  `token` (added for the owner-token gate — see ownerToken.ts) is this boot's random secret; a
@@ -23,69 +30,70 @@ import { isTempPath } from "./tempPath";
  *  Optional so a record written by an older core (or read by tooling that predates the gate)
  *  still round-trips through readRunRecords' shape check below. */
 export interface RunRecord {
-  port: number;
-  vault: string;
-  pid: number;
-  token?: string;
+    port: number
+    vault: string
+    pid: number
+    token?: string
 }
 
 /** `~/.bismuth/run` — where each running core drops its discovery record. Overridable via
  *  BISMUTH_RUN_DIR (tests). */
 export function runRegistryDir(): string {
-  return process.env.BISMUTH_RUN_DIR || join(homedir(), ".bismuth", "run");
+    return process.env.BISMUTH_RUN_DIR || join(homedir(), '.bismuth', 'run')
 }
 
 /** Stable per-vault filename (base64url of the absolute vault path), so relaunching the same vault
  *  overwrites its own record rather than piling up stale ones. */
 export function runKey(vault: string): string {
-  return Buffer.from(vault).toString("base64url");
+    return Buffer.from(vault).toString('base64url')
 }
 
 /** Path of this vault's run record. Exported (not just used internally) so the owner-token gate
  *  (ownerToken.ts's `ownerTokenDenyPath`) can name the exact file that must be denied to every
  *  agent channel — it carries this boot's token (see `RunRecord.token` above). */
 export function runRecordPath(vault: string): string {
-  return join(runRegistryDir(), `${runKey(vault)}.json`);
+    return join(runRegistryDir(), `${runKey(vault)}.json`)
 }
 
-let cleanupVault: string | null = null;
-let cleanupInstalled = false;
+let cleanupVault: string | null = null
+let cleanupInstalled = false
 
 /** Write this core's discovery record atomically (temp+rename) and arrange best-effort cleanup on
  *  exit/termination. Never throws — a failure just means discovery falls back to :4321. */
 export function writeRunRecord(rec: RunRecord): void {
-  try {
-    const dir = runRegistryDir();
-    mkdirSync(dir, { recursive: true });
-    const file = runRecordPath(rec.vault);
-    const tmp = `${file}.${process.pid}.tmp`;
-    // 0600: this record now carries the boot's owner token (ownerToken.ts) — a per-process
-    // secret that must not be world-readable. The mode applies to the tmp file at CREATE time
-    // (writeFileSync always creates `tmp` fresh — its name is unique per pid+file, so it never
-    // already exists); renameSync then moves that same inode onto `file`, so the mode survives
-    // the rename rather than being reset to the destination path's prior permissions.
-    writeFileSync(tmp, JSON.stringify(rec, null, 2), { mode: 0o600 });
-    renameSync(tmp, file);
-    cleanupVault = rec.vault;
-    if (!cleanupInstalled) {
-      cleanupInstalled = true;
-      const clean = () => {
-        if (cleanupVault) deleteRunRecord(cleanupVault);
-      };
-      process.on("exit", clean);
-      for (const sig of ["SIGINT", "SIGTERM"] as const) process.once(sig, clean);
+    try {
+        const dir = runRegistryDir()
+        mkdirSync(dir, { recursive: true })
+        const file = runRecordPath(rec.vault)
+        const tmp = `${file}.${process.pid}.tmp`
+        // 0600: this record now carries the boot's owner token (ownerToken.ts) — a per-process
+        // secret that must not be world-readable. The mode applies to the tmp file at CREATE time
+        // (writeFileSync always creates `tmp` fresh — its name is unique per pid+file, so it never
+        // already exists); renameSync then moves that same inode onto `file`, so the mode survives
+        // the rename rather than being reset to the destination path's prior permissions.
+        writeFileSync(tmp, JSON.stringify(rec, null, 2), { mode: 0o600 })
+        renameSync(tmp, file)
+        cleanupVault = rec.vault
+        if (!cleanupInstalled) {
+            cleanupInstalled = true
+            const clean = () => {
+                if (cleanupVault) deleteRunRecord(cleanupVault)
+            }
+            process.on('exit', clean)
+            for (const sig of ['SIGINT', 'SIGTERM'] as const)
+                process.once(sig, clean)
+        }
+    } catch {
+        /* best-effort — discovery is a convenience, not a requirement */
     }
-  } catch {
-    /* best-effort — discovery is a convenience, not a requirement */
-  }
 }
 
 export function deleteRunRecord(vault: string): void {
-  try {
-    unlinkSync(runRecordPath(vault));
-  } catch {
-    /* already gone */
-  }
+    try {
+        unlinkSync(runRecordPath(vault))
+    } catch {
+        /* already gone */
+    }
 }
 
 // A hard-killed core (SIGKILL, OOM, a `bun test` worker that never reaches writeRunRecord's
@@ -113,32 +121,41 @@ export function deleteRunRecord(vault: string): void {
  *  everything else is returned as-is (including temp-path vaults — a live core is a live core).
  *  Tolerant: a missing dir or a malformed file is skipped, never thrown. */
 export function readRunRecords(): RunRecord[] {
-  const dir = runRegistryDir();
-  let names: string[];
-  try {
-    names = readdirSync(dir).filter((n) => n.endsWith(".json"));
-  } catch {
-    return [];
-  }
-  const out: RunRecord[] = [];
-  for (const n of names) {
-    const file = join(dir, n);
-    let rec: RunRecord;
+    const dir = runRegistryDir()
+    let names: string[]
     try {
-      rec = JSON.parse(readFileSync(file, "utf8")) as RunRecord;
+        names = readdirSync(dir).filter(n => n.endsWith('.json'))
     } catch {
-      continue; // malformed/unreadable — skip, leave it for a future pass to reconsider
+        return []
     }
-    if (!rec || typeof rec.port !== "number" || typeof rec.vault !== "string" || typeof rec.pid !== "number") {
-      continue; // wrong shape — skip without pruning (be conservative about deleting the unknown)
+    const out: RunRecord[] = []
+    for (const n of names) {
+        const file = join(dir, n)
+        let rec: RunRecord
+        try {
+            rec = JSON.parse(readFileSync(file, 'utf8')) as RunRecord
+        } catch {
+            continue // malformed/unreadable — skip, leave it for a future pass to reconsider
+        }
+        if (
+            !rec ||
+            typeof rec.port !== 'number' ||
+            typeof rec.vault !== 'string' ||
+            typeof rec.pid !== 'number'
+        ) {
+            continue // wrong shape — skip without pruning (be conservative about deleting the unknown)
+        }
+        if (!pidAlive(rec.pid)) {
+            try {
+                unlinkSync(file)
+            } catch {
+                /* best-effort; a future call retries */
+            }
+            continue
+        }
+        out.push(rec)
     }
-    if (!pidAlive(rec.pid)) {
-      try { unlinkSync(file); } catch { /* best-effort; a future call retries */ }
-      continue;
-    }
-    out.push(rec);
-  }
-  return out;
+    return out
 }
 
 /**
@@ -153,13 +170,13 @@ export function readRunRecords(): RunRecord[] {
  * pool — inside a sandbox that IS the right answer. Undefined when still ambiguous, or none.
  */
 export function resolveRunRegistryBase(vault?: string): string | undefined {
-  const recs = readRunRecords();
-  if (vault) {
-    const hit = recs.find((r) => r.vault === vault);
-    return hit ? `http://localhost:${hit.port}` : undefined;
-  }
-  const persistent = recs.filter((r) => !isTempPath(r.vault));
-  const pool = persistent.length > 0 ? persistent : recs;
-  if (pool.length === 1) return `http://localhost:${pool[0].port}`;
-  return undefined;
+    const recs = readRunRecords()
+    if (vault) {
+        const hit = recs.find(r => r.vault === vault)
+        return hit ? `http://localhost:${hit.port}` : undefined
+    }
+    const persistent = recs.filter(r => !isTempPath(r.vault))
+    const pool = persistent.length > 0 ? persistent : recs
+    if (pool.length === 1) return `http://localhost:${pool[0].port}`
+    return undefined
 }

@@ -2,113 +2,152 @@
 // Reads the merged settings feed and the validation schema; mutates settings.yaml
 // and the per-folder icon map in place via core (preserving comments/key order).
 // Mutating commands call core directly — the app's file watcher picks up writes live.
-import type { CommandMap } from "../types";
-import { out, flag, bool, fail, parseValue, positionals, requireVault } from "../args";
+import type { CommandMap } from '../types'
 import {
-  serializeSettingsForFrontend,
-  setSettingInFile,
-  getVaultSchema,
-  setFolderIcon,
-  setFolderVisibility,
-} from "../../../core/src/settings";
-import { resolveDenyPlan, type VisibilityChannel } from "../../../core/src/visibility";
-import { cliAgentChannel } from "../../../core/src/visibilityCliGate";
+    out,
+    flag,
+    bool,
+    fail,
+    parseValue,
+    positionals,
+    requireVault,
+} from '../args'
+import {
+    serializeSettingsForFrontend,
+    setSettingInFile,
+    getVaultSchema,
+    setFolderIcon,
+    setFolderVisibility,
+} from '../../../core/src/settings'
+import {
+    resolveDenyPlan,
+    type VisibilityChannel,
+} from '../../../core/src/visibility'
+import { cliAgentChannel } from '../../../core/src/visibilityCliGate'
 
 /** Walk a dotted path into a value; returns undefined if any segment is missing. */
 function walkPath(obj: unknown, path: string): unknown {
-  let cur = obj;
-  for (const seg of path.split(".")) {
-    if (cur === null || typeof cur !== "object") return undefined;
-    cur = (cur as Record<string, unknown>)[seg];
-  }
-  return cur;
+    let cur = obj
+    for (const seg of path.split('.')) {
+        if (cur === null || typeof cur !== 'object') return undefined
+        cur = (cur as Record<string, unknown>)[seg]
+    }
+    return cur
 }
 
 export const commands: CommandMap = {
-  "settings get": {
-    summary: "Print the merged settings feed; pass --key a.b.c to read one dotted path",
-    usage: "[--key a.b.c]",
-    run: async (args) => {
-      const vault = requireVault(args);
-      const all = await serializeSettingsForFrontend(vault);
-      const key = flag(args, "key");
-      out(key ? walkPath(all, key) : all, args);
+    'settings get': {
+        summary:
+            'Print the merged settings feed; pass --key a.b.c to read one dotted path',
+        usage: '[--key a.b.c]',
+        run: async args => {
+            const vault = requireVault(args)
+            const all = await serializeSettingsForFrontend(vault)
+            const key = flag(args, 'key')
+            out(key ? walkPath(all, key) : all, args)
+        },
     },
-  },
-  "settings set": {
-    summary: "Set a settings.yaml value at a dotted path (value parsed as JSON, else raw string)",
-    usage: "<key.path> <value>",
-    run: async (args) => {
-      const vault = requireVault(args);
-      const [keyPath, value] = positionals(args);
-      if (!keyPath) fail("usage: settings set <key.path> <value>");
-      if (value === undefined) fail("usage: settings set <key.path> <value>");
-      await setSettingInFile(vault, keyPath.split("."), parseValue(value));
-      out({ ok: true }, args);
+    'settings set': {
+        summary:
+            'Set a settings.yaml value at a dotted path (value parsed as JSON, else raw string)',
+        usage: '<key.path> <value>',
+        run: async args => {
+            const vault = requireVault(args)
+            const [keyPath, value] = positionals(args)
+            if (!keyPath) fail('usage: settings set <key.path> <value>')
+            if (value === undefined)
+                fail('usage: settings set <key.path> <value>')
+            await setSettingInFile(vault, keyPath.split('.'), parseValue(value))
+            out({ ok: true }, args)
+        },
     },
-  },
-  "settings schema": {
-    summary: "Print the vault's property/validation schema",
-    run: async (args) => {
-      const vault = requireVault(args);
-      out(await getVaultSchema(vault), args);
+    'settings schema': {
+        summary: "Print the vault's property/validation schema",
+        run: async args => {
+            const vault = requireVault(args)
+            out(await getVaultSchema(vault), args)
+        },
     },
-  },
-  "settings deny-list": {
-    summary:
-      "This vault's visibility deny plan for a channel (see docs/vault/visibility.md). SECURITY: this must never become an enumeration oracle — " +
-      "the OWNER (BISMUTH_AGENT_CHANNEL unset) gets the full path list; any AGENT channel (chat/daemon) gets a COUNT ONLY, never paths, " +
-      "the same 'a count, not names' rule visibilityRefusalMessage already uses for the chat-refusal panel",
-    usage: "[--channel chat|daemon]  (default: daemon, the stricter channel)",
-    run: async (args) => {
-      const vault = requireVault(args);
-      const channelFlag = flag(args, "channel");
-      if (channelFlag !== undefined && channelFlag !== "chat" && channelFlag !== "daemon") {
-        fail("usage: settings deny-list [--channel chat|daemon]");
-      }
-      const channel: VisibilityChannel = channelFlag === "chat" ? "chat" : "daemon";
-      const plan = await resolveDenyPlan(vault, channel);
-      if (!plan.determined) {
-        // Undetermined is itself safe to report in full: it's a REASON the walk failed (an
-        // unreadable subtree, a bad .settings), never a path list.
-        out({ channel, determined: false, reason: plan.reason }, args);
-        return;
-      }
-      const isOwner = cliAgentChannel() === "owner";
-      out(
-        isOwner
-          ? { channel, determined: true, count: plan.entries.length, entries: plan.entries.map((e) => e.rel) }
-          : { channel, determined: true, count: plan.entries.length },
-        args,
-      );
+    'settings deny-list': {
+        summary:
+            "This vault's visibility deny plan for a channel (see docs/vault/visibility.md). SECURITY: this must never become an enumeration oracle — " +
+            'the OWNER (BISMUTH_AGENT_CHANNEL unset) gets the full path list; any AGENT channel (chat/daemon) gets a COUNT ONLY, never paths, ' +
+            "the same 'a count, not names' rule visibilityRefusalMessage already uses for the chat-refusal panel",
+        usage: '[--channel chat|daemon]  (default: daemon, the stricter channel)',
+        run: async args => {
+            const vault = requireVault(args)
+            const channelFlag = flag(args, 'channel')
+            if (
+                channelFlag !== undefined &&
+                channelFlag !== 'chat' &&
+                channelFlag !== 'daemon'
+            ) {
+                fail('usage: settings deny-list [--channel chat|daemon]')
+            }
+            const channel: VisibilityChannel =
+                channelFlag === 'chat' ? 'chat' : 'daemon'
+            const plan = await resolveDenyPlan(vault, channel)
+            if (!plan.determined) {
+                // Undetermined is itself safe to report in full: it's a REASON the walk failed (an
+                // unreadable subtree, a bad .settings), never a path list.
+                out({ channel, determined: false, reason: plan.reason }, args)
+                return
+            }
+            const isOwner = cliAgentChannel() === 'owner'
+            out(
+                isOwner
+                    ? {
+                          channel,
+                          determined: true,
+                          count: plan.entries.length,
+                          entries: plan.entries.map(e => e.rel),
+                      }
+                    : { channel, determined: true, count: plan.entries.length },
+                args,
+            )
+        },
     },
-  },
-  "folder-icon": {
-    summary: "Set (or --clear) a folder's icon in settings.yaml",
-    usage: "<folder> <icon> [--clear]",
-    run: async (args) => {
-      const vault = requireVault(args);
-      const [folder, icon] = positionals(args);
-      const clear = bool(args, "clear");
-      if (!folder) fail("usage: folder-icon <folder> <icon> [--clear]");
-      if (!clear && !icon) fail("usage: folder-icon <folder> <icon> [--clear]");
-      await setFolderIcon(vault, folder, clear ? null : icon);
-      out({ ok: true }, args);
+    'folder-icon': {
+        summary: "Set (or --clear) a folder's icon in settings.yaml",
+        usage: '<folder> <icon> [--clear]',
+        run: async args => {
+            const vault = requireVault(args)
+            const [folder, icon] = positionals(args)
+            const clear = bool(args, 'clear')
+            if (!folder) fail('usage: folder-icon <folder> <icon> [--clear]')
+            if (!clear && !icon)
+                fail('usage: folder-icon <folder> <icon> [--clear]')
+            await setFolderIcon(vault, folder, clear ? null : icon)
+            out({ ok: true }, args)
+        },
     },
-  },
-  "folder-visibility": {
-    summary: "Set (or --clear) a folder's AI visibility (chat-only|hidden) in settings.yaml",
-    usage: "<folder> <chat-only|hidden> [--clear]",
-    run: async (args) => {
-      const vault = requireVault(args);
-      const [folder, visibility] = positionals(args);
-      const clear = bool(args, "clear");
-      if (!folder) fail("usage: folder-visibility <folder> <chat-only|hidden> [--clear]");
-      if (!clear && visibility !== "chat-only" && visibility !== "hidden") {
-        fail("usage: folder-visibility <folder> <chat-only|hidden> [--clear]");
-      }
-      await setFolderVisibility(vault, folder, clear ? null : (visibility as "chat-only" | "hidden"));
-      out({ ok: true }, args);
+    'folder-visibility': {
+        summary:
+            "Set (or --clear) a folder's AI visibility (chat-only|hidden) in settings.yaml",
+        usage: '<folder> <chat-only|hidden> [--clear]',
+        run: async args => {
+            const vault = requireVault(args)
+            const [folder, visibility] = positionals(args)
+            const clear = bool(args, 'clear')
+            if (!folder)
+                fail(
+                    'usage: folder-visibility <folder> <chat-only|hidden> [--clear]',
+                )
+            if (
+                !clear &&
+                visibility !== 'chat-only' &&
+                visibility !== 'hidden'
+            ) {
+                fail(
+                    'usage: folder-visibility <folder> <chat-only|hidden> [--clear]',
+                )
+            }
+            await setFolderVisibility(
+                vault,
+                folder,
+                clear ? null : (visibility as 'chat-only' | 'hidden'),
+            )
+            out({ ok: true }, args)
+        },
     },
-  },
-};
+}

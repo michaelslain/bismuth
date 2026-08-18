@@ -2,7 +2,11 @@
  * Strip markdown code fences from a string (```json ... ``` or ``` ... ```).
  */
 export function stripFences(s: string): string {
-  return s.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim()
+    return s
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim()
 }
 
 /**
@@ -11,22 +15,22 @@ export function stripFences(s: string): string {
  * Returns null on total failure.
  */
 export function parseJsonResponse<T>(
-  response: string,
-  fallbackRegex: RegExp
+    response: string,
+    fallbackRegex: RegExp,
 ): T | null {
-  const cleaned = stripFences(response)
+    const cleaned = stripFences(response)
 
-  try {
-    return JSON.parse(cleaned) as T
-  } catch {
-    const match = cleaned.match(fallbackRegex)
-    if (!match) return null
     try {
-      return JSON.parse(match[0]) as T
+        return JSON.parse(cleaned) as T
     } catch {
-      return null
+        const match = cleaned.match(fallbackRegex)
+        if (!match) return null
+        try {
+            return JSON.parse(match[0]) as T
+        } catch {
+            return null
+        }
     }
-  }
 }
 
 /**
@@ -38,7 +42,7 @@ export function parseJsonResponse<T>(
  * relay/lib/memory.ts — the daemon was the lone UTC outlier.
  */
 export function today(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+    const d = new Date()
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }

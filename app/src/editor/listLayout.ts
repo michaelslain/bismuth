@@ -5,4 +5,4 @@
 
 // em added to the text indent per nesting level. foldBlocks.ts aligns its fold
 // triangle to the same per-depth indent without duplicating the constant.
-export const LIST_STEP = 1.6;
+export const LIST_STEP = 1.6

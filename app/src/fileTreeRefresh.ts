@@ -17,14 +17,19 @@
  * false); an absent `dirty` means "unknown", so refetch to be safe.
  */
 export function decideTreeRefresh(args: {
-  change: { version: number; dirty?: { tree: boolean } };
-  lastSeen: number;
-  editing: boolean;
-  dragging: boolean;
-  pendingOps: number;
+    change: { version: number; dirty?: { tree: boolean } }
+    lastSeen: number
+    editing: boolean
+    dragging: boolean
+    pendingOps: number
 }): { refetch: boolean; nextLastSeen: number } {
-  const { change, lastSeen, editing, dragging, pendingOps } = args;
-  if (change.version === lastSeen) return { refetch: false, nextLastSeen: lastSeen };
-  if (editing || dragging || pendingOps > 0) return { refetch: false, nextLastSeen: lastSeen };
-  return { refetch: change.dirty?.tree !== false, nextLastSeen: change.version };
+    const { change, lastSeen, editing, dragging, pendingOps } = args
+    if (change.version === lastSeen)
+        return { refetch: false, nextLastSeen: lastSeen }
+    if (editing || dragging || pendingOps > 0)
+        return { refetch: false, nextLastSeen: lastSeen }
+    return {
+        refetch: change.dirty?.tree !== false,
+        nextLastSeen: change.version,
+    }
 }

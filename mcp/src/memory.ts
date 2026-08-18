@@ -2,23 +2,31 @@
 // server ONLY when the daemon is enabled for this vault. They delegate to the shared
 // @bismuth/memory graph, so these tools, the daemon writer, and the relay collect-hook all
 // read/write ONE note format against <vault>/.daemon/memory.
-import { dirname, join, resolve } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { parse } from "yaml";
-import { writeNote, deleteNote, readNote, query, parseNoteRef, type NoteType, type MemoryNote } from "@bismuth/memory";
+import { dirname, join, resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { parse } from 'yaml'
+import {
+    writeNote,
+    deleteNote,
+    readNote,
+    query,
+    parseNoteRef,
+    type NoteType,
+    type MemoryNote,
+} from '@bismuth/memory'
 
-const SETTINGS_FILE = ".settings";
+const SETTINGS_FILE = '.settings'
 
 /** Walk up from `start` looking for a vault root, marked by a `.settings` file (the vault's
  *  single settings file — see core/src/settings.ts). Stops at the filesystem root. */
 function findVaultRoot(start: string): string | null {
-  let dir = resolve(start);
-  for (;;) {
-    if (existsSync(join(dir, SETTINGS_FILE))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
+    let dir = resolve(start)
+    for (;;) {
+        if (existsSync(join(dir, SETTINGS_FILE))) return dir
+        const parent = dirname(dir)
+        if (parent === dir) return null
+        dir = parent
+    }
 }
 
 /** Read just `daemon.enabled` out of a vault's `.settings` (YAML). A literal duplicate of
@@ -26,17 +34,22 @@ function findVaultRoot(start: string): string | null {
  *  (same convention as daemon/src/lib/bismuthPaths.ts). Degrades to false on any
  *  missing/corrupt/malformed file; never throws. */
 function daemonEnabledForVault(vault: string): boolean {
-  try {
-    const raw = readFileSync(join(vault, SETTINGS_FILE), "utf8");
-    const parsed = parse(raw) as Record<string, unknown> | null;
-    const daemon = parsed && typeof parsed === "object" ? parsed.daemon : undefined;
-    if (daemon && typeof daemon === "object" && typeof (daemon as Record<string, unknown>).enabled === "boolean") {
-      return (daemon as { enabled: boolean }).enabled;
+    try {
+        const raw = readFileSync(join(vault, SETTINGS_FILE), 'utf8')
+        const parsed = parse(raw) as Record<string, unknown> | null
+        const daemon =
+            parsed && typeof parsed === 'object' ? parsed.daemon : undefined
+        if (
+            daemon &&
+            typeof daemon === 'object' &&
+            typeof (daemon as Record<string, unknown>).enabled === 'boolean'
+        ) {
+            return (daemon as { enabled: boolean }).enabled
+        }
+    } catch {
+        // missing/corrupt/unreadable → not enabled
     }
-  } catch {
-    // missing/corrupt/unreadable → not enabled
-  }
-  return false;
+    return false
 }
 
 /**
@@ -47,8 +60,8 @@ function daemonEnabledForVault(vault: string): boolean {
  * is defined as memoryDir() != null).
  */
 export function resolveVaultRoot(): string | null {
-  if (process.env.BISMUTH_VAULT) return resolve(process.env.BISMUTH_VAULT);
-  return findVaultRoot(process.cwd());
+    if (process.env.BISMUTH_VAULT) return resolve(process.env.BISMUTH_VAULT)
+    return findVaultRoot(process.cwd())
 }
 
 /**
@@ -67,50 +80,62 @@ export function resolveVaultRoot(): string | null {
  * though the daemon IS enabled for the vault the user is actually working in.
  */
 export function memoryDir(): string | null {
-  if (process.env.BISMUTH_MEMORY_DIR) return process.env.BISMUTH_MEMORY_DIR;
-  const vault = resolveVaultRoot();
-  return vault && daemonEnabledForVault(vault) ? join(vault, ".daemon", "memory") : null;
+    if (process.env.BISMUTH_MEMORY_DIR) return process.env.BISMUTH_MEMORY_DIR
+    const vault = resolveVaultRoot()
+    return vault && daemonEnabledForVault(vault)
+        ? join(vault, '.daemon', 'memory')
+        : null
 }
 
 const today = (): string => {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
+    const d = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
 
 export async function remember(
-  args: { name: string; type?: string; tags?: string[]; content: string; folder?: string },
-  dir: string,
-): Promise<{ ok: true; name: string }> {
-  const folder = args.folder || undefined;
-  const date = today();
-  // Preserve an existing note's type/created when overwriting (matches the old behavior).
-  const existing = await readNote(args.name, dir, folder);
-  await writeNote(
-    args.name,
-    {
-      type: (args.type as NoteType) ?? existing?.frontmatter.type ?? "fact",
-      tags: args.tags ?? existing?.frontmatter.tags ?? [],
-      created: existing?.frontmatter.created ?? date,
-      updated: date,
+    args: {
+        name: string
+        type?: string
+        tags?: string[]
+        content: string
+        folder?: string
     },
-    args.content,
-    dir,
-    folder,
-  );
-  return { ok: true, name: folder ? `${folder}/${args.name}` : args.name };
+    dir: string,
+): Promise<{ ok: true; name: string }> {
+    const folder = args.folder || undefined
+    const date = today()
+    // Preserve an existing note's type/created when overwriting (matches the old behavior).
+    const existing = await readNote(args.name, dir, folder)
+    await writeNote(
+        args.name,
+        {
+            type:
+                (args.type as NoteType) ?? existing?.frontmatter.type ?? 'fact',
+            tags: args.tags ?? existing?.frontmatter.tags ?? [],
+            created: existing?.frontmatter.created ?? date,
+            updated: date,
+        },
+        args.content,
+        dir,
+        folder,
+    )
+    return { ok: true, name: folder ? `${folder}/${args.name}` : args.name }
 }
 
 export async function recall(
-  args: { query: string; folder?: string },
-  dir: string,
+    args: { query: string; folder?: string },
+    dir: string,
 ): Promise<{ ok: true; count: number; notes: MemoryNote[] }> {
-  const results = await query(args.query, dir, args.folder || undefined);
-  return { ok: true, count: results.length, notes: results };
+    const results = await query(args.query, dir, args.folder || undefined)
+    return { ok: true, count: results.length, notes: results }
 }
 
-export async function forget(args: { name: string }, dir: string): Promise<{ ok: boolean; name: string }> {
-  const ref = parseNoteRef(args.name);
-  const deleted = await deleteNote(ref.name, dir, ref.folder);
-  return { ok: deleted, name: args.name };
+export async function forget(
+    args: { name: string },
+    dir: string,
+): Promise<{ ok: boolean; name: string }> {
+    const ref = parseNoteRef(args.name)
+    const deleted = await deleteNote(ref.name, dir, ref.folder)
+    return { ok: deleted, name: args.name }
 }

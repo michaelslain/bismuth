@@ -11,24 +11,24 @@
 // tree / graph from whatever vault a DIFFERENT window last cached. scopedKey() namespaces a
 // key by the window's own resolved backend, so each vault gets its own cache slot.
 export function scopedKey(key: string, apiBase: string): string {
-  return `${key}::${apiBase}`;
+    return `${key}::${apiBase}`
 }
 
 export function readCache<T>(key: string): T | undefined {
-  try {
-    if (typeof localStorage === "undefined") return undefined;
-    const raw = localStorage.getItem(key);
-    return raw === null ? undefined : (JSON.parse(raw) as T);
-  } catch {
-    return undefined;
-  }
+    try {
+        if (typeof localStorage === 'undefined') return undefined
+        const raw = localStorage.getItem(key)
+        return raw === null ? undefined : (JSON.parse(raw) as T)
+    } catch {
+        return undefined
+    }
 }
 
 export function writeCache(key: string, value: unknown): void {
-  try {
-    if (typeof localStorage === "undefined") return;
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // unavailable or over quota — skip caching; the app works without it
-  }
+    try {
+        if (typeof localStorage === 'undefined') return
+        localStorage.setItem(key, JSON.stringify(value))
+    } catch {
+        // unavailable or over quota — skip caching; the app works without it
+    }
 }

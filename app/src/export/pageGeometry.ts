@@ -13,21 +13,21 @@
 // The pure parts (page constants + px->pt slice scale + an rgb() parser used to paint the page
 // background into the 1in margin band) are unit-tested in pageGeometry.test.ts.
 
-import { RULE_PX } from "./htmlTemplate";
+import { RULE_PX } from './htmlTemplate'
 
 /** US Letter portrait, in PDF points (72pt/in): 8.5in x 11in. */
-export const PAGE_W_PT = 612; // 8.5 * 72
-export const PAGE_H_PT = 792; // 11 * 72
+export const PAGE_W_PT = 612 // 8.5 * 72
+export const PAGE_H_PT = 792 // 11 * 72
 
 /** 1 inch margin on every side. */
-export const MARGIN_PT = 72; // 1 * 72
+export const MARGIN_PT = 72 // 1 * 72
 
 /** Printable content box = Letter minus a 1in margin on each edge. */
-export const CONTENT_W_PT = PAGE_W_PT - 2 * MARGIN_PT; // 468
-export const CONTENT_H_PT = PAGE_H_PT - 2 * MARGIN_PT; // 648
+export const CONTENT_W_PT = PAGE_W_PT - 2 * MARGIN_PT // 468
+export const CONTENT_H_PT = PAGE_H_PT - 2 * MARGIN_PT // 648
 
 /** Source raster width: 8.5in @ 96dpi. The iframe body is laid out at this width (PNG path). */
-export const PAGE_W_PX = 816; // 8.5 * 96
+export const PAGE_W_PX = 816 // 8.5 * 96
 
 /**
  * PDF content raster width: the 6.5in PRINTABLE box @ 96dpi. The PDF path lays the body out at
@@ -36,7 +36,7 @@ export const PAGE_W_PX = 816; // 8.5 * 96
  * chosen font size (pt) render at its true point size in the PDF, and keeps every margin exactly
  * 1in. (The PNG path still lays out at the full PAGE_W_PX with the reading column.)
  */
-export const CONTENT_W_PX = 624; // 6.5 * 96
+export const CONTENT_W_PX = 624 // 6.5 * 96
 
 /**
  * Snap a raw size DOWN to the nearest whole multiple of `unit` (same px space). Falls back to
@@ -47,9 +47,9 @@ export const CONTENT_W_PX = 624; // 6.5 * 96
  * pass a page-height-shaped value); a negative `raw` just floors through unchanged.
  */
 export function snapDownToGrid(raw: number, unit: number): number {
-  if (!(unit > 0)) return Math.floor(raw);
-  const snapped = Math.floor(raw / unit) * unit;
-  return snapped > 0 ? snapped : Math.floor(raw);
+    if (!(unit > 0)) return Math.floor(raw)
+    const snapped = Math.floor(raw / unit) * unit
+    return snapped > 0 ? snapped : Math.floor(raw)
 }
 
 /**
@@ -70,20 +70,23 @@ export function snapDownToGrid(raw: number, unit: number): number {
  *
  * Pure so the pager's math is unit-tested without a DOM.
  */
-export function pdfSliceMetrics(canvasWidthPx: number): { scale: number; pageHpx: number } {
-  const scale = CONTENT_W_PT / canvasWidthPx; // canvas px -> pt within the printable box
-  const rawPageHpx = CONTENT_H_PT / scale; // source px per printable page, before grid-snapping
-  const ruleCanvasPx = RULE_PX * (canvasWidthPx / CONTENT_W_PX); // the CSS rule, in canvas px
-  const pageHpx = snapDownToGrid(rawPageHpx, ruleCanvasPx);
-  return { scale, pageHpx };
+export function pdfSliceMetrics(canvasWidthPx: number): {
+    scale: number
+    pageHpx: number
+} {
+    const scale = CONTENT_W_PT / canvasWidthPx // canvas px -> pt within the printable box
+    const rawPageHpx = CONTENT_H_PT / scale // source px per printable page, before grid-snapping
+    const ruleCanvasPx = RULE_PX * (canvasWidthPx / CONTENT_W_PX) // the CSS rule, in canvas px
+    const pageHpx = snapDownToGrid(rawPageHpx, ruleCanvasPx)
+    return { scale, pageHpx }
 }
 
 /** One page's slice of the source content raster: a [start, start+height) band of canvas px. */
 export interface PageSlice {
-  /** Source-canvas Y (px) where this page's content starts. */
-  start: number;
-  /** Source-canvas height (px) of this page's content (< pageHpx for the last / a forced-break page). */
-  height: number;
+    /** Source-canvas Y (px) where this page's content starts. */
+    start: number
+    /** Source-canvas height (px) of this page's content (< pageHpx for the last / a forced-break page). */
+    height: number
 }
 
 /**
@@ -96,27 +99,31 @@ export interface PageSlice {
  *
  * Pure (no DOM) so the pagination math is unit-tested in pageGeometry.test.ts.
  */
-export function pageSlices(contentHpx: number, pageHpx: number, breaks: number[] = []): PageSlice[] {
-  const out: PageSlice[] = [];
-  if (contentHpx <= 0 || pageHpx <= 0) return out;
-  const sorted = [...breaks].sort((a, b) => a - b);
-  let offset = 0;
-  let bi = 0; // cursor into the sorted forced-break offsets
-  while (offset < contentHpx) {
-    // Skip markers at/above the current offset so a marker on a page boundary never emits an
-    // empty page.
-    while (bi < sorted.length && sorted[bi] <= offset) bi++;
-    let end = offset + pageHpx; // natural full-page bottom
-    if (bi < sorted.length && sorted[bi] < end) {
-      // A forced break inside this page ends it early; the next band starts AT the marker.
-      end = sorted[bi];
-      bi++;
+export function pageSlices(
+    contentHpx: number,
+    pageHpx: number,
+    breaks: number[] = [],
+): PageSlice[] {
+    const out: PageSlice[] = []
+    if (contentHpx <= 0 || pageHpx <= 0) return out
+    const sorted = [...breaks].sort((a, b) => a - b)
+    let offset = 0
+    let bi = 0 // cursor into the sorted forced-break offsets
+    while (offset < contentHpx) {
+        // Skip markers at/above the current offset so a marker on a page boundary never emits an
+        // empty page.
+        while (bi < sorted.length && sorted[bi] <= offset) bi++
+        let end = offset + pageHpx // natural full-page bottom
+        if (bi < sorted.length && sorted[bi] < end) {
+            // A forced break inside this page ends it early; the next band starts AT the marker.
+            end = sorted[bi]
+            bi++
+        }
+        end = Math.min(end, contentHpx)
+        out.push({ start: offset, height: end - offset })
+        offset = end
     }
-    end = Math.min(end, contentHpx);
-    out.push({ start: offset, height: end - offset });
-    offset = end;
-  }
-  return out;
+    return out
 }
 
 /**
@@ -126,22 +133,30 @@ export function pageSlices(contentHpx: number, pageHpx: number, breaks: number[]
  * (Input is already normalized to rgb()/hex by cssColor.normalizeCssColor before reaching here.)
  */
 export function parseRgbColor(color: string): [number, number, number] {
-  const v = color.trim();
-  const rgb = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i.exec(v);
-  if (rgb) {
-    return [clamp255(rgb[1]), clamp255(rgb[2]), clamp255(rgb[3])];
-  }
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(v);
-  if (hex) {
-    const h = hex[1];
-    if (h.length === 3) {
-      return [parseInt(h[0] + h[0], 16), parseInt(h[1] + h[1], 16), parseInt(h[2] + h[2], 16)];
+    const v = color.trim()
+    const rgb = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i.exec(v)
+    if (rgb) {
+        return [clamp255(rgb[1]), clamp255(rgb[2]), clamp255(rgb[3])]
     }
-    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-  }
-  return [255, 255, 255];
+    const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(v)
+    if (hex) {
+        const h = hex[1]
+        if (h.length === 3) {
+            return [
+                parseInt(h[0] + h[0], 16),
+                parseInt(h[1] + h[1], 16),
+                parseInt(h[2] + h[2], 16),
+            ]
+        }
+        return [
+            parseInt(h.slice(0, 2), 16),
+            parseInt(h.slice(2, 4), 16),
+            parseInt(h.slice(4, 6), 16),
+        ]
+    }
+    return [255, 255, 255]
 }
 
 function clamp255(n: string): number {
-  return Math.max(0, Math.min(255, Math.round(parseFloat(n))));
+    return Math.max(0, Math.min(255, Math.round(parseFloat(n))))
 }

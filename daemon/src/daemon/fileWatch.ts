@@ -12,9 +12,9 @@
 // memory, session state) is never watchable, so the daemon's own writes can never self-trigger a
 // file-change cron. Debouncing (default 2s) also means an editing session firing many rapid
 // autosaves collapses to ONE fire, not one per keystroke.
-import { watch as fsWatch, type FSWatcher } from "node:fs"
-import { loadCronJobs, fireFileChangeCron } from "./cron.ts"
-import type { VaultContext } from "../lib/config.ts"
+import { watch as fsWatch, type FSWatcher } from 'node:fs'
+import { loadCronJobs, fireFileChangeCron } from './cron.ts'
+import type { VaultContext } from '../lib/config.ts'
 
 /** Coalesce a burst of raw fs events into one batch after this many ms of quiet. */
 export const FILE_WATCH_DEBOUNCE_MS = 2000
@@ -23,7 +23,7 @@ export const FILE_WATCH_DEBOUNCE_MS = 2000
  *  on macOS/Linux can still see a `watch` pattern authored (or a path reported) with backslashes,
  *  so this can't key off `path.sep` (which is always "/" on those platforms). */
 function toPosix(p: string): string {
-  return p.replace(/\\/g, "/")
+    return p.replace(/\\/g, '/')
 }
 
 /**
@@ -34,8 +34,8 @@ function toPosix(p: string): string {
  * forward- or backslash-separated input so callers don't have to normalize first.
  */
 export function isDaemonInternalPath(relPath: string): boolean {
-  const norm = toPosix(relPath)
-  return norm === ".daemon" || norm.startsWith(".daemon/")
+    const norm = toPosix(relPath)
+    return norm === '.daemon' || norm.startsWith('.daemon/')
 }
 
 /**
@@ -46,16 +46,16 @@ export function isDaemonInternalPath(relPath: string): boolean {
  * pattern fails closed (never matches) rather than throwing.
  */
 export function matchesWatch(pattern: string, relPath: string): boolean {
-  const norm = toPosix(relPath)
-  try {
-    return new Bun.Glob(toPosix(pattern)).match(norm)
-  } catch {
-    return false
-  }
+    const norm = toPosix(relPath)
+    try {
+        return new Bun.Glob(toPosix(pattern)).match(norm)
+    } catch {
+        return false
+    }
 }
 
 export interface FileWatcher {
-  close(): void
+    close(): void
 }
 
 /**
@@ -66,38 +66,38 @@ export interface FileWatcher {
  * crons a vault ends up with.
  */
 export function createFileWatcher(
-  root: string,
-  opts: { debounceMs?: number; onBatch: (paths: string[]) => void },
+    root: string,
+    opts: { debounceMs?: number; onBatch: (paths: string[]) => void },
 ): FileWatcher | null {
-  const debounceMs = opts.debounceMs ?? FILE_WATCH_DEBOUNCE_MS
-  const pending = new Set<string>()
-  let timer: ReturnType<typeof setTimeout> | null = null
+    const debounceMs = opts.debounceMs ?? FILE_WATCH_DEBOUNCE_MS
+    const pending = new Set<string>()
+    let timer: ReturnType<typeof setTimeout> | null = null
 
-  let watcher: FSWatcher
-  try {
-    watcher = fsWatch(root, { recursive: true }, (_event, filename) => {
-      if (!filename) return // extent-unknown event (rare) — nothing specific to batch
-      const rel = toPosix(filename)
-      if (isDaemonInternalPath(rel)) return // never react to the daemon's own churn (loop guard)
-      pending.add(rel)
-      if (timer !== null) clearTimeout(timer)
-      timer = setTimeout(() => {
-        timer = null
-        const paths = [...pending]
-        pending.clear()
-        if (paths.length > 0) opts.onBatch(paths)
-      }, debounceMs)
-    })
-  } catch {
-    return null // vault dir missing (e.g. not yet created) — nothing to watch
-  }
+    let watcher: FSWatcher
+    try {
+        watcher = fsWatch(root, { recursive: true }, (_event, filename) => {
+            if (!filename) return // extent-unknown event (rare) — nothing specific to batch
+            const rel = toPosix(filename)
+            if (isDaemonInternalPath(rel)) return // never react to the daemon's own churn (loop guard)
+            pending.add(rel)
+            if (timer !== null) clearTimeout(timer)
+            timer = setTimeout(() => {
+                timer = null
+                const paths = [...pending]
+                pending.clear()
+                if (paths.length > 0) opts.onBatch(paths)
+            }, debounceMs)
+        })
+    } catch {
+        return null // vault dir missing (e.g. not yet created) — nothing to watch
+    }
 
-  return {
-    close(): void {
-      if (timer !== null) clearTimeout(timer)
-      watcher.close()
-    },
-  }
+    return {
+        close(): void {
+            if (timer !== null) clearTimeout(timer)
+            watcher.close()
+        },
+    }
 }
 
 // ── Per-vault wiring: fan a debounced batch out across that vault's file-change crons ──────────
@@ -105,32 +105,40 @@ export function createFileWatcher(
 const watchers = new Map<string, FileWatcher>() // keyed by ctx.root, mirrors process.ts's procKey scoping
 
 async function flush(ctx: VaultContext, paths: string[]): Promise<void> {
-  const jobs = await loadCronJobs(ctx)
-  for (const job of jobs) {
-    if (job.on !== "file-change" || !job.enabled) continue
-    const matches = paths.filter((p) => matchesWatch(job.watch, p))
-    if (matches.length === 0) continue
-    await fireFileChangeCron(ctx, job, matches)
-  }
+    const jobs = await loadCronJobs(ctx)
+    for (const job of jobs) {
+        if (job.on !== 'file-change' || !job.enabled) continue
+        const matches = paths.filter(p => matchesWatch(job.watch, p))
+        if (matches.length === 0) continue
+        await fireFileChangeCron(ctx, job, matches)
+    }
 }
 
 /** Start (or no-op if already running) the ONE file watcher for this vault's brain. */
-export function startFileWatch(ctx: VaultContext, debounceMs: number = FILE_WATCH_DEBOUNCE_MS): void {
-  if (watchers.has(ctx.root)) return
-  const fw = createFileWatcher(ctx.root, { debounceMs, onBatch: (paths) => { void flush(ctx, paths) } })
-  if (fw) watchers.set(ctx.root, fw)
+export function startFileWatch(
+    ctx: VaultContext,
+    debounceMs: number = FILE_WATCH_DEBOUNCE_MS,
+): void {
+    if (watchers.has(ctx.root)) return
+    const fw = createFileWatcher(ctx.root, {
+        debounceMs,
+        onBatch: paths => {
+            void flush(ctx, paths)
+        },
+    })
+    if (fw) watchers.set(ctx.root, fw)
 }
 
 /** Stop one vault's watcher (e.g. that vault's daemon was disabled at runtime). */
 export function stopFileWatch(ctx: VaultContext): void {
-  const fw = watchers.get(ctx.root)
-  if (!fw) return
-  fw.close()
-  watchers.delete(ctx.root)
+    const fw = watchers.get(ctx.root)
+    if (!fw) return
+    fw.close()
+    watchers.delete(ctx.root)
 }
 
 /** Stop every vault's watcher — full daemon shutdown. Mirror of process.ts's stopProcessTriggers. */
 export function stopAllFileWatches(): void {
-  for (const fw of watchers.values()) fw.close()
-  watchers.clear()
+    for (const fw of watchers.values()) fw.close()
+    watchers.clear()
 }

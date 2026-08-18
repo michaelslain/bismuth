@@ -11,16 +11,23 @@
 // that's only a cross-community bridge. `source` (the full, un-mode-filtered graph — GraphView's
 // `communitySource` prop, App.tsx's own `graph()` signal) still has the fields; this looks them up by
 // id and re-attaches them ONLY to the layout INPUT, never to anything rendered.
-import type { GraphData } from "../../../core/src/graph";
-import type { LayoutInput } from "../../../core/src/layout";
+import type { GraphData } from '../../../core/src/graph'
+import type { LayoutInput } from '../../../core/src/layout'
 
-export function localLayoutInput(g: GraphData, source?: GraphData): LayoutInput {
-  const byId = new Map(source?.nodes.map((n) => [n.id, n]));
-  return {
-    nodes: g.nodes.map((n) => {
-      const src = byId.get(n.id);
-      return { id: n.id, community: src?.community, communityPath: src?.communityPath };
-    }),
-    edges: g.edges.map((e) => ({ from: e.from, to: e.to })),
-  };
+export function localLayoutInput(
+    g: GraphData,
+    source?: GraphData,
+): LayoutInput {
+    const byId = new Map(source?.nodes.map(n => [n.id, n]))
+    return {
+        nodes: g.nodes.map(n => {
+            const src = byId.get(n.id)
+            return {
+                id: n.id,
+                community: src?.community,
+                communityPath: src?.communityPath,
+            }
+        }),
+        edges: g.edges.map(e => ({ from: e.from, to: e.to })),
+    }
 }

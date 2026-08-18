@@ -6,5 +6,5 @@
 // sidebar (`sidebar-hidden`), but the rail used to keep floating over the takeover instead of hiding
 // with it. The grid column collapses to 0 in lockstep via `.layout.switcher-active` (App.css).
 export function tabRailVisible(opts: { switcherOpen: boolean }): boolean {
-  return !opts.switcherOpen;
+    return !opts.switcherOpen
 }

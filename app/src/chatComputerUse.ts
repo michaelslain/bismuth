@@ -18,67 +18,75 @@
 // (computeChromeCommand: `/chrome` ENABLES, idempotently). With an enable verb, seeding from the
 // user's own setting is safe in every direction: the chat opens in the state they asked for, and
 // `/chrome` still reads "enabled".
-import { createSignal } from "solid-js";
-import { settings } from "./settings";
+import { createSignal } from 'solid-js'
+import { settings } from './settings'
 
-const KEY = "bismuth-chat-chrome-v1";
-const CAP = 200;
+const KEY = 'bismuth-chat-chrome-v1'
+const CAP = 200
 
 /** One chat TAB id → whether --chrome is enabled for that chat. */
 export interface ChatChromeEntry {
-  chatId: string;
-  enabled: boolean;
+    chatId: string
+    enabled: boolean
 }
 
 /** Pure upsert: drop any existing entry for `chatId`, append the new one (most-recent last), cap the
  *  list (oldest dropped). Exported for unit testing. */
 export function upsertChrome(
-  list: ChatChromeEntry[],
-  chatId: string,
-  enabled: boolean,
-  cap = CAP,
+    list: ChatChromeEntry[],
+    chatId: string,
+    enabled: boolean,
+    cap = CAP,
 ): ChatChromeEntry[] {
-  const next = list.filter((e) => e.chatId !== chatId);
-  next.push({ chatId, enabled });
-  return next.length > cap ? next.slice(next.length - cap) : next;
+    const next = list.filter(e => e.chatId !== chatId)
+    next.push({ chatId, enabled })
+    return next.length > cap ? next.slice(next.length - cap) : next
 }
 
 /** Pure lookup: the remembered state for `chatId`, or undefined when the chat has no override yet
  *  (the caller falls back to the global default). Reads newest-first. Exported for tests. */
-export function lookupChrome(list: ChatChromeEntry[], chatId: string): boolean | undefined {
-  for (let i = list.length - 1; i >= 0; i--) {
-    if (list[i].chatId === chatId) return list[i].enabled;
-  }
-  return undefined;
+export function lookupChrome(
+    list: ChatChromeEntry[],
+    chatId: string,
+): boolean | undefined {
+    for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].chatId === chatId) return list[i].enabled
+    }
+    return undefined
 }
 
 function parse(raw: string | null): ChatChromeEntry[] {
-  if (!raw) return [];
-  try {
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr)
-      ? arr.filter(
-          (x): x is ChatChromeEntry =>
-            !!x && typeof x === "object" && typeof x.chatId === "string" && typeof x.enabled === "boolean",
-        )
-      : [];
-  } catch {
-    return [];
-  }
+    if (!raw) return []
+    try {
+        const arr = JSON.parse(raw)
+        return Array.isArray(arr)
+            ? arr.filter(
+                  (x): x is ChatChromeEntry =>
+                      !!x &&
+                      typeof x === 'object' &&
+                      typeof x.chatId === 'string' &&
+                      typeof x.enabled === 'boolean',
+              )
+            : []
+    } catch {
+        return []
+    }
 }
 
 // A reactive mirror of the persisted store: the signal drives ChatView's live Globe-pill state,
 // localStorage makes it survive reload/reopen. Seeded once from storage on module load.
 const [chrome, setChrome] = createSignal<ChatChromeEntry[]>(
-  parse(typeof localStorage !== "undefined" ? localStorage.getItem(KEY) : null),
-);
+    parse(
+        typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null,
+    ),
+)
 
 function persist(list: ChatChromeEntry[]): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list));
-  } catch {
-    // storage unavailable/full — the in-memory signal still drives the toggle this run
-  }
+    try {
+        localStorage.setItem(KEY, JSON.stringify(list))
+    } catch {
+        // storage unavailable/full — the in-memory signal still drives the toggle this run
+    }
 }
 
 /** Whether --chrome is enabled for a chat tab id. REACTIVE — read it inside a ChatView binding so
@@ -87,13 +95,13 @@ function persist(list: ChatChromeEntry[]): void {
  *  `settings.chat.computerUse` — which ChatView stamps onto the session's spawn, so setting it true
  *  really does open chats with the browser on. */
 export function chatComputerUse(chatId: string): boolean {
-  return lookupChrome(chrome(), chatId) ?? settings.chat.computerUse;
+    return lookupChrome(chrome(), chatId) ?? settings.chat.computerUse
 }
 
 /** Set a chat tab's --chrome state. Persists + updates the live signal. */
 export function setChatComputerUse(chatId: string, enabled: boolean): void {
-  if (!chatId) return;
-  const next = upsertChrome(chrome(), chatId, enabled);
-  setChrome(next);
-  persist(next);
+    if (!chatId) return
+    const next = upsertChrome(chrome(), chatId, enabled)
+    setChrome(next)
+    persist(next)
 }

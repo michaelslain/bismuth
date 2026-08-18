@@ -25,54 +25,60 @@
 // `<WindowControls>` as children, the only story that exercises the `children` slot at all. Each
 // gets a fixed-width wrapper so `.top-strip-spacer`'s `flex: 1` — the strip's largest visual area —
 // is actually observable rather than collapsing to its content size.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { TopStrip } from "./TopStrip";
-import { WindowControls } from "./WindowControls";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { TopStrip } from './TopStrip'
+import { WindowControls } from './WindowControls'
 
-const noop = () => {};
+const noop = () => {}
 
 const meta = {
-  title: "Shell/TopStrip",
-  component: TopStrip,
-  parameters: { layout: "padded" },
-} satisfies Meta<typeof TopStrip>;
+    title: 'Shell/TopStrip',
+    component: TopStrip,
+    parameters: { layout: 'padded' },
+} satisfies Meta<typeof TopStrip>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 const Wrap = (props: { children: unknown }) => (
-  <div style={{ width: "360px", border: "1px solid var(--border-soft)" }}>{props.children as never}</div>
-);
+    <div style={{ width: '360px', border: '1px solid var(--border-soft)' }}>
+        {props.children as never}
+    </div>
+)
 
 /** Browser/dev build: no Tauri, so `mac` and `dragRegion` are both false and no children render —
  *  just the wordmark and the spacer filling the row. */
 export const Default: Story = {
-  render: () => (
-    <Wrap>
-      <TopStrip mac={false} dragRegion={false} />
-    </Wrap>
-  ),
-};
+    render: () => (
+        <Wrap>
+            <TopStrip mac={false} dragRegion={false} />
+        </Wrap>
+    ),
+}
 
 /** macOS Tauri build: the native Overlay titlebar draws its own traffic lights over the strip, so
  *  `top-strip--mac` reserves 78px of left padding for them and no WindowControls render (macOS
  *  never gets the typed `[-] [+] [x]` buttons). */
 export const Mac: Story = {
-  render: () => (
-    <Wrap>
-      <TopStrip mac={true} dragRegion={true} />
-    </Wrap>
-  ),
-};
+    render: () => (
+        <Wrap>
+            <TopStrip mac={true} dragRegion={true} />
+        </Wrap>
+    ),
+}
 
 /** Windows/Linux Tauri build: fully undecorated window, so the typed WindowControls render as
  *  `children` at the right edge, pushed there by the spacer. The only story exercising the slot. */
 export const WindowsLinux: Story = {
-  render: () => (
-    <Wrap>
-      <TopStrip mac={false} dragRegion={true}>
-        <WindowControls onMinimize={noop} onToggleMaximize={noop} onClose={noop} />
-      </TopStrip>
-    </Wrap>
-  ),
-};
+    render: () => (
+        <Wrap>
+            <TopStrip mac={false} dragRegion={true}>
+                <WindowControls
+                    onMinimize={noop}
+                    onToggleMaximize={noop}
+                    onClose={noop}
+                />
+            </TopStrip>
+        </Wrap>
+    ),
+}

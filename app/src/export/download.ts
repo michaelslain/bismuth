@@ -30,43 +30,44 @@
 // The Tauri side is injectable (TauriDelivery) so the routing + verify + reveal logic is
 // unit-testable without a webview (download.test.ts); the real seam lazy-imports the
 // plugins exactly like before.
-import { isTauri } from "../nativeMenu";
+import { isTauri } from '../nativeMenu'
 
 /** The impure Tauri surface deliverFile needs — injectable for tests. */
 export interface TauriDelivery {
-  /** Absolute path of the user's real Downloads directory. */
-  downloadDir(): Promise<string>;
-  join(dir: string, name: string): Promise<string>;
-  writeFile(path: string, bytes: Uint8Array): Promise<void>;
-  /** True only if the file provably exists after writing. May THROW if unavailable. */
-  exists(path: string): Promise<boolean>;
-  /** Native "Save as…" dialog; resolves the chosen absolute path or null on cancel. */
-  saveDialog(defaultName: string): Promise<string | null>;
-  /** Reveal (and select) the file in the OS file explorer. Best-effort — may throw/no-op. */
-  reveal(path: string): Promise<void>;
+    /** Absolute path of the user's real Downloads directory. */
+    downloadDir(): Promise<string>
+    join(dir: string, name: string): Promise<string>
+    writeFile(path: string, bytes: Uint8Array): Promise<void>
+    /** True only if the file provably exists after writing. May THROW if unavailable. */
+    exists(path: string): Promise<boolean>
+    /** Native "Save as…" dialog; resolves the chosen absolute path or null on cancel. */
+    saveDialog(defaultName: string): Promise<string | null>
+    /** Reveal (and select) the file in the OS file explorer. Best-effort — may throw/no-op. */
+    reveal(path: string): Promise<void>
 }
 
 export type Delivery =
-  | { via: "tauri"; path: string; verified: boolean } // landed at `path`; `verified` iff exists() confirmed it
-  | { via: "browser" };                               // handed to the browser's download machinery
+    | { via: 'tauri'; path: string; verified: boolean } // landed at `path`; `verified` iff exists() confirmed it
+    | { via: 'browser' } // handed to the browser's download machinery
 
 /** The real plugin-backed seam (lazy imports keep the plugins out of non-Tauri paths). */
 async function realTauriDelivery(): Promise<TauriDelivery> {
-  const fs = await import("@tauri-apps/plugin-fs");
-  const path = await import("@tauri-apps/api/path");
-  const dialog = await import("@tauri-apps/plugin-dialog");
-  return {
-    downloadDir: () => path.downloadDir(),
-    join: (dir, name) => path.join(dir, name),
-    writeFile: (p, bytes) => fs.writeFile(p, bytes),
-    exists: (p) => fs.exists(p),
-    saveDialog: (defaultName) => dialog.save({ defaultPath: defaultName, title: "Save export" }),
-    reveal: async (p) => {
-      // `opener:default` already grants `allow-reveal-item-in-dir` (see capabilities/default.json).
-      const opener = await import("@tauri-apps/plugin-opener");
-      await opener.revealItemInDir(p);
-    },
-  };
+    const fs = await import('@tauri-apps/plugin-fs')
+    const path = await import('@tauri-apps/api/path')
+    const dialog = await import('@tauri-apps/plugin-dialog')
+    return {
+        downloadDir: () => path.downloadDir(),
+        join: (dir, name) => path.join(dir, name),
+        writeFile: (p, bytes) => fs.writeFile(p, bytes),
+        exists: p => fs.exists(p),
+        saveDialog: defaultName =>
+            dialog.save({ defaultPath: defaultName, title: 'Save export' }),
+        reveal: async p => {
+            // `opener:default` already grants `allow-reveal-item-in-dir` (see capabilities/default.json).
+            const opener = await import('@tauri-apps/plugin-opener')
+            await opener.revealItemInDir(p)
+        },
+    }
 }
 
 // Split a filename into its base name and final extension (the dot included), Finder-style:
@@ -76,15 +77,18 @@ async function realTauriDelivery(): Promise<TauriDelivery> {
 //   ".gitignore"     → { base: ".gitignore", ext: "" }        (a leading dot is not an ext)
 // Only the single final extension is considered — multi-part suffixes like ".tar.gz" are
 // treated as one extension (".gz"), which is out of scope for the collision renamer.
-export function splitExtension(filename: string): { base: string; ext: string } {
-  const dot = filename.lastIndexOf(".");
-  if (dot <= 0) return { base: filename, ext: "" }; // no dot, or a leading-dot hidden file
-  return { base: filename.slice(0, dot), ext: filename.slice(dot) };
+export function splitExtension(filename: string): {
+    base: string
+    ext: string
+} {
+    const dot = filename.lastIndexOf('.')
+    if (dot <= 0) return { base: filename, ext: '' } // no dot, or a leading-dot hidden file
+    return { base: filename.slice(0, dot), ext: filename.slice(dot) }
 }
 
 // Give up after this many numbered candidates so a pathological Downloads folder (already
 // holding "x (1)"…"x (N)") can't spin forever — we fall back to a timestamped name.
-const MAX_DEDUP = 10_000;
+const MAX_DEDUP = 10_000
 
 // Resolve a non-colliding absolute path inside `dir` for `filename`, Finder-style: if
 // "<base><ext>" already exists, try "<base> (1)<ext>", then "<base> (2)<ext>", and so on —
@@ -96,42 +100,50 @@ const MAX_DEDUP = 10_000;
 // whether anything collides — so we stop probing and return the current candidate, exactly
 // reproducing the pre-dedup behavior on that binary. The subsequent verified write still
 // handles a missing capability gracefully (reports UNVERIFIED rather than failing).
-async function pickNonCollidingTarget(t: TauriDelivery, dir: string, filename: string): Promise<string> {
-  const first = await t.join(dir, filename);
-  try {
-    if (!(await t.exists(first))) return first;
-  } catch {
-    return first; // can't probe existence — behave exactly as before dedup existed
-  }
-  const { base, ext } = splitExtension(filename);
-  for (let n = 1; n <= MAX_DEDUP; n++) {
-    const candidate = await t.join(dir, `${base} (${n})${ext}`);
+async function pickNonCollidingTarget(
+    t: TauriDelivery,
+    dir: string,
+    filename: string,
+): Promise<string> {
+    const first = await t.join(dir, filename)
     try {
-      if (!(await t.exists(candidate))) return candidate;
+        if (!(await t.exists(first))) return first
     } catch {
-      return candidate; // can't probe — take this candidate rather than looping blind
+        return first // can't probe existence — behave exactly as before dedup existed
     }
-  }
-  // Pathological fallback: every numbered name up to the cap is taken. A timestamp is
-  // effectively collision-free, so we never infinite-loop.
-  return t.join(dir, `${base} ${Date.now()}${ext}`);
+    const { base, ext } = splitExtension(filename)
+    for (let n = 1; n <= MAX_DEDUP; n++) {
+        const candidate = await t.join(dir, `${base} (${n})${ext}`)
+        try {
+            if (!(await t.exists(candidate))) return candidate
+        } catch {
+            return candidate // can't probe — take this candidate rather than looping blind
+        }
+    }
+    // Pathological fallback: every numbered name up to the cap is taken. A timestamp is
+    // effectively collision-free, so we never infinite-loop.
+    return t.join(dir, `${base} ${Date.now()}${ext}`)
 }
 
 /** Browser fallback: Blob + <a download> anchor click. */
-function anchorDownload(filename: string, bytes: Uint8Array, mime: string): void {
-  const blob = new Blob([bytes as BlobPart], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+function anchorDownload(
+    filename: string,
+    bytes: Uint8Array,
+    mime: string,
+): void {
+    const blob = new Blob([bytes as BlobPart], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
 }
 
 /** Did we PROVE the file landed (`exists()` returned true), or just fail to check? */
-type WriteOutcome = "verified" | "unverified";
+type WriteOutcome = 'verified' | 'unverified'
 
 // Write bytes to `target`, then try to confirm the file is really there. Three outcomes:
 //   - writeFile THROWS        → a real write failure; propagates so the caller can fall back.
@@ -142,29 +154,39 @@ type WriteOutcome = "verified" | "unverified";
 //                               return "unverified" instead of forcing the Save-dialog
 //                               fallback on a write that most likely succeeded.
 //   - exists() === true       → "verified".
-async function writeChecked(t: TauriDelivery, target: string, bytes: Uint8Array): Promise<WriteOutcome> {
-  await t.writeFile(target, bytes);
-  let present: boolean;
-  try {
-    present = await t.exists(target);
-  } catch {
-    return "unverified"; // write resolved; we simply couldn't confirm — don't treat as failure
-  }
-  if (!present) {
-    throw new Error(`write reported success but no file exists at ${target}`);
-  }
-  return "verified";
+async function writeChecked(
+    t: TauriDelivery,
+    target: string,
+    bytes: Uint8Array,
+): Promise<WriteOutcome> {
+    await t.writeFile(target, bytes)
+    let present: boolean
+    try {
+        present = await t.exists(target)
+    } catch {
+        return 'unverified' // write resolved; we simply couldn't confirm — don't treat as failure
+    }
+    if (!present) {
+        throw new Error(
+            `write reported success but no file exists at ${target}`,
+        )
+    }
+    return 'verified'
 }
 
 // Reveal `path` in the OS file explorer, selected — never let a reveal failure fail an
 // export (Finder/opener quirks, unsupported platform, etc. are all swallowed).
-async function revealBestEffort(t: TauriDelivery, path: string, reveal: boolean): Promise<void> {
-  if (!reveal) return;
-  try {
-    await t.reveal(path);
-  } catch {
-    /* reveal is a courtesy — the file is already written; never fail the export over it */
-  }
+async function revealBestEffort(
+    t: TauriDelivery,
+    path: string,
+    reveal: boolean,
+): Promise<void> {
+    if (!reveal) return
+    try {
+        await t.reveal(path)
+    } catch {
+        /* reveal is a courtesy — the file is already written; never fail the export over it */
+    }
 }
 
 /**
@@ -179,52 +201,65 @@ async function revealBestEffort(t: TauriDelivery, path: string, reveal: boolean)
  * `reveal` only for the first so the user gets a single Finder window, not one per file.
  */
 export async function deliverFile(
-  filename: string,
-  bytes: Uint8Array,
-  mime: string,
-  tauri?: TauriDelivery | null,
-  browserDownload: (filename: string, bytes: Uint8Array, mime: string) => void = anchorDownload,
-  reveal = true,
+    filename: string,
+    bytes: Uint8Array,
+    mime: string,
+    tauri?: TauriDelivery | null,
+    browserDownload: (
+        filename: string,
+        bytes: Uint8Array,
+        mime: string,
+    ) => void = anchorDownload,
+    reveal = true,
 ): Promise<Delivery> {
-  const t = tauri === undefined ? (isTauri() ? await realTauriDelivery() : null) : tauri;
-  if (!t) {
-    browserDownload(filename, bytes, mime);
-    return { via: "browser" };
-  }
+    const t =
+        tauri === undefined
+            ? isTauri()
+                ? await realTauriDelivery()
+                : null
+            : tauri
+    if (!t) {
+        browserDownload(filename, bytes, mime)
+        return { via: 'browser' }
+    }
 
-  // Primary: the OS Downloads directory. De-dup the name Finder-style on collision so a
-  // repeat export of "homework 2.pdf" lands as "homework 2 (1).pdf" — a brand-new file with
-  // a fresh date-added (sorts to the TOP of a Date-Added Downloads) that the reveal below
-  // then selects, instead of silently overwriting the old one (which keeps its old
-  // date-added and sinks out of view).
-  let target = "";
-  let primaryError: Error | null = null;
-  try {
-    target = await pickNonCollidingTarget(t, await t.downloadDir(), filename);
-    const outcome = await writeChecked(t, target, bytes);
-    await revealBestEffort(t, target, reveal);
-    return { via: "tauri", path: target, verified: outcome === "verified" };
-  } catch (e) {
-    primaryError = e as Error;
-  }
+    // Primary: the OS Downloads directory. De-dup the name Finder-style on collision so a
+    // repeat export of "homework 2.pdf" lands as "homework 2 (1).pdf" — a brand-new file with
+    // a fresh date-added (sorts to the TOP of a Date-Added Downloads) that the reveal below
+    // then selects, instead of silently overwriting the old one (which keeps its old
+    // date-added and sinks out of view).
+    let target = ''
+    let primaryError: Error | null = null
+    try {
+        target = await pickNonCollidingTarget(
+            t,
+            await t.downloadDir(),
+            filename,
+        )
+        const outcome = await writeChecked(t, target, bytes)
+        await revealBestEffort(t, target, reveal)
+        return { via: 'tauri', path: target, verified: outcome === 'verified' }
+    } catch (e) {
+        primaryError = e as Error
+    }
 
-  // Fallback: let the user pick a destination via the native Save dialog. A path granted
-  // through the dialog is user-consented (and auto-allowed by the fs scope), so this works
-  // even when Downloads itself is blocked (e.g. macOS Files-and-Folders permission denied).
-  const chosen = await t.saveDialog(filename);
-  if (!chosen) {
-    throw new Error(
-      `couldn't write ${target || filename} (${primaryError?.message ?? "unknown error"}) and the save dialog was cancelled — nothing was exported`,
-    );
-  }
-  let outcome: WriteOutcome;
-  try {
-    outcome = await writeChecked(t, chosen, bytes);
-  } catch (e) {
-    throw new Error(`couldn't write ${chosen}: ${(e as Error).message}`);
-  }
-  await revealBestEffort(t, chosen, reveal);
-  return { via: "tauri", path: chosen, verified: outcome === "verified" };
+    // Fallback: let the user pick a destination via the native Save dialog. A path granted
+    // through the dialog is user-consented (and auto-allowed by the fs scope), so this works
+    // even when Downloads itself is blocked (e.g. macOS Files-and-Folders permission denied).
+    const chosen = await t.saveDialog(filename)
+    if (!chosen) {
+        throw new Error(
+            `couldn't write ${target || filename} (${primaryError?.message ?? 'unknown error'}) and the save dialog was cancelled — nothing was exported`,
+        )
+    }
+    let outcome: WriteOutcome
+    try {
+        outcome = await writeChecked(t, chosen, bytes)
+    } catch (e) {
+        throw new Error(`couldn't write ${chosen}: ${(e as Error).message}`)
+    }
+    await revealBestEffort(t, chosen, reveal)
+    return { via: 'tauri', path: chosen, verified: outcome === 'verified' }
 }
 
 /**
@@ -239,20 +274,23 @@ export async function deliverFile(
  * for the first file so the user gets one Finder window rather than one per file.
  */
 export async function writeToFolder(
-  folder: string,
-  filename: string,
-  bytes: Uint8Array,
-  tauri?: TauriDelivery,
-  reveal = true,
+    folder: string,
+    filename: string,
+    bytes: Uint8Array,
+    tauri?: TauriDelivery,
+    reveal = true,
 ): Promise<string> {
-  const t = tauri ?? (isTauri() ? await realTauriDelivery() : null);
-  if (!t) throw new Error("Writing to a chosen folder is only available in the desktop app");
-  const target = await pickNonCollidingTarget(t, folder, filename);
-  try {
-    await writeChecked(t, target, bytes);
-  } catch (e) {
-    throw new Error(`couldn't write ${target}: ${(e as Error).message}`);
-  }
-  await revealBestEffort(t, target, reveal);
-  return target;
+    const t = tauri ?? (isTauri() ? await realTauriDelivery() : null)
+    if (!t)
+        throw new Error(
+            'Writing to a chosen folder is only available in the desktop app',
+        )
+    const target = await pickNonCollidingTarget(t, folder, filename)
+    try {
+        await writeChecked(t, target, bytes)
+    } catch (e) {
+        throw new Error(`couldn't write ${target}: ${(e as Error).message}`)
+    }
+    await revealBestEffort(t, target, reveal)
+    return target
 }

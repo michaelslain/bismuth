@@ -1,44 +1,57 @@
-import { createSignal, createMemo, createEffect, untrack, onMount, onCleanup, Show, For } from "solid-js";
-import { api } from "../api";
-import { TextButton } from "../ui/TextButton";
-import { IconButton } from "../ui/IconButton";
-import { IconTextButton } from "../ui/IconTextButton";
-import { Icon } from "../icons/Icon";
-import { EmptyState } from "../ui/EmptyState";
-import { Modal } from "../ui/Modal";
-import { TextInput } from "../ui/TextInput";
-import { AsciiMeter } from "../ui/ascii/AsciiMeter";
-import { renderMarkdown } from "./markdown";
-import { EditCardsModal } from "./EditCardsModal";
-import type { BaseConfig, Row } from "../../../core/src/bases/types";
-import { fileBasename } from "../../../core/src/pathUtils";
-import { todayISO } from "../../../core/src/dates";
+import {
+    createSignal,
+    createMemo,
+    createEffect,
+    untrack,
+    onMount,
+    onCleanup,
+    Show,
+    For,
+} from 'solid-js'
+import { api } from '../api'
+import { TextButton } from '../ui/TextButton'
+import { IconButton } from '../ui/IconButton'
+import { IconTextButton } from '../ui/IconTextButton'
+import { Icon } from '../icons/Icon'
+import { EmptyState } from '../ui/EmptyState'
+import { Modal } from '../ui/Modal'
+import { TextInput } from '../ui/TextInput'
+import { AsciiMeter } from '../ui/ascii/AsciiMeter'
+import { renderMarkdown } from './markdown'
+import { EditCardsModal } from './EditCardsModal'
+import type { BaseConfig, Row } from '../../../core/src/bases/types'
+import { fileBasename } from '../../../core/src/pathUtils'
+import { todayISO } from '../../../core/src/dates'
 
 // Pure review-queue logic lives in its own module so it can be unit-tested headlessly
 // without importing this component (lucide-solid icons, Solid client-only code). Import
 // for local use, and re-export to preserve the existing `./FlashcardsView` public surface.
 import {
-  buildQueue,
-  nextPosAfterGrade,
-  nextCramPos,
-  reindexRetiredAfterDelete,
-  itemKey,
-  canGrade,
-  progressTotal,
-  loadSession,
-  saveSession,
-  backField as revScheduleCol,
-  type QueueItem,
-  type CardDir,
-} from "./flashcardsQueue";
-export { buildQueue, nextPosAfterGrade, type QueueItem, type CardDir };
+    buildQueue,
+    nextPosAfterGrade,
+    nextCramPos,
+    reindexRetiredAfterDelete,
+    itemKey,
+    canGrade,
+    progressTotal,
+    loadSession,
+    saveSession,
+    backField as revScheduleCol,
+    type QueueItem,
+    type CardDir,
+} from './flashcardsQueue'
+export { buildQueue, nextPosAfterGrade, type QueueItem, type CardDir }
 
 /** Grade → digit shown on the key badge / bound to the number keys (1-3). */
-const GRADE_KEYS: { response: "hard" | "good" | "easy"; key: string; cls: string }[] = [
-  { response: "hard", key: "1", cls: "hard" },
-  { response: "good", key: "2", cls: "good" },
-  { response: "easy", key: "3", cls: "easy" },
-];
+const GRADE_KEYS: {
+    response: 'hard' | 'good' | 'easy'
+    key: string
+    cls: string
+}[] = [
+    { response: 'hard', key: '1', cls: 'hard' },
+    { response: 'good', key: '2', cls: 'good' },
+    { response: 'easy', key: '3', cls: 'easy' },
+]
 
 /**
  * Flashcards view over a base's rows. Cards are table rows (front/back/due/ease/interval).
@@ -56,364 +69,459 @@ const GRADE_KEYS: { response: "hard" | "good" | "easy"; key: string; cls: string
  * backward.
  */
 export function FlashcardsView(props: {
-  rows: Row[];
-  config: BaseConfig;
-  basePath?: string;
-  onReviewed: () => void;
+    rows: Row[]
+    config: BaseConfig
+    basePath?: string
+    onReviewed: () => void
 }) {
-  const view = () => props.config.views[0] ?? { type: "flashcards", name: "" };
-  const frontField = () => view().frontField ?? "front";
-  const backField = () => view().backField ?? "back";
-  const dueField = () => view().dueField ?? "due";
-  const easeField = () => view().easeField ?? "ease";
-  const intervalField = () => view().intervalField ?? "interval";
-  const bidirectional = () => !!view().bidirectional;
+    const view = () => props.config.views[0] ?? { type: 'flashcards', name: '' }
+    const frontField = () => view().frontField ?? 'front'
+    const backField = () => view().backField ?? 'back'
+    const dueField = () => view().dueField ?? 'due'
+    const easeField = () => view().easeField ?? 'ease'
+    const intervalField = () => view().intervalField ?? 'interval'
+    const bidirectional = () => !!view().bidirectional
 
-  // Restore any in-flight session for this deck: switching AWAY from the flashcards
-  // tab unmounts this component, so without a restore the cram flag, queue position,
-  // and per-grade tally would all reset to zero on return. Keyed by base path; a deck
-  // with no base path (embedded query) simply starts fresh every mount.
-  const restored = loadSession(props.basePath);
-  const [cram, setCram] = createSignal(restored.cram);
+    // Restore any in-flight session for this deck: switching AWAY from the flashcards
+    // tab unmounts this component, so without a restore the cram flag, queue position,
+    // and per-grade tally would all reset to zero on return. Keyed by base path; a deck
+    // with no base path (embedded query) simply starts fresh every mount.
+    const restored = loadSession(props.basePath)
+    const [cram, setCram] = createSignal(restored.cram)
 
-  // The review queue: due cards normally; ALL cards in cram mode (order preserved).
-  // Bidirectional decks emit a forward + reverse entry per row (see flashcardsQueue).
-  // `today` is derived inside the memo via todayISO() so it's the LOCAL date and is
-  // re-evaluated on every recompute (not captured once at mount, in UTC).
-  const queue = createMemo(() => buildQueue(props.rows, dueField(), todayISO(), cram(), bidirectional()));
+    // The review queue: due cards normally; ALL cards in cram mode (order preserved).
+    // Bidirectional decks emit a forward + reverse entry per row (see flashcardsQueue).
+    // `today` is derived inside the memo via todayISO() so it's the LOCAL date and is
+    // re-evaluated on every recompute (not captured once at mount, in UTC).
+    const queue = createMemo(() =>
+        buildQueue(props.rows, dueField(), todayISO(), cram(), bidirectional()),
+    )
 
-  const [pos, setPos] = createSignal(restored.pos);
-  const [revealed, setRevealed] = createSignal(false);
-  // In-flight lock: true while a grade's async row-write / refetch is settling, so a
-  // second press can't advance a second card (see canGrade / the double-skip fix).
-  const [grading, setGrading] = createSignal(false);
+    const [pos, setPos] = createSignal(restored.pos)
+    const [revealed, setRevealed] = createSignal(false)
+    // In-flight lock: true while a grade's async row-write / refetch is settling, so a
+    // second press can't advance a second card (see canGrade / the double-skip fix).
+    const [grading, setGrading] = createSignal(false)
 
-  // Per-session tally for the header strip — one bucket per SM-2 grade so EASY shows
-  // distinctly (it used to be folded into GOOD, hiding it from the progress surface).
-  const [hardCount, setHardCount] = createSignal(restored.hard);
-  const [goodCount, setGoodCount] = createSignal(restored.good);
-  const [easyCount, setEasyCount] = createSignal(restored.easy);
+    // Per-session tally for the header strip — one bucket per SM-2 grade so EASY shows
+    // distinctly (it used to be folded into GOOD, hiding it from the progress surface).
+    const [hardCount, setHardCount] = createSignal(restored.hard)
+    const [goodCount, setGoodCount] = createSignal(restored.good)
+    const [easyCount, setEasyCount] = createSignal(restored.easy)
 
-  // Cram-until-easy pool: the itemKey()s of cards already rated "easy" this cram
-  // session. In cram mode a card graded good/hard stays IN the pool and resurfaces
-  // until it's finally easy; only "easy" retires it (see nextCramPos). Empty in
-  // normal mode. A new Set is assigned on each change so the signal stays reactive.
-  const [retired, setRetired] = createSignal<Set<string>>(new Set(restored.retired));
+    // Cram-until-easy pool: the itemKey()s of cards already rated "easy" this cram
+    // session. In cram mode a card graded good/hard stays IN the pool and resurfaces
+    // until it's finally easy; only "easy" retires it (see nextCramPos). Empty in
+    // normal mode. A new Set is assigned on each change so the signal stays reactive.
+    const [retired, setRetired] = createSignal<Set<string>>(
+        new Set(restored.retired),
+    )
 
-  // Persist the session on every state change so a tab switch (unmount) leaves the
-  // latest position, tally, and cram pool in the module store for the next mount.
-  createEffect(() => {
-    saveSession(props.basePath, {
-      cram: cram(),
-      pos: pos(),
-      good: goodCount(),
-      hard: hardCount(),
-      easy: easyCount(),
-      retired: [...retired()],
-    });
-  });
+    // Persist the session on every state change so a tab switch (unmount) leaves the
+    // latest position, tally, and cram pool in the module store for the next mount.
+    createEffect(() => {
+        saveSession(props.basePath, {
+            cram: cram(),
+            pos: pos(),
+            good: goodCount(),
+            hard: hardCount(),
+            easy: easyCount(),
+            retired: [...retired()],
+        })
+    })
 
-  const current = () => (pos() < queue().length ? queue()[pos()] : null);
-  const graded = () => hardCount() + goodCount() + easyCount();
-  // Distinct cards mastered (rated "easy") this cram session — the cram progress
-  // numerator, since re-reviews make the raw grade count (`graded`) exceed the deck.
-  const mastered = () => retired().size;
+    const current = () => (pos() < queue().length ? queue()[pos()] : null)
+    const graded = () => hardCount() + goodCount() + easyCount()
+    // Distinct cards mastered (rated "easy") this cram session — the cram progress
+    // numerator, since re-reviews make the raw grade count (`graded`) exceed the deck.
+    const mastered = () => retired().size
 
-  // The progress denominator is ANCHORED ONCE per session and then frozen, so the
-  // displayed total can never drift as you review. Computing it live (the old
-  // `graded + queue.length`) made the count climb by one per grade in cram mode
-  // (there the queue length is constant while `graded` grows) and flicker during
-  // the post-grade refetch in normal mode — the reported "count changes between
-  // cram and normal, and sometimes goes up randomly". `progressTotal` gives the
-  // mode-correct starting size (cram = all cards; normal = due count, reconstructed
-  // as graded + remaining so a mid-session resume still anchors correctly).
-  const [sessionTotal, setSessionTotal] = createSignal<number | null>(null);
-  createEffect(() => {
-    const len = queue().length; // reactive: re-anchors when a new session repopulates the queue
-    if (sessionTotal() === null && len > 0) {
-      setSessionTotal(progressTotal(len, untrack(graded), untrack(cram)));
+    // The progress denominator is ANCHORED ONCE per session and then frozen, so the
+    // displayed total can never drift as you review. Computing it live (the old
+    // `graded + queue.length`) made the count climb by one per grade in cram mode
+    // (there the queue length is constant while `graded` grows) and flicker during
+    // the post-grade refetch in normal mode — the reported "count changes between
+    // cram and normal, and sometimes goes up randomly". `progressTotal` gives the
+    // mode-correct starting size (cram = all cards; normal = due count, reconstructed
+    // as graded + remaining so a mid-session resume still anchors correctly).
+    const [sessionTotal, setSessionTotal] = createSignal<number | null>(null)
+    createEffect(() => {
+        const len = queue().length // reactive: re-anchors when a new session repopulates the queue
+        if (sessionTotal() === null && len > 0) {
+            setSessionTotal(progressTotal(len, untrack(graded), untrack(cram)))
+        }
+    })
+    const total = () =>
+        sessionTotal() ?? progressTotal(queue().length, graded(), cram())
+    // Progress numerator: normal mode counts grades (each due card is graded once);
+    // cram counts MASTERED (easy) cards, since cards loop until easy and the grade
+    // count would otherwise blow past the deck size / 100%.
+    const progressCount = () => (cram() ? mastered() : graded())
+    const progressPct = () => {
+        const t = total()
+        return t === 0 ? 0 : (progressCount() / t) * 100
     }
-  });
-  const total = () => sessionTotal() ?? progressTotal(queue().length, graded(), cram());
-  // Progress numerator: normal mode counts grades (each due card is graded once);
-  // cram counts MASTERED (easy) cards, since cards loop until easy and the grade
-  // count would otherwise blow past the deck size / 100%.
-  const progressCount = () => (cram() ? mastered() : graded());
-  const progressPct = () => {
-    const t = total();
-    return t === 0 ? 0 : (progressCount() / t) * 100;
-  };
 
-  // Prompt = the side being asked; answer = the side revealed. For a reverse card the
-  // back column is the prompt and the front column is the answer.
-  const promptCol = (it: QueueItem) => (it.dir === "fwd" ? frontField() : backField());
-  const answerCol = (it: QueueItem) => (it.dir === "fwd" ? backField() : frontField());
-  const promptHtml = (it: QueueItem) => renderMarkdown(String(it.r.note[promptCol(it)] ?? ""));
-  const answerHtml = (it: QueueItem) => renderMarkdown(String(it.r.note[answerCol(it)] ?? ""));
+    // Prompt = the side being asked; answer = the side revealed. For a reverse card the
+    // back column is the prompt and the front column is the answer.
+    const promptCol = (it: QueueItem) =>
+        it.dir === 'fwd' ? frontField() : backField()
+    const answerCol = (it: QueueItem) =>
+        it.dir === 'fwd' ? backField() : frontField()
+    const promptHtml = (it: QueueItem) =>
+        renderMarkdown(String(it.r.note[promptCol(it)] ?? ''))
+    const answerHtml = (it: QueueItem) =>
+        renderMarkdown(String(it.r.note[answerCol(it)] ?? ''))
 
-  // Which scheduling columns a direction advances: forward uses the base triple,
-  // reverse uses the `*Back` companions so each direction is scheduled independently.
-  const scheduleFields = (dir: CardDir) =>
-    dir === "fwd"
-      ? { due: dueField(), ease: easeField(), interval: intervalField() }
-      : { due: revScheduleCol(dueField()), ease: revScheduleCol(easeField()), interval: revScheduleCol(intervalField()) };
+    // Which scheduling columns a direction advances: forward uses the base triple,
+    // reverse uses the `*Back` companions so each direction is scheduled independently.
+    const scheduleFields = (dir: CardDir) =>
+        dir === 'fwd'
+            ? { due: dueField(), ease: easeField(), interval: intervalField() }
+            : {
+                  due: revScheduleCol(dueField()),
+                  ease: revScheduleCol(easeField()),
+                  interval: revScheduleCol(intervalField()),
+              }
 
-  const grade = async (response: "hard" | "good" | "easy") => {
-    const c = current();
-    // Single-advance lock: bail unless the answer is revealed AND no prior grade is
-    // still settling. Guarding on `revealed` alone left an async gap where a
-    // re-reveal + re-press double-graded the same card ("skips it twice").
-    if (!c || !canGrade({ revealed: revealed(), grading: grading() })) return;
-    setGrading(true);
-    setRevealed(false);
-    if (response === "hard") setHardCount((n) => n + 1);
-    else if (response === "easy") setEasyCount((n) => n + 1);
-    else setGoodCount((n) => n + 1);
-    // Cram mode never writes scheduling — it's practice, not review.
-    const persisted = !cram() && !!props.basePath;
-    try {
-      if (cram()) {
-        // Cram-until-easy: only an "easy" grade retires the card from the pool; a
-        // good/hard grade leaves it in so it resurfaces on a later wrap. nextCramPos
-        // scans forward (wrapping) for the next still-unmastered card, or -1 when
-        // every card is easy → out-of-range pos shows the "Cram complete" screen.
-        const pool = new Set(retired());
-        if (response === "easy") pool.add(itemKey(c));
-        setRetired(pool);
-        const np = nextCramPos(queue(), pos(), pool);
-        setPos(np === -1 ? queue().length : np);
-      } else {
-        // Track the card by its stable row index (c.index), not the positional queue
-        // offset: reviewCardRow pushes the card's due date forward so it drops out of
-        // the due-only queue on the onReviewed refetch. The shorter queue shifts the
-        // next card into the current pos, so we stay put (mirrors deleteCurrent)
-        // rather than incrementing into a queue whose membership just changed.
-        if (persisted) await api.reviewCardRow(props.basePath!, c.index, response, scheduleFields(c.dir));
-        setPos(nextPosAfterGrade(pos(), { cram: false, persisted }));
-        props.onReviewed();
-      }
-    } finally {
-      setGrading(false);
+    const grade = async (response: 'hard' | 'good' | 'easy') => {
+        const c = current()
+        // Single-advance lock: bail unless the answer is revealed AND no prior grade is
+        // still settling. Guarding on `revealed` alone left an async gap where a
+        // re-reveal + re-press double-graded the same card ("skips it twice").
+        if (!c || !canGrade({ revealed: revealed(), grading: grading() }))
+            return
+        setGrading(true)
+        setRevealed(false)
+        if (response === 'hard') setHardCount(n => n + 1)
+        else if (response === 'easy') setEasyCount(n => n + 1)
+        else setGoodCount(n => n + 1)
+        // Cram mode never writes scheduling — it's practice, not review.
+        const persisted = !cram() && !!props.basePath
+        try {
+            if (cram()) {
+                // Cram-until-easy: only an "easy" grade retires the card from the pool; a
+                // good/hard grade leaves it in so it resurfaces on a later wrap. nextCramPos
+                // scans forward (wrapping) for the next still-unmastered card, or -1 when
+                // every card is easy → out-of-range pos shows the "Cram complete" screen.
+                const pool = new Set(retired())
+                if (response === 'easy') pool.add(itemKey(c))
+                setRetired(pool)
+                const np = nextCramPos(queue(), pos(), pool)
+                setPos(np === -1 ? queue().length : np)
+            } else {
+                // Track the card by its stable row index (c.index), not the positional queue
+                // offset: reviewCardRow pushes the card's due date forward so it drops out of
+                // the due-only queue on the onReviewed refetch. The shorter queue shifts the
+                // next card into the current pos, so we stay put (mirrors deleteCurrent)
+                // rather than incrementing into a queue whose membership just changed.
+                if (persisted)
+                    await api.reviewCardRow(
+                        props.basePath!,
+                        c.index,
+                        response,
+                        scheduleFields(c.dir),
+                    )
+                setPos(nextPosAfterGrade(pos(), { cram: false, persisted }))
+                props.onReviewed()
+            }
+        } finally {
+            setGrading(false)
+        }
     }
-  };
 
-  const resetTally = () => {
-    setPos(0);
-    setRevealed(false);
-    setHardCount(0);
-    setGoodCount(0);
-    setEasyCount(0);
-    // Empty the cram-until-easy pool so a restarted / re-toggled session re-masters
-    // every card from scratch.
-    setRetired(new Set<string>());
-    // Drop the frozen denominator so the next queue (new mode / restarted session)
-    // re-anchors the total from scratch.
-    setSessionTotal(null);
-  };
-
-  const restart = () => {
-    resetTally();
-    if (!cram()) props.onReviewed();
-  };
-
-  const toggleCram = () => {
-    setCram(!cram());
-    resetTally();
-  };
-
-  // ── Deck-wide "Cards" modal (browse / add / edit / delete every card) ──
-  const [editing, setEditing] = createSignal(false);
-
-  // ── Per-card actions, on the card itself: edit this card / delete this card ──
-  const [editingCard, setEditingCard] = createSignal(false);
-  const [cardFront, setCardFront] = createSignal("");
-  const [cardBack, setCardBack] = createSignal("");
-
-  const openCardEdit = () => {
-    const c = current();
-    if (!c) return;
-    setCardFront(String(c.r.note[frontField()] ?? ""));
-    setCardBack(String(c.r.note[backField()] ?? ""));
-    setEditingCard(true);
-  };
-
-  const saveCardEdit = async () => {
-    const c = current();
-    if (!c || !props.basePath) return;
-    await api.rowUpdate(props.basePath, c.index, { ...c.r.note, [frontField()]: cardFront(), [backField()]: cardBack() });
-    setEditingCard(false);
-    props.onReviewed();
-  };
-
-  // Delete the current card and advance: rowDelete drops it from the base, the
-  // onReviewed refetch shrinks the queue, and the next card shifts into this pos
-  // (so we stay put — same as grading a card out of the due queue).
-  //
-  // In cram the positional "stay put" isn't enough: the refetch reindexes every
-  // higher row, and our cram bookkeeping (the index-keyed `retired` pool, the
-  // frozen deck-size total, and `pos`) would otherwise go stale — reading as a
-  // premature "Cram complete" or resurfacing an already-mastered card. So we
-  // reconcile it against the post-delete deck BEFORE the refetch lands.
-  const deleteCurrent = async () => {
-    const c = current();
-    if (!c || !props.basePath) return;
-    setRevealed(false);
-    if (cram()) {
-      const perRow = bidirectional() ? 2 : 1; // fwd+rev entries a row contributes
-      const newRetired = new Set(reindexRetiredAfterDelete(retired(), c.index));
-      // buildQueue is pure, so the cram queue after the row is removed can be
-      // computed now (cram ignores due dates, so this matches the coming refetch).
-      const newQueue = buildQueue(
-        props.rows.filter((_, i) => i !== c.index),
-        dueField(),
-        todayISO(),
-        true,
-        bidirectional(),
-      );
-      setRetired(newRetired);
-      // The frozen total drops by the entries this row contributed.
-      setSessionTotal((t) => (t === null ? t : Math.max(0, t - perRow)));
-      // Reposition onto the next still-unmastered card in the shrunk deck (or the
-      // completion sentinel when none remain). Scanning from pos()-1 makes the slot
-      // the deleted card vacated the first candidate; nextCramPos never lands on a
-      // retired card and reports -1 only when every survivor is mastered.
-      const np = newQueue.length === 0 ? 0 : nextCramPos(newQueue, pos() - 1, newRetired);
-      setPos(np === -1 ? newQueue.length : np);
+    const resetTally = () => {
+        setPos(0)
+        setRevealed(false)
+        setHardCount(0)
+        setGoodCount(0)
+        setEasyCount(0)
+        // Empty the cram-until-easy pool so a restarted / re-toggled session re-masters
+        // every card from scratch.
+        setRetired(new Set<string>())
+        // Drop the frozen denominator so the next queue (new mode / restarted session)
+        // re-anchors the total from scratch.
+        setSessionTotal(null)
     }
-    await api.rowDelete(props.basePath, c.index);
-    props.onReviewed();
-  };
 
-  // Edit/delete icons rendered on BOTH card faces so they flip with the card.
-  // stopPropagation keeps a click on them from triggering the card's reveal flip.
-  const cardActions = () => (
-    <div class="card-actions" onClick={(e) => e.stopPropagation()}>
-      <IconButton icon="Pencil" label="Edit this card" iconSize={13} onClick={openCardEdit} />
-      <IconButton icon="Trash2" label="Delete this card" iconSize={13} onClick={deleteCurrent} />
-    </div>
-  );
-
-  // ── Keyboard: Space reveals, 1/2/3 grade. Ignored while the edit modal is
-  // open or focus is in a text field, so it never fights typing. ──────────
-  const onKey = (e: KeyboardEvent) => {
-    if (editing() || editingCard()) return;
-    const el = e.target as HTMLElement | null;
-    if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
-    if (!current()) return;
-    if (e.code === "Space") {
-      e.preventDefault();
-      if (!revealed()) setRevealed(true);
-      return;
+    const restart = () => {
+        resetTally()
+        if (!cram()) props.onReviewed()
     }
-    if (revealed()) {
-      const g = GRADE_KEYS.find((x) => x.key === e.key);
-      if (g) {
-        e.preventDefault();
-        void grade(g.response);
-      }
-    }
-  };
-  onMount(() => window.addEventListener("keydown", onKey));
-  onCleanup(() => window.removeEventListener("keydown", onKey));
 
-  return (
-    <div class="flashcards-host">
-      <div class="revhead">
-        <div class="progress">
-          <div class="count">
-            {/* Normal mode: the 1-indexed card you're on. Cram: how many cards are
+    const toggleCram = () => {
+        setCram(!cram())
+        resetTally()
+    }
+
+    // ── Deck-wide "Cards" modal (browse / add / edit / delete every card) ──
+    const [editing, setEditing] = createSignal(false)
+
+    // ── Per-card actions, on the card itself: edit this card / delete this card ──
+    const [editingCard, setEditingCard] = createSignal(false)
+    const [cardFront, setCardFront] = createSignal('')
+    const [cardBack, setCardBack] = createSignal('')
+
+    const openCardEdit = () => {
+        const c = current()
+        if (!c) return
+        setCardFront(String(c.r.note[frontField()] ?? ''))
+        setCardBack(String(c.r.note[backField()] ?? ''))
+        setEditingCard(true)
+    }
+
+    const saveCardEdit = async () => {
+        const c = current()
+        if (!c || !props.basePath) return
+        await api.rowUpdate(props.basePath, c.index, {
+            ...c.r.note,
+            [frontField()]: cardFront(),
+            [backField()]: cardBack(),
+        })
+        setEditingCard(false)
+        props.onReviewed()
+    }
+
+    // Delete the current card and advance: rowDelete drops it from the base, the
+    // onReviewed refetch shrinks the queue, and the next card shifts into this pos
+    // (so we stay put — same as grading a card out of the due queue).
+    //
+    // In cram the positional "stay put" isn't enough: the refetch reindexes every
+    // higher row, and our cram bookkeeping (the index-keyed `retired` pool, the
+    // frozen deck-size total, and `pos`) would otherwise go stale — reading as a
+    // premature "Cram complete" or resurfacing an already-mastered card. So we
+    // reconcile it against the post-delete deck BEFORE the refetch lands.
+    const deleteCurrent = async () => {
+        const c = current()
+        if (!c || !props.basePath) return
+        setRevealed(false)
+        if (cram()) {
+            const perRow = bidirectional() ? 2 : 1 // fwd+rev entries a row contributes
+            const newRetired = new Set(
+                reindexRetiredAfterDelete(retired(), c.index),
+            )
+            // buildQueue is pure, so the cram queue after the row is removed can be
+            // computed now (cram ignores due dates, so this matches the coming refetch).
+            const newQueue = buildQueue(
+                props.rows.filter((_, i) => i !== c.index),
+                dueField(),
+                todayISO(),
+                true,
+                bidirectional(),
+            )
+            setRetired(newRetired)
+            // The frozen total drops by the entries this row contributed.
+            setSessionTotal(t => (t === null ? t : Math.max(0, t - perRow)))
+            // Reposition onto the next still-unmastered card in the shrunk deck (or the
+            // completion sentinel when none remain). Scanning from pos()-1 makes the slot
+            // the deleted card vacated the first candidate; nextCramPos never lands on a
+            // retired card and reports -1 only when every survivor is mastered.
+            const np =
+                newQueue.length === 0
+                    ? 0
+                    : nextCramPos(newQueue, pos() - 1, newRetired)
+            setPos(np === -1 ? newQueue.length : np)
+        }
+        await api.rowDelete(props.basePath, c.index)
+        props.onReviewed()
+    }
+
+    // Edit/delete icons rendered on BOTH card faces so they flip with the card.
+    // stopPropagation keeps a click on them from triggering the card's reveal flip.
+    const cardActions = () => (
+        <div class="card-actions" onClick={e => e.stopPropagation()}>
+            <IconButton
+                icon="Pencil"
+                label="Edit this card"
+                iconSize={13}
+                onClick={openCardEdit}
+            />
+            <IconButton
+                icon="Trash2"
+                label="Delete this card"
+                iconSize={13}
+                onClick={deleteCurrent}
+            />
+        </div>
+    )
+
+    // ── Keyboard: Space reveals, 1/2/3 grade. Ignored while the edit modal is
+    // open or focus is in a text field, so it never fights typing. ──────────
+    const onKey = (e: KeyboardEvent) => {
+        if (editing() || editingCard()) return
+        const el = e.target as HTMLElement | null
+        if (
+            el &&
+            (el.isContentEditable ||
+                /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
+        )
+            return
+        if (!current()) return
+        if (e.code === 'Space') {
+            e.preventDefault()
+            if (!revealed()) setRevealed(true)
+            return
+        }
+        if (revealed()) {
+            const g = GRADE_KEYS.find(x => x.key === e.key)
+            if (g) {
+                e.preventDefault()
+                void grade(g.response)
+            }
+        }
+    }
+    onMount(() => window.addEventListener('keydown', onKey))
+    onCleanup(() => window.removeEventListener('keydown', onKey))
+
+    return (
+        <div class="flashcards-host">
+            <div class="revhead">
+                <div class="progress">
+                    <div class="count">
+                        {/* Normal mode: the 1-indexed card you're on. Cram: how many cards are
                 mastered (easy) so far — cards loop until easy, so a position index
                 would be meaningless. */}
-            <b>{cram() ? mastered() : Math.min(graded() + 1, total())}</b> / {total()}
-            <Show when={bidirectional() && current()}>
-              {" · "}
-              <span class="card-dir">{current()!.dir === "fwd" ? "front → back" : "back → front"}</span>
-            </Show>
-            <Show when={cram()}> · cram</Show>
-          </div>
-          <div class="fcbar">
-            <AsciiMeter value={progressPct() / 100} width={30} />
-          </div>
-          <div class="tally">
-            <span class="a">HARD <b>{hardCount()}</b></span>
-            <span class="g">GOOD <b>{goodCount()}</b></span>
-            <span class="e">EASY <b>{easyCount()}</b></span>
-          </div>
-        </div>
-
-        <div class="deckctrls">
-          <Show when={props.basePath}>
-            <IconTextButton
-              icon="Layers"
-              iconSize={13}
-              variant="unselected"
-              title="Browse, add, edit, and delete every card in this deck"
-              onClick={() => setEditing(true)}
-            >
-              CARDS
-            </IconTextButton>
-          </Show>
-          <IconTextButton
-            icon="Zap"
-            iconSize={13}
-            variant={cram() ? "selected" : "unselected"}
-            title="Cram: review every card, no scheduling changes"
-            onClick={toggleCram}
-          >
-            CRAM
-          </IconTextButton>
-        </div>
-      </div>
-
-      <Show when={editing() && props.basePath}>
-        <EditCardsModal
-          rows={props.rows}
-          basePath={props.basePath!}
-          deckName={fileBasename(props.basePath!)}
-          frontField={frontField()}
-          backField={backField()}
-          onClose={() => setEditing(false)}
-          onChanged={() => props.onReviewed()}
-        />
-      </Show>
-
-      <div class="stage">
-        <Show
-          when={queue().length > 0}
-          fallback={
-            <EmptyState title={cram() ? "No cards in this deck" : "No cards due"}>
-              <Show when={!cram()} fallback={<>Add rows with <code>front</code> / <code>back</code> columns.</>}>
-                Hit the <span class="inline-bolt"><Icon value="Zap" size={14} /></span> button to review everything anyway.
-              </Show>
-            </EmptyState>
-          }
-        >
-          <Show
-            when={current() !== null}
-            fallback={
-              <div class="done">
-                <div class="big">{cram() ? "Cram complete" : "Deck complete"}</div>
-                <div class="sub">
-                  <Show
-                    when={cram()}
-                    fallback={
-                      <>
-                        You reviewed <b>{graded()}</b> {graded() === 1 ? "card" : "cards"}
-                        <Show when={goodCount() > 0}> · <span class="good-text">good</span> on most</Show>.
-                      </>
-                    }
-                  >
-                    Every card is <span class="good-text">easy</span> — you mastered{" "}
-                    <b>{total()}</b> {total() === 1 ? "card" : "cards"} in <b>{graded()}</b>{" "}
-                    {graded() === 1 ? "review" : "reviews"}.
-                  </Show>
+                        <b>
+                            {cram()
+                                ? mastered()
+                                : Math.min(graded() + 1, total())}
+                        </b>{' '}
+                        / {total()}
+                        <Show when={bidirectional() && current()}>
+                            {' · '}
+                            <span class="card-dir">
+                                {current()!.dir === 'fwd'
+                                    ? 'front → back'
+                                    : 'back → front'}
+                            </span>
+                        </Show>
+                        <Show when={cram()}> · cram</Show>
+                    </div>
+                    <div class="fcbar">
+                        <AsciiMeter value={progressPct() / 100} width={30} />
+                    </div>
+                    <div class="tally">
+                        <span class="a">
+                            HARD <b>{hardCount()}</b>
+                        </span>
+                        <span class="g">
+                            GOOD <b>{goodCount()}</b>
+                        </span>
+                        <span class="e">
+                            EASY <b>{easyCount()}</b>
+                        </span>
+                    </div>
                 </div>
-                <TextButton size="lg" onClick={restart}>REVIEW AGAIN</TextButton>
-              </div>
-            }
-          >
-            <div class="cardwrap">
-              {/*
+
+                <div class="deckctrls">
+                    <Show when={props.basePath}>
+                        <IconTextButton
+                            icon="Layers"
+                            iconSize={13}
+                            variant="unselected"
+                            title="Browse, add, edit, and delete every card in this deck"
+                            onClick={() => setEditing(true)}
+                        >
+                            CARDS
+                        </IconTextButton>
+                    </Show>
+                    <IconTextButton
+                        icon="Zap"
+                        iconSize={13}
+                        variant={cram() ? 'selected' : 'unselected'}
+                        title="Cram: review every card, no scheduling changes"
+                        onClick={toggleCram}
+                    >
+                        CRAM
+                    </IconTextButton>
+                </div>
+            </div>
+
+            <Show when={editing() && props.basePath}>
+                <EditCardsModal
+                    rows={props.rows}
+                    basePath={props.basePath!}
+                    deckName={fileBasename(props.basePath!)}
+                    frontField={frontField()}
+                    backField={backField()}
+                    onClose={() => setEditing(false)}
+                    onChanged={() => props.onReviewed()}
+                />
+            </Show>
+
+            <div class="stage">
+                <Show
+                    when={queue().length > 0}
+                    fallback={
+                        <EmptyState
+                            title={
+                                cram()
+                                    ? 'No cards in this deck'
+                                    : 'No cards due'
+                            }
+                        >
+                            <Show
+                                when={!cram()}
+                                fallback={
+                                    <>
+                                        Add rows with <code>front</code> /{' '}
+                                        <code>back</code> columns.
+                                    </>
+                                }
+                            >
+                                Hit the{' '}
+                                <span class="inline-bolt">
+                                    <Icon value="Zap" size={14} />
+                                </span>{' '}
+                                button to review everything anyway.
+                            </Show>
+                        </EmptyState>
+                    }
+                >
+                    <Show
+                        when={current() !== null}
+                        fallback={
+                            <div class="done">
+                                <div class="big">
+                                    {cram() ? 'Cram complete' : 'Deck complete'}
+                                </div>
+                                <div class="sub">
+                                    <Show
+                                        when={cram()}
+                                        fallback={
+                                            <>
+                                                You reviewed <b>{graded()}</b>{' '}
+                                                {graded() === 1
+                                                    ? 'card'
+                                                    : 'cards'}
+                                                <Show when={goodCount() > 0}>
+                                                    {' '}
+                                                    ·{' '}
+                                                    <span class="good-text">
+                                                        good
+                                                    </span>{' '}
+                                                    on most
+                                                </Show>
+                                                .
+                                            </>
+                                        }
+                                    >
+                                        Every card is{' '}
+                                        <span class="good-text">easy</span> —
+                                        you mastered <b>{total()}</b>{' '}
+                                        {total() === 1 ? 'card' : 'cards'} in{' '}
+                                        <b>{graded()}</b>{' '}
+                                        {graded() === 1 ? 'review' : 'reviews'}.
+                                    </Show>
+                                </div>
+                                <TextButton size="lg" onClick={restart}>
+                                    REVIEW AGAIN
+                                </TextButton>
+                            </div>
+                        }
+                    >
+                        <div class="cardwrap">
+                            {/*
                 Keyed by row index + direction via <For> over a single-element array: <For> reconciles
                 by item value, so when the current card's index OR direction changes the element is
                 disposed and a fresh one is created (instant reset to front + entrance anim). Keying on
@@ -422,83 +530,134 @@ export function FlashcardsView(props: {
                 value is unchanged, so it does NOT remount. The flip is a transform transition on the
                 persistent element, so it only animates when toggling `revealed` on the SAME card.
               */}
-              <For each={[`${current()!.index}:${current()!.dir}`]}>
-                {() => (
-                  <div
-                    class={`flip-card card-appear ${revealed() ? "flipped" : ""}`}
-                    onClick={() => !revealed() && setRevealed(true)}
-                  >
-                    <div class="flip-inner">
-                      <div class="flip-face flip-front">
-                        <Show when={props.basePath}>{cardActions()}</Show>
-                        <div class="card-md" innerHTML={promptHtml(current()!)} />
-                        <div class="fliphint">
-                          <span class="asc-kbd"><span class="asc-key">SPACE</span></span> to reveal answer
+                            <For
+                                each={[`${current()!.index}:${current()!.dir}`]}
+                            >
+                                {() => (
+                                    <div
+                                        class={`flip-card card-appear ${revealed() ? 'flipped' : ''}`}
+                                        onClick={() =>
+                                            !revealed() && setRevealed(true)
+                                        }
+                                    >
+                                        <div class="flip-inner">
+                                            <div class="flip-face flip-front">
+                                                <Show when={props.basePath}>
+                                                    {cardActions()}
+                                                </Show>
+                                                <div
+                                                    class="card-md"
+                                                    innerHTML={promptHtml(
+                                                        current()!,
+                                                    )}
+                                                />
+                                                <div class="fliphint">
+                                                    <span class="asc-kbd">
+                                                        <span class="asc-key">
+                                                            SPACE
+                                                        </span>
+                                                    </span>{' '}
+                                                    to reveal answer
+                                                </div>
+                                            </div>
+                                            <div class="flip-face flip-back">
+                                                <Show when={props.basePath}>
+                                                    {cardActions()}
+                                                </Show>
+                                                <div
+                                                    class="qcaption"
+                                                    innerHTML={promptHtml(
+                                                        current()!,
+                                                    )}
+                                                />
+                                                <div class="fcdiv" />
+                                                <div
+                                                    class="card-md abody"
+                                                    innerHTML={answerHtml(
+                                                        current()!,
+                                                    )}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </For>
                         </div>
-                      </div>
-                      <div class="flip-face flip-back">
-                        <Show when={props.basePath}>{cardActions()}</Show>
-                        <div class="qcaption" innerHTML={promptHtml(current()!)} />
-                        <div class="fcdiv" />
-                        <div class="card-md abody" innerHTML={answerHtml(current()!)} />
-                      </div>
+
+                        <Show when={revealed()}>
+                            <div class="grade-row">
+                                <For each={GRADE_KEYS}>
+                                    {g => (
+                                        <button
+                                            class={`grade ${g.cls}`}
+                                            onClick={() => grade(g.response)}
+                                        >
+                                            <span class="g-name">
+                                                {g.response}
+                                            </span>
+                                            <span class="asc-kbd">
+                                                <span class="asc-key">
+                                                    {g.key}
+                                                </span>
+                                            </span>
+                                        </button>
+                                    )}
+                                </For>
+                            </div>
+                        </Show>
+                    </Show>
+                </Show>
+            </div>
+
+            <Show when={editingCard() && props.basePath}>
+                <Modal
+                    onClose={() => setEditingCard(false)}
+                    class="cards-modal card-edit-one"
+                >
+                    <div class="cards-head">
+                        <h2 class="cards-title">Edit card</h2>
+                        <div class="sp" />
+                        <IconButton
+                            icon="X"
+                            label="Close"
+                            onClick={() => setEditingCard(false)}
+                        />
                     </div>
-                  </div>
-                )}
-              </For>
-            </div>
-
-            <Show when={revealed()}>
-              <div class="grade-row">
-                <For each={GRADE_KEYS}>
-                  {(g) => (
-                    <button class={`grade ${g.cls}`} onClick={() => grade(g.response)}>
-                      <span class="g-name">{g.response}</span>
-                      <span class="asc-kbd"><span class="asc-key">{g.key}</span></span>
-                    </button>
-                  )}
-                </For>
-              </div>
+                    <div class="card-edit-one-body">
+                        <label class="card-edit-labeled">
+                            <span>Front</span>
+                            <TextInput
+                                multiline
+                                class="card-edit-field"
+                                value={cardFront()}
+                                placeholder="Front / prompt…"
+                                onInput={setCardFront}
+                            />
+                        </label>
+                        <label class="card-edit-labeled">
+                            <span>Back</span>
+                            <TextInput
+                                multiline
+                                class="card-edit-field"
+                                value={cardBack()}
+                                placeholder="Back / answer…"
+                                onInput={setCardBack}
+                            />
+                        </label>
+                        <div class="card-edit-one-actions">
+                            <TextButton onClick={() => setEditingCard(false)}>
+                                CANCEL
+                            </TextButton>
+                            <TextButton
+                                variant="selected"
+                                onClick={saveCardEdit}
+                            >
+                                SAVE
+                            </TextButton>
+                        </div>
+                    </div>
+                </Modal>
             </Show>
-          </Show>
-        </Show>
-      </div>
-
-      <Show when={editingCard() && props.basePath}>
-        <Modal onClose={() => setEditingCard(false)} class="cards-modal card-edit-one">
-          <div class="cards-head">
-            <h2 class="cards-title">Edit card</h2>
-            <div class="sp" />
-            <IconButton icon="X" label="Close" onClick={() => setEditingCard(false)} />
-          </div>
-          <div class="card-edit-one-body">
-            <label class="card-edit-labeled">
-              <span>Front</span>
-              <TextInput
-                multiline
-                class="card-edit-field"
-                value={cardFront()}
-                placeholder="Front / prompt…"
-                onInput={setCardFront}
-              />
-            </label>
-            <label class="card-edit-labeled">
-              <span>Back</span>
-              <TextInput
-                multiline
-                class="card-edit-field"
-                value={cardBack()}
-                placeholder="Back / answer…"
-                onInput={setCardBack}
-              />
-            </label>
-            <div class="card-edit-one-actions">
-              <TextButton onClick={() => setEditingCard(false)}>CANCEL</TextButton>
-              <TextButton variant="selected" onClick={saveCardEdit}>SAVE</TextButton>
-            </div>
-          </div>
-        </Modal>
-      </Show>
-    </div>
-  );
+        </div>
+    )
 }

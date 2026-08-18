@@ -15,61 +15,153 @@
 // (split-down) never collide.
 
 export interface KeybindingSpec {
-  /** Stable id; the YAML key under `keybindings:` and the lookup App.tsx uses. */
-  id: string;
-  /** Human label (for docs / a future shortcuts cheat-sheet). */
-  label: string;
-  /** Default combo string, equal to the value previously hardcoded in App.tsx. */
-  default: string;
-  /** One-line doc surfaced by settings autocomplete + the parity test. */
-  doc: string;
+    /** Stable id; the YAML key under `keybindings:` and the lookup App.tsx uses. */
+    id: string
+    /** Human label (for docs / a future shortcuts cheat-sheet). */
+    label: string
+    /** Default combo string, equal to the value previously hardcoded in App.tsx. */
+    default: string
+    /** One-line doc surfaced by settings autocomplete + the parity test. */
+    doc: string
 }
 
 export const KEYBINDING_CATALOG: KeybindingSpec[] = [
-  { id: "find", label: "Find in note", default: "Mod+F",
-    doc: "Open the in-note find bar in the focused editor (searches the current note)." },
-  { id: "command-palette", label: "Toggle command palette", default: "Mod+P",
-    doc: "Open/close the command palette." },
-  { id: "quick-switcher", label: "Toggle quick switcher", default: "Mod+O",
-    doc: "Open/close the quick file switcher." },
-  { id: "terminal", label: "Open terminal", default: "Mod+`, Mod+J",
-    doc: "Open a terminal tab (comma-separated alternatives allowed)." },
-  { id: "toggle-draw-mode", label: "Toggle draw mode", default: "Mod+Shift+I",
-    doc: "Toggle ink/draw mode in the focused note editor — draw freehand over the note (Escape also exits). Mnemonic: Ink. On Linux/Windows Ctrl+Shift+I collides with browser devtools — rebind if needed." },
-  { id: "split-right", label: "Split pane right", default: "Mod+D",
-    doc: "Split the focused pane into a new pane to the right." },
-  { id: "split-down", label: "Split pane down", default: "Mod+Shift+D",
-    doc: "Split the focused pane into a new pane below." },
-  { id: "equalize-panes", label: "Equalize panes", default: "Mod+Alt+=",
-    doc: "Reset all split panes to equal sizes." },
-  { id: "close-pane", label: "Close pane", default: "Mod+W",
-    doc: "Close the focused pane (closes the whole tab when it's the last pane)." },
-  { id: "new-tab", label: "New tab", default: "Mod+T",
-    doc: "Open a new tab (the Knowledge Graph home)." },
-  { id: "reopen-tab", label: "Reopen closed tab", default: "Mod+Shift+T",
-    doc: "Reopen the most recently closed tab." },
-  { id: "history-back", label: "Back", default: "Mod+[",
-    doc: "Go back in the focused pane's navigation history." },
-  { id: "history-forward", label: "Forward", default: "Mod+]",
-    doc: "Go forward in the focused pane's navigation history." },
-  { id: "focus-pane-left", label: "Focus pane left", default: "Mod+Alt+ArrowLeft",
-    doc: "Move focus to the pane on the left." },
-  { id: "focus-pane-right", label: "Focus pane right", default: "Mod+Alt+ArrowRight",
-    doc: "Move focus to the pane on the right." },
-  { id: "focus-pane-up", label: "Focus pane up", default: "Mod+Alt+ArrowUp",
-    doc: "Move focus to the pane above." },
-  { id: "focus-pane-down", label: "Focus pane down", default: "Mod+Alt+ArrowDown",
-    doc: "Move focus to the pane below." },
-  { id: "new-claude-chat", label: "New Claude chat", default: "Mod+Shift+C",
-    doc: "Open a new Claude Code chat session in its own tab." },
-  { id: "insert-template", label: "Insert template", default: "Alt+T",
-    doc: "Open the template-insertion palette (ignored while typing in a form field)." },
-  { id: "toggle-sidebar", label: "Toggle sidebar", default: "Alt+S",
-    doc: "Show/hide the left sidebar (ignored while typing in a form field)." },
-  { id: "zoom-in", label: "Zoom in", default: "Mod+=, Mod+Shift+=",
-    doc: "Increase the whole app's UI zoom one step. Mod+Shift+= covers keyboards where the labeled \"+\" requires Shift." },
-  { id: "zoom-out", label: "Zoom out", default: "Mod+-",
-    doc: "Decrease the whole app's UI zoom one step." },
-  { id: "zoom-reset", label: "Reset zoom", default: "Mod+0",
-    doc: "Reset the whole app's UI zoom to 100%." },
-];
+    {
+        id: 'find',
+        label: 'Find in note',
+        default: 'Mod+F',
+        doc: 'Open the in-note find bar in the focused editor (searches the current note).',
+    },
+    {
+        id: 'command-palette',
+        label: 'Toggle command palette',
+        default: 'Mod+P',
+        doc: 'Open/close the command palette.',
+    },
+    {
+        id: 'quick-switcher',
+        label: 'Toggle quick switcher',
+        default: 'Mod+O',
+        doc: 'Open/close the quick file switcher.',
+    },
+    {
+        id: 'terminal',
+        label: 'Open terminal',
+        default: 'Mod+`, Mod+J',
+        doc: 'Open a terminal tab (comma-separated alternatives allowed).',
+    },
+    {
+        id: 'toggle-draw-mode',
+        label: 'Toggle draw mode',
+        default: 'Mod+Shift+I',
+        doc: 'Toggle ink/draw mode in the focused note editor — draw freehand over the note (Escape also exits). Mnemonic: Ink. On Linux/Windows Ctrl+Shift+I collides with browser devtools — rebind if needed.',
+    },
+    {
+        id: 'split-right',
+        label: 'Split pane right',
+        default: 'Mod+D',
+        doc: 'Split the focused pane into a new pane to the right.',
+    },
+    {
+        id: 'split-down',
+        label: 'Split pane down',
+        default: 'Mod+Shift+D',
+        doc: 'Split the focused pane into a new pane below.',
+    },
+    {
+        id: 'equalize-panes',
+        label: 'Equalize panes',
+        default: 'Mod+Alt+=',
+        doc: 'Reset all split panes to equal sizes.',
+    },
+    {
+        id: 'close-pane',
+        label: 'Close pane',
+        default: 'Mod+W',
+        doc: "Close the focused pane (closes the whole tab when it's the last pane).",
+    },
+    {
+        id: 'new-tab',
+        label: 'New tab',
+        default: 'Mod+T',
+        doc: 'Open a new tab (the Knowledge Graph home).',
+    },
+    {
+        id: 'reopen-tab',
+        label: 'Reopen closed tab',
+        default: 'Mod+Shift+T',
+        doc: 'Reopen the most recently closed tab.',
+    },
+    {
+        id: 'history-back',
+        label: 'Back',
+        default: 'Mod+[',
+        doc: "Go back in the focused pane's navigation history.",
+    },
+    {
+        id: 'history-forward',
+        label: 'Forward',
+        default: 'Mod+]',
+        doc: "Go forward in the focused pane's navigation history.",
+    },
+    {
+        id: 'focus-pane-left',
+        label: 'Focus pane left',
+        default: 'Mod+Alt+ArrowLeft',
+        doc: 'Move focus to the pane on the left.',
+    },
+    {
+        id: 'focus-pane-right',
+        label: 'Focus pane right',
+        default: 'Mod+Alt+ArrowRight',
+        doc: 'Move focus to the pane on the right.',
+    },
+    {
+        id: 'focus-pane-up',
+        label: 'Focus pane up',
+        default: 'Mod+Alt+ArrowUp',
+        doc: 'Move focus to the pane above.',
+    },
+    {
+        id: 'focus-pane-down',
+        label: 'Focus pane down',
+        default: 'Mod+Alt+ArrowDown',
+        doc: 'Move focus to the pane below.',
+    },
+    {
+        id: 'new-claude-chat',
+        label: 'New Claude chat',
+        default: 'Mod+Shift+C',
+        doc: 'Open a new Claude Code chat session in its own tab.',
+    },
+    {
+        id: 'insert-template',
+        label: 'Insert template',
+        default: 'Alt+T',
+        doc: 'Open the template-insertion palette (ignored while typing in a form field).',
+    },
+    {
+        id: 'toggle-sidebar',
+        label: 'Toggle sidebar',
+        default: 'Alt+S',
+        doc: 'Show/hide the left sidebar (ignored while typing in a form field).',
+    },
+    {
+        id: 'zoom-in',
+        label: 'Zoom in',
+        default: 'Mod+=, Mod+Shift+=',
+        doc: 'Increase the whole app\'s UI zoom one step. Mod+Shift+= covers keyboards where the labeled "+" requires Shift.',
+    },
+    {
+        id: 'zoom-out',
+        label: 'Zoom out',
+        default: 'Mod+-',
+        doc: "Decrease the whole app's UI zoom one step.",
+    },
+    {
+        id: 'zoom-reset',
+        label: 'Reset zoom',
+        default: 'Mod+0',
+        doc: "Reset the whole app's UI zoom to 100%.",
+    },
+]

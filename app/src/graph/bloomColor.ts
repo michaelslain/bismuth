@@ -11,25 +11,30 @@
 // NaN to 0, so a malformed colour silently paints pure black — which a `screen` blend composites
 // as a total no-op. The caller (GraphAtmosphere) is what turns "null" into an actual fallback.
 
-export type Rgb = readonly [number, number, number];
+export type Rgb = readonly [number, number, number]
 
-const clamp255 = (n: number): number => Math.max(0, Math.min(255, Math.round(n)));
+const clamp255 = (n: number): number =>
+    Math.max(0, Math.min(255, Math.round(n)))
 
 /** Parse a CSS hex colour (`#rgb` or `#rrggbb`, case-insensitive, optional surrounding
  *  whitespace) into 0..255 integer channels. Anything else — empty string, `rgb(...)`, a named
  *  colour, garbage — returns null rather than a partial/NaN result. */
 export function parseHexColor(value: string): Rgb | null {
-  const s = value.trim();
-  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(s);
-  if (short) {
-    const [, r, g, b] = short;
-    return [parseInt(r + r, 16), parseInt(g + g, 16), parseInt(b + b, 16)];
-  }
-  const long = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(s);
-  if (long) {
-    return [parseInt(long[1], 16), parseInt(long[2], 16), parseInt(long[3], 16)];
-  }
-  return null;
+    const s = value.trim()
+    const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(s)
+    if (short) {
+        const [, r, g, b] = short
+        return [parseInt(r + r, 16), parseInt(g + g, 16), parseInt(b + b, 16)]
+    }
+    const long = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(s)
+    if (long) {
+        return [
+            parseInt(long[1], 16),
+            parseInt(long[2], 16),
+            parseInt(long[3], 16),
+        ]
+    }
+    return null
 }
 
 /** Parse a "r, g, b" CSS custom-property value (e.g. `--bloom-rgb: 150, 230, 216`) into 0..255
@@ -37,11 +42,14 @@ export function parseHexColor(value: string): Rgb | null {
  *  finite-number tokens — so `""` (unset), `"1, 2"`, `"a, b, c"`, and `"1, , 3"` all fall through
  *  to null instead of an `Infinity`/`NaN`-tainted triple. */
 export function parseRgbTriple(value: string): Rgb | null {
-  const tokens = value.trim().split(",").map((t) => t.trim());
-  if (tokens.length !== 3 || tokens.some((t) => t === "")) return null;
-  const nums = tokens.map(Number);
-  if (nums.some((n) => !Number.isFinite(n))) return null;
-  return [clamp255(nums[0]), clamp255(nums[1]), clamp255(nums[2])];
+    const tokens = value
+        .trim()
+        .split(',')
+        .map(t => t.trim())
+    if (tokens.length !== 3 || tokens.some(t => t === '')) return null
+    const nums = tokens.map(Number)
+    if (nums.some(n => !Number.isFinite(n))) return null
+    return [clamp255(nums[0]), clamp255(nums[1]), clamp255(nums[2])]
 }
 
 // ---------------------------------------------------------------------------
@@ -50,7 +58,8 @@ export function parseRgbTriple(value: string): Rgb | null {
 
 /** Rec. 709 luma: the weighting the eye actually uses, and the same one bench/visual.ts's probe
  *  measures brightness with. */
-export const luma = (r: number, g: number, b: number): number => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+export const luma = (r: number, g: number, b: number): number =>
+    0.2126 * r + 0.7152 * g + 0.0722 * b
 
 /**
  * How far a cell's own TERRITORY colour displaces the shared phosphor hue.
@@ -62,15 +71,16 @@ export const luma = (r: number, g: number, b: number): number => 0.2126 * r + 0.
  * the opposite of what a diffuse ground wants. Mixing most of the way toward the territory hue over
  * the phosphor base keeps ONE family of colour with the territories legible inside it.
  */
-export const TERRITORY_TINT = 0.72;
+export const TERRITORY_TINT = 0.72
 
 /** A cell whose mean colour is this dark carries no territory — either no coloured emitter reached
  *  it, or its blurred weight fell under the field's own epsilon and `buildBloom` zeroed the
  *  channels. Below it, the luma renormalisation would divide by ~0 and manufacture a hue out of
  *  rounding noise. */
-const TERRITORY_EPS = 1;
+const TERRITORY_EPS = 1
 
-const clampByte = (n: number): number => (n < 0 ? 0 : n > 255 ? 255 : Math.round(n));
+const clampByte = (n: number): number =>
+    n < 0 ? 0 : n > 255 ? 255 : Math.round(n)
 
 /**
  * The painted phosphor colour for one field cell, packed `0xRRGGBB`.
@@ -85,12 +95,20 @@ const clampByte = (n: number): number => (n < 0 ? 0 : n > 255 ? 255 : Math.round
  * atmosphere would stop being a density map, which is the one thing it is for. A cell with no
  * colour falls through to the base hue exactly.
  */
-export function tintTerritory(base: Rgb, cr: number, cg: number, cb: number): number {
-  const [r, g, b] = base;
-  const cl = luma(cr, cg, cb);
-  if (!(cl > TERRITORY_EPS)) return (clampByte(r) << 16) | (clampByte(g) << 8) | clampByte(b);
-  const k = luma(r, g, b) / cl;
-  return (clampByte(r + (cr * k - r) * TERRITORY_TINT) << 16)
-    | (clampByte(g + (cg * k - g) * TERRITORY_TINT) << 8)
-    | clampByte(b + (cb * k - b) * TERRITORY_TINT);
+export function tintTerritory(
+    base: Rgb,
+    cr: number,
+    cg: number,
+    cb: number,
+): number {
+    const [r, g, b] = base
+    const cl = luma(cr, cg, cb)
+    if (!(cl > TERRITORY_EPS))
+        return (clampByte(r) << 16) | (clampByte(g) << 8) | clampByte(b)
+    const k = luma(r, g, b) / cl
+    return (
+        (clampByte(r + (cr * k - r) * TERRITORY_TINT) << 16) |
+        (clampByte(g + (cg * k - g) * TERRITORY_TINT) << 8) |
+        clampByte(b + (cb * k - b) * TERRITORY_TINT)
+    )
 }

@@ -1,26 +1,33 @@
-import type { EvalContext } from "./types";
-import { isLink, toNumber, truthy, type Link } from "./values";
+import type { EvalContext } from './types'
+import { isLink, toNumber, truthy, type Link } from './values'
 
 export function asString(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  if (v instanceof Date) return v.toISOString();
-  if (isLink(v)) return (v as Link).display ?? (v as Link).path;
-  return String(v);
+    if (v === null || v === undefined) return ''
+    if (v instanceof Date) return v.toISOString()
+    if (isLink(v)) return (v as Link).display ?? (v as Link).path
+    return String(v)
 }
 
 // ---- Duration parsing (used by date arithmetic + the `duration` helper) ----
 // Accepts "1d", "-2h", "30m", "1.5w", "1y", "1mo", "500ms". "M"/"mo" = months,
 // "m" = minutes. Returns milliseconds, or NaN if not a duration literal.
 const UNIT_MS: Record<string, number> = {
-  ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000,
-  w: 7 * 86_400_000, mo: 30 * 86_400_000, M: 30 * 86_400_000, y: 365 * 86_400_000,
-};
-const DURATION_RE = /^(-?\d+(?:\.\d+)?)(ms|mo|M|[smhdwy])$/;
+    ms: 1,
+    s: 1000,
+    m: 60_000,
+    h: 3_600_000,
+    d: 86_400_000,
+    w: 7 * 86_400_000,
+    mo: 30 * 86_400_000,
+    M: 30 * 86_400_000,
+    y: 365 * 86_400_000,
+}
+const DURATION_RE = /^(-?\d+(?:\.\d+)?)(ms|mo|M|[smhdwy])$/
 export function parseDurationMs(s: unknown): number {
-  if (typeof s !== "string") return NaN;
-  const m = s.trim().match(DURATION_RE);
-  if (!m) return NaN;
-  return Number(m[1]) * UNIT_MS[m[2]];
+    if (typeof s !== 'string') return NaN
+    const m = s.trim().match(DURATION_RE)
+    if (!m) return NaN
+    return Number(m[1]) * UNIT_MS[m[2]]
 }
 
 // Lambda-style method args land here from the parser as plain strings (the
@@ -28,235 +35,328 @@ export function parseDurationMs(s: unknown): number {
 // path or a tiny embedded expression instead). `_.x`, `it.x`, `$.x`, and
 // "bare" forms all resolve against the item; an item that's an object lets
 // you reach into it, an item that's primitive only responds to `_`/`it`/`$`.
-const ITEM_ACCESSOR_PREFIX_RE = /^(_|it|\$)\./;
-function compileItemAccessor(arg: unknown): (item: unknown, index: number) => unknown {
-  if (typeof arg === "function") return arg as (i: unknown, n: number) => unknown;
-  if (typeof arg !== "string") return (item) => item;
-  const path = arg.trim();
-  // Bare placeholders just return the item.
-  if (path === "_" || path === "it" || path === "$") return (item) => item;
-  // Stripped leading placeholder + dot = property path on the item.
-  const stripped = path.replace(ITEM_ACCESSOR_PREFIX_RE, "");
-  const parts = stripped.split(".").filter(Boolean);
-  return (item) => {
-    let v: unknown = item;
-    for (const k of parts) {
-      if (v === null || v === undefined) return undefined;
-      v = (v as Record<string, unknown>)[k];
+const ITEM_ACCESSOR_PREFIX_RE = /^(_|it|\$)\./
+function compileItemAccessor(
+    arg: unknown,
+): (item: unknown, index: number) => unknown {
+    if (typeof arg === 'function')
+        return arg as (i: unknown, n: number) => unknown
+    if (typeof arg !== 'string') return item => item
+    const path = arg.trim()
+    // Bare placeholders just return the item.
+    if (path === '_' || path === 'it' || path === '$') return item => item
+    // Stripped leading placeholder + dot = property path on the item.
+    const stripped = path.replace(ITEM_ACCESSOR_PREFIX_RE, '')
+    const parts = stripped.split('.').filter(Boolean)
+    return item => {
+        let v: unknown = item
+        for (const k of parts) {
+            if (v === null || v === undefined) return undefined
+            v = (v as Record<string, unknown>)[k]
+        }
+        return v
     }
-    return v;
-  };
 }
 // ---- Global functions ----
-export function callFunction(name: string, args: unknown[], _ctx: EvalContext): unknown {
-  switch (name) {
-    case "if": return truthy(args[0]) ? args[1] : args.length > 2 ? args[2] : undefined;
-    case "number": return toNumber(args[0]);
-    case "list": return args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
-    case "min": return Math.min(...args.map(toNumber));
-    case "max": return Math.max(...args.map(toNumber));
-    case "now": return new Date();
-    case "today": { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
-    case "date": return args[0] instanceof Date ? args[0] : new Date(asString(args[0]));
-    case "duration": return parseDurationMs(args[0]);
-    case "link": return { __link: true, path: asString(args[0]), display: args[1] != null ? asString(args[1]) : undefined } as Link;
-    case "random": return Math.random();
-    default: return undefined;
-  }
+export function callFunction(
+    name: string,
+    args: unknown[],
+    _ctx: EvalContext,
+): unknown {
+    switch (name) {
+        case 'if':
+            return truthy(args[0])
+                ? args[1]
+                : args.length > 2
+                  ? args[2]
+                  : undefined
+        case 'number':
+            return toNumber(args[0])
+        case 'list':
+            return args.length === 1 && Array.isArray(args[0]) ? args[0] : args
+        case 'min':
+            return Math.min(...args.map(toNumber))
+        case 'max':
+            return Math.max(...args.map(toNumber))
+        case 'now':
+            return new Date()
+        case 'today': {
+            const d = new Date()
+            d.setHours(0, 0, 0, 0)
+            return d
+        }
+        case 'date':
+            return args[0] instanceof Date
+                ? args[0]
+                : new Date(asString(args[0]))
+        case 'duration':
+            return parseDurationMs(args[0])
+        case 'link':
+            return {
+                __link: true,
+                path: asString(args[0]),
+                display: args[1] != null ? asString(args[1]) : undefined,
+            } as Link
+        case 'random':
+            return Math.random()
+        default:
+            return undefined
+    }
 }
 
 // ---- Method dispatch by receiver type ----
-export function callMethod(receiver: unknown, name: string, args: unknown[], ctx: EvalContext): unknown {
-  if (receiver && typeof receiver === "object" && !Array.isArray(receiver) && "path" in (receiver as object) && "tags" in (receiver as object)) {
-    return callFileMethod(receiver as FileMeta, name, args, ctx);
-  }
-  if (typeof receiver === "number") return callNumberMethod(receiver, name, args);
-  if (typeof receiver === "string") return callStringMethod(receiver, name, args);
-  if (Array.isArray(receiver)) return callArrayMethod(receiver, name, args);
-  if (receiver instanceof Date) return callDateMethod(receiver, name, args);
-  return undefined;
+export function callMethod(
+    receiver: unknown,
+    name: string,
+    args: unknown[],
+    ctx: EvalContext,
+): unknown {
+    if (
+        receiver &&
+        typeof receiver === 'object' &&
+        !Array.isArray(receiver) &&
+        'path' in (receiver as object) &&
+        'tags' in (receiver as object)
+    ) {
+        return callFileMethod(receiver as FileMeta, name, args, ctx)
+    }
+    if (typeof receiver === 'number')
+        return callNumberMethod(receiver, name, args)
+    if (typeof receiver === 'string')
+        return callStringMethod(receiver, name, args)
+    if (Array.isArray(receiver)) return callArrayMethod(receiver, name, args)
+    if (receiver instanceof Date) return callDateMethod(receiver, name, args)
+    return undefined
 }
 
-type FileMeta = { tags: string[]; links: string[]; folder: string; path: string; [k: string]: unknown };
+type FileMeta = {
+    tags: string[]
+    links: string[]
+    folder: string
+    path: string
+    [k: string]: unknown
+}
 
 /** Basename of a path: drop the folder and the trailing extension. Wikilink targets
  *  (what f.links stores) are basenames with no folder / .md / #heading / |alias. */
 function baseName(p: string): string {
-  const seg = p.slice(p.lastIndexOf("/") + 1);
-  return seg.replace(/\.[^.]+$/, "");
+    const seg = p.slice(p.lastIndexOf('/') + 1)
+    return seg.replace(/\.[^.]+$/, '')
 }
 
 /** The link target a hasLink/asLink argument should be compared against. Accepts a
  *  bare note name (string), a FileMeta (e.g. `this.file`), or a Link, and normalizes
  *  all three to the basename used in f.links — so `file.hasLink(this.file)` matches. */
 function linkName(a: unknown): string {
-  if (a && typeof a === "object") {
-    const o = a as Record<string, unknown>;
-    if (o.__link === true && typeof o.path === "string") return baseName(o.path);   // a Link
-    if (typeof o.name === "string") return o.name;                                   // a FileMeta
-    if (typeof o.path === "string") return baseName(o.path);
-  }
-  return asString(a);
+    if (a && typeof a === 'object') {
+        const o = a as Record<string, unknown>
+        if (o.__link === true && typeof o.path === 'string')
+            return baseName(o.path) // a Link
+        if (typeof o.name === 'string') return o.name // a FileMeta
+        if (typeof o.path === 'string') return baseName(o.path)
+    }
+    return asString(a)
 }
 
-function callFileMethod(f: FileMeta, name: string, args: unknown[], ctx: EvalContext): unknown {
-  switch (name) {
-    case "hasTag":
-      return args.some((a) => f.tags.includes(asString(a)));
-    case "hasLink":
-      // Accept a name, a FileMeta (this.file), or a Link — all compared by basename.
-      return args.some((a) => f.links.includes(linkName(a)));
-    case "inFolder":
-      return f.folder === asString(args[0]) || f.folder.startsWith(asString(args[0]) + "/");
-    case "hasProperty":
-      return args.length > 0 ? Object.prototype.hasOwnProperty.call(ctx.note, asString(args[0])) : false;
-    case "asLink":
-      // A Link to this file with optional custom display text (Obsidian's file.asLink).
-      return { __link: true, path: f.path, display: args[0] != null ? asString(args[0]) : asString(f.name) } as Link;
-  }
-  return undefined;
+function callFileMethod(
+    f: FileMeta,
+    name: string,
+    args: unknown[],
+    ctx: EvalContext,
+): unknown {
+    switch (name) {
+        case 'hasTag':
+            return args.some(a => f.tags.includes(asString(a)))
+        case 'hasLink':
+            // Accept a name, a FileMeta (this.file), or a Link — all compared by basename.
+            return args.some(a => f.links.includes(linkName(a)))
+        case 'inFolder':
+            return (
+                f.folder === asString(args[0]) ||
+                f.folder.startsWith(asString(args[0]) + '/')
+            )
+        case 'hasProperty':
+            return args.length > 0
+                ? Object.prototype.hasOwnProperty.call(
+                      ctx.note,
+                      asString(args[0]),
+                  )
+                : false
+        case 'asLink':
+            // A Link to this file with optional custom display text (Obsidian's file.asLink).
+            return {
+                __link: true,
+                path: f.path,
+                display: args[0] != null ? asString(args[0]) : asString(f.name),
+            } as Link
+    }
+    return undefined
 }
 
 function callNumberMethod(n: number, name: string, args: unknown[]): unknown {
-  switch (name) {
-    case "toFixed":
-      return n.toFixed(typeof args[0] === "number" ? args[0] : 0);
-    case "round": {
-      const d = typeof args[0] === "number" ? args[0] : 0;
-      const f = 10 ** d;
-      return Math.round(n * f) / f;
+    switch (name) {
+        case 'toFixed':
+            return n.toFixed(typeof args[0] === 'number' ? args[0] : 0)
+        case 'round': {
+            const d = typeof args[0] === 'number' ? args[0] : 0
+            const f = 10 ** d
+            return Math.round(n * f) / f
+        }
+        case 'floor':
+            return Math.floor(n)
+        case 'ceil':
+            return Math.ceil(n)
+        case 'abs':
+            return Math.abs(n)
+        case 'isEmpty':
+            return false
     }
-    case "floor":
-      return Math.floor(n);
-    case "ceil":
-      return Math.ceil(n);
-    case "abs":
-      return Math.abs(n);
-    case "isEmpty":
-      return false;
-  }
-  return undefined;
+    return undefined
 }
 
-const TITLE_CASE_RE = /\w\S*/g;
+const TITLE_CASE_RE = /\w\S*/g
 function callStringMethod(s: string, name: string, args: unknown[]): unknown {
-  switch (name) {
-    case "lower":
-      return s.toLowerCase();
-    case "upper":
-      return s.toUpperCase();
-    case "trim":
-      return s.trim();
-    case "title":
-      return s.replace(TITLE_CASE_RE, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
-    case "contains":
-      return s.includes(asString(args[0]));
-    case "startsWith":
-      return s.startsWith(asString(args[0]));
-    case "endsWith":
-      return s.endsWith(asString(args[0]));
-    case "replace":
-      return s.split(asString(args[0])).join(asString(args[1]));
-    case "slice":
-      return s.slice(toNumber(args[0]), args[1] != null ? toNumber(args[1]) : undefined);
-    case "split":
-      return s.split(asString(args[0]));
-    case "reverse":
-      return s.split("").reverse().join("");
-    case "isEmpty":
-      return s.length === 0;
-    case "matches": {
-      try {
-        const re = args[0] instanceof RegExp
-          ? args[0]
-          : new RegExp(asString(args[0]), args[1] != null ? asString(args[1]) : undefined);
-        return re.test(s);
-      } catch {
-        return false;
-      }
+    switch (name) {
+        case 'lower':
+            return s.toLowerCase()
+        case 'upper':
+            return s.toUpperCase()
+        case 'trim':
+            return s.trim()
+        case 'title':
+            return s.replace(
+                TITLE_CASE_RE,
+                w => w[0].toUpperCase() + w.slice(1).toLowerCase(),
+            )
+        case 'contains':
+            return s.includes(asString(args[0]))
+        case 'startsWith':
+            return s.startsWith(asString(args[0]))
+        case 'endsWith':
+            return s.endsWith(asString(args[0]))
+        case 'replace':
+            return s.split(asString(args[0])).join(asString(args[1]))
+        case 'slice':
+            return s.slice(
+                toNumber(args[0]),
+                args[1] != null ? toNumber(args[1]) : undefined,
+            )
+        case 'split':
+            return s.split(asString(args[0]))
+        case 'reverse':
+            return s.split('').reverse().join('')
+        case 'isEmpty':
+            return s.length === 0
+        case 'matches': {
+            try {
+                const re =
+                    args[0] instanceof RegExp
+                        ? args[0]
+                        : new RegExp(
+                              asString(args[0]),
+                              args[1] != null ? asString(args[1]) : undefined,
+                          )
+                return re.test(s)
+            } catch {
+                return false
+            }
+        }
     }
-  }
-  return undefined;
+    return undefined
 }
 
-function callArrayMethod(arr: unknown[], name: string, args: unknown[]): unknown {
-  switch (name) {
-    case "contains":
-      return arr.some((x) => x === args[0] || asString(x) === asString(args[0]));
-    case "join":
-      return arr.map(asString).join(args[0] != null ? asString(args[0]) : ", ");
-    case "unique":
-      return [...new Set(arr)];
-    case "sort":
-      return [...arr].sort();
-    case "reverse":
-      return [...arr].reverse();
-    case "slice":
-      return arr.slice(toNumber(args[0]), args[1] != null ? toNumber(args[1]) : undefined);
-    case "flat":
-      return arr.flat();
-    case "isEmpty":
-      return arr.length === 0;
-    case "map":
-      return arr.map(compileItemAccessor(args[0]));
-    case "filter": {
-      const get = compileItemAccessor(args[0]);
-      return arr.filter((x, i) => truthy(get(x, i)));
+function callArrayMethod(
+    arr: unknown[],
+    name: string,
+    args: unknown[],
+): unknown {
+    switch (name) {
+        case 'contains':
+            return arr.some(
+                x => x === args[0] || asString(x) === asString(args[0]),
+            )
+        case 'join':
+            return arr
+                .map(asString)
+                .join(args[0] != null ? asString(args[0]) : ', ')
+        case 'unique':
+            return [...new Set(arr)]
+        case 'sort':
+            return [...arr].sort()
+        case 'reverse':
+            return [...arr].reverse()
+        case 'slice':
+            return arr.slice(
+                toNumber(args[0]),
+                args[1] != null ? toNumber(args[1]) : undefined,
+            )
+        case 'flat':
+            return arr.flat()
+        case 'isEmpty':
+            return arr.length === 0
+        case 'map':
+            return arr.map(compileItemAccessor(args[0]))
+        case 'filter': {
+            const get = compileItemAccessor(args[0])
+            return arr.filter((x, i) => truthy(get(x, i)))
+        }
+        case 'reduce':
+            return callArrayReduce(arr, args)
     }
-    case "reduce":
-      return callArrayReduce(arr, args);
-  }
-  return undefined;
+    return undefined
 }
 
 function callArrayReduce(arr: unknown[], args: unknown[]): unknown {
-  const fn0 = args[0] as Function & { __params?: number };
-  const arity = typeof fn0 === "function" ? (fn0.__params ?? fn0.length) : -1;
-  if (typeof fn0 === "function" && arity >= 2) {
-    return arr.reduce(fn0 as (acc: unknown, x: unknown, i: number) => unknown, args[1] as unknown);
-  }
-  const get = compileItemAccessor(args[0]);
-  const seed = args[1] != null ? toNumber(args[1]) : 0;
-  return arr.reduce((acc: number, x, i) => acc + toNumber(get(x, i)), seed);
+    const fn0 = args[0] as Function & { __params?: number }
+    const arity = typeof fn0 === 'function' ? (fn0.__params ?? fn0.length) : -1
+    if (typeof fn0 === 'function' && arity >= 2) {
+        return arr.reduce(
+            fn0 as (acc: unknown, x: unknown, i: number) => unknown,
+            args[1] as unknown,
+        )
+    }
+    const get = compileItemAccessor(args[0])
+    const seed = args[1] != null ? toNumber(args[1]) : 0
+    return arr.reduce((acc: number, x, i) => acc + toNumber(get(x, i)), seed)
 }
 
 function callDateMethod(d: Date, name: string, args: unknown[]): unknown {
-  switch (name) {
-    case "format":
-      return formatDate(d, asString(args[0]));
-    case "date": {
-      const copy = new Date(d);
-      copy.setHours(0, 0, 0, 0);
-      return copy;
+    switch (name) {
+        case 'format':
+            return formatDate(d, asString(args[0]))
+        case 'date': {
+            const copy = new Date(d)
+            copy.setHours(0, 0, 0, 0)
+            return copy
+        }
+        case 'isEmpty':
+            return Number.isNaN(d.getTime())
+        case 'plus': {
+            const ms = parseDurationMs(args[0])
+            return new Date(d.getTime() + (Number.isNaN(ms) ? 0 : ms))
+        }
+        case 'minus': {
+            const ms = parseDurationMs(args[0])
+            return new Date(d.getTime() - (Number.isNaN(ms) ? 0 : ms))
+        }
     }
-    case "isEmpty":
-      return Number.isNaN(d.getTime());
-    case "plus": {
-      const ms = parseDurationMs(args[0]);
-      return new Date(d.getTime() + (Number.isNaN(ms) ? 0 : ms));
-    }
-    case "minus": {
-      const ms = parseDurationMs(args[0]);
-      return new Date(d.getTime() - (Number.isNaN(ms) ? 0 : ms));
-    }
-  }
-  return undefined;
+    return undefined
 }
 
-const FORMAT_DATE_YEAR_RE = /YYYY/g;
-const FORMAT_DATE_MONTH_RE = /MM/g;
-const FORMAT_DATE_DAY_RE = /DD/g;
-const FORMAT_DATE_HOUR_RE = /HH/g;
-const FORMAT_DATE_MINUTE_RE = /mm/g;
-const FORMAT_DATE_SECOND_RE = /ss/g;
+const FORMAT_DATE_YEAR_RE = /YYYY/g
+const FORMAT_DATE_MONTH_RE = /MM/g
+const FORMAT_DATE_DAY_RE = /DD/g
+const FORMAT_DATE_HOUR_RE = /HH/g
+const FORMAT_DATE_MINUTE_RE = /mm/g
+const FORMAT_DATE_SECOND_RE = /ss/g
 function formatDate(d: Date, fmt: string): string {
-  if (!fmt) return d.toISOString().slice(0, 10);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return fmt
-    .replace(FORMAT_DATE_YEAR_RE, String(d.getFullYear()))
-    .replace(FORMAT_DATE_MONTH_RE, pad(d.getMonth() + 1))
-    .replace(FORMAT_DATE_DAY_RE, pad(d.getDate()))
-    .replace(FORMAT_DATE_HOUR_RE, pad(d.getHours()))
-    .replace(FORMAT_DATE_MINUTE_RE, pad(d.getMinutes()))
-    .replace(FORMAT_DATE_SECOND_RE, pad(d.getSeconds()));
+    if (!fmt) return d.toISOString().slice(0, 10)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return fmt
+        .replace(FORMAT_DATE_YEAR_RE, String(d.getFullYear()))
+        .replace(FORMAT_DATE_MONTH_RE, pad(d.getMonth() + 1))
+        .replace(FORMAT_DATE_DAY_RE, pad(d.getDate()))
+        .replace(FORMAT_DATE_HOUR_RE, pad(d.getHours()))
+        .replace(FORMAT_DATE_MINUTE_RE, pad(d.getMinutes()))
+        .replace(FORMAT_DATE_SECOND_RE, pad(d.getSeconds()))
 }

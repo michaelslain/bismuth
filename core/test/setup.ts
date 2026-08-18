@@ -2,8 +2,11 @@
 // Redirects the layout disk cache to a throwaway temp dir so the test suite never writes to the real
 // durable cache location (~/.bismuth/layout-cache). Must run before layout-cache.ts is imported — a
 // preload does, which is why this lives here rather than in an individual test file (imports hoist).
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 
-process.env.BISMUTH_LAYOUT_CACHE_DIR ||= join(tmpdir(), `bismuth-layout-test-${randomUUID()}`);
+process.env.BISMUTH_LAYOUT_CACHE_DIR ||= join(
+    tmpdir(),
+    `bismuth-layout-test-${randomUUID()}`,
+)

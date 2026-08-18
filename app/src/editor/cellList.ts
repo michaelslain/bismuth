@@ -41,7 +41,7 @@
 
 /** Every clean line-break carrier a cell source can use: a literal `<br>` / `<br/>` /
  *  `<br />` marker (Bismuth/Obsidian convention) or a real newline (some surfaces). */
-const BR_OR_NL_RE = /<br\s*\/?>|\r?\n/gi;
+const BR_OR_NL_RE = /<br\s*\/?>|\r?\n/gi
 // A dropped-break boundary (see the header note): a list marker glued directly onto the
 // previous item's last NON-space char, e.g. the `- b` in "- a- b". The captured `\S` keeps a
 // prose " - " (space before the dash) from ever matching, so a real sentence isn't split; and
@@ -53,51 +53,51 @@ const BR_OR_NL_RE = /<br\s*\/?>|\r?\n/gi;
 // A `*`-bulleted list is still detected on the CLEAN `<br>`/newline convention (UL_ITEM_RE
 // accepts `* item`); only the rarer COLLAPSED `*` case is passed over — the safe trade. The
 // ordered form is digit-led, so it never collides with markdown emphasis.
-const GLUED_UL_RE = /(\S)(-[ \t])/g;
-const GLUED_OL_RE = /(\S)(\d+[.)][ \t])/g;
+const GLUED_UL_RE = /(\S)(-[ \t])/g
+const GLUED_OL_RE = /(\S)(\d+[.)][ \t])/g
 // A marker + optional whitespace-led content. Bare `-` / `1.` (an empty item) is allowed;
 // `-5` / `*bold*` (no space after the marker) is NOT a bullet — matching markdown.
-const UL_ITEM_RE = /^[-*](?:[ \t]+(.*))?$/;
-const OL_ITEM_RE = /^\d+[.)](?:[ \t]+(.*))?$/;
+const UL_ITEM_RE = /^[-*](?:[ \t]+(.*))?$/
+const OL_ITEM_RE = /^\d+[.)](?:[ \t]+(.*))?$/
 
 export interface CellList {
-  ordered: boolean;
-  /** Item texts with the list marker stripped (still raw inline markdown). */
-  items: string[];
+    ordered: boolean
+    /** Item texts with the list marker stripped (still raw inline markdown). */
+    items: string[]
 }
 
 /** Split a cell source into its item candidates (trimmed). Normalizes the clean `<br>`/newline
  *  carriers to line breaks AND re-inserts the breaks the editor's DOM read dropped (a marker
  *  concatenated straight onto the previous item — see the header note). Pure. */
 export function splitCellItems(src: string): string[] {
-  let s = src.replace(BR_OR_NL_RE, "\n");
-  // Re-break a glued run: "- a- b- c" → "- a\n- b\n- c" (and "1. a2. b" → "1. a\n2. b").
-  s = s.replace(GLUED_UL_RE, "$1\n$2").replace(GLUED_OL_RE, "$1\n$2");
-  return s.split("\n").map((seg) => seg.trim());
+    let s = src.replace(BR_OR_NL_RE, '\n')
+    // Re-break a glued run: "- a- b- c" → "- a\n- b\n- c" (and "1. a2. b" → "1. a\n2. b").
+    s = s.replace(GLUED_UL_RE, '$1\n$2').replace(GLUED_OL_RE, '$1\n$2')
+    return s.split('\n').map(seg => seg.trim())
 }
 
 /** Parse a cell source into a list, or null if it isn't one (see the convention above). */
 export function parseCellList(src: string): CellList | null {
-  const segments = splitCellItems(src);
-  // A list needs ≥2 non-empty items, each starting with a marker (checked below).
-  const nonEmpty = segments.filter((s) => s !== "");
-  if (nonEmpty.length < 2) return null;
+    const segments = splitCellItems(src)
+    // A list needs ≥2 non-empty items, each starting with a marker (checked below).
+    const nonEmpty = segments.filter(s => s !== '')
+    if (nonEmpty.length < 2) return null
 
-  const match = (re: RegExp): string[] | null => {
-    const items: string[] = [];
-    for (const seg of nonEmpty) {
-      const m = re.exec(seg);
-      if (!m) return null;
-      items.push(m[1] ?? "");
+    const match = (re: RegExp): string[] | null => {
+        const items: string[] = []
+        for (const seg of nonEmpty) {
+            const m = re.exec(seg)
+            if (!m) return null
+            items.push(m[1] ?? '')
+        }
+        return items
     }
-    return items;
-  };
 
-  const ul = match(UL_ITEM_RE);
-  if (ul) return { ordered: false, items: ul };
-  const ol = match(OL_ITEM_RE);
-  if (ol) return { ordered: true, items: ol };
-  return null;
+    const ul = match(UL_ITEM_RE)
+    if (ul) return { ordered: false, items: ul }
+    const ol = match(OL_ITEM_RE)
+    if (ol) return { ordered: true, items: ol }
+    return null
 }
 
 /** Render a cell source as a `<ul>`/`<ol>` if it follows the list convention, else null.
@@ -115,19 +115,22 @@ export function parseCellList(src: string): CellList | null {
  *  a native marker from doubling it. Inline styles keep the layout self-contained (no
  *  external CSS needed) so this renders identically in the editor widget AND on every reading
  *  surface (bases/markdown.ts) that shares this function. */
-export function renderCellListHtml(src: string, renderItem: (item: string) => string): string | null {
-  const parsed = parseCellList(src);
-  if (!parsed) return null;
-  const tag = parsed.ordered ? "ol" : "ul";
-  const body = parsed.items
-    .map((it, i) => {
-      const marker = parsed.ordered ? `${i + 1}.` : "•"; // "•" for bullets, "N." for numbers
-      return (
-        `<li class="bismuth-cell-li" style="display:flex;gap:0.4em;list-style:none;margin:0.05em 0">` +
-        `<span class="bismuth-cell-mk" style="flex:0 0 auto;opacity:0.75">${marker}</span>` +
-        `<span class="bismuth-cell-it">${renderItem(it)}</span></li>`
-      );
-    })
-    .join("");
-  return `<${tag} class="bismuth-cell-list" style="margin:0;padding-left:0.2em;list-style:none">${body}</${tag}>`;
+export function renderCellListHtml(
+    src: string,
+    renderItem: (item: string) => string,
+): string | null {
+    const parsed = parseCellList(src)
+    if (!parsed) return null
+    const tag = parsed.ordered ? 'ol' : 'ul'
+    const body = parsed.items
+        .map((it, i) => {
+            const marker = parsed.ordered ? `${i + 1}.` : '•' // "•" for bullets, "N." for numbers
+            return (
+                `<li class="bismuth-cell-li" style="display:flex;gap:0.4em;list-style:none;margin:0.05em 0">` +
+                `<span class="bismuth-cell-mk" style="flex:0 0 auto;opacity:0.75">${marker}</span>` +
+                `<span class="bismuth-cell-it">${renderItem(it)}</span></li>`
+            )
+        })
+        .join('')
+    return `<${tag} class="bismuth-cell-list" style="margin:0;padding-left:0.2em;list-style:none">${body}</${tag}>`
 }

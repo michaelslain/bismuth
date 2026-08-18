@@ -3,14 +3,14 @@
 // resolved hex — means a category recolours itself automatically when the theme
 // changes, because it renders through `var(--token)`.
 
-import { PALETTE_TOKENS, type PaletteTokenName } from "../ui/palette";
+import { PALETTE_TOKENS, type PaletteTokenName } from '../ui/palette'
 
 /** Palette tokens a category colour may reference. Each maps to a `--<token>` CSS var. */
-export const THEME_SWATCHES = PALETTE_TOKENS;
-export type ThemeSwatch = PaletteTokenName;
+export const THEME_SWATCHES = PALETTE_TOKENS
+export type ThemeSwatch = PaletteTokenName
 
 export function isThemeToken(color: string | undefined): color is ThemeSwatch {
-  return !!color && (THEME_SWATCHES as readonly string[]).includes(color);
+    return !!color && (THEME_SWATCHES as readonly string[]).includes(color)
 }
 
 /**
@@ -19,8 +19,8 @@ export function isThemeToken(color: string | undefined): color is ThemeSwatch {
  * else (hex, rgb(), named) passes through unchanged. Undefined falls back to accent.
  */
 export function resolveCategoryColor(color: string | undefined): string {
-  if (!color) return "var(--accent)";
-  return isThemeToken(color) ? `var(--${color})` : color;
+    if (!color) return 'var(--accent)'
+    return isThemeToken(color) ? `var(--${color})` : color
 }
 
 // ── Multi-category support ────────────────────────────────────────────────────
@@ -29,29 +29,32 @@ export function resolveCategoryColor(color: string | undefined): string {
 // old single-category events working unchanged.
 
 interface CategoryLike {
-  name: string;
-  color: string;
+    name: string
+    color: string
 }
 interface EventLike {
-  category?: string;
-  categories?: string[];
+    category?: string
+    categories?: string[]
 }
 
 /** The ordered list of category NAMES an event belongs to (prefers the array). */
 export function eventCategoryNames(event: EventLike): string[] {
-  if (event.categories && event.categories.length) return event.categories;
-  return event.category ? [event.category] : [];
+    if (event.categories && event.categories.length) return event.categories
+    return event.category ? [event.category] : []
 }
 
 /**
  * The ordered list of resolved CSS colours for an event's categories — one per
  * category that resolves to a known category definition (unknown names dropped).
  */
-export function eventCategoryColors(event: EventLike, categories: CategoryLike[]): string[] {
-  return eventCategoryNames(event)
-    .map((name) => categories.find((c) => c.name === name)?.color)
-    .filter((c): c is string => c != null)
-    .map(resolveCategoryColor);
+export function eventCategoryColors(
+    event: EventLike,
+    categories: CategoryLike[],
+): string[] {
+    return eventCategoryNames(event)
+        .map(name => categories.find(c => c.name === name)?.color)
+        .filter((c): c is string => c != null)
+        .map(resolveCategoryColor)
 }
 
 /**
@@ -61,14 +64,19 @@ export function eventCategoryColors(event: EventLike, categories: CategoryLike[]
  *  - 2+ colours → a linear-gradient blending each colour across the block
  */
 export function categoryFill(colors: string[]): string | undefined {
-  if (colors.length === 0) return undefined;
-  const tint = (c: string) => `color-mix(in srgb, ${c} 85%, transparent)`;
-  if (colors.length === 1) return tint(colors[0]);
-  const stops = colors.map((c, i) => `${tint(c)} ${(i / (colors.length - 1)) * 100}%`);
-  return `linear-gradient(135deg, ${stops.join(", ")})`;
+    if (colors.length === 0) return undefined
+    const tint = (c: string) => `color-mix(in srgb, ${c} 85%, transparent)`
+    if (colors.length === 1) return tint(colors[0])
+    const stops = colors.map(
+        (c, i) => `${tint(c)} ${(i / (colors.length - 1)) * 100}%`,
+    )
+    return `linear-gradient(135deg, ${stops.join(', ')})`
 }
 
 /** Convenience: resolve an event straight to its `background` fill (or undefined). */
-export function eventCategoryFill(event: EventLike, categories: CategoryLike[]): string | undefined {
-  return categoryFill(eventCategoryColors(event, categories));
+export function eventCategoryFill(
+    event: EventLike,
+    categories: CategoryLike[],
+): string | undefined {
+    return categoryFill(eventCategoryColors(event, categories))
 }

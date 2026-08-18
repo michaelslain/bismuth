@@ -24,15 +24,15 @@
 // for the real media DOM AFTER innerHTML assignment — reusing the exact same `renderEmbedHtml`
 // (images / pdf iframes / audio / video / note-chip fallback with GET /asset URLs) the inline
 // renderer used, so #30 image-into-cell drops render identically.
-import { renderNoteBody, maskCode, unmaskCode } from "../bases/markdown";
-import { renderEmbedHtml } from "./inlineMarkdown";
-import { escapeAttr } from "../htmlEscape";
+import { renderNoteBody, maskCode, unmaskCode } from '../bases/markdown'
+import { renderEmbedHtml } from './inlineMarkdown'
+import { escapeAttr } from '../htmlEscape'
 
 /** A cell's stored single-line source → block markdown: every `<br>`/`<br/>` marker becomes a
  *  real newline for the block parser. Pure. Also the doc the in-cell CodeMirror EDIT face (#15/#49,
  *  cellEditor.ts) loads, so a `<br>`-carried multi-line cell edits as genuine lines. */
 export function cellSourceToBlockMarkdown(src: string): string {
-  return src.replace(/<br\s*\/?>/gi, "\n");
+    return src.replace(/<br\s*\/?>/gi, '\n')
 }
 
 /** The inverse of `cellSourceToBlockMarkdown`: the in-cell editor's multi-line DOC → the cell's
@@ -41,40 +41,52 @@ export function cellSourceToBlockMarkdown(src: string): string {
  *  trailing break survives), matching the old contenteditable read-back's `.trim()`. Pure — this is
  *  the lossless round-trip the nested CodeMirror commits through on blur / cell-nav. */
 export function cmDocToCellSource(doc: string): string {
-  return doc.split("\n").join("<br>").trim();
+    return doc.split('\n').join('<br>').trim()
 }
 
 // `![[target]]` wiki embeds + `![alt](url)` markdown images (same shapes tokenizeInline split).
-const WIKI_EMBED_RE = /!\[\[([^\]\n]+?)\]\]/g;
-const MD_IMAGE_RE = /!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+const WIKI_EMBED_RE = /!\[\[([^\]\n]+?)\]\]/g
+const MD_IMAGE_RE = /!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
 
 const embedSlot = (wiki: boolean, target: string, alt: string | null): string =>
-  `<span class="cm-cell-embed-slot" data-wiki="${wiki ? "1" : "0"}" data-target="${escapeAttr(target)}"` +
-  (alt != null ? ` data-alt="${escapeAttr(alt)}"` : "") +
-  `></span>`;
+    `<span class="cm-cell-embed-slot" data-wiki="${wiki ? '1' : '0'}" data-target="${escapeAttr(target)}"` +
+    (alt != null ? ` data-alt="${escapeAttr(alt)}"` : '') +
+    `></span>`
 
 /** Render a cell's markdown source to sanitized BLOCK HTML — the note reader's engine over the
  *  `<br>`→newline source, with embeds slotted out (see the module note; call `upgradeCellEmbeds`
  *  on the element after assigning this as innerHTML). Pure string → string. */
 export function renderCellBlockHtml(src: string): string {
-  // Mask code first so an embed-looking string inside a code span stays literal.
-  const { masked, codes } = maskCode(src ?? "");
-  const slotted = masked
-    .replace(WIKI_EMBED_RE, (_m, target: string) => embedSlot(true, target.trim(), null))
-    .replace(MD_IMAGE_RE, (_m, alt: string, url: string) => embedSlot(false, url, alt));
-  return renderNoteBody(cellSourceToBlockMarkdown(unmaskCode(slotted, codes)));
+    // Mask code first so an embed-looking string inside a code span stays literal.
+    const { masked, codes } = maskCode(src ?? '')
+    const slotted = masked
+        .replace(WIKI_EMBED_RE, (_m, target: string) =>
+            embedSlot(true, target.trim(), null),
+        )
+        .replace(MD_IMAGE_RE, (_m, alt: string, url: string) =>
+            embedSlot(false, url, alt),
+        )
+    return renderNoteBody(cellSourceToBlockMarkdown(unmaskCode(slotted, codes)))
 }
 
 /** Swap every embed slot in a rendered cell for its real media DOM (img / pdf iframe / audio /
  *  video / clickable note chip), built by the shared `renderEmbedHtml` with the injected
  *  GET /asset URL builder — after the sanitizer, exactly like the pre-block-render path did. */
-export function upgradeCellEmbeds(cell: HTMLElement, assetUrl: (target: string) => string): void {
-  for (const slot of Array.from(cell.querySelectorAll<HTMLElement>("span.cm-cell-embed-slot"))) {
-    const wiki = slot.getAttribute("data-wiki") === "1";
-    const target = slot.getAttribute("data-target") ?? "";
-    const alt = slot.getAttribute("data-alt");
-    const tmp = cell.ownerDocument.createElement("div");
-    tmp.innerHTML = renderEmbedHtml({ type: "embed", wiki, target, alt }, assetUrl);
-    slot.replaceWith(...Array.from(tmp.childNodes));
-  }
+export function upgradeCellEmbeds(
+    cell: HTMLElement,
+    assetUrl: (target: string) => string,
+): void {
+    for (const slot of Array.from(
+        cell.querySelectorAll<HTMLElement>('span.cm-cell-embed-slot'),
+    )) {
+        const wiki = slot.getAttribute('data-wiki') === '1'
+        const target = slot.getAttribute('data-target') ?? ''
+        const alt = slot.getAttribute('data-alt')
+        const tmp = cell.ownerDocument.createElement('div')
+        tmp.innerHTML = renderEmbedHtml(
+            { type: 'embed', wiki, target, alt },
+            assetUrl,
+        )
+        slot.replaceWith(...Array.from(tmp.childNodes))
+    }
 }

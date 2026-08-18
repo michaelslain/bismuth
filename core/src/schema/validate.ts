@@ -1,70 +1,73 @@
 // core/src/schema/validate.ts
 import type {
-  PropertyType,
-  Schema,
-  SchemaEntry,
-  Diagnostic,
-  ValidateContext,
-  ValidateMode,
-} from "./types";
-import { extractWikilinks } from "../wikilinks";
-import { parseList } from "./coerce";
+    PropertyType,
+    Schema,
+    SchemaEntry,
+    Diagnostic,
+    ValidateContext,
+    ValidateMode,
+} from './types'
+import { extractWikilinks } from '../wikilinks'
+import { parseList } from './coerce'
 
 /** Pull the link target from a value: "[[Target|Display]]" -> "Target", else the raw string. */
 function linkTarget(value: string): string {
-  const links = extractWikilinks(value);
-  if (links.length > 0) return links[0];
-  return value.trim();
+    const links = extractWikilinks(value)
+    if (links.length > 0) return links[0]
+    return value.trim()
 }
 
 /** Levenshtein distance for nearest-match enum suggestions. */
 function editDistance(a: string, b: string): number {
-  const m = a.length;
-  const n = b.length;
-  const row = Array.from({ length: n + 1 }, (_, j) => j);
-  for (let i = 1; i <= m; i++) {
-    let prev = row[0];
-    row[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const tmp = row[j];
-      row[j] = Math.min(
-        row[j] + 1,
-        row[j - 1] + 1,
-        prev + (a[i - 1] === b[j - 1] ? 0 : 1),
-      );
-      prev = tmp;
+    const m = a.length
+    const n = b.length
+    const row = Array.from({ length: n + 1 }, (_, j) => j)
+    for (let i = 1; i <= m; i++) {
+        let prev = row[0]
+        row[0] = i
+        for (let j = 1; j <= n; j++) {
+            const tmp = row[j]
+            row[j] = Math.min(
+                row[j] + 1,
+                row[j - 1] + 1,
+                prev + (a[i - 1] === b[j - 1] ? 0 : 1),
+            )
+            prev = tmp
+        }
     }
-  }
-  return row[n];
+    return row[n]
 }
 
 /** Closest configured value(s) to `value`, nearest first. */
 function nearestEnum(values: string[], value: string): string[] {
-  return [...values]
-    .map((v) => ({ v, d: editDistance(v.toLowerCase(), value.toLowerCase()) }))
-    .sort((a, b) => a.d - b.d)
-    .map((x) => x.v);
+    return [...values]
+        .map(v => ({
+            v,
+            d: editDistance(v.toLowerCase(), value.toLowerCase()),
+        }))
+        .sort((a, b) => a.d - b.d)
+        .map(x => x.v)
 }
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 /** True when y-m-d is a real calendar date (e.g. rejects 2026-02-30). */
 function isRealCalendarDate(y: number, m: number, d: number): boolean {
-  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return (
-    dt.getUTCFullYear() === y &&
-    dt.getUTCMonth() === m - 1 &&
-    dt.getUTCDate() === d
-  );
+    if (m < 1 || m > 12 || d < 1 || d > 31) return false
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    return (
+        dt.getUTCFullYear() === y &&
+        dt.getUTCMonth() === m - 1 &&
+        dt.getUTCDate() === d
+    )
 }
 
 function err(message: string, suggestions?: string[]): Diagnostic {
-  return { path: [], severity: "error", message, suggestions };
+    return { path: [], severity: 'error', message, suggestions }
 }
 
 function warn(message: string, suggestions?: string[]): Diagnostic {
-  return { path: [], severity: "warning", message, suggestions };
+    return { path: [], severity: 'warning', message, suggestions }
 }
 
 /**
@@ -74,99 +77,111 @@ function warn(message: string, suggestions?: string[]): Diagnostic {
  * null/undefined is ALWAYS valid here (the required check lives in validateDocument).
  */
 export function validateValue(
-  type: PropertyType,
-  value: unknown,
-  ctx?: ValidateContext,
+    type: PropertyType,
+    value: unknown,
+    ctx?: ValidateContext,
 ): Diagnostic | null {
-  if (value === null || value === undefined) return null;
+    if (value === null || value === undefined) return null
 
-  if (typeof type === "string") {
-    switch (type) {
-      case "string":
-      case "icon": // a Lucide icon name OR an emoji — any string is valid, never flagged
-      case "keybind": // a shortcut combo like "Mod+Shift+D" — validated leniently (any string)
-        return null;
-      case "number":
-        return typeof value === "number" && !Number.isNaN(value)
-          ? null
-          : err("expected a number");
-      case "boolean":
-        return typeof value === "boolean" ? null : err("expected true or false");
-      case "date": {
-        if (value instanceof Date) {
-          return Number.isNaN(value.getTime())
-            ? err("expected a date (YYYY-MM-DD)")
-            : null;
+    if (typeof type === 'string') {
+        switch (type) {
+            case 'string':
+            case 'icon': // a Lucide icon name OR an emoji — any string is valid, never flagged
+            case 'keybind': // a shortcut combo like "Mod+Shift+D" — validated leniently (any string)
+                return null
+            case 'number':
+                return typeof value === 'number' && !Number.isNaN(value)
+                    ? null
+                    : err('expected a number')
+            case 'boolean':
+                return typeof value === 'boolean'
+                    ? null
+                    : err('expected true or false')
+            case 'date': {
+                if (value instanceof Date) {
+                    return Number.isNaN(value.getTime())
+                        ? err('expected a date (YYYY-MM-DD)')
+                        : null
+                }
+                if (typeof value === 'string' && DATE_RE.test(value)) {
+                    const [y, m, d] = value.split('-').map(Number)
+                    if (isRealCalendarDate(y, m, d)) return null
+                }
+                return err('expected a date (YYYY-MM-DD)')
+            }
+            case 'datetime': {
+                if (value instanceof Date) {
+                    return Number.isNaN(value.getTime())
+                        ? err('expected a date-time (ISO-8601)')
+                        : null
+                }
+                if (
+                    typeof value === 'string' &&
+                    !Number.isNaN(Date.parse(value))
+                ) {
+                    return null
+                }
+                return err('expected a date-time (ISO-8601)')
+            }
+            case 'file': {
+                if (!ctx?.resolveLink) return null
+                const target =
+                    typeof value === 'string'
+                        ? linkTarget(value)
+                        : String(value)
+                return ctx.resolveLink(target)
+                    ? null
+                    : warn(`"${target}" not found in vault`)
+            }
         }
-        if (typeof value === "string" && DATE_RE.test(value)) {
-          const [y, m, d] = value.split("-").map(Number);
-          if (isRealCalendarDate(y, m, d)) return null;
+    }
+
+    // A path is any string — we never flag it (it may name a path you're about to
+    // create). Completion (settingsComplete.ts) is where the type does its real work.
+    if (type.kind === 'path') return null
+
+    if (type.kind === 'enum') {
+        const str = String(value)
+        const match = type.caseInsensitive
+            ? type.values.some(v => v.toLowerCase() === str.toLowerCase())
+            : type.values.includes(str)
+        if (match) return null
+        if (type.allowPrefixes?.some(p => str.startsWith(p))) return null
+        return err(
+            `expected one of: ${type.values.join(', ')}`,
+            nearestEnum(type.values, str).slice(0, 3),
+        )
+    }
+
+    if (type.kind === 'list') {
+        const items = Array.isArray(value) ? value : parseList(value)
+        if (!type.item) return null
+        for (let i = 0; i < items.length; i++) {
+            const inner = validateValue(type.item, items[i], ctx)
+            if (inner) return { ...inner, path: [String(i)] }
         }
-        return err("expected a date (YYYY-MM-DD)");
-      }
-      case "datetime": {
-        if (value instanceof Date) {
-          return Number.isNaN(value.getTime())
-            ? err("expected a date-time (ISO-8601)")
-            : null;
+        return null
+    }
+
+    if (type.kind === 'object') {
+        if (
+            typeof value !== 'object' ||
+            value === null ||
+            Array.isArray(value)
+        ) {
+            return err('expected an object')
         }
-        if (typeof value === "string" && !Number.isNaN(Date.parse(value))) {
-          return null;
+        const obj = value as Record<string, unknown>
+        for (const [key, entry] of Object.entries(type.fields)) {
+            // validateEntry (not validateValue) so nested fields get soft min/max
+            // range checks too — our settings.yaml nests every tunable under a section.
+            const inner = validateEntry(entry, obj[key], ctx)
+            if (inner) return { ...inner, path: [key, ...inner.path] }
         }
-        return err("expected a date-time (ISO-8601)");
-      }
-      case "file": {
-        if (!ctx?.resolveLink) return null;
-        const target = typeof value === "string" ? linkTarget(value) : String(value);
-        return ctx.resolveLink(target)
-          ? null
-          : warn(`"${target}" not found in vault`);
-      }
+        return null
     }
-  }
 
-  // A path is any string — we never flag it (it may name a path you're about to
-  // create). Completion (settingsComplete.ts) is where the type does its real work.
-  if (type.kind === "path") return null;
-
-  if (type.kind === "enum") {
-    const str = String(value);
-    const match = type.caseInsensitive
-      ? type.values.some((v) => v.toLowerCase() === str.toLowerCase())
-      : type.values.includes(str);
-    if (match) return null;
-    if (type.allowPrefixes?.some((p) => str.startsWith(p))) return null;
-    return err(
-      `expected one of: ${type.values.join(", ")}`,
-      nearestEnum(type.values, str).slice(0, 3),
-    );
-  }
-
-  if (type.kind === "list") {
-    const items = Array.isArray(value) ? value : parseList(value);
-    if (!type.item) return null;
-    for (let i = 0; i < items.length; i++) {
-      const inner = validateValue(type.item, items[i], ctx);
-      if (inner) return { ...inner, path: [String(i)] };
-    }
-    return null;
-  }
-
-  if (type.kind === "object") {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      return err("expected an object");
-    }
-    const obj = value as Record<string, unknown>;
-    for (const [key, entry] of Object.entries(type.fields)) {
-      // validateEntry (not validateValue) so nested fields get soft min/max
-      // range checks too — our settings.yaml nests every tunable under a section.
-      const inner = validateEntry(entry, obj[key], ctx);
-      if (inner) return { ...inner, path: [key, ...inner.path] };
-    }
-    return null;
-  }
-
-  return null;
+    return null
 }
 
 /**
@@ -174,21 +189,21 @@ export function validateValue(
  * soft min/max range warning for numeric values. Returns null when clean.
  */
 export function validateEntry(
-  entry: SchemaEntry,
-  value: unknown,
-  ctx?: ValidateContext,
+    entry: SchemaEntry,
+    value: unknown,
+    ctx?: ValidateContext,
 ): Diagnostic | null {
-  const typeDiag = validateValue(entry.type, value, ctx);
-  if (typeDiag) return typeDiag;
-  if (typeof value === "number") {
-    if (entry.min !== undefined && value < entry.min) {
-      return warn(`expected a value >= ${entry.min}`);
+    const typeDiag = validateValue(entry.type, value, ctx)
+    if (typeDiag) return typeDiag
+    if (typeof value === 'number') {
+        if (entry.min !== undefined && value < entry.min) {
+            return warn(`expected a value >= ${entry.min}`)
+        }
+        if (entry.max !== undefined && value > entry.max) {
+            return warn(`expected a value <= ${entry.max}`)
+        }
     }
-    if (entry.max !== undefined && value > entry.max) {
-      return warn(`expected a value <= ${entry.max}`);
-    }
-  }
-  return null;
+    return null
 }
 
 /**
@@ -199,34 +214,40 @@ export function validateEntry(
  * never recursed into, so their contents are never flagged.
  */
 function collectUnknownKeys(
-  obj: Record<string, unknown>,
-  fields: Schema,
-  mode: ValidateMode,
-  basePath: string[],
-  out: Diagnostic[],
+    obj: Record<string, unknown>,
+    fields: Schema,
+    mode: ValidateMode,
+    basePath: string[],
+    out: Diagnostic[],
 ): void {
-  for (const [key, value] of Object.entries(obj)) {
-    const entry = fields[key];
-    if (!entry) {
-      out.push({
-        path: [...basePath, key],
-        severity: mode === "settings" ? "warning" : "info",
-        message: `unknown property: ${key}`,
-      });
-      continue;
+    for (const [key, value] of Object.entries(obj)) {
+        const entry = fields[key]
+        if (!entry) {
+            out.push({
+                path: [...basePath, key],
+                severity: mode === 'settings' ? 'warning' : 'info',
+                message: `unknown property: ${key}`,
+            })
+            continue
+        }
+        const type = entry.type
+        if (
+            typeof type === 'object' &&
+            type.kind === 'object' &&
+            Object.keys(type.fields).length > 0 &&
+            value !== null &&
+            typeof value === 'object' &&
+            !Array.isArray(value)
+        ) {
+            collectUnknownKeys(
+                value as Record<string, unknown>,
+                type.fields,
+                mode,
+                [...basePath, key],
+                out,
+            )
+        }
     }
-    const type = entry.type;
-    if (
-      typeof type === "object" &&
-      type.kind === "object" &&
-      Object.keys(type.fields).length > 0 &&
-      value !== null &&
-      typeof value === "object" &&
-      !Array.isArray(value)
-    ) {
-      collectUnknownKeys(value as Record<string, unknown>, type.fields, mode, [...basePath, key], out);
-    }
-  }
 }
 
 /**
@@ -236,60 +257,65 @@ function collectUnknownKeys(
  * - Missing required keys: ignored (frontmatter) / error (settings).
  */
 export function validateDocument(
-  parsed: unknown,
-  schema: Schema,
-  opts: { mode: ValidateMode; ctx?: ValidateContext },
+    parsed: unknown,
+    schema: Schema,
+    opts: { mode: ValidateMode; ctx?: ValidateContext },
 ): Diagnostic[] {
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return [];
-  }
-  const obj = parsed as Record<string, unknown>;
-  const out: Diagnostic[] = [];
+    if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Array.isArray(parsed)
+    ) {
+        return []
+    }
+    const obj = parsed as Record<string, unknown>
+    const out: Diagnostic[] = []
 
-  // Unknown keys at every nesting level (recursive; open-map sections excluded).
-  collectUnknownKeys(obj, schema, opts.mode, [], out);
+    // Unknown keys at every nesting level (recursive; open-map sections excluded).
+    collectUnknownKeys(obj, schema, opts.mode, [], out)
 
-  for (const [key, value] of Object.entries(obj)) {
-    const entry = schema[key];
-    if (!entry) continue; // unknown keys already reported by collectUnknownKeys
-    const diag = validateEntry(entry, value, opts.ctx);
-    if (diag) out.push({ ...diag, path: [key, ...diag.path] });
-  }
-
-  if (opts.mode === "settings") {
-    for (const [key, entry] of Object.entries(schema)) {
-      if (!entry.required) continue;
-      const v = obj[key];
-      if (v === undefined || v === null) {
-        out.push({
-          path: [key],
-          severity: "error",
-          message: `missing required property: ${key}`,
-        });
-      }
+    for (const [key, value] of Object.entries(obj)) {
+        const entry = schema[key]
+        if (!entry) continue // unknown keys already reported by collectUnknownKeys
+        const diag = validateEntry(entry, value, opts.ctx)
+        if (diag) out.push({ ...diag, path: [key, ...diag.path] })
     }
 
-    // Toolbar items may carry either `command` (single) or `commands` (list); a
-    // non-empty `commands` wins at runtime. Setting both is a no-op-prone mistake,
-    // so warn (the generic field validator can't see across sibling fields).
-    if (Array.isArray(obj.toolbar)) {
-      obj.toolbar.forEach((item, i) => {
-        if (
-          item && typeof item === "object" &&
-          "command" in item &&
-          Array.isArray((item as { commands?: unknown }).commands) &&
-          (item as { commands: unknown[] }).commands.length > 0
-        ) {
-          out.push({
-            path: ["toolbar", String(i)],
-            severity: "warning",
-            message: "toolbar item sets both `command` and `commands`; `command` is ignored when `commands` is non-empty.",
-          });
+    if (opts.mode === 'settings') {
+        for (const [key, entry] of Object.entries(schema)) {
+            if (!entry.required) continue
+            const v = obj[key]
+            if (v === undefined || v === null) {
+                out.push({
+                    path: [key],
+                    severity: 'error',
+                    message: `missing required property: ${key}`,
+                })
+            }
         }
-      });
+
+        // Toolbar items may carry either `command` (single) or `commands` (list); a
+        // non-empty `commands` wins at runtime. Setting both is a no-op-prone mistake,
+        // so warn (the generic field validator can't see across sibling fields).
+        if (Array.isArray(obj.toolbar)) {
+            obj.toolbar.forEach((item, i) => {
+                if (
+                    item &&
+                    typeof item === 'object' &&
+                    'command' in item &&
+                    Array.isArray((item as { commands?: unknown }).commands) &&
+                    (item as { commands: unknown[] }).commands.length > 0
+                ) {
+                    out.push({
+                        path: ['toolbar', String(i)],
+                        severity: 'warning',
+                        message:
+                            'toolbar item sets both `command` and `commands`; `command` is ignored when `commands` is non-empty.',
+                    })
+                }
+            })
+        }
     }
-  }
 
-  return out;
+    return out
 }
-

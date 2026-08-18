@@ -8,32 +8,32 @@
 // per-session via `claude --plugin-dir <relay>` so it isn't even present outside app
 // terminals, but the env gate is a cheap belt-and-suspenders guard.
 
-const BUDGET_MS = 2000;
+const BUDGET_MS = 2000
 
 /** Subset of the Claude Code hook stdin payload we consume (see relay-merge-spec). */
 export interface HookInput {
-  session_id?: string;
-  cwd?: string;
-  agent_id?: string;
-  agent_type?: string;
-  last_assistant_message?: string;
-  /** SessionEnd: why the session ended (e.g. "clear", "compact", "logout", "exit"). */
-  reason?: string;
-  /** UserPromptSubmit: the submitted prompt text (used for memory recall). */
-  prompt?: string;
-  /** SessionEnd: path to the session transcript jsonl (used for memory collection). */
-  transcript_path?: string;
-  [k: string]: unknown;
+    session_id?: string
+    cwd?: string
+    agent_id?: string
+    agent_type?: string
+    last_assistant_message?: string
+    /** SessionEnd: why the session ended (e.g. "clear", "compact", "logout", "exit"). */
+    reason?: string
+    /** UserPromptSubmit: the submitted prompt text (used for memory recall). */
+    prompt?: string
+    /** SessionEnd: path to the session transcript jsonl (used for memory collection). */
+    transcript_path?: string
+    [k: string]: unknown
 }
 
 /** The app terminal-tab id, or undefined when not launched from a Bismuth terminal. */
 export function terminalId(): string | undefined {
-  return process.env.CLAUDE_TERMINAL_ID;
+    return process.env.CLAUDE_TERMINAL_ID
 }
 
 /** Base URL of this app's core server (set in the pty env by terminal.ts). */
 export function relayUrl(): string {
-  return process.env.CLAUDE_RELAY_URL || "http://localhost:4321";
+    return process.env.CLAUDE_RELAY_URL || 'http://localhost:4321'
 }
 
 /**
@@ -44,52 +44,55 @@ export function relayUrl(): string {
  * every subagent the workflow spawns, so they share one key. Undefined → ordinary
  * (non-workflow) subagent, rendered exactly as before. */
 export function workflowId(): string | undefined {
-  const explicit = process.env.CLAUDE_WORKFLOW_ID?.trim();
-  if (explicit) return explicit;
-  const jobDir = process.env.CLAUDE_JOB_DIR?.trim();
-  if (jobDir) {
-    const base = jobDir.replace(/[/\\]+$/, "").split(/[/\\]/).pop();
-    if (base) return base;
-  }
-  return undefined;
+    const explicit = process.env.CLAUDE_WORKFLOW_ID?.trim()
+    if (explicit) return explicit
+    const jobDir = process.env.CLAUDE_JOB_DIR?.trim()
+    if (jobDir) {
+        const base = jobDir
+            .replace(/[/\\]+$/, '')
+            .split(/[/\\]/)
+            .pop()
+        if (base) return base
+    }
+    return undefined
 }
 
 /** This vault's daemon memory dir, or undefined. terminal.ts injects BISMUTH_MEMORY_DIR
  *  only when settings.daemon.enabled — so its presence is the gate for memory recall +
  *  collection (both no-op without it). */
 export function memoryDir(): string | undefined {
-  return process.env.BISMUTH_MEMORY_DIR;
+    return process.env.BISMUTH_MEMORY_DIR
 }
 
 /** Parse the hook payload from stdin; {} on empty/invalid input. */
 export async function readHookInput(): Promise<HookInput> {
-  try {
-    const text = await Bun.stdin.text();
-    return text ? (JSON.parse(text) as HookInput) : {};
-  } catch {
-    return {};
-  }
+    try {
+        const text = await Bun.stdin.text()
+        return text ? (JSON.parse(text) as HookInput) : {}
+    } catch {
+        return {}
+    }
 }
 
 /** POST to a relay endpoint, best-effort: 2s timeout, all errors swallowed. */
 export async function postRelay(path: string, body: unknown): Promise<void> {
-  try {
-    await fetch(`${relayUrl().replace(/\/+$/, "")}${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(BUDGET_MS),
-    });
-  } catch {
-    // relay unreachable / slow — never block the session.
-  }
+    try {
+        await fetch(`${relayUrl().replace(/\/+$/, '')}${path}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(BUDGET_MS),
+        })
+    } catch {
+        // relay unreachable / slow — never block the session.
+    }
 }
 
 /** Run a hook body so it always exits 0 and never throws past the runtime. */
 export function runHook(fn: () => Promise<void>): void {
-  fn()
-    .catch(() => {})
-    .finally(() => process.exit(0));
+    fn()
+        .catch(() => {})
+        .finally(() => process.exit(0))
 }
 
 /**
@@ -99,13 +102,13 @@ export function runHook(fn: () => Promise<void>): void {
  * Bismuth terminal tab or when the payload carries no session id.
  */
 export async function reportSession(): Promise<void> {
-  const tid = terminalId();
-  if (!tid) return; // not launched from a Bismuth terminal tab
-  const input = await readHookInput();
-  if (!input.session_id) return;
-  await postRelay("/relay/session", {
-    sessionId: input.session_id,
-    terminalId: tid,
-    cwd: input.cwd ?? "",
-  });
+    const tid = terminalId()
+    if (!tid) return // not launched from a Bismuth terminal tab
+    const input = await readHookInput()
+    if (!input.session_id) return
+    await postRelay('/relay/session', {
+        sessionId: input.session_id,
+        terminalId: tid,
+        cwd: input.cwd ?? '',
+    })
 }

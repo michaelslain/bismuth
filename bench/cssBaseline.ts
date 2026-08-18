@@ -36,14 +36,17 @@
 //   bun bench/cssBaseline.ts             # check (exit 1 on drift)
 // rmSync here is for the generated drift dump, NOT for a Chrome profile — profile cleanup lives in
 // chromeSession.ts.
-import { readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { launchChrome } from "./chromeSession";
+import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { launchChrome } from './chromeSession'
 
-const arg = (n: string, d = "") => { const i = process.argv.indexOf(`--${n}`); return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d; };
-const has = (n: string) => process.argv.includes(`--${n}`);
-const BASE = arg("base", "http://localhost:6006");
-const ONLY = arg("story", "");
+const arg = (n: string, d = '') => {
+    const i = process.argv.indexOf(`--${n}`)
+    return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d
+}
+const has = (n: string) => process.argv.includes(`--${n}`)
+const BASE = arg('base', 'http://localhost:6006')
+const ONLY = arg('story', '')
 // SETTLE is only the head start before convergence takes over, not the thing being relied on. Raising
 // a fixed sleep was tried first and does not work: 700ms missed Univer's async toolbar theming,
 // 1500ms still let one story flake under full-suite CPU load, and 2000ms still caught Milkdown
@@ -55,7 +58,7 @@ const ONLY = arg("story", "");
 // DOWNLOADED and is still parsing — no requests in flight, no DOM movement, and nothing mounted yet.
 // Three guards now overlap: this head start, network idle, and the growth escalation in captureOne.
 // Costs ~0.7s x 264 stories on the sweep, which is worth paying for a gate that can be believed.
-const SETTLE = Number(arg("settle", "1500"));
+const SETTLE = Number(arg('settle', '1500'))
 /** How many byte-identical consecutive captures mean "this story has stopped moving". Two is not
  *  enough: a dynamic import can hold a stable loading state across one interval and then swap.
  *
@@ -67,37 +70,93 @@ const SETTLE = Number(arg("settle", "1500"));
  *  every capture in the window genuinely identical and therefore no warning. That is how a 578-element
  *  diff appears on a story nobody edited. Widening the window does not eliminate the failure (a long
  *  enough stall always can), which is why the drift-retry pass below still exists as the backstop. */
-const STABLE = Number(arg("stable", "4"));
-const CONVERGE_WAIT = Number(arg("wait", "400"));
-const MAX_TRIES = Number(arg("tries", "20"));
+const STABLE = Number(arg('stable', '4'))
+const CONVERGE_WAIT = Number(arg('wait', '400'))
+const MAX_TRIES = Number(arg('tries', '20'))
 /** Frozen wall clock. Any fixed instant works; this one is a Thursday mid-month, so a month grid has
  *  both leading and trailing out-of-month cells and the calendar stories exercise both. */
-const FROZEN_NOW = Date.parse("2026-01-15T12:00:00Z");
-const UPDATE = has("update");
-const OUT = join(import.meta.dir, "css-baseline.json");
+const FROZEN_NOW = Date.parse('2026-01-15T12:00:00Z')
+const UPDATE = has('update')
+const OUT = join(import.meta.dir, 'css-baseline.json')
 /** Full drift dump on a failing run — generated, gitignored, overwritten every run. */
-const DRIFT = join(import.meta.dir, "css-baseline.drift.txt");
-const W = 1280, H = 900;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const DRIFT = join(import.meta.dir, 'css-baseline.drift.txt')
+const W = 1280,
+    H = 900
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /** The properties worth tracking. Deliberately NOT every property: the full computed set is ~340
  *  properties per element, which makes the baseline enormous and full of values no CSS in this repo
  *  ever sets. These are the ones this codebase's rules actually control. */
 const PROPS = [
-  "display","position","top","right","bottom","left","z-index","overflow-x","overflow-y",
-  "width","height","min-width","min-height","max-width","max-height",
-  "margin-top","margin-right","margin-bottom","margin-left",
-  "padding-top","padding-right","padding-bottom","padding-left",
-  "flex-direction","flex-wrap","flex-grow","flex-shrink","flex-basis","align-items","justify-content","gap",
-  "grid-template-columns","grid-template-rows",
-  "font-family","font-size","font-weight","font-style","line-height","letter-spacing","text-transform",
-  "text-align","text-decoration-line","white-space","text-overflow","font-variant-numeric",
-  "color","background-color","background-image","opacity","visibility",
-  "border-top-width","border-right-width","border-bottom-width","border-left-width",
-  "border-top-color","border-right-color","border-bottom-color","border-left-color",
-  "border-top-left-radius","border-top-right-radius","border-bottom-left-radius","border-bottom-right-radius",
-  "box-shadow","backdrop-filter","transform","transition-property","transition-duration","cursor",
-];
+    'display',
+    'position',
+    'top',
+    'right',
+    'bottom',
+    'left',
+    'z-index',
+    'overflow-x',
+    'overflow-y',
+    'width',
+    'height',
+    'min-width',
+    'min-height',
+    'max-width',
+    'max-height',
+    'margin-top',
+    'margin-right',
+    'margin-bottom',
+    'margin-left',
+    'padding-top',
+    'padding-right',
+    'padding-bottom',
+    'padding-left',
+    'flex-direction',
+    'flex-wrap',
+    'flex-grow',
+    'flex-shrink',
+    'flex-basis',
+    'align-items',
+    'justify-content',
+    'gap',
+    'grid-template-columns',
+    'grid-template-rows',
+    'font-family',
+    'font-size',
+    'font-weight',
+    'font-style',
+    'line-height',
+    'letter-spacing',
+    'text-transform',
+    'text-align',
+    'text-decoration-line',
+    'white-space',
+    'text-overflow',
+    'font-variant-numeric',
+    'color',
+    'background-color',
+    'background-image',
+    'opacity',
+    'visibility',
+    'border-top-width',
+    'border-right-width',
+    'border-bottom-width',
+    'border-left-width',
+    'border-top-color',
+    'border-right-color',
+    'border-bottom-color',
+    'border-left-color',
+    'border-top-left-radius',
+    'border-top-right-radius',
+    'border-bottom-left-radius',
+    'border-bottom-right-radius',
+    'box-shadow',
+    'backdrop-filter',
+    'transform',
+    'transition-property',
+    'transition-duration',
+    'cursor',
+]
 
 /** Serialize one story as { ref: {prop: value}, els: { stablePath: {prop: value} } }.
  *  The path is structural (tag + nth-child chain), NOT class-based — class names are exactly what
@@ -204,7 +263,7 @@ const PROBE = `(async () => {
     }
   }
   return JSON.stringify({ count: count, ref: defaults, els: out });
-})()`;
+})()`
 
 /** Installed via Page.addScriptToEvaluateOnNewDocument, so it runs before ANY story code — including
  *  the module-scope `const NOW = Date.now()` several story fixtures use. Only the wall clock is
@@ -224,9 +283,9 @@ const FREEZE = `(() => {
   D.UTC = R.UTC.bind(R);
   Object.setPrototypeOf(D, R);
   window.Date = D;
-})()`;
+})()`
 
-const index = await (await fetch(`${BASE}/index.json`)).json();
+const index = await (await fetch(`${BASE}/index.json`)).json()
 // --story takes an exact id OR a PREFIX. Exact-only was a footgun: story ids are
 // "<component>--<case>", so the natural thing to type for a component — `--story shell-windowcontrols`
 // — matched nothing and threw, and the per-component workflow this harness is used for is exactly
@@ -249,20 +308,26 @@ const index = await (await fetch(`${BASE}/index.json`)).json();
  * to hide a bug in the gate itself, which is the most expensive kind of mistake this file can make:
  * silent, self-justifying, and indistinguishable from diligence.
  */
-const UNSTABLE: string[] = [];
+const UNSTABLE: string[] = []
 
-const matchesOnly = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY);
+const matchesOnly = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY)
 // Excluded only during a SWEEP. An explicit --story naming one is an intentional manual check.
-const excluded = (id: string) => !ONLY && UNSTABLE.indexOf(id) >= 0;
-const storyIds = Object.keys(index.entries).filter((id) => matchesOnly(id) && !excluded(id)).sort();
-if (storyIds.length === 0) throw new Error(`no stories matched (--story ${ONLY})`);
+const excluded = (id: string) => !ONLY && UNSTABLE.indexOf(id) >= 0
+const storyIds = Object.keys(index.entries)
+    .filter(id => matchesOnly(id) && !excluded(id))
+    .sort()
+if (storyIds.length === 0)
+    throw new Error(`no stories matched (--story ${ONLY})`)
 if (!ONLY && UNSTABLE.length) {
-  console.error(
-    `NOT PROTECTED: ${UNSTABLE.length} story(s) excluded as nondeterministic — a regression in these ` +
-    `will NOT be caught here:\n  ${UNSTABLE.join("\n  ")}`,
-  );
+    console.error(
+        `NOT PROTECTED: ${UNSTABLE.length} story(s) excluded as nondeterministic — a regression in these ` +
+            `will NOT be caught here:\n  ${UNSTABLE.join('\n  ')}`,
+    )
 }
-if (ONLY) console.error(`--story ${ONLY} matched ${storyIds.length}: ${storyIds.join(", ")}`);
+if (ONLY)
+    console.error(
+        `--story ${ONLY} matched ${storyIds.length}: ${storyIds.join(', ')}`,
+    )
 
 // Launch, port poll, CDP attach and teardown are chromeSession.ts's — including the SIGKILL-then-retry
 // profile delete that this harness needed after leaking 20 profiles / 600 MB, and which two sibling
@@ -271,9 +336,12 @@ if (ONLY) console.error(`--story ${ONLY} matched ${storyIds.length}: ${storyIds.
 // `--force-prefers-reduced-motion` is passed explicitly, not defaulted in the helper: visual.ts must
 // NOT have it, because its readiness loop waits for animation to settle.
 const session = await launchChrome({
-  label: "cssbase", width: W, height: H, flags: ["--force-prefers-reduced-motion"],
-});
-const { page } = session;
+    label: 'cssbase',
+    width: W,
+    height: H,
+    flags: ['--force-prefers-reduced-motion'],
+})
+const { page } = session
 
 // NETWORK-IDLE GATING. The failure this closes: app-sheetview settles on THREE elements — the shell
 // that renders before `sheet/univerSheet.ts`'s dynamic import resolves. Three elements holding
@@ -287,7 +355,7 @@ const { page } = session;
 // surface in the app (Milkdown, the drawing canvas, the graph renderer), which is the point — the
 // alternative was a hand-maintained list of slow stories that the next code-split component silently
 // falls off.
-await page("Network.enable");
+await page('Network.enable')
 // QUIESCENCE, NOT A COUNTER. An in-flight counter was tried first and is the wrong shape: any request
 // that never emits a terminal event (a cancelled fetch, a redirect chain, an EventSource) pins it
 // permanently above zero, and the story can then NEVER satisfy the settle condition. That is not a
@@ -296,29 +364,39 @@ await page("Network.enable");
 // four stories that had been fine. Timestamping the last network event instead cannot leak: the worst
 // a lost event can do is let the page look idle slightly early, which is the pre-existing behaviour
 // rather than a new failure mode.
-let lastNetAt = Date.now();
-const NET_QUIET = 500;
-session.ws.addEventListener("message", (e) => {
-  let m: any;
-  try { m = JSON.parse(String((e as MessageEvent).data)); } catch { return; }
-  if (typeof m.method === "string" && m.method.indexOf("Network.") === 0) lastNetAt = Date.now();
-});
-const netQuiet = () => Date.now() - lastNetAt > NET_QUIET;
+let lastNetAt = Date.now()
+const NET_QUIET = 500
+session.ws.addEventListener('message', e => {
+    let m: any
+    try {
+        m = JSON.parse(String((e as MessageEvent).data))
+    } catch {
+        return
+    }
+    if (typeof m.method === 'string' && m.method.indexOf('Network.') === 0)
+        lastNetAt = Date.now()
+})
+const netQuiet = () => Date.now() - lastNetAt > NET_QUIET
 
 // PER-TOOL, deliberately not in the helper: this harness needs a fixed viewport at scale 1, a pinned
 // timezone and a frozen clock (see DETERMINISM above). visual.ts renders at scale 2 and needs real
 // time, so none of the three can be a shared default.
-await page("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+await page('Emulation.setDeviceMetricsOverride', {
+    width: W,
+    height: H,
+    deviceScaleFactor: 1,
+    mobile: false,
+})
 // UTC, not the host zone: a calendar rendering local dates would otherwise shift with whoever runs it.
-await page("Emulation.setTimezoneOverride", { timezoneId: "UTC" });
-await page("Page.addScriptToEvaluateOnNewDocument", { source: FREEZE });
+await page('Emulation.setTimezoneOverride', { timezoneId: 'UTC' })
+await page('Page.addScriptToEvaluateOnNewDocument', { source: FREEZE })
 
-const captured: Record<string, any> = {};
-const empty: string[] = [];
+const captured: Record<string, any> = {}
+const empty: string[] = []
 // Progress goes to stderr every story. A full run holds the terminal for minutes with nothing to
 // show, which reads as a hang — and any supervisor watching the stream (a subagent watchdog, CI's
 // no-output timeout) will kill it on exactly that silence. \r keeps it to one line interactively.
-const unstable: string[] = [];
+const unstable: string[] = []
 
 /** Probe the CURRENTLY-LOADED page until it stops changing, then return the capture.
  *
@@ -330,131 +408,185 @@ const unstable: string[] = [];
  *  drift-retry pass below: a plateau is broken by re-loading the story on its own, and a real
  *  regression survives that. */
 const captureOne = async (id: string, settle: number, wait: number) => {
-  await sleep(settle);
-  // `grew` escalates the stability requirement for staged mounters ONLY, so the ~250 stories that
-  // render in one shot pay nothing for Univer's benefit. See the growth note at the break below.
-  let last = "", value = "", same = 0, maxCount = 0, grew = false, need = STABLE;
-  for (let i = 0; i < MAX_TRIES; i++) {
-    const r = await page("Runtime.evaluate", { expression: PROBE, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) { console.error(`\nSKIP ${id}: ${r.exceptionDetails.text}`); return null; }
-    value = r.result.value;
-    // AN EMPTY STORY ROOT IS NEVER "SETTLED". This is the completeness hole, and it is not subtle
-    // once measured: ui-markdownfield--placeholder renders ZERO elements until ~2000ms, because
-    // Milkdown mounts asynchronously. The default 800ms settle plus three 350ms convergence waits
-    // reaches a verdict at ~1850ms, and three consecutive captures of an empty root are perfectly
-    // identical — so the harness recorded "this story has no elements" and moved on, having proved
-    // only that nothing had started yet. The check pass then saw the real component and reported
-    // every element as NEW. Refusing to count an empty capture toward stability costs nothing on the
-    // 258 stories that mount promptly (their first capture is already non-empty) and gives the slow
-    // ones the full MAX_TRIES budget. A story that genuinely renders nothing still exits the loop
-    // unsettled and is reported by the "rendered 0 elements" warning below, which is where a truly
-    // blank story SHOULD surface — loudly, not as a silently blessed recording.
-    const count = Number(/"count":(\d+)/.exec(value)?.[1] ?? 0);
-    // A STORY THAT GREW WHILE WE WATCHED IS A STAGED MOUNTER, AND STAGED MOUNTERS LIE AT REST.
-    // app-sheetview goes 3 elements -> 469 -> 538 as Univer registers its plugins. Each step holds
-    // still, so a plain "N identical captures" test can accept 469 and record a spreadsheet with no
-    // toolbar. Chasing this with a bigger fixed window costs every fast story the same delay; keying
-    // it to observed GROWTH costs only the stories that actually stage. Once a story has grown even
-    // once, it must then hold still for three extra probes before it is believed.
-    //
-    // This is what I initially misdiagnosed as Univer being nondeterministic and nearly dropped from
-    // the gate. It is not: probed six times at a flat 4s wait it produced 538 elements and 36 toolbar
-    // buttons every single time. The variance was entirely this early break.
-    if (count > maxCount) {
-      if (maxCount > 0) grew = true;
-      maxCount = count;
+    await sleep(settle)
+    // `grew` escalates the stability requirement for staged mounters ONLY, so the ~250 stories that
+    // render in one shot pay nothing for Univer's benefit. See the growth note at the break below.
+    let last = '',
+        value = '',
+        same = 0,
+        maxCount = 0,
+        grew = false,
+        need = STABLE
+    for (let i = 0; i < MAX_TRIES; i++) {
+        const r = await page('Runtime.evaluate', {
+            expression: PROBE,
+            returnByValue: true,
+            awaitPromise: true,
+        })
+        if (r.exceptionDetails) {
+            console.error(`\nSKIP ${id}: ${r.exceptionDetails.text}`)
+            return null
+        }
+        value = r.result.value
+        // AN EMPTY STORY ROOT IS NEVER "SETTLED". This is the completeness hole, and it is not subtle
+        // once measured: ui-markdownfield--placeholder renders ZERO elements until ~2000ms, because
+        // Milkdown mounts asynchronously. The default 800ms settle plus three 350ms convergence waits
+        // reaches a verdict at ~1850ms, and three consecutive captures of an empty root are perfectly
+        // identical — so the harness recorded "this story has no elements" and moved on, having proved
+        // only that nothing had started yet. The check pass then saw the real component and reported
+        // every element as NEW. Refusing to count an empty capture toward stability costs nothing on the
+        // 258 stories that mount promptly (their first capture is already non-empty) and gives the slow
+        // ones the full MAX_TRIES budget. A story that genuinely renders nothing still exits the loop
+        // unsettled and is reported by the "rendered 0 elements" warning below, which is where a truly
+        // blank story SHOULD surface — loudly, not as a silently blessed recording.
+        const count = Number(/"count":(\d+)/.exec(value)?.[1] ?? 0)
+        // A STORY THAT GREW WHILE WE WATCHED IS A STAGED MOUNTER, AND STAGED MOUNTERS LIE AT REST.
+        // app-sheetview goes 3 elements -> 469 -> 538 as Univer registers its plugins. Each step holds
+        // still, so a plain "N identical captures" test can accept 469 and record a spreadsheet with no
+        // toolbar. Chasing this with a bigger fixed window costs every fast story the same delay; keying
+        // it to observed GROWTH costs only the stories that actually stage. Once a story has grown even
+        // once, it must then hold still for three extra probes before it is believed.
+        //
+        // This is what I initially misdiagnosed as Univer being nondeterministic and nearly dropped from
+        // the gate. It is not: probed six times at a flat 4s wait it produced 538 elements and 36 toolbar
+        // buttons every single time. The variance was entirely this early break.
+        if (count > maxCount) {
+            if (maxCount > 0) grew = true
+            maxCount = count
+        }
+        need = grew ? STABLE + 3 : STABLE
+        // `inflight <= 0` is part of the settle condition, not a separate wait: a story can be visually
+        // still purely because the thing that will change it has not been delivered yet.
+        same = value === last && count > 0 && netQuiet() ? same + 1 : 0
+        last = value
+        if (same >= need - 1) break
+        await sleep(wait)
     }
-    need = grew ? STABLE + 3 : STABLE;
-    // `inflight <= 0` is part of the settle condition, not a separate wait: a story can be visually
-    // still purely because the thing that will change it has not been delivered yet.
-    same = value === last && count > 0 && netQuiet() ? same + 1 : 0;
-    last = value;
-    if (same >= need - 1) break;
-    await sleep(wait);
-  }
-  const parsed = JSON.parse(value);
-  return { ref: parsed.ref, els: parsed.els, count: parsed.count as number, settled: same >= need - 1 };
-};
-
-let done = 0;
-for (const id of storyIds) {
-  process.stderr.write(`\r[${++done}/${storyIds.length}] ${id.slice(0, 60).padEnd(60)}`);
-  // A CDP call can reject outright — "Session with given id not found" when the renderer falls over,
-  // which happened once at story 185 of 247 under memory pressure from a second browser. Left
-  // unhandled that surfaces as a raw protocol error with a stack pointing at the RPC helper and NO
-  // indication of which story was in flight, which is the least useful possible failure. Name the
-  // story, then rethrow: a half-finished run must not be mistaken for a pass.
-  try {
-    await page("Page.navigate", { url: `${BASE}/iframe.html?id=${id}&viewMode=story` });
-  } catch (e) {
-    process.stderr.write("\n");
-    throw new Error(`CDP died navigating to "${id}" (story ${done}/${storyIds.length}): ${(e as Error).message}`);
-  }
-  const got = await captureOne(id, SETTLE, CONVERGE_WAIT);
-  if (!got) continue;
-  if (!got.settled) unstable.push(id);
-  if (got.count === 0) empty.push(id);
-  captured[id] = { ref: got.ref, els: got.els };
+    const parsed = JSON.parse(value)
+    return {
+        ref: parsed.ref,
+        els: parsed.els,
+        count: parsed.count as number,
+        settled: same >= need - 1,
+    }
 }
-process.stderr.write("\n");
+
+let done = 0
+for (const id of storyIds) {
+    process.stderr.write(
+        `\r[${++done}/${storyIds.length}] ${id.slice(0, 60).padEnd(60)}`,
+    )
+    // A CDP call can reject outright — "Session with given id not found" when the renderer falls over,
+    // which happened once at story 185 of 247 under memory pressure from a second browser. Left
+    // unhandled that surfaces as a raw protocol error with a stack pointing at the RPC helper and NO
+    // indication of which story was in flight, which is the least useful possible failure. Name the
+    // story, then rethrow: a half-finished run must not be mistaken for a pass.
+    try {
+        await page('Page.navigate', {
+            url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
+        })
+    } catch (e) {
+        process.stderr.write('\n')
+        throw new Error(
+            `CDP died navigating to "${id}" (story ${done}/${storyIds.length}): ${(e as Error).message}`,
+        )
+    }
+    const got = await captureOne(id, SETTLE, CONVERGE_WAIT)
+    if (!got) continue
+    if (!got.settled) unstable.push(id)
+    if (got.count === 0) empty.push(id)
+    captured[id] = { ref: got.ref, els: got.els }
+}
+process.stderr.write('\n')
 // The browser is NOT released here. It was, until the drift-retry pass below needed to re-load a
 // story — and closing first turned every retry into a dead-session catch that silently kept the
 // first-pass verdict. close() is idempotent and registered on process exit; the explicit call now sits
 // after the retry.
 
-if (empty.length) console.error(`WARNING: ${empty.length} story(s) rendered 0 elements — unprotected:\n  ${empty.join("\n  ")}`);
-if (unstable.length) console.error(`WARNING: ${unstable.length} story(s) never converged in ${MAX_TRIES} probes — their values are arbitrary and will flake:\n  ${unstable.join("\n  ")}`);
+if (empty.length)
+    console.error(
+        `WARNING: ${empty.length} story(s) rendered 0 elements — unprotected:\n  ${empty.join('\n  ')}`,
+    )
+if (unstable.length)
+    console.error(
+        `WARNING: ${unstable.length} story(s) never converged in ${MAX_TRIES} probes — their values are arbitrary and will flake:\n  ${unstable.join('\n  ')}`,
+    )
 
 if (UPDATE) {
-  // A partial re-record (--update --story <id>) must MERGE, not replace: writing `captured` whole
-  // would silently wipe the snapshot for the other 239 stories, and re-recording just the story a
-  // task touched is the natural per-task workflow. Full --update still replaces everything, so a
-  // story deleted from Storybook drops out of the baseline the way it should.
-  let next = captured;
-  if (ONLY && existsSync(OUT)) next = { ...JSON.parse(readFileSync(OUT, "utf8")), ...captured };
-  writeFileSync(OUT, JSON.stringify(next, null, 1));
-  console.log(`recorded ${Object.keys(captured).length} stories -> ${OUT} (${Object.keys(next).length} total)`);
-  process.exit(0);
+    // A partial re-record (--update --story <id>) must MERGE, not replace: writing `captured` whole
+    // would silently wipe the snapshot for the other 239 stories, and re-recording just the story a
+    // task touched is the natural per-task workflow. Full --update still replaces everything, so a
+    // story deleted from Storybook drops out of the baseline the way it should.
+    let next = captured
+    if (ONLY && existsSync(OUT))
+        next = { ...JSON.parse(readFileSync(OUT, 'utf8')), ...captured }
+    writeFileSync(OUT, JSON.stringify(next, null, 1))
+    console.log(
+        `recorded ${Object.keys(captured).length} stories -> ${OUT} (${Object.keys(next).length} total)`,
+    )
+    process.exit(0)
 }
 
-if (!existsSync(OUT)) throw new Error(`no baseline at ${OUT} — run with --update first`);
-const base = JSON.parse(readFileSync(OUT, "utf8"));
-const diffs: string[] = [];
+if (!existsSync(OUT))
+    throw new Error(`no baseline at ${OUT} — run with --update first`)
+const base = JSON.parse(readFileSync(OUT, 'utf8'))
+const diffs: string[] = []
 // Entries are DEVIATIONS-FROM-`ref` (see PROBE), so a property absent from an entry does NOT mean
 // "unchanged" — it means "whatever this run's reference resolved to". Comparing the stored keys
 // directly would let a global inherited rule vanish from both the element and the reference at once
 // and read as no drift. So resolve every property on both sides against ITS OWN recorded reference
 // first, and walk the full PROPS list rather than only the keys that happen to be present.
-const resolve = (rec: Record<string, string> | undefined, ref: Record<string, string>, prop: string) =>
-  rec?.[prop] ?? ref[prop] ?? "[absent]";
+const resolve = (
+    rec: Record<string, string> | undefined,
+    ref: Record<string, string>,
+    prop: string,
+) => rec?.[prop] ?? ref[prop] ?? '[absent]'
 /** All drift lines for ONE story, or [] if it matches. Pure, so the retry pass can reuse it. */
-const diffStory = (id: string, c: { ref: Record<string, string>; els: Record<string, any> }): string[] => {
-  const out: string[] = [];
-  const b = base[id];
-  if (!b) return [`${id}: NEW story (no baseline)`];
-  if (!b.ref || !b.els) throw new Error(`baseline story "${id}" predates the recorded-reference schema — re-record with --update`);
-  const bRef = b.ref as Record<string, string>, cRef = c.ref;
-  // Reference drift is reported in its own right: it is the app-wide signal, and without it a
-  // dropped global rule reads only as a wall of per-element lines with no stated cause.
-  for (const prop of PROPS) {
-    if (bRef[prop] !== cRef[prop]) out.push(`${id} [reference] ${prop}: ${bRef[prop] ?? "[absent]"} -> ${cRef[prop] ?? "[absent]"}`);
-  }
-  const allPaths = new Set([...Object.keys(b.els), ...Object.keys(c.els)]);
-  for (const p of allPaths) {
-    const bp = b.els[p], cp = c.els[p];
-    if (!bp) { out.push(`${id} ${p}: NEW element`); continue; }
-    if (!cp) { out.push(`${id} ${p}: REMOVED element`); continue; }
+const diffStory = (
+    id: string,
+    c: { ref: Record<string, string>; els: Record<string, any> },
+): string[] => {
+    const out: string[] = []
+    const b = base[id]
+    if (!b) return [`${id}: NEW story (no baseline)`]
+    if (!b.ref || !b.els)
+        throw new Error(
+            `baseline story "${id}" predates the recorded-reference schema — re-record with --update`,
+        )
+    const bRef = b.ref as Record<string, string>,
+        cRef = c.ref
+    // Reference drift is reported in its own right: it is the app-wide signal, and without it a
+    // dropped global rule reads only as a wall of per-element lines with no stated cause.
     for (const prop of PROPS) {
-      const bv = resolve(bp, bRef, prop);
-      const cv = resolve(cp, cRef, prop);
-      if (bv !== cv) out.push(`${id} ${p} ${prop}: ${bv} -> ${cv}`);
+        if (bRef[prop] !== cRef[prop])
+            out.push(
+                `${id} [reference] ${prop}: ${bRef[prop] ?? '[absent]'} -> ${cRef[prop] ?? '[absent]'}`,
+            )
     }
-  }
-  return out;
-};
+    const allPaths = new Set([...Object.keys(b.els), ...Object.keys(c.els)])
+    for (const p of allPaths) {
+        const bp = b.els[p],
+            cp = c.els[p]
+        if (!bp) {
+            out.push(`${id} ${p}: NEW element`)
+            continue
+        }
+        if (!cp) {
+            out.push(`${id} ${p}: REMOVED element`)
+            continue
+        }
+        for (const prop of PROPS) {
+            const bv = resolve(bp, bRef, prop)
+            const cv = resolve(cp, cRef, prop)
+            if (bv !== cv) out.push(`${id} ${p} ${prop}: ${bv} -> ${cv}`)
+        }
+    }
+    return out
+}
 
-const perStory = new Map<string, string[]>();
-for (const id of Object.keys(captured)) perStory.set(id, diffStory(id, captured[id]));
+const perStory = new Map<string, string[]>()
+for (const id of Object.keys(captured))
+    perStory.set(id, diffStory(id, captured[id]))
 
 // RETRY the drifted stories, one at a time, with a fresh load and more patience.
 //
@@ -468,51 +600,64 @@ for (const id of Object.keys(captured)) perStory.set(id, diffStory(id, captured[
 // (a font swap, a rule on every icon) drifts most of them, and retrying those would double a
 // 12-minute sweep to re-confirm a change the author already knows they made. Above the cap the
 // first-pass verdict stands and the cap is announced, so a skipped retry is never silent.
-const RETRY_CAP = Math.max(8, Math.floor(storyIds.length / 4));
-const drifted = [...perStory].filter(([, d]) => d.length).map(([id]) => id);
+const RETRY_CAP = Math.max(8, Math.floor(storyIds.length / 4))
+const drifted = [...perStory].filter(([, d]) => d.length).map(([id]) => id)
 if (drifted.length > RETRY_CAP && !UPDATE) {
-  process.stderr.write(`${drifted.length} of ${storyIds.length} stories drifted — above the ${RETRY_CAP} retry cap, so this reads as an intended app-wide change, not contention. Reporting the first pass as-is.\n`);
+    process.stderr.write(
+        `${drifted.length} of ${storyIds.length} stories drifted — above the ${RETRY_CAP} retry cap, so this reads as an intended app-wide change, not contention. Reporting the first pass as-is.\n`,
+    )
 } else if (drifted.length && !UPDATE) {
-  process.stderr.write(`re-checking ${drifted.length} drifted story(s) in isolation before reporting…\n`);
-  for (const id of drifted) {
-    try {
-      await page("Page.navigate", { url: `${BASE}/iframe.html?id=${id}&viewMode=story` });
-    } catch { break; }  // session gone; keep the first-pass verdict rather than silently passing
-    const again = await captureOne(id, SETTLE * 2, CONVERGE_WAIT * 2);
-    if (!again) continue;
-    const d2 = diffStory(id, again);
-    if (d2.length < perStory.get(id)!.length) {
-      process.stderr.write(`  ${id}: ${perStory.get(id)!.length} -> ${d2.length} on retry\n`);
+    process.stderr.write(
+        `re-checking ${drifted.length} drifted story(s) in isolation before reporting…\n`,
+    )
+    for (const id of drifted) {
+        try {
+            await page('Page.navigate', {
+                url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
+            })
+        } catch {
+            break
+        } // session gone; keep the first-pass verdict rather than silently passing
+        const again = await captureOne(id, SETTLE * 2, CONVERGE_WAIT * 2)
+        if (!again) continue
+        const d2 = diffStory(id, again)
+        if (d2.length < perStory.get(id)!.length) {
+            process.stderr.write(
+                `  ${id}: ${perStory.get(id)!.length} -> ${d2.length} on retry\n`,
+            )
+        }
+        perStory.set(id, d2)
+        if (d2.length === 0) captured[id] = { ref: again.ref, els: again.els }
     }
-    perStory.set(id, d2);
-    if (d2.length === 0) captured[id] = { ref: again.ref, els: again.els };
-  }
 }
-for (const d of perStory.values()) diffs.push(...d);
-session.close();
+for (const d of perStory.values()) diffs.push(...d)
+session.close()
 // A story whose probe threw was logged SKIP and never landed in `captured`. Iterating only the
 // captured side would let it drop out of the comparison entirely with the exit code still 0 — the
 // story-level version of the same union rule applied to properties above.
 for (const id of Object.keys(base)) {
-  // `excluded` as well as `matchesOnly`: this loop walks the RECORDED side, so an excluded story is
-  // still sitting in the baseline file and would otherwise be reported here as vanished-from-the-run.
-  if (!matchesOnly(id) || excluded(id)) continue;
-  if (!(id in captured)) diffs.push(`${id}: MISSING from capture (story errored or was removed)`);
+    // `excluded` as well as `matchesOnly`: this loop walks the RECORDED side, so an excluded story is
+    // still sitting in the baseline file and would otherwise be reported here as vanished-from-the-run.
+    if (!matchesOnly(id) || excluded(id)) continue
+    if (!(id in captured))
+        diffs.push(`${id}: MISSING from capture (story errored or was removed)`)
 }
-console.log(diffs.slice(0, 200).join("\n"));
-if (diffs.length > 200) console.log(`… and ${diffs.length - 200} more`);
+console.log(diffs.slice(0, 200).join('\n'))
+if (diffs.length > 200) console.log(`… and ${diffs.length - 200} more`)
 // The terminal cap is for readability, but the truncated remainder is where a real regression hides
 // inside an expected-looking diff: an intentional app-wide change (a font swap, a white-space rule
 // on every icon) easily produces four figures of drift, and reviewing only the first 200 lines means
 // grading the change by its most boring rows. Always write the FULL list somewhere greppable.
 if (diffs.length) {
-  writeFileSync(DRIFT, diffs.join("\n") + "\n");
-  console.log(`full diff -> ${DRIFT}`);
+    writeFileSync(DRIFT, diffs.join('\n') + '\n')
+    console.log(`full diff -> ${DRIFT}`)
 } else {
-  // A clean run must DELETE the dump, not just decline to write one. Leaving the previous failing
-  // run's file on disk means the next reader greps a stale drift list against a passing run and
-  // believes it — the exact confusion this file exists to prevent.
-  try { rmSync(DRIFT, { force: true }); } catch {}
+    // A clean run must DELETE the dump, not just decline to write one. Leaving the previous failing
+    // run's file on disk means the next reader greps a stale drift list against a passing run and
+    // believes it — the exact confusion this file exists to prevent.
+    try {
+        rmSync(DRIFT, { force: true })
+    } catch {}
 }
-console.log(`${diffs.length} changed`);
-process.exit(diffs.length === 0 ? 0 : 1);
+console.log(`${diffs.length} changed`)
+process.exit(diffs.length === 0 ? 0 : 1)

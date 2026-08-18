@@ -46,33 +46,37 @@
 /** A 3D point. 2D callers pass z=0 for every point — the distance math naturally degenerates to 2D
  *  when every input shares the same z, so this module never needs a separate 2D/3D mode (matching
  *  how CanvasGraphRenderer's own `NodeView.p2` was already "Vec3, z=0", not a distinct 2-tuple type). */
-export type Vec3 = readonly [number, number, number];
+export type Vec3 = readonly [number, number, number]
 
-const EPS = 1e-9;
+const EPS = 1e-9
 
 function finite(n: number, fallback = 0): number {
-  return Number.isFinite(n) ? n : fallback;
+    return Number.isFinite(n) ? n : fallback
 }
 
 /** The distance from point `i` to its nearest OTHER point. O(n) per call — see
  *  `medianNearestNeighborDistance` for the O(n²)-total budget this is spent inside. */
 function nearestDistance(positions: readonly Vec3[], i: number): number {
-  const [xi, yi, zi] = positions[i];
-  let best = Infinity;
-  for (let j = 0; j < positions.length; j++) {
-    if (j === i) continue;
-    const [xj, yj, zj] = positions[j];
-    const d = Math.hypot(finite(xi) - finite(xj), finite(yi) - finite(yj), finite(zi) - finite(zj));
-    if (d < best) best = d;
-  }
-  return best;
+    const [xi, yi, zi] = positions[i]
+    let best = Infinity
+    for (let j = 0; j < positions.length; j++) {
+        if (j === i) continue
+        const [xj, yj, zj] = positions[j]
+        const d = Math.hypot(
+            finite(xi) - finite(xj),
+            finite(yi) - finite(yj),
+            finite(zi) - finite(zj),
+        )
+        if (d < best) best = d
+    }
+    return best
 }
 
 function median(values: readonly number[]): number {
-  if (values.length === 0) return 0;
-  const s = [...values].sort((a, b) => a - b);
-  const mid = s.length >> 1;
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+    if (values.length === 0) return 0
+    const s = [...values].sort((a, b) => a - b)
+    const mid = s.length >> 1
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
 }
 
 /**
@@ -82,11 +86,14 @@ function median(values: readonly number[]): number {
  * measure and yield 0. O(n²) — fine at the scale this runs (once per structural signature, not per
  * frame; see `createSpacingCache`).
  */
-export function medianNearestNeighborDistance(positions: readonly Vec3[]): number {
-  if (positions.length < 2) return 0;
-  const d: number[] = new Array(positions.length);
-  for (let i = 0; i < positions.length; i++) d[i] = nearestDistance(positions, i);
-  return median(d);
+export function medianNearestNeighborDistance(
+    positions: readonly Vec3[],
+): number {
+    if (positions.length < 2) return 0
+    const d: number[] = new Array(positions.length)
+    for (let i = 0; i < positions.length; i++)
+        d[i] = nearestDistance(positions, i)
+    return median(d)
 }
 
 /**
@@ -124,44 +131,55 @@ export function medianNearestNeighborDistance(positions: readonly Vec3[]): numbe
  * `medianNearestNeighborDistance`'s own doc for why the median (not min/mean) is what's being measured
  * here.
  */
-let warnedDegenerateSpacingOnce = false;
+let warnedDegenerateSpacingOnce = false
 
 /** Test-only escape hatch: `scaleToSpacing`'s degenerate-majority warning (see its doc) fires at most
  *  once per process, so a test suite exercising it more than once needs to reset the flag between
  *  cases. Not meant for production callers. */
 export function resetSpacingWarningForTests(): void {
-  warnedDegenerateSpacingOnce = false;
+    warnedDegenerateSpacingOnce = false
 }
 
-export function scaleToSpacing(positions: readonly Vec3[], targetSpacing: number): Vec3[] {
-  const n = positions.length;
-  if (n === 0) return [];
+export function scaleToSpacing(
+    positions: readonly Vec3[],
+    targetSpacing: number,
+): Vec3[] {
+    const n = positions.length
+    if (n === 0) return []
 
-  let cx = 0, cy = 0, cz = 0;
-  for (const p of positions) { cx += finite(p[0]); cy += finite(p[1]); cz += finite(p[2]); }
-  cx /= n; cy /= n; cz /= n;
+    let cx = 0,
+        cy = 0,
+        cz = 0
+    for (const p of positions) {
+        cx += finite(p[0])
+        cy += finite(p[1])
+        cz += finite(p[2])
+    }
+    cx /= n
+    cy /= n
+    cz /= n
 
-  const current = medianNearestNeighborDistance(positions);
-  const target = finite(targetSpacing, 0);
-  // n < 2 is a DIFFERENT, unsurprising degenerate case (nothing to measure at all, not "the cloud is
-  // coincident") — already covered by its own doc note above, so it's excluded here to keep this
-  // warning specifically about the majority-coincidence cliff.
-  const degenerate = n >= 2 && target > 0 && current <= EPS;
-  if (degenerate && !warnedDegenerateSpacingOnce) {
-    warnedDegenerateSpacingOnce = true;
-    console.warn(
-      `respace: scaleToSpacing — ${n} points, requested targetSpacing=${target}, but the median ` +
-      "nearest-neighbour distance is ~0 (a majority of the cloud coincides at a single point); " +
-      "rescale skipped (scale=1). Further occurrences are suppressed for this process.",
-    );
-  }
-  const scale = current > EPS && target > 0 ? target / current : 1;
+    const current = medianNearestNeighborDistance(positions)
+    const target = finite(targetSpacing, 0)
+    // n < 2 is a DIFFERENT, unsurprising degenerate case (nothing to measure at all, not "the cloud is
+    // coincident") — already covered by its own doc note above, so it's excluded here to keep this
+    // warning specifically about the majority-coincidence cliff.
+    const degenerate = n >= 2 && target > 0 && current <= EPS
+    if (degenerate && !warnedDegenerateSpacingOnce) {
+        warnedDegenerateSpacingOnce = true
+        console.warn(
+            `respace: scaleToSpacing — ${n} points, requested targetSpacing=${target}, but the median ` +
+                'nearest-neighbour distance is ~0 (a majority of the cloud coincides at a single point); ' +
+                'rescale skipped (scale=1). Further occurrences are suppressed for this process.',
+        )
+    }
+    const scale = current > EPS && target > 0 ? target / current : 1
 
-  return positions.map((p): Vec3 => [
-    (finite(p[0]) - cx) * scale,
-    (finite(p[1]) - cy) * scale,
-    (finite(p[2]) - cz) * scale,
-  ]);
+    return positions.map((p): Vec3 => [
+        (finite(p[0]) - cx) * scale,
+        (finite(p[1]) - cy) * scale,
+        (finite(p[2]) - cz) * scale,
+    ])
 }
 
 // ---- signature-keyed memo ----------------------------------------------------------------------
@@ -194,23 +212,23 @@ export function scaleToSpacing(positions: readonly Vec3[], targetSpacing: number
 // fresh `Map` of freshly-cloned `Vec3` entries, not `(m) => m`).
 
 export interface SpacingCache<T> {
-  /** Returns an INDEPENDENT copy (via `clone`, see `createSpacingCache`) of the value for `sig`,
-   *  computing (and storing) it via `compute` on a miss. Never calls `compute` on a hit — the whole
-   *  point is to skip the O(n²) recompute. Safe to mutate whatever comes back; the cache's own copy
-   *  is never exposed. */
-  getOrCompute(sig: string, compute: () => T): T;
+    /** Returns an INDEPENDENT copy (via `clone`, see `createSpacingCache`) of the value for `sig`,
+     *  computing (and storing) it via `compute` on a miss. Never calls `compute` on a hit — the whole
+     *  point is to skip the O(n²) recompute. Safe to mutate whatever comes back; the cache's own copy
+     *  is never exposed. */
+    getOrCompute(sig: string, compute: () => T): T
 }
 
 /** Default cap ported from Canvas's `cache.size > 8`: small on purpose — this cache exists only to
  *  make re-visiting a handful of recently-seen graph modes (2nd/3rd/both/agents/daemon) free, not as
  *  a general-purpose store. */
-export const SPACING_CACHE_MAX_ENTRIES = 8;
+export const SPACING_CACHE_MAX_ENTRIES = 8
 
 /** `clone` for a `SpacingCache<Vec3[]>` — a fresh outer array of fresh inner tuples. This is the
  *  clone this module's own values (`scaleToSpacing`'s return) need; a cache over some other T brings
  *  its own. */
 export function cloneVec3Array(v: readonly Vec3[]): Vec3[] {
-  return v.map((p): Vec3 => [p[0], p[1], p[2]]);
+    return v.map((p): Vec3 => [p[0], p[1], p[2]])
 }
 
 /**
@@ -223,25 +241,25 @@ export function cloneVec3Array(v: readonly Vec3[]): Vec3[] {
  * directions matter.
  */
 export function createSpacingCache<T>(
-  clone: (value: T) => T,
-  maxEntries = SPACING_CACHE_MAX_ENTRIES,
+    clone: (value: T) => T,
+    maxEntries = SPACING_CACHE_MAX_ENTRIES,
 ): SpacingCache<T> {
-  const cache = new Map<string, T>();
-  return {
-    getOrCompute(sig, compute) {
-      if (!cache.has(sig)) {
-        // Clone BEFORE storing, not just on the way out: `compute()` may return an array its own
-        // caller/closure also retains a reference to (a real case, not hypothetical — see task-6
-        // review round 2). Storing that reference directly would let a later external mutation of
-        // the ORIGINAL corrupt the cache even though nothing ever mutated what `getOrCompute` itself
-        // handed back. Store our own copy so the cache is never aliased to anything outside it.
-        cache.set(sig, clone(compute()));
-        if (cache.size > maxEntries) {
-          const oldest = cache.keys().next().value;
-          if (oldest !== undefined) cache.delete(oldest);
-        }
-      }
-      return clone(cache.get(sig) as T); // and clone AGAIN on the way out — see the header block above
-    },
-  };
+    const cache = new Map<string, T>()
+    return {
+        getOrCompute(sig, compute) {
+            if (!cache.has(sig)) {
+                // Clone BEFORE storing, not just on the way out: `compute()` may return an array its own
+                // caller/closure also retains a reference to (a real case, not hypothetical — see task-6
+                // review round 2). Storing that reference directly would let a later external mutation of
+                // the ORIGINAL corrupt the cache even though nothing ever mutated what `getOrCompute` itself
+                // handed back. Store our own copy so the cache is never aliased to anything outside it.
+                cache.set(sig, clone(compute()))
+                if (cache.size > maxEntries) {
+                    const oldest = cache.keys().next().value
+                    if (oldest !== undefined) cache.delete(oldest)
+                }
+            }
+            return clone(cache.get(sig) as T) // and clone AGAIN on the way out — see the header block above
+        },
+    }
 }

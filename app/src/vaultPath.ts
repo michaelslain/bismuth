@@ -16,5 +16,5 @@
  *  segment to extract (e.g. "" or "/"); callers guard against that rendering
  *  blank (App.tsx does `vaultName() || "vault"`), not this function. */
 export function vaultBasename(path: string): string {
-  return path.split("/").filter(Boolean).pop() ?? path;
+    return path.split('/').filter(Boolean).pop() ?? path
 }

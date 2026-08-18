@@ -5,5 +5,9 @@
 
 /** Connector prefix for a node at `depth`, last child or not. */
 export function treePrefix(depth: number, last: boolean): string {
-  return depth === 0 ? (last ? "`-- " : "|-- ") : "|   ".repeat(depth) + (last ? "`-- " : "|-- ");
+    return depth === 0
+        ? last
+            ? '`-- '
+            : '|-- '
+        : '|   '.repeat(depth) + (last ? '`-- ' : '|-- ')
 }

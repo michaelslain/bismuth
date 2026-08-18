@@ -13,9 +13,13 @@
 // math; the widget owns the DOM listener wiring that calls in.
 
 /** Clamp a resized column width: never below `min`. Pure. */
-export function computeResizeWidth(startWidth: number, dx: number, min: number): number {
-  const w = startWidth + dx;
-  return w < min ? min : w;
+export function computeResizeWidth(
+    startWidth: number,
+    dx: number,
+    min: number,
+): number {
+    const w = startWidth + dx
+    return w < min ? min : w
 }
 
 /** Signed horizontal auto-scroll nudge for a pointer at `clientX` over a scroller spanning
@@ -23,10 +27,15 @@ export function computeResizeWidth(startWidth: number, dx: number, min: number):
  *  pointer is between the zones, else the overshoot past the zone boundary (positive → scroll
  *  right, negative → scroll left). Pure — the widget applies it to `scrollLeft` and accumulates
  *  the REALIZED delta into the drag's width math. */
-export function autoScrollDelta(clientX: number, left: number, right: number, edge: number): number {
-  if (clientX > right - edge) return clientX - (right - edge);
-  if (clientX < left + edge) return clientX - (left + edge);
-  return 0;
+export function autoScrollDelta(
+    clientX: number,
+    left: number,
+    right: number,
+    edge: number,
+): number {
+    if (clientX > right - edge) return clientX - (right - edge)
+    if (clientX < left + edge) return clientX - (left + edge)
+    return 0
 }
 
 /** Sum of a frozen column-width set, or null when ANY column has no numeric width (not frozen /
@@ -36,47 +45,53 @@ export function autoScrollDelta(clientX: number, left: number, right: number, ed
  *  content-driven column sizing — a shrink drag updates the <col> style but the RENDERED column
  *  floors at its nowrap content width, i.e. the resize visibly sticks. */
 export function frozenColumnsWidth(widths: number[]): number | null {
-  let sum = 0;
-  for (const w of widths) {
-    if (!Number.isFinite(w)) return null;
-    sum += w;
-  }
-  return sum;
+    let sum = 0
+    for (const w of widths) {
+        if (!Number.isFinite(w)) return null
+        sum += w
+    }
+    return sum
 }
 
 /** A live resize drag: feed it pointer x as the pointer moves, `end()` it exactly once. */
 export interface ResizeDrag {
-  /** Recompute + apply the width for the current pointer x. No-op once ended. */
-  move(clientX: number): void;
-  /** Run the one-shot cleanup (listeners/cursor/persist). Safe to call any number of times — the
-   *  cleanup fires only on the FIRST call, so wiring it to several end events can't double-clean. */
-  end(): void;
-  /** True until `end()` has run — lets the caller skip re-entrant starts. */
-  readonly active: boolean;
+    /** Recompute + apply the width for the current pointer x. No-op once ended. */
+    move(clientX: number): void
+    /** Run the one-shot cleanup (listeners/cursor/persist). Safe to call any number of times — the
+     *  cleanup fires only on the FIRST call, so wiring it to several end events can't double-clean. */
+    end(): void
+    /** True until `end()` has run — lets the caller skip re-entrant starts. */
+    readonly active: boolean
 }
 
 /** Create a resize-drag controller. `onWidth` applies a computed width (pointer-driven); `onEnd` is
  *  the single cleanup, guaranteed to run at most once no matter how many end events call `end()`. */
 export function createResizeDrag(opts: {
-  originX: number;
-  startWidth: number;
-  min: number;
-  onWidth: (width: number) => void;
-  onEnd: () => void;
+    originX: number
+    startWidth: number
+    min: number
+    onWidth: (width: number) => void
+    onEnd: () => void
 }): ResizeDrag {
-  let active = true;
-  return {
-    get active() {
-      return active;
-    },
-    move(clientX: number): void {
-      if (!active) return;
-      opts.onWidth(computeResizeWidth(opts.startWidth, clientX - opts.originX, opts.min));
-    },
-    end(): void {
-      if (!active) return;
-      active = false;
-      opts.onEnd();
-    },
-  };
+    let active = true
+    return {
+        get active() {
+            return active
+        },
+        move(clientX: number): void {
+            if (!active) return
+            opts.onWidth(
+                computeResizeWidth(
+                    opts.startWidth,
+                    clientX - opts.originX,
+                    opts.min,
+                ),
+            )
+        },
+        end(): void {
+            if (!active) return
+            active = false
+            opts.onEnd()
+        },
+    }
 }

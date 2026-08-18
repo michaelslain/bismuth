@@ -9,21 +9,28 @@
 
 /** What a tool we have no rule for gets — and, in `pickToolIcon`, the signal that a `kind` told us
  *  nothing so the free-form name is worth a look after all. */
-export const GENERIC_TOOL_ICON = "Wrench";
+export const GENERIC_TOOL_ICON = 'Wrench'
 
 /** A Lucide icon name for a tool, by best-effort match on ONE string (falls back to a wrench).
  *  Never an exhaustive list — it's purely decorative; unknown tools just get the generic icon. */
 export function toolIcon(name: string): string {
-  const n = name.toLowerCase();
-  if (n.includes("bash") || n.includes("terminal")) return "SquareTerminal";
-  if (n.includes("read")) return "FileText";
-  if (n.includes("write") || n.includes("edit") || n.includes("notebook")) return "Pencil";
-  if (n.includes("grep") || n.includes("glob") || n.includes("search") || n.includes("find")) return "Search";
-  if (n.includes("web") || n.includes("fetch")) return "Globe";
-  if (n.includes("task") || n.includes("agent")) return "Bot";
-  if (n.includes("todo")) return "LayoutList";
-  if (n.startsWith("mcp__")) return "Server";
-  return GENERIC_TOOL_ICON;
+    const n = name.toLowerCase()
+    if (n.includes('bash') || n.includes('terminal')) return 'SquareTerminal'
+    if (n.includes('read')) return 'FileText'
+    if (n.includes('write') || n.includes('edit') || n.includes('notebook'))
+        return 'Pencil'
+    if (
+        n.includes('grep') ||
+        n.includes('glob') ||
+        n.includes('search') ||
+        n.includes('find')
+    )
+        return 'Search'
+    if (n.includes('web') || n.includes('fetch')) return 'Globe'
+    if (n.includes('task') || n.includes('agent')) return 'Bot'
+    if (n.includes('todo')) return 'LayoutList'
+    if (n.startsWith('mcp__')) return 'Server'
+    return GENERIC_TOOL_ICON
 }
 
 /**
@@ -47,14 +54,14 @@ export function toolIcon(name: string): string {
  * covers the rest, and a chip only falls through to the wrench when NEITHER string matched.
  */
 export function pickToolIcon(kind: string | undefined, name: string): string {
-  const byKind = kind ? toolIcon(kind) : GENERIC_TOOL_ICON;
-  return byKind === GENERIC_TOOL_ICON ? toolIcon(name) : byKind;
+    const byKind = kind ? toolIcon(kind) : GENERIC_TOOL_ICON
+    return byKind === GENERIC_TOOL_ICON ? toolIcon(name) : byKind
 }
 
 /** Truncate long tool output / JSON so a chip body stays readable (expanding a chip still shows it
  *  all, up to a generous cap). */
 export function clamp(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + "…" : s;
+    return s.length > max ? s.slice(0, max) + '…' : s
 }
 
 /**
@@ -76,6 +83,6 @@ export function clamp(s: string, max: number): string {
  * instead of leaving it to a call site nothing can test.
  */
 export function chipSummary(raw: string, name: string, max: number): string {
-  if (raw.trim() === name.trim()) return "";
-  return clamp(raw, max);
+    if (raw.trim() === name.trim()) return ''
+    return clamp(raw, max)
 }

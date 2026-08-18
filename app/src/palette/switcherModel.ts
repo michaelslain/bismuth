@@ -7,14 +7,14 @@
 //   3. the Bismuth AI escalation on zero/weak results (switcherAi.ts).
 // This module owns the two pure decisions the component needs — which content rows are visible,
 // and what Enter does — so both are unit-testable without Solid/DOM (switcherModel.test.ts).
-import type { SearchResult } from "../searchOpts";
-import type { SwitcherAiPhase } from "./switcherAi";
+import type { SearchResult } from '../searchOpts'
+import type { SwitcherAiPhase } from './switcherAi'
 
 /** The stored outcome of the debounced content (keyword) search: the query it ran FOR plus its
  *  results. Keeping the query alongside the results is the staleness guard (see visibleContent). */
 export interface ContentHits {
-  query: string;
-  results: SearchResult[];
+    query: string
+    results: SearchResult[]
 }
 
 /**
@@ -28,38 +28,38 @@ export interface ContentHits {
  *   one list, one row per note; the file-name row (which opens the same note) wins.
  */
 export function visibleContent(
-  stored: ContentHits | null,
-  currentQuery: string,
-  fileMatchPaths: readonly string[],
+    stored: ContentHits | null,
+    currentQuery: string,
+    fileMatchPaths: readonly string[],
 ): SearchResult[] {
-  if (!stored || stored.query !== currentQuery) return [];
-  const taken = new Set(fileMatchPaths);
-  return stored.results.filter((r) => !taken.has(r.path));
+    if (!stored || stored.query !== currentQuery) return []
+    const taken = new Set(fileMatchPaths)
+    return stored.results.filter(r => !taken.has(r.path))
 }
 
 export type SwitcherEnterAction =
-  // Open the currently highlighted row (file / content / AI result) — the caller's menu-nav
-  // Enter handling does this; "commit" means "let it".
-  | "commit"
-  // Run the one-shot Bismuth AI prompt search for the current query.
-  | "ask-ai"
-  // Swallow the keypress (nothing sensible to do).
-  | "none";
+    // Open the currently highlighted row (file / content / AI result) — the caller's menu-nav
+    // Enter handling does this; "commit" means "let it".
+    | 'commit'
+    // Run the one-shot Bismuth AI prompt search for the current query.
+    | 'ask-ai'
+    // Swallow the keypress (nothing sensible to do).
+    | 'none'
 
 export interface SwitcherEnterState {
-  /** The query box is non-empty. */
-  hasQuery: boolean;
-  /** isNaturalLanguageQuery(query) — the query is question-shaped (3+ words). */
-  shaped: boolean;
-  /** Rows currently visible to the menu nav: file+content rows in the idle phase, AI result
-   *  rows in the results phase. (Loading/error phases show no navigable rows.) */
-  rowCount: number;
-  /** The AI request lifecycle phase (switcherAi.ts reducer). */
-  aiPhase: SwitcherAiPhase;
-  /** Cmd/Ctrl+Enter — force the AI prompt search even when rows are showing. The always-
-   *  reachable AI path folded in from the old Search tab (a natural-language query usually
-   *  still has SOME keyword hit, which would otherwise make Enter commit forever). */
-  forceAi?: boolean;
+    /** The query box is non-empty. */
+    hasQuery: boolean
+    /** isNaturalLanguageQuery(query) — the query is question-shaped (3+ words). */
+    shaped: boolean
+    /** Rows currently visible to the menu nav: file+content rows in the idle phase, AI result
+     *  rows in the results phase. (Loading/error phases show no navigable rows.) */
+    rowCount: number
+    /** The AI request lifecycle phase (switcherAi.ts reducer). */
+    aiPhase: SwitcherAiPhase
+    /** Cmd/Ctrl+Enter — force the AI prompt search even when rows are showing. The always-
+     *  reachable AI path folded in from the old Search tab (a natural-language query usually
+     *  still has SOME keyword hit, which would otherwise make Enter commit forever). */
+    forceAi?: boolean
 }
 
 /**
@@ -71,9 +71,14 @@ export interface SwitcherEnterState {
  *  5. Otherwise nothing.
  */
 export function planSwitcherEnter(s: SwitcherEnterState): SwitcherEnterAction {
-  if (s.aiPhase === "loading") return "none";
-  if (s.forceAi && s.hasQuery) return "ask-ai";
-  if (s.rowCount > 0) return "commit";
-  if (s.hasQuery && s.shaped && (s.aiPhase === "idle" || s.aiPhase === "error")) return "ask-ai";
-  return "none";
+    if (s.aiPhase === 'loading') return 'none'
+    if (s.forceAi && s.hasQuery) return 'ask-ai'
+    if (s.rowCount > 0) return 'commit'
+    if (
+        s.hasQuery &&
+        s.shaped &&
+        (s.aiPhase === 'idle' || s.aiPhase === 'error')
+    )
+        return 'ask-ai'
+    return 'none'
 }

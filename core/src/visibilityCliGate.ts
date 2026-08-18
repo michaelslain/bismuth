@@ -44,15 +44,23 @@
 //    only the MCP server's own env block sets it) will pass `--vault`/`--dir` explicitly, and a gate
 //    that only checked env would be a no-op for exactly the invocation shape this file exists to
 //    cover.
-import { buildDenyPaths, findDeniedEntry, normalizeForCompare, type DenyEntry, type VisibilityChannel } from "./visibility";
+import {
+    buildDenyPaths,
+    findDeniedEntry,
+    normalizeForCompare,
+    type DenyEntry,
+    type VisibilityChannel,
+} from './visibility'
 
 /** Which channel this MCP server is serving, from `BISMUTH_MCP_CHANNEL`.
  *
  *  Defaults to "daemon" — the stricter channel — when unset or unrecognized, so a spawner that
  *  forgets to declare itself gets the safe answer rather than the permissive one. Bismuth's own
  *  spawners set it explicitly (the daemon session, and each chat driver that injects an MCP server). */
-export function mcpChannel(env: Record<string, string | undefined> = process.env): VisibilityChannel {
-  return env.BISMUTH_MCP_CHANNEL === "chat" ? "chat" : "daemon";
+export function mcpChannel(
+    env: Record<string, string | undefined> = process.env,
+): VisibilityChannel {
+    return env.BISMUTH_MCP_CHANNEL === 'chat' ? 'chat' : 'daemon'
 }
 
 /**
@@ -69,17 +77,19 @@ export function mcpChannel(env: Record<string, string | undefined> = process.env
  * "absent" — it falls through to the stricter "daemon" channel rather than "owner", so a corrupted
  * signal fails safe instead of silently degrading to no gate at all.
  */
-export function cliAgentChannel(env: Record<string, string | undefined> = process.env): VisibilityChannel | "owner" {
-  const raw = env.BISMUTH_AGENT_CHANNEL;
-  // EMPTY counts as absent, not as a garbled agent value. `export BISMUTH_AGENT_CHANNEL=` and shells
-  // that propagate empty vars are ordinary in a human's environment, and Bismuth itself never writes
-  // an empty value — it always stamps "chat" or "daemon" explicitly. So an empty value can only have
-  // come from the OWNER's own shell, and treating it as an agent locked them out of their own CLI
-  // (found by the acceptance run). Nothing is lost by being lenient here: this signal is an honesty
-  // boundary, and an agent that could set the var to "" could equally `unset` it — the layer that
-  // actually ENFORCES against a determined process is the OS sandbox wrapper, not this env var.
-  if (raw === undefined || raw.trim() === "") return "owner";
-  return raw === "chat" ? "chat" : "daemon";
+export function cliAgentChannel(
+    env: Record<string, string | undefined> = process.env,
+): VisibilityChannel | 'owner' {
+    const raw = env.BISMUTH_AGENT_CHANNEL
+    // EMPTY counts as absent, not as a garbled agent value. `export BISMUTH_AGENT_CHANNEL=` and shells
+    // that propagate empty vars are ordinary in a human's environment, and Bismuth itself never writes
+    // an empty value — it always stamps "chat" or "daemon" explicitly. So an empty value can only have
+    // come from the OWNER's own shell, and treating it as an agent locked them out of their own CLI
+    // (found by the acceptance run). Nothing is lost by being lenient here: this signal is an honesty
+    // boundary, and an agent that could set the var to "" could equally `unset` it — the layer that
+    // actually ENFORCES against a determined process is the OS sandbox wrapper, not this env var.
+    if (raw === undefined || raw.trim() === '') return 'owner'
+    return raw === 'chat' ? 'chat' : 'daemon'
 }
 
 /**
@@ -115,15 +125,31 @@ export function cliAgentChannel(env: Record<string, string | undefined> = proces
  * `bismuth serve` (grepped), so refusing it under a restricted vault does not brick any real flow.
  */
 const ALWAYS_SAFE_COMMANDS = new Set([
-  "backends", "install", "uninstall", "app", "daemon", "agent-graph",
-  "folder-icon", "folder-visibility", "settings", "backup", "page",
-]);
+    'backends',
+    'install',
+    'uninstall',
+    'app',
+    'daemon',
+    'agent-graph',
+    'folder-icon',
+    'folder-visibility',
+    'settings',
+    'backup',
+    'page',
+])
 
 /** Tier B — takes an explicit path, and returns only that path's content. Allowed subject to the
  *  argv path check below, which is what makes them safe. */
 const PATH_SCOPED_COMMANDS = new Set([
-  "read", "write", "move", "delete", "restore", "mkdir", "prop", "render",
-]);
+    'read',
+    'write',
+    'move',
+    'delete',
+    'restore',
+    'mkdir',
+    'prop',
+    'render',
+])
 
 /**
  * Compound-command overrides, checked before the group's first-token tier. Needed only where a
@@ -138,9 +164,9 @@ const PATH_SCOPED_COMMANDS = new Set([
  *    change-scoping), and refusing them would brick that in any restricted vault.
  */
 const COMPOUND_OVERRIDES: Record<string, CommandTier> = {
-  "checkpoint advance": "always-safe",
-  "checkpoint ref": "always-safe",
-};
+    'checkpoint advance': 'always-safe',
+    'checkpoint ref': 'always-safe',
+}
 
 /**
  * Tier C is everything else, INCLUDING commands this build has never heard of — refused whenever
@@ -162,30 +188,31 @@ const COMPOUND_OVERRIDES: Record<string, CommandTier> = {
  * `GET /file?path=…` ambient-oracle read this whole feature exists to close. It was never in
  * Tier A/B and must never be.
  */
-export type CommandTier = "always-safe" | "path-scoped" | "refuse-when-restricted";
+export type CommandTier =
+    'always-safe' | 'path-scoped' | 'refuse-when-restricted'
 
 /** Pure: which tier this argv falls into. Checks a two-word compound override first (needed only
  *  for groups whose own subcommands disagree — see COMPOUND_OVERRIDES), then the group's first
  *  token, mirroring the CLI's own longest-match dispatch closely enough for classification purposes. */
 export function commandTier(args: string[]): CommandTier {
-  const first = (args[0] ?? "").toLowerCase();
-  // No command at all (or a bare flag) is help output — harmless.
-  if (!first || first.startsWith("-")) return "always-safe";
-  if (args.length >= 2) {
-    const compound = `${first} ${(args[1] ?? "").toLowerCase()}`;
-    const override = COMPOUND_OVERRIDES[compound];
-    if (override) return override;
-  }
-  if (ALWAYS_SAFE_COMMANDS.has(first)) return "always-safe";
-  if (PATH_SCOPED_COMMANDS.has(first)) return "path-scoped";
-  return "refuse-when-restricted";
+    const first = (args[0] ?? '').toLowerCase()
+    // No command at all (or a bare flag) is help output — harmless.
+    if (!first || first.startsWith('-')) return 'always-safe'
+    if (args.length >= 2) {
+        const compound = `${first} ${(args[1] ?? '').toLowerCase()}`
+        const override = COMPOUND_OVERRIDES[compound]
+        if (override) return override
+    }
+    if (ALWAYS_SAFE_COMMANDS.has(first)) return 'always-safe'
+    if (PATH_SCOPED_COMMANDS.has(first)) return 'path-scoped'
+    return 'refuse-when-restricted'
 }
 
 export interface GateDecision {
-  /** True when the CLI may run. */
-  allowed: boolean;
-  /** Why not — returned to the model verbatim, so it stops rather than retrying variants. */
-  reason?: string;
+    /** True when the CLI may run. */
+    allowed: boolean
+    /** Why not — returned to the model verbatim, so it stops rather than retrying variants. */
+    reason?: string
 }
 
 /**
@@ -216,16 +243,16 @@ export interface GateDecision {
  * still refuses a token that merely CONTAINS a restricted path as a prefix.
  */
 function foldForScan(s: string): string {
-  return normalizeForCompare(s);
+    return normalizeForCompare(s)
 }
 
 /** The path-shaped pieces of one argv token: the token itself, and — for `--flag=value` and
  *  `path=value` query fragments — whatever follows the first `=`. Each is handed to
  *  findDeniedEntry, which resolves `.`/`..` and both other spelling axes properly. */
 function pathCandidates(arg: string): string[] {
-  const eq = arg.indexOf("=");
-  if (eq === -1 || eq === arg.length - 1) return [arg];
-  return [arg, arg.slice(eq + 1)];
+    const eq = arg.indexOf('=')
+    if (eq === -1 || eq === arg.length - 1) return [arg]
+    return [arg, arg.slice(eq + 1)]
 }
 
 /**
@@ -245,53 +272,53 @@ function pathCandidates(arg: string): string[] {
  *     function for the `/./`-inside-a-longer-token hole that costs.
  */
 export function decideCliGate(
-  args: string[],
-  restricted: DenyEntry[],
+    args: string[],
+    restricted: DenyEntry[],
 ): GateDecision {
-  if (restricted.length === 0) return { allowed: true };
+    if (restricted.length === 0) return { allowed: true }
 
-  const tier = commandTier(args);
-  if (tier === "always-safe") return { allowed: true };
-  if (tier === "refuse-when-restricted") {
-    return {
-      allowed: false,
-      reason:
-        `Refused: \`bismuth ${args[0]}\` can return the contents of notes this vault marks off-limits ` +
-        `to AI sessions, and it cannot be filtered per-file. ${restricted.length} note(s) are restricted. ` +
-        `Ask the user to unhide them, or read a specific visible file by path.`,
-    };
-  }
-
-  const refusal = (entry: DenyEntry): GateDecision => ({
-    allowed: false,
-    reason:
-      `Refused: "${entry.rel}" is marked off-limits to AI sessions by this vault's visibility ` +
-      `settings. Do not try to reach it another way — tell the user it is hidden if they need to know.`,
-  });
-
-  for (const arg of args) {
-    for (const candidate of pathCandidates(arg)) {
-      const hit = findDeniedEntry(restricted, candidate);
-      if (hit) return refusal(hit);
+    const tier = commandTier(args)
+    if (tier === 'always-safe') return { allowed: true }
+    if (tier === 'refuse-when-restricted') {
+        return {
+            allowed: false,
+            reason:
+                `Refused: \`bismuth ${args[0]}\` can return the contents of notes this vault marks off-limits ` +
+                `to AI sessions, and it cannot be filtered per-file. ${restricted.length} note(s) are restricted. ` +
+                `Ask the user to unhide them, or read a specific visible file by path.`,
+        }
     }
-  }
 
-  const haystack = args.map(foldForScan);
-  for (const entry of restricted) {
-    for (const form of [entry.rel, entry.abs]) {
-      const needle = foldForScan(form);
-      if (!needle) continue;
-      if (haystack.some((a) => a.includes(needle))) return refusal(entry);
+    const refusal = (entry: DenyEntry): GateDecision => ({
+        allowed: false,
+        reason:
+            `Refused: "${entry.rel}" is marked off-limits to AI sessions by this vault's visibility ` +
+            `settings. Do not try to reach it another way — tell the user it is hidden if they need to know.`,
+    })
+
+    for (const arg of args) {
+        for (const candidate of pathCandidates(arg)) {
+            const hit = findDeniedEntry(restricted, candidate)
+            if (hit) return refusal(hit)
+        }
     }
-  }
-  return { allowed: true };
+
+    const haystack = args.map(foldForScan)
+    for (const entry of restricted) {
+        for (const form of [entry.rel, entry.abs]) {
+            const needle = foldForScan(form)
+            if (!needle) continue
+            if (haystack.some(a => a.includes(needle))) return refusal(entry)
+        }
+    }
+    return { allowed: true }
 }
 
 /** Value of a `--name <value>` argv flag, mirroring cli/src/args.ts's `flag()` (duplicated rather
  *  than imported: core must not depend on the cli workspace). */
 function argFlag(args: string[], name: string): string | undefined {
-  const i = args.indexOf(`--${name}`);
-  return i !== -1 && i + 1 < args.length ? args[i + 1] : undefined;
+    const i = args.indexOf(`--${name}`)
+    return i !== -1 && i + 1 < args.length ? args[i + 1] : undefined
 }
 
 /** Resolve the dir a CLI invocation targets exactly the way the CLI's own commands do:
@@ -304,8 +331,11 @@ function argFlag(args: string[], name: string): string | undefined {
  *  ungated. A `--dir` target that isn't the vault root (the memory repo case) still works: every
  *  file's OWN frontmatter `visibility:` is read regardless of which root buildDenyPaths walked from,
  *  and a Tier-C command refuses on ANY restricted file, not a specific one. */
-function resolveGateVault(args: string[], env: Record<string, string | undefined>): string | undefined {
-  return argFlag(args, "dir") ?? argFlag(args, "vault") ?? env.BISMUTH_VAULT;
+function resolveGateVault(
+    args: string[],
+    env: Record<string, string | undefined>,
+): string | undefined {
+    return argFlag(args, 'dir') ?? argFlag(args, 'vault') ?? env.BISMUTH_VAULT
 }
 
 /** Shared resolve-then-decide core for both entry points below. Never throws — any failure REFUSES,
@@ -313,23 +343,23 @@ function resolveGateVault(args: string[], env: Record<string, string | undefined
  *  immediately when no vault is configured: with no vault there is nothing to protect, and refusing
  *  every call would break the docs/help commands that need no vault at all. */
 async function resolveAndDecide(
-  args: string[],
-  env: Record<string, string | undefined>,
-  channel: VisibilityChannel,
+    args: string[],
+    env: Record<string, string | undefined>,
+    channel: VisibilityChannel,
 ): Promise<GateDecision> {
-  const vault = resolveGateVault(args, env);
-  if (!vault) return { allowed: true };
-  try {
-    const restricted = await buildDenyPaths(vault, channel);
-    return decideCliGate(args, restricted);
-  } catch (e) {
-    return {
-      allowed: false,
-      reason:
-        `Refused: could not resolve this vault's visibility settings, so the ` +
-        `bismuth CLI is unavailable to this session (${e instanceof Error ? e.message : String(e)}).`,
-    };
-  }
+    const vault = resolveGateVault(args, env)
+    if (!vault) return { allowed: true }
+    try {
+        const restricted = await buildDenyPaths(vault, channel)
+        return decideCliGate(args, restricted)
+    } catch (e) {
+        return {
+            allowed: false,
+            reason:
+                `Refused: could not resolve this vault's visibility settings, so the ` +
+                `bismuth CLI is unavailable to this session (${e instanceof Error ? e.message : String(e)}).`,
+        }
+    }
 }
 
 /**
@@ -338,10 +368,10 @@ async function resolveAndDecide(
  * spawns the CLI through.
  */
 export async function gateCliArgs(
-  args: string[],
-  env: Record<string, string | undefined> = process.env,
+    args: string[],
+    env: Record<string, string | undefined> = process.env,
 ): Promise<GateDecision> {
-  return resolveAndDecide(args, env, mcpChannel(env));
+    return resolveAndDecide(args, env, mcpChannel(env))
 }
 
 /**
@@ -352,10 +382,10 @@ export async function gateCliArgs(
  * at all, rather than defaulting to the stricter channel.
  */
 export async function gateCliInvocation(
-  args: string[],
-  env: Record<string, string | undefined> = process.env,
+    args: string[],
+    env: Record<string, string | undefined> = process.env,
 ): Promise<GateDecision> {
-  const channel = cliAgentChannel(env);
-  if (channel === "owner") return { allowed: true };
-  return resolveAndDecide(args, env, channel);
+    const channel = cliAgentChannel(env)
+    if (channel === 'owner') return { allowed: true }
+    return resolveAndDecide(args, env, channel)
 }

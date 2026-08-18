@@ -3,22 +3,28 @@
 // holds one content id (a note path or a ::sentinel), a Split divides space between
 // two children. No DOM, no Solid — fully unit-testable.
 
-export type Leaf = { kind: "leaf"; id: string; content: string };
+export type Leaf = { kind: 'leaf'; id: string; content: string }
 export type Split = {
-  kind: "split";
-  id: string;
-  dir: "row" | "col"; // row = side-by-side, col = stacked
-  ratio: number; // fraction of space given to child `a` (0..1)
-  a: PaneNode;
-  b: PaneNode;
-};
-export type PaneNode = Leaf | Split;
+    kind: 'split'
+    id: string
+    dir: 'row' | 'col' // row = side-by-side, col = stacked
+    ratio: number // fraction of space given to child `a` (0..1)
+    a: PaneNode
+    b: PaneNode
+}
+export type PaneNode = Leaf | Split
 // `name` is an optional user-set label that overrides the content-derived tab title
 // (see contentLabel/tabBarLabel). Undefined = fall back to the automatic label.
 // `pinned` marks a tab as pinned: pinned tabs always render before unpinned ones (the
 // strip maintains that partition via sortPinned), show compact (icon + pin glyph, no
 // close X), and survive reload. Undefined/false = a normal tab.
-export type Tab = { id: string; root: PaneNode; focusId: string; name?: string; pinned?: boolean };
+export type Tab = {
+    id: string
+    root: PaneNode
+    focusId: string
+    name?: string
+    pinned?: boolean
+}
 
 // Stable partition so pinned tabs render before unpinned ones, preserving each group's
 // existing relative order. Every strip mutation that could break the invariant (reorder,
@@ -26,11 +32,11 @@ export type Tab = { id: string; root: PaneNode; focusId: string; name?: string; 
 // front across reorders and reloads. Returns the SAME array when already partitioned, so
 // callers don't churn the reactive signal on a no-op.
 export function sortPinned(tabs: Tab[]): Tab[] {
-  const pinned = tabs.filter((t) => t.pinned);
-  if (pinned.length === 0 || pinned.length === tabs.length) return tabs; // all one group
-  const rest = tabs.filter((t) => !t.pinned);
-  const merged = [...pinned, ...rest];
-  return merged.every((t, i) => t === tabs[i]) ? tabs : merged;
+    const pinned = tabs.filter(t => t.pinned)
+    if (pinned.length === 0 || pinned.length === tabs.length) return tabs // all one group
+    const rest = tabs.filter(t => !t.pinned)
+    const merged = [...pinned, ...rest]
+    return merged.every((t, i) => t === tabs[i]) ? tabs : merged
 }
 
 // Opening a file ALWAYS opens a new tab — it never replaces the active tab's content in place
@@ -41,126 +47,161 @@ export function sortPinned(tabs: Tab[]): Tab[] {
 // ("focus"). Otherwise a fresh tab ("new"). Pure, so App's openFile decision is unit-testable
 // without a DOM.
 export type OpenDecision =
-  | { kind: "noop" }
-  | { kind: "focus"; tabId: string; leafId: string }
-  | { kind: "new" };
+    | { kind: 'noop' }
+    | { kind: 'focus'; tabId: string; leafId: string }
+    | { kind: 'new' }
 
-export function decideOpen(tabs: Tab[], activeTab: Tab | null, content: string): OpenDecision {
-  if (activeTab) {
-    const focused = leaves(activeTab.root).find((l) => l.id === activeTab.focusId);
-    if (focused?.content === content) return { kind: "noop" };
-  }
-  for (const t of tabs) {
-    const existing = findLeafByContent(t.root, content);
-    if (existing) return { kind: "focus", tabId: t.id, leafId: existing.id };
-  }
-  return { kind: "new" };
+export function decideOpen(
+    tabs: Tab[],
+    activeTab: Tab | null,
+    content: string,
+): OpenDecision {
+    if (activeTab) {
+        const focused = leaves(activeTab.root).find(
+            l => l.id === activeTab.focusId,
+        )
+        if (focused?.content === content) return { kind: 'noop' }
+    }
+    for (const t of tabs) {
+        const existing = findLeafByContent(t.root, content)
+        if (existing) return { kind: 'focus', tabId: t.id, leafId: existing.id }
+    }
+    return { kind: 'new' }
 }
 
 // Flip a tab's pinned flag by id, then re-normalize the partition. Unknown id → unchanged.
 // Setting pinned:false stores `undefined` (keeps the optional field absent rather than
 // serializing `pinned:false` noise).
-export function setTabPinned(tabs: Tab[], tabId: string, pinned: boolean): Tab[] {
-  let changed = false;
-  const next = tabs.map((t) => {
-    if (t.id !== tabId) return t;
-    changed = true;
-    return { ...t, pinned: pinned ? true : undefined };
-  });
-  return changed ? sortPinned(next) : tabs;
+export function setTabPinned(
+    tabs: Tab[],
+    tabId: string,
+    pinned: boolean,
+): Tab[] {
+    let changed = false
+    const next = tabs.map(t => {
+        if (t.id !== tabId) return t
+        changed = true
+        return { ...t, pinned: pinned ? true : undefined }
+    })
+    return changed ? sortPinned(next) : tabs
 }
 
 // Globally-unique ids. A counter would reset to 0 on page reload while persisted layouts
 // keep their old ids — so a fresh split could mint an id that collides with an existing
 // pane, and since ops match by id they'd hit both. crypto.randomUUID never repeats.
 function newId(): string {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return "id-" + Math.random().toString(36).slice(2) + "-" + Math.random().toString(36).slice(2);
+    if (typeof crypto !== 'undefined' && crypto.randomUUID)
+        return crypto.randomUUID()
+    return (
+        'id-' +
+        Math.random().toString(36).slice(2) +
+        '-' +
+        Math.random().toString(36).slice(2)
+    )
 }
 
 export function makeLeaf(content: string): Leaf {
-  return { kind: "leaf", id: newId(), content };
+    return { kind: 'leaf', id: newId(), content }
 }
 
 export function makeTab(content: string): Tab {
-  const root = makeLeaf(content);
-  return { id: newId(), root, focusId: root.id };
+    const root = makeLeaf(content)
+    return { id: newId(), root, focusId: root.id }
 }
 
 // Replace the target leaf with a split: original content on side `a`, and on side `b`
 // either `newContent` (when provided) or a duplicate of the original. Returns the new
 // root and the new leaf's id.
 export function splitLeaf(
-  root: PaneNode,
-  leafId: string,
-  dir: "row" | "col",
-  newContent?: string,
+    root: PaneNode,
+    leafId: string,
+    dir: 'row' | 'col',
+    newContent?: string,
 ): { root: PaneNode; newLeafId: string } {
-  let newLeafId = "";
-  const walk = (node: PaneNode): PaneNode => {
-    if (node.kind === "leaf") {
-      if (node.id !== leafId) return node;
-      const dup = makeLeaf(newContent ?? node.content);
-      newLeafId = dup.id;
-      return { kind: "split", id: newId(), dir, ratio: 0.5, a: node, b: dup };
+    let newLeafId = ''
+    const walk = (node: PaneNode): PaneNode => {
+        if (node.kind === 'leaf') {
+            if (node.id !== leafId) return node
+            const dup = makeLeaf(newContent ?? node.content)
+            newLeafId = dup.id
+            return {
+                kind: 'split',
+                id: newId(),
+                dir,
+                ratio: 0.5,
+                a: node,
+                b: dup,
+            }
+        }
+        return { ...node, a: walk(node.a), b: walk(node.b) }
     }
-    return { ...node, a: walk(node.a), b: walk(node.b) };
-  };
-  return { root: walk(root), newLeafId };
+    return { root: walk(root), newLeafId }
 }
 
 // Remove the target leaf; its sibling takes the parent split's place. Returns the
 // new root, or null when the tree becomes empty (closing the last pane).
 export function closeLeaf(root: PaneNode, leafId: string): PaneNode | null {
-  const walk = (node: PaneNode): PaneNode | null => {
-    if (node.kind === "leaf") return node.id === leafId ? null : node;
-    const a = walk(node.a);
-    const b = walk(node.b);
-    if (a === null) return b; // collapse to surviving sibling
-    if (b === null) return a;
-    if (a === node.a && b === node.b) return node;
-    return { ...node, a, b };
-  };
-  return walk(root);
+    const walk = (node: PaneNode): PaneNode | null => {
+        if (node.kind === 'leaf') return node.id === leafId ? null : node
+        const a = walk(node.a)
+        const b = walk(node.b)
+        if (a === null) return b // collapse to surviving sibling
+        if (b === null) return a
+        if (a === node.a && b === node.b) return node
+        return { ...node, a, b }
+    }
+    return walk(root)
 }
 
 export function leaves(root: PaneNode): Leaf[] {
-  return root.kind === "leaf" ? [root] : [...leaves(root.a), ...leaves(root.b)];
+    return root.kind === 'leaf'
+        ? [root]
+        : [...leaves(root.a), ...leaves(root.b)]
 }
 
 // After a tree was pruned/rebuilt, keep the old focus if its leaf survived, else fall
 // back to the first surviving leaf. The single source of truth for the focus invariant.
 export function resolveFocus(root: PaneNode, preferred: string): string {
-  const ls = leaves(root);
-  return ls.some((l) => l.id === preferred) ? preferred : ls[0].id;
+    const ls = leaves(root)
+    return ls.some(l => l.id === preferred) ? preferred : ls[0].id
 }
 
 export function leafCount(node: PaneNode): number {
-  return node.kind === "leaf" ? 1 : leafCount(node.a) + leafCount(node.b);
+    return node.kind === 'leaf' ? 1 : leafCount(node.a) + leafCount(node.b)
 }
 
 // Recompute every split's ratio by leaf-count weighting so all leaves end up with
 // equal area, even when nesting is uneven. Structure is unchanged.
 export function equalize(root: PaneNode): PaneNode {
-  if (root.kind === "leaf") return root;
-  const a = equalize(root.a);
-  const b = equalize(root.b);
-  const ca = leafCount(a);
-  const cb = leafCount(b);
-  return { ...root, ratio: ca / (ca + cb), a, b };
+    if (root.kind === 'leaf') return root
+    const a = equalize(root.a)
+    const b = equalize(root.b)
+    const ca = leafCount(a)
+    const cb = leafCount(b)
+    return { ...root, ratio: ca / (ca + cb), a, b }
 }
 
-export function setContent(root: PaneNode, leafId: string, content: string): PaneNode {
-  const walk = (node: PaneNode): PaneNode => {
-    if (node.kind === "leaf") return node.id === leafId ? { ...node, content } : node;
-    return { ...node, a: walk(node.a), b: walk(node.b) };
-  };
-  return walk(root);
+export function setContent(
+    root: PaneNode,
+    leafId: string,
+    content: string,
+): PaneNode {
+    const walk = (node: PaneNode): PaneNode => {
+        if (node.kind === 'leaf')
+            return node.id === leafId ? { ...node, content } : node
+        return { ...node, a: walk(node.a), b: walk(node.b) }
+    }
+    return walk(root)
 }
 
-export function findLeafByContent(root: PaneNode, content: string): Leaf | null {
-  if (root.kind === "leaf") return root.content === content ? root : null;
-  return findLeafByContent(root.a, content) ?? findLeafByContent(root.b, content);
+export function findLeafByContent(
+    root: PaneNode,
+    content: string,
+): Leaf | null {
+    if (root.kind === 'leaf') return root.content === content ? root : null
+    return (
+        findLeafByContent(root.a, content) ?? findLeafByContent(root.b, content)
+    )
 }
 
 // Move one pane next to another: remove the dragged leaf (collapsing its parent), then
@@ -168,39 +209,50 @@ export function findLeafByContent(root: PaneNode, content: string): Leaf | null 
 // the drop. Returns the new root and the moved pane's id, or null if the move is a no-op
 // (onto itself, dragged leaf missing, or dragging the tab's only pane).
 export function movePane(
-  root: PaneNode,
-  draggedId: string,
-  targetId: string,
-  dir: Dir,
+    root: PaneNode,
+    draggedId: string,
+    targetId: string,
+    dir: Dir,
 ): { root: PaneNode; focusId: string } | null {
-  if (draggedId === targetId) return null;
-  const dragged = leaves(root).find((l) => l.id === draggedId);
-  if (!dragged) return null;
-  const afterClose = closeLeaf(root, draggedId);
-  if (afterClose === null) return null; // can't move the only pane
-  if (!leaves(afterClose).some((l) => l.id === targetId)) return null; // target gone (shouldn't happen)
-  const splitDir = dir === "left" || dir === "right" ? "row" : "col";
-  const { root: splitRoot, newLeafId } = splitLeaf(afterClose, targetId, splitDir);
-  const moved = dir === "right" || dir === "down" ? newLeafId : targetId;
-  return { root: setContent(splitRoot, moved, dragged.content), focusId: moved };
+    if (draggedId === targetId) return null
+    const dragged = leaves(root).find(l => l.id === draggedId)
+    if (!dragged) return null
+    const afterClose = closeLeaf(root, draggedId)
+    if (afterClose === null) return null // can't move the only pane
+    if (!leaves(afterClose).some(l => l.id === targetId)) return null // target gone (shouldn't happen)
+    const splitDir = dir === 'left' || dir === 'right' ? 'row' : 'col'
+    const { root: splitRoot, newLeafId } = splitLeaf(
+        afterClose,
+        targetId,
+        splitDir,
+    )
+    const moved = dir === 'right' || dir === 'down' ? newLeafId : targetId
+    return {
+        root: setContent(splitRoot, moved, dragged.content),
+        focusId: moved,
+    }
 }
 
 // Reorder a tab to a target insertion index (0..n, as produced by the drag
 // controller from chip midpoints). The index is in the *original* array's
 // coordinates; we adjust for the removal of the moved tab so dropping a tab
 // just left or right of its own slot is a no-op. Unknown id → unchanged.
-export function reorderTabs(tabs: Tab[], tabId: string, toIndex: number): Tab[] {
-  const from = tabs.findIndex((t) => t.id === tabId);
-  if (from === -1) return tabs;
-  const adjusted = from < toIndex ? toIndex - 1 : toIndex;
-  const clamped = Math.max(0, Math.min(adjusted, tabs.length - 1));
-  if (clamped === from) return tabs;
-  const next = tabs.slice();
-  const [moved] = next.splice(from, 1);
-  next.splice(clamped, 0, moved);
-  // Keep the pinned block at the front: a drag that crosses the pin boundary clamps the
-  // moved tab back to its own group's edge rather than mixing pinned + unpinned.
-  return sortPinned(next);
+export function reorderTabs(
+    tabs: Tab[],
+    tabId: string,
+    toIndex: number,
+): Tab[] {
+    const from = tabs.findIndex(t => t.id === tabId)
+    if (from === -1) return tabs
+    const adjusted = from < toIndex ? toIndex - 1 : toIndex
+    const clamped = Math.max(0, Math.min(adjusted, tabs.length - 1))
+    if (clamped === from) return tabs
+    const next = tabs.slice()
+    const [moved] = next.splice(from, 1)
+    next.splice(clamped, 0, moved)
+    // Keep the pinned block at the front: a drag that crosses the pin boundary clamps the
+    // moved tab back to its own group's edge rather than mixing pinned + unpinned.
+    return sortPinned(next)
 }
 
 // Split the target leaf and graft an existing subtree `node` (a leaf or a whole
@@ -208,22 +260,22 @@ export function reorderTabs(tabs: Tab[], tabId: string, toIndex: number): Tab[] 
 // (right/down). Unlike splitLeaf, `node` keeps its identity and internal layout,
 // so a multi-pane tab dropped onto a pane preserves its structure.
 export function splitLeafWithNode(
-  root: PaneNode,
-  targetId: string,
-  dir: "row" | "col",
-  node: PaneNode,
-  nodeFirst: boolean,
+    root: PaneNode,
+    targetId: string,
+    dir: 'row' | 'col',
+    node: PaneNode,
+    nodeFirst: boolean,
 ): { root: PaneNode } {
-  const walk = (n: PaneNode): PaneNode => {
-    if (n.kind === "leaf") {
-      if (n.id !== targetId) return n;
-      const a = nodeFirst ? node : n;
-      const b = nodeFirst ? n : node;
-      return { kind: "split", id: newId(), dir, ratio: 0.5, a, b };
+    const walk = (n: PaneNode): PaneNode => {
+        if (n.kind === 'leaf') {
+            if (n.id !== targetId) return n
+            const a = nodeFirst ? node : n
+            const b = nodeFirst ? n : node
+            return { kind: 'split', id: newId(), dir, ratio: 0.5, a, b }
+        }
+        return { ...n, a: walk(n.a), b: walk(n.b) }
     }
-    return { ...n, a: walk(n.a), b: walk(n.b) };
-  };
-  return { root: walk(root) };
+    return { root: walk(root) }
 }
 
 // Replace the target leaf in place with `node` (a leaf or a whole subtree),
@@ -231,29 +283,33 @@ export function splitLeafWithNode(
 // an empty pane or a pane's center — the pane *becomes* that layout rather than
 // splitting beside it (which would orphan the old/empty leaf). Unchanged if the
 // leaf id is absent.
-export function replaceLeafWithNode(root: PaneNode, leafId: string, node: PaneNode): PaneNode {
-  const walk = (n: PaneNode): PaneNode => {
-    if (n.kind === "leaf") return n.id === leafId ? node : n;
-    return { ...n, a: walk(n.a), b: walk(n.b) };
-  };
-  return walk(root);
+export function replaceLeafWithNode(
+    root: PaneNode,
+    leafId: string,
+    node: PaneNode,
+): PaneNode {
+    const walk = (n: PaneNode): PaneNode => {
+        if (n.kind === 'leaf') return n.id === leafId ? node : n
+        return { ...n, a: walk(n.a), b: walk(n.b) }
+    }
+    return walk(root)
 }
 
 // Center-drop: move the source pane's content into the target pane, then close
 // the source (collapsing its split). Returns the new root + focus (the target),
 // or null onto itself / missing panes / when the source is the only pane.
 export function replacePaneWithPane(
-  root: PaneNode,
-  targetId: string,
-  srcId: string,
+    root: PaneNode,
+    targetId: string,
+    srcId: string,
 ): { root: PaneNode; focusId: string } | null {
-  if (targetId === srcId) return null;
-  const src = leaves(root).find((l) => l.id === srcId);
-  if (!src) return null;
-  if (!leaves(root).some((l) => l.id === targetId)) return null;
-  const closed = closeLeaf(setContent(root, targetId, src.content), srcId);
-  if (closed === null) return null;
-  return { root: closed, focusId: targetId };
+    if (targetId === srcId) return null
+    const src = leaves(root).find(l => l.id === srcId)
+    if (!src) return null
+    if (!leaves(root).some(l => l.id === targetId)) return null
+    const closed = closeLeaf(setContent(root, targetId, src.content), srcId)
+    if (closed === null) return null
+    return { root: closed, focusId: targetId }
 }
 
 // Detach a pane (leaf) from its tab into a fresh top-level tab inserted at
@@ -261,133 +317,143 @@ export function replacePaneWithPane(
 // focus pointing at the detached pane is reset to a survivor. Returns null for
 // an unknown tab/leaf or when the pane is its tab's only one (no split to leave).
 export function detachLeafToTab(
-  tabs: Tab[],
-  srcTabId: string,
-  leafId: string,
-  toIndex: number,
+    tabs: Tab[],
+    srcTabId: string,
+    leafId: string,
+    toIndex: number,
 ): { tabs: Tab[]; newTabId: string } | null {
-  const src = tabs.find((t) => t.id === srcTabId);
-  if (!src) return null;
-  const leaf = leaves(src.root).find((l) => l.id === leafId);
-  if (!leaf) return null;
-  const afterClose = closeLeaf(src.root, leafId);
-  if (afterClose === null) return null;
-  const ls = leaves(afterClose);
-  const focusId = ls.some((l) => l.id === src.focusId) ? src.focusId : ls[0].id;
-  const newTab = makeTab(leaf.content);
-  const next = tabs.map((t) => (t.id === srcTabId ? { ...t, root: afterClose, focusId } : t));
-  const clamped = Math.max(0, Math.min(toIndex, next.length));
-  next.splice(clamped, 0, newTab);
-  // The detached tab is unpinned; if it landed inside the pinned block, push it back out.
-  return { tabs: sortPinned(next), newTabId: newTab.id };
+    const src = tabs.find(t => t.id === srcTabId)
+    if (!src) return null
+    const leaf = leaves(src.root).find(l => l.id === leafId)
+    if (!leaf) return null
+    const afterClose = closeLeaf(src.root, leafId)
+    if (afterClose === null) return null
+    const ls = leaves(afterClose)
+    const focusId = ls.some(l => l.id === src.focusId) ? src.focusId : ls[0].id
+    const newTab = makeTab(leaf.content)
+    const next = tabs.map(t =>
+        t.id === srcTabId ? { ...t, root: afterClose, focusId } : t,
+    )
+    const clamped = Math.max(0, Math.min(toIndex, next.length))
+    next.splice(clamped, 0, newTab)
+    // The detached tab is unpinned; if it landed inside the pinned block, push it back out.
+    return { tabs: sortPinned(next), newTabId: newTab.id }
 }
 
-import type { Rect } from "./dnd/geometry";
-export type { Rect };
-export type Dir = "left" | "right" | "up" | "down";
+import type { Rect } from './dnd/geometry'
+export type { Rect }
+export type Dir = 'left' | 'right' | 'up' | 'down'
 
 // Normalized layout rectangles (0..1) for every leaf, derived from split ratios.
 export function computeRects(
-  root: PaneNode,
-  rect: Rect = { x: 0, y: 0, w: 1, h: 1 },
+    root: PaneNode,
+    rect: Rect = { x: 0, y: 0, w: 1, h: 1 },
 ): Map<string, Rect> {
-  const map = new Map<string, Rect>();
-  const walk = (node: PaneNode, r: Rect) => {
-    if (node.kind === "leaf") {
-      map.set(node.id, r);
-      return;
+    const map = new Map<string, Rect>()
+    const walk = (node: PaneNode, r: Rect) => {
+        if (node.kind === 'leaf') {
+            map.set(node.id, r)
+            return
+        }
+        if (node.dir === 'row') {
+            const wa = r.w * node.ratio
+            walk(node.a, { x: r.x, y: r.y, w: wa, h: r.h })
+            walk(node.b, { x: r.x + wa, y: r.y, w: r.w - wa, h: r.h })
+        } else {
+            const ha = r.h * node.ratio
+            walk(node.a, { x: r.x, y: r.y, w: r.w, h: ha })
+            walk(node.b, { x: r.x, y: r.y + ha, w: r.w, h: r.h - ha })
+        }
     }
-    if (node.dir === "row") {
-      const wa = r.w * node.ratio;
-      walk(node.a, { x: r.x, y: r.y, w: wa, h: r.h });
-      walk(node.b, { x: r.x + wa, y: r.y, w: r.w - wa, h: r.h });
-    } else {
-      const ha = r.h * node.ratio;
-      walk(node.a, { x: r.x, y: r.y, w: r.w, h: ha });
-      walk(node.b, { x: r.x, y: r.y + ha, w: r.w, h: r.h - ha });
-    }
-  };
-  walk(root, rect);
-  return map;
+    walk(root, rect)
+    return map
 }
 
 // Nearest leaf whose center lies in the given direction from `fromId`.
-export function focusNeighbor(root: PaneNode, fromId: string, dir: Dir): string | null {
-  const rects = computeRects(root);
-  const from = rects.get(fromId);
-  if (!from) return null;
-  const fcx = from.x + from.w / 2;
-  const fcy = from.y + from.h / 2;
-  const horizontal = dir === "left" || dir === "right";
-  let best: string | null = null;
-  let bestScore = Infinity;
-  for (const [id, r] of rects) {
-    if (id === fromId) continue;
-    const dx = r.x + r.w / 2 - fcx;
-    const dy = r.y + r.h / 2 - fcy;
+export function focusNeighbor(
+    root: PaneNode,
+    fromId: string,
+    dir: Dir,
+): string | null {
+    const rects = computeRects(root)
+    const from = rects.get(fromId)
+    if (!from) return null
+    const fcx = from.x + from.w / 2
+    const fcy = from.y + from.h / 2
+    const horizontal = dir === 'left' || dir === 'right'
+    let best: string | null = null
+    let bestScore = Infinity
+    for (const [id, r] of rects) {
+        if (id === fromId) continue
+        const dx = r.x + r.w / 2 - fcx
+        const dy = r.y + r.h / 2 - fcy
 
-    // Check if neighbor is in the target direction
-    let inDir: boolean;
-    switch (dir) {
-      case "right":
-        inDir = dx > 0.001 && Math.abs(dy) <= Math.abs(dx);
-        break;
-      case "left":
-        inDir = dx < -0.001 && Math.abs(dy) <= Math.abs(dx);
-        break;
-      case "down":
-        inDir = dy > 0.001 && Math.abs(dx) <= Math.abs(dy);
-        break;
-      case "up":
-        inDir = dy < -0.001 && Math.abs(dx) <= Math.abs(dy);
-        break;
+        // Check if neighbor is in the target direction
+        let inDir: boolean
+        switch (dir) {
+            case 'right':
+                inDir = dx > 0.001 && Math.abs(dy) <= Math.abs(dx)
+                break
+            case 'left':
+                inDir = dx < -0.001 && Math.abs(dy) <= Math.abs(dx)
+                break
+            case 'down':
+                inDir = dy > 0.001 && Math.abs(dx) <= Math.abs(dy)
+                break
+            case 'up':
+                inDir = dy < -0.001 && Math.abs(dx) <= Math.abs(dy)
+                break
+        }
+        if (!inDir) continue
+        // Rank by distance along the travel axis first, breaking ties by the smaller
+        // cross-axis offset — so "right" lands on the pane straight across, not a
+        // diagonal one that merely happens to be closer in 2D.
+        const primary = horizontal ? Math.abs(dx) : Math.abs(dy)
+        const secondary = horizontal ? Math.abs(dy) : Math.abs(dx)
+        const score = primary * 1000 + secondary
+        if (score < bestScore) {
+            bestScore = score
+            best = id
+        }
     }
-    if (!inDir) continue;
-    // Rank by distance along the travel axis first, breaking ties by the smaller
-    // cross-axis offset — so "right" lands on the pane straight across, not a
-    // diagonal one that merely happens to be closer in 2D.
-    const primary = horizontal ? Math.abs(dx) : Math.abs(dy);
-    const secondary = horizontal ? Math.abs(dy) : Math.abs(dx);
-    const score = primary * 1000 + secondary;
-    if (score < bestScore) {
-      bestScore = score;
-      best = id;
-    }
-  }
-  return best;
+    return best
 }
 
 // Drop leaves for which exists(content) is false; collapse splits accordingly.
 export function pruneMissing(
-  root: PaneNode,
-  exists: (content: string) => boolean,
+    root: PaneNode,
+    exists: (content: string) => boolean,
 ): PaneNode | null {
-  if (root.kind === "leaf") return exists(root.content) ? root : null;
-  const a = pruneMissing(root.a, exists);
-  const b = pruneMissing(root.b, exists);
-  if (a === null && b === null) return null;
-  if (a === null) return b;
-  if (b === null) return a;
-  if (a === root.a && b === root.b) return root;
-  return { ...root, a, b };
+    if (root.kind === 'leaf') return exists(root.content) ? root : null
+    const a = pruneMissing(root.a, exists)
+    const b = pruneMissing(root.b, exists)
+    if (a === null && b === null) return null
+    if (a === null) return b
+    if (b === null) return a
+    if (a === root.a && b === root.b) return root
+    return { ...root, a, b }
 }
 
-export function setRatio(root: PaneNode, splitId: string, ratio: number): PaneNode {
-  const walk = (node: PaneNode): PaneNode => {
-    if (node.kind === "leaf") return node;
-    if (node.id === splitId) return { ...node, ratio };
-    const a = walk(node.a);
-    const b = walk(node.b);
-    return a === node.a && b === node.b ? node : { ...node, a, b };
-  };
-  return walk(root);
+export function setRatio(
+    root: PaneNode,
+    splitId: string,
+    ratio: number,
+): PaneNode {
+    const walk = (node: PaneNode): PaneNode => {
+        if (node.kind === 'leaf') return node
+        if (node.id === splitId) return { ...node, ratio }
+        const a = walk(node.a)
+        const b = walk(node.b)
+        return a === node.a && b === node.b ? node : { ...node, a, b }
+    }
+    return walk(root)
 }
 
-export type Persisted = { tabs: Tab[]; activeTabId: string | null };
+export type Persisted = { tabs: Tab[]; activeTabId: string | null }
 
 export function serializeTabs(tabs: Tab[], activeTabId: string | null): string {
-  const payload: Persisted = { tabs, activeTabId };
-  return JSON.stringify(payload);
+    const payload: Persisted = { tabs, activeTabId }
+    return JSON.stringify(payload)
 }
 
 // Cold-launch restore split. A RELOAD (Cmd+R / hot-reload) restores the whole layout as-is; a
@@ -397,13 +463,16 @@ export function serializeTabs(tabs: Tab[], activeTabId: string | null): string {
 // working set stays one keystroke away without duplicating the pins that just came back. Pure, so
 // App.tsx's startup restore is unit-testable without a DOM. The active tab follows the restored
 // (pinned) set when it was the active one, else the first pinned tab (null when nothing is pinned).
-export function splitColdLaunch(layout: Persisted): { restore: Persisted; stash: Tab[] } {
-  const pinned = layout.tabs.filter((t) => t.pinned);
-  const stash = layout.tabs.filter((t) => !t.pinned);
-  const activeTabId = pinned.some((t) => t.id === layout.activeTabId)
-    ? layout.activeTabId
-    : (pinned[0]?.id ?? null);
-  return { restore: { tabs: pinned, activeTabId }, stash };
+export function splitColdLaunch(layout: Persisted): {
+    restore: Persisted
+    stash: Tab[]
+} {
+    const pinned = layout.tabs.filter(t => t.pinned)
+    const stash = layout.tabs.filter(t => !t.pinned)
+    const activeTabId = pinned.some(t => t.id === layout.activeTabId)
+        ? layout.activeTabId
+        : (pinned[0]?.id ?? null)
+    return { restore: { tabs: pinned, activeTabId }, stash }
 }
 
 // Content ids that no longer exist, mapped to their modern equivalent. A layout persisted by
@@ -412,29 +481,36 @@ export function splitColdLaunch(layout: Persisted): { restore: Persisted; stash:
 // was unified into the Cmd+O switcher takeover (#8: "the search tab and the cmd+o should be
 // the same thing"), so a persisted search tab becomes a graph home tab.
 export const LEGACY_CONTENT_IDS: Record<string, string> = {
-  "::search": "::graph",
-};
+    '::search': '::graph',
+}
 
 /** Rewrite legacy leaf content ids (see LEGACY_CONTENT_IDS); returns the same node when
  *  nothing changes so no-op restores don't churn. Exported for tests. */
 export function migrateLegacyContent(node: PaneNode): PaneNode {
-  if (node.kind === "leaf") {
-    const to = LEGACY_CONTENT_IDS[node.content];
-    return to ? { ...node, content: to } : node;
-  }
-  const a = migrateLegacyContent(node.a);
-  const b = migrateLegacyContent(node.b);
-  return a === node.a && b === node.b ? node : { ...node, a, b };
+    if (node.kind === 'leaf') {
+        const to = LEGACY_CONTENT_IDS[node.content]
+        return to ? { ...node, content: to } : node
+    }
+    const a = migrateLegacyContent(node.a)
+    const b = migrateLegacyContent(node.b)
+    return a === node.a && b === node.b ? node : { ...node, a, b }
 }
 
 // Give every node a fresh unique id, recording old→new so references (focusId) can be
 // remapped. Heals layouts persisted with duplicate ids (the counter-reset bug) and
 // guarantees uniqueness regardless of what was stored.
 function reassignIds(node: PaneNode, map: Map<string, string>): PaneNode {
-  const id = newId();
-  map.set(node.id, id);
-  if (node.kind === "leaf") return { ...node, id };
-  return { kind: "split", id, dir: node.dir, ratio: node.ratio, a: reassignIds(node.a, map), b: reassignIds(node.b, map) };
+    const id = newId()
+    map.set(node.id, id)
+    if (node.kind === 'leaf') return { ...node, id }
+    return {
+        kind: 'split',
+        id,
+        dir: node.dir,
+        ratio: node.ratio,
+        a: reassignIds(node.a, map),
+        b: reassignIds(node.b, map),
+    }
 }
 
 // Parse stored layout, pruning leaves whose content no longer exists, and re-id every
@@ -442,37 +518,40 @@ function reassignIds(node: PaneNode, map: Map<string, string>): PaneNode {
 // pointing at a pruned leaf is reset to the tab's first surviving leaf. Malformed input
 // yields an empty layout.
 export function deserializeTabs(
-  json: string | null,
-  exists: (content: string) => boolean,
+    json: string | null,
+    exists: (content: string) => boolean,
 ): Persisted {
-  if (!json) return { tabs: [], activeTabId: null };
-  let parsed: Persisted;
-  try {
-    parsed = JSON.parse(json) as Persisted;
-  } catch {
-    return { tabs: [], activeTabId: null };
-  }
-  if (!parsed || !Array.isArray(parsed.tabs)) return { tabs: [], activeTabId: null };
-  const tabs: Tab[] = [];
-  const tabIdMap = new Map<string, string>();
-  for (const t of parsed.tabs) {
-    // Rewrite legacy content ids FIRST (e.g. the removed "::search" tab → "::graph") so the
-    // exists() prune and everything downstream only ever sees current ids.
-    const pruned = pruneMissing(migrateLegacyContent(t.root), exists);
-    if (!pruned) continue;
-    const idMap = new Map<string, string>();
-    const root = reassignIds(pruned, idMap);
-    const focusId = resolveFocus(root, idMap.get(t.focusId) ?? "");
-    const tabId = newId();
-    tabIdMap.set(t.id, tabId);
-    // Preserve a user-set tab name across reloads; ignore non-string/blank values.
-    const name = typeof t.name === "string" && t.name.trim() ? t.name : undefined;
-    // Preserve the pinned flag across reloads (only the truthy case; absent otherwise).
-    const pinned = t.pinned === true ? true : undefined;
-    tabs.push({ id: tabId, root, focusId, name, pinned });
-  }
-  // Normalize the partition so pinned tabs lead even if the stored order was inconsistent.
-  const sorted = sortPinned(tabs);
-  const activeTabId = tabIdMap.get(parsed.activeTabId ?? "") ?? sorted[0]?.id ?? null;
-  return { tabs: sorted, activeTabId };
+    if (!json) return { tabs: [], activeTabId: null }
+    let parsed: Persisted
+    try {
+        parsed = JSON.parse(json) as Persisted
+    } catch {
+        return { tabs: [], activeTabId: null }
+    }
+    if (!parsed || !Array.isArray(parsed.tabs))
+        return { tabs: [], activeTabId: null }
+    const tabs: Tab[] = []
+    const tabIdMap = new Map<string, string>()
+    for (const t of parsed.tabs) {
+        // Rewrite legacy content ids FIRST (e.g. the removed "::search" tab → "::graph") so the
+        // exists() prune and everything downstream only ever sees current ids.
+        const pruned = pruneMissing(migrateLegacyContent(t.root), exists)
+        if (!pruned) continue
+        const idMap = new Map<string, string>()
+        const root = reassignIds(pruned, idMap)
+        const focusId = resolveFocus(root, idMap.get(t.focusId) ?? '')
+        const tabId = newId()
+        tabIdMap.set(t.id, tabId)
+        // Preserve a user-set tab name across reloads; ignore non-string/blank values.
+        const name =
+            typeof t.name === 'string' && t.name.trim() ? t.name : undefined
+        // Preserve the pinned flag across reloads (only the truthy case; absent otherwise).
+        const pinned = t.pinned === true ? true : undefined
+        tabs.push({ id: tabId, root, focusId, name, pinned })
+    }
+    // Normalize the partition so pinned tabs lead even if the stored order was inconsistent.
+    const sorted = sortPinned(tabs)
+    const activeTabId =
+        tabIdMap.get(parsed.activeTabId ?? '') ?? sorted[0]?.id ?? null
+    return { tabs: sorted, activeTabId }
 }

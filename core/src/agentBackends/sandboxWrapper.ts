@@ -32,76 +32,90 @@
 // unit-testable with no filesystem or subprocess involved. WHICH paths a profile denies is not
 // decided here — every agent spawn, this one included, resolves that from visibility.ts's
 // `buildSandboxDenyPaths` so the set cannot drift between backends.
-import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { existsSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { join } from 'node:path'
 
 /** Where `sandbox-exec` lives on every Mac — a normal, Apple-signed, stock part of the OS (no
  *  install needed). It carries a decade-old "(DEPRECATED)" man-page label with no runtime warning
  *  on any invocation (verified — see spike-seatbelt.md §6); Bismuth's existing, shipped, Claude-only
  *  `sandbox.filesystem.denyRead` almost certainly rests on the same substrate already, so this
  *  isn't a new platform risk, just an explicit one. Overridable only for tests. */
-export const SANDBOX_EXEC_PATH = "/usr/bin/sandbox-exec";
+export const SANDBOX_EXEC_PATH = '/usr/bin/sandbox-exec'
 
 /** `sandbox_apply` failed — Seatbelt could not apply THIS profile to the spawned process (most
  *  commonly: nesting inside an already-sandboxed parent — see P2/P4 above). MUST be surfaced as a
  *  refusal, never treated as an ordinary nonzero exit to retry unwrapped. */
-export const SANDBOX_APPLY_FAILURE_EXIT_CODE = 71;
+export const SANDBOX_APPLY_FAILURE_EXIT_CODE = 71
 
-export function isSandboxApplyFailure(exitCode: number | null | undefined): boolean {
-  return exitCode === SANDBOX_APPLY_FAILURE_EXIT_CODE;
+export function isSandboxApplyFailure(
+    exitCode: number | null | undefined,
+): boolean {
+    return exitCode === SANDBOX_APPLY_FAILURE_EXIT_CODE
 }
 
 export interface SandboxWrapperCheckOpts {
-  /** Test seam — defaults to `process.platform`. */
-  platform?: NodeJS.Platform;
-  /** Test seam — defaults to {@link SANDBOX_EXEC_PATH}. */
-  sandboxExecPath?: string;
-  /** The backend's own `catalog.ts` `selfSandboxes` flag (P2). */
-  selfSandboxes?: boolean;
+    /** Test seam — defaults to `process.platform`. */
+    platform?: NodeJS.Platform
+    /** Test seam — defaults to {@link SANDBOX_EXEC_PATH}. */
+    sandboxExecPath?: string
+    /** The backend's own `catalog.ts` `selfSandboxes` flag (P2). */
+    selfSandboxes?: boolean
 }
 
 /** Named so a refusal message can explain itself precisely instead of a bare "unavailable". */
-export type SandboxWrapperUnavailableReason = "unsupported-platform" | "sandbox-exec-missing" | "backend-self-sandboxes";
+export type SandboxWrapperUnavailableReason =
+    'unsupported-platform' | 'sandbox-exec-missing' | 'backend-self-sandboxes'
 
-export type SandboxWrapperAvailability = { available: true } | { available: false; reason: SandboxWrapperUnavailableReason };
+export type SandboxWrapperAvailability =
+    | { available: true }
+    | { available: false; reason: SandboxWrapperUnavailableReason }
 
 /**
  * Assert every precondition (P1, P2) rather than assume them. Order matters only for which reason
  * a caller sees first when multiple fail; darwin is checked first because it's the cheapest and
  * most common reason on this codebase's non-macOS CI/dev hosts.
  */
-export function checkSandboxWrapperAvailability(opts: SandboxWrapperCheckOpts = {}): SandboxWrapperAvailability {
-  if ((opts.platform ?? process.platform) !== "darwin") return { available: false, reason: "unsupported-platform" };
-  if (opts.selfSandboxes) return { available: false, reason: "backend-self-sandboxes" };
-  if (!existsSync(opts.sandboxExecPath ?? SANDBOX_EXEC_PATH)) return { available: false, reason: "sandbox-exec-missing" };
-  return { available: true };
+export function checkSandboxWrapperAvailability(
+    opts: SandboxWrapperCheckOpts = {},
+): SandboxWrapperAvailability {
+    if ((opts.platform ?? process.platform) !== 'darwin')
+        return { available: false, reason: 'unsupported-platform' }
+    if (opts.selfSandboxes)
+        return { available: false, reason: 'backend-self-sandboxes' }
+    if (!existsSync(opts.sandboxExecPath ?? SANDBOX_EXEC_PATH))
+        return { available: false, reason: 'sandbox-exec-missing' }
+    return { available: true }
 }
 
 /** Convenience boolean form of {@link checkSandboxWrapperAvailability}. */
-export function sandboxWrapperAvailable(opts: SandboxWrapperCheckOpts = {}): boolean {
-  return checkSandboxWrapperAvailability(opts).available;
+export function sandboxWrapperAvailable(
+    opts: SandboxWrapperCheckOpts = {},
+): boolean {
+    return checkSandboxWrapperAvailability(opts).available
 }
 
 /** A short, user-facing explanation of why the wrapper can't run — for a refusal message. Never
  *  claims a mechanism that wasn't checked. */
-export function describeSandboxWrapperUnavailable(reason: SandboxWrapperUnavailableReason): string {
-  switch (reason) {
-    case "unsupported-platform":
-      return "the OS read-deny sandbox is only available on macOS";
-    case "sandbox-exec-missing":
-      return "the OS read-deny sandbox (sandbox-exec) is not present on this machine";
-    case "backend-self-sandboxes":
-      return "this backend applies its own OS sandbox, which can't be nested inside another one";
-  }
+export function describeSandboxWrapperUnavailable(
+    reason: SandboxWrapperUnavailableReason,
+): string {
+    switch (reason) {
+        case 'unsupported-platform':
+            return 'the OS read-deny sandbox is only available on macOS'
+        case 'sandbox-exec-missing':
+            return 'the OS read-deny sandbox (sandbox-exec) is not present on this machine'
+        case 'backend-self-sandboxes':
+            return "this backend applies its own OS sandbox, which can't be nested inside another one"
+    }
 }
 
 /** Escape a path for a Seatbelt profile string literal: backslash first (so a literal backslash in
  *  a later quote-escape isn't double-escaped), then the double quote. The profile language is a
  *  Scheme-like S-expression grammar with C-style string escapes. */
 function seatbeltQuote(path: string): string {
-  return `"${path.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    return `"${path.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
 /**
@@ -123,9 +137,13 @@ function seatbeltQuote(path: string): string {
  * new file every call for no reason.
  */
 export function buildSeatbeltProfile(denyPaths: string[]): string {
-  const unique = Array.from(new Set(denyPaths)).sort();
-  const lines = ["(version 1)", "(allow default)", ...unique.map((p) => `(deny file-read* (subpath ${seatbeltQuote(p)}))`)];
-  return `${lines.join("\n")}\n`;
+    const unique = Array.from(new Set(denyPaths)).sort()
+    const lines = [
+        '(version 1)',
+        '(allow default)',
+        ...unique.map(p => `(deny file-read* (subpath ${seatbeltQuote(p)}))`),
+    ]
+    return `${lines.join('\n')}\n`
 }
 
 /**
@@ -134,9 +152,13 @@ export function buildSeatbeltProfile(denyPaths: string[]): string {
  * spawn overhead or its exit-71 risk, and a caller with no profile (wrapper unavailable) must not
  * silently wrap with nothing, which would be indistinguishable from "protected" while doing nothing.
  */
-export function wrapArgv(argv: string[], profilePath: string | null, sandboxExecPath: string = SANDBOX_EXEC_PATH): string[] {
-  if (!profilePath) return argv;
-  return [sandboxExecPath, "-f", profilePath, ...argv];
+export function wrapArgv(
+    argv: string[],
+    profilePath: string | null,
+    sandboxExecPath: string = SANDBOX_EXEC_PATH,
+): string[] {
+    if (!profilePath) return argv
+    return [sandboxExecPath, '-f', profilePath, ...argv]
 }
 
 /** `<vault>/.daemon/tmp` — where a materialized profile lives. Reused across turns whose deny set
@@ -144,7 +166,7 @@ export function wrapArgv(argv: string[], profilePath: string | null, sandboxExec
  *  restricted-note set keeps changing across turns accumulates one file per distinct set with no
  *  pruning here — small, static text files, and out of this module's scope to garbage-collect. */
 function profileDir(vaultRoot: string): string {
-  return join(vaultRoot, ".daemon", "tmp");
+    return join(vaultRoot, '.daemon', 'tmp')
 }
 
 /**
@@ -155,13 +177,16 @@ function profileDir(vaultRoot: string): string {
  * it turn after turn. Returns null when there is nothing to deny — the caller's signal that
  * {@link wrapArgv} should leave the spawn unwrapped.
  */
-export async function materializeSandboxProfile(vaultRoot: string, denyPaths: string[]): Promise<string | null> {
-  if (denyPaths.length === 0) return null;
-  const profile = buildSeatbeltProfile(denyPaths);
-  const hash = createHash("sha256").update(profile).digest("hex").slice(0, 16);
-  const dir = profileDir(vaultRoot);
-  const path = join(dir, `visibility-${hash}.sb`);
-  await mkdir(dir, { recursive: true });
-  await writeFile(path, profile, { mode: 0o600 });
-  return path;
+export async function materializeSandboxProfile(
+    vaultRoot: string,
+    denyPaths: string[],
+): Promise<string | null> {
+    if (denyPaths.length === 0) return null
+    const profile = buildSeatbeltProfile(denyPaths)
+    const hash = createHash('sha256').update(profile).digest('hex').slice(0, 16)
+    const dir = profileDir(vaultRoot)
+    const path = join(dir, `visibility-${hash}.sb`)
+    await mkdir(dir, { recursive: true })
+    await writeFile(path, profile, { mode: 0o600 })
+    return path
 }

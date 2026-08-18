@@ -18,43 +18,49 @@
 
    `VaultIntro.tsx` imports all three names back from here unchanged; the component itself is
    otherwise untouched. */
-import type { GraphRenderer } from "../graph/graphRenderer";
-import { paletteToInts, hexToInt } from "../themeColors";
-import type { GraphData } from "../../../core/src/graph";
-import { THEMES, type ThemeName } from "../themes";
-import { DEFAULT_ACCENT_PALETTE } from "../settings";
+import type { GraphRenderer } from '../graph/graphRenderer'
+import { paletteToInts, hexToInt } from '../themeColors'
+import type { GraphData } from '../../../core/src/graph'
+import { THEMES, type ThemeName } from '../themes'
+import { DEFAULT_ACCENT_PALETTE } from '../settings'
 
 // Build a point-cloud graph with BAKED positions (a seeded random sphere). Baking positions
 // means the renderer draws the layout directly — no cold force-settle, no auto-fit race — so
 // it frames any node count instantly and reliably. The "you" hub sits at the center.
 function makeCloud(n: number, radius: number, seed: number): GraphData {
-  let s = seed;
-  const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-  const nodes: GraphData["nodes"] = [
-    { id: "you", label: "", kind: "self", position: [0, 0, 0], position2d: [0, 0] },
-  ];
-  for (let i = 0; i < n; i++) {
-    const r = radius * Math.cbrt(rnd());
-    const theta = rnd() * Math.PI * 2;
-    const phi = Math.acos(2 * rnd() - 1);
-    const x = r * Math.sin(phi) * Math.cos(theta);
-    const y = r * Math.sin(phi) * Math.sin(theta);
-    const z = r * Math.cos(phi);
-    nodes.push({
-      id: `n${i}`,
-      label: "",
-      kind: "note",
-      community: i % 5,
-      position: [x, y, z] as [number, number, number],
-      position2d: [x, y] as [number, number],
-    });
-  }
-  const edges: GraphData["edges"] = [];
-  for (let i = 0; i < n; i++) {
-    if (i % 6 === 0) edges.push({ from: "you", to: `n${i}`, kind: "link" });
-    if (i >= 7) edges.push({ from: `n${i - 7}`, to: `n${i}`, kind: "link" });
-  }
-  return { nodes, edges };
+    let s = seed
+    const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff
+    const nodes: GraphData['nodes'] = [
+        {
+            id: 'you',
+            label: '',
+            kind: 'self',
+            position: [0, 0, 0],
+            position2d: [0, 0],
+        },
+    ]
+    for (let i = 0; i < n; i++) {
+        const r = radius * Math.cbrt(rnd())
+        const theta = rnd() * Math.PI * 2
+        const phi = Math.acos(2 * rnd() - 1)
+        const x = r * Math.sin(phi) * Math.cos(theta)
+        const y = r * Math.sin(phi) * Math.sin(theta)
+        const z = r * Math.cos(phi)
+        nodes.push({
+            id: `n${i}`,
+            label: '',
+            kind: 'note',
+            community: i % 5,
+            position: [x, y, z] as [number, number, number],
+            position2d: [x, y] as [number, number],
+        })
+    }
+    const edges: GraphData['edges'] = []
+    for (let i = 0; i < n; i++) {
+        if (i % 6 === 0) edges.push({ from: 'you', to: `n${i}`, kind: 'link' })
+        if (i >= 7) edges.push({ from: `n${i - 7}`, to: `n${i}`, kind: 'link' })
+    }
+    return { nodes, edges }
 }
 
 // Theme slide: a small starter cloud (just enough to show the palette). Three-brains slide:
@@ -62,8 +68,8 @@ function makeCloud(n: number, radius: number, seed: number): GraphData {
 // Exported so the headless smoke test drives the renderer with the REAL first-run fixtures rather
 // than a stand-in (they differ in the ways that matter: node count either side of the 350-node idle
 // spin cut-off, and a baked layout with no settle).
-export const SMALL_GRAPH = makeCloud(54, 300, 1234567);
-export const BIG_GRAPH = makeCloud(1874, 760, 987654321);
+export const SMALL_GRAPH = makeCloud(54, 300, 1234567)
+export const BIG_GRAPH = makeCloud(1874, 760, 987654321)
 
 // Push the chosen theme's colors into a renderer. Shared by both IntroGraph instances. Typed to the
 // SEAM, not to a concrete renderer class — the intro is a consumer of GraphRenderer like any other.
@@ -80,26 +86,28 @@ export const BIG_GRAPH = makeCloud(1874, 760, 987654321);
 // comes from --graph-0..4 (the theme's own graph ramp) rather than accentPalette, which is what
 // the palette slide is advertising anyway.
 export function applyGraphConfig(renderer: GraphRenderer, name: ThemeName) {
-  const ap = THEMES[name];
-  const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
-  renderer.setConfig({
-    spin: true,
-    spinSpeed: 0.0016,
-    palette: paletteToInts(palette),
-    viewMode: "3d",
-    showGraphLabels: false,
-    graphLabelHubCount: 0,
-    edgeColor: hexToInt(ap.neutral, 0xaeb4c2),
-    edgeOpacity: ap.isLight ? 0.22 : 0.34,
-    // Transparent ground so the page's own --bg shows THROUGH the graph. Load-bearing, not
-    // vestigial: the field's viewport otherwise paints an opaque --graph-bg, and the two IntroGraph
-    // layers CROSS-FADE (opacity 0↔1), so an opaque ground would fade the whole page background
-    // between --bg and --graph-bg on every slide change — visible in three of the four themes
-    // (riso's pair is the widest gap). See AsciiGraphRenderer.applyGround().
-    transparent: true,
-    backgroundColor: hexToInt(ap.background, 0x14151b),
-    labelTextColor: "rgba(0,0,0,0)",
-    labelBgColor: "rgba(0,0,0,0)",
-    selfColor: hexToInt(ap.foreground, 0xffffff),
-  });
+    const ap = THEMES[name]
+    const palette = ap.accentPalette?.length
+        ? ap.accentPalette
+        : DEFAULT_ACCENT_PALETTE
+    renderer.setConfig({
+        spin: true,
+        spinSpeed: 0.0016,
+        palette: paletteToInts(palette),
+        viewMode: '3d',
+        showGraphLabels: false,
+        graphLabelHubCount: 0,
+        edgeColor: hexToInt(ap.neutral, 0xaeb4c2),
+        edgeOpacity: ap.isLight ? 0.22 : 0.34,
+        // Transparent ground so the page's own --bg shows THROUGH the graph. Load-bearing, not
+        // vestigial: the field's viewport otherwise paints an opaque --graph-bg, and the two IntroGraph
+        // layers CROSS-FADE (opacity 0↔1), so an opaque ground would fade the whole page background
+        // between --bg and --graph-bg on every slide change — visible in three of the four themes
+        // (riso's pair is the widest gap). See AsciiGraphRenderer.applyGround().
+        transparent: true,
+        backgroundColor: hexToInt(ap.background, 0x14151b),
+        labelTextColor: 'rgba(0,0,0,0)',
+        labelBgColor: 'rgba(0,0,0,0)',
+        selfColor: hexToInt(ap.foreground, 0xffffff),
+    })
 }

@@ -6,8 +6,8 @@
 // — see exporters.ts renderPreview). PDF instead honors the SAME marker by slicing the
 // rendered CANVAS at each marker's div (htmlToPdf.ts) — that path needs no text-level split,
 // since one PDF can hold many pages.
-import { maskCode, unmaskCode, PAGEBREAK_RE } from "../bases/markdown";
-import { stripFrontmatter } from "../bases/cardBodySplit";
+import { maskCode, unmaskCode, PAGEBREAK_RE } from '../bases/markdown'
+import { stripFrontmatter } from '../bases/cardBodySplit'
 
 /**
  * Split markdown `text` at every lone `<!-- pagebreak -->` marker line — the exact marker
@@ -19,8 +19,8 @@ import { stripFrontmatter } from "../bases/cardBodySplit";
  * "no markers" and "one page" identically. Pure; unit-tested in pageBreaks.test.ts.
  */
 export function splitByPageBreaks(text: string): string[] {
-  const { masked, codes } = maskCode(text);
-  return masked.split(PAGEBREAK_RE).map((section) => unmaskCode(section, codes));
+    const { masked, codes } = maskCode(text)
+    return masked.split(PAGEBREAK_RE).map(section => unmaskCode(section, codes))
 }
 
 /**
@@ -38,14 +38,17 @@ export function splitByPageBreaks(text: string): string[] {
  * as — or produces — a page of its own. When false (the default) it is simply dropped.
  * Either way the section COUNT is identical, so page numbering never shifts with the toggle.
  */
-export function pageSections(text: string, includeFrontmatter = false): string[] {
-  const body = stripFrontmatter(text);
-  const sections = splitByPageBreaks(body).filter((s) => s.trim() !== "");
-  if (sections.length === 0) sections.push("");
-  if (includeFrontmatter && body.length < text.length) {
-    // stripFrontmatter removes a leading prefix, so the frontmatter block is exactly the
-    // slice it dropped — re-prepend it verbatim to the first real page.
-    sections[0] = text.slice(0, text.length - body.length) + sections[0];
-  }
-  return sections;
+export function pageSections(
+    text: string,
+    includeFrontmatter = false,
+): string[] {
+    const body = stripFrontmatter(text)
+    const sections = splitByPageBreaks(body).filter(s => s.trim() !== '')
+    if (sections.length === 0) sections.push('')
+    if (includeFrontmatter && body.length < text.length) {
+        // stripFrontmatter removes a leading prefix, so the frontmatter block is exactly the
+        // slice it dropped — re-prepend it verbatim to the first real page.
+        sections[0] = text.slice(0, text.length - body.length) + sections[0]
+    }
+    return sections
 }

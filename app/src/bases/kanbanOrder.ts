@@ -24,9 +24,9 @@
  *  `sortKeys.length` as well as the max guarantees the new card outranks every
  *  possible post-insertion implicit key, not just the pre-insertion ones. */
 export function appendOrder(sortKeys: number[]): number {
-  let max = -1;
-  for (const k of sortKeys) {
-    if (Number.isFinite(k) && k > max) max = k;
-  }
-  return Math.max(max, sortKeys.length) + 1;
+    let max = -1
+    for (const k of sortKeys) {
+        if (Number.isFinite(k) && k > max) max = k
+    }
+    return Math.max(max, sortKeys.length) + 1
 }

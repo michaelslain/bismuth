@@ -16,14 +16,14 @@
 //
 // galleryStore.tsx mirrors its single-slot `pending` state here: `setGalleryOpen(true)` on open,
 // `setGalleryOpen(false)` when the gallery settles (picked or dismissed).
-let open = false;
+let open = false
 
 /** Record whether a gallery modal is currently open. Called by galleryStore as its state flips. */
 export function setGalleryOpen(v: boolean): void {
-  open = v;
+    open = v
 }
 
 /** True while a gallery modal is open — a synchronous, non-reactive read for imperative callers. */
 export function isGalleryOpen(): boolean {
-  return open;
+    return open
 }

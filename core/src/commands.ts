@@ -5,81 +5,128 @@
 // action (see app/src/commands.ts). Single source of truth for command ids.
 
 export interface CommandSpec {
-  /** Stable id referenced by `.settings`'s `toolbar` entries and the palette. */
-  id: string;
-  /** Human label shown in the palette and as a button's default tooltip. */
-  label: string;
-  /** Default Lucide icon name (the palette icon; toolbar buttons may override). */
-  icon: string;
-  /**
-   * True for a command whose action only OPENS A MODAL and then waits on a person to finish it
-   * (a connect/setup/install dialog, or a picker like the emoji library / create menu) — it never
-   * completes the underlying task by itself. Still runnable via app control BY DESIGN: an agent
-   * opening the dialog to show a user how is the intended behaviour. What changes is the
-   * `run-command` reply (App.tsx's `runCommand` handler) — it reports `interactive: true` plus a
-   * `note` explaining that a person needs to finish it, instead of implying the task itself is done.
-   */
-  interactive?: boolean;
+    /** Stable id referenced by `.settings`'s `toolbar` entries and the palette. */
+    id: string
+    /** Human label shown in the palette and as a button's default tooltip. */
+    label: string
+    /** Default Lucide icon name (the palette icon; toolbar buttons may override). */
+    icon: string
+    /**
+     * True for a command whose action only OPENS A MODAL and then waits on a person to finish it
+     * (a connect/setup/install dialog, or a picker like the emoji library / create menu) — it never
+     * completes the underlying task by itself. Still runnable via app control BY DESIGN: an agent
+     * opening the dialog to show a user how is the intended behaviour. What changes is the
+     * `run-command` reply (App.tsx's `runCommand` handler) — it reports `interactive: true` plus a
+     * `note` explaining that a person needs to finish it, instead of implying the task itself is done.
+     */
+    interactive?: boolean
 }
 
 export const COMMAND_CATALOG: CommandSpec[] = [
-  { id: "new-tab",         label: "New tab",                   icon: "Plus" },
-  { id: "close-tab",       label: "Close tab",                 icon: "X" },
-  { id: "reopen-tab",      label: "Reopen closed tab",         icon: "RotateCcw" },
-  { id: "history-back",    label: "Back",                      icon: "ArrowLeft" },
-  { id: "history-forward", label: "Forward",                   icon: "ArrowRight" },
-  { id: "open-graph",      label: "Open graph view",           icon: "Share2" },
-  { id: "open-inbox",      label: "Open daemon inbox",         icon: "Inbox" },
-  { id: "open-folder",     label: "Open folder…",              icon: "FolderOpen" },
-  { id: "new-window",      label: "New window",                icon: "AppWindow" },
-  { id: "create-menu",     label: "Create new…",               icon: "Plus", interactive: true },
-  { id: "new-note",        label: "New note",                  icon: "FilePlus" },
-  { id: "new-folder",      label: "New folder",                icon: "FolderPlus" },
-  { id: "new-base",        label: "New base",                  icon: "Database" },
-  { id: "new-spreadsheet", label: "New spreadsheet",           icon: "Table" },
-  { id: "new-drawing",     label: "New drawing",               icon: "PenTool" },
-  { id: "new-claude-chat", label: "New Claude Chat",            icon: "MessageSquare" },
-  { id: "export",          label: "Export current file…",      icon: "Download" },
-  { id: "archive-tasks",     label: "Archive completed tasks (this note)", icon: "Archive" },
-  { id: "archive-all-tasks", label: "Archive completed tasks (all notes)", icon: "ArchiveX" },
-  { id: "detect-ai",       label: "Detect AI text",            icon: "Bot" },
-  // Opens the full emoji library (the grid picker) and inserts the pick at the caret. This is the
-  // ALWAYS-VISIBLE home for the library — the `:emoji` completion popup deliberately no longer
-  // carries an "Open emoji gallery" row (it buried / outranked real matches like `:rocket`, #67).
-  { id: "emoji-library",   label: "Emoji library…",            icon: "Smile", interactive: true },
-  { id: "terminal",        label: "Open Terminal",             icon: "SquareTerminal" },
-  { id: "search",          label: "Search",                    icon: "Search" },
-  { id: "settings",        label: "Open Settings",             icon: "Settings" },
-  { id: "edit-dictionary", label: "Edit custom dictionary…",   icon: "BookOpen", interactive: true },
-  { id: "graph-2nd",       label: "Graph: 2nd Brain (vault)",  icon: "Notebook" },
-  { id: "graph-3rd",       label: "Graph: 3rd Brain (memory)", icon: "Brain" },
-  { id: "graph-both",      label: "Graph: Both Brains",        icon: "Network" },
-  { id: "graph-daemon",    label: "Graph: Daemon",             icon: "Server" },
-  { id: "graph-local",     label: "Graph: Local (open note)",  icon: "Pin" },
-  { id: "equalize-panes",   label: "Equalize panes",   icon: "Columns3" },
-  { id: "split-right",      label: "Split right",      icon: "PanelRight" },
-  { id: "split-down",       label: "Split down",       icon: "PanelBottom" },
-  { id: "close-pane",       label: "Close pane",       icon: "SquareX" },
-  { id: "focus-pane-left",  label: "Focus pane left",  icon: "ArrowLeft" },
-  { id: "focus-pane-right", label: "Focus pane right", icon: "ArrowRight" },
-  { id: "focus-pane-up",    label: "Focus pane up",    icon: "ArrowUp" },
-  { id: "focus-pane-down",  label: "Focus pane down",  icon: "ArrowDown" },
-  { id: "toggle-sidebar",  label: "Toggle sidebar",            icon: "PanelLeft" },
-  { id: "daemon-owner",    label: "Set daemon owner device…",  icon: "Server", interactive: true },
-  { id: "daemon-setup",    label: "Set up daemon…",            icon: "Download", interactive: true },
-  { id: "daemon-update",   label: "Update daemon…",            icon: "RefreshCw" },
-  { id: "bismuth-install", label: "Install Bismuth CLI + MCP…", icon: "Download", interactive: true },
-  { id: "update-app",      label: "Update Bismuth…",            icon: "RefreshCw" },
-  { id: "gcal-connect",    label: "Connect Google Calendar…",  icon: "Calendar", interactive: true },
-  { id: "gcal-sync",       label: "Sync Google Calendar",      icon: "RefreshCw" },
-  { id: "gcal-disconnect", label: "Disconnect Google Calendar", icon: "CalendarX" },
-  { id: "zoom-in",    label: "Zoom In",    icon: "ZoomIn" },
-  { id: "zoom-out",   label: "Zoom Out",   icon: "ZoomOut" },
-  { id: "zoom-reset", label: "Reset Zoom", icon: "RotateCcw" },
-];
+    { id: 'new-tab', label: 'New tab', icon: 'Plus' },
+    { id: 'close-tab', label: 'Close tab', icon: 'X' },
+    { id: 'reopen-tab', label: 'Reopen closed tab', icon: 'RotateCcw' },
+    { id: 'history-back', label: 'Back', icon: 'ArrowLeft' },
+    { id: 'history-forward', label: 'Forward', icon: 'ArrowRight' },
+    { id: 'open-graph', label: 'Open graph view', icon: 'Share2' },
+    { id: 'open-inbox', label: 'Open daemon inbox', icon: 'Inbox' },
+    { id: 'open-folder', label: 'Open folder…', icon: 'FolderOpen' },
+    { id: 'new-window', label: 'New window', icon: 'AppWindow' },
+    {
+        id: 'create-menu',
+        label: 'Create new…',
+        icon: 'Plus',
+        interactive: true,
+    },
+    { id: 'new-note', label: 'New note', icon: 'FilePlus' },
+    { id: 'new-folder', label: 'New folder', icon: 'FolderPlus' },
+    { id: 'new-base', label: 'New base', icon: 'Database' },
+    { id: 'new-spreadsheet', label: 'New spreadsheet', icon: 'Table' },
+    { id: 'new-drawing', label: 'New drawing', icon: 'PenTool' },
+    { id: 'new-claude-chat', label: 'New Claude Chat', icon: 'MessageSquare' },
+    { id: 'export', label: 'Export current file…', icon: 'Download' },
+    {
+        id: 'archive-tasks',
+        label: 'Archive completed tasks (this note)',
+        icon: 'Archive',
+    },
+    {
+        id: 'archive-all-tasks',
+        label: 'Archive completed tasks (all notes)',
+        icon: 'ArchiveX',
+    },
+    { id: 'detect-ai', label: 'Detect AI text', icon: 'Bot' },
+    // Opens the full emoji library (the grid picker) and inserts the pick at the caret. This is the
+    // ALWAYS-VISIBLE home for the library — the `:emoji` completion popup deliberately no longer
+    // carries an "Open emoji gallery" row (it buried / outranked real matches like `:rocket`, #67).
+    {
+        id: 'emoji-library',
+        label: 'Emoji library…',
+        icon: 'Smile',
+        interactive: true,
+    },
+    { id: 'terminal', label: 'Open Terminal', icon: 'SquareTerminal' },
+    { id: 'search', label: 'Search', icon: 'Search' },
+    { id: 'settings', label: 'Open Settings', icon: 'Settings' },
+    {
+        id: 'edit-dictionary',
+        label: 'Edit custom dictionary…',
+        icon: 'BookOpen',
+        interactive: true,
+    },
+    { id: 'graph-2nd', label: 'Graph: 2nd Brain (vault)', icon: 'Notebook' },
+    { id: 'graph-3rd', label: 'Graph: 3rd Brain (memory)', icon: 'Brain' },
+    { id: 'graph-both', label: 'Graph: Both Brains', icon: 'Network' },
+    { id: 'graph-daemon', label: 'Graph: Daemon', icon: 'Server' },
+    { id: 'graph-local', label: 'Graph: Local (open note)', icon: 'Pin' },
+    { id: 'equalize-panes', label: 'Equalize panes', icon: 'Columns3' },
+    { id: 'split-right', label: 'Split right', icon: 'PanelRight' },
+    { id: 'split-down', label: 'Split down', icon: 'PanelBottom' },
+    { id: 'close-pane', label: 'Close pane', icon: 'SquareX' },
+    { id: 'focus-pane-left', label: 'Focus pane left', icon: 'ArrowLeft' },
+    { id: 'focus-pane-right', label: 'Focus pane right', icon: 'ArrowRight' },
+    { id: 'focus-pane-up', label: 'Focus pane up', icon: 'ArrowUp' },
+    { id: 'focus-pane-down', label: 'Focus pane down', icon: 'ArrowDown' },
+    { id: 'toggle-sidebar', label: 'Toggle sidebar', icon: 'PanelLeft' },
+    {
+        id: 'daemon-owner',
+        label: 'Set daemon owner device…',
+        icon: 'Server',
+        interactive: true,
+    },
+    {
+        id: 'daemon-setup',
+        label: 'Set up daemon…',
+        icon: 'Download',
+        interactive: true,
+    },
+    { id: 'daemon-update', label: 'Update daemon…', icon: 'RefreshCw' },
+    {
+        id: 'bismuth-install',
+        label: 'Install Bismuth CLI + MCP…',
+        icon: 'Download',
+        interactive: true,
+    },
+    { id: 'update-app', label: 'Update Bismuth…', icon: 'RefreshCw' },
+    {
+        id: 'gcal-connect',
+        label: 'Connect Google Calendar…',
+        icon: 'Calendar',
+        interactive: true,
+    },
+    { id: 'gcal-sync', label: 'Sync Google Calendar', icon: 'RefreshCw' },
+    {
+        id: 'gcal-disconnect',
+        label: 'Disconnect Google Calendar',
+        icon: 'CalendarX',
+    },
+    { id: 'zoom-in', label: 'Zoom In', icon: 'ZoomIn' },
+    { id: 'zoom-out', label: 'Zoom Out', icon: 'ZoomOut' },
+    { id: 'zoom-reset', label: 'Reset Zoom', icon: 'RotateCcw' },
+]
 
 /** All command ids, in catalog order. */
-export const COMMAND_IDS: string[] = COMMAND_CATALOG.map((c) => c.id);
+export const COMMAND_IDS: string[] = COMMAND_CATALOG.map(c => c.id)
 
 /**
  * Commands that MUST NOT be fired via the app-control channel (`bismuth app run …` → POST
@@ -91,24 +138,24 @@ export const COMMAND_IDS: string[] = COMMAND_CATALOG.map((c) => c.id);
  * list. (Opening a chat TAB is additionally blocked by open-tab rejecting a `::chat:` content.)
  */
 export const UI_CONTROL_BLOCKLIST: string[] = [
-  "new-window",
-  "open-folder",
-  "update-app",
-  "daemon-update",
-  "new-claude-chat",
-];
+    'new-window',
+    'open-folder',
+    'update-app',
+    'daemon-update',
+    'new-claude-chat',
+]
 
 /** True if a command id may be run via app control (in the catalog and not blocklisted). */
 export function isUiControlAllowed(id: string): boolean {
-  return COMMAND_IDS.includes(id) && !UI_CONTROL_BLOCKLIST.includes(id);
+    return COMMAND_IDS.includes(id) && !UI_CONTROL_BLOCKLIST.includes(id)
 }
 
 /** The command ids `bismuth app run` accepts — the catalog minus the blocklist. */
 export function uiControlAllowedIds(): string[] {
-  return COMMAND_IDS.filter((id) => !UI_CONTROL_BLOCKLIST.includes(id));
+    return COMMAND_IDS.filter(id => !UI_CONTROL_BLOCKLIST.includes(id))
 }
 
 /** Label for a command id, or undefined if the id is unknown. */
 export function commandLabel(id: string): string | undefined {
-  return COMMAND_CATALOG.find((c) => c.id === id)?.label;
+    return COMMAND_CATALOG.find(c => c.id === id)?.label
 }

@@ -28,16 +28,16 @@
 // that's ambiguous, and guessing wrong silently destroys someone's edit. Instead we keep the local
 // text (never revert what the user is actively looking at) and flag `conflict: true` so the caller
 // can surface it instead of pretending nothing happened.
-import { minimalChange } from "./normalizeFrontmatter";
+import { minimalChange } from './normalizeFrontmatter'
 
 export interface MergeResult {
-  /** The text to persist (and, if it differs from the caller's `local`, to reconcile into the
-   *  visible buffer so what's on screen matches what's now on disk). */
-  text: string;
-  /** True when local and external edits touched OVERLAPPING spans — `text` is `local` verbatim
-   *  (the user's in-progress edit is never silently reverted), but the disk's conflicting region
-   *  was NOT incorporated. The caller should surface this rather than stay silent. */
-  conflict: boolean;
+    /** The text to persist (and, if it differs from the caller's `local`, to reconcile into the
+     *  visible buffer so what's on screen matches what's now on disk). */
+    text: string
+    /** True when local and external edits touched OVERLAPPING spans — `text` is `local` verbatim
+     *  (the user's in-progress edit is never silently reverted), but the disk's conflicting region
+     *  was NOT incorporated. The caller should surface this rather than stay silent. */
+    conflict: boolean
 }
 
 /**
@@ -52,28 +52,33 @@ export interface MergeResult {
  *  - BOTH changed, in OVERLAPPING regions → keep `local`, `conflict: true` (ambiguous; surfaced,
  *    never silently resolved).
  */
-export function threeWayMerge(base: string, local: string, disk: string): MergeResult {
-  if (disk === base) return { text: local, conflict: false };
-  if (local === base) return { text: disk, conflict: false };
-  if (local === disk) return { text: disk, conflict: false };
+export function threeWayMerge(
+    base: string,
+    local: string,
+    disk: string,
+): MergeResult {
+    if (disk === base) return { text: local, conflict: false }
+    if (local === base) return { text: disk, conflict: false }
+    if (local === disk) return { text: disk, conflict: false }
 
-  const localDiff = minimalChange(base, local);
-  const diskDiff = minimalChange(base, disk);
+    const localDiff = minimalChange(base, local)
+    const diskDiff = minimalChange(base, disk)
 
-  const disjoint = localDiff.to <= diskDiff.from || diskDiff.to <= localDiff.from;
-  if (!disjoint) return { text: local, conflict: true };
+    const disjoint =
+        localDiff.to <= diskDiff.from || diskDiff.to <= localDiff.from
+    if (!disjoint) return { text: local, conflict: true }
 
-  const merged =
-    localDiff.from <= diskDiff.from
-      ? base.slice(0, localDiff.from) +
-        localDiff.insert +
-        base.slice(localDiff.to, diskDiff.from) +
-        diskDiff.insert +
-        base.slice(diskDiff.to)
-      : base.slice(0, diskDiff.from) +
-        diskDiff.insert +
-        base.slice(diskDiff.to, localDiff.from) +
-        localDiff.insert +
-        base.slice(localDiff.to);
-  return { text: merged, conflict: false };
+    const merged =
+        localDiff.from <= diskDiff.from
+            ? base.slice(0, localDiff.from) +
+              localDiff.insert +
+              base.slice(localDiff.to, diskDiff.from) +
+              diskDiff.insert +
+              base.slice(diskDiff.to)
+            : base.slice(0, diskDiff.from) +
+              diskDiff.insert +
+              base.slice(diskDiff.to, localDiff.from) +
+              localDiff.insert +
+              base.slice(localDiff.to)
+    return { text: merged, conflict: false }
 }

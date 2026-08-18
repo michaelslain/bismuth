@@ -216,7 +216,7 @@ PRINT — do not \`remember\` — one final line, and nothing else after it:
 \`bloat-deleted=N snapshots-collapsed=N auto-processed=N merged=N improved=N stale-deleted=N notes=N size=XKB\`
 
 Report honestly, including failures, and then read your own numbers before you finish. If \`snapshots-collapsed=0\` and \`merged=0\` while the Step 3 cluster command still shows a stem with a count greater than 1, the run FAILED — you skipped the actual job. Go back and do Step 3 rather than reporting a clean zero.
-`;
+`
 
 /** vault-review — every-4h pass over the vault to keep a living model of the user in memory. */
 const VAULT_REVIEW = `---
@@ -284,15 +284,15 @@ Where a change of view or of situation matters, record it INSIDE the note as a d
 Also: link notes to each other via \`[[backlinks]]\`, and where memory contradicts the vault, fix the memory.
 
 Focus on what's new, surprising, or shifts a prior understanding. Don't just summarize everything — the goal is a living model of the user, not a vault changelog.
-`;
+`
 
 export interface DefaultCron {
-  name: string;
-  content: string;
+    name: string
+    content: string
 }
 
 /** The crons seeded into a fresh vault's .daemon/crons (non-clobbering). */
 export const DEFAULT_CRONS: DefaultCron[] = [
-  { name: "dream", content: DREAM },
-  { name: "vault-review", content: VAULT_REVIEW },
-];
+    { name: 'dream', content: DREAM },
+    { name: 'vault-review', content: VAULT_REVIEW },
+]

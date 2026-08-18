@@ -30,30 +30,30 @@
 // The scoring core (recordHit / scoreOf / pruneStore) is PURE over an explicit store +
 // `now`, so it is fully unit-testable without a clock or storage (see frecency.test.ts).
 
-import { readCache, writeCache } from "./viewCache";
+import { readCache, writeCache } from './viewCache'
 
 /** One key's decayed hit-count (`score`) as of its last hit at epoch-ms `at`. */
-export type FrecencyEntry = { score: number; at: number };
+export type FrecencyEntry = { score: number; at: number }
 /** The whole store: namespaced key → entry. */
-export type FrecencyStore = Record<string, FrecencyEntry>;
+export type FrecencyStore = Record<string, FrecencyEntry>
 
 /** Half-life of a hit's weight. After this long untouched, a key counts for half. */
-export const HALF_LIFE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+export const HALF_LIFE_MS = 3 * 24 * 60 * 60 * 1000 // 3 days
 
 /** localStorage key (versioned so the shape can evolve without a migration). */
-const STORAGE_KEY = "bismuth-frecency-v1";
+const STORAGE_KEY = 'bismuth-frecency-v1'
 
 /** Max keys retained; the lowest-scoring are pruned so storage stays bounded. */
-const CAP = 500;
+const CAP = 500
 
 /** Namespaced key for a vault file path. */
 export function fileKey(path: string): string {
-  return `file:${path}`;
+    return `file:${path}`
 }
 
 /** Namespaced key for a command id. */
 export function commandKey(id: string): string {
-  return `cmd:${id}`;
+    return `cmd:${id}`
 }
 
 /**
@@ -61,8 +61,8 @@ export function commandKey(id: string): string {
  * half-life, →0 as age grows). Negative/zero ages clamp to 1 (clock skew is harmless).
  */
 export function decayFactor(ageMs: number, halfLife = HALF_LIFE_MS): number {
-  if (ageMs <= 0) return 1;
-  return Math.pow(0.5, ageMs / halfLife);
+    if (ageMs <= 0) return 1
+    return Math.pow(0.5, ageMs / halfLife)
 }
 
 /**
@@ -70,22 +70,24 @@ export function decayFactor(ageMs: number, halfLife = HALF_LIFE_MS): number {
  * `now`, then adds 1 — so frequent+recent keys accumulate while stale ones fade first.
  */
 export function recordHit(
-  entry: FrecencyEntry | undefined,
-  now: number,
-  halfLife = HALF_LIFE_MS,
+    entry: FrecencyEntry | undefined,
+    now: number,
+    halfLife = HALF_LIFE_MS,
 ): FrecencyEntry {
-  const decayed = entry ? entry.score * decayFactor(now - entry.at, halfLife) : 0;
-  return { score: decayed + 1, at: now };
+    const decayed = entry
+        ? entry.score * decayFactor(now - entry.at, halfLife)
+        : 0
+    return { score: decayed + 1, at: now }
 }
 
 /** Pure: an entry's current rank — its stored score decayed forward to `now`. 0 if absent. */
 export function scoreOf(
-  entry: FrecencyEntry | undefined,
-  now: number,
-  halfLife = HALF_LIFE_MS,
+    entry: FrecencyEntry | undefined,
+    now: number,
+    halfLife = HALF_LIFE_MS,
 ): number {
-  if (!entry) return 0;
-  return entry.score * decayFactor(now - entry.at, halfLife);
+    if (!entry) return 0
+    return entry.score * decayFactor(now - entry.at, halfLife)
 }
 
 /**
@@ -93,21 +95,25 @@ export function scoreOf(
  * the SAME reference when already within cap (no needless copy). Keeps history bounded
  * so a long-lived vault never grows the blob without limit.
  */
-export function pruneStore(store: FrecencyStore, now: number, cap = CAP): FrecencyStore {
-  const keys = Object.keys(store);
-  if (keys.length <= cap) return store;
-  const kept = keys
-    .sort((a, b) => scoreOf(store[b], now) - scoreOf(store[a], now))
-    .slice(0, cap);
-  const out: FrecencyStore = {};
-  for (const k of kept) out[k] = store[k];
-  return out;
+export function pruneStore(
+    store: FrecencyStore,
+    now: number,
+    cap = CAP,
+): FrecencyStore {
+    const keys = Object.keys(store)
+    if (keys.length <= cap) return store
+    const kept = keys
+        .sort((a, b) => scoreOf(store[b], now) - scoreOf(store[a], now))
+        .slice(0, cap)
+    const out: FrecencyStore = {}
+    for (const k of kept) out[k] = store[k]
+    return out
 }
 
 /** Read the whole store from localStorage (empty object on miss/malformed/absent). */
 export function loadFrecency(): FrecencyStore {
-  const raw = readCache<FrecencyStore>(STORAGE_KEY);
-  return raw && typeof raw === "object" ? raw : {};
+    const raw = readCache<FrecencyStore>(STORAGE_KEY)
+    return raw && typeof raw === 'object' ? raw : {}
 }
 
 /**
@@ -115,7 +121,7 @@ export function loadFrecency(): FrecencyStore {
  * the shared store; a storage failure silently no-ops (learning just won't stick).
  */
 export function recordUse(key: string, now = Date.now()): void {
-  const store = loadFrecency();
-  store[key] = recordHit(store[key], now);
-  writeCache(STORAGE_KEY, pruneStore(store, now));
+    const store = loadFrecency()
+    store[key] = recordHit(store[key], now)
+    writeCache(STORAGE_KEY, pruneStore(store, now))
 }

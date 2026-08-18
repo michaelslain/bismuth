@@ -16,10 +16,14 @@
 // structurally as just the calls we make.
 
 /** A rail action on the shared <ContextMenu>. Mirrors ContextMenu's `QuickAction`. */
-export type QuickActionSpec = { icon: string; label: string; onSelect: () => void };
+export type QuickActionSpec = {
+    icon: string
+    label: string
+    onSelect: () => void
+}
 
 /** Place a picked glyph. Return false when there's nowhere to put it (App then toasts). */
-export type EmojiInsert = (char: string) => boolean;
+export type EmojiInsert = (char: string) => boolean
 
 /**
  * The emoji-library rail action.
@@ -34,13 +38,20 @@ export type EmojiInsert = (char: string) => boolean;
  *   pass its own: CM's outer selection never tracks a cell edit (the cell is a contenteditable
  *   island), so the default would drop the emoji at a stale position elsewhere in the note.
  */
-export function emojiQuickAction(opts: { focus: () => void; insert?: EmojiInsert }): QuickActionSpec {
-  return {
-    icon: "Smile",
-    label: "Emoji library",
-    onSelect: () => {
-      opts.focus();
-      window.dispatchEvent(new CustomEvent("bismuth-open-emoji-library", { detail: { insert: opts.insert } }));
-    },
-  };
+export function emojiQuickAction(opts: {
+    focus: () => void
+    insert?: EmojiInsert
+}): QuickActionSpec {
+    return {
+        icon: 'Smile',
+        label: 'Emoji library',
+        onSelect: () => {
+            opts.focus()
+            window.dispatchEvent(
+                new CustomEvent('bismuth-open-emoji-library', {
+                    detail: { insert: opts.insert },
+                }),
+            )
+        },
+    }
 }

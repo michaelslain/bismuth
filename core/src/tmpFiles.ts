@@ -11,18 +11,18 @@
 // drags into a chat should not become a permanent tracked vault file. Entries here are pruned
 // by age on server boot.
 
-import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 /** How long a staged file survives. Long enough to outlive the conversation that referenced it,
  *  short enough that the directory doesn't grow without bound. */
-export const TMP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+export const TMP_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 /** `~/.bismuth/tmp` — sibling of the run registry's `~/.bismuth/run`. Overridable via
  *  `BISMUTH_TMP_DIR` (tests point it at a scratch dir). */
 export function tmpFilesDir(): string {
-  return process.env.BISMUTH_TMP_DIR || join(homedir(), ".bismuth", "tmp");
+    return process.env.BISMUTH_TMP_DIR || join(homedir(), '.bismuth', 'tmp')
 }
 
 /**
@@ -34,41 +34,47 @@ export function tmpFilesDir(): string {
  * so a hostile name degrades to a boring one rather than throwing.
  */
 export function safeTmpName(name: string): string {
-  const base = (name.split(/[\\/]/).pop() ?? "")
-    .replace(/[\x00-\x1f]/g, "")
-    .replace(/^\.+/, "")
-    .trim()
-    .slice(0, 120);
-  return base || "file";
+    const base = (name.split(/[\\/]/).pop() ?? '')
+        .replace(/[\x00-\x1f]/g, '')
+        .replace(/^\.+/, '')
+        .trim()
+        .slice(0, 120)
+    return base || 'file'
 }
 
 /** A name that doesn't collide with an existing entry: `photo.jpg` → `photo-1.jpg` → … The
  *  suffix goes before the extension so the file keeps its type. */
 async function uniqueName(dir: string, name: string): Promise<string> {
-  const dot = name.lastIndexOf(".");
-  const stem = dot > 0 ? name.slice(0, dot) : name;
-  const ext = dot > 0 ? name.slice(dot) : "";
-  let candidate = name;
-  for (let i = 1; i < 1000; i++) {
-    const exists = await stat(join(dir, candidate)).then(
-      () => true,
-      () => false,
-    );
-    if (!exists) return candidate;
-    candidate = `${stem}-${i}${ext}`;
-  }
-  return `${stem}-${Date.now()}${ext}`;
+    const dot = name.lastIndexOf('.')
+    const stem = dot > 0 ? name.slice(0, dot) : name
+    const ext = dot > 0 ? name.slice(dot) : ''
+    let candidate = name
+    for (let i = 1; i < 1000; i++) {
+        const exists = await stat(join(dir, candidate)).then(
+            () => true,
+            () => false,
+        )
+        if (!exists) return candidate
+        candidate = `${stem}-${i}${ext}`
+    }
+    return `${stem}-${Date.now()}${ext}`
 }
 
 /** Write `bytes` into the scratch dir under a safe, de-collided form of `name`. Returns the
  *  ABSOLUTE path — the whole point of staging is producing something an agent can read. */
-export async function stageTmpFile(name: string, bytes: Uint8Array | ArrayBuffer): Promise<string> {
-  const dir = tmpFilesDir();
-  await mkdir(dir, { recursive: true });
-  const final = await uniqueName(dir, safeTmpName(name));
-  const path = join(dir, final);
-  await writeFile(path, bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes);
-  return path;
+export async function stageTmpFile(
+    name: string,
+    bytes: Uint8Array | ArrayBuffer,
+): Promise<string> {
+    const dir = tmpFilesDir()
+    await mkdir(dir, { recursive: true })
+    const final = await uniqueName(dir, safeTmpName(name))
+    const path = join(dir, final)
+    await writeFile(
+        path,
+        bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes,
+    )
+    return path
 }
 
 /**
@@ -79,25 +85,28 @@ export async function stageTmpFile(name: string, bytes: Uint8Array | ArrayBuffer
  * Returns the number of entries removed (tests assert on it). Never throws: a scratch dir that
  * can't be pruned must not take the server down.
  */
-export async function pruneTmpFiles(maxAgeMs: number = TMP_MAX_AGE_MS, now = Date.now()): Promise<number> {
-  const dir = tmpFilesDir();
-  let removed = 0;
-  let entries: string[];
-  try {
-    entries = await readdir(dir);
-  } catch {
-    return 0; // no scratch dir yet — nothing to prune
-  }
-  for (const entry of entries) {
-    const path = join(dir, entry);
+export async function pruneTmpFiles(
+    maxAgeMs: number = TMP_MAX_AGE_MS,
+    now = Date.now(),
+): Promise<number> {
+    const dir = tmpFilesDir()
+    let removed = 0
+    let entries: string[]
     try {
-      const s = await stat(path);
-      if (now - s.mtimeMs < maxAgeMs) continue;
-      await rm(path, { recursive: true, force: true });
-      removed++;
+        entries = await readdir(dir)
     } catch {
-      /* raced with another prune / permission — skip */
+        return 0 // no scratch dir yet — nothing to prune
     }
-  }
-  return removed;
+    for (const entry of entries) {
+        const path = join(dir, entry)
+        try {
+            const s = await stat(path)
+            if (now - s.mtimeMs < maxAgeMs) continue
+            await rm(path, { recursive: true, force: true })
+            removed++
+        } catch {
+            /* raced with another prune / permission — skip */
+        }
+    }
+    return removed
 }

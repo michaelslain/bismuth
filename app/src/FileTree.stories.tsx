@@ -23,55 +23,55 @@
 // two stories drive the real DOM the way a user would rather than hand-writing markup: a story
 // that renders its own `<div class="ft-row">` would prove nothing about the component. `active`
 // and `drop-target` ARE props, so their stories stay declarative.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import type { JSX } from "solid-js";
-import { expect, fireEvent, userEvent, waitFor, within } from "storybook/test";
-import { FileTree } from "./FileTree";
-import { setTransport } from "./api";
-import { fakeTransport } from "./ui/_fakeTransport";
-import { SETTINGS_FILE } from "./tabIds";
-import type { TreeEntry } from "../../core/src/graph";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import type { JSX } from 'solid-js'
+import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
+import { FileTree } from './FileTree'
+import { setTransport } from './api'
+import { fakeTransport } from './ui/_fakeTransport'
+import { SETTINGS_FILE } from './tabIds'
+import type { TreeEntry } from '../../core/src/graph'
 
 // A vault with the four row shapes the component distinguishes: folders, files, the visibility
 // tiers, and the two runtime-managed system entries. `buildTree` (fileTreeModel.ts) infers
 // intermediate directories from the paths, so a dir entry is only listed where it carries its own
 // metadata (system flag, label override, resolved visibility).
 const TREE: TreeEntry[] = [
-  { path: "projects", kind: "dir" },
-  { path: "projects/Internship.md", kind: "file" },
-  { path: "projects/Project Roadmap.md", kind: "file" },
-  // "chat-only" is the milder tier: muted badge, row otherwise normal.
-  { path: "projects/Standup.md", kind: "file", visibility: "chat-only" },
-  { path: "reading", kind: "dir" },
-  { path: "reading/Essay.md", kind: "file" },
-  { path: "reading/Reading List.md", kind: "file" },
-  // A folder resolved to "hidden" — the danger-tinted badge, cascading onto its children.
-  { path: "journal", kind: "dir", visibility: "hidden" },
-  { path: "journal/2026-08-16.md", kind: "file", visibility: "hidden" },
-  { path: "Housing.md", kind: "file" },
-  { path: "Budget.sheet", kind: "file" },
-  // The system pair: both render muted + italic and sort to the bottom of the level.
-  { path: ".daemon", kind: "dir", isSystemFolder: true, label: "bismuth" },
-  { path: SETTINGS_FILE, kind: "file" },
-];
+    { path: 'projects', kind: 'dir' },
+    { path: 'projects/Internship.md', kind: 'file' },
+    { path: 'projects/Project Roadmap.md', kind: 'file' },
+    // "chat-only" is the milder tier: muted badge, row otherwise normal.
+    { path: 'projects/Standup.md', kind: 'file', visibility: 'chat-only' },
+    { path: 'reading', kind: 'dir' },
+    { path: 'reading/Essay.md', kind: 'file' },
+    { path: 'reading/Reading List.md', kind: 'file' },
+    // A folder resolved to "hidden" — the danger-tinted badge, cascading onto its children.
+    { path: 'journal', kind: 'dir', visibility: 'hidden' },
+    { path: 'journal/2026-08-16.md', kind: 'file', visibility: 'hidden' },
+    { path: 'Housing.md', kind: 'file' },
+    { path: 'Budget.sheet', kind: 'file' },
+    // The system pair: both render muted + italic and sort to the bottom of the level.
+    { path: '.daemon', kind: 'dir', isSystemFolder: true, label: 'bismuth' },
+    { path: SETTINGS_FILE, kind: 'file' },
+]
 
-const noop = () => {};
+const noop = () => {}
 /** No sidebar drag is in flight in most stories, so nothing is a drop target. */
-const noDrop = () => null;
+const noDrop = () => null
 
 /** The sidebar's real width, so connector prefixes and row truncation read as they ship. */
 function Sidebar(props: { children: JSX.Element }) {
-  return <div style={{ width: "260px" }}>{props.children}</div>;
+    return <div style={{ width: '260px' }}>{props.children}</div>
 }
 
 const meta = {
-  title: "App/FileTree",
-  component: FileTree,
-  parameters: { layout: "padded" },
-} satisfies Meta<typeof FileTree>;
+    title: 'App/FileTree',
+    component: FileTree,
+    parameters: { layout: 'padded' },
+} satisfies Meta<typeof FileTree>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 /** The tree at rest, every folder collapsed. Covers the row grid (`ft-row`), the connector
  *  prefixes (`ft-prefix`), the typed glyphs (`ft-icon`), both visibility badge tiers
@@ -79,65 +79,82 @@ type Story = StoryObj<typeof meta>;
  *  rows (`.daemon`, `.settings`), and the collapsed disclosure wrapper (`ft-collapse` at 0fr with
  *  `ft-collapse-inner` clipping it) — the folder subtrees are in the DOM but measure zero. */
 export const Default: Story = {
-  render: () => {
-    setTransport(fakeTransport({ tree: TREE }));
-    return (
-      <Sidebar>
-        <FileTree onOpen={noop} startItemDrag={noop} dropHighlight={noDrop} />
-      </Sidebar>
-    );
-  },
-};
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+}
 
 /** A folder expanded. The ONLY story that reaches the `open` state class — `ft-collapse` flips
  *  0fr→1fr and its children mount, so this is also the only one that renders depth-1 connector
  *  prefixes (`|--` for middle children, `` `-- `` for the last). `open` lives in an internal
  *  signal with no prop, so the story clicks the real folder row. */
 export const FolderOpen: Story = {
-  render: () => {
-    setTransport(fakeTransport({ tree: TREE }));
-    return (
-      <Sidebar>
-        <FileTree onOpen={noop} startItemDrag={noop} dropHighlight={noDrop} />
-      </Sidebar>
-    );
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    // testing-library matches on an element's DIRECT text-node children only, so the row div
-    // matches as "projects" — the `|--` connector lives in a child <span> and is not folded in,
-    // and the wrapper divs contribute no text of their own. One hit, no ambiguity.
-    await userEvent.click(await canvas.findByText(/projects/));
-    await waitFor(() => canvas.getByText(/Internship/));
-  },
-};
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        // testing-library matches on an element's DIRECT text-node children only, so the row div
+        // matches as "projects" — the `|--` connector lives in a child <span> and is not folded in,
+        // and the wrapper divs contribute no text of their own. One hit, no ambiguity.
+        await userEvent.click(await canvas.findByText(/projects/))
+        await waitFor(() => canvas.getByText(/Internship/))
+    },
+}
 
 /** The open note's row, highlighted via the `activeFile` prop (accent fill + glow, and the icon
  *  takes the accent too). Declarative — `activeFile` is a real prop, so no interaction needed. */
 export const ActiveFile: Story = {
-  render: () => {
-    setTransport(fakeTransport({ tree: TREE }));
-    return (
-      <Sidebar>
-        <FileTree onOpen={noop} activeFile="Housing.md" startItemDrag={noop} dropHighlight={noDrop} />
-      </Sidebar>
-    );
-  },
-};
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    activeFile="Housing.md"
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+}
 
 /** Mid-drag: `dropHighlight` names the folder under the pointer, tinting that row. Also
  *  declarative — the prop is the drag controller's read seam (App's dnd/viewDrag), so a story can
  *  pose the state without simulating a pointer drag. */
 export const DropTarget: Story = {
-  render: () => {
-    setTransport(fakeTransport({ tree: TREE }));
-    return (
-      <Sidebar>
-        <FileTree onOpen={noop} startItemDrag={noop} dropHighlight={() => "reading"} />
-      </Sidebar>
-    );
-  },
-};
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={() => 'reading'}
+                />
+            </Sidebar>
+        )
+    },
+}
 
 /** Multi-select: three rows marked via Cmd-click, the state Delete and drag-many operate on.
  *  Like `open` and `editing`, the selection lives in an internal signal with no prop, so the story
@@ -150,24 +167,33 @@ export const DropTarget: Story = {
  *  story reaching this state the computed-style gate could never have told the difference between
  *  "selected rows are styled" and "selected rows are styled by nothing". */
 export const MultiSelected: Story = {
-  render: () => {
-    setTransport(fakeTransport({ tree: TREE }));
-    return (
-      <Sidebar>
-        <FileTree onOpen={noop} activeFile="Housing.md" startItemDrag={noop} dropHighlight={noDrop} />
-      </Sidebar>
-    );
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    // Budget and Housing are top-level files, so they need no folder expanded first. Housing is
-    // also `activeFile`, which is the point: a row that is BOTH active and selected must still read
-    // as active, and only a story holding both states at once can show that.
-    fireEvent.click(await canvas.findByText(/Budget/), { metaKey: true });
-    fireEvent.click(await canvas.findByText(/Housing/), { metaKey: true });
-    await waitFor(() => expect(canvasElement.querySelectorAll('[class*="selected"]').length).toBe(2));
-  },
-};
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    activeFile="Housing.md"
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        // Budget and Housing are top-level files, so they need no folder expanded first. Housing is
+        // also `activeFile`, which is the point: a row that is BOTH active and selected must still read
+        // as active, and only a story holding both states at once can show that.
+        fireEvent.click(await canvas.findByText(/Budget/), { metaKey: true })
+        fireEvent.click(await canvas.findByText(/Housing/), { metaKey: true })
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelectorAll('[class*="selected"]').length,
+            ).toBe(2),
+        )
+    },
+}
 
 /** Inline rename (`ft-edit-input`): the accent-bordered input sitting in place of a row's label.
  *  `editing` is an internal signal set only from the context menu, so the story takes the real
@@ -175,18 +201,25 @@ export const MultiSelected: Story = {
  *  client coordinates because the menu positions itself from them; a synthesized right-click at
  *  0,0 would pin the menu to the viewport corner. */
 export const Renaming: Story = {
-  render: () => {
-    setTransport(fakeTransport({ tree: TREE }));
-    return (
-      <Sidebar>
-        <FileTree onOpen={noop} startItemDrag={noop} dropHighlight={noDrop} />
-      </Sidebar>
-    );
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    fireEvent.contextMenu(await canvas.findByText(/Housing/), { clientX: 150, clientY: 120 });
-    await userEvent.click(await canvas.findByText("Rename"));
-    await waitFor(() => canvas.getByDisplayValue("Housing"));
-  },
-};
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        fireEvent.contextMenu(await canvas.findByText(/Housing/), {
+            clientX: 150,
+            clientY: 120,
+        })
+        await userEvent.click(await canvas.findByText('Rename'))
+        await waitFor(() => canvas.getByDisplayValue('Housing'))
+    },
+}

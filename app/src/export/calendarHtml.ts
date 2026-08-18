@@ -8,192 +8,261 @@
 // Row -> event mapping reuses calendarSerialize.rowToEvent (the exact mapping the live
 // calendar uses), and recurrence/date math reuses the headless core helpers, so an
 // exported calendar agrees with what's on screen.
-import { expandRecurrence, toDateStr, addDays } from "../../../core/src/bases/recurrence";
-import { formatGutterHour } from "../calendar/dates";
-import { rowToEvent } from "../bases/calendarSerialize";
-import type { CalendarEvent } from "../calendar/types";
-import { escapeHtml } from "../htmlEscape";
-import { tintStyle } from "./exportTheme";
-import type { ExportCategory } from "./baseTable";
-import type { BaseConfig, ViewResult } from "../../../core/src/bases/types";
-import type { ExportOptions, ThemePalette, CalSpan } from "./types";
+import {
+    expandRecurrence,
+    toDateStr,
+    addDays,
+} from '../../../core/src/bases/recurrence'
+import { formatGutterHour } from '../calendar/dates'
+import { rowToEvent } from '../bases/calendarSerialize'
+import type { CalendarEvent } from '../calendar/types'
+import { escapeHtml } from '../htmlEscape'
+import { tintStyle } from './exportTheme'
+import type { ExportCategory } from './baseTable'
+import type { BaseConfig, ViewResult } from '../../../core/src/bases/types'
+import type { ExportOptions, ThemePalette, CalSpan } from './types'
 
 // An event carries a category NAME ("Work"); its color lives in the base's `categories`
 // frontmatter (Work -> "blue"). Resolve name -> stored color (a theme token or hex), which
 // tintStyle then turns into a concrete fill. Unknown/no category falls back to the accent.
-type ColorFor = (category: string | undefined) => string | undefined;
+type ColorFor = (category: string | undefined) => string | undefined
 function colorResolver(categories: ExportCategory[]): ColorFor {
-  const byName = new Map(categories.map((c) => [c.name, c.color]));
-  return (category) => (category ? byName.get(category) ?? undefined : undefined);
+    const byName = new Map(categories.map(c => [c.name, c.color]))
+    return category =>
+        category ? (byName.get(category) ?? undefined) : undefined
 }
 
 // Shared render context: the resolved live-theme palette, the 24h-time setting, and the
 // category color resolver.
-interface CalCtx { p: ThemePalette; military: boolean; colorFor: ColorFor; }
+interface CalCtx {
+    p: ThemePalette
+    military: boolean
+    colorFor: ColorFor
+}
 
 // ---- date helpers ----------------------------------------------------------------------
 
 function parseLocal(iso: string): Date {
-  return new Date(iso + "T00:00:00");
+    return new Date(iso + 'T00:00:00')
 }
 function startOfWeek(d: Date, mondayFirst: boolean): Date {
-  const off = mondayFirst ? -((d.getDay() + 6) % 7) : -d.getDay();
-  return addDays(d, off);
+    const off = mondayFirst ? -((d.getDay() + 6) % 7) : -d.getDay()
+    return addDays(d, off)
 }
 function fmtTime(t: string, military: boolean): string {
-  const [h, m] = t.split(":").map(Number);
-  if (Number.isNaN(h)) return t;
-  if (military) return `${h}:${String(m || 0).padStart(2, "0")}`;
-  const h12 = h % 12 || 12;
-  return `${h12}:${String(m || 0).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+    const [h, m] = t.split(':').map(Number)
+    if (Number.isNaN(h)) return t
+    if (military) return `${h}:${String(m || 0).padStart(2, '0')}`
+    const h12 = h % 12 || 12
+    return `${h12}:${String(m || 0).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
 }
-const fmtHourLabel = formatGutterHour;
+const fmtHourLabel = formatGutterHour
 function minutesOf(t?: string): number | null {
-  if (!t) return null;
-  const [h, m] = t.split(":").map(Number);
-  return Number.isNaN(h) ? null : h * 60 + (m || 0);
+    if (!t) return null
+    const [h, m] = t.split(':').map(Number)
+    return Number.isNaN(h) ? null : h * 60 + (m || 0)
 }
-const WEEKDAYS_SUN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const WEEKDAYS_MON = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const WEEKDAYS_SUN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const WEEKDAYS_MON = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const MONTHS = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+]
 
 // ---- the renderer ----------------------------------------------------------------------
 
-interface Occurrence extends CalendarEvent { date: string; }
+interface Occurrence extends CalendarEvent {
+    date: string
+}
 
 /** Expand events to dated occurrences within [rangeStart, rangeEnd] (recurrence-aware). */
-function occurrencesIn(events: CalendarEvent[], rangeStart: string, rangeEnd: string): Occurrence[] {
-  const out: Occurrence[] = [];
-  for (const e of events) {
-    if (e.recurrence) {
-      for (const d of expandRecurrence(e.recurrence, rangeStart, rangeEnd)) out.push({ ...e, date: d });
-    } else if (e.date && e.date >= rangeStart && e.date <= rangeEnd) {
-      out.push({ ...e, date: e.date });
+function occurrencesIn(
+    events: CalendarEvent[],
+    rangeStart: string,
+    rangeEnd: string,
+): Occurrence[] {
+    const out: Occurrence[] = []
+    for (const e of events) {
+        if (e.recurrence) {
+            for (const d of expandRecurrence(
+                e.recurrence,
+                rangeStart,
+                rangeEnd,
+            ))
+                out.push({ ...e, date: d })
+        } else if (e.date && e.date >= rangeStart && e.date <= rangeEnd) {
+            out.push({ ...e, date: e.date })
+        }
     }
-  }
-  return out;
+    return out
 }
 
 /** Occurrences on a given day, all-day first, then timed by start minute. */
 function onDay(occ: Occurrence[], dateStr: string): Occurrence[] {
-  return occ
-    .filter((o) => o.date === dateStr)
-    .sort((a, b) => (minutesOf(a.startTime) ?? -1) - (minutesOf(b.startTime) ?? -1));
+    return occ
+        .filter(o => o.date === dateStr)
+        .sort(
+            (a, b) =>
+                (minutesOf(a.startTime) ?? -1) - (minutesOf(b.startTime) ?? -1),
+        )
 }
 
 function chipHtml(o: Occurrence, ctx: CalCtx): string {
-  const time = o.startTime ? `<span class="exp-cal-time">${escapeHtml(fmtTime(o.startTime, ctx.military))}</span> ` : "";
-  return `<div class="exp-cal-chip" style="${tintStyle(ctx.colorFor(o.category), ctx.p)}">${time}${escapeHtml(o.title || "Untitled")}</div>`;
+    const time = o.startTime
+        ? `<span class="exp-cal-time">${escapeHtml(fmtTime(o.startTime, ctx.military))}</span> `
+        : ''
+    return `<div class="exp-cal-chip" style="${tintStyle(ctx.colorFor(o.category), ctx.p)}">${time}${escapeHtml(o.title || 'Untitled')}</div>`
 }
 
-function monthGrid(occ: Occurrence[], anchor: Date, mondayFirst: boolean, ctx: CalCtx): string {
-  const y = anchor.getFullYear();
-  const m = anchor.getMonth();
-  const firstOfMonth = new Date(y, m, 1);
-  const weekStart = startOfWeek(firstOfMonth, mondayFirst);
-  const firstDay = Math.round((firstOfMonth.getTime() - weekStart.getTime()) / 86400000);
-  const daysInMonth = new Date(y, m + 1, 0).getDate();
-  const total = Math.ceil((firstDay + daysInMonth) / 7) * 7;
-  const todayStr = toDateStr(new Date());
+function monthGrid(
+    occ: Occurrence[],
+    anchor: Date,
+    mondayFirst: boolean,
+    ctx: CalCtx,
+): string {
+    const y = anchor.getFullYear()
+    const m = anchor.getMonth()
+    const firstOfMonth = new Date(y, m, 1)
+    const weekStart = startOfWeek(firstOfMonth, mondayFirst)
+    const firstDay = Math.round(
+        (firstOfMonth.getTime() - weekStart.getTime()) / 86400000,
+    )
+    const daysInMonth = new Date(y, m + 1, 0).getDate()
+    const total = Math.ceil((firstDay + daysInMonth) / 7) * 7
+    const todayStr = toDateStr(new Date())
 
-  const names = (mondayFirst ? WEEKDAYS_MON : WEEKDAYS_SUN)
-    .map((d) => `<div class="exp-cal-dayname">${d}</div>`).join("");
+    const names = (mondayFirst ? WEEKDAYS_MON : WEEKDAYS_SUN)
+        .map(d => `<div class="exp-cal-dayname">${d}</div>`)
+        .join('')
 
-  let cells = "";
-  for (let i = 0; i < total; i++) {
-    const offset = i - firstDay;
-    const date = new Date(y, m, 1 + offset);
-    const dateStr = toDateStr(date);
-    const inMonth = offset >= 0 && offset < daysInMonth;
-    const isToday = dateStr === todayStr;
-    const chips = onDay(occ, dateStr).map((o) => chipHtml(o, ctx)).join("");
-    cells += `<div class="exp-cal-cell${inMonth ? "" : " out"}${isToday ? " today" : ""}">` +
-      `<div class="exp-cal-num">${date.getDate()}</div>` +
-      `<div class="exp-cal-cellevents">${chips}</div></div>`;
-  }
-  const title = `${MONTHS[m]} ${y}`;
-  return `<div class="exp-cal-title">${title}</div>` +
-    `<div class="exp-cal-month">` +
-    `<div class="exp-cal-names">${names}</div>` +
-    `<div class="exp-cal-grid">${cells}</div></div>`;
+    let cells = ''
+    for (let i = 0; i < total; i++) {
+        const offset = i - firstDay
+        const date = new Date(y, m, 1 + offset)
+        const dateStr = toDateStr(date)
+        const inMonth = offset >= 0 && offset < daysInMonth
+        const isToday = dateStr === todayStr
+        const chips = onDay(occ, dateStr)
+            .map(o => chipHtml(o, ctx))
+            .join('')
+        cells +=
+            `<div class="exp-cal-cell${inMonth ? '' : ' out'}${isToday ? ' today' : ''}">` +
+            `<div class="exp-cal-num">${date.getDate()}</div>` +
+            `<div class="exp-cal-cellevents">${chips}</div></div>`
+    }
+    const title = `${MONTHS[m]} ${y}`
+    return (
+        `<div class="exp-cal-title">${title}</div>` +
+        `<div class="exp-cal-month">` +
+        `<div class="exp-cal-names">${names}</div>` +
+        `<div class="exp-cal-grid">${cells}</div></div>`
+    )
 }
 
 // Week / 3-day / day share a column-per-day time grid: a left hour gutter + one column per
 // day, all-day events in a band on top, timed events absolutely positioned. 1px-per-minute
 // would be huge; mirror the live grid's 50px/hour (1200px tall).
-const HOUR_PX = 44;
-const GRID_PX = HOUR_PX * 24;
+const HOUR_PX = 44
+const GRID_PX = HOUR_PX * 24
 
 function timedBlocks(events: Occurrence[], ctx: CalCtx): string {
-  const timed = events.filter((e) => minutesOf(e.startTime) !== null);
-  if (!timed.length) return "";
-  // Simple lane assignment so overlapping events don't stack on top of each other.
-  type Placed = { o: Occurrence; start: number; end: number; lane: number };
-  const placed: Placed[] = [];
-  const laneEnds: number[] = [];
-  for (const o of timed) {
-    const start = minutesOf(o.startTime)!;
-    const end = Math.max(start + 30, minutesOf(o.endTime) ?? start + 60);
-    let lane = laneEnds.findIndex((e) => e <= start);
-    if (lane === -1) { lane = laneEnds.length; laneEnds.push(end); } else { laneEnds[lane] = end; }
-    placed.push({ o, start, end, lane });
-  }
-  const lanes = laneEnds.length || 1;
-  return placed.map(({ o, start, end, lane }) => {
-    const top = (start / 1440) * GRID_PX;
-    const height = Math.max(20, ((end - start) / 1440) * GRID_PX);
-    const width = 100 / lanes;
-    const left = lane * width;
-    const title = escapeHtml(o.title || "Untitled");
-    // Short blocks can't fit a stacked title + time line, so collapse to one line
-    // (start-time + title) rather than letting the time wrap + clip.
-    const inner = height < 42
-      ? `<div class="exp-cal-blockline"><span class="exp-cal-time">${escapeHtml(fmtTime(o.startTime!, ctx.military))}</span> ${title}</div>`
-      : `<div class="exp-cal-blocktitle">${title}</div>` +
-        `<div class="exp-cal-time">${escapeHtml(`${fmtTime(o.startTime!, ctx.military)}${o.endTime ? "–" + fmtTime(o.endTime, ctx.military) : ""}`)}</div>`;
-    return `<div class="exp-cal-block" style="${tintStyle(ctx.colorFor(o.category), ctx.p)}top:${top.toFixed(1)}px;height:${height.toFixed(1)}px;left:${left}%;width:calc(${width}% - 3px);">${inner}</div>`;
-  }).join("");
+    const timed = events.filter(e => minutesOf(e.startTime) !== null)
+    if (!timed.length) return ''
+    // Simple lane assignment so overlapping events don't stack on top of each other.
+    type Placed = { o: Occurrence; start: number; end: number; lane: number }
+    const placed: Placed[] = []
+    const laneEnds: number[] = []
+    for (const o of timed) {
+        const start = minutesOf(o.startTime)!
+        const end = Math.max(start + 30, minutesOf(o.endTime) ?? start + 60)
+        let lane = laneEnds.findIndex(e => e <= start)
+        if (lane === -1) {
+            lane = laneEnds.length
+            laneEnds.push(end)
+        } else {
+            laneEnds[lane] = end
+        }
+        placed.push({ o, start, end, lane })
+    }
+    const lanes = laneEnds.length || 1
+    return placed
+        .map(({ o, start, end, lane }) => {
+            const top = (start / 1440) * GRID_PX
+            const height = Math.max(20, ((end - start) / 1440) * GRID_PX)
+            const width = 100 / lanes
+            const left = lane * width
+            const title = escapeHtml(o.title || 'Untitled')
+            // Short blocks can't fit a stacked title + time line, so collapse to one line
+            // (start-time + title) rather than letting the time wrap + clip.
+            const inner =
+                height < 42
+                    ? `<div class="exp-cal-blockline"><span class="exp-cal-time">${escapeHtml(fmtTime(o.startTime!, ctx.military))}</span> ${title}</div>`
+                    : `<div class="exp-cal-blocktitle">${title}</div>` +
+                      `<div class="exp-cal-time">${escapeHtml(`${fmtTime(o.startTime!, ctx.military)}${o.endTime ? '–' + fmtTime(o.endTime, ctx.military) : ''}`)}</div>`
+            return `<div class="exp-cal-block" style="${tintStyle(ctx.colorFor(o.category), ctx.p)}top:${top.toFixed(1)}px;height:${height.toFixed(1)}px;left:${left}%;width:calc(${width}% - 3px);">${inner}</div>`
+        })
+        .join('')
 }
 
 function timeGrid(occ: Occurrence[], days: Date[], ctx: CalCtx): string {
-  const todayStr = toDateStr(new Date());
-  const hours = Array.from({ length: 24 }, (_, h) =>
-    `<div class="exp-cal-hour"><span class="exp-cal-hourlabel">${fmtHourLabel(h, ctx.military)}</span></div>`,
-  ).join("");
+    const todayStr = toDateStr(new Date())
+    const hours = Array.from(
+        { length: 24 },
+        (_, h) =>
+            `<div class="exp-cal-hour"><span class="exp-cal-hourlabel">${fmtHourLabel(h, ctx.military)}</span></div>`,
+    ).join('')
 
-  let anyAllDay = false;
-  const cols = days.map((date) => {
-    const dateStr = toDateStr(date);
-    const dayEvents = onDay(occ, dateStr);
-    const allDay = dayEvents.filter((e) => minutesOf(e.startTime) === null);
-    if (allDay.length) anyAllDay = true;
-    const allDayHtml = allDay.map((o) => chipHtml(o, ctx)).join("");
-    const isToday = dateStr === todayStr;
-    const weekday = WEEKDAYS_SUN[date.getDay()];
-    return {
-      head: `<div class="exp-cal-colhead${isToday ? " today" : ""}"><span class="exp-cal-wd">${weekday}</span> <span class="exp-cal-dn">${date.getMonth() + 1}/${date.getDate()}</span></div>`,
-      allDay: `<div class="exp-cal-allday">${allDayHtml}</div>`,
-      body: `<div class="exp-cal-colbody" style="height:${GRID_PX}px;">${timedBlocks(dayEvents, ctx)}</div>`,
-    };
-  });
+    let anyAllDay = false
+    const cols = days.map(date => {
+        const dateStr = toDateStr(date)
+        const dayEvents = onDay(occ, dateStr)
+        const allDay = dayEvents.filter(e => minutesOf(e.startTime) === null)
+        if (allDay.length) anyAllDay = true
+        const allDayHtml = allDay.map(o => chipHtml(o, ctx)).join('')
+        const isToday = dateStr === todayStr
+        const weekday = WEEKDAYS_SUN[date.getDay()]
+        return {
+            head: `<div class="exp-cal-colhead${isToday ? ' today' : ''}"><span class="exp-cal-wd">${weekday}</span> <span class="exp-cal-dn">${date.getMonth() + 1}/${date.getDate()}</span></div>`,
+            allDay: `<div class="exp-cal-allday">${allDayHtml}</div>`,
+            body: `<div class="exp-cal-colbody" style="height:${GRID_PX}px;">${timedBlocks(dayEvents, ctx)}</div>`,
+        }
+    })
 
-  const heads = `<div class="exp-cal-gutterhead"></div>` + cols.map((c) => c.head).join("");
-  const alldays = anyAllDay
-    ? `<div class="exp-cal-gutterlabel">all-day</div>` + cols.map((c) => c.allDay).join("")
-    : "";
-  const bodies = `<div class="exp-cal-gutter" style="height:${GRID_PX}px;">${hours}</div>` + cols.map((c) => c.body).join("");
+    const heads =
+        `<div class="exp-cal-gutterhead"></div>` +
+        cols.map(c => c.head).join('')
+    const alldays = anyAllDay
+        ? `<div class="exp-cal-gutterlabel">all-day</div>` +
+          cols.map(c => c.allDay).join('')
+        : ''
+    const bodies =
+        `<div class="exp-cal-gutter" style="height:${GRID_PX}px;">${hours}</div>` +
+        cols.map(c => c.body).join('')
 
-  const gridCols = `grid-template-columns: 56px repeat(${days.length}, minmax(0, 1fr));`;
-  const title = days.length === 1
-    ? `${WEEKDAYS_SUN[days[0].getDay()]}, ${MONTHS[days[0].getMonth()]} ${days[0].getDate()}, ${days[0].getFullYear()}`
-    : `${MONTHS[days[0].getMonth()]} ${days[0].getDate()} – ${MONTHS[days[days.length - 1].getMonth()]} ${days[days.length - 1].getDate()}, ${days[days.length - 1].getFullYear()}`;
+    const gridCols = `grid-template-columns: 56px repeat(${days.length}, minmax(0, 1fr));`
+    const title =
+        days.length === 1
+            ? `${WEEKDAYS_SUN[days[0].getDay()]}, ${MONTHS[days[0].getMonth()]} ${days[0].getDate()}, ${days[0].getFullYear()}`
+            : `${MONTHS[days[0].getMonth()]} ${days[0].getDate()} – ${MONTHS[days[days.length - 1].getMonth()]} ${days[days.length - 1].getDate()}, ${days[days.length - 1].getFullYear()}`
 
-  return `<div class="exp-cal-title">${title}</div>` +
-    `<div class="exp-cal-time-grid" style="${gridCols}">` +
-    `<div class="exp-cal-row heads">${heads}</div>` +
-    (alldays ? `<div class="exp-cal-row alldays">${alldays}</div>` : "") +
-    `<div class="exp-cal-row bodies">${bodies}</div>` +
-    `</div>`;
+    return (
+        `<div class="exp-cal-title">${title}</div>` +
+        `<div class="exp-cal-time-grid" style="${gridCols}">` +
+        `<div class="exp-cal-row heads">${heads}</div>` +
+        (alldays ? `<div class="exp-cal-row alldays">${alldays}</div>` : '') +
+        `<div class="exp-cal-row bodies">${bodies}</div>` +
+        `</div>`
+    )
 }
 
 /**
@@ -202,48 +271,65 @@ function timeGrid(occ: Occurrence[], days: Date[], ctx: CalCtx): string {
  * picks month / week / 3day / day; `opts.weekStartsOnMonday` aligns the week.
  */
 export function calendarHtml(
-  _config: BaseConfig,
-  vr: ViewResult,
-  opts: ExportOptions,
-  palette: ThemePalette,
-  categories: ExportCategory[] = [],
+    _config: BaseConfig,
+    vr: ViewResult,
+    opts: ExportOptions,
+    palette: ThemePalette,
+    categories: ExportCategory[] = [],
 ): { body: string; css: string } {
-  const events = vr.groups.flatMap((g) => g.rows).map((r, i) => rowToEvent(r, i, vr.view));
-  const ctx: CalCtx = { p: palette, military: opts.militaryTime, colorFor: colorResolver(categories) };
-  const anchor = opts.calStart ? parseLocal(opts.calStart) : new Date();
-  const span: CalSpan = opts.calSpan;
-  const mondayFirst = opts.weekStartsOnMonday;
-
-  let body: string;
-  if (span === "month") {
-    const y = anchor.getFullYear(), m = anchor.getMonth();
-    const weekStart = startOfWeek(new Date(y, m, 1), mondayFirst);
-    const firstDay = Math.round((new Date(y, m, 1).getTime() - weekStart.getTime()) / 86400000);
-    const daysInMonth = new Date(y, m + 1, 0).getDate();
-    const total = Math.ceil((firstDay + daysInMonth) / 7) * 7;
-    const rangeStart = toDateStr(new Date(y, m, 1 - firstDay));
-    const rangeEnd = toDateStr(new Date(y, m, 1 - firstDay + total - 1));
-    body = monthGrid(occurrencesIn(events, rangeStart, rangeEnd), anchor, mondayFirst, ctx);
-  } else {
-    let days: Date[];
-    if (span === "week") {
-      const s = startOfWeek(anchor, mondayFirst);
-      days = Array.from({ length: 7 }, (_, i) => addDays(s, i));
-    } else if (span === "3day") {
-      days = [0, 1, 2].map((i) => addDays(anchor, i));
-    } else {
-      days = [anchor];
+    const events = vr.groups
+        .flatMap(g => g.rows)
+        .map((r, i) => rowToEvent(r, i, vr.view))
+    const ctx: CalCtx = {
+        p: palette,
+        military: opts.militaryTime,
+        colorFor: colorResolver(categories),
     }
-    const rangeStart = toDateStr(days[0]);
-    const rangeEnd = toDateStr(days[days.length - 1]);
-    body = timeGrid(occurrencesIn(events, rangeStart, rangeEnd), days, ctx);
-  }
+    const anchor = opts.calStart ? parseLocal(opts.calStart) : new Date()
+    const span: CalSpan = opts.calSpan
+    const mondayFirst = opts.weekStartsOnMonday
 
-  return { body: `<div class="exp-cal">${body}</div>`, css: calendarCss(palette) };
+    let body: string
+    if (span === 'month') {
+        const y = anchor.getFullYear(),
+            m = anchor.getMonth()
+        const weekStart = startOfWeek(new Date(y, m, 1), mondayFirst)
+        const firstDay = Math.round(
+            (new Date(y, m, 1).getTime() - weekStart.getTime()) / 86400000,
+        )
+        const daysInMonth = new Date(y, m + 1, 0).getDate()
+        const total = Math.ceil((firstDay + daysInMonth) / 7) * 7
+        const rangeStart = toDateStr(new Date(y, m, 1 - firstDay))
+        const rangeEnd = toDateStr(new Date(y, m, 1 - firstDay + total - 1))
+        body = monthGrid(
+            occurrencesIn(events, rangeStart, rangeEnd),
+            anchor,
+            mondayFirst,
+            ctx,
+        )
+    } else {
+        let days: Date[]
+        if (span === 'week') {
+            const s = startOfWeek(anchor, mondayFirst)
+            days = Array.from({ length: 7 }, (_, i) => addDays(s, i))
+        } else if (span === '3day') {
+            days = [0, 1, 2].map(i => addDays(anchor, i))
+        } else {
+            days = [anchor]
+        }
+        const rangeStart = toDateStr(days[0])
+        const rangeEnd = toDateStr(days[days.length - 1])
+        body = timeGrid(occurrencesIn(events, rangeStart, rangeEnd), days, ctx)
+    }
+
+    return {
+        body: `<div class="exp-cal">${body}</div>`,
+        css: calendarCss(palette),
+    }
 }
 
 function calendarCss(t: ThemePalette): string {
-  return `
+    return `
   /* visual calendar export needs the full width, not the 760px prose column */
   body { max-width: 1100px; }
   .exp-cal { color: ${t.fg}; }
@@ -297,5 +383,5 @@ function calendarCss(t: ThemePalette): string {
      inline span inside .exp-cal-blockline and must stay inline — hence the child combinator. */
   .exp-cal-block > .exp-cal-time { display: block; white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; font-size: 0.64rem; }
-`;
+`
 }

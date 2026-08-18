@@ -4,80 +4,111 @@
 // a one-word command ("graph"). Each group is a thin wrapper over `@bismuth/core`
 // functions — no running server required for the file-based commands (the app's
 // vault watcher picks up writes live).
-import type { CommandMap } from "./types";
-import { commands as fileCmds } from "./commands/file";
-import { commands as noteCmds } from "./commands/note";
-import { commands as searchCmds } from "./commands/search";
-import { commands as graphCmds } from "./commands/graph";
-import { commands as taskCmds } from "./commands/task";
-import { commands as baseCmds } from "./commands/base";
-import { commands as calendarCmds } from "./commands/calendar";
-import { commands as cardCmds } from "./commands/card";
-import { commands as propCmds } from "./commands/prop";
-import { commands as settingsCmds } from "./commands/settings";
-import { commands as daemonCmds } from "./commands/daemon";
-import { commands as drawCmds } from "./commands/draw";
-import { commands as serveCmds } from "./commands/serve";
-import { commands as exportCmds } from "./commands/export";
-import { commands as apiCmds } from "./commands/api";
-import { commands as appCmds } from "./commands/app";
-import { commands as pageCmds } from "./commands/page";
-import { commands as installCmds } from "./commands/install";
-import { commands as backendsCmds } from "./commands/backends";
-import { commands as checkpointCmds } from "./commands/checkpoint";
-import { commands as updateCmds } from "./commands/update";
-import { commands as gcalCmds } from "./commands/gcal";
-import { commands as relayCmds } from "./commands/relay";
-import { commands as chatCmds } from "./commands/chat";
-import { gateCliInvocation } from "../../core/src/visibilityCliGate";
+import type { CommandMap } from './types'
+import { commands as fileCmds } from './commands/file'
+import { commands as noteCmds } from './commands/note'
+import { commands as searchCmds } from './commands/search'
+import { commands as graphCmds } from './commands/graph'
+import { commands as taskCmds } from './commands/task'
+import { commands as baseCmds } from './commands/base'
+import { commands as calendarCmds } from './commands/calendar'
+import { commands as cardCmds } from './commands/card'
+import { commands as propCmds } from './commands/prop'
+import { commands as settingsCmds } from './commands/settings'
+import { commands as daemonCmds } from './commands/daemon'
+import { commands as drawCmds } from './commands/draw'
+import { commands as serveCmds } from './commands/serve'
+import { commands as exportCmds } from './commands/export'
+import { commands as apiCmds } from './commands/api'
+import { commands as appCmds } from './commands/app'
+import { commands as pageCmds } from './commands/page'
+import { commands as installCmds } from './commands/install'
+import { commands as backendsCmds } from './commands/backends'
+import { commands as checkpointCmds } from './commands/checkpoint'
+import { commands as updateCmds } from './commands/update'
+import { commands as gcalCmds } from './commands/gcal'
+import { commands as relayCmds } from './commands/relay'
+import { commands as chatCmds } from './commands/chat'
+import { gateCliInvocation } from '../../core/src/visibilityCliGate'
 
 const registry: CommandMap = {
-  ...fileCmds, ...noteCmds, ...searchCmds, ...graphCmds, ...taskCmds, ...baseCmds,
-  ...calendarCmds, ...cardCmds, ...propCmds, ...settingsCmds, ...daemonCmds, ...drawCmds, ...serveCmds,
-  ...exportCmds, ...apiCmds, ...appCmds, ...pageCmds, ...installCmds, ...backendsCmds, ...checkpointCmds,
-  ...updateCmds, ...gcalCmds, ...relayCmds, ...chatCmds,
-};
-
-function printHelp(): void {
-  console.log("bismuth — control every aspect of a Bismuth vault from the shell\n");
-  console.log("usage: bismuth <command> [args] [--vault <dir>] [--memory <dir>] [--pretty]\n");
-  const keys = Object.keys(registry).sort();
-  const width = Math.max(...keys.map((k) => k.length));
-  for (const k of keys) {
-    const c = registry[k];
-    const usage = c.usage ? ` ${c.usage}` : "";
-    console.log(`  ${k.padEnd(width)}  ${c.summary}${usage}`);
-  }
-  console.log("\nmost commands need a vault: pass --vault <dir> or set BISMUTH_VAULT.");
+    ...fileCmds,
+    ...noteCmds,
+    ...searchCmds,
+    ...graphCmds,
+    ...taskCmds,
+    ...baseCmds,
+    ...calendarCmds,
+    ...cardCmds,
+    ...propCmds,
+    ...settingsCmds,
+    ...daemonCmds,
+    ...drawCmds,
+    ...serveCmds,
+    ...exportCmds,
+    ...apiCmds,
+    ...appCmds,
+    ...pageCmds,
+    ...installCmds,
+    ...backendsCmds,
+    ...checkpointCmds,
+    ...updateCmds,
+    ...gcalCmds,
+    ...relayCmds,
+    ...chatCmds,
 }
 
-const argv = Bun.argv.slice(2);
+function printHelp(): void {
+    console.log(
+        'bismuth — control every aspect of a Bismuth vault from the shell\n',
+    )
+    console.log(
+        'usage: bismuth <command> [args] [--vault <dir>] [--memory <dir>] [--pretty]\n',
+    )
+    const keys = Object.keys(registry).sort()
+    const width = Math.max(...keys.map(k => k.length))
+    for (const k of keys) {
+        const c = registry[k]
+        const usage = c.usage ? ` ${c.usage}` : ''
+        console.log(`  ${k.padEnd(width)}  ${c.summary}${usage}`)
+    }
+    console.log(
+        '\nmost commands need a vault: pass --vault <dir> or set BISMUTH_VAULT.',
+    )
+}
 
-if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
-  printHelp();
-  process.exit(0);
+const argv = Bun.argv.slice(2)
+
+if (
+    argv.length === 0 ||
+    argv[0] === '--help' ||
+    argv[0] === '-h' ||
+    argv[0] === 'help'
+) {
+    printHelp()
+    process.exit(0)
 }
 
 // Longest-match dispatch: prefer a three-word phrase, then two-word, then a single word.
-const three = argv.length >= 3 ? `${argv[0]} ${argv[1]} ${argv[2]}` : null;
-const two = argv.length >= 2 ? `${argv[0]} ${argv[1]}` : null;
-let cmdKey: string | null = null;
-let rest: string[] = [];
+const three = argv.length >= 3 ? `${argv[0]} ${argv[1]} ${argv[2]}` : null
+const two = argv.length >= 2 ? `${argv[0]} ${argv[1]}` : null
+let cmdKey: string | null = null
+let rest: string[] = []
 if (three && registry[three]) {
-  cmdKey = three;
-  rest = argv.slice(3);
+    cmdKey = three
+    rest = argv.slice(3)
 } else if (two && registry[two]) {
-  cmdKey = two;
-  rest = argv.slice(2);
+    cmdKey = two
+    rest = argv.slice(2)
 } else if (registry[argv[0]]) {
-  cmdKey = argv[0];
-  rest = argv.slice(1);
+    cmdKey = argv[0]
+    rest = argv.slice(1)
 }
 
 if (!cmdKey) {
-  console.error(`unknown command: ${argv.slice(0, 3).join(" ")}\n`);
-  printHelp();
-  process.exit(1);
+    console.error(`unknown command: ${argv.slice(0, 3).join(' ')}\n`)
+    printHelp()
+    process.exit(1)
 }
 
 // The visibility gate (core/src/visibilityCliGate.ts), checked HERE — the one place every
@@ -86,15 +117,15 @@ if (!cmdKey) {
 // unset for the vault OWNER's own hand (their shell, a dev script, CI) — so this is a no-op for
 // every interactive/headless use of the CLI today, and only refuses when Bismuth itself spawned the
 // process that's running this command (see that file's header for the full design).
-const gate = await gateCliInvocation(argv);
+const gate = await gateCliInvocation(argv)
 if (!gate.allowed) {
-  console.error(gate.reason ?? "Refused by the vault's visibility settings.");
-  process.exit(1);
+    console.error(gate.reason ?? "Refused by the vault's visibility settings.")
+    process.exit(1)
 }
 
 try {
-  await registry[cmdKey].run(rest);
+    await registry[cmdKey].run(rest)
 } catch (e) {
-  console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
-  process.exit(1);
+    console.error(`error: ${e instanceof Error ? e.message : String(e)}`)
+    process.exit(1)
 }

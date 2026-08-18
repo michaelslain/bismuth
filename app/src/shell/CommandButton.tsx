@@ -1,5 +1,5 @@
-import { Show } from "solid-js";
-import { IconButton } from "../ui/IconButton";
+import { Show } from 'solid-js'
+import { IconButton } from '../ui/IconButton'
 
 // The purely-presentational rendering half of App.tsx's configurable toolbar button (shared by
 // the sidebar header bar, the horizontal tab strip, and the vertical tab rail): an icon button
@@ -21,26 +21,26 @@ import { IconButton } from "../ui/IconButton";
 // CLASS NAMES ARE STILL BARE GLOBAL STRING LITERALS — this is the extraction half of the migration
 // only.
 export function CommandButton(props: {
-  icon: string;
-  label: string;
-  iconSize?: number;
-  disabled?: boolean;
-  /** Rendered only when greater than 0. */
-  badge?: number;
-  onClick?: (e: MouseEvent) => void;
+    icon: string
+    label: string
+    iconSize?: number
+    disabled?: boolean
+    /** Rendered only when greater than 0. */
+    badge?: number
+    onClick?: (e: MouseEvent) => void
 }) {
-  return (
-    <span class="toolbar-btn-wrap">
-      <IconButton
-        icon={props.icon}
-        iconSize={props.iconSize}
-        disabled={props.disabled}
-        label={props.label}
-        onClick={props.onClick}
-      />
-      <Show when={(props.badge ?? 0) > 0}>
-        <span class="toolbar-badge">{props.badge}</span>
-      </Show>
-    </span>
-  );
+    return (
+        <span class="toolbar-btn-wrap">
+            <IconButton
+                icon={props.icon}
+                iconSize={props.iconSize}
+                disabled={props.disabled}
+                label={props.label}
+                onClick={props.onClick}
+            />
+            <Show when={(props.badge ?? 0) > 0}>
+                <span class="toolbar-badge">{props.badge}</span>
+            </Show>
+        </span>
+    )
 }

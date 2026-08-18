@@ -23,58 +23,65 @@
 // canvas at a time, so there's no hidden instance to pause here — left at its default (visible)
 // on every story below, called out explicitly so a future story that stacks more than one
 // <GraphView> in a single render knows to set it false on whichever isn't the one being shown.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { GraphView } from "./GraphView";
-import { sampleGraphData } from "./ui/_graphFixtures";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { GraphView } from './GraphView'
+import { sampleGraphData } from './ui/_graphFixtures'
 
 const meta = {
-  title: "Graph/GraphView",
-  component: GraphView,
-  parameters: { layout: "fullscreen" },
-} satisfies Meta<typeof GraphView>;
+    title: 'Graph/GraphView',
+    component: GraphView,
+    parameters: { layout: 'fullscreen' },
+} satisfies Meta<typeof GraphView>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
-const noop = () => {};
+const noop = () => {}
 
 // Fixed px, not vh: the Storybook preview iframe is short with the Controls panel open (see
 // Calendar/MonthView.stories.tsx's own note on this), and `.graph-root` fills its parent's
 // height (App.css `.graph-root { height: 100% }`).
-const STORY_H = "640px";
+const STORY_H = '640px'
 
 /** The full-pane 2D field: a self node, 8 wikilink-chained notes, a few tags fanning off them —
  *  real coordinates from computeLayout, not hand-placed. `fill` is how the real app always
  *  renders GraphView (App.tsx's one call site never omits it); the 1:1-square fallback only
  *  the `mini` story below exists for cases that don't pass it. */
 export const Default: Story = {
-  render: () => (
-    <div style={{ height: STORY_H, width: "100%" }}>
-      <GraphView graph={sampleGraphData(8)} onOpen={noop} mode="2nd" setMode={noop} active={null} fill />
-    </div>
-  ),
-};
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <GraphView
+                graph={sampleGraphData(8)}
+                onOpen={noop}
+                mode="2nd"
+                setMode={noop}
+                active={null}
+                fill
+            />
+        </div>
+    ),
+}
 
 /** A 60-note graph — same fixture, much larger — to see the field's respacing, hub labelling,
  *  and cluster masses hold up past the everyday small-vault case. `active` points at one of the
  *  generated note ids so the active-file highlight has something real to draw. */
 export const LargerGraph: Story = {
-  render: () => {
-    const graph = sampleGraphData(60);
-    return (
-      <div style={{ height: STORY_H, width: "100%" }}>
-        <GraphView
-          graph={graph}
-          onOpen={noop}
-          mode="2nd"
-          setMode={noop}
-          active={graph.nodes[1]?.id ?? null}
-          fill
-        />
-      </div>
-    );
-  },
-};
+    render: () => {
+        const graph = sampleGraphData(60)
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <GraphView
+                    graph={graph}
+                    onOpen={noop}
+                    mode="2nd"
+                    setMode={noop}
+                    active={graph.nodes[1]?.id ?? null}
+                    fill
+                />
+            </div>
+        )
+    },
+}
 
 /**
  * The cramped sidebar slot: `mini` swaps the text-segmented mode switcher for bare icon
@@ -89,21 +96,21 @@ export const LargerGraph: Story = {
  * localLayoutInput.ts) — the same fixture graph serves both roles here.
  */
 export const MiniLocal: Story = {
-  render: () => {
-    const graph = sampleGraphData(8);
-    return (
-      <div style={{ height: "305px", width: "266px" }}>
-        <GraphView
-          graph={graph}
-          communitySource={graph}
-          onOpen={noop}
-          mode="local"
-          setMode={noop}
-          active={graph.nodes[1]?.id ?? null}
-          fill
-          mini
-        />
-      </div>
-    );
-  },
-};
+    render: () => {
+        const graph = sampleGraphData(8)
+        return (
+            <div style={{ height: '305px', width: '266px' }}>
+                <GraphView
+                    graph={graph}
+                    communitySource={graph}
+                    onOpen={noop}
+                    mode="local"
+                    setMode={noop}
+                    active={graph.nodes[1]?.id ?? null}
+                    fill
+                    mini
+                />
+            </div>
+        )
+    },
+}

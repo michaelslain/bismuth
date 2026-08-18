@@ -10,117 +10,131 @@
 //
 // Self-disables when there's no source build (no build-origin.json or no BISMUTH_APP_PATH) — e.g.
 // dev (`bun run dev`). Never throws; failures surface as an "error" phase / a reason.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 export interface UpdateStatus {
-  available: boolean;
-  behind: number;
-  localSha: string | null;
-  remoteSha: string | null;
-  builtSha: string | null;
-  dirty: boolean;
-  /** When unavailable: why — "not-a-source-build" | "not-a-git-repo" | "access-denied"
-   *  (the app can't read the build-source repo, typically macOS TCC: a Finder-launched app
-   *  only has access to the vault folder it was granted, not the dev clone under ~/Documents)
-   *  | "repo-missing" | "git-not-found" | "no-upstream". */
-  reason?: string;
+    available: boolean
+    behind: number
+    localSha: string | null
+    remoteSha: string | null
+    builtSha: string | null
+    dirty: boolean
+    /** When unavailable: why — "not-a-source-build" | "not-a-git-repo" | "access-denied"
+     *  (the app can't read the build-source repo, typically macOS TCC: a Finder-launched app
+     *  only has access to the vault folder it was granted, not the dev clone under ~/Documents)
+     *  | "repo-missing" | "git-not-found" | "no-upstream". */
+    reason?: string
 }
 
-export type UpdatePhase = "idle" | "pulling" | "building" | "ready" | "error";
+export type UpdatePhase = 'idle' | 'pulling' | 'building' | 'ready' | 'error'
 export interface UpdateProgress {
-  phase: UpdatePhase;
-  message?: string;
-  log?: string;
+    phase: UpdatePhase
+    message?: string
+    log?: string
 }
 
 // PATH augmented with the dirs a from-source rebuild needs (git, bun, cargo/rustup),
 // since a Finder-launched sidecar inherits only the minimal launchd PATH.
 function buildPath(): string {
-  return [
-    process.env.PATH,
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    join(homedir(), ".cargo", "bin"),
-    join(homedir(), ".bun", "bin"),
-    join(homedir(), ".local", "bin"),
-  ]
-    .filter(Boolean)
-    .join(":");
+    return [
+        process.env.PATH,
+        '/opt/homebrew/bin',
+        '/usr/local/bin',
+        join(homedir(), '.cargo', 'bin'),
+        join(homedir(), '.bun', 'bin'),
+        join(homedir(), '.local', 'bin'),
+    ]
+        .filter(Boolean)
+        .join(':')
 }
 
 /** A stable macOS code-signing identity for update rebuilds: APPLE_SIGNING_IDENTITY if the
  *  environment carries one, else the first login-keychain codesigning certificate whose name
  *  contains "Bismuth" (the documented one-time self-signed setup). Null → ad-hoc as before. */
 async function findSigningIdentity(): Promise<string | null> {
-  if (process.platform !== "darwin") return null;
-  if (process.env.APPLE_SIGNING_IDENTITY) return process.env.APPLE_SIGNING_IDENTITY;
-  const probe = await runProc(["security", "find-identity", "-v", "-p", "codesigning"], { timeoutMs: 10_000 });
-  if (probe.code !== 0) return null;
-  const line = probe.stdout.split("\n").find((l) => l.includes("Bismuth"));
-  return line?.match(/"([^"]+)"/)?.[1] ?? null;
+    if (process.platform !== 'darwin') return null
+    if (process.env.APPLE_SIGNING_IDENTITY)
+        return process.env.APPLE_SIGNING_IDENTITY
+    const probe = await runProc(
+        ['security', 'find-identity', '-v', '-p', 'codesigning'],
+        { timeoutMs: 10_000 },
+    )
+    if (probe.code !== 0) return null
+    const line = probe.stdout.split('\n').find(l => l.includes('Bismuth'))
+    return line?.match(/"([^"]+)"/)?.[1] ?? null
 }
 
 async function runProc(
-  cmd: string[],
-  opts: { cwd?: string; timeoutMs?: number; env?: Record<string, string> } = {},
+    cmd: string[],
+    opts: {
+        cwd?: string
+        timeoutMs?: number
+        env?: Record<string, string>
+    } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  try {
-    const proc = Bun.spawn(cmd, {
-      cwd: opts.cwd,
-      env: { ...process.env, PATH: buildPath(), ...(opts.env ?? {}) },
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const timer = opts.timeoutMs ? setTimeout(() => proc.kill(), opts.timeoutMs) : undefined;
     try {
-      const [stdout, stderr, code] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
-      return { code, stdout, stderr };
-    } finally {
-      if (timer) clearTimeout(timer);
+        const proc = Bun.spawn(cmd, {
+            cwd: opts.cwd,
+            env: { ...process.env, PATH: buildPath(), ...(opts.env ?? {}) },
+            stdin: 'ignore',
+            stdout: 'pipe',
+            stderr: 'pipe',
+        })
+        const timer = opts.timeoutMs
+            ? setTimeout(() => proc.kill(), opts.timeoutMs)
+            : undefined
+        try {
+            const [stdout, stderr, code] = await Promise.all([
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+                proc.exited,
+            ])
+            return { code, stdout, stderr }
+        } finally {
+            if (timer) clearTimeout(timer)
+        }
+    } catch (e) {
+        return {
+            code: -1,
+            stdout: '',
+            stderr: e instanceof Error ? e.message : String(e),
+        }
     }
-  } catch (e) {
-    return { code: -1, stdout: "", stderr: e instanceof Error ? e.message : String(e) };
-  }
 }
 
 /** Runs a git subcommand in a repo. Injectable so getUpdateStatus is unit-testable. */
 export type GitRunner = (
-  repoRoot: string,
-  args: string[],
-  timeoutMs?: number,
-) => Promise<{ code: number; stdout: string; stderr: string }>;
+    repoRoot: string,
+    args: string[],
+    timeoutMs?: number,
+) => Promise<{ code: number; stdout: string; stderr: string }>
 
 const realGit: GitRunner = (repoRoot, args, timeoutMs = 15_000) =>
-  runProc(["git", "-C", repoRoot, ...args], { timeoutMs });
+    runProc(['git', '-C', repoRoot, ...args], { timeoutMs })
 
 function tail(s: string, n = 2000): string {
-  const t = s.trim();
-  return t.length > n ? `…${t.slice(-n)}` : t;
+    const t = s.trim()
+    return t.length > n ? `…${t.slice(-n)}` : t
 }
 
 interface BuildOrigin {
-  repoRoot: string;
-  sha: string;
+    repoRoot: string
+    sha: string
 }
 
 export function readBuildOrigin(): BuildOrigin | null {
-  const src = process.env.BISMUTH_INSTALL_SRC;
-  if (!src) return null;
-  const file = join(src, "build-origin.json");
-  if (!existsSync(file)) return null;
-  try {
-    const o = JSON.parse(readFileSync(file, "utf8")) as Partial<BuildOrigin>;
-    return o.repoRoot ? { repoRoot: o.repoRoot, sha: o.sha ?? "" } : null;
-  } catch {
-    return null;
-  }
+    const src = process.env.BISMUTH_INSTALL_SRC
+    if (!src) return null
+    const file = join(src, 'build-origin.json')
+    if (!existsSync(file)) return null
+    try {
+        const o = JSON.parse(readFileSync(file, 'utf8')) as Partial<BuildOrigin>
+        return o.repoRoot ? { repoRoot: o.repoRoot, sha: o.sha ?? '' } : null
+    } catch {
+        return null
+    }
 }
 
 /** Classify why a git probe against the build-source repo failed, so the status reports the
@@ -129,64 +143,89 @@ export function readBuildOrigin(): BuildOrigin | null {
  *  the build-source clone — so when that clone is under ~/Documents, git can't chdir into it and
  *  fails with "Operation not permitted", which is access-denied, NOT a missing repo. */
 function classifyGitFailure(r: { code: number; stderr: string }): string {
-  if (r.code === -1) return "git-not-found"; // spawn itself failed → no git on PATH
-  const e = (r.stderr || "").toLowerCase();
-  if (e.includes("operation not permitted") || e.includes("permission denied")) return "access-denied";
-  if (e.includes("no such file or directory")) return "repo-missing";
-  return "not-a-git-repo";
+    if (r.code === -1) return 'git-not-found' // spawn itself failed → no git on PATH
+    const e = (r.stderr || '').toLowerCase()
+    if (
+        e.includes('operation not permitted') ||
+        e.includes('permission denied')
+    )
+        return 'access-denied'
+    if (e.includes('no such file or directory')) return 'repo-missing'
+    return 'not-a-git-repo'
 }
 
 /** Read-only update status. Auto-fetches origin/main. Never throws. Deps injectable for tests. */
 export async function getUpdateStatus(
-  deps: { git?: GitRunner; origin?: BuildOrigin | null } = {},
+    deps: { git?: GitRunner; origin?: BuildOrigin | null } = {},
 ): Promise<UpdateStatus> {
-  const git = deps.git ?? realGit;
-  const base: UpdateStatus = {
-    available: false,
-    behind: 0,
-    localSha: null,
-    remoteSha: null,
-    builtSha: null,
-    dirty: false,
-  };
-  const origin = deps.origin !== undefined ? deps.origin : readBuildOrigin();
-  if (!origin?.repoRoot) return { ...base, reason: "not-a-source-build" };
-  const { repoRoot, sha: builtSha } = origin;
-  base.builtSha = builtSha || null;
+    const git = deps.git ?? realGit
+    const base: UpdateStatus = {
+        available: false,
+        behind: 0,
+        localSha: null,
+        remoteSha: null,
+        builtSha: null,
+        dirty: false,
+    }
+    const origin = deps.origin !== undefined ? deps.origin : readBuildOrigin()
+    if (!origin?.repoRoot) return { ...base, reason: 'not-a-source-build' }
+    const { repoRoot, sha: builtSha } = origin
+    base.builtSha = builtSha || null
 
-  const probe = await git(repoRoot, ["rev-parse", "--is-inside-work-tree"]);
-  if (probe.code !== 0) {
-    return { ...base, reason: classifyGitFailure(probe) };
-  }
-  // Best-effort fetch; if offline we still report against the last-known remote.
-  await git(repoRoot, ["fetch", "--quiet", "origin", "main"], 20_000);
-  const remote = await git(repoRoot, ["rev-parse", "origin/main"]);
-  if (remote.code !== 0) return { ...base, reason: "no-upstream" };
+    const probe = await git(repoRoot, ['rev-parse', '--is-inside-work-tree'])
+    if (probe.code !== 0) {
+        return { ...base, reason: classifyGitFailure(probe) }
+    }
+    // Best-effort fetch; if offline we still report against the last-known remote.
+    await git(repoRoot, ['fetch', '--quiet', 'origin', 'main'], 20_000)
+    const remote = await git(repoRoot, ['rev-parse', 'origin/main'])
+    if (remote.code !== 0) return { ...base, reason: 'no-upstream' }
 
-  const localSha = (await git(repoRoot, ["rev-parse", "HEAD"])).stdout.trim() || null;
-  const remoteSha = remote.stdout.trim() || null;
+    const localSha =
+        (await git(repoRoot, ['rev-parse', 'HEAD'])).stdout.trim() || null
+    const remoteSha = remote.stdout.trim() || null
 
-  // Measure how far the INSTALLED BUILD (builtSha) is behind origin/main — NOT the clone's
-  // live HEAD. The build-source clone is often the same clone the developer commits from, so
-  // after committing+pushing locally the clone's HEAD advances to origin/main while the
-  // running .app is still at builtSha; a HEAD-based count would then report 0 (no update)
-  // even though the installed app is stale. builtSha is what the app actually contains, so
-  // it's the correct base for everyone — for a normal user whose clone == build, builtSha ==
-  // HEAD and the result is unchanged. Fall back to HEAD when builtSha is missing/unresolvable
-  // in this clone (e.g. shallow/GC'd), preserving the prior behavior.
-  const baseRev = builtSha || "HEAD";
-  let behindOut = await git(repoRoot, ["rev-list", "--count", `${baseRev}..origin/main`]);
-  if (behindOut.code !== 0 && baseRev !== "HEAD") {
-    behindOut = await git(repoRoot, ["rev-list", "--count", "HEAD..origin/main"]);
-  }
-  const behind = behindOut.code === 0 ? parseInt(behindOut.stdout.trim() || "0", 10) || 0 : 0;
-  const dirty = (await git(repoRoot, ["status", "--porcelain"])).stdout.trim().length > 0;
-  return { available: behind > 0, behind, localSha, remoteSha, builtSha: builtSha || null, dirty };
+    // Measure how far the INSTALLED BUILD (builtSha) is behind origin/main — NOT the clone's
+    // live HEAD. The build-source clone is often the same clone the developer commits from, so
+    // after committing+pushing locally the clone's HEAD advances to origin/main while the
+    // running .app is still at builtSha; a HEAD-based count would then report 0 (no update)
+    // even though the installed app is stale. builtSha is what the app actually contains, so
+    // it's the correct base for everyone — for a normal user whose clone == build, builtSha ==
+    // HEAD and the result is unchanged. Fall back to HEAD when builtSha is missing/unresolvable
+    // in this clone (e.g. shallow/GC'd), preserving the prior behavior.
+    const baseRev = builtSha || 'HEAD'
+    let behindOut = await git(repoRoot, [
+        'rev-list',
+        '--count',
+        `${baseRev}..origin/main`,
+    ])
+    if (behindOut.code !== 0 && baseRev !== 'HEAD') {
+        behindOut = await git(repoRoot, [
+            'rev-list',
+            '--count',
+            'HEAD..origin/main',
+        ])
+    }
+    const behind =
+        behindOut.code === 0
+            ? parseInt(behindOut.stdout.trim() || '0', 10) || 0
+            : 0
+    const dirty =
+        (await git(repoRoot, ['status', '--porcelain'])).stdout.trim().length >
+        0
+    return {
+        available: behind > 0,
+        behind,
+        localSha,
+        remoteSha,
+        builtSha: builtSha || null,
+        dirty,
+    }
 }
 
-let state: UpdateProgress = { phase: "idle" };
+let state: UpdateProgress = { phase: 'idle' }
 export function getUpdateProgress(): UpdateProgress {
-  return state;
+    return state
 }
 
 /**
@@ -195,79 +234,118 @@ export function getUpdateProgress(): UpdateProgress {
  * HTTP request returns immediately — the frontend polls getUpdateProgress(). Never throws.
  */
 export async function startUpdate(): Promise<UpdateProgress> {
-  if (state.phase === "pulling" || state.phase === "building") return state;
-  // Claim the slot synchronously, BEFORE the first await, so a second concurrent caller
-  // sees phase==="pulling" at the guard above and returns early (the guard ran before any
-  // await gap, so two callers could otherwise both pass it).
-  state = { phase: "pulling", message: "checking for update…" };
-  const origin = readBuildOrigin();
-  const appPath = process.env.BISMUTH_APP_PATH;
-  if (!origin?.repoRoot || !appPath) {
-    state = { phase: "error", message: "self-update unavailable (not a bundled source build)" };
-    return state;
-  }
-  const status = await getUpdateStatus();
-  if (!status.available) {
-    state = { phase: "idle", message: "already up to date" };
-    return state;
-  }
-  if (status.dirty) {
-    state = { phase: "error", message: "the Bismuth repo has uncommitted changes — won't overwrite" };
-    return state;
-  }
-  state = { phase: "pulling", message: "pulling latest…" };
-  void runPipeline(origin.repoRoot, appPath);
-  return state;
+    if (state.phase === 'pulling' || state.phase === 'building') return state
+    // Claim the slot synchronously, BEFORE the first await, so a second concurrent caller
+    // sees phase==="pulling" at the guard above and returns early (the guard ran before any
+    // await gap, so two callers could otherwise both pass it).
+    state = { phase: 'pulling', message: 'checking for update…' }
+    const origin = readBuildOrigin()
+    const appPath = process.env.BISMUTH_APP_PATH
+    if (!origin?.repoRoot || !appPath) {
+        state = {
+            phase: 'error',
+            message: 'self-update unavailable (not a bundled source build)',
+        }
+        return state
+    }
+    const status = await getUpdateStatus()
+    if (!status.available) {
+        state = { phase: 'idle', message: 'already up to date' }
+        return state
+    }
+    if (status.dirty) {
+        state = {
+            phase: 'error',
+            message:
+                "the Bismuth repo has uncommitted changes — won't overwrite",
+        }
+        return state
+    }
+    state = { phase: 'pulling', message: 'pulling latest…' }
+    void runPipeline(origin.repoRoot, appPath)
+    return state
 }
 
 async function runPipeline(repoRoot: string, appPath: string): Promise<void> {
-  try {
-    const pull = await realGit(repoRoot, ["pull", "--ff-only", "origin", "main"], 120_000);
-    if (pull.code !== 0) {
-      state = { phase: "error", message: "git pull failed (diverged or conflict)", log: tail(pull.stderr || pull.stdout) };
-      return;
+    try {
+        const pull = await realGit(
+            repoRoot,
+            ['pull', '--ff-only', 'origin', 'main'],
+            120_000,
+        )
+        if (pull.code !== 0) {
+            state = {
+                phase: 'error',
+                message: 'git pull failed (diverged or conflict)',
+                log: tail(pull.stderr || pull.stdout),
+            }
+            return
+        }
+        state = {
+            phase: 'building',
+            message: 'rebuilding Bismuth (this takes a few minutes)…',
+        }
+        // `bun run tauri build --bundles app` in app/ — rebuilds frontend + sidecar + tools +
+        // the .app, but SKIPS the .dmg: self-update only swaps the .app, and the dmg packaging
+        // step (bundle_dmg.sh) is intermittently flaky, so building it would just add a failure
+        // mode. Resolve bun from PATH: in the COMPILED sidecar process.execPath is the sidecar
+        // binary, NOT bun, so we must look bun up (buildPath includes ~/.bun/bin).
+        const bun = Bun.which('bun', { PATH: buildPath() }) ?? 'bun'
+        // Stable code identity (macOS): with only ad-hoc signing, every rebuild changes the
+        // .app's CDHash, and macOS TCC — which pins Files-and-Folders grants to the code
+        // identity — silently revokes the user's folder permissions on EVERY update. If a
+        // signing identity exists (a certificate containing "Bismuth" in the login keychain,
+        // created once via Keychain Access → Certificate Assistant → "Code Signing"; see
+        // docs/overview/install.md), pass it to Tauri (APPLE_SIGNING_IDENTITY) so the identity
+        // stays stable across rebuilds and grants survive. Opt-in: no cert → same as before.
+        const signingIdentity = await findSigningIdentity()
+        const build = await runProc(
+            [bun, 'run', 'tauri', 'build', '--bundles', 'app'],
+            {
+                cwd: join(repoRoot, 'app'),
+                timeoutMs: 900_000,
+                ...(signingIdentity
+                    ? { env: { APPLE_SIGNING_IDENTITY: signingIdentity } }
+                    : {}),
+            },
+        )
+        if (build.code !== 0) {
+            state = {
+                phase: 'error',
+                message: 'build failed',
+                log: tail(build.stderr || build.stdout),
+            }
+            return
+        }
+        spawnRelauncher(repoRoot, appPath)
+        state = { phase: 'ready', message: 'update ready — relaunching…' }
+    } catch (e) {
+        state = {
+            phase: 'error',
+            message: e instanceof Error ? e.message : String(e),
+        }
     }
-    state = { phase: "building", message: "rebuilding Bismuth (this takes a few minutes)…" };
-    // `bun run tauri build --bundles app` in app/ — rebuilds frontend + sidecar + tools +
-    // the .app, but SKIPS the .dmg: self-update only swaps the .app, and the dmg packaging
-    // step (bundle_dmg.sh) is intermittently flaky, so building it would just add a failure
-    // mode. Resolve bun from PATH: in the COMPILED sidecar process.execPath is the sidecar
-    // binary, NOT bun, so we must look bun up (buildPath includes ~/.bun/bin).
-    const bun = Bun.which("bun", { PATH: buildPath() }) ?? "bun";
-    // Stable code identity (macOS): with only ad-hoc signing, every rebuild changes the
-    // .app's CDHash, and macOS TCC — which pins Files-and-Folders grants to the code
-    // identity — silently revokes the user's folder permissions on EVERY update. If a
-    // signing identity exists (a certificate containing "Bismuth" in the login keychain,
-    // created once via Keychain Access → Certificate Assistant → "Code Signing"; see
-    // docs/overview/install.md), pass it to Tauri (APPLE_SIGNING_IDENTITY) so the identity
-    // stays stable across rebuilds and grants survive. Opt-in: no cert → same as before.
-    const signingIdentity = await findSigningIdentity();
-    const build = await runProc([bun, "run", "tauri", "build", "--bundles", "app"], {
-      cwd: join(repoRoot, "app"),
-      timeoutMs: 900_000,
-      ...(signingIdentity ? { env: { APPLE_SIGNING_IDENTITY: signingIdentity } } : {}),
-    });
-    if (build.code !== 0) {
-      state = { phase: "error", message: "build failed", log: tail(build.stderr || build.stdout) };
-      return;
-    }
-    spawnRelauncher(repoRoot, appPath);
-    state = { phase: "ready", message: "update ready — relaunching…" };
-  } catch (e) {
-    state = { phase: "error", message: e instanceof Error ? e.message : String(e) };
-  }
 }
 
 // Write + spawn a DETACHED script that waits for the app to quit, swaps the .app bundle,
 // and relaunches. Detached (nohup + reparent) so it survives the sidecar being killed when
 // the app exits. The frontend calls the Tauri `quit_app` command once phase=ready.
 function spawnRelauncher(repoRoot: string, appPath: string): void {
-  const builtApp = join(repoRoot, "app", "src-tauri", "target", "release", "bundle", "macos", "Bismuth.app");
-  const appPid = process.env.BISMUTH_APP_PID ?? "";
-  const logPath = join(tmpdir(), "bismuth-update.log");
-  // Self-deleting + atomic swap: move DEST aside to a backup first, then ditto into place;
-  // restore the backup if ditto fails so a failed copy never leaves the user with no app.
-  const script = `#!/bin/bash
+    const builtApp = join(
+        repoRoot,
+        'app',
+        'src-tauri',
+        'target',
+        'release',
+        'bundle',
+        'macos',
+        'Bismuth.app',
+    )
+    const appPid = process.env.BISMUTH_APP_PID ?? ''
+    const logPath = join(tmpdir(), 'bismuth-update.log')
+    // Self-deleting + atomic swap: move DEST aside to a backup first, then ditto into place;
+    // restore the backup if ditto fails so a failed copy never leaves the user with no app.
+    const script = `#!/bin/bash
 # Bismuth self-update relauncher (generated). Wait for the app to quit, swap, relaunch.
 set -e
 trap 'rm -f "$0"' EXIT
@@ -289,13 +367,23 @@ else
   exit 1
 fi
 /usr/bin/open "$DEST"
-`;
-  const scriptPath = join(tmpdir(), `bismuth-update-${process.pid}-${performance.now().toFixed(0)}.sh`);
-  writeFileSync(scriptPath, script, { mode: 0o755 });
-  // nohup + & so the job reparents to launchd and outlives this sidecar.
-  Bun.spawn(["/bin/bash", "-c", `nohup bash ${JSON.stringify(scriptPath)} >${JSON.stringify(logPath)} 2>&1 &`], {
-    stdin: "ignore",
-    stdout: "ignore",
-    stderr: "ignore",
-  });
+`
+    const scriptPath = join(
+        tmpdir(),
+        `bismuth-update-${process.pid}-${performance.now().toFixed(0)}.sh`,
+    )
+    writeFileSync(scriptPath, script, { mode: 0o755 })
+    // nohup + & so the job reparents to launchd and outlives this sidecar.
+    Bun.spawn(
+        [
+            '/bin/bash',
+            '-c',
+            `nohup bash ${JSON.stringify(scriptPath)} >${JSON.stringify(logPath)} 2>&1 &`,
+        ],
+        {
+            stdin: 'ignore',
+            stdout: 'ignore',
+            stderr: 'ignore',
+        },
+    )
 }

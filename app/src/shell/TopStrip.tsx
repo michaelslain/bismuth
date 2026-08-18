@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import type { JSX } from 'solid-js'
 
 // The wordmark + platform titlebar strip, lifted out of App.tsx verbatim (design/ascii/README.md
 // "App shell", §1). macOS runs a transparent Overlay titlebar (native traffic lights float over
@@ -23,16 +23,22 @@ import type { JSX } from "solid-js";
 // migration only. `.asc-wordmark` stays a bare global permanently: it is an `asc-*`
 // design-system class living in App.css's ASCII register alongside its `@keyframes asc-sheen`
 // and its reduced-motion `@media`, not chrome owned by this component.
-export function TopStrip(props: { mac: boolean; dragRegion: boolean; children?: JSX.Element }) {
-  return (
-    <div
-      class="top-strip"
-      classList={{ "top-strip--mac": props.mac }}
-      data-tauri-drag-region={props.dragRegion ? "deep" : undefined}
-    >
-      <span class="asc-wordmark" aria-label="Bismuth">,;']--]';,</span>
-      <div class="top-strip-spacer" />
-      {props.children}
-    </div>
-  );
+export function TopStrip(props: {
+    mac: boolean
+    dragRegion: boolean
+    children?: JSX.Element
+}) {
+    return (
+        <div
+            class="top-strip"
+            classList={{ 'top-strip--mac': props.mac }}
+            data-tauri-drag-region={props.dragRegion ? 'deep' : undefined}
+        >
+            <span class="asc-wordmark" aria-label="Bismuth">
+                ,;']--]';,
+            </span>
+            <div class="top-strip-spacer" />
+            {props.children}
+        </div>
+    )
 }

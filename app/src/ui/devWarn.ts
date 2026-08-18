@@ -3,16 +3,16 @@
 // every component emits the same wording. Call sites guard these with
 // `import.meta.env?.DEV` — they have zero effect in production.
 
-import { uppercaseWarning } from "./uiLint";
+import { uppercaseWarning } from './uiLint'
 
 /**
  * Warn that `icon` is not a Lucide icon name. Single canonical message shared by
  * IconButton / IconTextButton / TextButton (matches IconButton/SearchBar).
  */
 export function warnBadIcon(component: string, icon: string): void {
-  console.warn(
-    `${component}: "${icon}" is not a Lucide icon name. Use a Lucide icon, not a literal glyph/emoji.`,
-  );
+    console.warn(
+        `${component}: "${icon}" is not a Lucide icon name. Use a Lucide icon, not a literal glyph/emoji.`,
+    )
 }
 
 /**
@@ -21,6 +21,6 @@ export function warnBadIcon(component: string, icon: string): void {
  * text itself comes from `uppercaseWarning`.
  */
 export function warnNonUppercase(_component: string, children: unknown): void {
-  const w = uppercaseWarning(children);
-  if (w) console.warn(w);
+    const w = uppercaseWarning(children)
+    if (w) console.warn(w)
 }

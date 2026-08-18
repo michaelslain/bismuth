@@ -74,22 +74,39 @@
 // that file leaves the var unset or set to "permission" and is byte-for-byte unaffected) — plus the
 // pid-teardown helper extracted to ../support/acpFakeAgentProcess.ts, shared with (and retrofitted
 // onto) acpAbortFakeAgent.test.ts.
-import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { ChatFrame } from "../../src/chat";
-import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
-import { makeChatFrameCollector } from "../support/chatFrameCollector";
-import { makeAcpFakeAgentStubDir, pidAlive, waitForPidFile, waitProcessesGone } from "../support/acpFakeAgentProcess";
-import { shouldRunSlowTests } from "../slowGate";
+import {
+    afterAll,
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    test,
+} from 'bun:test'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { ChatFrame } from '../../src/chat'
+import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
+import { makeChatFrameCollector } from '../support/chatFrameCollector'
+import {
+    makeAcpFakeAgentStubDir,
+    pidAlive,
+    waitForPidFile,
+    waitProcessesGone,
+} from '../support/acpFakeAgentProcess'
+import { shouldRunSlowTests } from '../slowGate'
 
-const FAKE_AGENT_SCRIPT = join(import.meta.dir, "..", "support", "fakeAcpAgent.ts");
+const FAKE_AGENT_SCRIPT = join(
+    import.meta.dir,
+    '..',
+    'support',
+    'fakeAcpAgent.ts',
+)
 
 // Must match ../support/fakeAcpAgent.ts's own constant — duplicated rather than imported because the
 // fake is a standalone script executed as a subprocess, not a module this test links against (the
 // same convention every sibling fake-agent test file already uses).
-const FAKE_QUEUE_TURN_PREFIX = "fake-acp queued-turn echo: ";
+const FAKE_QUEUE_TURN_PREFIX = 'fake-acp queued-turn echo: '
 
 /** How long the fake holds each `session/prompt` open before auto-settling — see fakeAcpAgent.ts's
  *  own QUEUE_HOLD_MS doc comment. Pinned explicitly here (rather than relying on the fake's own
@@ -101,7 +118,7 @@ const FAKE_QUEUE_TURN_PREFIX = "fake-acp queued-turn echo: ";
  *  than typical IPC latency — a smaller `QUEUE_HOLD_MS` (this file previously used 400ms) leaves too
  *  little slack for a scheduler overrun under full-suite load to flip "still held" into "already
  *  settled", which would fail `toBe(1)` for a reason that has nothing to do with the queue. */
-const QUEUE_HOLD_MS = 2_000;
+const QUEUE_HOLD_MS = 2_000
 
 /** How long after sending the second (and third) message to wait before asserting the first turn is
  *  still held. Comfortably less than QUEUE_HOLD_MS (leaves ~1700ms of slack — enough that a scheduler
@@ -109,11 +126,11 @@ const QUEUE_HOLD_MS = 2_000;
  *  spawn→pipe→readline round trip (so "still held" is a real observation, not a coincidence of
  *  scheduling). See QUEUE_HOLD_MS's own doc comment for why this is NOT the same margin shape as the
  *  permission-mode tests' PARKED_OBSERVATION_MS. */
-const HELD_OBSERVATION_MS = 300;
+const HELD_OBSERVATION_MS = 300
 
 interface EchoLine {
-  method?: string;
-  params?: unknown;
+    method?: string
+    params?: unknown
 }
 
 /** Same tolerance contract as every sibling fake-agent test file: a missing file is an empty array
@@ -121,21 +138,24 @@ interface EchoLine {
  *  dropped so the CURRENT poll fails and is retried, rather than throwing a spurious JSON.parse error
  *  that would fail the whole test. */
 function readEchoLines(path: string): EchoLine[] {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    return [];
-  }
-  const out: EchoLine[] = [];
-  for (const l of text.split("\n").map((s) => s.trim()).filter(Boolean)) {
+    let text: string
     try {
-      out.push(JSON.parse(l) as EchoLine);
+        text = readFileSync(path, 'utf8')
     } catch {
-      /* torn/partially-written line — see this function's doc comment */
+        return []
     }
-  }
-  return out;
+    const out: EchoLine[] = []
+    for (const l of text
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean)) {
+        try {
+            out.push(JSON.parse(l) as EchoLine)
+        } catch {
+            /* torn/partially-written line — see this function's doc comment */
+        }
+    }
+    return out
 }
 
 /** Pull the plain text out of a `session/prompt` request's own `params.prompt` — the same shape
@@ -143,263 +163,373 @@ function readEchoLines(path: string): EchoLine[] {
  *  fakeAcpAgent.ts's own `extractPromptText` for the same reason as every other constant/helper this
  *  file mirrors: the fake is a standalone subprocess script, not a module this test links against. */
 function promptText(params: unknown): string {
-  const p = params && typeof params === "object" ? (params as Record<string, unknown>) : {};
-  const blocks = Array.isArray(p.prompt) ? p.prompt : [];
-  const first = blocks.find((b) => b && typeof b === "object" && (b as Record<string, unknown>).type === "text") as
-    | Record<string, unknown>
-    | undefined;
-  return typeof first?.text === "string" ? first.text : "";
+    const p =
+        params && typeof params === 'object'
+            ? (params as Record<string, unknown>)
+            : {}
+    const blocks = Array.isArray(p.prompt) ? p.prompt : []
+    const first = blocks.find(
+        b =>
+            b &&
+            typeof b === 'object' &&
+            (b as Record<string, unknown>).type === 'text',
+    ) as Record<string, unknown> | undefined
+    return typeof first?.text === 'string' ? first.text : ''
 }
 
 /** Pull `sessionId` out of a `session/prompt` request's own params — the value under test in every
  *  sessionId assertion below. */
 function promptSessionId(params: unknown): string | undefined {
-  const p = params && typeof params === "object" ? (params as Record<string, unknown>) : {};
-  return typeof p.sessionId === "string" ? p.sessionId : undefined;
+    const p =
+        params && typeof params === 'object'
+            ? (params as Record<string, unknown>)
+            : {}
+    return typeof p.sessionId === 'string' ? p.sessionId : undefined
 }
 
-async function waitForCondition(check: () => boolean, timeoutMs: number, description: string): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (check()) return;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  throw new Error(`timeout waiting for: ${description}`);
+async function waitForCondition(
+    check: () => boolean,
+    timeoutMs: number,
+    description: string,
+): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+        if (check()) return
+        await new Promise(r => setTimeout(r, 50))
+    }
+    throw new Error(`timeout waiting for: ${description}`)
 }
 
 // Spawns real processes/sockets, so it is gated as a SLOW suite (see slowGate.ts): the
 // pre-commit gate skips it for latency; pre-push and CI still run it in full.
-const describeOrSkipSlow = shouldRunSlowTests(process.env) ? describe : describe.skip;
+const describeOrSkipSlow = shouldRunSlowTests(process.env)
+    ? describe
+    : describe.skip
 
-describeOrSkipSlow("the ACP driver's turn queue: a message sent while the previous turn is in flight, against a fake agent that holds every turn open (zero network, zero CLI dependency)", () => {
-  // `| undefined` with explicit resets in beforeEach, matching every sibling fake-agent test file's
-  // documented shape: if a throwing call in the FIRST beforeEach fails partway, afterEach must not be
-  // handed `undefined` where it expects a string (rmSync's `force:true` swallows ENOENT, not an
-  // ERR_INVALID_ARG_TYPE from a wrong argument type) — a bug this harness has shipped before.
-  let stubDir: string | undefined;
-  let echoDir: string | undefined;
-  let pidDir: string | undefined;
-  let echoFile: string;
-  let pidFile: string;
-  const savedEnv: Record<string, string | undefined> = {};
-  const ENV_KEYS = [
-    "PATH",
-    "FAKE_ACP_PROMPT_HOLD",
-    "FAKE_ACP_QUEUE_HOLD_MS",
-    "FAKE_ACP_PERMISSION_OPTIONS",
-    "FAKE_ACP_ECHO_FILE",
-    "FAKE_ACP_MODEL_SHAPE",
-    "FAKE_ACP_AUTH_GATE",
-    "FAKE_ACP_CLINE_AUTHED",
-  ] as const;
-  const chatIds: string[] = [];
-  // Pids this test itself caused to exist (captured via waitForPidFile once a session is confirmed
-  // open), verified gone in afterEach — see ../support/acpFakeAgentProcess.ts's header for why a
-  // synchronous afterEach that only calls closeChat() is not sufficient on its own.
-  const spawnedPids: number[] = [];
+describeOrSkipSlow(
+    "the ACP driver's turn queue: a message sent while the previous turn is in flight, against a fake agent that holds every turn open (zero network, zero CLI dependency)",
+    () => {
+        // `| undefined` with explicit resets in beforeEach, matching every sibling fake-agent test file's
+        // documented shape: if a throwing call in the FIRST beforeEach fails partway, afterEach must not be
+        // handed `undefined` where it expects a string (rmSync's `force:true` swallows ENOENT, not an
+        // ERR_INVALID_ARG_TYPE from a wrong argument type) — a bug this harness has shipped before.
+        let stubDir: string | undefined
+        let echoDir: string | undefined
+        let pidDir: string | undefined
+        let echoFile: string
+        let pidFile: string
+        const savedEnv: Record<string, string | undefined> = {}
+        const ENV_KEYS = [
+            'PATH',
+            'FAKE_ACP_PROMPT_HOLD',
+            'FAKE_ACP_QUEUE_HOLD_MS',
+            'FAKE_ACP_PERMISSION_OPTIONS',
+            'FAKE_ACP_ECHO_FILE',
+            'FAKE_ACP_MODEL_SHAPE',
+            'FAKE_ACP_AUTH_GATE',
+            'FAKE_ACP_CLINE_AUTHED',
+        ] as const
+        const chatIds: string[] = []
+        // Pids this test itself caused to exist (captured via waitForPidFile once a session is confirmed
+        // open), verified gone in afterEach — see ../support/acpFakeAgentProcess.ts's header for why a
+        // synchronous afterEach that only calls closeChat() is not sufficient on its own.
+        const spawnedPids: number[] = []
 
-  function restoreEnv(): void {
-    for (const k of ENV_KEYS) {
-      if (savedEnv[k] === undefined) delete process.env[k];
-      else process.env[k] = savedEnv[k];
-    }
-  }
+        function restoreEnv(): void {
+            for (const k of ENV_KEYS) {
+                if (savedEnv[k] === undefined) delete process.env[k]
+                else process.env[k] = savedEnv[k]
+            }
+        }
 
-  beforeEach(() => {
-    // Snapshot env BEFORE anything that can throw — see every sibling fake-agent test file's
-    // identical ordering discipline (a first-beforeEach throw must never leave a later test's PATH
-    // stripped by afterEach's restore).
-    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+        beforeEach(() => {
+            // Snapshot env BEFORE anything that can throw — see every sibling fake-agent test file's
+            // identical ordering discipline (a first-beforeEach throw must never leave a later test's PATH
+            // stripped by afterEach's restore).
+            for (const k of ENV_KEYS) savedEnv[k] = process.env[k]
 
-    stubDir = undefined;
-    echoDir = undefined;
-    pidDir = undefined;
-    pidDir = mkdtempSync(join(tmpdir(), "bismuth-acp-queue-pid-"));
-    pidFile = join(pidDir, "agent.pid");
-    stubDir = makeAcpFakeAgentStubDir("bismuth-acp-queue-stub-", "cline", FAKE_AGENT_SCRIPT, pidFile);
-    echoDir = mkdtempSync(join(tmpdir(), "bismuth-acp-queue-echo-"));
-    echoFile = join(echoDir, "echo.jsonl");
+            stubDir = undefined
+            echoDir = undefined
+            pidDir = undefined
+            pidDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-queue-pid-'))
+            pidFile = join(pidDir, 'agent.pid')
+            stubDir = makeAcpFakeAgentStubDir(
+                'bismuth-acp-queue-stub-',
+                'cline',
+                FAKE_AGENT_SCRIPT,
+                pidFile,
+            )
+            echoDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-queue-echo-'))
+            echoFile = join(echoDir, 'echo.jsonl')
 
-    // Prepended, not appended: must win over any real `cline` installed elsewhere on PATH.
-    process.env.PATH = `${stubDir}:${savedEnv.PATH ?? ""}`;
-    process.env.FAKE_ACP_ECHO_FILE = echoFile;
-    process.env.FAKE_ACP_PROMPT_HOLD = "queue";
-    process.env.FAKE_ACP_QUEUE_HOLD_MS = String(QUEUE_HOLD_MS);
-    // Hermetic against ambient env — the same finding every sibling fake-agent test file's beforeEach
-    // documents: a stray FAKE_ACP_AUTH_GATE (or a leftover permission-options var) exported in the
-    // shell running `bun test` must not leak into this file's own tests.
-    process.env.FAKE_ACP_MODEL_SHAPE = "new";
-    delete process.env.FAKE_ACP_AUTH_GATE;
-    delete process.env.FAKE_ACP_CLINE_AUTHED;
-    delete process.env.FAKE_ACP_PERMISSION_OPTIONS;
-  });
+            // Prepended, not appended: must win over any real `cline` installed elsewhere on PATH.
+            process.env.PATH = `${stubDir}:${savedEnv.PATH ?? ''}`
+            process.env.FAKE_ACP_ECHO_FILE = echoFile
+            process.env.FAKE_ACP_PROMPT_HOLD = 'queue'
+            process.env.FAKE_ACP_QUEUE_HOLD_MS = String(QUEUE_HOLD_MS)
+            // Hermetic against ambient env — the same finding every sibling fake-agent test file's beforeEach
+            // documents: a stray FAKE_ACP_AUTH_GATE (or a leftover permission-options var) exported in the
+            // shell running `bun test` must not leak into this file's own tests.
+            process.env.FAKE_ACP_MODEL_SHAPE = 'new'
+            delete process.env.FAKE_ACP_AUTH_GATE
+            delete process.env.FAKE_ACP_CLINE_AUTHED
+            delete process.env.FAKE_ACP_PERMISSION_OPTIONS
+        })
 
-  afterEach(async () => {
-    // Env restore FIRST: a throw below must never skip restoration and leave a later test (in this
-    // file or a later file in this same process) pointed at a stub PATH.
-    restoreEnv();
+        afterEach(async () => {
+            // Env restore FIRST: a throw below must never skip restoration and leave a later test (in this
+            // file or a later file in this same process) pointed at a stub PATH.
+            restoreEnv()
 
-    // Temp-dir cleanup lives in `finally`, not merely "after" the close/poll calls: closeChat() and
-    // waitProcessesGone() are both non-throwing as of this writing (closeChat's own
-    // killWithEscalation wraps every proc.kill() in try/catch; waitProcessesGone never throws by its
-    // own doc comment/contract), so this is defense-in-depth against a FUTURE regression in either —
-    // not a currently-observed gap — but it costs nothing and closes the only ordering hole that is
-    // even theoretically ours to close: a throw between "session close requested" and "temp dirs
-    // removed" must never skip the removal. What this can NEVER cover: the whole process (this
-    // `bun test` run) being killed with SIGKILL — no `finally` runs when there is no process left to
-    // run it in; that half is categorically unfixable from inside this file.
-    let stillAlive: number[] = [];
-    try {
-      for (const id of chatIds.splice(0)) CHAT_BACKENDS.cline.closeChat(id);
+            // Temp-dir cleanup lives in `finally`, not merely "after" the close/poll calls: closeChat() and
+            // waitProcessesGone() are both non-throwing as of this writing (closeChat's own
+            // killWithEscalation wraps every proc.kill() in try/catch; waitProcessesGone never throws by its
+            // own doc comment/contract), so this is defense-in-depth against a FUTURE regression in either —
+            // not a currently-observed gap — but it costs nothing and closes the only ordering hole that is
+            // even theoretically ours to close: a throw between "session close requested" and "temp dirs
+            // removed" must never skip the removal. What this can NEVER cover: the whole process (this
+            // `bun test` run) being killed with SIGKILL — no `finally` runs when there is no process left to
+            // run it in; that half is categorically unfixable from inside this file.
+            let stillAlive: number[] = []
+            try {
+                for (const id of chatIds.splice(0))
+                    CHAT_BACKENDS.cline.closeChat(id)
 
-      // closeChat() only SENDS a signal (SIGTERM, escalating to SIGKILL after driver.ts's
-      // KILL_ESCALATION_GRACE_MS if ignored) — it does not wait for the process to exit. Poll by
-      // OWNED pid (never a `pgrep -f` pattern match) via the shared helper — see
-      // acpFakeAgentProcess.ts's own header.
-      stillAlive = await waitProcessesGone(spawnedPids.splice(0));
-    } finally {
-      if (stubDir) rmSync(stubDir, { recursive: true, force: true });
-      if (echoDir) rmSync(echoDir, { recursive: true, force: true });
-      if (pidDir) rmSync(pidDir, { recursive: true, force: true });
-    }
+                // closeChat() only SENDS a signal (SIGTERM, escalating to SIGKILL after driver.ts's
+                // KILL_ESCALATION_GRACE_MS if ignored) — it does not wait for the process to exit. Poll by
+                // OWNED pid (never a `pgrep -f` pattern match) via the shared helper — see
+                // acpFakeAgentProcess.ts's own header.
+                stillAlive = await waitProcessesGone(spawnedPids.splice(0))
+            } finally {
+                if (stubDir) rmSync(stubDir, { recursive: true, force: true })
+                if (echoDir) rmSync(echoDir, { recursive: true, force: true })
+                if (pidDir) rmSync(pidDir, { recursive: true, force: true })
+            }
 
-    if (stillAlive.length > 0) {
-      throw new Error(`acpQueueFakeAgent.test: fake-agent pid(s) ${stillAlive.join(", ")} still alive after closeChat — a real leak.`);
-    }
-  }, 15_000);
+            if (stillAlive.length > 0) {
+                throw new Error(
+                    `acpQueueFakeAgent.test: fake-agent pid(s) ${stillAlive.join(', ')} still alive after closeChat — a real leak.`,
+                )
+            }
+        }, 15_000)
 
-  afterAll(() => {
-    // Belt-and-suspenders: a thrown assertion mid-test must never leave a LATER, unrelated test file
-    // in this same `bun test` process pointed at a stub PATH or a stuck FAKE_ACP_* var.
-    restoreEnv();
-  });
+        afterAll(() => {
+            // Belt-and-suspenders: a thrown assertion mid-test must never leave a LATER, unrelated test file
+            // in this same `bun test` process pointed at a stub PATH or a stuck FAKE_ACP_* var.
+            restoreEnv()
+        })
 
-  /**
-   * Pre-create the session and wait for the handshake+session/new round trip to finish (the
-   * "session" frame) before this file's own turn-QUEUE scenario begins. Without this, the very
-   * first `sendMessage` call on a brand-new chat races its OWN async session creation — a real gap
-   * driver.ts's own "new session" branch documents itself (see its "PRE-EXISTING GAP" comment,
-   * driver.ts:643) — which would make a bare
-   * two-`sendMessage`-calls-back-to-back test flaky for a reason that has nothing to do with the
-   * queue this task is testing. Pre-creating the session and waiting for confirmation that it is
-   * open (turnActive: false, sessionId assigned) makes the FIRST `sendMessage` call below take the
-   * "existing session" branch, whose own path to `runOrQueue` is fully synchronous up to and
-   * including `session/prompt` hitting the wire — the property this file's assertions depend on.
-   *
-   * Also captures the fake agent's own pid (for teardown verification) and returns the ACP
-   * `sessionId` the driver reports — the INDEPENDENTLY-obtained expected value every sessionId
-   * assertion below compares against, rather than comparing wire values only to each other (a
-   * tautology given `s.sessionId` is assigned exactly once — see this file's header).
-   */
-  async function openReadySession(
-    chatId: string,
-    sink: (f: ChatFrame) => void,
-    waitFor: (match: (f: ChatFrame) => boolean, timeoutMs?: number) => Promise<ChatFrame>,
-  ): Promise<string> {
-    CHAT_BACKENDS.cline.openSession({ chatId, cwd: "/tmp", sink, computerUse: false });
-    const sessionFrame = await waitFor((f) => f.type === "session");
-    if (sessionFrame.type !== "session") throw new Error(`expected a "session" frame, got ${sessionFrame.type}`);
+        /**
+         * Pre-create the session and wait for the handshake+session/new round trip to finish (the
+         * "session" frame) before this file's own turn-QUEUE scenario begins. Without this, the very
+         * first `sendMessage` call on a brand-new chat races its OWN async session creation — a real gap
+         * driver.ts's own "new session" branch documents itself (see its "PRE-EXISTING GAP" comment,
+         * driver.ts:643) — which would make a bare
+         * two-`sendMessage`-calls-back-to-back test flaky for a reason that has nothing to do with the
+         * queue this task is testing. Pre-creating the session and waiting for confirmation that it is
+         * open (turnActive: false, sessionId assigned) makes the FIRST `sendMessage` call below take the
+         * "existing session" branch, whose own path to `runOrQueue` is fully synchronous up to and
+         * including `session/prompt` hitting the wire — the property this file's assertions depend on.
+         *
+         * Also captures the fake agent's own pid (for teardown verification) and returns the ACP
+         * `sessionId` the driver reports — the INDEPENDENTLY-obtained expected value every sessionId
+         * assertion below compares against, rather than comparing wire values only to each other (a
+         * tautology given `s.sessionId` is assigned exactly once — see this file's header).
+         */
+        async function openReadySession(
+            chatId: string,
+            sink: (f: ChatFrame) => void,
+            waitFor: (
+                match: (f: ChatFrame) => boolean,
+                timeoutMs?: number,
+            ) => Promise<ChatFrame>,
+        ): Promise<string> {
+            CHAT_BACKENDS.cline.openSession({
+                chatId,
+                cwd: '/tmp',
+                sink,
+                computerUse: false,
+            })
+            const sessionFrame = await waitFor(f => f.type === 'session')
+            if (sessionFrame.type !== 'session')
+                throw new Error(
+                    `expected a "session" frame, got ${sessionFrame.type}`,
+                )
 
-    const pid = await waitForPidFile(pidFile);
-    spawnedPids.push(pid);
-    expect(pidAlive(pid)).toBe(true); // sanity: alive now, so "not alive after teardown" means something
+            const pid = await waitForPidFile(pidFile)
+            spawnedPids.push(pid)
+            expect(pidAlive(pid)).toBe(true) // sanity: alive now, so "not alive after teardown" means something
 
-    return sessionFrame.sessionId;
-  }
+            return sessionFrame.sessionId
+        }
 
-  test(
-    "two sendMessage calls back to back: the second is queued (not dispatched) while the first turn is in flight, and runs after it settles — in submission order, on the same ACP session",
-    async () => {
-      const chatId = "acp-queue-two-" + Date.now();
-      chatIds.push(chatId);
-      const { sink, frames, waitFor } = makeChatFrameCollector(20_000);
+        test('two sendMessage calls back to back: the second is queued (not dispatched) while the first turn is in flight, and runs after it settles — in submission order, on the same ACP session', async () => {
+            const chatId = 'acp-queue-two-' + Date.now()
+            chatIds.push(chatId)
+            const { sink, frames, waitFor } = makeChatFrameCollector(20_000)
 
-      const expectedSessionId = await openReadySession(chatId, sink, waitFor);
+            const expectedSessionId = await openReadySession(
+                chatId,
+                sink,
+                waitFor,
+            )
 
-      CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "first message" });
-      CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "second message" });
+            CHAT_BACKENDS.cline.sendMessage({
+                chatId,
+                cwd: '/tmp',
+                sink,
+                computerUse: false,
+                text: 'first message',
+            })
+            CHAT_BACKENDS.cline.sendMessage({
+                chatId,
+                cwd: '/tmp',
+                sink,
+                computerUse: false,
+                text: 'second message',
+            })
 
-      // THE assertion this test exists for (see this file's header): while turn 1 is still
-      // genuinely held, the second message must NOT have reached the wire at all — it is sitting in
-      // the driver's own queue. A driver that bypassed the turnActive gate would show 2 lines here.
-      await new Promise((r) => setTimeout(r, HELD_OBSERVATION_MS));
-      expect(readEchoLines(echoFile).filter((l) => l.method === "session/prompt").length).toBe(1);
-      expect(frames.filter((f) => f.type === "done").length).toBe(0);
+            // THE assertion this test exists for (see this file's header): while turn 1 is still
+            // genuinely held, the second message must NOT have reached the wire at all — it is sitting in
+            // the driver's own queue. A driver that bypassed the turnActive gate would show 2 lines here.
+            await new Promise(r => setTimeout(r, HELD_OBSERVATION_MS))
+            expect(
+                readEchoLines(echoFile).filter(
+                    l => l.method === 'session/prompt',
+                ).length,
+            ).toBe(1)
+            expect(frames.filter(f => f.type === 'done').length).toBe(0)
 
-      await waitForCondition(
-        () => frames.filter((f) => f.type === "done").length === 2,
-        QUEUE_HOLD_MS * 2 + 8_000,
-        "2 done frames (both turns settled)",
-      );
+            await waitForCondition(
+                () => frames.filter(f => f.type === 'done').length === 2,
+                QUEUE_HOLD_MS * 2 + 8_000,
+                '2 done frames (both turns settled)',
+            )
 
-      const prompts = readEchoLines(echoFile).filter((l) => l.method === "session/prompt");
-      expect(prompts.length).toBe(2);
-      // Submission order, not mere presence — see this file's header.
-      expect(prompts.map((p) => promptText(p.params))).toEqual(["first message", "second message"]);
-      // Compared against an INDEPENDENTLY obtained expected value (the driver's own "session" frame),
-      // not against each other — see this file's header on why sessionIds[1] === sessionIds[0] alone
-      // would be a tautology.
-      expect(promptSessionId(prompts[0].params)).toBe(expectedSessionId);
-      expect(promptSessionId(prompts[1].params)).toBe(expectedSessionId);
+            const prompts = readEchoLines(echoFile).filter(
+                l => l.method === 'session/prompt',
+            )
+            expect(prompts.length).toBe(2)
+            // Submission order, not mere presence — see this file's header.
+            expect(prompts.map(p => promptText(p.params))).toEqual([
+                'first message',
+                'second message',
+            ])
+            // Compared against an INDEPENDENTLY obtained expected value (the driver's own "session" frame),
+            // not against each other — see this file's header on why sessionIds[1] === sessionIds[0] alone
+            // would be a tautology.
+            expect(promptSessionId(prompts[0].params)).toBe(expectedSessionId)
+            expect(promptSessionId(prompts[1].params)).toBe(expectedSessionId)
 
-      // Independent second proof channel (the driver's own frame stream, not the echo file) — mirrors
-      // acpPermissionFakeAgent.test.ts's identical dual-proof idiom.
-      const queueTexts = frames.filter((f): f is Extract<ChatFrame, { type: "assistant-text" }> => f.type === "assistant-text").map((f) => f.text);
-      expect(queueTexts).toEqual([`${FAKE_QUEUE_TURN_PREFIX}first message`, `${FAKE_QUEUE_TURN_PREFIX}second message`]);
+            // Independent second proof channel (the driver's own frame stream, not the echo file) — mirrors
+            // acpPermissionFakeAgent.test.ts's identical dual-proof idiom.
+            const queueTexts = frames
+                .filter(
+                    (f): f is Extract<ChatFrame, { type: 'assistant-text' }> =>
+                        f.type === 'assistant-text',
+                )
+                .map(f => f.text)
+            expect(queueTexts).toEqual([
+                `${FAKE_QUEUE_TURN_PREFIX}first message`,
+                `${FAKE_QUEUE_TURN_PREFIX}second message`,
+            ])
 
-      expect(frames.filter((f) => f.type === "done").length).toBe(2);
-      const results = frames.filter((f): f is Extract<ChatFrame, { type: "result" }> => f.type === "result");
-      expect(results.length).toBe(2);
-      expect(results.every((r) => r.isError === false)).toBe(true);
-      expect(frames.some((f) => f.type === "error")).toBe(false);
+            expect(frames.filter(f => f.type === 'done').length).toBe(2)
+            const results = frames.filter(
+                (f): f is Extract<ChatFrame, { type: 'result' }> =>
+                    f.type === 'result',
+            )
+            expect(results.length).toBe(2)
+            expect(results.every(r => r.isError === false)).toBe(true)
+            expect(frames.some(f => f.type === 'error')).toBe(false)
+        }, 25_000)
+
+        test('three sendMessage calls while the first is in flight: the two QUEUED turns run in the order they were submitted, not reversed', async () => {
+            const chatId = 'acp-queue-three-' + Date.now()
+            chatIds.push(chatId)
+            const { sink, frames, waitFor } = makeChatFrameCollector(25_000)
+
+            const expectedSessionId = await openReadySession(
+                chatId,
+                sink,
+                waitFor,
+            )
+
+            CHAT_BACKENDS.cline.sendMessage({
+                chatId,
+                cwd: '/tmp',
+                sink,
+                computerUse: false,
+                text: 'alpha',
+            })
+            CHAT_BACKENDS.cline.sendMessage({
+                chatId,
+                cwd: '/tmp',
+                sink,
+                computerUse: false,
+                text: 'beta',
+            })
+            CHAT_BACKENDS.cline.sendMessage({
+                chatId,
+                cwd: '/tmp',
+                sink,
+                computerUse: false,
+                text: 'gamma',
+            })
+
+            // Both "beta" and "gamma" are queued behind "alpha" at this instant — the two-simultaneously-
+            // queued scenario a bare two-message test cannot exercise (see this file's header). Same
+            // completeness checks as the two-message test above (0 done frames, exactly 1 wire request)
+            // while held, not dropped just because this test's own focus is ordering.
+            await new Promise(r => setTimeout(r, HELD_OBSERVATION_MS))
+            expect(
+                readEchoLines(echoFile).filter(
+                    l => l.method === 'session/prompt',
+                ).length,
+            ).toBe(1)
+            expect(frames.filter(f => f.type === 'done').length).toBe(0)
+
+            await waitForCondition(
+                () => frames.filter(f => f.type === 'done').length === 3,
+                QUEUE_HOLD_MS * 3 + 10_000,
+                '3 done frames',
+            )
+
+            const prompts = readEchoLines(echoFile).filter(
+                l => l.method === 'session/prompt',
+            )
+            expect(prompts.length).toBe(3)
+            // THE assertion this test exists for: submission order specifically. A LIFO (or otherwise
+            // reordering) queue drain still produces 3 session/prompt calls and 3 done frames — passing
+            // every count-based check in this file — while getting beta/gamma backwards here.
+            expect(prompts.map(p => promptText(p.params))).toEqual([
+                'alpha',
+                'beta',
+                'gamma',
+            ])
+            for (const p of prompts)
+                expect(promptSessionId(p.params)).toBe(expectedSessionId)
+
+            const queueTexts = frames
+                .filter(
+                    (f): f is Extract<ChatFrame, { type: 'assistant-text' }> =>
+                        f.type === 'assistant-text',
+                )
+                .map(f => f.text)
+            expect(queueTexts).toEqual([
+                `${FAKE_QUEUE_TURN_PREFIX}alpha`,
+                `${FAKE_QUEUE_TURN_PREFIX}beta`,
+                `${FAKE_QUEUE_TURN_PREFIX}gamma`,
+            ])
+
+            expect(frames.filter(f => f.type === 'done').length).toBe(3)
+            const results = frames.filter(
+                (f): f is Extract<ChatFrame, { type: 'result' }> =>
+                    f.type === 'result',
+            )
+            expect(results.length).toBe(3)
+            expect(results.every(r => r.isError === false)).toBe(true)
+            expect(frames.some(f => f.type === 'error')).toBe(false)
+        }, 30_000)
     },
-    25_000,
-  );
-
-  test(
-    "three sendMessage calls while the first is in flight: the two QUEUED turns run in the order they were submitted, not reversed",
-    async () => {
-      const chatId = "acp-queue-three-" + Date.now();
-      chatIds.push(chatId);
-      const { sink, frames, waitFor } = makeChatFrameCollector(25_000);
-
-      const expectedSessionId = await openReadySession(chatId, sink, waitFor);
-
-      CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "alpha" });
-      CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "beta" });
-      CHAT_BACKENDS.cline.sendMessage({ chatId, cwd: "/tmp", sink, computerUse: false, text: "gamma" });
-
-      // Both "beta" and "gamma" are queued behind "alpha" at this instant — the two-simultaneously-
-      // queued scenario a bare two-message test cannot exercise (see this file's header). Same
-      // completeness checks as the two-message test above (0 done frames, exactly 1 wire request)
-      // while held, not dropped just because this test's own focus is ordering.
-      await new Promise((r) => setTimeout(r, HELD_OBSERVATION_MS));
-      expect(readEchoLines(echoFile).filter((l) => l.method === "session/prompt").length).toBe(1);
-      expect(frames.filter((f) => f.type === "done").length).toBe(0);
-
-      await waitForCondition(
-        () => frames.filter((f) => f.type === "done").length === 3,
-        QUEUE_HOLD_MS * 3 + 10_000,
-        "3 done frames",
-      );
-
-      const prompts = readEchoLines(echoFile).filter((l) => l.method === "session/prompt");
-      expect(prompts.length).toBe(3);
-      // THE assertion this test exists for: submission order specifically. A LIFO (or otherwise
-      // reordering) queue drain still produces 3 session/prompt calls and 3 done frames — passing
-      // every count-based check in this file — while getting beta/gamma backwards here.
-      expect(prompts.map((p) => promptText(p.params))).toEqual(["alpha", "beta", "gamma"]);
-      for (const p of prompts) expect(promptSessionId(p.params)).toBe(expectedSessionId);
-
-      const queueTexts = frames.filter((f): f is Extract<ChatFrame, { type: "assistant-text" }> => f.type === "assistant-text").map((f) => f.text);
-      expect(queueTexts).toEqual([`${FAKE_QUEUE_TURN_PREFIX}alpha`, `${FAKE_QUEUE_TURN_PREFIX}beta`, `${FAKE_QUEUE_TURN_PREFIX}gamma`]);
-
-      expect(frames.filter((f) => f.type === "done").length).toBe(3);
-      const results = frames.filter((f): f is Extract<ChatFrame, { type: "result" }> => f.type === "result");
-      expect(results.length).toBe(3);
-      expect(results.every((r) => r.isError === false)).toBe(true);
-      expect(frames.some((f) => f.type === "error")).toBe(false);
-    },
-    30_000,
-  );
-});
+)

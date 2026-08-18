@@ -5,48 +5,52 @@
 // <table> widget; a block becomes "active" (shows raw pipe source for structural /
 // power edits) when the user opens it via the widget's source toggle. It stays
 // active only while the cursor remains inside its line range.
-import { Facet, StateEffect, StateField } from "@codemirror/state";
-import { groupTableBlocks } from "./tableModel";
-import type { NoteCandidate } from "./wikilink";
+import { Facet, StateEffect, StateField } from '@codemirror/state'
+import { groupTableBlocks } from './tableModel'
+import type { NoteCandidate } from './wikilink'
 
 /** The current note's vault path, supplied by the editor host. The table widget reads it
  *  to scope its persisted (visual-only) column widths / row heights per note. */
 export const notePathFacet = Facet.define<string | null, string | null>({
-  combine: (values) => values[0] ?? null,
-});
+    combine: values => values[0] ?? null,
+})
 
 /** A live getter for the vault's note candidates, supplied by the editor host. The table
  *  widget reads it to resolve a wikilink clicked in a cell to its real vault path (#33) — a
  *  GETTER (not a snapshot) so the list stays current as notes are added/renamed. Defaults to
  *  an empty list when no host provides it (e.g. a card editor). */
-export const noteNamesFacet = Facet.define<() => NoteCandidate[], () => NoteCandidate[]>({
-  combine: (values) => values[0] ?? (() => []),
-});
+export const noteNamesFacet = Facet.define<
+    () => NoteCandidate[],
+    () => NoteCandidate[]
+>({
+    combine: values => values[0] ?? (() => []),
+})
 
 /** A live getter for the vault's `#tag` names (bare, no leading `#`), supplied by the editor host.
  *  The in-cell CodeMirror EDIT face (cellEditor.ts) reads it so a cell's `#tag` autocomplete offers
  *  the exact same candidates the note body's does (#49). A GETTER (not a snapshot) so it stays
  *  current; defaults to an empty list when no host provides it. */
 export const tagNamesFacet = Facet.define<() => string[], () => string[]>({
-  combine: (values) => values[0] ?? (() => []),
-});
+    combine: values => values[0] ?? (() => []),
+})
 
 /** Request raw-source mode for the table block whose header is at this 1-based line
  *  (or null to clear). */
-export const setActiveTableEffect = StateEffect.define<number | null>();
+export const setActiveTableEffect = StateEffect.define<number | null>()
 
 /** The header line of the table block currently shown as raw source, or null. */
 export const activeTableField = StateField.define<number | null>({
-  create: () => null,
-  update(value, tr) {
-    for (const e of tr.effects) if (e.is(setActiveTableEffect)) return e.value;
-    if (value == null) return value;
-    if (!tr.docChanged && !tr.selection) return value;
-    // Stay raw only while the cursor is still within the (possibly shifted) block.
-    const doc = tr.state.doc;
-    const head = doc.lineAt(tr.state.selection.main.head).number;
-    const { blocks } = groupTableBlocks(doc);
-    const block = blocks.find((b) => head >= b.startLine && head <= b.endLine);
-    return block ? block.startLine : null;
-  },
-});
+    create: () => null,
+    update(value, tr) {
+        for (const e of tr.effects)
+            if (e.is(setActiveTableEffect)) return e.value
+        if (value == null) return value
+        if (!tr.docChanged && !tr.selection) return value
+        // Stay raw only while the cursor is still within the (possibly shifted) block.
+        const doc = tr.state.doc
+        const head = doc.lineAt(tr.state.selection.main.head).number
+        const { blocks } = groupTableBlocks(doc)
+        const block = blocks.find(b => head >= b.startLine && head <= b.endLine)
+        return block ? block.startLine : null
+    },
+})

@@ -14,9 +14,9 @@
  * "Open folder…" fail invisibly (github issue #6) — a packaged app has no visible console.
  */
 export type PickResult =
-  | { status: "picked"; path: string }
-  | { status: "cancelled" }
-  | { status: "error"; message: string };
+    | { status: 'picked'; path: string }
+    | { status: 'cancelled' }
+    | { status: 'error'; message: string }
 
 /**
  * Pure core of the picker's outcome decision, so the cancel-vs-error distinction is testable
@@ -24,14 +24,17 @@ export type PickResult =
  * fall back to their own flow, so it reads as a cancel, not an error.
  */
 export function classifyPickResult(r: {
-  value?: unknown;
-  thrown?: unknown;
-  unavailable?: boolean;
+    value?: unknown
+    thrown?: unknown
+    unavailable?: boolean
 }): PickResult {
-  if (r.unavailable) return { status: "cancelled" };
-  if (r.thrown !== undefined) {
-    const message = r.thrown instanceof Error ? r.thrown.message : String(r.thrown);
-    return { status: "error", message };
-  }
-  return typeof r.value === "string" ? { status: "picked", path: r.value } : { status: "cancelled" };
+    if (r.unavailable) return { status: 'cancelled' }
+    if (r.thrown !== undefined) {
+        const message =
+            r.thrown instanceof Error ? r.thrown.message : String(r.thrown)
+        return { status: 'error', message }
+    }
+    return typeof r.value === 'string'
+        ? { status: 'picked', path: r.value }
+        : { status: 'cancelled' }
 }

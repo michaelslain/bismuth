@@ -9,34 +9,37 @@
 /** One selectable model as it arrives on the `models` frame — only the fields the Effort picker
  *  needs (its value + the effort levels it supports). Mirrors the wider entry in core/src/chat.ts. */
 export interface EffortModel {
-  value: string;
-  effortLevels: string[];
+    value: string
+    effortLevels: string[]
 }
 
 /** A single option for the Effort `Select`. */
 export interface EffortOption {
-  value: string;
-  label: string;
+    value: string
+    label: string
 }
 
 /** Human labels for the SDK's discrete effort levels (EffortLevel = low|medium|high|xhigh|max).
  *  A level not listed here falls back to a capitalized form, so a future level still renders. */
 export const EFFORT_LABELS: Record<string, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra high",
-  max: "Max",
-};
+    low: 'Low',
+    medium: 'Medium',
+    high: 'High',
+    xhigh: 'Extra high',
+    max: 'Max',
+}
 
 /** The SDK's documented default effort ("high" — deep reasoning). Used ONLY as the picker's DISPLAY
  *  fallback before the user has chosen a level; it is never force-sent to the session (an unset
  *  effort leaves the model/CLI default untouched). */
-export const DEFAULT_EFFORT_DISPLAY = "high";
+export const DEFAULT_EFFORT_DISPLAY = 'high'
 
 /** A friendly label for an effort level. */
 export function effortLabel(level: string): string {
-  return EFFORT_LABELS[level] ?? (level ? level.charAt(0).toUpperCase() + level.slice(1) : level);
+    return (
+        EFFORT_LABELS[level] ??
+        (level ? level.charAt(0).toUpperCase() + level.slice(1) : level)
+    )
 }
 
 /**
@@ -45,8 +48,11 @@ export function effortLabel(level: string): string {
  * the picker with something the session would reject. `allowed` is the selected model's live
  * supportedEffortLevels — the single source of truth, never a hardcoded set.
  */
-export function sanitizeEffort(raw: string | null | undefined, allowed: readonly string[]): string {
-  return raw != null && allowed.includes(raw) ? raw : "";
+export function sanitizeEffort(
+    raw: string | null | undefined,
+    allowed: readonly string[],
+): string {
+    return raw != null && allowed.includes(raw) ? raw : ''
 }
 
 /**
@@ -55,8 +61,11 @@ export function sanitizeEffort(raw: string | null | undefined, allowed: readonly
  * model is unknown or exposes no effort levels (an older CLI / a model without effort) — the header
  * then hides the picker. Pure so the "options track the selected model" rule is unit-tested.
  */
-export function effortOptionsForModel(modelValue: string, models: readonly EffortModel[]): EffortOption[] {
-  const m = models.find((x) => x.value === modelValue);
-  const levels = m?.effortLevels ?? [];
-  return levels.map((l) => ({ value: l, label: effortLabel(l) }));
+export function effortOptionsForModel(
+    modelValue: string,
+    models: readonly EffortModel[],
+): EffortOption[] {
+    const m = models.find(x => x.value === modelValue)
+    const levels = m?.effortLevels ?? []
+    return levels.map(l => ({ value: l, label: effortLabel(l) }))
 }

@@ -6,137 +6,154 @@
 // A calendar lives in a `type: base` + `view: calendar` markdown file: events are the
 // base's row table (YAML list), categories are a frontmatter key. Every write preserves
 // the WHOLE frontmatter and only touches events + categories (matching BaseBackend).
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { parseRows, serializeRows } from "./bases/rows";
-import type { Row } from "./bases/types";
-import { createError } from "./error";
-import { parseRRule, firstOccurrence } from "./gcal/recurrence";
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import { parseRows, serializeRows } from './bases/rows'
+import type { Row } from './bases/types'
+import { createError } from './error'
+import { parseRRule, firstOccurrence } from './gcal/recurrence'
 // The recurrence rule model + its date math live in ./bases/recurrence (the canonical copy, which
 // bases/types.ts already re-exports and app/src/export/calendarHtml.ts already imports directly).
 // This module used to carry a byte-identical second copy; it now re-exports that one so the two
 // can't drift. The re-export keeps calendar.ts's own public surface unchanged for cli/src/commands.
-import { toDateStr, addDays, expandRecurrence } from "./bases/recurrence";
-export { toDateStr, addDays, expandRecurrence } from "./bases/recurrence";
-export type { Recurrence, RecurrenceType } from "./bases/recurrence";
-import type { Recurrence } from "./bases/recurrence";
+import { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
+export { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
+export type { Recurrence, RecurrenceType } from './bases/recurrence'
+import type { Recurrence } from './bases/recurrence'
 
 export interface Category {
-  name: string;
-  color: string;
+    name: string
+    color: string
 }
 
 export interface CalendarEvent {
-  id: string;
-  title: string;
-  date: string; // "YYYY-MM-DD"
-  startTime?: string; // "HH:MM" — undefined = all-day
-  endTime?: string;
-  location?: string;
-  link?: string;
-  description?: string;
-  category?: string;
-  categories?: string[];
-  recurrence?: Recurrence;
-  localUpdated?: string; // ISO timestamp stamped on every local create/edit
+    id: string
+    title: string
+    date: string // "YYYY-MM-DD"
+    startTime?: string // "HH:MM" — undefined = all-day
+    endTime?: string
+    location?: string
+    link?: string
+    description?: string
+    category?: string
+    categories?: string[]
+    recurrence?: Recurrence
+    localUpdated?: string // ISO timestamp stamped on every local create/edit
 }
 
 export interface ParsedCalendar {
-  frontmatter: Record<string, unknown>;
-  events: CalendarEvent[];
+    frontmatter: Record<string, unknown>
+    events: CalendarEvent[]
 }
 
 // ── ids + time ──────────────────────────────────────────────────────────────
 
-export const newId = (): string => crypto.randomUUID();
-const now = (): string => new Date().toISOString();
+export const newId = (): string => crypto.randomUUID()
+const now = (): string => new Date().toISOString()
 
 // ── row ⇄ event mapping (mirrors calendarSerialize.ts) ────────────────────────
 
 function str(v: unknown): string | undefined {
-  return v === undefined || v === null || v === "" ? undefined : String(v);
+    return v === undefined || v === null || v === '' ? undefined : String(v)
 }
 
 export function rowToEvent(row: Row, i: number): CalendarEvent {
-  const n = row.note;
-  const rawRec = n.recurrence;
-  let recurrence: Recurrence | undefined;
-  if (rawRec) {
-    try {
-      recurrence = typeof rawRec === "string" ? (JSON.parse(rawRec) as Recurrence) : (rawRec as Recurrence);
-    } catch {
-      recurrence = undefined;
+    const n = row.note
+    const rawRec = n.recurrence
+    let recurrence: Recurrence | undefined
+    if (rawRec) {
+        try {
+            recurrence =
+                typeof rawRec === 'string'
+                    ? (JSON.parse(rawRec) as Recurrence)
+                    : (rawRec as Recurrence)
+        } catch {
+            recurrence = undefined
+        }
     }
-  }
-  const rawCats = n.categories;
-  let categories: string[] | undefined;
-  if (Array.isArray(rawCats)) {
-    categories = rawCats.map(String);
-  } else if (typeof rawCats === "string" && rawCats) {
-    try {
-      const parsed = JSON.parse(rawCats);
-      categories = Array.isArray(parsed) ? parsed.map(String) : [rawCats];
-    } catch {
-      categories = [rawCats];
+    const rawCats = n.categories
+    let categories: string[] | undefined
+    if (Array.isArray(rawCats)) {
+        categories = rawCats.map(String)
+    } else if (typeof rawCats === 'string' && rawCats) {
+        try {
+            const parsed = JSON.parse(rawCats)
+            categories = Array.isArray(parsed) ? parsed.map(String) : [rawCats]
+        } catch {
+            categories = [rawCats]
+        }
     }
-  }
-  return {
-    id: str(n.id) ?? `row-${i}`,
-    title: String(n.title ?? ""),
-    date: String(n.date ?? ""),
-    startTime: str(n.startTime),
-    endTime: str(n.endTime),
-    location: str(n.location),
-    link: str(n.link),
-    description: str(n.description),
-    category: str(n.category),
-    ...(categories && categories.length ? { categories } : {}),
-    recurrence,
-    localUpdated: str(n.localUpdated),
-  };
+    return {
+        id: str(n.id) ?? `row-${i}`,
+        title: String(n.title ?? ''),
+        date: String(n.date ?? ''),
+        startTime: str(n.startTime),
+        endTime: str(n.endTime),
+        location: str(n.location),
+        link: str(n.link),
+        description: str(n.description),
+        category: str(n.category),
+        ...(categories && categories.length ? { categories } : {}),
+        recurrence,
+        localUpdated: str(n.localUpdated),
+    }
 }
 
 function eventToRow(e: CalendarEvent): Row {
-  return {
-    file: { name: "", basename: "", path: "", folder: "", ext: "md", size: 0, ctime: 0, mtime: 0, tags: [], links: [] },
-    note: {
-      id: e.id,
-      title: e.title,
-      date: e.date,
-      startTime: e.startTime,
-      endTime: e.endTime,
-      location: e.location,
-      link: e.link,
-      description: e.description,
-      category: e.category,
-      categories: e.categories && e.categories.length ? JSON.stringify(e.categories) : undefined,
-      recurrence: e.recurrence ? JSON.stringify(e.recurrence) : undefined,
-      localUpdated: e.localUpdated,
-    },
-    formula: {},
-  };
+    return {
+        file: {
+            name: '',
+            basename: '',
+            path: '',
+            folder: '',
+            ext: 'md',
+            size: 0,
+            ctime: 0,
+            mtime: 0,
+            tags: [],
+            links: [],
+        },
+        note: {
+            id: e.id,
+            title: e.title,
+            date: e.date,
+            startTime: e.startTime,
+            endTime: e.endTime,
+            location: e.location,
+            link: e.link,
+            description: e.description,
+            category: e.category,
+            categories:
+                e.categories && e.categories.length
+                    ? JSON.stringify(e.categories)
+                    : undefined,
+            recurrence: e.recurrence ? JSON.stringify(e.recurrence) : undefined,
+            localUpdated: e.localUpdated,
+        },
+        formula: {},
+    }
 }
 
-const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
 
 export function parseCalendarFile(text: string): ParsedCalendar {
-  const m = text.match(FM_RE);
-  let frontmatter: Record<string, unknown> = {};
-  let body = text;
-  if (m) {
-    try {
-      frontmatter = (parseYaml(m[1]) as Record<string, unknown>) ?? {};
-    } catch {
-      frontmatter = {};
+    const m = text.match(FM_RE)
+    let frontmatter: Record<string, unknown> = {}
+    let body = text
+    if (m) {
+        try {
+            frontmatter = (parseYaml(m[1]) as Record<string, unknown>) ?? {}
+        } catch {
+            frontmatter = {}
+        }
+        body = m[2]
     }
-    body = m[2];
-  }
-  const rows = parseRows(body, { name: "", path: "" });
-  return { frontmatter, events: rows.map((r, i) => rowToEvent(r, i)) };
+    const rows = parseRows(body, { name: '', path: '' })
+    return { frontmatter, events: rows.map((r, i) => rowToEvent(r, i)) }
 }
 
 export function categoriesOf(frontmatter: Record<string, unknown>): Category[] {
-  const c = frontmatter.categories;
-  return Array.isArray(c) ? (c as Category[]) : [];
+    const c = frontmatter.categories
+    return Array.isArray(c) ? (c as Category[]) : []
 }
 
 /**
@@ -145,61 +162,88 @@ export function categoriesOf(frontmatter: Record<string, unknown>): Category[] {
  * the `view: calendar` shorthand applies only when no `views:` array is present.
  */
 export function isCalendarBase(frontmatter: Record<string, unknown>): boolean {
-  if (frontmatter.type !== "base") return false;
-  if (Array.isArray(frontmatter.views)) {
-    return frontmatter.views.some(
-      (v) => !!v && typeof v === "object" && (v as Record<string, unknown>).type === "calendar",
-    );
-  }
-  return frontmatter.view === "calendar";
+    if (frontmatter.type !== 'base') return false
+    if (Array.isArray(frontmatter.views)) {
+        return frontmatter.views.some(
+            v =>
+                !!v &&
+                typeof v === 'object' &&
+                (v as Record<string, unknown>).type === 'calendar',
+        )
+    }
+    return frontmatter.view === 'calendar'
 }
 
 /** A fresh, empty calendar base file (`type: base` + `view: calendar`). */
-export function emptyCalendarFile(opts: { title?: string; categories?: Category[] } = {}): string {
-  const fm: Record<string, unknown> = { type: "base", view: "calendar" };
-  if (opts.title) fm.title = opts.title;
-  if (opts.categories && opts.categories.length) fm.categories = opts.categories;
-  return serializeCalendarFile(fm, []);
+export function emptyCalendarFile(
+    opts: { title?: string; categories?: Category[] } = {},
+): string {
+    const fm: Record<string, unknown> = { type: 'base', view: 'calendar' }
+    if (opts.title) fm.title = opts.title
+    if (opts.categories && opts.categories.length)
+        fm.categories = opts.categories
+    return serializeCalendarFile(fm, [])
 }
 
 /**
  * Re-emit the calendar base file: canonical YAML frontmatter (all original keys
  * preserved; categories written back only when non-empty) + the events table.
  */
-export function serializeCalendarFile(frontmatter: Record<string, unknown>, events: CalendarEvent[]): string {
-  const fm = stringifyYaml(frontmatter).trimEnd();
-  const body = serializeRows(events.map(eventToRow));
-  return body ? `---\n${fm}\n---\n\n${body}\n` : `---\n${fm}\n---\n`;
+export function serializeCalendarFile(
+    frontmatter: Record<string, unknown>,
+    events: CalendarEvent[],
+): string {
+    const fm = stringifyYaml(frontmatter).trimEnd()
+    const body = serializeRows(events.map(eventToRow))
+    return body ? `---\n${fm}\n---\n\n${body}\n` : `---\n${fm}\n---\n`
 }
 
 // ── date math (ported from app/src/calendar/dates.ts, local-midnight convention) ──
 
 function parseLocalDate(iso: string): Date {
-  return new Date(iso + "T00:00:00");
+    return new Date(iso + 'T00:00:00')
 }
 
-const dayBefore = (iso: string): string => toDateStr(addDays(parseLocalDate(iso), -1));
-const dayAfter = (iso: string): string => toDateStr(addDays(parseLocalDate(iso), 1));
-
+const dayBefore = (iso: string): string =>
+    toDateStr(addDays(parseLocalDate(iso), -1))
+const dayAfter = (iso: string): string =>
+    toDateStr(addDays(parseLocalDate(iso), 1))
 
 // ── queries ───────────────────────────────────────────────────────────────
 
 /** Concrete event instances in [rangeStart, rangeEnd] — recurrences expanded to one event per date. */
-export function eventsForRange(events: CalendarEvent[], rangeStart: string, rangeEnd: string): CalendarEvent[] {
-  const result: CalendarEvent[] = [];
-  for (const event of events) {
-    if (!event.recurrence) {
-      if (event.date >= rangeStart && event.date <= rangeEnd) result.push(event);
-    } else {
-      for (const date of expandRecurrence(event.recurrence, rangeStart, rangeEnd)) result.push({ ...event, date });
+export function eventsForRange(
+    events: CalendarEvent[],
+    rangeStart: string,
+    rangeEnd: string,
+): CalendarEvent[] {
+    const result: CalendarEvent[] = []
+    for (const event of events) {
+        if (!event.recurrence) {
+            if (event.date >= rangeStart && event.date <= rangeEnd)
+                result.push(event)
+        } else {
+            for (const date of expandRecurrence(
+                event.recurrence,
+                rangeStart,
+                rangeEnd,
+            ))
+                result.push({ ...event, date })
+        }
     }
-  }
-  return result.sort((a, b) => a.date.localeCompare(b.date) || (a.startTime ?? "").localeCompare(b.startTime ?? ""));
+    return result.sort(
+        (a, b) =>
+            a.date.localeCompare(b.date) ||
+            (a.startTime ?? '').localeCompare(b.startTime ?? ''),
+    )
 }
 
 /** Concrete instances on a single day, sorted by start time (all-day first). */
-export function eventsForDay(events: CalendarEvent[], date: string): CalendarEvent[] {
-  return eventsForRange(events, date, date);
+export function eventsForDay(
+    events: CalendarEvent[],
+    date: string,
+): CalendarEvent[] {
+    return eventsForRange(events, date, date)
 }
 
 /**
@@ -208,34 +252,50 @@ export function eventsForDay(events: CalendarEvent[], date: string): CalendarEve
  * event matches when its date is inside the window; a recurring master when its series
  * window [startDate, endDate ?? ∞] intersects it. Bounds optional (missing = open-ended).
  */
-export function eventsInWindow(events: CalendarEvent[], from?: string, to?: string): CalendarEvent[] {
-  const lo = from ?? "0000-01-01";
-  const hi = to ?? "9999-12-31";
-  return events.filter((e) => {
-    if (!e.recurrence) return e.date >= lo && e.date <= hi;
-    return e.recurrence.startDate <= hi && (e.recurrence.endDate ?? "9999-12-31") >= lo;
-  });
+export function eventsInWindow(
+    events: CalendarEvent[],
+    from?: string,
+    to?: string,
+): CalendarEvent[] {
+    const lo = from ?? '0000-01-01'
+    const hi = to ?? '9999-12-31'
+    return events.filter(e => {
+        if (!e.recurrence) return e.date >= lo && e.date <= hi
+        return (
+            e.recurrence.startDate <= hi &&
+            (e.recurrence.endDate ?? '9999-12-31') >= lo
+        )
+    })
 }
 
 /**
  * Case-insensitive substring search over title / description / location / category /
  * categories. Works on raw events or expanded instances (the caller picks the input).
  */
-export function searchEvents(events: CalendarEvent[], query: string): CalendarEvent[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  return events.filter((e) =>
-    [e.title, e.description, e.location, e.category, ...(e.categories ?? [])]
-      .filter((s): s is string => !!s)
-      .join("\n")
-      .toLowerCase()
-      .includes(q),
-  );
+export function searchEvents(
+    events: CalendarEvent[],
+    query: string,
+): CalendarEvent[] {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    return events.filter(e =>
+        [
+            e.title,
+            e.description,
+            e.location,
+            e.category,
+            ...(e.categories ?? []),
+        ]
+            .filter((s): s is string => !!s)
+            .join('\n')
+            .toLowerCase()
+            .includes(q),
+    )
 }
 
 export interface OverlapPair {
-  a: CalendarEvent;
-  b: CalendarEvent;
+    a: CalendarEvent
+    b: CalendarEvent
 }
 
 /**
@@ -243,22 +303,26 @@ export interface OverlapPair {
  * (no startTime/endTime) don't participate. "HH:MM" strings compare lexicographically.
  */
 export function detectOverlaps(dayEvents: CalendarEvent[]): OverlapPair[] {
-  const timed = dayEvents.filter((e) => e.startTime && e.endTime);
-  const pairs: OverlapPair[] = [];
-  for (let i = 0; i < timed.length; i++) {
-    for (let j = i + 1; j < timed.length; j++) {
-      const a = timed[i];
-      const b = timed[j];
-      if (a.startTime! < b.endTime! && b.startTime! < a.endTime!) pairs.push({ a, b });
+    const timed = dayEvents.filter(e => e.startTime && e.endTime)
+    const pairs: OverlapPair[] = []
+    for (let i = 0; i < timed.length; i++) {
+        for (let j = i + 1; j < timed.length; j++) {
+            const a = timed[i]
+            const b = timed[j]
+            if (a.startTime! < b.endTime! && b.startTime! < a.endTime!)
+                pairs.push({ a, b })
+        }
     }
-  }
-  return pairs;
+    return pairs
 }
 
 // ── mutations (pure array transforms; caller re-serializes + writes) ──────────
 
-export function findEvent(events: CalendarEvent[], id: string): CalendarEvent | undefined {
-  return events.find((e) => e.id === id);
+export function findEvent(
+    events: CalendarEvent[],
+    id: string,
+): CalendarEvent | undefined {
+    return events.find(e => e.id === id)
 }
 
 /**
@@ -269,41 +333,61 @@ export function findEvent(events: CalendarEvent[], id: string): CalendarEvent | 
  * (Google's DTSTART semantics), so a weekly BYDAY rule never starts on an off-day.
  * Throws CALENDAR_RRULE_FORMAT_ERROR on an unsupported rule.
  */
-export function recurrenceFromRRule(rrule: string, startDate: string): Recurrence {
-  const body = rrule.trim().replace(/^rrule:/i, "");
-  const parsed = parseRRule([`RRULE:${body.toUpperCase()}`], startDate, newId());
-  if (!parsed) {
-    throw createError(
-      "CALENDAR_RRULE_FORMAT_ERROR",
-      `unsupported RRULE: ${rrule} (supported: FREQ=DAILY|WEEKLY|MONTHLY, INTERVAL=2 with FREQ=WEEKLY for biweekly, BYDAY, UNTIL)`,
-    );
-  }
-  return { ...parsed, startDate: firstOccurrence(parsed) };
+export function recurrenceFromRRule(
+    rrule: string,
+    startDate: string,
+): Recurrence {
+    const body = rrule.trim().replace(/^rrule:/i, '')
+    const parsed = parseRRule(
+        [`RRULE:${body.toUpperCase()}`],
+        startDate,
+        newId(),
+    )
+    if (!parsed) {
+        throw createError(
+            'CALENDAR_RRULE_FORMAT_ERROR',
+            `unsupported RRULE: ${rrule} (supported: FREQ=DAILY|WEEKLY|MONTHLY, INTERVAL=2 with FREQ=WEEKLY for biweekly, BYDAY, UNTIL)`,
+        )
+    }
+    return { ...parsed, startDate: firstOccurrence(parsed) }
 }
 
-function stamp(e: Omit<CalendarEvent, "id" | "localUpdated"> & { id?: string }): CalendarEvent {
-  return { ...e, id: e.id ?? newId(), localUpdated: now() };
+function stamp(
+    e: Omit<CalendarEvent, 'id' | 'localUpdated'> & { id?: string },
+): CalendarEvent {
+    return { ...e, id: e.id ?? newId(), localUpdated: now() }
 }
 
 export function addEvent(
-  events: CalendarEvent[],
-  event: Omit<CalendarEvent, "id" | "localUpdated"> & { id?: string },
+    events: CalendarEvent[],
+    event: Omit<CalendarEvent, 'id' | 'localUpdated'> & { id?: string },
 ): { events: CalendarEvent[]; event: CalendarEvent } {
-  const created = stamp(event);
-  return { events: [...events, created], event: created };
+    const created = stamp(event)
+    return { events: [...events, created], event: created }
 }
 
 /** Update start/end/date (and any other single-instance fields) of an event by id. Throws if not found. */
-export function moveEvent(events: CalendarEvent[], id: string, updates: Partial<CalendarEvent>): CalendarEvent[] {
-  if (!findEvent(events, id)) throw createError("CALENDAR_EVENT_NOT_FOUND", `no event with id ${id}`);
-  const clean = { ...updates };
-  delete (clean as Partial<CalendarEvent>).id;
-  return events.map((e) => (e.id === id ? { ...e, ...clean, localUpdated: now() } : e));
+export function moveEvent(
+    events: CalendarEvent[],
+    id: string,
+    updates: Partial<CalendarEvent>,
+): CalendarEvent[] {
+    if (!findEvent(events, id))
+        throw createError('CALENDAR_EVENT_NOT_FOUND', `no event with id ${id}`)
+    const clean = { ...updates }
+    delete (clean as Partial<CalendarEvent>).id
+    return events.map(e =>
+        e.id === id ? { ...e, ...clean, localUpdated: now() } : e,
+    )
 }
 
-export function deleteEvent(events: CalendarEvent[], id: string): CalendarEvent[] {
-  if (!findEvent(events, id)) throw createError("CALENDAR_EVENT_NOT_FOUND", `no event with id ${id}`);
-  return events.filter((e) => e.id !== id);
+export function deleteEvent(
+    events: CalendarEvent[],
+    id: string,
+): CalendarEvent[] {
+    if (!findEvent(events, id))
+        throw createError('CALENDAR_EVENT_NOT_FOUND', `no event with id ${id}`)
+    return events.filter(e => e.id !== id)
 }
 
 /**
@@ -314,60 +398,106 @@ export function deleteEvent(events: CalendarEvent[], id: string): CalendarEvent[
  * Ported from EventStore.editOccurrence. Throws if the id isn't a recurring event.
  */
 export function overrideOccurrence(
-  events: CalendarEvent[],
-  masterId: string,
-  occurrenceDate: string,
-  updates: Partial<CalendarEvent>,
+    events: CalendarEvent[],
+    masterId: string,
+    occurrenceDate: string,
+    updates: Partial<CalendarEvent>,
 ): CalendarEvent[] {
-  const master = findEvent(events, masterId);
-  if (!master?.recurrence) throw createError("CALENDAR_NOT_RECURRING", `event ${masterId} is not a recurring event`);
-  let list = events.slice();
-  const { seriesId, endDate: originalEndDate } = master.recurrence;
-  if (occurrenceDate === master.recurrence.startDate) {
-    // Editing the FIRST occurrence: no head segment — drop the master entirely.
-    list = list.filter((e) => e.id !== masterId);
-  } else {
-    list = list.map((e) =>
-      e.id === masterId
-        ? { ...e, recurrence: { ...master.recurrence!, endDate: dayBefore(occurrenceDate) }, localUpdated: now() }
-        : e,
-    );
-  }
-  if (!originalEndDate || originalEndDate > occurrenceDate) {
-    const { id: _id, ...masterRest } = master;
-    list.push(stamp({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter(occurrenceDate), endDate: originalEndDate, seriesId } }));
-  }
-  const { id: _mid, recurrence: _mrec, ...rest } = master;
-  const single = { ...updates };
-  delete (single as Partial<CalendarEvent>).recurrence;
-  delete (single as Partial<CalendarEvent>).id;
-  list.push(stamp({ ...rest, ...single, date: occurrenceDate }));
-  return list;
+    const master = findEvent(events, masterId)
+    if (!master?.recurrence)
+        throw createError(
+            'CALENDAR_NOT_RECURRING',
+            `event ${masterId} is not a recurring event`,
+        )
+    let list = events.slice()
+    const { seriesId, endDate: originalEndDate } = master.recurrence
+    if (occurrenceDate === master.recurrence.startDate) {
+        // Editing the FIRST occurrence: no head segment — drop the master entirely.
+        list = list.filter(e => e.id !== masterId)
+    } else {
+        list = list.map(e =>
+            e.id === masterId
+                ? {
+                      ...e,
+                      recurrence: {
+                          ...master.recurrence!,
+                          endDate: dayBefore(occurrenceDate),
+                      },
+                      localUpdated: now(),
+                  }
+                : e,
+        )
+    }
+    if (!originalEndDate || originalEndDate > occurrenceDate) {
+        const { id: _id, ...masterRest } = master
+        list.push(
+            stamp({
+                ...masterRest,
+                recurrence: {
+                    ...master.recurrence,
+                    startDate: dayAfter(occurrenceDate),
+                    endDate: originalEndDate,
+                    seriesId,
+                },
+            }),
+        )
+    }
+    const { id: _mid, recurrence: _mrec, ...rest } = master
+    const single = { ...updates }
+    delete (single as Partial<CalendarEvent>).recurrence
+    delete (single as Partial<CalendarEvent>).id
+    list.push(stamp({ ...rest, ...single, date: occurrenceDate }))
+    return list
 }
 
 /**
  * Delete ONE occurrence of a recurring master by splitting the series around it (no
  * replacement single event). Ported from EventStore.deleteOccurrence.
  */
-export function deleteOccurrence(events: CalendarEvent[], masterId: string, occurrenceDate: string): CalendarEvent[] {
-  const master = findEvent(events, masterId);
-  if (!master?.recurrence) throw createError("CALENDAR_NOT_RECURRING", `event ${masterId} is not a recurring event`);
-  let list = events.slice();
-  const { seriesId, endDate: originalEndDate } = master.recurrence;
-  if (occurrenceDate === master.recurrence.startDate) {
-    list = list.filter((e) => e.id !== masterId);
-  } else {
-    list = list.map((e) =>
-      e.id === masterId
-        ? { ...e, recurrence: { ...master.recurrence!, endDate: dayBefore(occurrenceDate) }, localUpdated: now() }
-        : e,
-    );
-  }
-  if (!originalEndDate || originalEndDate > occurrenceDate) {
-    const { id: _id, ...masterRest } = master;
-    list.push(stamp({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter(occurrenceDate), endDate: originalEndDate, seriesId } }));
-  }
-  return list;
+export function deleteOccurrence(
+    events: CalendarEvent[],
+    masterId: string,
+    occurrenceDate: string,
+): CalendarEvent[] {
+    const master = findEvent(events, masterId)
+    if (!master?.recurrence)
+        throw createError(
+            'CALENDAR_NOT_RECURRING',
+            `event ${masterId} is not a recurring event`,
+        )
+    let list = events.slice()
+    const { seriesId, endDate: originalEndDate } = master.recurrence
+    if (occurrenceDate === master.recurrence.startDate) {
+        list = list.filter(e => e.id !== masterId)
+    } else {
+        list = list.map(e =>
+            e.id === masterId
+                ? {
+                      ...e,
+                      recurrence: {
+                          ...master.recurrence!,
+                          endDate: dayBefore(occurrenceDate),
+                      },
+                      localUpdated: now(),
+                  }
+                : e,
+        )
+    }
+    if (!originalEndDate || originalEndDate > occurrenceDate) {
+        const { id: _id, ...masterRest } = master
+        list.push(
+            stamp({
+                ...masterRest,
+                recurrence: {
+                    ...master.recurrence,
+                    startDate: dayAfter(occurrenceDate),
+                    endDate: originalEndDate,
+                    seriesId,
+                },
+            }),
+        )
+    }
+    return list
 }
 
 // ── category mutations (pure; mirror app/src/calendar/EventStore.ts semantics) ──
@@ -380,17 +510,32 @@ export function deleteOccurrence(events: CalendarEvent[], masterId: string, occu
 // and resolves conflicts correctly.
 
 export interface CalendarPatch {
-  frontmatter: Record<string, unknown>;
-  events: CalendarEvent[];
+    frontmatter: Record<string, unknown>
+    events: CalendarEvent[]
 }
 
 /** Add a category. Throws CALENDAR_CATEGORY_EXISTS on a duplicate name. */
-export function addCategory(frontmatter: Record<string, unknown>, category: Category): Record<string, unknown> {
-  const name = category.name?.trim();
-  if (!name) throw createError("CALENDAR_CATEGORY_FORMAT_ERROR", "category name required");
-  const cats = categoriesOf(frontmatter);
-  if (cats.some((c) => c.name === name)) throw createError("CALENDAR_CATEGORY_EXISTS", `category ${name} already exists`, 409);
-  return { ...frontmatter, categories: [...cats, { name, color: category.color }] };
+export function addCategory(
+    frontmatter: Record<string, unknown>,
+    category: Category,
+): Record<string, unknown> {
+    const name = category.name?.trim()
+    if (!name)
+        throw createError(
+            'CALENDAR_CATEGORY_FORMAT_ERROR',
+            'category name required',
+        )
+    const cats = categoriesOf(frontmatter)
+    if (cats.some(c => c.name === name))
+        throw createError(
+            'CALENDAR_CATEGORY_EXISTS',
+            `category ${name} already exists`,
+            409,
+        )
+    return {
+        ...frontmatter,
+        categories: [...cats, { name, color: category.color }],
+    }
 }
 
 /**
@@ -399,34 +544,52 @@ export function addCategory(frontmatter: Record<string, unknown>, category: Cate
  * unknown or the new name collides with another category.
  */
 export function updateCategory(
-  frontmatter: Record<string, unknown>,
-  events: CalendarEvent[],
-  name: string,
-  updates: Partial<Category>,
+    frontmatter: Record<string, unknown>,
+    events: CalendarEvent[],
+    name: string,
+    updates: Partial<Category>,
 ): CalendarPatch {
-  const cats = categoriesOf(frontmatter);
-  const idx = cats.findIndex((c) => c.name === name);
-  if (idx === -1) throw createError("CALENDAR_CATEGORY_NOT_FOUND", `no category named ${name}`, 404);
-  const nextName = updates.name?.trim();
-  if (nextName && nextName !== name && cats.some((c) => c.name === nextName)) {
-    throw createError("CALENDAR_CATEGORY_EXISTS", `category ${nextName} already exists`, 409);
-  }
-  const nextCats = cats.slice();
-  nextCats[idx] = {
-    ...nextCats[idx],
-    ...(nextName ? { name: nextName } : {}),
-    ...(updates.color !== undefined ? { color: updates.color } : {}),
-  };
-  let nextEvents = events;
-  if (nextName && nextName !== name) {
-    nextEvents = events.map((e) => {
-      let ev = e;
-      if (e.category === name) ev = { ...ev, category: nextName };
-      if (e.categories?.includes(name)) ev = { ...ev, categories: e.categories.map((c) => (c === name ? nextName : c)) };
-      return ev === e ? e : { ...ev, localUpdated: now() };
-    });
-  }
-  return { frontmatter: { ...frontmatter, categories: nextCats }, events: nextEvents };
+    const cats = categoriesOf(frontmatter)
+    const idx = cats.findIndex(c => c.name === name)
+    if (idx === -1)
+        throw createError(
+            'CALENDAR_CATEGORY_NOT_FOUND',
+            `no category named ${name}`,
+            404,
+        )
+    const nextName = updates.name?.trim()
+    if (nextName && nextName !== name && cats.some(c => c.name === nextName)) {
+        throw createError(
+            'CALENDAR_CATEGORY_EXISTS',
+            `category ${nextName} already exists`,
+            409,
+        )
+    }
+    const nextCats = cats.slice()
+    nextCats[idx] = {
+        ...nextCats[idx],
+        ...(nextName ? { name: nextName } : {}),
+        ...(updates.color !== undefined ? { color: updates.color } : {}),
+    }
+    let nextEvents = events
+    if (nextName && nextName !== name) {
+        nextEvents = events.map(e => {
+            let ev = e
+            if (e.category === name) ev = { ...ev, category: nextName }
+            if (e.categories?.includes(name))
+                ev = {
+                    ...ev,
+                    categories: e.categories.map(c =>
+                        c === name ? nextName : c,
+                    ),
+                }
+            return ev === e ? e : { ...ev, localUpdated: now() }
+        })
+    }
+    return {
+        frontmatter: { ...frontmatter, categories: nextCats },
+        events: nextEvents,
+    }
 }
 
 /**
@@ -434,28 +597,49 @@ export function updateCategory(
  * must be another existing category). Changed events get a fresh localUpdated stamp.
  */
 export function removeCategory(
-  frontmatter: Record<string, unknown>,
-  events: CalendarEvent[],
-  name: string,
-  reassignTo?: string,
+    frontmatter: Record<string, unknown>,
+    events: CalendarEvent[],
+    name: string,
+    reassignTo?: string,
 ): CalendarPatch {
-  const cats = categoriesOf(frontmatter);
-  if (!cats.some((c) => c.name === name)) throw createError("CALENDAR_CATEGORY_NOT_FOUND", `no category named ${name}`, 404);
-  if (reassignTo !== undefined) {
-    if (reassignTo === name) throw createError("CALENDAR_CATEGORY_FORMAT_ERROR", "cannot reassign to the category being removed");
-    if (!cats.some((c) => c.name === reassignTo)) {
-      throw createError("CALENDAR_CATEGORY_NOT_FOUND", `no category named ${reassignTo} to reassign to`, 404);
+    const cats = categoriesOf(frontmatter)
+    if (!cats.some(c => c.name === name))
+        throw createError(
+            'CALENDAR_CATEGORY_NOT_FOUND',
+            `no category named ${name}`,
+            404,
+        )
+    if (reassignTo !== undefined) {
+        if (reassignTo === name)
+            throw createError(
+                'CALENDAR_CATEGORY_FORMAT_ERROR',
+                'cannot reassign to the category being removed',
+            )
+        if (!cats.some(c => c.name === reassignTo)) {
+            throw createError(
+                'CALENDAR_CATEGORY_NOT_FOUND',
+                `no category named ${reassignTo} to reassign to`,
+                404,
+            )
+        }
     }
-  }
-  const nextEvents = events.map((e) => {
-    let ev = e;
-    if (e.category === name) ev = { ...ev, category: reassignTo };
-    if (e.categories?.includes(name)) {
-      const mapped = e.categories.map((c) => (c === name ? reassignTo : c)).filter((c): c is string => !!c);
-      const deduped = [...new Set(mapped)];
-      ev = { ...ev, categories: deduped.length ? deduped : undefined };
+    const nextEvents = events.map(e => {
+        let ev = e
+        if (e.category === name) ev = { ...ev, category: reassignTo }
+        if (e.categories?.includes(name)) {
+            const mapped = e.categories
+                .map(c => (c === name ? reassignTo : c))
+                .filter((c): c is string => !!c)
+            const deduped = [...new Set(mapped)]
+            ev = { ...ev, categories: deduped.length ? deduped : undefined }
+        }
+        return ev === e ? e : { ...ev, localUpdated: now() }
+    })
+    return {
+        frontmatter: {
+            ...frontmatter,
+            categories: cats.filter(c => c.name !== name),
+        },
+        events: nextEvents,
     }
-    return ev === e ? e : { ...ev, localUpdated: now() };
-  });
-  return { frontmatter: { ...frontmatter, categories: cats.filter((c) => c.name !== name) }, events: nextEvents };
 }

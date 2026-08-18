@@ -4,28 +4,28 @@
 // to normalized (column-padded) markdown. No CodeMirror or DOM deps so it can be
 // unit-tested in isolation; the editable-table widget (tableWidget.ts) and the
 // live-preview wiring (livePreview.ts) both consume these.
-import type { Text } from "@codemirror/state";
+import type { Text } from '@codemirror/state'
 
-export type Align = "left" | "center" | "right" | "none";
+export type Align = 'left' | 'center' | 'right' | 'none'
 
 export interface TableBlock {
-  /** 1-based line number of the header row. */
-  startLine: number;
-  /** 1-based line number of the last body row (inclusive). */
-  endLine: number;
-  /** Cell text grid. Row 0 is the header; the separator row is NOT included. */
-  cells: string[][];
-  /** Per-column alignment, derived from the separator row. */
-  aligns: Align[];
+    /** 1-based line number of the header row. */
+    startLine: number
+    /** 1-based line number of the last body row (inclusive). */
+    endLine: number
+    /** Cell text grid. Row 0 is the header; the separator row is NOT included. */
+    cells: string[][]
+    /** Per-column alignment, derived from the separator row. */
+    aligns: Align[]
 }
 
 // A separator row: optional leading pipe, then runs of `:`/`-`/space separated by
 // pipes, at least one pipe overall. Mirrors the detector in livePreview's scan.
-const SEP_RE = /^\s*\|?[\s:|-]+\|[\s:|-]*$/;
+const SEP_RE = /^\s*\|?[\s:|-]+\|[\s:|-]*$/
 
 /** True if `line` is a GFM separator row AND `prev` looks like a header (has a pipe). */
 export function isSeparatorRow(line: string, prev: string): boolean {
-  return SEP_RE.test(line) && /\|/.test(prev) && /-/.test(line);
+    return SEP_RE.test(line) && /\|/.test(prev) && /-/.test(line)
 }
 
 /** Split one markdown table row into trimmed cell strings. A `\|` escape is treated
@@ -33,27 +33,27 @@ export function isSeparatorRow(line: string, prev: string): boolean {
  *  grid holds display text); serializeTable re-escapes it. The outer leading/trailing
  *  pipes (and the empty cells they create) are dropped. */
 export function parseTableRow(line: string): string[] {
-  const cells: string[] = [];
-  let cur = "";
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === "\\" && line[i + 1] === "|") {
-      cur += "|"; // unescape to literal pipe (display text)
-      i++;
-      continue;
+    const cells: string[] = []
+    let cur = ''
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i]
+        if (ch === '\\' && line[i + 1] === '|') {
+            cur += '|' // unescape to literal pipe (display text)
+            i++
+            continue
+        }
+        if (ch === '|') {
+            cells.push(cur)
+            cur = ''
+            continue
+        }
+        cur += ch
     }
-    if (ch === "|") {
-      cells.push(cur);
-      cur = "";
-      continue;
-    }
-    cur += ch;
-  }
-  cells.push(cur);
-  // Drop the empty cell before the first `|` and after the last `|` (the outer rails).
-  if (cells.length && cells[0].trim() === "") cells.shift();
-  if (cells.length && cells[cells.length - 1].trim() === "") cells.pop();
-  return cells.map((c) => c.trim());
+    cells.push(cur)
+    // Drop the empty cell before the first `|` and after the last `|` (the outer rails).
+    if (cells.length && cells[0].trim() === '') cells.shift()
+    if (cells.length && cells[cells.length - 1].trim() === '') cells.pop()
+    return cells.map(c => c.trim())
 }
 
 /** Char-offset spans (relative to the row's line start) of each CONTENT cell in a raw table-row
@@ -61,48 +61,61 @@ export function parseTableRow(line: string): string[] {
  *  dropped, mirroring `parseTableRow`. A `\|` escape counts as cell text, never a delimiter. Used
  *  to map a document offset that lands inside a table row to its grid COLUMN — e.g. the find bar
  *  locating which rendered cell an active match sits in (#31). Pure. */
-export function parseRowCellSpans(line: string): { start: number; end: number }[] {
-  const cells: { start: number; end: number }[] = [];
-  let start = 0;
-  for (let i = 0; i < line.length; i++) {
-    if (line[i] === "\\" && line[i + 1] === "|") { i++; continue; } // escaped pipe is cell text
-    if (line[i] === "|") { cells.push({ start, end: i }); start = i + 1; }
-  }
-  cells.push({ start, end: line.length });
-  const isEmpty = (s: { start: number; end: number }): boolean => line.slice(s.start, s.end).trim() === "";
-  if (cells.length && isEmpty(cells[0])) cells.shift(); // leading rail
-  if (cells.length && isEmpty(cells[cells.length - 1])) cells.pop(); // trailing rail
-  return cells;
+export function parseRowCellSpans(
+    line: string,
+): { start: number; end: number }[] {
+    const cells: { start: number; end: number }[] = []
+    let start = 0
+    for (let i = 0; i < line.length; i++) {
+        if (line[i] === '\\' && line[i + 1] === '|') {
+            i++
+            continue
+        } // escaped pipe is cell text
+        if (line[i] === '|') {
+            cells.push({ start, end: i })
+            start = i + 1
+        }
+    }
+    cells.push({ start, end: line.length })
+    const isEmpty = (s: { start: number; end: number }): boolean =>
+        line.slice(s.start, s.end).trim() === ''
+    if (cells.length && isEmpty(cells[0])) cells.shift() // leading rail
+    if (cells.length && isEmpty(cells[cells.length - 1])) cells.pop() // trailing rail
+    return cells
 }
 
 /** Map one separator cell (`:---`, `:--:`, `---:`, `---`) to its alignment. */
 export function parseAlign(cell: string): Align {
-  const t = cell.trim();
-  const left = t.startsWith(":");
-  const right = t.endsWith(":");
-  if (left && right) return "center";
-  if (right) return "right";
-  if (left) return "left";
-  return "none";
+    const t = cell.trim()
+    const left = t.startsWith(':')
+    const right = t.endsWith(':')
+    if (left && right) return 'center'
+    if (right) return 'right'
+    if (left) return 'left'
+    return 'none'
 }
 
 /** Parse the lines of a single table block (header, separator, body rows) into a grid.
  *  `lines[0]` is the header, `lines[1]` the separator, the rest are body rows. */
-export function parseTableBlock(lines: string[]): { cells: string[][]; aligns: Align[] } {
-  const header = parseTableRow(lines[0] ?? "");
-  const aligns = parseTableRow(lines[1] ?? "").map(parseAlign);
-  const cols = header.length;
-  const norm = (row: string[]): string[] => {
-    const r = row.slice(0, cols);
-    while (r.length < cols) r.push("");
-    return r;
-  };
-  const cells: string[][] = [norm(header)];
-  for (let i = 2; i < lines.length; i++) cells.push(norm(parseTableRow(lines[i])));
-  // Pad/truncate aligns to column count.
-  const a = aligns.slice(0, cols);
-  while (a.length < cols) a.push("none");
-  return { cells, aligns: a };
+export function parseTableBlock(lines: string[]): {
+    cells: string[][]
+    aligns: Align[]
+} {
+    const header = parseTableRow(lines[0] ?? '')
+    const aligns = parseTableRow(lines[1] ?? '').map(parseAlign)
+    const cols = header.length
+    const norm = (row: string[]): string[] => {
+        const r = row.slice(0, cols)
+        while (r.length < cols) r.push('')
+        return r
+    }
+    const cells: string[][] = [norm(header)]
+    for (let i = 2; i < lines.length; i++)
+        cells.push(norm(parseTableRow(lines[i])))
+    // Pad/truncate aligns to column count.
+    const a = aligns.slice(0, cols)
+    while (a.length < cols) a.push('none')
+    return { cells, aligns: a }
 }
 
 // A CodeMirror `Text` doc is immutable and shared across selection-only transactions, so
@@ -114,45 +127,54 @@ export function parseTableBlock(lines: string[]): { cells: string[][]; aligns: A
 // SAFETY: every caller treats the result as read-only (destructure + iterate); the table-edit
 // ops build brand-new cell arrays rather than mutating a block in place — the table test suites
 // exercise this exhaustively.
-const tableBlockCache = new WeakMap<Text, { blocks: TableBlock[]; byLine: Map<number, TableBlock> }>();
+const tableBlockCache = new WeakMap<
+    Text,
+    { blocks: TableBlock[]; byLine: Map<number, TableBlock> }
+>()
 
 /** Scan the whole document and group contiguous pipe-table lines into blocks.
  *  Returns the blocks plus a line-number → block index for O(1) per-line lookup.
  *  Memoized by doc identity (see tableBlockCache). */
-export function groupTableBlocks(doc: Text): { blocks: TableBlock[]; byLine: Map<number, TableBlock> } {
-  const cached = tableBlockCache.get(doc);
-  if (cached) return cached;
-  const result = groupTableBlocksUncached(doc);
-  tableBlockCache.set(doc, result);
-  return result;
+export function groupTableBlocks(doc: Text): {
+    blocks: TableBlock[]
+    byLine: Map<number, TableBlock>
+} {
+    const cached = tableBlockCache.get(doc)
+    if (cached) return cached
+    const result = groupTableBlocksUncached(doc)
+    tableBlockCache.set(doc, result)
+    return result
 }
 
-function groupTableBlocksUncached(doc: Text): { blocks: TableBlock[]; byLine: Map<number, TableBlock> } {
-  const blocks: TableBlock[] = [];
-  const byLine = new Map<number, TableBlock>();
-  let i = 2; // a table needs a header (≥1) + separator (≥2)
-  while (i <= doc.lines) {
-    const sep = doc.line(i).text;
-    const prev = doc.line(i - 1).text;
-    if (isSeparatorRow(sep, prev)) {
-      const startLine = i - 1;
-      const lines = [prev, sep];
-      let j = i + 1;
-      while (j <= doc.lines && doc.line(j).text.includes("|")) {
-        lines.push(doc.line(j).text);
-        j++;
-      }
-      const endLine = j - 1;
-      const { cells, aligns } = parseTableBlock(lines);
-      const block: TableBlock = { startLine, endLine, cells, aligns };
-      blocks.push(block);
-      for (let k = startLine; k <= endLine; k++) byLine.set(k, block);
-      i = j + 1;
-      continue;
+function groupTableBlocksUncached(doc: Text): {
+    blocks: TableBlock[]
+    byLine: Map<number, TableBlock>
+} {
+    const blocks: TableBlock[] = []
+    const byLine = new Map<number, TableBlock>()
+    let i = 2 // a table needs a header (≥1) + separator (≥2)
+    while (i <= doc.lines) {
+        const sep = doc.line(i).text
+        const prev = doc.line(i - 1).text
+        if (isSeparatorRow(sep, prev)) {
+            const startLine = i - 1
+            const lines = [prev, sep]
+            let j = i + 1
+            while (j <= doc.lines && doc.line(j).text.includes('|')) {
+                lines.push(doc.line(j).text)
+                j++
+            }
+            const endLine = j - 1
+            const { cells, aligns } = parseTableBlock(lines)
+            const block: TableBlock = { startLine, endLine, cells, aligns }
+            blocks.push(block)
+            for (let k = startLine; k <= endLine; k++) byLine.set(k, block)
+            i = j + 1
+            continue
+        }
+        i++
     }
-    i++;
-  }
-  return { blocks, byLine };
+    return { blocks, byLine }
 }
 
 /** True if `cp` is an East-Asian WIDE / FULLWIDTH code point (occupies TWO monospace
@@ -160,43 +182,43 @@ function groupTableBlocksUncached(doc: Text): { blocks: TableBlock[]; byLine: Ma
  *  `is-fullwidth-code-point` ranges. Column padding must count these as 2 or the pipes in
  *  the raw-source view drift right of the header (the #25 "columns don't line up" bug). */
 function isWideCodePoint(cp: number): boolean {
-  return (
-    cp >= 0x1100 &&
-    (cp <= 0x115f || // Hangul Jamo
-      cp === 0x2329 ||
-      cp === 0x232a ||
-      (cp >= 0x2e80 && cp <= 0x303e) || // CJK Radicals … Kangxi … CJK symbols
-      (cp >= 0x3041 && cp <= 0x33ff) || // Hiragana … Katakana … CJK compat
-      (cp >= 0x3400 && cp <= 0x4dbf) || // CJK Ext A
-      (cp >= 0x4e00 && cp <= 0x9fff) || // CJK Unified
-      (cp >= 0xa000 && cp <= 0xa4cf) || // Yi
-      (cp >= 0xa960 && cp <= 0xa97c) || // Hangul Jamo Ext A
-      (cp >= 0xac00 && cp <= 0xd7a3) || // Hangul Syllables
-      (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility Ideographs
-      (cp >= 0xfe10 && cp <= 0xfe19) || // Vertical forms
-      (cp >= 0xfe30 && cp <= 0xfe6f) || // CJK Compatibility Forms
-      (cp >= 0xff00 && cp <= 0xff60) || // Fullwidth Forms
-      (cp >= 0xffe0 && cp <= 0xffe6) ||
-      (cp >= 0x1f300 && cp <= 0x1faff) || // emoji + symbols
-      (cp >= 0x1f900 && cp <= 0x1f9ff) ||
-      (cp >= 0x20000 && cp <= 0x3fffd)) // CJK Ext B+
-  );
+    return (
+        cp >= 0x1100 &&
+        (cp <= 0x115f || // Hangul Jamo
+            cp === 0x2329 ||
+            cp === 0x232a ||
+            (cp >= 0x2e80 && cp <= 0x303e) || // CJK Radicals … Kangxi … CJK symbols
+            (cp >= 0x3041 && cp <= 0x33ff) || // Hiragana … Katakana … CJK compat
+            (cp >= 0x3400 && cp <= 0x4dbf) || // CJK Ext A
+            (cp >= 0x4e00 && cp <= 0x9fff) || // CJK Unified
+            (cp >= 0xa000 && cp <= 0xa4cf) || // Yi
+            (cp >= 0xa960 && cp <= 0xa97c) || // Hangul Jamo Ext A
+            (cp >= 0xac00 && cp <= 0xd7a3) || // Hangul Syllables
+            (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility Ideographs
+            (cp >= 0xfe10 && cp <= 0xfe19) || // Vertical forms
+            (cp >= 0xfe30 && cp <= 0xfe6f) || // CJK Compatibility Forms
+            (cp >= 0xff00 && cp <= 0xff60) || // Fullwidth Forms
+            (cp >= 0xffe0 && cp <= 0xffe6) ||
+            (cp >= 0x1f300 && cp <= 0x1faff) || // emoji + symbols
+            (cp >= 0x1f900 && cp <= 0x1f9ff) ||
+            (cp >= 0x20000 && cp <= 0x3fffd)) // CJK Ext B+
+    )
 }
 
 /** True if `cp` renders in ZERO monospace columns: a combining mark or a zero-width space.
  *  These attach to the previous glyph, so counting them widens the column spuriously. */
 function isZeroWidthCodePoint(cp: number): boolean {
-  return (
-    (cp >= 0x0300 && cp <= 0x036f) || // combining diacritics
-    (cp >= 0x1ab0 && cp <= 0x1aff) ||
-    (cp >= 0x1dc0 && cp <= 0x1dff) ||
-    (cp >= 0x20d0 && cp <= 0x20ff) || // combining marks for symbols
-    (cp >= 0xfe20 && cp <= 0xfe2f) || // combining half marks
-    cp === 0x200b || // zero-width space
-    cp === 0x200c ||
-    cp === 0x200d || // ZWJ (emoji sequences)
-    cp === 0xfeff
-  );
+    return (
+        (cp >= 0x0300 && cp <= 0x036f) || // combining diacritics
+        (cp >= 0x1ab0 && cp <= 0x1aff) ||
+        (cp >= 0x1dc0 && cp <= 0x1dff) ||
+        (cp >= 0x20d0 && cp <= 0x20ff) || // combining marks for symbols
+        (cp >= 0xfe20 && cp <= 0xfe2f) || // combining half marks
+        cp === 0x200b || // zero-width space
+        cp === 0x200c ||
+        cp === 0x200d || // ZWJ (emoji sequences)
+        cp === 0xfeff
+    )
 }
 
 /** Monospace DISPLAY width of a string, in columns. CJK / fullwidth / emoji code points
@@ -205,60 +227,64 @@ function isZeroWidthCodePoint(cp: number): boolean {
  *  padding built on it never lines up in a monospace view — this is what `padCell` /
  *  `serializeTable` measure by so the aligned raw source actually aligns (#25). */
 export function displayWidth(str: string): number {
-  let w = 0;
-  for (const ch of str) {
-    const cp = ch.codePointAt(0) ?? 0;
-    if (isZeroWidthCodePoint(cp)) continue;
-    w += isWideCodePoint(cp) ? 2 : 1;
-  }
-  return w;
+    let w = 0
+    for (const ch of str) {
+        const cp = ch.codePointAt(0) ?? 0
+        if (isZeroWidthCodePoint(cp)) continue
+        w += isWideCodePoint(cp) ? 2 : 1
+    }
+    return w
 }
 
 function alignSep(align: Align, width: number): string {
-  const w = Math.max(width, 3); // GFM needs at least one dash; keep it readable
-  switch (align) {
-    case "left":
-      return ":" + "-".repeat(w - 1);
-    case "right":
-      return "-".repeat(w - 1) + ":";
-    case "center":
-      return ":" + "-".repeat(Math.max(w - 2, 1)) + ":";
-    default:
-      return "-".repeat(w);
-  }
+    const w = Math.max(width, 3) // GFM needs at least one dash; keep it readable
+    switch (align) {
+        case 'left':
+            return ':' + '-'.repeat(w - 1)
+        case 'right':
+            return '-'.repeat(w - 1) + ':'
+        case 'center':
+            return ':' + '-'.repeat(Math.max(w - 2, 1)) + ':'
+        default:
+            return '-'.repeat(w)
+    }
 }
 
 /** Escape a display cell back to source: literal pipes become `\|`, newlines become
  *  spaces (a cell is a single line). */
 function encodeCell(text: string): string {
-  return text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+    return text.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|')
 }
 
 function padCell(text: string, width: number, align: Align): string {
-  // Pad by DISPLAY width, not `.length`, so a cell holding wide CJK / emoji still lines up.
-  const pad = Math.max(width - displayWidth(text), 0);
-  if (align === "right") return " ".repeat(pad) + text;
-  if (align === "center") {
-    const l = Math.floor(pad / 2);
-    return " ".repeat(l) + text + " ".repeat(pad - l);
-  }
-  return text + " ".repeat(pad);
+    // Pad by DISPLAY width, not `.length`, so a cell holding wide CJK / emoji still lines up.
+    const pad = Math.max(width - displayWidth(text), 0)
+    if (align === 'right') return ' '.repeat(pad) + text
+    if (align === 'center') {
+        const l = Math.floor(pad / 2)
+        return ' '.repeat(l) + text + ' '.repeat(pad - l)
+    }
+    return text + ' '.repeat(pad)
 }
 
 /** A table's editable content: the cell grid (row 0 = header) plus per-column alignment.
  *  The unit the structural row/column ops below transform. */
 export interface TableGrid {
-  cells: string[][];
-  aligns: Align[];
+    cells: string[][]
+    aligns: Align[]
 }
 
 /** Column count of a grid (header row width, falling back to aligns / widest row). */
 function gridCols(g: TableGrid): number {
-  return Math.max(g.cells[0]?.length ?? 0, g.aligns.length, ...g.cells.map((r) => r.length));
+    return Math.max(
+        g.cells[0]?.length ?? 0,
+        g.aligns.length,
+        ...g.cells.map(r => r.length),
+    )
 }
 
 function blankRow(cols: number): string[] {
-  return Array.from({ length: cols }, () => "");
+    return Array.from({ length: cols }, () => '')
 }
 
 // ── Structural row/column ops ────────────────────────────────────────────────
@@ -270,53 +296,55 @@ function blankRow(cols: number): string[] {
 /** Insert a blank body row at index `at` (clamped to `[1, rows]` so the header stays
  *  first). `at = r` inserts ABOVE row r; `at = r + 1` inserts below it. */
 export function insertRow(g: TableGrid, at: number): TableGrid {
-  const rows = g.cells.length;
-  const idx = Math.min(Math.max(at, 1), rows);
-  const cells = g.cells.map((r) => r.slice());
-  cells.splice(idx, 0, blankRow(gridCols(g)));
-  return { cells, aligns: g.aligns.slice() };
+    const rows = g.cells.length
+    const idx = Math.min(Math.max(at, 1), rows)
+    const cells = g.cells.map(r => r.slice())
+    cells.splice(idx, 0, blankRow(gridCols(g)))
+    return { cells, aligns: g.aligns.slice() }
 }
 
 /** Delete body row `at`. The header (0) is never deletable and the last body row is
  *  kept (a table always has ≥1 body row after the header), so out-of-range / guarded
  *  requests return an unchanged copy of the grid. */
 export function deleteRow(g: TableGrid, at: number): TableGrid {
-  const cells = g.cells.map((r) => r.slice());
-  // Refuse to delete the header (0), an out-of-range row, or the LAST body row
-  // (`length <= 2` = header + one body) — a table keeps ≥1 body row.
-  if (at <= 0 || at >= cells.length || cells.length <= 2) return { cells, aligns: g.aligns.slice() };
-  cells.splice(at, 1);
-  return { cells, aligns: g.aligns.slice() };
+    const cells = g.cells.map(r => r.slice())
+    // Refuse to delete the header (0), an out-of-range row, or the LAST body row
+    // (`length <= 2` = header + one body) — a table keeps ≥1 body row.
+    if (at <= 0 || at >= cells.length || cells.length <= 2)
+        return { cells, aligns: g.aligns.slice() }
+    cells.splice(at, 1)
+    return { cells, aligns: g.aligns.slice() }
 }
 
 /** Insert a blank column at index `at` (clamped to `[0, cols]`) in every row, with a
  *  `none` alignment. `at = c` inserts LEFT of column c; `at = c + 1` inserts to its right. */
 export function insertColumn(g: TableGrid, at: number): TableGrid {
-  const cols = gridCols(g);
-  const idx = Math.min(Math.max(at, 0), cols);
-  const cells = g.cells.map((r) => {
-    const row = r.slice();
-    while (row.length < cols) row.push("");
-    row.splice(idx, 0, "");
-    return row;
-  });
-  const aligns = g.aligns.slice();
-  while (aligns.length < cols) aligns.push("none");
-  aligns.splice(idx, 0, "none");
-  return { cells, aligns };
+    const cols = gridCols(g)
+    const idx = Math.min(Math.max(at, 0), cols)
+    const cells = g.cells.map(r => {
+        const row = r.slice()
+        while (row.length < cols) row.push('')
+        row.splice(idx, 0, '')
+        return row
+    })
+    const aligns = g.aligns.slice()
+    while (aligns.length < cols) aligns.push('none')
+    aligns.splice(idx, 0, 'none')
+    return { cells, aligns }
 }
 
 /** Delete column `at` from every row and its alignment. The last column is kept (a
  *  table always has ≥1 column), so a guarded / out-of-range request returns an
  *  unchanged copy of the grid. */
 export function deleteColumn(g: TableGrid, at: number): TableGrid {
-  const cols = gridCols(g);
-  const cells = g.cells.map((r) => r.slice());
-  if (at < 0 || at >= cols || cols <= 1) return { cells, aligns: g.aligns.slice() };
-  for (const row of cells) if (at < row.length) row.splice(at, 1);
-  const aligns = g.aligns.slice();
-  if (at < aligns.length) aligns.splice(at, 1);
-  return { cells, aligns };
+    const cols = gridCols(g)
+    const cells = g.cells.map(r => r.slice())
+    if (at < 0 || at >= cols || cols <= 1)
+        return { cells, aligns: g.aligns.slice() }
+    for (const row of cells) if (at < row.length) row.splice(at, 1)
+    const aligns = g.aligns.slice()
+    if (at < aligns.length) aligns.splice(at, 1)
+    return { cells, aligns }
 }
 
 /** Move a BODY row from index `from` to index `to` (both 1-based over `cells`; the header at
@@ -324,35 +352,35 @@ export function deleteColumn(g: TableGrid, at: number): TableGrid {
  *  then re-inserted so a downward move lands after its target. Out-of-range / header / no-op
  *  requests return an unchanged copy. Pure — the drag-to-reorder-rows op (#62 feature). */
 export function moveRow(g: TableGrid, from: number, to: number): TableGrid {
-  const cells = g.cells.map((r) => r.slice());
-  const rows = cells.length;
-  if (from <= 0 || from >= rows || to <= 0 || to >= rows || from === to) {
-    return { cells, aligns: g.aligns.slice() };
-  }
-  const [row] = cells.splice(from, 1);
-  cells.splice(to, 0, row);
-  return { cells, aligns: g.aligns.slice() };
+    const cells = g.cells.map(r => r.slice())
+    const rows = cells.length
+    if (from <= 0 || from >= rows || to <= 0 || to >= rows || from === to) {
+        return { cells, aligns: g.aligns.slice() }
+    }
+    const [row] = cells.splice(from, 1)
+    cells.splice(to, 0, row)
+    return { cells, aligns: g.aligns.slice() }
 }
 
 /** Move a column (its header + every body cell + its alignment) from index `from` to index `to`.
  *  Out-of-range / no-op requests return an unchanged copy. Pure — the drag-to-reorder-columns op. */
 export function moveColumn(g: TableGrid, from: number, to: number): TableGrid {
-  const cols = gridCols(g);
-  if (from < 0 || from >= cols || to < 0 || to >= cols || from === to) {
-    return { cells: g.cells.map((r) => r.slice()), aligns: g.aligns.slice() };
-  }
-  const cells = g.cells.map((r) => {
-    const row = r.slice();
-    while (row.length < cols) row.push("");
-    const [cell] = row.splice(from, 1);
-    row.splice(to, 0, cell);
-    return row;
-  });
-  const aligns = g.aligns.slice();
-  while (aligns.length < cols) aligns.push("none");
-  const [a] = aligns.splice(from, 1);
-  aligns.splice(to, 0, a);
-  return { cells, aligns };
+    const cols = gridCols(g)
+    if (from < 0 || from >= cols || to < 0 || to >= cols || from === to) {
+        return { cells: g.cells.map(r => r.slice()), aligns: g.aligns.slice() }
+    }
+    const cells = g.cells.map(r => {
+        const row = r.slice()
+        while (row.length < cols) row.push('')
+        const [cell] = row.splice(from, 1)
+        row.splice(to, 0, cell)
+        return row
+    })
+    const aligns = g.aligns.slice()
+    while (aligns.length < cols) aligns.push('none')
+    const [a] = aligns.splice(from, 1)
+    aligns.splice(to, 0, a)
+    return { cells, aligns }
 }
 
 /** Given the cumulative boundary coordinates of a track (columns' x-edges or rows' y-edges —
@@ -360,20 +388,20 @@ export function moveColumn(g: TableGrid, from: number, to: number): TableGrid {
  *  number of segment CENTERS that lie before `pos`, clamped to `[0, count]`. Drives the drag-drop
  *  indicator for reorder (#62). Pure. */
 export function reorderDropIndex(bounds: number[], pos: number): number {
-  const count = Math.max(bounds.length - 1, 0);
-  let slot = 0;
-  for (let i = 0; i < count; i++) {
-    const center = (bounds[i] + bounds[i + 1]) / 2;
-    if (pos >= center) slot = i + 1;
-  }
-  return Math.min(Math.max(slot, 0), count);
+    const count = Math.max(bounds.length - 1, 0)
+    let slot = 0
+    for (let i = 0; i < count; i++) {
+        const center = (bounds[i] + bounds[i + 1]) / 2
+        if (pos >= center) slot = i + 1
+    }
+    return Math.min(Math.max(slot, 0), count)
 }
 
 /** The FINAL index a dragged item lands at, given the item's original index `from` and the drop
  *  SLOT `drop` (from `reorderDropIndex`). Removing the item first shifts every later slot down by
  *  one, so a drop past the original position lands one slot earlier. Pure. */
 export function reorderFinalIndex(from: number, drop: number): number {
-  return from < drop ? drop - 1 : drop;
+    return from < drop ? drop - 1 : drop
 }
 
 /** Move the item at index `from` to index `to` in a COPY of `arr`, with the EXACT same splice
@@ -384,26 +412,37 @@ export function reorderFinalIndex(from: number, drop: number): number {
  *  the markdown, indexed by column, so a `moveColumn` must permute them the same way — otherwise
  *  the moved column keeps the width of whatever column now sits at its old index (the "widths
  *  don't travel, a reorder looks like a shuffle not a swap" bug). */
-export function moveInArray<T>(arr: readonly T[], from: number, to: number): T[] {
-  const a = arr.slice();
-  if (from < 0 || from >= a.length || to < 0 || to >= a.length || from === to) return a;
-  const [x] = a.splice(from, 1);
-  a.splice(to, 0, x);
-  return a;
+export function moveInArray<T>(
+    arr: readonly T[],
+    from: number,
+    to: number,
+): T[] {
+    const a = arr.slice()
+    if (from < 0 || from >= a.length || to < 0 || to >= a.length || from === to)
+        return a
+    const [x] = a.splice(from, 1)
+    a.splice(to, 0, x)
+    return a
 }
 
 /** Append `addition` to the cell at (r, c), on its OWN in-cell line (a `<br>` marker joins
  *  it to any existing content) so a dropped image lands under, not merged into, the cell's
  *  text. Used by the file-drop handler (#30) to place an `![[…]]` embed into the cell the
  *  image was dropped on. Returns a NEW grid; out-of-range (r, c) returns an unchanged copy. */
-export function appendToCell(g: TableGrid, r: number, c: number, addition: string): TableGrid {
-  const cells = g.cells.map((row) => row.slice());
-  const row = cells[r];
-  if (!row || c < 0 || c >= row.length) return { cells, aligns: g.aligns.slice() };
-  const existing = (row[c] ?? "").trim();
-  // A GFM cell is one source line; `<br>` is the in-cell line break (see cellSourceFromDom).
-  row[c] = existing ? `${existing}<br>${addition}` : addition;
-  return { cells, aligns: g.aligns.slice() };
+export function appendToCell(
+    g: TableGrid,
+    r: number,
+    c: number,
+    addition: string,
+): TableGrid {
+    const cells = g.cells.map(row => row.slice())
+    const row = cells[r]
+    if (!row || c < 0 || c >= row.length)
+        return { cells, aligns: g.aligns.slice() }
+    const existing = (row[c] ?? '').trim()
+    // A GFM cell is one source line; `<br>` is the in-cell line break (see cellSourceFromDom).
+    row[c] = existing ? `${existing}<br>${addition}` : addition
+    return { cells, aligns: g.aligns.slice() }
 }
 
 // ── Merged cells (pure, out-of-source visual state, #62 merge feature) ────────────────────────
@@ -417,110 +456,174 @@ export function appendToCell(g: TableGrid, r: number, c: number, addition: strin
 /** A merged rectangular region: its top-left ANCHOR cell (r, c) spanning `rowSpan` rows ×
  *  `colSpan` columns (both ≥ 1; a 1×1 "region" is not a merge). */
 export interface MergeRegion {
-  r: number;
-  c: number;
-  rowSpan: number;
-  colSpan: number;
+    r: number
+    c: number
+    rowSpan: number
+    colSpan: number
 }
 
 /** `"r,c"` key for a cell coordinate (stable Set/Map key). */
 export function cellKey(r: number, c: number): string {
-  return `${r},${c}`;
+    return `${r},${c}`
 }
 
 /** The bounding rectangle covering two cell coordinates (inclusive) — the region a shift+click
  *  from cell `a` to cell `b` selects. Always well-formed (rowSpan/colSpan ≥ 1). Pure. */
-export function rectFromCells(a: { r: number; c: number }, b: { r: number; c: number }): MergeRegion {
-  const r = Math.min(a.r, b.r);
-  const c = Math.min(a.c, b.c);
-  return { r, c, rowSpan: Math.abs(a.r - b.r) + 1, colSpan: Math.abs(a.c - b.c) + 1 };
+export function rectFromCells(
+    a: { r: number; c: number },
+    b: { r: number; c: number },
+): MergeRegion {
+    const r = Math.min(a.r, b.r)
+    const c = Math.min(a.c, b.c)
+    return {
+        r,
+        c,
+        rowSpan: Math.abs(a.r - b.r) + 1,
+        colSpan: Math.abs(a.c - b.c) + 1,
+    }
 }
 
 /** True if two regions share any cell. Pure. */
 export function regionsOverlap(a: MergeRegion, b: MergeRegion): boolean {
-  return (
-    a.c < b.c + b.colSpan &&
-    b.c < a.c + a.colSpan &&
-    a.r < b.r + b.rowSpan &&
-    b.r < a.r + a.rowSpan
-  );
+    return (
+        a.c < b.c + b.colSpan &&
+        b.c < a.c + a.colSpan &&
+        a.r < b.r + b.rowSpan &&
+        b.r < a.r + a.rowSpan
+    )
 }
 
 /** Drop regions that fall outside a `rows × cols` grid, clamp spans that overrun the grid edge,
  *  drop degenerate 1×1 regions, and drop any region overlapping an earlier kept one (first wins).
  *  Keeps the stored merge set valid after the grid changes shape. Pure — returns a new array. */
-export function normalizeMergeRegions(regions: MergeRegion[], rows: number, cols: number): MergeRegion[] {
-  const kept: MergeRegion[] = [];
-  for (const raw of regions) {
-    if (!Number.isInteger(raw.r) || !Number.isInteger(raw.c) || raw.r < 0 || raw.c < 0) continue;
-    if (raw.r >= rows || raw.c >= cols) continue;
-    const rowSpan = Math.min(Math.max(raw.rowSpan, 1), rows - raw.r);
-    const colSpan = Math.min(Math.max(raw.colSpan, 1), cols - raw.c);
-    if (rowSpan <= 1 && colSpan <= 1) continue; // not a merge
-    const region = { r: raw.r, c: raw.c, rowSpan, colSpan };
-    if (kept.some((k) => regionsOverlap(k, region))) continue;
-    kept.push(region);
-  }
-  return kept;
+export function normalizeMergeRegions(
+    regions: MergeRegion[],
+    rows: number,
+    cols: number,
+): MergeRegion[] {
+    const kept: MergeRegion[] = []
+    for (const raw of regions) {
+        if (
+            !Number.isInteger(raw.r) ||
+            !Number.isInteger(raw.c) ||
+            raw.r < 0 ||
+            raw.c < 0
+        )
+            continue
+        if (raw.r >= rows || raw.c >= cols) continue
+        const rowSpan = Math.min(Math.max(raw.rowSpan, 1), rows - raw.r)
+        const colSpan = Math.min(Math.max(raw.colSpan, 1), cols - raw.c)
+        if (rowSpan <= 1 && colSpan <= 1) continue // not a merge
+        const region = { r: raw.r, c: raw.c, rowSpan, colSpan }
+        if (kept.some(k => regionsOverlap(k, region))) continue
+        kept.push(region)
+    }
+    return kept
 }
 
 /** The region whose ANCHOR is exactly (r, c), or null. Pure. */
-export function mergeAnchorAt(regions: MergeRegion[], r: number, c: number): MergeRegion | null {
-  return regions.find((m) => m.r === r && m.c === c) ?? null;
+export function mergeAnchorAt(
+    regions: MergeRegion[],
+    r: number,
+    c: number,
+): MergeRegion | null {
+    return regions.find(m => m.r === r && m.c === c) ?? null
 }
 
 /** The region CONTAINING cell (r, c) (anchor or covered), or null. Pure. */
-export function mergeContaining(regions: MergeRegion[], r: number, c: number): MergeRegion | null {
-  return regions.find((m) => r >= m.r && r < m.r + m.rowSpan && c >= m.c && c < m.c + m.colSpan) ?? null;
+export function mergeContaining(
+    regions: MergeRegion[],
+    r: number,
+    c: number,
+): MergeRegion | null {
+    return (
+        regions.find(
+            m =>
+                r >= m.r &&
+                r < m.r + m.rowSpan &&
+                c >= m.c &&
+                c < m.c + m.colSpan,
+        ) ?? null
+    )
 }
 
 /** Set of `"r,c"` keys COVERED (hidden) by a merge — every cell of every region except its anchor.
  *  The widget skips rendering these; the anchor renders with colspan/rowspan. Pure. */
 export function coveredCells(regions: MergeRegion[]): Set<string> {
-  const covered = new Set<string>();
-  for (const m of regions) {
-    for (let r = m.r; r < m.r + m.rowSpan; r++) {
-      for (let c = m.c; c < m.c + m.colSpan; c++) {
-        if (r === m.r && c === m.c) continue; // the anchor stays visible
-        covered.add(cellKey(r, c));
-      }
+    const covered = new Set<string>()
+    for (const m of regions) {
+        for (let r = m.r; r < m.r + m.rowSpan; r++) {
+            for (let c = m.c; c < m.c + m.colSpan; c++) {
+                if (r === m.r && c === m.c) continue // the anchor stays visible
+                covered.add(cellKey(r, c))
+            }
+        }
     }
-  }
-  return covered;
+    return covered
 }
 
 /** Add `region` to the set, first removing any existing regions it overlaps (the new merge wins),
  *  then normalizing against the grid. A 1×1 region is a no-op. Pure — returns a new array. */
-export function addMergeRegion(regions: MergeRegion[], region: MergeRegion, rows: number, cols: number): MergeRegion[] {
-  if (region.rowSpan <= 1 && region.colSpan <= 1) return normalizeMergeRegions(regions, rows, cols);
-  const survivors = regions.filter((m) => !regionsOverlap(m, region));
-  return normalizeMergeRegions([region, ...survivors], rows, cols);
+export function addMergeRegion(
+    regions: MergeRegion[],
+    region: MergeRegion,
+    rows: number,
+    cols: number,
+): MergeRegion[] {
+    if (region.rowSpan <= 1 && region.colSpan <= 1)
+        return normalizeMergeRegions(regions, rows, cols)
+    const survivors = regions.filter(m => !regionsOverlap(m, region))
+    return normalizeMergeRegions([region, ...survivors], rows, cols)
 }
 
 /** Remove the region containing (r, c) (so an "unmerge" of any cell of a merge splits it). Pure. */
-export function removeMergeAt(regions: MergeRegion[], r: number, c: number): MergeRegion[] {
-  return regions.filter((m) => !(r >= m.r && r < m.r + m.rowSpan && c >= m.c && c < m.c + m.colSpan));
+export function removeMergeAt(
+    regions: MergeRegion[],
+    r: number,
+    c: number,
+): MergeRegion[] {
+    return regions.filter(
+        m =>
+            !(
+                r >= m.r &&
+                r < m.r + m.rowSpan &&
+                c >= m.c &&
+                c < m.c + m.colSpan
+            ),
+    )
 }
 
 /** Serialize a cell grid + alignments back to normalized, column-padded markdown lines.
  *  Column widths are the max visible width per column so the raw source stays tidy. */
 export function serializeTable(cells: string[][], aligns: Align[]): string {
-  const cols = Math.max(0, ...cells.map((r) => r.length), aligns.length);
-  const enc = cells.map((row) => Array.from({ length: cols }, (_, c) => encodeCell(row[c] ?? "")));
-  const widths: number[] = [];
-  for (let c = 0; c < cols; c++) {
-    let w = 3; // separator needs ≥3 dashes; floor the column width there
-    for (const row of enc) w = Math.max(w, displayWidth(row[c])); // DISPLAY width (CJK/emoji-aware)
-    widths.push(w);
-  }
-  const al = (c: number): Align => aligns[c] ?? "none";
-  const rowLine = (row: string[]): string =>
-    "| " + Array.from({ length: cols }, (_, c) => padCell(row[c] ?? "", widths[c], al(c))).join(" | ") + " |";
-  const out: string[] = [];
-  if (enc.length) out.push(rowLine(enc[0]));
-  out.push("| " + Array.from({ length: cols }, (_, c) => alignSep(al(c), widths[c])).join(" | ") + " |");
-  for (let r = 1; r < enc.length; r++) out.push(rowLine(enc[r]));
-  return out.join("\n");
+    const cols = Math.max(0, ...cells.map(r => r.length), aligns.length)
+    const enc = cells.map(row =>
+        Array.from({ length: cols }, (_, c) => encodeCell(row[c] ?? '')),
+    )
+    const widths: number[] = []
+    for (let c = 0; c < cols; c++) {
+        let w = 3 // separator needs ≥3 dashes; floor the column width there
+        for (const row of enc) w = Math.max(w, displayWidth(row[c])) // DISPLAY width (CJK/emoji-aware)
+        widths.push(w)
+    }
+    const al = (c: number): Align => aligns[c] ?? 'none'
+    const rowLine = (row: string[]): string =>
+        '| ' +
+        Array.from({ length: cols }, (_, c) =>
+            padCell(row[c] ?? '', widths[c], al(c)),
+        ).join(' | ') +
+        ' |'
+    const out: string[] = []
+    if (enc.length) out.push(rowLine(enc[0]))
+    out.push(
+        '| ' +
+            Array.from({ length: cols }, (_, c) =>
+                alignSep(al(c), widths[c]),
+            ).join(' | ') +
+            ' |',
+    )
+    for (let r = 1; r < enc.length; r++) out.push(rowLine(enc[r]))
+    return out.join('\n')
 }
 
 /** Pretty-print a table grid to normalized, column-padded GFM markdown — the canonical
@@ -528,7 +631,7 @@ export function serializeTable(cells: string[][], aligns: Align[]): string {
  *  aligned and readable by a human OR an LLM. A thin `TableGrid` wrapper over
  *  `serializeTable` (which does the column-width padding). */
 export function formatTable(g: TableGrid): string {
-  return serializeTable(g.cells, g.aligns);
+    return serializeTable(g.cells, g.aligns)
 }
 
 /** Line-surgical rewrite for an IN-PLACE cell edit (#46): replace only the source lines of
@@ -540,18 +643,23 @@ export function formatTable(g: TableGrid): string {
  *  table, wiping it there too. Alignment drift on the edited line is the accepted cost;
  *  structural ops (add/delete row/column, Enter-new-row) still go through formatTable.
  *  Returns null when the shapes don't line up — the caller falls back to formatTable. */
-export function surgicalTableEdit(before: string, orig: string[][], next: string[][]): string | null {
-  if (next.length !== orig.length) return null; // row count changed: structural, not in-place
-  const lines = before.split("\n");
-  if (lines.length !== next.length + 1) return null; // header + separator + body rows
-  const out = lines.slice();
-  for (let r = 0; r < next.length; r++) {
-    const a = orig[r] ?? [];
-    const b = next[r];
-    if (b.length === a.length && b.every((c, i) => c === a[i])) continue; // untouched row
-    out[r === 0 ? 0 : r + 1] = "| " + b.map((c) => encodeCell(c)).join(" | ") + " |";
-  }
-  return out.join("\n");
+export function surgicalTableEdit(
+    before: string,
+    orig: string[][],
+    next: string[][],
+): string | null {
+    if (next.length !== orig.length) return null // row count changed: structural, not in-place
+    const lines = before.split('\n')
+    if (lines.length !== next.length + 1) return null // header + separator + body rows
+    const out = lines.slice()
+    for (let r = 0; r < next.length; r++) {
+        const a = orig[r] ?? []
+        const b = next[r]
+        if (b.length === a.length && b.every((c, i) => c === a[i])) continue // untouched row
+        out[r === 0 ? 0 : r + 1] =
+            '| ' + b.map(c => encodeCell(c)).join(' | ') + ' |'
+    }
+    return out.join('\n')
 }
 
 /** Re-format a block of raw table markdown LINES into aligned GFM (parse → pretty
@@ -559,8 +667,8 @@ export function surgicalTableEdit(before: string, orig: string[][], next: string
  *  it as raw markdown shows tidy, aligned columns. `lines[0]` is the header, `lines[1]`
  *  the separator, the rest body rows — the same shape `parseTableBlock` consumes. */
 export function prettifyTableBlock(lines: string[]): string {
-  const { cells, aligns } = parseTableBlock(lines);
-  return serializeTable(cells, aligns);
+    const { cells, aligns } = parseTableBlock(lines)
+    return serializeTable(cells, aligns)
 }
 
 // ── Cursor remap off table blocks (pure, #59) ─────────────────────────────────
@@ -579,22 +687,22 @@ export function prettifyTableBlock(lines: string[]): string {
  *  a table at the very start/end of the doc keeps its outer boundary reachable (else content
  *  could never be typed before/after it — pressing Enter there makes a fresh line). Pure. */
 export function remapCursorOffTable(
-  doc: Text,
-  head: number,
-  prevHead: number,
-  activeStartLine: number | null,
+    doc: Text,
+    head: number,
+    prevHead: number,
+    activeStartLine: number | null,
 ): number {
-  const { blocks } = groupTableBlocks(doc);
-  for (const b of blocks) {
-    if (b.startLine === activeStartLine) continue; // raw-source mode: its lines are editable
-    const from = doc.line(b.startLine).from;
-    const to = doc.line(b.endLine).to;
-    if (head < from || head > to) continue;
-    const forward = head >= prevHead;
-    if (forward) return to < doc.length ? to + 1 : to; // next line start, else the end boundary
-    return from > 0 ? from - 1 : from; // previous line end, else the start boundary
-  }
-  return head;
+    const { blocks } = groupTableBlocks(doc)
+    for (const b of blocks) {
+        if (b.startLine === activeStartLine) continue // raw-source mode: its lines are editable
+        const from = doc.line(b.startLine).from
+        const to = doc.line(b.endLine).to
+        if (head < from || head > to) continue
+        const forward = head >= prevHead
+        if (forward) return to < doc.length ? to + 1 : to // next line start, else the end boundary
+        return from > 0 ? from - 1 : from // previous line end, else the start boundary
+    }
+    return head
 }
 
 // ── Coordinate → cell resolution (pure, #30) ──────────────────────────────────
@@ -609,37 +717,41 @@ export function remapCursorOffTable(
 
 /** One cell's client rect + its grid coordinate, as collected from the widget DOM. */
 export interface CellRect {
-  r: number;
-  c: number;
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
+    r: number
+    c: number
+    left: number
+    top: number
+    right: number
+    bottom: number
 }
 
 /** Squared distance from a point to a rect (0 when inside). */
 function rectDist2(rect: CellRect, x: number, y: number): number {
-  const dx = Math.max(rect.left - x, 0, x - rect.right);
-  const dy = Math.max(rect.top - y, 0, y - rect.bottom);
-  return dx * dx + dy * dy;
+    const dx = Math.max(rect.left - x, 0, x - rect.right)
+    const dy = Math.max(rect.top - y, 0, y - rect.bottom)
+    return dx * dx + dy * dy
 }
 
 /** The cell at client point (x, y): the CONTAINING cell when the point is inside one, else
  *  the NEAREST cell (the point sits on a border/gutter or the wrap's edge-button margin —
  *  the user still dropped visually ON the table, so snap rather than lose the drop to the
  *  note body). Returns null only for an empty list. Pure. */
-export function cellRectAtPoint(cells: CellRect[], x: number, y: number): CellRect | null {
-  let best: CellRect | null = null;
-  let bestD = Infinity;
-  for (const cell of cells) {
-    const d = rectDist2(cell, x, y);
-    if (d === 0) return cell; // containing cell wins outright
-    if (d < bestD) {
-      bestD = d;
-      best = cell;
+export function cellRectAtPoint(
+    cells: CellRect[],
+    x: number,
+    y: number,
+): CellRect | null {
+    let best: CellRect | null = null
+    let bestD = Infinity
+    for (const cell of cells) {
+        const d = rectDist2(cell, x, y)
+        if (d === 0) return cell // containing cell wins outright
+        if (d < bestD) {
+            bestD = d
+            best = cell
+        }
     }
-  }
-  return best;
+    return best
 }
 
 // ── Cell keydown decision (pure) ──────────────────────────────────────────────
@@ -651,39 +763,39 @@ export function cellRectAtPoint(cells: CellRect[], x: number, y: number): CellRe
 
 /** The subset of a `KeyboardEvent` the cell's keydown logic reads. */
 export interface CellKeyEvent {
-  key: string;
-  metaKey: boolean;
-  ctrlKey: boolean;
-  shiftKey: boolean;
+    key: string
+    metaKey: boolean
+    ctrlKey: boolean
+    shiftKey: boolean
 }
 
 /** What the editable table cell should do with a keydown. */
 export type CellKeyAction =
-  | "select-cell" // Mod+A: select this cell's contents (native would grab the whole editor)
-  | "block-format" // Mod+B/I/U: swallow — no rich-text markup in a plain-markdown cell
-  | "pass-through" // any other Cmd/Ctrl combo: a global app shortcut — DON'T stop it, let it bubble
-  | "tab-next" // Tab: next cell (wraps to next row / commits past the last cell)
-  | "tab-prev" // Shift+Tab: previous cell
-  | "newline" // Shift+Enter: soft line break within the cell
-  | "next-row" // Enter: move to the cell below (or commit on the last row)
-  | "leave" // Escape: blur the cell
-  | "edit"; // everything else: native contenteditable input (stop it reaching CM's keymap)
+    | 'select-cell' // Mod+A: select this cell's contents (native would grab the whole editor)
+    | 'block-format' // Mod+B/I/U: swallow — no rich-text markup in a plain-markdown cell
+    | 'pass-through' // any other Cmd/Ctrl combo: a global app shortcut — DON'T stop it, let it bubble
+    | 'tab-next' // Tab: next cell (wraps to next row / commits past the last cell)
+    | 'tab-prev' // Shift+Tab: previous cell
+    | 'newline' // Shift+Enter: soft line break within the cell
+    | 'next-row' // Enter: move to the cell below (or commit on the last row)
+    | 'leave' // Escape: blur the cell
+    | 'edit' // everything else: native contenteditable input (stop it reaching CM's keymap)
 
 /** Classify a cell keydown. The one line that fixes "global shortcuts don't work inside a
  *  table": every Cmd/Ctrl combo the cell doesn't itself own is `pass-through`, so the
  *  widget leaves it alone and it reaches App.tsx's window keydown handler. */
 export function decideCellKey(e: CellKeyEvent): CellKeyAction {
-  const mod = e.metaKey || e.ctrlKey;
-  if (mod) {
-    const k = e.key.toLowerCase();
-    if (k === "a") return "select-cell";
-    if (k === "b" || k === "i" || k === "u") return "block-format";
-    return "pass-through";
-  }
-  if (e.key === "Tab") return e.shiftKey ? "tab-prev" : "tab-next";
-  if (e.key === "Enter") return e.shiftKey ? "newline" : "next-row";
-  if (e.key === "Escape") return "leave";
-  return "edit";
+    const mod = e.metaKey || e.ctrlKey
+    if (mod) {
+        const k = e.key.toLowerCase()
+        if (k === 'a') return 'select-cell'
+        if (k === 'b' || k === 'i' || k === 'u') return 'block-format'
+        return 'pass-through'
+    }
+    if (e.key === 'Tab') return e.shiftKey ? 'tab-prev' : 'tab-next'
+    if (e.key === 'Enter') return e.shiftKey ? 'newline' : 'next-row'
+    if (e.key === 'Escape') return 'leave'
+    return 'edit'
 }
 
 // ── In-cell list continuation (pure) ──────────────────────────────────────────
@@ -697,22 +809,25 @@ export function decideCellKey(e: CellKeyEvent): CellKeyAction {
  *   - `{ marker }` → a non-empty list item: open this marker on a new line;
  *   - "exit"       → an empty marker (just `- ` / `2. `): drop it and leave the list;
  *   - null         → not a list item: Enter keeps its normal next-row behavior. */
-export type CellListEnter = { marker: string } | "exit" | null;
+export type CellListEnter = { marker: string } | 'exit' | null
 
 // A list-item line needs whitespace after the marker (so a lone `-` isn't a list); the
 // content may be empty (`- ` / `1. `), which is the signal to exit the list.
-const CELL_UL_ITEM = /^([-*])[ \t]+(.*)$/;
-const CELL_OL_ITEM = /^(\d+)([.)])[ \t]+(.*)$/;
+const CELL_UL_ITEM = /^([-*])[ \t]+(.*)$/
+const CELL_OL_ITEM = /^(\d+)([.)])[ \t]+(.*)$/
 
 /** Decide how Enter continues an in-cell list, given the caret's current line text. The
  *  next ordered marker increments the number; unordered repeats the bullet. Mirrors the
  *  markers cellList.ts renders. */
 export function cellListContinuation(lineText: string): CellListEnter {
-  const ul = CELL_UL_ITEM.exec(lineText);
-  if (ul) return ul[2].trim() === "" ? "exit" : { marker: `${ul[1]} ` };
-  const ol = CELL_OL_ITEM.exec(lineText);
-  if (ol) return ol[3].trim() === "" ? "exit" : { marker: `${parseInt(ol[1], 10) + 1}${ol[2]} ` };
-  return null;
+    const ul = CELL_UL_ITEM.exec(lineText)
+    if (ul) return ul[2].trim() === '' ? 'exit' : { marker: `${ul[1]} ` }
+    const ol = CELL_OL_ITEM.exec(lineText)
+    if (ol)
+        return ol[3].trim() === ''
+            ? 'exit'
+            : { marker: `${parseInt(ol[1], 10) + 1}${ol[2]} ` }
+    return null
 }
 
 // ── Enter action (pure, #42) ──────────────────────────────────────────────────
@@ -722,9 +837,9 @@ export function cellListContinuation(lineText: string): CellListEnter {
 // (the old `next-row` behavior) while letting a user grow the table by pressing Enter at the
 // bottom. `rowIndex` is 0-based over `cells` (row 0 = header); `rowCount` is the total row
 // count including the header. (In-cell list continuation is decided separately and wins.)
-export type EnterAction = "line-break" | "new-row";
+export type EnterAction = 'line-break' | 'new-row'
 
 /** Enter creates a new row only on the last row; otherwise it inserts an in-cell line break. */
 export function enterAction(rowIndex: number, rowCount: number): EnterAction {
-  return rowIndex >= rowCount - 1 ? "new-row" : "line-break";
+    return rowIndex >= rowCount - 1 ? 'new-row' : 'line-break'
 }

@@ -1,29 +1,49 @@
-import { randomUUID } from "node:crypto";
-import { basename } from "node:path";
-import type { ChatAgentSession } from "./agents";
+import { randomUUID } from 'node:crypto'
+import { basename } from 'node:path'
+import type { ChatAgentSession } from './agents'
 import {
-  query,
-  listSessions,
-  getSessionMessages,
-  getSessionInfo,
-  type CanUseTool,
-  type EffortLevel,
-  type HookInput,
-  type Query,
-  type SDKMessage,
-  type SDKUserMessage,
-  type SessionMessage,
-} from "@anthropic-ai/claude-agent-sdk";
-import { whichClaude } from "./claudeWhich";
-import { loadSessionModel, saveSessionModel } from "./chatModelStore";
-import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
-import { buildDenyPaths, buildManagedSettingsDeny, buildSandboxDenyPaths, sandboxFailIfUnavailable, isDeniedPath, type DenyEntry } from "./visibility";
-import { readDaemonSessionIds } from "./daemon";
-import { backfillLegacyDaemonSessions } from "./chatDaemonLegacy";
-import { detachSessionSink, emit, reattachSessionSink, rebindSessionSink, scheduleSessionClose } from "./chatProviders/sessionSink";
+    query,
+    listSessions,
+    getSessionMessages,
+    getSessionInfo,
+    type CanUseTool,
+    type EffortLevel,
+    type HookInput,
+    type Query,
+    type SDKMessage,
+    type SDKUserMessage,
+    type SessionMessage,
+} from '@anthropic-ai/claude-agent-sdk'
+import { whichClaude } from './claudeWhich'
+import { loadSessionModel, saveSessionModel } from './chatModelStore'
+import {
+    buildAutoNoteBody,
+    extractText,
+    recallMemory,
+    stripInjectedBlocks,
+    writeNote as writeMemoryNote,
+    type TranscriptEntry,
+} from '@bismuth/memory'
+import {
+    buildDenyPaths,
+    buildManagedSettingsDeny,
+    buildSandboxDenyPaths,
+    sandboxFailIfUnavailable,
+    isDeniedPath,
+    type DenyEntry,
+} from './visibility'
+import { readDaemonSessionIds } from './daemon'
+import { backfillLegacyDaemonSessions } from './chatDaemonLegacy'
+import {
+    detachSessionSink,
+    emit,
+    reattachSessionSink,
+    rebindSessionSink,
+    scheduleSessionClose,
+} from './chatProviders/sessionSink'
 // One source of truth for how long a subagent lives in the agents graph, so the chat and relay
 // paths can't drift apart (they render as the same thing in the same view).
-import { DONE_SUBAGENT_TTL_MS, RUNNING_SUBAGENT_MAX_MS } from "./relay";
+import { DONE_SUBAGENT_TTL_MS, RUNNING_SUBAGENT_MAX_MS } from './relay'
 
 /**
  * Visual Claude Code driver for the in-app chat surface. Each chat is ONE long-lived Agent-SDK
@@ -46,107 +66,139 @@ import { DONE_SUBAGENT_TTL_MS, RUNNING_SUBAGENT_MAX_MS } from "./relay";
 /** The self-updating per-turn manifest, sourced entirely from the SDK `system`/`init` event —
  *  NEVER hardcode any of these lists; they reflect the live CLI (commands, tools, model, …). */
 export interface ChatManifest {
-  model: string;
-  permissionMode: string; // 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'
-  slashCommands: string[]; // from init.slash_commands
-  tools: string[]; // from init.tools
-  mcpServers: { name: string; status: string }[]; // from init.mcp_servers
-  /** Optional per-command blurbs for the composer's "/" popover. The Claude SDK's init carries
-   *  names only (never set here); the opencode provider fills it from its command registry
-   *  (`opencode debug config` — descriptions ride the same JSON). Absent keys just show no detail. */
-  commandDetails?: Record<string, string>;
+    model: string
+    permissionMode: string // 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'
+    slashCommands: string[] // from init.slash_commands
+    tools: string[] // from init.tools
+    mcpServers: { name: string; status: string }[] // from init.mcp_servers
+    /** Optional per-command blurbs for the composer's "/" popover. The Claude SDK's init carries
+     *  names only (never set here); the opencode provider fills it from its command registry
+     *  (`opencode debug config` — descriptions ride the same JSON). Absent keys just show no detail. */
+    commandDetails?: Record<string, string>
 }
 
 export type ChatFrame =
-  /** A fresh manifest from each `system`/`init` (emitted every turn; the manifest self-updates). */
-  | { type: "manifest"; manifest: ChatManifest }
-  /** A past USER turn, emitted ONLY when replaying history (live user messages come from the client,
-   *  not the wire). The frontend renders it as a user bubble — same as a freshly-sent user item.
-   *  `images` carries any persisted image attachments as data: URLs so an image(-only) turn
-   *  survives replay instead of vanishing. */
-  | { type: "user-message"; text: string; images?: string[] }
-  /** A delta of assistant prose (markdown). Streamed live from `content_block_delta` text deltas. */
-  | { type: "assistant-text"; text: string }
-  /** A delta of extended-thinking text. Streamed live from `content_block_delta` thinking deltas. */
-  | { type: "thinking"; text: string }
-  /** Claude invoked a tool (an assistant `tool_use` content block).
-   *  `name` is what the UI LABELS the chip with. `kind` is an optional stable machine token for the
-   *  same call, carried only by backends that have one (ACP's `ToolCall.kind`: "read"/"edit"/
-   *  "search"/"execute"/…): a title reads well but is free-form prose, so the frontend picks the
-   *  chip's ICON off `kind` when it's there and falls back to `name` when it isn't
-   *  (app/src/chatToolIcon.ts). Optional, so the Claude/opencode/codex producers stay valid. */
-  | { type: "tool-use"; id: string; name: string; kind?: string; input: unknown }
-  /** That tool finished (a user `tool_result` content block). */
-  | { type: "tool-result"; id: string; content: string; isError: boolean }
-  /** canUseTool is asking the USER to approve/deny a not-pre-allowed tool. */
-  | { type: "permission"; id: string; toolName: string; input: unknown }
-  /** Claude called the AskUserQuestion tool — 1-4 multiple-choice questions the USER must answer for
-   *  the turn to continue. Reaches the host through the SDK's `canUseTool` channel (verified live: the
-   *  `onUserDialog` path never fires for a programmatic query()); we intercept it there and surface it
-   *  as this frame. The client renders interactive option buttons and answers via
-   *  {type:"question_response", id, answers} (or skips), which resolves the parked canUseTool promise. */
-  | { type: "question"; id: string; questions: ChatQuestion[] }
-  /** A turn ended (the `result` event). */
-  | { type: "result"; isError: boolean; numTurns: number; costUsd: number | null }
-  /** The turn is fully drained (pushed after `result`). */
-  | { type: "done" }
-  /** The models this login can run (Query.supportedModels), fetched EAGERLY on session spawn — the
-   *  SDK's `initialize` control request resolves the moment the CLI subprocess starts (NOT gated on a
-   *  user turn), so this powers the header model picker the instant the chat opens, BEFORE the first
-   *  message (set_model is wired end-to-end). Emitted once per session (the list is static per login).
-   *  Each model also carries the reasoning-effort levels IT supports (ModelInfo.supportedEffortLevels)
-   *  so the header's Effort picker (FEATURE #63) offers exactly what the SELECTED model allows —
-   *  never a hardcoded list. Empty for a model/CLI that doesn't expose effort → the picker hides. */
-  | { type: "models"; models: { value: string; label: string; description: string; effortLevels: string[]; free?: boolean }[] }
-  /** The session's conversation summary (Query store via getSessionInfo) — names the chat tab.
-   *  Emitted once per session, retried each turn-end until a non-empty summary exists. */
-  | { type: "title"; title: string }
-  /** The SDK session_id this chat is bound to, emitted the moment it's first learned (and again if
-   *  it ever changes — e.g. after a resume). The client persists it keyed by the chat TAB id so a
-   *  reopened tab (Cmd+Shift+T) can RESUME the same conversation instead of spawning a blank one —
-   *  the session_id is the durable, on-disk identity of the conversation (app/src/chatSessionStore.ts).
-   *  `origin` says whether that conversation is one the vault's DAEMON minted (a cron chat opened
-   *  from the History picker's daemon scope) or the user's own, so the tab strip / pane header can
-   *  show the matching glyph (see resolveChatOrigin below). Re-read per emit — a resume can bind
-   *  this tab to a different conversation entirely. */
-  | { type: "session"; sessionId: string; origin: ChatOrigin }
-  /** Context-window usage after a completed turn (Query.getContextUsage) — the header pill. */
-  | { type: "context"; percentage: number; totalTokens: number; maxTokens: number }
-  /** Provider credential state (opencode-only today — `opencode auth list`, re-fetched per session
-   *  open). Powers the header's auth pill: which providers hold stored credentials, so the user can
-   *  see logged-in-vs-not without leaving the chat. Claude sessions never emit it (the claude CLI
-   *  manages its own login and the SDK surfaces failures as turn errors). */
-  | { type: "auth"; providers: { name: string; kind: string }[] }
-  /** A fatal problem. `no-claude` = the `claude` CLI isn't installed (surface setup, never fall
-   *  back to an API); `no-opencode` = the `opencode` CLI isn't installed (the opencode provider —
-   *  see chatProviders/); `no-binary` = an ACP agent's CLI isn't installed (chatProviders/acp/ —
-   *  `binary` names which one, e.g. "cline"/"gemini"); `visibility-refused` = this vault restricts
-   *  one or more notes and Bismuth has no VERIFIED mechanism to enforce that on the chosen
-   *  backend+channel (docs/vault/visibility.md's per-backend table) — `binary` names the refused
-   *  backend, `restrictedCount` is how many notes/folders are restricted (a COUNT only — never their
-   *  names or paths, since naming a hidden note in an error message would defeat the point of hiding
-   *  it), and `message` is the full user-facing explanation built by {@link visibilityRefusalMessage}.
-   *  Emitted INSTEAD OF opening the session, with one exception: a mid-session re-read of the
-   *  vault's visibility that cannot be resolved (respawnSession) emits it and ends the session,
-   *  rather than continue a conversation whose deny list no longer describes the vault.
-   *  `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
-  | {
-      type: "error";
-      code: "no-claude" | "no-opencode" | "no-binary" | "visibility-refused" | "spawn" | "exit" | "error";
-      message: string;
-      binary?: string;
-      restrictedCount?: number;
-    };
+    /** A fresh manifest from each `system`/`init` (emitted every turn; the manifest self-updates). */
+    | { type: 'manifest'; manifest: ChatManifest }
+    /** A past USER turn, emitted ONLY when replaying history (live user messages come from the client,
+     *  not the wire). The frontend renders it as a user bubble — same as a freshly-sent user item.
+     *  `images` carries any persisted image attachments as data: URLs so an image(-only) turn
+     *  survives replay instead of vanishing. */
+    | { type: 'user-message'; text: string; images?: string[] }
+    /** A delta of assistant prose (markdown). Streamed live from `content_block_delta` text deltas. */
+    | { type: 'assistant-text'; text: string }
+    /** A delta of extended-thinking text. Streamed live from `content_block_delta` thinking deltas. */
+    | { type: 'thinking'; text: string }
+    /** Claude invoked a tool (an assistant `tool_use` content block).
+     *  `name` is what the UI LABELS the chip with. `kind` is an optional stable machine token for the
+     *  same call, carried only by backends that have one (ACP's `ToolCall.kind`: "read"/"edit"/
+     *  "search"/"execute"/…): a title reads well but is free-form prose, so the frontend picks the
+     *  chip's ICON off `kind` when it's there and falls back to `name` when it isn't
+     *  (app/src/chatToolIcon.ts). Optional, so the Claude/opencode/codex producers stay valid. */
+    | {
+          type: 'tool-use'
+          id: string
+          name: string
+          kind?: string
+          input: unknown
+      }
+    /** That tool finished (a user `tool_result` content block). */
+    | { type: 'tool-result'; id: string; content: string; isError: boolean }
+    /** canUseTool is asking the USER to approve/deny a not-pre-allowed tool. */
+    | { type: 'permission'; id: string; toolName: string; input: unknown }
+    /** Claude called the AskUserQuestion tool — 1-4 multiple-choice questions the USER must answer for
+     *  the turn to continue. Reaches the host through the SDK's `canUseTool` channel (verified live: the
+     *  `onUserDialog` path never fires for a programmatic query()); we intercept it there and surface it
+     *  as this frame. The client renders interactive option buttons and answers via
+     *  {type:"question_response", id, answers} (or skips), which resolves the parked canUseTool promise. */
+    | { type: 'question'; id: string; questions: ChatQuestion[] }
+    /** A turn ended (the `result` event). */
+    | {
+          type: 'result'
+          isError: boolean
+          numTurns: number
+          costUsd: number | null
+      }
+    /** The turn is fully drained (pushed after `result`). */
+    | { type: 'done' }
+    /** The models this login can run (Query.supportedModels), fetched EAGERLY on session spawn — the
+     *  SDK's `initialize` control request resolves the moment the CLI subprocess starts (NOT gated on a
+     *  user turn), so this powers the header model picker the instant the chat opens, BEFORE the first
+     *  message (set_model is wired end-to-end). Emitted once per session (the list is static per login).
+     *  Each model also carries the reasoning-effort levels IT supports (ModelInfo.supportedEffortLevels)
+     *  so the header's Effort picker (FEATURE #63) offers exactly what the SELECTED model allows —
+     *  never a hardcoded list. Empty for a model/CLI that doesn't expose effort → the picker hides. */
+    | {
+          type: 'models'
+          models: {
+              value: string
+              label: string
+              description: string
+              effortLevels: string[]
+              free?: boolean
+          }[]
+      }
+    /** The session's conversation summary (Query store via getSessionInfo) — names the chat tab.
+     *  Emitted once per session, retried each turn-end until a non-empty summary exists. */
+    | { type: 'title'; title: string }
+    /** The SDK session_id this chat is bound to, emitted the moment it's first learned (and again if
+     *  it ever changes — e.g. after a resume). The client persists it keyed by the chat TAB id so a
+     *  reopened tab (Cmd+Shift+T) can RESUME the same conversation instead of spawning a blank one —
+     *  the session_id is the durable, on-disk identity of the conversation (app/src/chatSessionStore.ts).
+     *  `origin` says whether that conversation is one the vault's DAEMON minted (a cron chat opened
+     *  from the History picker's daemon scope) or the user's own, so the tab strip / pane header can
+     *  show the matching glyph (see resolveChatOrigin below). Re-read per emit — a resume can bind
+     *  this tab to a different conversation entirely. */
+    | { type: 'session'; sessionId: string; origin: ChatOrigin }
+    /** Context-window usage after a completed turn (Query.getContextUsage) — the header pill. */
+    | {
+          type: 'context'
+          percentage: number
+          totalTokens: number
+          maxTokens: number
+      }
+    /** Provider credential state (opencode-only today — `opencode auth list`, re-fetched per session
+     *  open). Powers the header's auth pill: which providers hold stored credentials, so the user can
+     *  see logged-in-vs-not without leaving the chat. Claude sessions never emit it (the claude CLI
+     *  manages its own login and the SDK surfaces failures as turn errors). */
+    | { type: 'auth'; providers: { name: string; kind: string }[] }
+    /** A fatal problem. `no-claude` = the `claude` CLI isn't installed (surface setup, never fall
+     *  back to an API); `no-opencode` = the `opencode` CLI isn't installed (the opencode provider —
+     *  see chatProviders/); `no-binary` = an ACP agent's CLI isn't installed (chatProviders/acp/ —
+     *  `binary` names which one, e.g. "cline"/"gemini"); `visibility-refused` = this vault restricts
+     *  one or more notes and Bismuth has no VERIFIED mechanism to enforce that on the chosen
+     *  backend+channel (docs/vault/visibility.md's per-backend table) — `binary` names the refused
+     *  backend, `restrictedCount` is how many notes/folders are restricted (a COUNT only — never their
+     *  names or paths, since naming a hidden note in an error message would defeat the point of hiding
+     *  it), and `message` is the full user-facing explanation built by {@link visibilityRefusalMessage}.
+     *  Emitted INSTEAD OF opening the session, with one exception: a mid-session re-read of the
+     *  vault's visibility that cannot be resolved (respawnSession) emits it and ends the session,
+     *  rather than continue a conversation whose deny list no longer describes the vault.
+     *  `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
+    | {
+          type: 'error'
+          code:
+              | 'no-claude'
+              | 'no-opencode'
+              | 'no-binary'
+              | 'visibility-refused'
+              | 'spawn'
+              | 'exit'
+              | 'error'
+          message: string
+          binary?: string
+          restrictedCount?: number
+      }
 
-export type ChatSink = (frame: ChatFrame) => void;
+export type ChatSink = (frame: ChatFrame) => void
 
 /** A base64 image the user attached to a chat turn. `media_type` must be one of the SDK-accepted
  *  image MIME types (image/png | image/jpeg | image/gif | image/webp); `data` is the raw base64
  *  payload WITHOUT the `data:<mime>;base64,` prefix. Threaded client → /chat WS → chatSend →
  *  sendMessage → makeUserMessage, where it becomes an SDK image content block. */
 export interface ChatImage {
-  media_type: string;
-  data: string;
+    media_type: string
+    data: string
 }
 
 // --- AskUserQuestion (interactive multiple-choice tool) -------------------------------------
@@ -162,23 +214,23 @@ export interface ChatImage {
 // 2.1.x: the assistant received the returned answer and continued the turn.
 
 /** The Claude Code tool name we intercept in canUseTool to render the interactive question card. */
-export const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
+export const ASK_USER_QUESTION_TOOL = 'AskUserQuestion'
 
 /** One selectable option in an AskUserQuestion question. */
 export interface ChatQuestionOption {
-  label: string;
-  description: string;
+    label: string
+    description: string
 }
 
 /** One question from an AskUserQuestion tool call (the client renders the options as buttons). */
 export interface ChatQuestion {
-  /** The full question text — ALSO the key the answer is returned under in the `answers` map. */
-  question: string;
-  /** Short chip/tag label (≤12 chars) — a compact header shown above the question. */
-  header: string;
-  /** True → the user may pick SEVERAL options (their labels are comma-joined into one answer). */
-  multiSelect: boolean;
-  options: ChatQuestionOption[];
+    /** The full question text — ALSO the key the answer is returned under in the `answers` map. */
+    question: string
+    /** Short chip/tag label (≤12 chars) — a compact header shown above the question. */
+    header: string
+    /** True → the user may pick SEVERAL options (their labels are comma-joined into one answer). */
+    multiSelect: boolean
+    options: ChatQuestionOption[]
 }
 
 /**
@@ -187,40 +239,47 @@ export interface ChatQuestion {
  * questions with no text or no valid options and coerces missing fields to sane defaults. Returns null
  * when there's no usable question at all (the caller then answers the dialog as cancelled).
  */
-export function extractAskUserQuestions(payload: unknown): ChatQuestion[] | null {
-  const raw = (payload as { questions?: unknown } | null | undefined)?.questions;
-  if (!Array.isArray(raw)) return null;
-  const out: ChatQuestion[] = [];
-  for (const q of raw) {
-    if (!q || typeof q !== "object") continue;
-    const o = q as Record<string, unknown>;
-    const question = typeof o.question === "string" ? o.question.trim() : "";
-    if (!question) continue;
-    const optsRaw = Array.isArray(o.options) ? o.options : [];
-    const options: ChatQuestionOption[] = [];
-    for (const opt of optsRaw) {
-      if (!opt || typeof opt !== "object") continue;
-      const oo = opt as Record<string, unknown>;
-      const label = typeof oo.label === "string" ? oo.label : "";
-      if (!label) continue;
-      options.push({ label, description: typeof oo.description === "string" ? oo.description : "" });
+export function extractAskUserQuestions(
+    payload: unknown,
+): ChatQuestion[] | null {
+    const raw = (payload as { questions?: unknown } | null | undefined)
+        ?.questions
+    if (!Array.isArray(raw)) return null
+    const out: ChatQuestion[] = []
+    for (const q of raw) {
+        if (!q || typeof q !== 'object') continue
+        const o = q as Record<string, unknown>
+        const question = typeof o.question === 'string' ? o.question.trim() : ''
+        if (!question) continue
+        const optsRaw = Array.isArray(o.options) ? o.options : []
+        const options: ChatQuestionOption[] = []
+        for (const opt of optsRaw) {
+            if (!opt || typeof opt !== 'object') continue
+            const oo = opt as Record<string, unknown>
+            const label = typeof oo.label === 'string' ? oo.label : ''
+            if (!label) continue
+            options.push({
+                label,
+                description:
+                    typeof oo.description === 'string' ? oo.description : '',
+            })
+        }
+        if (!options.length) continue
+        out.push({
+            question,
+            header: typeof o.header === 'string' ? o.header : '',
+            multiSelect: o.multiSelect === true,
+            options,
+        })
     }
-    if (!options.length) continue;
-    out.push({
-      question,
-      header: typeof o.header === "string" ? o.header : "",
-      multiSelect: o.multiSelect === true,
-      options,
-    });
-  }
-  return out.length ? out : null;
+    return out.length ? out : null
 }
 
 /** The canUseTool result that answers (or skips) an AskUserQuestion tool call — always an `allow`
  *  (denying would surface a tool error): the answers ride in `updatedInput`. */
 export interface AskUserQuestionAnswer {
-  behavior: "allow";
-  updatedInput: Record<string, unknown>;
+    behavior: 'allow'
+    updatedInput: Record<string, unknown>
 }
 
 /**
@@ -233,11 +292,11 @@ export interface AskUserQuestionAnswer {
  * ...input, answers } }` — the assistant received the answer and continued.
  */
 export function buildAskUserQuestionAnswer(
-  toolInput: Record<string, unknown>,
-  answers: Record<string, string> | null,
+    toolInput: Record<string, unknown>,
+    answers: Record<string, string> | null,
 ): AskUserQuestionAnswer {
-  if (!answers) return { behavior: "allow", updatedInput: toolInput };
-  return { behavior: "allow", updatedInput: { ...toolInput, answers } };
+    if (!answers) return { behavior: 'allow', updatedInput: toolInput }
+    return { behavior: 'allow', updatedInput: { ...toolInput, answers } }
 }
 
 /**
@@ -250,44 +309,51 @@ export function buildAskUserQuestionAnswer(
  *    image block per attachment. MessageParam.content accepts ImageBlockParam, so no query()/preset
  *    change is needed — only this shape.
  */
-export function makeUserMessage(text: string, images?: ChatImage[]): SDKUserMessage {
-  const content = (
-    images && images.length
-      ? [
-          ...(text ? [{ type: "text", text }] : []),
-          ...images.map((im) => ({
-            type: "image",
-            source: { type: "base64", media_type: im.media_type, data: im.data },
-          })),
-        ]
-      : text
-  ) as SDKUserMessage["message"]["content"];
-  return {
-    type: "user",
-    message: { role: "user", content },
-    parent_tool_use_id: null,
-    session_id: "",
-  };
+export function makeUserMessage(
+    text: string,
+    images?: ChatImage[],
+): SDKUserMessage {
+    const content = (
+        images && images.length
+            ? [
+                  ...(text ? [{ type: 'text', text }] : []),
+                  ...images.map(im => ({
+                      type: 'image',
+                      source: {
+                          type: 'base64',
+                          media_type: im.media_type,
+                          data: im.data,
+                      },
+                  })),
+              ]
+            : text
+    ) as SDKUserMessage['message']['content']
+    return {
+        type: 'user',
+        message: { role: 'user', content },
+        parent_tool_use_id: null,
+        session_id: '',
+    }
 }
 
 // --- Permission plumbing --------------------------------------------------------------------
 
 /** How the client answers a "permission" frame; resolves the pending canUseTool promise. */
-type PermissionDecision = { behavior: "allow" | "deny"; always?: boolean };
-type PermissionResolver = (d: PermissionDecision) => void;
+type PermissionDecision = { behavior: 'allow' | 'deny'; always?: boolean }
+type PermissionResolver = (d: PermissionDecision) => void
 
 // The SDK CanUseTool returns this union; we shape it ourselves to avoid coupling to the SDK's
 // optional fields. Allow echoes the input back unchanged; deny carries a user-facing message.
 type SdkPermissionResult =
-  | { behavior: "allow"; updatedInput: Record<string, unknown> }
-  | { behavior: "deny"; message: string };
+    | { behavior: 'allow'; updatedInput: Record<string, unknown> }
+    | { behavior: 'deny'; message: string }
 
 /** A parked AskUserQuestion tool call: `resolve` settles the canUseTool promise once the client
  *  answers/skips (or the turn tears down); `toolInput` is the tool's original input, spread into the
  *  answer's `updatedInput` so the tool sees `{ ...input, answers }`. */
 interface PendingDialog {
-  resolve: (result: SdkPermissionResult) => void;
-  toolInput: Record<string, unknown>;
+    resolve: (result: SdkPermissionResult) => void
+    toolInput: Record<string, unknown>
 }
 
 // --- The push-input queue ------------------------------------------------------------------
@@ -299,206 +365,224 @@ interface PendingDialog {
  * promise that push()/close() later settles.
  */
 interface InputQueue extends AsyncIterable<SDKUserMessage> {
-  push(text: string, images?: ChatImage[]): void;
-  close(): void;
+    push(text: string, images?: ChatImage[]): void
+    close(): void
 }
 
 function makeInputQueue(): InputQueue {
-  const buffered: SDKUserMessage[] = [];
-  let waiting: ((r: IteratorResult<SDKUserMessage>) => void) | null = null;
-  let closed = false;
+    const buffered: SDKUserMessage[] = []
+    let waiting: ((r: IteratorResult<SDKUserMessage>) => void) | null = null
+    let closed = false
 
-  return {
-    push(text: string, images?: ChatImage[]) {
-      if (closed) return;
-      const msg = makeUserMessage(text, images);
-      if (waiting) {
-        const resolve = waiting;
-        waiting = null;
-        resolve({ value: msg, done: false });
-      } else {
-        buffered.push(msg);
-      }
-    },
-    close() {
-      if (closed) return;
-      closed = true;
-      if (waiting) {
-        const resolve = waiting;
-        waiting = null;
-        resolve({ value: undefined as unknown as SDKUserMessage, done: true });
-      }
-    },
-    [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
-      return {
-        next(): Promise<IteratorResult<SDKUserMessage>> {
-          if (buffered.length) {
-            return Promise.resolve({ value: buffered.shift()!, done: false });
-          }
-          if (closed) {
-            return Promise.resolve({ value: undefined as unknown as SDKUserMessage, done: true });
-          }
-          return new Promise((resolve) => {
-            waiting = resolve;
-          });
+    return {
+        push(text: string, images?: ChatImage[]) {
+            if (closed) return
+            const msg = makeUserMessage(text, images)
+            if (waiting) {
+                const resolve = waiting
+                waiting = null
+                resolve({ value: msg, done: false })
+            } else {
+                buffered.push(msg)
+            }
         },
-      };
-    },
-  };
+        close() {
+            if (closed) return
+            closed = true
+            if (waiting) {
+                const resolve = waiting
+                waiting = null
+                resolve({
+                    value: undefined as unknown as SDKUserMessage,
+                    done: true,
+                })
+            }
+        },
+        [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
+            return {
+                next(): Promise<IteratorResult<SDKUserMessage>> {
+                    if (buffered.length) {
+                        return Promise.resolve({
+                            value: buffered.shift()!,
+                            done: false,
+                        })
+                    }
+                    if (closed) {
+                        return Promise.resolve({
+                            value: undefined as unknown as SDKUserMessage,
+                            done: true,
+                        })
+                    }
+                    return new Promise(resolve => {
+                        waiting = resolve
+                    })
+                },
+            }
+        },
+    }
 }
 
 // --- Session registry ----------------------------------------------------------------------
 
 interface ChatSession {
-  id: string;
-  /** The vault dir; the query()'s cwd so `claude` operates against the user's notes. */
-  cwd: string;
-  /** The push-input mailbox feeding query() as the multi-turn `prompt`. */
-  input: InputQueue;
-  /** The live query() generator + control surface (interrupt/setModel/setPermissionMode/close). */
-  q: Query;
-  /** Where ChatFrames go for this chat (the chat WebSocket). */
-  sink: ChatSink;
-  /** In-flight permission prompts keyed by toolUseID — resolved by respondPermission(). */
-  pending: Map<string, PermissionResolver>;
-  /** In-flight AskUserQuestion tool calls keyed by toolUseID — resolved by respondQuestion(). Kept
-   *  separate from `pending` (ordinary allow/deny permissions): these are parked canUseTool promises
-   *  whose resolution carries the user's ANSWER in `updatedInput`, not an allow/deny decision. */
-  pendingDialogs: Map<string, PendingDialog>;
-  /** Tool names the user chose to always allow this session (canUseTool short-circuits these). */
-  alwaysAllow: Set<string>;
-  /** The latest Claude Code session id seen on the wire (for diagnostics + a visibility respawn's
-   *  `resume`, so refreshing the deny list mid-conversation keeps the history). */
-  sessionId: string | null;
-  /** The resolved `claude` binary — kept so a visibility respawn can rebuild query() without
-   *  re-resolving it. */
-  bin: string;
-  /** The reasoning-effort level the user chose in the header (FEATURE #63), applied LIVE via
-   *  Query.applyFlagSettings. Also stashed here so a visibility respawn (spawnChatQuery rebuilds
-   *  query() from scratch) re-applies it through the spawn `effort` option — otherwise the respawn
-   *  would silently reset effort to the model default. Undefined until the user picks one. */
-  effort?: string;
-  /** The model the user selected (Bug #89). Stored here so a visibility respawn (spawnChatQuery
-   *  rebuilds query() from scratch) re-applies it — the SDK's query() options don't accept a base
-   *  model, so setModel() is called again after the new query is created. Undefined = default.
-   *  ALSO persisted per SDK session_id (chatModelStore.ts) so a conversation resumed later — into
-   *  any tab, after any restart — comes back on the model it was last set to. */
-  model?: string;
-  /** LIVE chat-visibility deny set (both path forms), read by canUseTool at call time so a
-   *  mid-session visibility change takes effect without a stale captured copy. Rebuilt on respawn. */
-  /** LIVE restricted entries for this session's channel, checked via isDeniedPath (which
-   *  case-folds + matches subpaths). Replaced the exact-match Set, which a differently-cased
-   *  path defeated. */
-  deniedEntries: DenyEntry[];
-  /** Enable Claude's --chrome (browser/computer-use) capability. Read from settings at spawn —
-   *  respawns preserve the flag via this field (like effort). */
-  computerUse?: boolean;
-  /** Set by invalidateChatVisibility when the vault's visibility settings change: the next
-   *  sendMessage tears down + respawns query() with a fresh deny list (managedSettings/sandbox are
-   *  spawn-fixed and can't be updated live, so a respawn is the only way to re-gate them). */
-  visibilityDirty?: boolean;
-  /** Set when the /chrome toggle (or header Globe pill) flips computerUse for a LIVE session (BUG
-   *  #87): --chrome is a spawn-time CLI flag (extraArgs), not a runtime control request, so — like
-   *  visibilityDirty — the next sendMessage tears down + respawns query() (resuming the same
-   *  conversation) with the new capability. Without a respawn the toggle silently did nothing for
-   *  the session the user typed /chrome into, which is why the browser kept reading as disabled. */
-  spawnOptionsDirty?: boolean;
-  /** From init: "none" when the user is on a Claude subscription login (no API key) — in that case
-   *  the SDK's total_cost_usd is a notional API-equivalent figure the user does NOT pay, so we hide
-   *  it. Any other value means real API-key billing, where the cost is meaningful. */
-  apiKeySource: string;
-  /** A pending grace-period teardown (set on an abnormal WS drop, cleared on reconnect). */
-  closeTimer?: ReturnType<typeof setTimeout>;
-  /** True while a user turn is in flight (set on push, cleared after result+done / drain end).
-   *  Read by rebindSink: a reconnect that finds NO active turn pushes a synthetic `done` so a
-   *  terminating frame lost to a dead socket can't wedge the client's streaming state forever. */
-  turnActive: boolean;
-  /** Set by detachSink on an abnormal WS drop: frames buffer here (capped) instead of being
-   *  fired into a dead socket, and rebindSink flushes them to the reconnected one — the chat
-   *  analogue of terminal.ts's PTY detach/attach output buffering. */
-  detached: boolean;
-  buffer: ChatFrame[];
-  /** Once-per-session latches: the supported-models list is static per login (fetched EAGERLY on
-   *  spawn, so the picker is usable before the first turn — see emitSupportedModels); the title
-   *  latches only when a NON-EMPTY summary exists (a brand-new session has none on turn 1, so the
-   *  drain retries at each turn-end until one appears). */
-  modelsSent?: boolean;
-  titleSent?: boolean;
-  /** Latch for the EAGER synthetic manifest (emitInitManifest): true once ANY manifest — the
-   *  spawn-time synthetic one OR a real per-turn `system/init` — has been emitted, so a slow eager
-   *  control-request fetch can never clobber a real per-turn manifest that raced ahead (BUG #14). */
-  manifestSent?: boolean;
-  /** The vault's 3rd-brain dir when the daemon is enabled — a finished chat's conversation is
-   *  captured there as an auto note (like the relay SessionEnd hook does for terminals), so
-   *  the dream cron consolidates in-app chats too. Undefined = daemon off = no capture. */
-  memoryDir?: string;
-  /** Completed turns this session — a conversation with none isn't worth a memory note. */
-  turnCount: number;
-  /** The conversation summary once known (maybeEmitTitle) — the agents-graph node label. Falls back
-   *  to the cwd basename in the snapshot until a summary exists. */
-  title?: string;
-  /** ms epoch of the last turn activity (set on spawn, bumped on each push + turn-end). Drives the
-   *  chat node's awake/idle state in the agents graph, like a relay session's lastSeen. */
-  lastActivityAt: number;
-  /** Subagents spawned via the SDK Task tool this session, keyed by the Task tool_use id. Populated
-   *  in the drain loop (tool-use → add, tool-result → mark done); swept on the relay's shared
-   *  lifetimes (brief linger once done, backstop age if the result never came — see
-   *  sweepDoneChatSubagents). Surfaced as depth-1 children in the agents graph. */
-  chatSubagents: Map<string, { agentId: string; agentType: string; startedAt: number; done: boolean; doneAt?: number }>;
-  /** Latch so a grace-timeout close after an explicit close can't write the note twice. */
-  captured?: boolean;
-  /** Set by abortTurn() right before interrupt(), cleared when the NEXT `result` message is
-   *  handled. The SDK reports a user-interrupted turn as an error result (is_error: true,
-   *  subtype "error_during_execution") — indistinguishable on the wire from a real failure — so
-   *  without this a deliberate Escape/Stop surfaces as "The turn ended with an error." in the UI.
-   *  This flag lets the drain loop recognize "we asked for this" and report isError: false. */
-  aborting?: boolean;
+    id: string
+    /** The vault dir; the query()'s cwd so `claude` operates against the user's notes. */
+    cwd: string
+    /** The push-input mailbox feeding query() as the multi-turn `prompt`. */
+    input: InputQueue
+    /** The live query() generator + control surface (interrupt/setModel/setPermissionMode/close). */
+    q: Query
+    /** Where ChatFrames go for this chat (the chat WebSocket). */
+    sink: ChatSink
+    /** In-flight permission prompts keyed by toolUseID — resolved by respondPermission(). */
+    pending: Map<string, PermissionResolver>
+    /** In-flight AskUserQuestion tool calls keyed by toolUseID — resolved by respondQuestion(). Kept
+     *  separate from `pending` (ordinary allow/deny permissions): these are parked canUseTool promises
+     *  whose resolution carries the user's ANSWER in `updatedInput`, not an allow/deny decision. */
+    pendingDialogs: Map<string, PendingDialog>
+    /** Tool names the user chose to always allow this session (canUseTool short-circuits these). */
+    alwaysAllow: Set<string>
+    /** The latest Claude Code session id seen on the wire (for diagnostics + a visibility respawn's
+     *  `resume`, so refreshing the deny list mid-conversation keeps the history). */
+    sessionId: string | null
+    /** The resolved `claude` binary — kept so a visibility respawn can rebuild query() without
+     *  re-resolving it. */
+    bin: string
+    /** The reasoning-effort level the user chose in the header (FEATURE #63), applied LIVE via
+     *  Query.applyFlagSettings. Also stashed here so a visibility respawn (spawnChatQuery rebuilds
+     *  query() from scratch) re-applies it through the spawn `effort` option — otherwise the respawn
+     *  would silently reset effort to the model default. Undefined until the user picks one. */
+    effort?: string
+    /** The model the user selected (Bug #89). Stored here so a visibility respawn (spawnChatQuery
+     *  rebuilds query() from scratch) re-applies it — the SDK's query() options don't accept a base
+     *  model, so setModel() is called again after the new query is created. Undefined = default.
+     *  ALSO persisted per SDK session_id (chatModelStore.ts) so a conversation resumed later — into
+     *  any tab, after any restart — comes back on the model it was last set to. */
+    model?: string
+    /** LIVE chat-visibility deny set (both path forms), read by canUseTool at call time so a
+     *  mid-session visibility change takes effect without a stale captured copy. Rebuilt on respawn. */
+    /** LIVE restricted entries for this session's channel, checked via isDeniedPath (which
+     *  case-folds + matches subpaths). Replaced the exact-match Set, which a differently-cased
+     *  path defeated. */
+    deniedEntries: DenyEntry[]
+    /** Enable Claude's --chrome (browser/computer-use) capability. Read from settings at spawn —
+     *  respawns preserve the flag via this field (like effort). */
+    computerUse?: boolean
+    /** Set by invalidateChatVisibility when the vault's visibility settings change: the next
+     *  sendMessage tears down + respawns query() with a fresh deny list (managedSettings/sandbox are
+     *  spawn-fixed and can't be updated live, so a respawn is the only way to re-gate them). */
+    visibilityDirty?: boolean
+    /** Set when the /chrome toggle (or header Globe pill) flips computerUse for a LIVE session (BUG
+     *  #87): --chrome is a spawn-time CLI flag (extraArgs), not a runtime control request, so — like
+     *  visibilityDirty — the next sendMessage tears down + respawns query() (resuming the same
+     *  conversation) with the new capability. Without a respawn the toggle silently did nothing for
+     *  the session the user typed /chrome into, which is why the browser kept reading as disabled. */
+    spawnOptionsDirty?: boolean
+    /** From init: "none" when the user is on a Claude subscription login (no API key) — in that case
+     *  the SDK's total_cost_usd is a notional API-equivalent figure the user does NOT pay, so we hide
+     *  it. Any other value means real API-key billing, where the cost is meaningful. */
+    apiKeySource: string
+    /** A pending grace-period teardown (set on an abnormal WS drop, cleared on reconnect). */
+    closeTimer?: ReturnType<typeof setTimeout>
+    /** True while a user turn is in flight (set on push, cleared after result+done / drain end).
+     *  Read by rebindSink: a reconnect that finds NO active turn pushes a synthetic `done` so a
+     *  terminating frame lost to a dead socket can't wedge the client's streaming state forever. */
+    turnActive: boolean
+    /** Set by detachSink on an abnormal WS drop: frames buffer here (capped) instead of being
+     *  fired into a dead socket, and rebindSink flushes them to the reconnected one — the chat
+     *  analogue of terminal.ts's PTY detach/attach output buffering. */
+    detached: boolean
+    buffer: ChatFrame[]
+    /** Once-per-session latches: the supported-models list is static per login (fetched EAGERLY on
+     *  spawn, so the picker is usable before the first turn — see emitSupportedModels); the title
+     *  latches only when a NON-EMPTY summary exists (a brand-new session has none on turn 1, so the
+     *  drain retries at each turn-end until one appears). */
+    modelsSent?: boolean
+    titleSent?: boolean
+    /** Latch for the EAGER synthetic manifest (emitInitManifest): true once ANY manifest — the
+     *  spawn-time synthetic one OR a real per-turn `system/init` — has been emitted, so a slow eager
+     *  control-request fetch can never clobber a real per-turn manifest that raced ahead (BUG #14). */
+    manifestSent?: boolean
+    /** The vault's 3rd-brain dir when the daemon is enabled — a finished chat's conversation is
+     *  captured there as an auto note (like the relay SessionEnd hook does for terminals), so
+     *  the dream cron consolidates in-app chats too. Undefined = daemon off = no capture. */
+    memoryDir?: string
+    /** Completed turns this session — a conversation with none isn't worth a memory note. */
+    turnCount: number
+    /** The conversation summary once known (maybeEmitTitle) — the agents-graph node label. Falls back
+     *  to the cwd basename in the snapshot until a summary exists. */
+    title?: string
+    /** ms epoch of the last turn activity (set on spawn, bumped on each push + turn-end). Drives the
+     *  chat node's awake/idle state in the agents graph, like a relay session's lastSeen. */
+    lastActivityAt: number
+    /** Subagents spawned via the SDK Task tool this session, keyed by the Task tool_use id. Populated
+     *  in the drain loop (tool-use → add, tool-result → mark done); swept on the relay's shared
+     *  lifetimes (brief linger once done, backstop age if the result never came — see
+     *  sweepDoneChatSubagents). Surfaced as depth-1 children in the agents graph. */
+    chatSubagents: Map<
+        string,
+        {
+            agentId: string
+            agentType: string
+            startedAt: number
+            done: boolean
+            doneAt?: number
+        }
+    >
+    /** Latch so a grace-timeout close after an explicit close can't write the note twice. */
+    captured?: boolean
+    /** Set by abortTurn() right before interrupt(), cleared when the NEXT `result` message is
+     *  handled. The SDK reports a user-interrupted turn as an error result (is_error: true,
+     *  subtype "error_during_execution") — indistinguishable on the wire from a real failure — so
+     *  without this a deliberate Escape/Stop surfaces as "The turn ended with an error." in the UI.
+     *  This flag lets the drain loop recognize "we asked for this" and report isError: false. */
+    aborting?: boolean
 }
 
 // Frame buffering + reconnect lifecycle (MAX_BUFFERED_FRAMES / emit / rebindSessionSink /
 // scheduleSessionClose) is transport-agnostic and shared with the opencode provider — see
 // chatProviders/sessionSink.ts. ChatSession satisfies its SessionSink shape structurally.
 
-const sessions = new Map<string, ChatSession>();
+const sessions = new Map<string, ChatSession>()
 // createSession is async (it awaits the visibility deny-list build), so a chatId with no
 // session yet needs a guard against two concurrent sendMessage/resumeSession calls both
 // racing to create one (the second would silently orphan the first's process). Callers
 // share the SAME in-flight promise instead of starting a second creation.
-const inFlightCreates = new Map<string, Promise<ChatSession | null>>();
+const inFlightCreates = new Map<string, Promise<ChatSession | null>>()
 
 /** Generate a fresh chat id (used by the server on upgrade). */
 export function newChatId(): string {
-  return randomUUID();
+    return randomUUID()
 }
 
 /** Coerce a tool_result `content` (string | block array | other) into a sensible display string. */
 function stringifyToolContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const block of content) {
-      if (block && typeof block === "object") {
-        const b = block as Record<string, unknown>;
-        if (b.type === "text" && typeof b.text === "string") {
-          parts.push(b.text);
-          continue;
+    if (typeof content === 'string') return content
+    if (Array.isArray(content)) {
+        const parts: string[] = []
+        for (const block of content) {
+            if (block && typeof block === 'object') {
+                const b = block as Record<string, unknown>
+                if (b.type === 'text' && typeof b.text === 'string') {
+                    parts.push(b.text)
+                    continue
+                }
+            }
+            // Non-text block (image, etc.) — render its JSON so nothing is silently dropped.
+            try {
+                parts.push(JSON.stringify(block))
+            } catch {
+                parts.push(String(block))
+            }
         }
-      }
-      // Non-text block (image, etc.) — render its JSON so nothing is silently dropped.
-      try {
-        parts.push(JSON.stringify(block));
-      } catch {
-        parts.push(String(block));
-      }
+        return parts.join('\n')
     }
-    return parts.join("\n");
-  }
-  if (content == null) return "";
-  try {
-    return JSON.stringify(content);
-  } catch {
-    return String(content);
-  }
+    if (content == null) return ''
+    try {
+        return JSON.stringify(content)
+    } catch {
+        return String(content)
+    }
 }
 
 /** The visual chat prepends a `<editor-context>…</editor-context>` preamble (active file / open
@@ -508,7 +592,10 @@ function stringifyToolContent(content: unknown): string {
  *  here so a replayed bubble shows only what the user actually typed. Kept in sync with
  *  ChatView.buildEditorContext (a lone `<editor-context>` line … `</editor-context>` then a blank line). */
 export function stripEditorContext(text: string): string {
-  return text.replace(/^<editor-context>\n[\s\S]*?\n<\/editor-context>\n\n/, "");
+    return text.replace(
+        /^<editor-context>\n[\s\S]*?\n<\/editor-context>\n\n/,
+        '',
+    )
 }
 
 /**
@@ -522,39 +609,44 @@ export function stripEditorContext(text: string): string {
  * the spawn-time synthetic manifest.
  */
 export function sessionModelFromMessages(
-  messages: readonly { type?: string; message?: unknown }[],
+    messages: readonly { type?: string; message?: unknown }[],
 ): string | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (!msg || msg.type !== "user") continue;
-    const content =
-      msg.message && typeof msg.message === "object" ? (msg.message as { content?: unknown }).content : undefined;
-    if (typeof content !== "string") continue; // /model records are plain-string user messages
-    if (!content.includes("<command-name>/model</command-name>")) continue;
-    const args = content.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]?.trim();
-    return args || null; // the NEWEST record decides — an empty one means "no usable info"
-  }
-  return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i]
+        if (!msg || msg.type !== 'user') continue
+        const content =
+            msg.message && typeof msg.message === 'object'
+                ? (msg.message as { content?: unknown }).content
+                : undefined
+        if (typeof content !== 'string') continue // /model records are plain-string user messages
+        if (!content.includes('<command-name>/model</command-name>')) continue
+        const args = content
+            .match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]
+            ?.trim()
+        return args || null // the NEWEST record decides — an empty one means "no usable info"
+    }
+    return null
 }
 
 /** Coerce a user message's `content` (string | block array) into its plain prose. Used when
  *  replaying history: pulls the `text` out of `{role:"user", content}` (the raw Anthropic shape),
  *  joining the text blocks and ignoring tool_result/non-text blocks (those become tool-result frames). */
 function userMessageText(content: unknown): string {
-  let text = "";
-  if (typeof content === "string") {
-    text = content;
-  } else if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const block of content) {
-      if (block && typeof block === "object") {
-        const b = block as Record<string, unknown>;
-        if (b.type === "text" && typeof b.text === "string") parts.push(b.text);
-      }
+    let text = ''
+    if (typeof content === 'string') {
+        text = content
+    } else if (Array.isArray(content)) {
+        const parts: string[] = []
+        for (const block of content) {
+            if (block && typeof block === 'object') {
+                const b = block as Record<string, unknown>
+                if (b.type === 'text' && typeof b.text === 'string')
+                    parts.push(b.text)
+            }
+        }
+        text = parts.join('')
     }
-    text = parts.join("");
-  }
-  return stripEditorContext(text);
+    return stripEditorContext(text)
 }
 
 /**
@@ -571,77 +663,103 @@ function userMessageText(content: unknown): string {
  *    thinking + tool_use blocks in order, a `user` message contributes a `user-message` frame for
  *    its prose AND tool-result frames for any tool_result blocks. `system` carries no replayable UI.
  */
-function translateSdkMessage(msg: SessionMessage | SDKMessage, opts: { live: boolean }): ChatFrame[] {
-  const frames: ChatFrame[] = [];
+function translateSdkMessage(
+    msg: SessionMessage | SDKMessage,
+    opts: { live: boolean },
+): ChatFrame[] {
+    const frames: ChatFrame[] = []
 
-  if (msg.type === "assistant") {
-    const content = (msg.message as { content?: unknown }).content;
-    if (Array.isArray(content)) {
-      for (const block of content) {
-        if (!block || typeof block !== "object") continue;
-        const b = block as Record<string, unknown>;
-        if (b.type === "tool_use") {
-          frames.push({
-            type: "tool-use",
-            id: typeof b.id === "string" ? b.id : randomUUID(),
-            name: typeof b.name === "string" ? b.name : "tool",
-            input: b.input,
-          });
-        } else if (!opts.live) {
-          // History has no deltas — replay assistant prose + thinking from the final blocks.
-          if (b.type === "text" && typeof b.text === "string" && b.text.length) {
-            frames.push({ type: "assistant-text", text: b.text });
-          } else if (b.type === "thinking" && typeof b.thinking === "string" && b.thinking.length) {
-            frames.push({ type: "thinking", text: b.thinking });
-          }
+    if (msg.type === 'assistant') {
+        const content = (msg.message as { content?: unknown }).content
+        if (Array.isArray(content)) {
+            for (const block of content) {
+                if (!block || typeof block !== 'object') continue
+                const b = block as Record<string, unknown>
+                if (b.type === 'tool_use') {
+                    frames.push({
+                        type: 'tool-use',
+                        id: typeof b.id === 'string' ? b.id : randomUUID(),
+                        name: typeof b.name === 'string' ? b.name : 'tool',
+                        input: b.input,
+                    })
+                } else if (!opts.live) {
+                    // History has no deltas — replay assistant prose + thinking from the final blocks.
+                    if (
+                        b.type === 'text' &&
+                        typeof b.text === 'string' &&
+                        b.text.length
+                    ) {
+                        frames.push({ type: 'assistant-text', text: b.text })
+                    } else if (
+                        b.type === 'thinking' &&
+                        typeof b.thinking === 'string' &&
+                        b.thinking.length
+                    ) {
+                        frames.push({ type: 'thinking', text: b.thinking })
+                    }
+                }
+            }
         }
-      }
+        return frames
     }
-    return frames;
-  }
 
-  if (msg.type === "user") {
-    const content = (msg.message as { content?: unknown }).content;
-    // A live user message is ONLY the carrier of tool_result blocks (the user's own prompt came from
-    // the client). In history we also surface the prose — and any persisted image attachments —
-    // as a user-message bubble; an image-only turn (no text blocks) must not vanish from replay.
-    if (!opts.live) {
-      const text = userMessageText(content);
-      const images: string[] = [];
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (!block || typeof block !== "object") continue;
-          const b = block as Record<string, unknown>;
-          if (b.type !== "image") continue;
-          const src = b.source as { type?: string; media_type?: string; data?: string } | undefined;
-          if (src && src.type === "base64" && typeof src.media_type === "string" && typeof src.data === "string") {
-            images.push(`data:${src.media_type};base64,${src.data}`);
-          }
+    if (msg.type === 'user') {
+        const content = (msg.message as { content?: unknown }).content
+        // A live user message is ONLY the carrier of tool_result blocks (the user's own prompt came from
+        // the client). In history we also surface the prose — and any persisted image attachments —
+        // as a user-message bubble; an image-only turn (no text blocks) must not vanish from replay.
+        if (!opts.live) {
+            const text = userMessageText(content)
+            const images: string[] = []
+            if (Array.isArray(content)) {
+                for (const block of content) {
+                    if (!block || typeof block !== 'object') continue
+                    const b = block as Record<string, unknown>
+                    if (b.type !== 'image') continue
+                    const src = b.source as
+                        | { type?: string; media_type?: string; data?: string }
+                        | undefined
+                    if (
+                        src &&
+                        src.type === 'base64' &&
+                        typeof src.media_type === 'string' &&
+                        typeof src.data === 'string'
+                    ) {
+                        images.push(`data:${src.media_type};base64,${src.data}`)
+                    }
+                }
+            }
+            // Pure tool_result carrier messages have neither — keep skipping those (no empty bubbles).
+            if (text.length || images.length)
+                frames.push({
+                    type: 'user-message',
+                    text,
+                    ...(images.length ? { images } : {}),
+                })
         }
-      }
-      // Pure tool_result carrier messages have neither — keep skipping those (no empty bubbles).
-      if (text.length || images.length) frames.push({ type: "user-message", text, ...(images.length ? { images } : {}) });
-    }
-    if (Array.isArray(content)) {
-      for (const block of content) {
-        if (!block || typeof block !== "object") continue;
-        const b = block as Record<string, unknown>;
-        if (b.type === "tool_result") {
-          frames.push({
-            type: "tool-result",
-            id: typeof b.tool_use_id === "string" ? b.tool_use_id : "",
-            content: stringifyToolContent(b.content),
-            isError: b.is_error === true,
-          });
+        if (Array.isArray(content)) {
+            for (const block of content) {
+                if (!block || typeof block !== 'object') continue
+                const b = block as Record<string, unknown>
+                if (b.type === 'tool_result') {
+                    frames.push({
+                        type: 'tool-result',
+                        id:
+                            typeof b.tool_use_id === 'string'
+                                ? b.tool_use_id
+                                : '',
+                        content: stringifyToolContent(b.content),
+                        isError: b.is_error === true,
+                    })
+                }
+            }
         }
-      }
+        return frames
     }
-    return frames;
-  }
 
-  // system / result carry no frame here — the live loop handles them inline (they mutate session
-  // state); history has nothing replayable from them.
-  return frames;
+    // system / result carry no frame here — the live loop handles them inline (they mutate session
+    // state); history has nothing replayable from them.
+    return frames
 }
 
 /**
@@ -654,24 +772,34 @@ function translateSdkMessage(msg: SessionMessage | SDKMessage, opts: { live: boo
  * (no session/side-effects) so the de-dupe rule is unit-tested independent of a live `claude`.
  */
 export function unstreamedAssistantFrames(
-  msg: { message?: { content?: unknown } },
-  streamedTextLen: number,
-  streamedThinkingLen: number,
+    msg: { message?: { content?: unknown } },
+    streamedTextLen: number,
+    streamedThinkingLen: number,
 ): ChatFrame[] {
-  const frames: ChatFrame[] = [];
-  if (streamedTextLen > 0 && streamedThinkingLen > 0) return frames; // everything already streamed
-  const content = msg.message?.content;
-  if (!Array.isArray(content)) return frames;
-  for (const block of content) {
-    if (!block || typeof block !== "object") continue;
-    const b = block as Record<string, unknown>;
-    if (streamedTextLen === 0 && b.type === "text" && typeof b.text === "string" && b.text.length) {
-      frames.push({ type: "assistant-text", text: b.text });
-    } else if (streamedThinkingLen === 0 && b.type === "thinking" && typeof b.thinking === "string" && b.thinking.length) {
-      frames.push({ type: "thinking", text: b.thinking });
+    const frames: ChatFrame[] = []
+    if (streamedTextLen > 0 && streamedThinkingLen > 0) return frames // everything already streamed
+    const content = msg.message?.content
+    if (!Array.isArray(content)) return frames
+    for (const block of content) {
+        if (!block || typeof block !== 'object') continue
+        const b = block as Record<string, unknown>
+        if (
+            streamedTextLen === 0 &&
+            b.type === 'text' &&
+            typeof b.text === 'string' &&
+            b.text.length
+        ) {
+            frames.push({ type: 'assistant-text', text: b.text })
+        } else if (
+            streamedThinkingLen === 0 &&
+            b.type === 'thinking' &&
+            typeof b.thinking === 'string' &&
+            b.thinking.length
+        ) {
+            frames.push({ type: 'thinking', text: b.thinking })
+        }
     }
-  }
-  return frames;
+    return frames
 }
 
 /**
@@ -686,7 +814,7 @@ export function unstreamedAssistantFrames(
  * this is the only stub actually worth replacing with real data (see docs/chat/overview.md).
  */
 export function isMcpCommand(text: string): boolean {
-  return /^\/mcp\s*$/i.test(text.trim());
+    return /^\/mcp\s*$/i.test(text.trim())
 }
 
 /**
@@ -698,19 +826,19 @@ export function isMcpCommand(text: string): boolean {
  * DOES surface "/mcp" won't double it) and order-stable (SDK commands first, synthetics appended) so
  * the popover ordering stays deterministic. Pure → unit-tested in core/test/chat.test.ts.
  */
-export const LOCAL_SLASH_COMMANDS = ["mcp"] as const;
+export const LOCAL_SLASH_COMMANDS = ['mcp'] as const
 export function withLocalSlashCommands(commands: string[]): string[] {
-  const out = [...commands];
-  for (const c of LOCAL_SLASH_COMMANDS) if (!out.includes(c)) out.push(c);
-  return out;
+    const out = [...commands]
+    for (const c of LOCAL_SLASH_COMMANDS) if (!out.includes(c)) out.push(c)
+    return out
 }
 
 /** The minimal per-server shape formatMcpStatus needs — a projection of the SDK's McpServerStatus
  *  (name/status/tools[]) down to a tool COUNT, so the pure formatter needs no SDK types at all. */
 export interface ChatMcpServerSummary {
-  name: string;
-  status: string;
-  toolCount?: number;
+    name: string
+    status: string
+    toolCount?: number
 }
 
 /**
@@ -722,12 +850,16 @@ export interface ChatMcpServerSummary {
  * instead of an empty list.
  */
 export function formatMcpStatus(servers: ChatMcpServerSummary[]): string {
-  if (!servers.length) return "No MCP servers are configured for this session.";
-  const lines = servers.map((s) => {
-    const tools = typeof s.toolCount === "number" ? ` — ${s.toolCount} tool${s.toolCount === 1 ? "" : "s"}` : "";
-    return `- **${s.name}** — ${s.status}${tools}`;
-  });
-  return `**MCP Servers** (${servers.length})\n\n${lines.join("\n")}`;
+    if (!servers.length)
+        return 'No MCP servers are configured for this session.'
+    const lines = servers.map(s => {
+        const tools =
+            typeof s.toolCount === 'number'
+                ? ` — ${s.toolCount} tool${s.toolCount === 1 ? '' : 's'}`
+                : ''
+        return `- **${s.name}** — ${s.status}${tools}`
+    })
+    return `**MCP Servers** (${servers.length})\n\n${lines.join('\n')}`
 }
 
 /**
@@ -745,13 +877,16 @@ export function formatMcpStatus(servers: ChatMcpServerSummary[]): string {
  * a dead end: switch to a backend that DOES enforce the gate (Claude Code, today), or unhide the
  * restricted notes.
  */
-export function visibilityRefusalMessage(backendLabel: string, restrictedCount: number): string {
-  const notes = restrictedCount === 1 ? "1 note" : `${restrictedCount} notes`;
-  return (
-    `This vault marks ${notes} off-limits to AI sessions, and Bismuth has no verified way to enforce ` +
-    `that on ${backendLabel}. Rather than run unprotected, this chat won't start — switch to Claude ` +
-    `Code (which does enforce it), or unhide the restricted notes.`
-  );
+export function visibilityRefusalMessage(
+    backendLabel: string,
+    restrictedCount: number,
+): string {
+    const notes = restrictedCount === 1 ? '1 note' : `${restrictedCount} notes`
+    return (
+        `This vault marks ${notes} off-limits to AI sessions, and Bismuth has no verified way to enforce ` +
+        `that on ${backendLabel}. Rather than run unprotected, this chat won't start — switch to Claude ` +
+        `Code (which does enforce it), or unhide the restricted notes.`
+    )
 }
 
 /**
@@ -765,18 +900,29 @@ export function visibilityRefusalMessage(backendLabel: string, restrictedCount: 
  * and a resumed session replay simply won't show it (like emitInitManifest's own synthetic manifest).
  */
 async function answerMcpCommand(session: ChatSession): Promise<void> {
-  session.turnActive = true;
-  let text: string;
-  try {
-    const servers = await session.q.mcpServerStatus();
-    text = formatMcpStatus(servers.map((s) => ({ name: s.name, status: s.status, toolCount: s.tools?.length })));
-  } catch (e) {
-    text = `Couldn't read MCP server status: ${(e as Error).message}`;
-  }
-  emit(session, { type: "assistant-text", text });
-  emit(session, { type: "result", isError: false, numTurns: 0, costUsd: null });
-  emit(session, { type: "done" });
-  session.turnActive = false;
+    session.turnActive = true
+    let text: string
+    try {
+        const servers = await session.q.mcpServerStatus()
+        text = formatMcpStatus(
+            servers.map(s => ({
+                name: s.name,
+                status: s.status,
+                toolCount: s.tools?.length,
+            })),
+        )
+    } catch (e) {
+        text = `Couldn't read MCP server status: ${(e as Error).message}`
+    }
+    emit(session, { type: 'assistant-text', text })
+    emit(session, {
+        type: 'result',
+        isError: false,
+        numTurns: 0,
+        costUsd: null,
+    })
+    emit(session, { type: 'done' })
+    session.turnActive = false
 }
 
 /**
@@ -786,54 +932,70 @@ async function answerMcpCommand(session: ChatSession): Promise<void> {
  * pushes `text` into the queue so the CLI runs it as the next turn. If `claude` isn't installed,
  * pushes {error, code:"no-claude"} and returns — NEVER calls any API.
  */
-export async function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink, images?: ChatImage[], memoryDir?: string, computerUse?: boolean): Promise<void> {
-  const existing = sessions.get(chatId);
-  if (existing) {
-    // Existing session: a turn arriving cancels any pending grace-teardown (we reconnected), keeps
-    // the sink fresh (a reconnect installs a new socket) AND flushes anything buffered while
-    // detached (reattachSessionSink — see sessionSink.ts), then queues the turn.
-    reattachSessionSink(existing, sink);
-    existing.cwd = cwd;
-    existing.lastActivityAt = Date.now();
-    // BUG #87: --chrome (browser/computer-use) is a spawn-fixed CLI flag, so a session spawned
-    // without it stays without it — the toggle "did nothing" and the browser kept reading disabled.
-    // The client carries the CURRENT computerUse choice on every turn, so reconcile it here: if it
-    // changed since this session spawned, stash the new value + mark the session spawn-dirty so the
-    // respawn below re-runs query() with/without --chrome (resuming the same conversation).
-    const chrome = computerUseChange(existing.computerUse, computerUse);
-    if (chrome.respawn) {
-      existing.computerUse = chrome.next;
-      existing.spawnOptionsDirty = true;
+export async function sendMessage(
+    chatId: string,
+    text: string,
+    cwd: string,
+    sink: ChatSink,
+    images?: ChatImage[],
+    memoryDir?: string,
+    computerUse?: boolean,
+): Promise<void> {
+    const existing = sessions.get(chatId)
+    if (existing) {
+        // Existing session: a turn arriving cancels any pending grace-teardown (we reconnected), keeps
+        // the sink fresh (a reconnect installs a new socket) AND flushes anything buffered while
+        // detached (reattachSessionSink — see sessionSink.ts), then queues the turn.
+        reattachSessionSink(existing, sink)
+        existing.cwd = cwd
+        existing.lastActivityAt = Date.now()
+        // BUG #87: --chrome (browser/computer-use) is a spawn-fixed CLI flag, so a session spawned
+        // without it stays without it — the toggle "did nothing" and the browser kept reading disabled.
+        // The client carries the CURRENT computerUse choice on every turn, so reconcile it here: if it
+        // changed since this session spawned, stash the new value + mark the session spawn-dirty so the
+        // respawn below re-runs query() with/without --chrome (resuming the same conversation).
+        const chrome = computerUseChange(existing.computerUse, computerUse)
+        if (chrome.respawn) {
+            existing.computerUse = chrome.next
+            existing.spawnOptionsDirty = true
+        }
+        // Visibility settings changed (visibilityDirty) or the --chrome flag flipped (spawnOptionsDirty)
+        // since this session spawned → respawn query() BEFORE running the turn: managedSettings/sandbox
+        // AND --chrome are spawn-fixed, so a stale session would keep reading a since-hidden file / keep
+        // the old browser capability. Resumes the same conversation, so history survives.
+        if (existing.visibilityDirty || existing.spawnOptionsDirty)
+            await respawnSession(existing)
+        // BUG #39: "/mcp" is answered locally instead of forwarded — see isMcpCommand/answerMcpCommand.
+        // (images.length guard mirrors ChatView's own "slash commands can't carry images" send-time rule.)
+        if (isMcpCommand(text) && !images?.length) {
+            await answerMcpCommand(existing)
+            return
+        }
+        existing.turnActive = true
+        existing.input.push(text, images)
+        return
     }
-    // Visibility settings changed (visibilityDirty) or the --chrome flag flipped (spawnOptionsDirty)
-    // since this session spawned → respawn query() BEFORE running the turn: managedSettings/sandbox
-    // AND --chrome are spawn-fixed, so a stale session would keep reading a since-hidden file / keep
-    // the old browser capability. Resumes the same conversation, so history survives.
-    if (existing.visibilityDirty || existing.spawnOptionsDirty) await respawnSession(existing);
-    // BUG #39: "/mcp" is answered locally instead of forwarded — see isMcpCommand/answerMcpCommand.
-    // (images.length guard mirrors ChatView's own "slash commands can't carry images" send-time rule.)
+
+    const session = await getOrCreateSession(
+        chatId,
+        cwd,
+        sink,
+        undefined,
+        memoryDir,
+        computerUse,
+    )
+    if (!session) return // no-claude / spawn error already pushed to the sink
+
+    // BUG #39: same local "/mcp" interception for a chat's very FIRST turn.
     if (isMcpCommand(text) && !images?.length) {
-      await answerMcpCommand(existing);
-      return;
+        await answerMcpCommand(session)
+        return
     }
-    existing.turnActive = true;
-    existing.input.push(text, images);
-    return;
-  }
 
-  const session = await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir, computerUse);
-  if (!session) return; // no-claude / spawn error already pushed to the sink
-
-  // BUG #39: same local "/mcp" interception for a chat's very FIRST turn.
-  if (isMcpCommand(text) && !images?.length) {
-    await answerMcpCommand(session);
-    return;
-  }
-
-  // The session's drain loop is already running (createSession starts it on spawn), so this just
-  // pushes the first turn into the generator, which was parked on the empty input queue for it.
-  session.turnActive = true;
-  session.input.push(text, images);
+    // The session's drain loop is already running (createSession starts it on spawn), so this just
+    // pushes the first turn into the generator, which was parked on the empty input queue for it.
+    session.turnActive = true
+    session.input.push(text, images)
 }
 
 /** createSession, de-duplicated against a concurrent in-flight call for the same chatId (see
@@ -841,25 +1003,33 @@ export async function sendMessage(chatId: string, text: string, cwd: string, sin
  *  calls racing before the first registers its session would otherwise both spawn a `claude`
  *  process and the second registration would orphan the first. */
 async function getOrCreateSession(
-  chatId: string,
-  cwd: string,
-  sink: ChatSink,
-  resume: string | undefined,
-  memoryDir: string | undefined,
-  computerUse?: boolean,
+    chatId: string,
+    cwd: string,
+    sink: ChatSink,
+    resume: string | undefined,
+    memoryDir: string | undefined,
+    computerUse?: boolean,
 ): Promise<ChatSession | null> {
-  let creating = inFlightCreates.get(chatId);
-  if (!creating) {
-    creating = createSession(chatId, cwd, sink, resume, memoryDir, computerUse);
-    inFlightCreates.set(chatId, creating);
-  }
-  try {
-    return await creating;
-  } finally {
-    // Only the owner clears its own entry — a stale delete could drop a NEWER in-flight
-    // create for the same chatId started after this one finished (unlikely, but cheap to guard).
-    if (inFlightCreates.get(chatId) === creating) inFlightCreates.delete(chatId);
-  }
+    let creating = inFlightCreates.get(chatId)
+    if (!creating) {
+        creating = createSession(
+            chatId,
+            cwd,
+            sink,
+            resume,
+            memoryDir,
+            computerUse,
+        )
+        inFlightCreates.set(chatId, creating)
+    }
+    try {
+        return await creating
+    } finally {
+        // Only the owner clears its own entry — a stale delete could drop a NEWER in-flight
+        // create for the same chatId started after this one finished (unlikely, but cheap to guard).
+        if (inFlightCreates.get(chatId) === creating)
+            inFlightCreates.delete(chatId)
+    }
 }
 
 /**
@@ -872,11 +1042,25 @@ async function getOrCreateSession(
  * If a session already exists for this chatId, it's torn down first so we cleanly re-bind to the
  * resumed conversation.
  */
-export async function resumeSession(chatId: string, sessionId: string, cwd: string, sink: ChatSink, memoryDir?: string, computerUse?: boolean): Promise<void> {
-  if (sessions.has(chatId)) closeChat(chatId);
-  // No initial turn — query() resumes the existing session; createSession starts the drain loop on
-  // spawn, which streams its init manifest + models frame straight to the header.
-  await getOrCreateSession(chatId, cwd, sink, sessionId, memoryDir, computerUse);
+export async function resumeSession(
+    chatId: string,
+    sessionId: string,
+    cwd: string,
+    sink: ChatSink,
+    memoryDir?: string,
+    computerUse?: boolean,
+): Promise<void> {
+    if (sessions.has(chatId)) closeChat(chatId)
+    // No initial turn — query() resumes the existing session; createSession starts the drain loop on
+    // spawn, which streams its init manifest + models frame straight to the header.
+    await getOrCreateSession(
+        chatId,
+        cwd,
+        sink,
+        sessionId,
+        memoryDir,
+        computerUse,
+    )
 }
 
 /**
@@ -891,9 +1075,22 @@ export async function resumeSession(chatId: string, sessionId: string, cwd: stri
  * rebindSink) so an open can't spawn a duplicate; concurrent open/first-turn calls share the same
  * inFlightCreates promise. A null return means no-claude / spawn error — already pushed to the sink.
  */
-export async function openSession(chatId: string, cwd: string, sink: ChatSink, memoryDir?: string, computerUse?: boolean): Promise<void> {
-  if (sessions.has(chatId)) return;
-  await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir, computerUse);
+export async function openSession(
+    chatId: string,
+    cwd: string,
+    sink: ChatSink,
+    memoryDir?: string,
+    computerUse?: boolean,
+): Promise<void> {
+    if (sessions.has(chatId)) return
+    await getOrCreateSession(
+        chatId,
+        cwd,
+        sink,
+        undefined,
+        memoryDir,
+        computerUse,
+    )
 }
 
 /**
@@ -908,99 +1105,116 @@ export async function openSession(chatId: string, cwd: string, sink: ChatSink, m
  * against the vault's visibility settings, RECOMPUTED fresh on every new session (never cached) so
  * a visibility edit takes effect on the very next chat message — see docs/vault/visibility.md.
  */
-async function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: string, memoryDir?: string, computerUse?: boolean): Promise<ChatSession | null> {
-  const bin = whichClaude();
-  if (!bin) {
-    sink({ type: "error", code: "no-claude", message: "The `claude` CLI was not found. Install Claude Code to use chat." });
-    return null;
-  }
-
-  // Visibility gate (core/src/visibility.ts): resolve every note's effective visibility for the
-  // "chat" channel and deny the restricted subset. Per-file paths, not folder globs — an explicit
-  // file-level override inside a restricted folder is honored automatically (buildDenyPaths never
-  // emits a deny for it). A walk that cannot enumerate the vault throws rather than reporting an
-  // empty restricted set, so the session is refused instead of spawning with no deny list.
-  let denyEntries: DenyEntry[];
-  try {
-    denyEntries = await buildDenyPaths(cwd, "chat");
-  } catch (e) {
-    sink({
-      type: "error",
-      code: "visibility-refused",
-      binary: "claude",
-      message:
-        "Bismuth couldn't read this vault's visibility settings, so this chat wasn't started rather " +
-        `than risk running without them (${e instanceof Error ? e.message : String(e)}). Check the ` +
-        "vault's `.settings` file, then try again.",
-    });
-    return null;
-  }
-
-  // Resuming an existing conversation: preload the model IT was last set to (Bug #89 — keyed by the
-  // durable SDK session_id, chatModelStore.ts). spawnChatQuery re-applies it via q.setModel() right
-  // after the query spawns (belt-and-braces with the CLI's own per-session model restore), and
-  // emitInitManifest reports it, so the header shows the session's OWN model the instant a resumed
-  // chat opens — never the global/tab fallback. Sessions predating the store fall back to the CLI's
-  // own transcript /model records (sessionModelFromMessages). Undefined (fresh session / nothing
-  // saved anywhere) keeps the CLI's own resolution.
-  let savedModel = resume ? loadSessionModel(resume) ?? undefined : undefined;
-  if (resume && !savedModel) {
-    try {
-      savedModel = sessionModelFromMessages(await getSessionMessages(resume, { dir: cwd })) ?? undefined;
-    } catch {
-      /* unreadable transcript — the CLI's own restore still applies */
+async function createSession(
+    chatId: string,
+    cwd: string,
+    sink: ChatSink,
+    resume?: string,
+    memoryDir?: string,
+    computerUse?: boolean,
+): Promise<ChatSession | null> {
+    const bin = whichClaude()
+    if (!bin) {
+        sink({
+            type: 'error',
+            code: 'no-claude',
+            message:
+                'The `claude` CLI was not found. Install Claude Code to use chat.',
+        })
+        return null
     }
-  }
 
-  const input = makeInputQueue();
-  const session: ChatSession = {
-    id: chatId,
-    cwd,
-    input,
-    model: savedModel,
-    // q is assigned by spawnChatQuery below; the canUseTool closure only runs after query()
-    // returns, so the forward reference through `session` is safe.
-    q: undefined as unknown as Query,
-    sink,
-    pending: new Map(),
-    pendingDialogs: new Map(),
-    alwaysAllow: new Set(),
-    sessionId: null,
-    bin,
-    deniedEntries: denyEntries,
-    computerUse,
-    apiKeySource: "none",
-    turnActive: false,
-    detached: false,
-    buffer: [],
-    memoryDir,
-    turnCount: 0,
-    lastActivityAt: Date.now(),
-    chatSubagents: new Map(),
-  };
+    // Visibility gate (core/src/visibility.ts): resolve every note's effective visibility for the
+    // "chat" channel and deny the restricted subset. Per-file paths, not folder globs — an explicit
+    // file-level override inside a restricted folder is honored automatically (buildDenyPaths never
+    // emits a deny for it). A walk that cannot enumerate the vault throws rather than reporting an
+    // empty restricted set, so the session is refused instead of spawning with no deny list.
+    let denyEntries: DenyEntry[]
+    try {
+        denyEntries = await buildDenyPaths(cwd, 'chat')
+    } catch (e) {
+        sink({
+            type: 'error',
+            code: 'visibility-refused',
+            binary: 'claude',
+            message:
+                "Bismuth couldn't read this vault's visibility settings, so this chat wasn't started rather " +
+                `than risk running without them (${e instanceof Error ? e.message : String(e)}). Check the ` +
+                "vault's `.settings` file, then try again.",
+        })
+        return null
+    }
 
-  if (!spawnChatQuery(session, denyEntries, resume)) return null; // spawn error already pushed
-  sessions.set(chatId, session);
-  // Populate the header model picker EAGERLY — Query.supportedModels() resolves off the SDK's
-  // `initialize` control request, which the SDK fires the instant the `claude` subprocess spawns
-  // (NOT gated on the first user turn), so the picker is usable + switchable the moment the chat
-  // opens, before any message is sent. The drain loop's `init` handler re-tries as a fallback if
-  // this eager fetch couldn't resolve. Fire-and-forget; latched by session.modelsSent.
-  emitSupportedModels(session);
-  // Populate the header manifest (slash commands + MCP servers) EAGERLY too — the SDK does NOT emit
-  // a `system`/`init` MESSAGE for a turn-less fresh session (only the first turn produces one), so
-  // without this the header stays bare on open; instead we synthesize it from the SDK's control
-  // requests, which resolve off the `initialize` handshake with no user turn (BUG #14).
-  emitInitManifest(session);
-  // Start draining the SDK generator NOW, on spawn — NOT gated on a user turn (BUG #14). This is
-  // what lets a chat OPEN (openSession) bring up a live session whose `init` manifest + `models`
-  // frame + permission mode stream to the header BEFORE the first message; the generator simply
-  // parks on the empty input queue until sendMessage() pushes the first turn. Started here — exactly
-  // once per session creation, de-duped by inFlightCreates + the `sessions.set` above — so no
-  // caller (openSession, sendMessage's first turn, resumeSession) can race two concurrent drains
-  // over the same generator. (respawnSession respawns its own query() + drain out of band.)
-  void drain(session);
-  return session;
+    // Resuming an existing conversation: preload the model IT was last set to (Bug #89 — keyed by the
+    // durable SDK session_id, chatModelStore.ts). spawnChatQuery re-applies it via q.setModel() right
+    // after the query spawns (belt-and-braces with the CLI's own per-session model restore), and
+    // emitInitManifest reports it, so the header shows the session's OWN model the instant a resumed
+    // chat opens — never the global/tab fallback. Sessions predating the store fall back to the CLI's
+    // own transcript /model records (sessionModelFromMessages). Undefined (fresh session / nothing
+    // saved anywhere) keeps the CLI's own resolution.
+    let savedModel = resume
+        ? (loadSessionModel(resume) ?? undefined)
+        : undefined
+    if (resume && !savedModel) {
+        try {
+            savedModel =
+                sessionModelFromMessages(
+                    await getSessionMessages(resume, { dir: cwd }),
+                ) ?? undefined
+        } catch {
+            /* unreadable transcript — the CLI's own restore still applies */
+        }
+    }
+
+    const input = makeInputQueue()
+    const session: ChatSession = {
+        id: chatId,
+        cwd,
+        input,
+        model: savedModel,
+        // q is assigned by spawnChatQuery below; the canUseTool closure only runs after query()
+        // returns, so the forward reference through `session` is safe.
+        q: undefined as unknown as Query,
+        sink,
+        pending: new Map(),
+        pendingDialogs: new Map(),
+        alwaysAllow: new Set(),
+        sessionId: null,
+        bin,
+        deniedEntries: denyEntries,
+        computerUse,
+        apiKeySource: 'none',
+        turnActive: false,
+        detached: false,
+        buffer: [],
+        memoryDir,
+        turnCount: 0,
+        lastActivityAt: Date.now(),
+        chatSubagents: new Map(),
+    }
+
+    if (!spawnChatQuery(session, denyEntries, resume)) return null // spawn error already pushed
+    sessions.set(chatId, session)
+    // Populate the header model picker EAGERLY — Query.supportedModels() resolves off the SDK's
+    // `initialize` control request, which the SDK fires the instant the `claude` subprocess spawns
+    // (NOT gated on the first user turn), so the picker is usable + switchable the moment the chat
+    // opens, before any message is sent. The drain loop's `init` handler re-tries as a fallback if
+    // this eager fetch couldn't resolve. Fire-and-forget; latched by session.modelsSent.
+    emitSupportedModels(session)
+    // Populate the header manifest (slash commands + MCP servers) EAGERLY too — the SDK does NOT emit
+    // a `system`/`init` MESSAGE for a turn-less fresh session (only the first turn produces one), so
+    // without this the header stays bare on open; instead we synthesize it from the SDK's control
+    // requests, which resolve off the `initialize` handshake with no user turn (BUG #14).
+    emitInitManifest(session)
+    // Start draining the SDK generator NOW, on spawn — NOT gated on a user turn (BUG #14). This is
+    // what lets a chat OPEN (openSession) bring up a live session whose `init` manifest + `models`
+    // frame + permission mode stream to the header BEFORE the first message; the generator simply
+    // parks on the empty input queue until sendMessage() pushes the first turn. Started here — exactly
+    // once per session creation, de-duped by inFlightCreates + the `sessions.set` above — so no
+    // caller (openSession, sendMessage's first turn, resumeSession) can race two concurrent drains
+    // over the same generator. (respawnSession respawns its own query() + drain out of band.)
+    void drain(session)
+    return session
 }
 
 /**
@@ -1028,14 +1242,17 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
  * When false, the dangerouslyDisableSandbox parameter is completely ignored and all commands must
  * run sandboxed. Default: true."
  */
-export function buildChatSandboxOption(denyEntries: DenyEntry[], cwd: string): Record<string, unknown> | undefined {
-  if (denyEntries.length === 0) return undefined;
-  return {
-    enabled: true,
-    failIfUnavailable: sandboxFailIfUnavailable(denyEntries),
-    allowUnsandboxedCommands: false,
-    filesystem: { denyRead: buildSandboxDenyPaths(denyEntries, cwd) },
-  };
+export function buildChatSandboxOption(
+    denyEntries: DenyEntry[],
+    cwd: string,
+): Record<string, unknown> | undefined {
+    if (denyEntries.length === 0) return undefined
+    return {
+        enabled: true,
+        failIfUnavailable: sandboxFailIfUnavailable(denyEntries),
+        allowUnsandboxedCommands: false,
+        filesystem: { denyRead: buildSandboxDenyPaths(denyEntries, cwd) },
+    }
 }
 
 /**
@@ -1044,195 +1261,252 @@ export function buildChatSandboxOption(denyEntries: DenyEntry[], cwd: string): R
  * sandbox are fixed at spawn and cannot be updated on a running query(), so re-gating them means
  * a new query(). Returns false (after pushing a spawn error to the sink) if query() throws.
  */
-function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?: string): boolean {
-  // canUseTool fires ONLY for tools not already allowed by the user's settings (pre-allowed tools
-  // run silently — correct Claude Code behavior). It reads session.deniedEntries LIVE so a respawn
-  // that swapped the set takes effect immediately.
-  const canUseTool = (
-    toolName: string,
-    toolInput: Record<string, unknown>,
-    opts: { toolUseID?: string },
-  ): Promise<SdkPermissionResult> => {
-    // Path-aware visibility auto-deny (same-process layer, belt-and-suspenders with managedSettings):
-    // denies OUTRIGHT — no prompt, no "always allow" override — when the tool targets a restricted
-    // file. Read/Edit/Write carry it as `file_path`; NotebookEdit as `notebook_path`; Grep/Glob as
-    // `path` (but those are additionally hard-disabled below when any deny exists). Both relative
-    // and absolute forms are in deniedPathSet (the model isn't consistent — see denyPathSet).
-    for (const key of ["file_path", "notebook_path", "path"] as const) {
-      const p = toolInput[key];
-      // isDeniedPath, NOT deniedPathSet.has(p): the set is an exact byte comparison, and a model's
-      // reported path is not byte-identical to ours. On macOS's case-insensitive filesystem
-      // "Private/SECRET.md" opens the same file as "Private/secret.md" and slipped straight through.
-      if (typeof p === "string" && isDeniedPath(session.deniedEntries, p)) {
-        return Promise.resolve({ behavior: "deny", message: "This file is marked hidden from chat (visibility)." });
-      }
-    }
-    // AskUserQuestion (Claude's interactive multiple-choice tool) reaches us HERE, through canUseTool
-    // — not as a normal permission (no allow/deny), but as a question the user must ANSWER. Surface
-    // it as a `question` frame (interactive option buttons) and PARK the canUseTool promise until the
-    // client answers via respondQuestion(): a pending question naturally blocks the turn from ending.
-    // A malformed input (no usable question) is allowed straight through so the tool emits its own
-    // error rather than hanging forever on a card that can't render.
-    if (toolName === ASK_USER_QUESTION_TOOL) {
-      const questions = extractAskUserQuestions(toolInput);
-      if (!questions) return Promise.resolve({ behavior: "allow", updatedInput: toolInput });
-      const id = opts.toolUseID ?? randomUUID();
-      return new Promise<SdkPermissionResult>((resolve) => {
-        session.pendingDialogs.set(id, { resolve, toolInput });
-        emit(session, { type: "question", id, questions });
-      });
-    }
-    if (session.alwaysAllow.has(toolName)) {
-      return Promise.resolve({ behavior: "allow", updatedInput: toolInput });
-    }
-    const id = opts.toolUseID ?? randomUUID();
-    return new Promise<SdkPermissionResult>((resolve) => {
-      session.pending.set(id, ({ behavior, always }) => {
-        if (behavior === "allow") {
-          if (always) session.alwaysAllow.add(toolName);
-          resolve({ behavior: "allow", updatedInput: toolInput });
-        } else {
-          resolve({ behavior: "deny", message: "Denied by the user" });
+function spawnChatQuery(
+    session: ChatSession,
+    denyEntries: DenyEntry[],
+    resume?: string,
+): boolean {
+    // canUseTool fires ONLY for tools not already allowed by the user's settings (pre-allowed tools
+    // run silently — correct Claude Code behavior). It reads session.deniedEntries LIVE so a respawn
+    // that swapped the set takes effect immediately.
+    const canUseTool = (
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        opts: { toolUseID?: string },
+    ): Promise<SdkPermissionResult> => {
+        // Path-aware visibility auto-deny (same-process layer, belt-and-suspenders with managedSettings):
+        // denies OUTRIGHT — no prompt, no "always allow" override — when the tool targets a restricted
+        // file. Read/Edit/Write carry it as `file_path`; NotebookEdit as `notebook_path`; Grep/Glob as
+        // `path` (but those are additionally hard-disabled below when any deny exists). Both relative
+        // and absolute forms are in deniedPathSet (the model isn't consistent — see denyPathSet).
+        for (const key of ['file_path', 'notebook_path', 'path'] as const) {
+            const p = toolInput[key]
+            // isDeniedPath, NOT deniedPathSet.has(p): the set is an exact byte comparison, and a model's
+            // reported path is not byte-identical to ours. On macOS's case-insensitive filesystem
+            // "Private/SECRET.md" opens the same file as "Private/secret.md" and slipped straight through.
+            if (
+                typeof p === 'string' &&
+                isDeniedPath(session.deniedEntries, p)
+            ) {
+                return Promise.resolve({
+                    behavior: 'deny',
+                    message:
+                        'This file is marked hidden from chat (visibility).',
+                })
+            }
         }
-      });
-      emit(session, { type: "permission", id, toolName, input: toolInput });
-    });
-  };
+        // AskUserQuestion (Claude's interactive multiple-choice tool) reaches us HERE, through canUseTool
+        // — not as a normal permission (no allow/deny), but as a question the user must ANSWER. Surface
+        // it as a `question` frame (interactive option buttons) and PARK the canUseTool promise until the
+        // client answers via respondQuestion(): a pending question naturally blocks the turn from ending.
+        // A malformed input (no usable question) is allowed straight through so the tool emits its own
+        // error rather than hanging forever on a card that can't render.
+        if (toolName === ASK_USER_QUESTION_TOOL) {
+            const questions = extractAskUserQuestions(toolInput)
+            if (!questions)
+                return Promise.resolve({
+                    behavior: 'allow',
+                    updatedInput: toolInput,
+                })
+            const id = opts.toolUseID ?? randomUUID()
+            return new Promise<SdkPermissionResult>(resolve => {
+                session.pendingDialogs.set(id, { resolve, toolInput })
+                emit(session, { type: 'question', id, questions })
+            })
+        }
+        if (session.alwaysAllow.has(toolName)) {
+            return Promise.resolve({
+                behavior: 'allow',
+                updatedInput: toolInput,
+            })
+        }
+        const id = opts.toolUseID ?? randomUUID()
+        return new Promise<SdkPermissionResult>(resolve => {
+            session.pending.set(id, ({ behavior, always }) => {
+                if (behavior === 'allow') {
+                    if (always) session.alwaysAllow.add(toolName)
+                    resolve({ behavior: 'allow', updatedInput: toolInput })
+                } else {
+                    resolve({ behavior: 'deny', message: 'Denied by the user' })
+                }
+            })
+            emit(session, {
+                type: 'permission',
+                id,
+                toolName,
+                input: toolInput,
+            })
+        })
+    }
 
-  // Blocks the CLI-bridge MCP tool's file-read escape hatch (bismuth_cli can target ANY vault via
-  // its own --vault/--dir flags) — always. When ANY file is restricted, ALSO hard-disable Grep and
-  // Glob: their per-file managedSettings deny only matches a call whose OWN `path` argument is the
-  // denied file, but an UNSCOPED Grep(pattern, path: undefined) scans the whole vault (including a
-  // hidden file) and returns its matching lines — the per-file deny can't stop that, so the only
-  // reliable gate for a broad scan is to forbid the tools outright (an honesty boundary: no
-  // vault-wide scan can reach a hidden file). Cost: a restricted vault's chat loses grep/glob.
-  const disallowedTools = denyEntries.length > 0
-    ? ["mcp__bismuth__bismuth_cli", "Grep", "Glob"]
-    : ["mcp__bismuth__bismuth_cli"];
+    // Blocks the CLI-bridge MCP tool's file-read escape hatch (bismuth_cli can target ANY vault via
+    // its own --vault/--dir flags) — always. When ANY file is restricted, ALSO hard-disable Grep and
+    // Glob: their per-file managedSettings deny only matches a call whose OWN `path` argument is the
+    // denied file, but an UNSCOPED Grep(pattern, path: undefined) scans the whole vault (including a
+    // hidden file) and returns its matching lines — the per-file deny can't stop that, so the only
+    // reliable gate for a broad scan is to forbid the tools outright (an honesty boundary: no
+    // vault-wide scan can reach a hidden file). Cost: a restricted vault's chat loses grep/glob.
+    const disallowedTools =
+        denyEntries.length > 0
+            ? ['mcp__bismuth__bismuth_cli', 'Grep', 'Glob']
+            : ['mcp__bismuth__bismuth_cli']
 
-  let q: Query;
-  try {
-    q = query({
-      prompt: session.input,
-      options: {
-        pathToClaudeCodeExecutable: session.bin,
-        cwd: session.cwd,
-        // Explicit `env` (SPREADING process.env, never replacing it — see the SDK's own doc comment
-        // on Options.env) so BISMUTH_AGENT_CHANNEL reaches this session's `claude` subprocess: the
-        // signal core/src/visibilityCliGate.ts's CLI-dispatch gate reads to tell an agent's own hand
-        // (this session, running its own Bash tool) from the vault owner's (an unstamped `bismuth`
-        // invocation). This IS the chat surface, so "chat" — never "daemon", which is the DIFFERENT
-        // always-on session daemon/src/daemon/session.ts spawns.
-        env: { ...process.env, BISMUTH_AGENT_CHANNEL: "chat" },
-        includePartialMessages: true,
-        // resume an existing Claude Code session (keeps its history + session_id) when asked; a
-        // brand-new session simply omits it.
-        ...(resume ? { resume } : {}),
-        // permissionMode is intentionally NOT set HERE: omitting it (like settingSources) makes the
-        // SDK resolve the STARTING mode from the user's OWN Claude Code config, which is the right
-        // default for headless / direct callers (CLI, tests). The in-app chat's app-level default
-        // (Bypass) is applied CLIENT-SIDE instead — ChatView sends {set_permission_mode:
-        // bypassPermissions} on each session's first manifest (see BUG #14) — so the app default
-        // can't leak into non-UI callers and the live permission tests keep exercising the real
-        // canUseTool prompt flow (bypassPermissions suppresses canUseTool entirely). Still switchable
-        // live in the header.
-        //
-        // BUG #60 ("bypass doesn't work in chat"): `bypassPermissions` — whether set at spawn OR via
-        // the runtime setPermissionMode control request — is GATED behind this capability flag. The
-        // SDK only passes `--allow-dangerously-skip-permissions` to the CLI when it's true; without
-        // it the CLI silently refuses to enter bypass mode, so canUseTool kept firing and every tool
-        // call still prompted even after the client selected Bypass. Enabling the capability does NOT
-        // change the starting mode (still resolved from config above) — it only lets the client's
-        // set_permission_mode actually take effect. Visibility stays enforced under bypass: the
-        // managedSettings deny + sandbox denyRead are policy-tier and survive the permission mode.
-        allowDangerouslySkipPermissions: true,
-        // Reasoning effort (FEATURE #63) is applied LIVE via applyFlagSettings, but a visibility
-        // respawn rebuilds query() from scratch — so thread the session's chosen effort through the
-        // spawn `effort` option too so the respawn preserves it (this path also covers levels the
-        // runtime flag layer rejects, e.g. 'max'). Omitted until the user picks a level.
-        ...(session.effort ? { effort: session.effort as EffortLevel } : {}),
-        // Browser/computer-use capability (--chrome): passes `--chrome` (a boolean flag, hence
-        // `null`) so the spawned claude process can launch and control a Chromium browser.
-        ...(session.computerUse ? { extraArgs: { chrome: null } } : {}),
-        // Use Claude Code's own preset system prompt — this is a VISUAL CLAUDE CODE, so it must
-        // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
-        // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
-        // relative paths resolve against $HOME instead of `cwd`.
-        systemPrompt: { type: "preset", preset: "claude_code" },
-        // The SDK CanUseTool type carries many optional fields we don't read; cast our narrow
-        // closure to it. (canUseTool ALSO carries the AskUserQuestion interactive-question flow — see
-        // the ASK_USER_QUESTION_TOOL branch above.)
-        canUseTool: canUseTool as unknown as CanUseTool,
-        // Visibility gate, continued: `managedSettings` is the SDK's restrictive-only policy tier —
-        // it layers UNDER the user's own config (deny outranks any pre-existing "always allow") and
-        // survives this session's permission mode (Step-0 spike). `sandbox` additionally blocks a
-        // Bash `cat`/`grep` at the OS level (verified on macOS). Omitted entirely when nothing is
-        // restricted, so a vault with no visibility settings behaves exactly as before.
-        //
-        // `failIfUnavailable: sandboxFailIfUnavailable(denyEntries)` (never a fixed `false`) — a
-        // 2026-07-30 measurement (docs/vault/visibility.md, visibility-acceptance.md) found that a
-        // fixed `false` let a session whose sandbox couldn't start run anyway with ONLY
-        // managedSettings standing guard, which a raw Bash `cat`/`bismuth read`/`python3 -c` walks
-        // straight past (managedSettings only restricts the Read/Edit/Grep/Glob tool calling
-        // convention). Restricted vault → fail closed; unrestricted vault → unaffected, exactly as
-        // before this fix (sandboxFailIfUnavailable([]) is false, and this whole block is only
-        // included when denyEntries.length > 0 anyway).
-        //
-        // sandbox itself is now built by buildChatSandboxOption (Task 9), which additionally sets
-        // `allowUnsandboxedCommands: false` — see its doc comment for why (stops the model turning
-        // its own sandbox off via the Bash tool's `dangerouslyDisableSandbox` parameter).
-        ...(denyEntries.length > 0
-          ? {
-              managedSettings: { permissions: { deny: buildManagedSettingsDeny(denyEntries) } },
-              sandbox: buildChatSandboxOption(denyEntries, session.cwd),
-            }
-          : {}),
-        // Memory auto-recall (daemon-gated). The visual chat is an SDK session with NO relay
-        // plugin, so the relay's terminal-tab UserPromptSubmit recall hook never fires here — the
-        // app's PRIMARY Claude surface saw none of the 3rd brain. Mirror that hook in-process: when
-        // this vault's daemon is enabled (session.memoryDir is set), on every user turn recall the
-        // memory relevant to the prompt and inject it as `additionalContext`. recallMemory wraps the
-        // block in a `<bismuth-memory>` envelope that demarcates the vault's 3rd brain from Claude's
-        // OWN memory, so an in-app chat never conflates the two stores. Read session.memoryDir via the
-        // closure so a respawnSession respawn keeps recall wired. captureToMemory already strips that
-        // injected `<bismuth-memory>` block (stripInjectedBlocks) before collecting, so recall never
-        // amplifies through the recall→collect→recall loop. recallMemory is budgeted + never
-        // throws, so a bloated/slow graph degrades to "no recall" rather than stalling the turn.
-        ...(session.memoryDir
-          ? {
-              hooks: {
-                UserPromptSubmit: [
-                  {
-                    hooks: [
-                      async (input: HookInput) => {
-                        const dir = session.memoryDir;
-                        if (!dir || input.hook_event_name !== "UserPromptSubmit") return {};
-                        const context = await recallMemory(dir, input.prompt);
-                        return context
-                          ? { hookSpecificOutput: { hookEventName: "UserPromptSubmit" as const, additionalContext: context } }
-                          : {};
-                      },
-                    ],
-                  },
-                ],
-              },
-            }
-          : {}),
-        disallowedTools,
-      },
-    });
-  } catch (e) {
-    session.sink({ type: "error", code: "spawn", message: (e as Error).message });
-    return false;
-  }
-  session.q = q;
-  // Re-apply the user's chosen model on respawn. The SDK's query() options don't accept a base
-  // model (unlike effort which has a spawn option), so we call setModel() again after the new
-  // query is created (Bug #89).
-  if (session.model) {
-    try { q.setModel(session.model)?.catch(() => {}); } catch { /* */ }
-  }
-  return true;
+    let q: Query
+    try {
+        q = query({
+            prompt: session.input,
+            options: {
+                pathToClaudeCodeExecutable: session.bin,
+                cwd: session.cwd,
+                // Explicit `env` (SPREADING process.env, never replacing it — see the SDK's own doc comment
+                // on Options.env) so BISMUTH_AGENT_CHANNEL reaches this session's `claude` subprocess: the
+                // signal core/src/visibilityCliGate.ts's CLI-dispatch gate reads to tell an agent's own hand
+                // (this session, running its own Bash tool) from the vault owner's (an unstamped `bismuth`
+                // invocation). This IS the chat surface, so "chat" — never "daemon", which is the DIFFERENT
+                // always-on session daemon/src/daemon/session.ts spawns.
+                env: { ...process.env, BISMUTH_AGENT_CHANNEL: 'chat' },
+                includePartialMessages: true,
+                // resume an existing Claude Code session (keeps its history + session_id) when asked; a
+                // brand-new session simply omits it.
+                ...(resume ? { resume } : {}),
+                // permissionMode is intentionally NOT set HERE: omitting it (like settingSources) makes the
+                // SDK resolve the STARTING mode from the user's OWN Claude Code config, which is the right
+                // default for headless / direct callers (CLI, tests). The in-app chat's app-level default
+                // (Bypass) is applied CLIENT-SIDE instead — ChatView sends {set_permission_mode:
+                // bypassPermissions} on each session's first manifest (see BUG #14) — so the app default
+                // can't leak into non-UI callers and the live permission tests keep exercising the real
+                // canUseTool prompt flow (bypassPermissions suppresses canUseTool entirely). Still switchable
+                // live in the header.
+                //
+                // BUG #60 ("bypass doesn't work in chat"): `bypassPermissions` — whether set at spawn OR via
+                // the runtime setPermissionMode control request — is GATED behind this capability flag. The
+                // SDK only passes `--allow-dangerously-skip-permissions` to the CLI when it's true; without
+                // it the CLI silently refuses to enter bypass mode, so canUseTool kept firing and every tool
+                // call still prompted even after the client selected Bypass. Enabling the capability does NOT
+                // change the starting mode (still resolved from config above) — it only lets the client's
+                // set_permission_mode actually take effect. Visibility stays enforced under bypass: the
+                // managedSettings deny + sandbox denyRead are policy-tier and survive the permission mode.
+                allowDangerouslySkipPermissions: true,
+                // Reasoning effort (FEATURE #63) is applied LIVE via applyFlagSettings, but a visibility
+                // respawn rebuilds query() from scratch — so thread the session's chosen effort through the
+                // spawn `effort` option too so the respawn preserves it (this path also covers levels the
+                // runtime flag layer rejects, e.g. 'max'). Omitted until the user picks a level.
+                ...(session.effort
+                    ? { effort: session.effort as EffortLevel }
+                    : {}),
+                // Browser/computer-use capability (--chrome): passes `--chrome` (a boolean flag, hence
+                // `null`) so the spawned claude process can launch and control a Chromium browser.
+                ...(session.computerUse ? { extraArgs: { chrome: null } } : {}),
+                // Use Claude Code's own preset system prompt — this is a VISUAL CLAUDE CODE, so it must
+                // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
+                // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
+                // relative paths resolve against $HOME instead of `cwd`.
+                systemPrompt: { type: 'preset', preset: 'claude_code' },
+                // The SDK CanUseTool type carries many optional fields we don't read; cast our narrow
+                // closure to it. (canUseTool ALSO carries the AskUserQuestion interactive-question flow — see
+                // the ASK_USER_QUESTION_TOOL branch above.)
+                canUseTool: canUseTool as unknown as CanUseTool,
+                // Visibility gate, continued: `managedSettings` is the SDK's restrictive-only policy tier —
+                // it layers UNDER the user's own config (deny outranks any pre-existing "always allow") and
+                // survives this session's permission mode (Step-0 spike). `sandbox` additionally blocks a
+                // Bash `cat`/`grep` at the OS level (verified on macOS). Omitted entirely when nothing is
+                // restricted, so a vault with no visibility settings behaves exactly as before.
+                //
+                // `failIfUnavailable: sandboxFailIfUnavailable(denyEntries)` (never a fixed `false`) — a
+                // 2026-07-30 measurement (docs/vault/visibility.md, visibility-acceptance.md) found that a
+                // fixed `false` let a session whose sandbox couldn't start run anyway with ONLY
+                // managedSettings standing guard, which a raw Bash `cat`/`bismuth read`/`python3 -c` walks
+                // straight past (managedSettings only restricts the Read/Edit/Grep/Glob tool calling
+                // convention). Restricted vault → fail closed; unrestricted vault → unaffected, exactly as
+                // before this fix (sandboxFailIfUnavailable([]) is false, and this whole block is only
+                // included when denyEntries.length > 0 anyway).
+                //
+                // sandbox itself is now built by buildChatSandboxOption (Task 9), which additionally sets
+                // `allowUnsandboxedCommands: false` — see its doc comment for why (stops the model turning
+                // its own sandbox off via the Bash tool's `dangerouslyDisableSandbox` parameter).
+                ...(denyEntries.length > 0
+                    ? {
+                          managedSettings: {
+                              permissions: {
+                                  deny: buildManagedSettingsDeny(denyEntries),
+                              },
+                          },
+                          sandbox: buildChatSandboxOption(
+                              denyEntries,
+                              session.cwd,
+                          ),
+                      }
+                    : {}),
+                // Memory auto-recall (daemon-gated). The visual chat is an SDK session with NO relay
+                // plugin, so the relay's terminal-tab UserPromptSubmit recall hook never fires here — the
+                // app's PRIMARY Claude surface saw none of the 3rd brain. Mirror that hook in-process: when
+                // this vault's daemon is enabled (session.memoryDir is set), on every user turn recall the
+                // memory relevant to the prompt and inject it as `additionalContext`. recallMemory wraps the
+                // block in a `<bismuth-memory>` envelope that demarcates the vault's 3rd brain from Claude's
+                // OWN memory, so an in-app chat never conflates the two stores. Read session.memoryDir via the
+                // closure so a respawnSession respawn keeps recall wired. captureToMemory already strips that
+                // injected `<bismuth-memory>` block (stripInjectedBlocks) before collecting, so recall never
+                // amplifies through the recall→collect→recall loop. recallMemory is budgeted + never
+                // throws, so a bloated/slow graph degrades to "no recall" rather than stalling the turn.
+                ...(session.memoryDir
+                    ? {
+                          hooks: {
+                              UserPromptSubmit: [
+                                  {
+                                      hooks: [
+                                          async (input: HookInput) => {
+                                              const dir = session.memoryDir
+                                              if (
+                                                  !dir ||
+                                                  input.hook_event_name !==
+                                                      'UserPromptSubmit'
+                                              )
+                                                  return {}
+                                              const context =
+                                                  await recallMemory(
+                                                      dir,
+                                                      input.prompt,
+                                                  )
+                                              return context
+                                                  ? {
+                                                        hookSpecificOutput: {
+                                                            hookEventName:
+                                                                'UserPromptSubmit' as const,
+                                                            additionalContext:
+                                                                context,
+                                                        },
+                                                    }
+                                                  : {}
+                                          },
+                                      ],
+                                  },
+                              ],
+                          },
+                      }
+                    : {}),
+                disallowedTools,
+            },
+        })
+    } catch (e) {
+        session.sink({
+            type: 'error',
+            code: 'spawn',
+            message: (e as Error).message,
+        })
+        return false
+    }
+    session.q = q
+    // Re-apply the user's chosen model on respawn. The SDK's query() options don't accept a base
+    // model (unlike effort which has a spawn option), so we call setModel() again after the new
+    // query is created (Bug #89).
+    if (session.model) {
+        try {
+            q.setModel(session.model)?.catch(() => {})
+        } catch {
+            /* */
+        }
+    }
+    return true
 }
 
 /**
@@ -1241,7 +1515,7 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
  * `visibility:` frontmatter edit). One core server serves one vault, so all sessions share it.
  */
 export function invalidateChatVisibility(): void {
-  for (const s of sessions.values()) s.visibilityDirty = true;
+    for (const s of sessions.values()) s.visibilityDirty = true
 }
 
 /**
@@ -1254,11 +1528,11 @@ export function invalidateChatVisibility(): void {
  * respawn). Extracted so the enable/disable decision is unit-testable without a live `claude`.
  */
 export function computerUseChange(
-  current: boolean | undefined,
-  requested: boolean | undefined,
+    current: boolean | undefined,
+    requested: boolean | undefined,
 ): { next: boolean; respawn: boolean } {
-  const next = !!requested;
-  return { next, respawn: !!current !== next };
+    const next = !!requested
+    return { next, respawn: !!current !== next }
 }
 
 /**
@@ -1272,37 +1546,46 @@ export function computerUseChange(
  * next turn will surface the error; we clear the dirty flags regardless to avoid a respawn loop.
  */
 async function respawnSession(session: ChatSession): Promise<void> {
-  session.visibilityDirty = false;
-  session.spawnOptionsDirty = false;
-  // The respawn exists because the vault's visibility changed; if the new state cannot be
-  // enumerated, continuing on the session's PREVIOUS deny list would run the next turn against a
-  // list that no longer describes the vault. End the session instead.
-  let denyEntries: DenyEntry[];
-  try {
-    denyEntries = await buildDenyPaths(session.cwd, "chat");
-  } catch (e) {
-    session.sink({
-      type: "error",
-      code: "visibility-refused",
-      binary: "claude",
-      message:
-        "Bismuth couldn't re-read this vault's visibility settings, so this chat was stopped rather " +
-        `than continue without them (${e instanceof Error ? e.message : String(e)}). Check the ` +
-        "vault's `.settings` file, then reopen the chat.",
-    });
-    closeChat(session.id);
-    return;
-  }
-  session.deniedEntries = denyEntries;
-  // Tear down the old query() (interrupt any in-flight, then close) — NOT closeChat, which would
-  // capture-to-memory and drop the session from the registry. NOTE: no await between the close and
-  // spawnChatQuery below — session.q must already point at the NEW query when the old drain loop's
-  // finally wakes up, so its respawn guard (drain's `session.q !== q` check) sees the swap and ends
-  // silently instead of evicting the session.
-  try { session.q.interrupt?.()?.catch(() => {}); } catch { /* */ }
-  try { session.q.close?.(); } catch { /* */ }
-  // Respawn against the same conversation (resume) with the fresh gate, then re-drain.
-  if (spawnChatQuery(session, denyEntries, session.sessionId ?? undefined)) void drain(session);
+    session.visibilityDirty = false
+    session.spawnOptionsDirty = false
+    // The respawn exists because the vault's visibility changed; if the new state cannot be
+    // enumerated, continuing on the session's PREVIOUS deny list would run the next turn against a
+    // list that no longer describes the vault. End the session instead.
+    let denyEntries: DenyEntry[]
+    try {
+        denyEntries = await buildDenyPaths(session.cwd, 'chat')
+    } catch (e) {
+        session.sink({
+            type: 'error',
+            code: 'visibility-refused',
+            binary: 'claude',
+            message:
+                "Bismuth couldn't re-read this vault's visibility settings, so this chat was stopped rather " +
+                `than continue without them (${e instanceof Error ? e.message : String(e)}). Check the ` +
+                "vault's `.settings` file, then reopen the chat.",
+        })
+        closeChat(session.id)
+        return
+    }
+    session.deniedEntries = denyEntries
+    // Tear down the old query() (interrupt any in-flight, then close) — NOT closeChat, which would
+    // capture-to-memory and drop the session from the registry. NOTE: no await between the close and
+    // spawnChatQuery below — session.q must already point at the NEW query when the old drain loop's
+    // finally wakes up, so its respawn guard (drain's `session.q !== q` check) sees the swap and ends
+    // silently instead of evicting the session.
+    try {
+        session.q.interrupt?.()?.catch(() => {})
+    } catch {
+        /* */
+    }
+    try {
+        session.q.close?.()
+    } catch {
+        /* */
+    }
+    // Respawn against the same conversation (resume) with the fresh gate, then re-drain.
+    if (spawnChatQuery(session, denyEntries, session.sessionId ?? undefined))
+        void drain(session)
 }
 
 // --- Session history (the resume picker) ----------------------------------------------------
@@ -1327,30 +1610,34 @@ async function respawnSession(session: ChatSession): Promise<void> {
  *  backfill, see daemon.ts readDaemonSessionIds) is the ONE signal behind this — never a content
  *  heuristic, and never the `session-id` POINTER (which names only the newest daemon run and so
  *  mislabels every earlier one). */
-export type ChatOrigin = "user" | "daemon";
+export type ChatOrigin = 'user' | 'daemon'
 
 /** Which sessions the History picker is asking for. */
-export type ChatScope = "user" | "daemon" | "all";
+export type ChatScope = 'user' | 'daemon' | 'all'
 
 /** Every valid scope, and the one a caller that says nothing gets. `user` is the default so that
  *  someone who never touches the filter sees exactly today's behavior. */
-export const CHAT_SCOPES = ["user", "daemon", "all"] as const;
-export const DEFAULT_CHAT_SCOPE: ChatScope = "user";
+export const CHAT_SCOPES = ['user', 'daemon', 'all'] as const
+export const DEFAULT_CHAT_SCOPE: ChatScope = 'user'
 
 /** Pure: coerce an untrusted scope (a query param / request body field) to a real one. Anything
  *  absent, misspelled or hostile falls back to the default rather than erroring — a bad scope must
  *  never be able to turn History into something OTHER than the user's own chats. */
 export function parseChatScope(raw: unknown): ChatScope {
-  return typeof raw === "string" && (CHAT_SCOPES as readonly string[]).includes(raw)
-    ? (raw as ChatScope)
-    : DEFAULT_CHAT_SCOPE;
+    return typeof raw === 'string' &&
+        (CHAT_SCOPES as readonly string[]).includes(raw)
+        ? (raw as ChatScope)
+        : DEFAULT_CHAT_SCOPE
 }
 
 /** Pure: who minted this session? Membership in the daemon's durable set, and nothing else.
  *  An id absent from the set is the user's — so an empty set (no daemon, a daemon that never ran,
  *  or an unreadable file) makes EVERYTHING the user's, which is the pre-daemon behavior. */
-export function resolveChatOrigin(sessionId: string, daemonIds: ReadonlySet<string>): ChatOrigin {
-  return daemonIds.has(sessionId) ? "daemon" : "user";
+export function resolveChatOrigin(
+    sessionId: string,
+    daemonIds: ReadonlySet<string>,
+): ChatOrigin {
+    return daemonIds.has(sessionId) ? 'daemon' : 'user'
 }
 
 /** Pure: drop the sessions the vault's daemon minted. Empty `daemonIds` (no daemon, or a daemon
@@ -1358,11 +1645,11 @@ export function resolveChatOrigin(sessionId: string, daemonIds: ReadonlySet<stri
  *  simple two-way filter (the `user`-scope case of filterSessionsByScope below); still exported and
  *  tested standalone since it is the historical, minimal membership test. */
 export function excludeDaemonSessions<T extends { sessionId: string }>(
-  sessions: readonly T[],
-  daemonIds: ReadonlySet<string>,
+    sessions: readonly T[],
+    daemonIds: ReadonlySet<string>,
 ): T[] {
-  if (daemonIds.size === 0) return [...sessions];
-  return sessions.filter((s) => !daemonIds.has(s.sessionId));
+    if (daemonIds.size === 0) return [...sessions]
+    return sessions.filter(s => !daemonIds.has(s.sessionId))
 }
 
 /**
@@ -1375,23 +1662,26 @@ export function excludeDaemonSessions<T extends { sessionId: string }>(
  * run, which is the truth anyway.
  */
 export function filterSessionsByScope<T extends { sessionId: string }>(
-  sessions: readonly T[],
-  daemonIds: ReadonlySet<string>,
-  scope: ChatScope,
+    sessions: readonly T[],
+    daemonIds: ReadonlySet<string>,
+    scope: ChatScope,
 ): T[] {
-  if (scope === "all") return [...sessions];
-  if (scope === "daemon") return sessions.filter((s) => daemonIds.has(s.sessionId));
-  return excludeDaemonSessions(sessions, daemonIds);
+    if (scope === 'all') return [...sessions]
+    if (scope === 'daemon')
+        return sessions.filter(s => daemonIds.has(s.sessionId))
+    return excludeDaemonSessions(sessions, daemonIds)
 }
 
 /** How many sessions one page of the store scan pulls. */
-const SESSION_PAGE = 100;
+const SESSION_PAGE = 100
 /** Hard ceiling on sessions scanned in one call, so a store dominated by daemon sessions can't
  *  turn one History open into an unbounded read. */
-const SESSION_SCAN_CAP = 2000;
+const SESSION_SCAN_CAP = 2000
 
 /** A store session plus the provenance the picker needs to filter and to pick its icon. */
-type ScopedSession = Awaited<ReturnType<typeof listSessions>>[number] & { origin: ChatOrigin };
+type ScopedSession = Awaited<ReturnType<typeof listSessions>>[number] & {
+    origin: ChatOrigin
+}
 
 /**
  * Collect up to `want` of the newest sessions for `cwd` that belong to `scope`, each tagged with
@@ -1404,27 +1694,38 @@ type ScopedSession = Awaited<ReturnType<typeof listSessions>>[number] & { origin
  * before the daemon existed, and makes the `daemon` scope reachable at all on a store where the
  * user's own chats happen to be newest. Bounded by SESSION_SCAN_CAP either way.
  */
-async function listScopedSessions(cwd: string, want: number, scope: ChatScope): Promise<ScopedSession[]> {
-  // Recover provenance for daemon sessions minted before the durable set existed — once per vault,
-  // ever (see chatDaemonLegacy.ts). Without this the set is EMPTY on exactly the machines that have
-  // the problem, and every pre-existing daemon chat stays listed; with it, the first History open
-  // pays one bounded scan (~1.3s for ~1000 transcripts) and the picker is correct from then on. Every
-  // scope needs it: it is what makes those sessions filterable AND, for `daemon`/`all`, findable and
-  // correctly iconed.
-  await backfillLegacyDaemonSessions(cwd);
-  const daemonIds = readDaemonSessionIds(cwd);
-  const out: ScopedSession[] = [];
-  for (let offset = 0; out.length < want && offset < SESSION_SCAN_CAP; ) {
-    const page = await listSessions({ dir: cwd, limit: SESSION_PAGE, offset });
-    if (page.length === 0) break;
-    offset += page.length;
-    for (const s of filterSessionsByScope(page, daemonIds, scope)) {
-      out.push({ ...s, origin: resolveChatOrigin(s.sessionId, daemonIds) });
-      if (out.length >= want) break;
+async function listScopedSessions(
+    cwd: string,
+    want: number,
+    scope: ChatScope,
+): Promise<ScopedSession[]> {
+    // Recover provenance for daemon sessions minted before the durable set existed — once per vault,
+    // ever (see chatDaemonLegacy.ts). Without this the set is EMPTY on exactly the machines that have
+    // the problem, and every pre-existing daemon chat stays listed; with it, the first History open
+    // pays one bounded scan (~1.3s for ~1000 transcripts) and the picker is correct from then on. Every
+    // scope needs it: it is what makes those sessions filterable AND, for `daemon`/`all`, findable and
+    // correctly iconed.
+    await backfillLegacyDaemonSessions(cwd)
+    const daemonIds = readDaemonSessionIds(cwd)
+    const out: ScopedSession[] = []
+    for (let offset = 0; out.length < want && offset < SESSION_SCAN_CAP;) {
+        const page = await listSessions({
+            dir: cwd,
+            limit: SESSION_PAGE,
+            offset,
+        })
+        if (page.length === 0) break
+        offset += page.length
+        for (const s of filterSessionsByScope(page, daemonIds, scope)) {
+            out.push({
+                ...s,
+                origin: resolveChatOrigin(s.sessionId, daemonIds),
+            })
+            if (out.length >= want) break
+        }
+        if (page.length < SESSION_PAGE) break // short page = store exhausted
     }
-    if (page.length < SESSION_PAGE) break; // short page = store exhausted
-  }
-  return out.slice(0, want);
+    return out.slice(0, want)
 }
 
 /**
@@ -1437,21 +1738,28 @@ async function listScopedSessions(cwd: string, want: number, scope: ChatScope): 
  * returns [] if the SDK can't read the store.
  */
 export async function listChatSessions(
-  cwd: string,
-  limit = 50,
-  scope: ChatScope = DEFAULT_CHAT_SCOPE,
-): Promise<{ sessionId: string; summary: string; lastModified: number; origin: ChatOrigin }[]> {
-  try {
-    const sessions = await listScopedSessions(cwd, limit, scope);
-    return sessions.map((s) => ({
-      sessionId: s.sessionId,
-      summary: s.summary,
-      lastModified: s.lastModified,
-      origin: s.origin,
-    }));
-  } catch {
-    return [];
-  }
+    cwd: string,
+    limit = 50,
+    scope: ChatScope = DEFAULT_CHAT_SCOPE,
+): Promise<
+    {
+        sessionId: string
+        summary: string
+        lastModified: number
+        origin: ChatOrigin
+    }[]
+> {
+    try {
+        const sessions = await listScopedSessions(cwd, limit, scope)
+        return sessions.map(s => ({
+            sessionId: s.sessionId,
+            summary: s.summary,
+            lastModified: s.lastModified,
+            origin: s.origin,
+        }))
+    } catch {
+        return []
+    }
 }
 
 /**
@@ -1460,23 +1768,27 @@ export async function listChatSessions(
  * tool_use, user-message bubbles for user prose, tool-result frames for tool_result blocks). Tolerant
  * of odd/empty messages; returns [] if the session can't be read.
  */
-export async function sessionHistoryFrames(sessionId: string, cwd: string): Promise<ChatFrame[]> {
-  let messages: SessionMessage[];
-  try {
-    messages = await getSessionMessages(sessionId, { dir: cwd });
-  } catch {
-    return [];
-  }
-  const frames: ChatFrame[] = [];
-  for (const msg of messages) {
-    if (!msg || typeof msg !== "object") continue;
+export async function sessionHistoryFrames(
+    sessionId: string,
+    cwd: string,
+): Promise<ChatFrame[]> {
+    let messages: SessionMessage[]
     try {
-      for (const frame of translateSdkMessage(msg, { live: false })) frames.push(frame);
+        messages = await getSessionMessages(sessionId, { dir: cwd })
     } catch {
-      /* skip a malformed message rather than abort the whole replay */
+        return []
     }
-  }
-  return frames;
+    const frames: ChatFrame[] = []
+    for (const msg of messages) {
+        if (!msg || typeof msg !== 'object') continue
+        try {
+            for (const frame of translateSdkMessage(msg, { live: false }))
+                frames.push(frame)
+        } catch {
+            /* skip a malformed message rather than abort the whole replay */
+        }
+    }
+    return frames
 }
 
 // --- Session content search (the history picker's search box) -------------------------------
@@ -1489,43 +1801,47 @@ export async function sessionHistoryFrames(sessionId: string, cwd: string): Prom
 /** A short excerpt from `text` centered on the first case-insensitive occurrence of `query`, with
  *  `…` markers where it's clipped and whitespace collapsed to a single line for display. Returns
  *  null when `query` doesn't occur in `text`. Pure + unit-tested. */
-export function chatSnippet(text: string, query: string, radius = 60): string | null {
-  if (!text || !query) return null;
-  const idx = text.toLowerCase().indexOf(query.toLowerCase());
-  if (idx < 0) return null;
-  const start = Math.max(0, idx - radius);
-  const end = Math.min(text.length, idx + query.length + radius);
-  let snip = text.slice(start, end).replace(/\s+/g, " ").trim();
-  if (start > 0) snip = `…${snip}`;
-  if (end < text.length) snip = `${snip}…`;
-  return snip;
+export function chatSnippet(
+    text: string,
+    query: string,
+    radius = 60,
+): string | null {
+    if (!text || !query) return null
+    const idx = text.toLowerCase().indexOf(query.toLowerCase())
+    if (idx < 0) return null
+    const start = Math.max(0, idx - radius)
+    const end = Math.min(text.length, idx + query.length + radius)
+    let snip = text.slice(start, end).replace(/\s+/g, ' ').trim()
+    if (start > 0) snip = `…${snip}`
+    if (end < text.length) snip = `${snip}…`
+    return snip
 }
 
 /** One search hit: a past session whose title or message text matched, plus a snippet of where. */
 export interface ChatSearchHit {
-  sessionId: string;
-  summary: string;
-  lastModified: number; // ms epoch
-  /** A short excerpt around the match (the title or a message) for the picker row's second line. */
-  snippet: string;
-  /** True when the match was in the session's title/summary rather than its message body. */
-  inTitle: boolean;
-  /** Who minted the session — so a hit row shows the same daemon-vs-user glyph the list rows do. */
-  origin: ChatOrigin;
+    sessionId: string
+    summary: string
+    lastModified: number // ms epoch
+    /** A short excerpt around the match (the title or a message) for the picker row's second line. */
+    snippet: string
+    /** True when the match was in the session's title/summary rather than its message body. */
+    inTitle: boolean
+    /** Who minted the session — so a hit row shows the same daemon-vs-user glyph the list rows do. */
+    origin: ChatOrigin
 }
 
 /** The searchable projection of one session: its title + every human-readable message text. */
 export interface ChatSearchDoc {
-  sessionId: string;
-  summary: string;
-  lastModified: number;
-  texts: string[];
-  origin: ChatOrigin;
+    sessionId: string
+    summary: string
+    lastModified: number
+    texts: string[]
+    origin: ChatOrigin
 }
 
 /** Split a query into lowercased, non-empty whitespace tokens. */
 function queryTokens(query: string): string[] {
-  return query.toLowerCase().split(/\s+/).filter(Boolean);
+    return query.toLowerCase().split(/\s+/).filter(Boolean)
 }
 
 /**
@@ -1535,24 +1851,32 @@ function queryTokens(query: string): string[] {
  * FIRST token, preferring the title when it contains it, else the first message that does. Returns
  * null when the session doesn't match. Unit-tested so the search rule needs no live `claude`.
  */
-export function matchChatSession(doc: ChatSearchDoc, query: string): ChatSearchHit | null {
-  const tokens = queryTokens(query);
-  if (!tokens.length) return null;
-  // AND across tokens over the combined title + messages. A token carries no whitespace, so it can
-  // never straddle the "\n" join boundary — a token that passes therefore lives within one field.
-  const combined = [doc.summary, ...doc.texts].join("\n").toLowerCase();
-  if (!tokens.every((t) => combined.includes(t))) return null;
-  const meta = { sessionId: doc.sessionId, summary: doc.summary, lastModified: doc.lastModified, origin: doc.origin };
-  const first = tokens[0]!;
-  const titleSnip = chatSnippet(doc.summary, first);
-  if (titleSnip) return { ...meta, snippet: titleSnip, inTitle: true };
-  for (const text of doc.texts) {
-    const snip = chatSnippet(text, first);
-    if (snip) return { ...meta, snippet: snip, inTitle: false };
-  }
-  // Unreachable given the AND test guarantees `first` is in the title or a message, but fall back
-  // to the title rather than assert.
-  return { ...meta, snippet: doc.summary, inTitle: true };
+export function matchChatSession(
+    doc: ChatSearchDoc,
+    query: string,
+): ChatSearchHit | null {
+    const tokens = queryTokens(query)
+    if (!tokens.length) return null
+    // AND across tokens over the combined title + messages. A token carries no whitespace, so it can
+    // never straddle the "\n" join boundary — a token that passes therefore lives within one field.
+    const combined = [doc.summary, ...doc.texts].join('\n').toLowerCase()
+    if (!tokens.every(t => combined.includes(t))) return null
+    const meta = {
+        sessionId: doc.sessionId,
+        summary: doc.summary,
+        lastModified: doc.lastModified,
+        origin: doc.origin,
+    }
+    const first = tokens[0]!
+    const titleSnip = chatSnippet(doc.summary, first)
+    if (titleSnip) return { ...meta, snippet: titleSnip, inTitle: true }
+    for (const text of doc.texts) {
+        const snip = chatSnippet(text, first)
+        if (snip) return { ...meta, snippet: snip, inTitle: false }
+    }
+    // Unreachable given the AND test guarantees `first` is in the title or a message, but fall back
+    // to the title rather than assert.
+    return { ...meta, snippet: doc.summary, inTitle: true }
 }
 
 /** Build a session's searchable doc from its SDK transcript: the title plus each user/assistant
@@ -1560,28 +1884,37 @@ export function matchChatSession(doc: ChatSearchDoc, query: string): ChatSearchH
  *  by stripInjectedBlocks, so search matches what the human actually wrote/read). Tolerant — an
  *  unreadable session yields an empty text list (title-only search still works). */
 async function buildSearchDoc(
-  session: { sessionId: string; summary: string; lastModified: number; origin: ChatOrigin },
-  cwd: string,
+    session: {
+        sessionId: string
+        summary: string
+        lastModified: number
+        origin: ChatOrigin
+    },
+    cwd: string,
 ): Promise<ChatSearchDoc> {
-  let messages: SessionMessage[] = [];
-  try {
-    messages = await getSessionMessages(session.sessionId, { dir: cwd });
-  } catch {
-    messages = [];
-  }
-  const texts: string[] = [];
-  for (const msg of messages) {
-    if (!msg || (msg.type !== "user" && msg.type !== "assistant")) continue;
-    const text = stripInjectedBlocks(extractText((msg as { message?: TranscriptEntry["message"] }).message));
-    if (text) texts.push(text);
-  }
-  return {
-    sessionId: session.sessionId,
-    summary: session.summary,
-    lastModified: session.lastModified,
-    texts,
-    origin: session.origin,
-  };
+    let messages: SessionMessage[] = []
+    try {
+        messages = await getSessionMessages(session.sessionId, { dir: cwd })
+    } catch {
+        messages = []
+    }
+    const texts: string[] = []
+    for (const msg of messages) {
+        if (!msg || (msg.type !== 'user' && msg.type !== 'assistant')) continue
+        const text = stripInjectedBlocks(
+            extractText(
+                (msg as { message?: TranscriptEntry['message'] }).message,
+            ),
+        )
+        if (text) texts.push(text)
+    }
+    return {
+        sessionId: session.sessionId,
+        summary: session.summary,
+        lastModified: session.lastModified,
+        texts,
+        origin: session.origin,
+    }
 }
 
 /**
@@ -1599,34 +1932,39 @@ async function buildSearchDoc(
  * Each hit carries its origin for the row's glyph.
  */
 export async function searchChatSessions(
-  cwd: string,
-  query: string,
-  limit = 100,
-  scope: ChatScope = DEFAULT_CHAT_SCOPE,
+    cwd: string,
+    query: string,
+    limit = 100,
+    scope: ChatScope = DEFAULT_CHAT_SCOPE,
 ): Promise<ChatSearchHit[]> {
-  const q = query.trim();
-  if (!q) return [];
-  let sessionList: ScopedSession[];
-  try {
-    sessionList = await listScopedSessions(cwd, limit, scope);
-  } catch {
-    return [];
-  }
-  const hits: ChatSearchHit[] = [];
-  // Read each session's transcript on demand and filter — the SDK's own data, no index.
-  await Promise.all(
-    sessionList.map(async (s) => {
-      const doc = await buildSearchDoc(
-        { sessionId: s.sessionId, summary: s.summary, lastModified: s.lastModified, origin: s.origin },
-        cwd,
-      );
-      const hit = matchChatSession(doc, q);
-      if (hit) hits.push(hit);
-    }),
-  );
-  // listSessions is newest-first but Promise.all resolves out of order — restore newest-first.
-  hits.sort((a, b) => b.lastModified - a.lastModified);
-  return hits;
+    const q = query.trim()
+    if (!q) return []
+    let sessionList: ScopedSession[]
+    try {
+        sessionList = await listScopedSessions(cwd, limit, scope)
+    } catch {
+        return []
+    }
+    const hits: ChatSearchHit[] = []
+    // Read each session's transcript on demand and filter — the SDK's own data, no index.
+    await Promise.all(
+        sessionList.map(async s => {
+            const doc = await buildSearchDoc(
+                {
+                    sessionId: s.sessionId,
+                    summary: s.summary,
+                    lastModified: s.lastModified,
+                    origin: s.origin,
+                },
+                cwd,
+            )
+            const hit = matchChatSession(doc, q)
+            if (hit) hits.push(hit)
+        }),
+    )
+    // listSessions is newest-first but Promise.all resolves out of order — restore newest-first.
+    hits.sort((a, b) => b.lastModified - a.lastModified)
+    return hits
 }
 
 /**
@@ -1641,20 +1979,25 @@ export async function searchChatSessions(
  * fallback to retry, never surfacing as a chat error.
  */
 function emitSupportedModels(session: ChatSession): void {
-  if (session.modelsSent || !session.q) return;
-  session.q
-    .supportedModels()
-    .then((ms) => {
-      if (session.modelsSent) return; // eager + fallback raced — whoever resolved first already sent
-      session.modelsSent = true;
-      emit(session, {
-        type: "models",
-        // supportedEffortLevels rides along per model (FEATURE #63) so the header's Effort picker
-        // tracks the SELECTED model's real levels — the SDK reports it, we never hardcode it.
-        models: ms.map((m) => ({ value: m.value, label: m.displayName, description: m.description, effortLevels: m.supportedEffortLevels ?? [] })),
-      });
-    })
-    .catch(() => {});
+    if (session.modelsSent || !session.q) return
+    session.q
+        .supportedModels()
+        .then(ms => {
+            if (session.modelsSent) return // eager + fallback raced — whoever resolved first already sent
+            session.modelsSent = true
+            emit(session, {
+                type: 'models',
+                // supportedEffortLevels rides along per model (FEATURE #63) so the header's Effort picker
+                // tracks the SELECTED model's real levels — the SDK reports it, we never hardcode it.
+                models: ms.map(m => ({
+                    value: m.value,
+                    label: m.displayName,
+                    description: m.description,
+                    effortLevels: m.supportedEffortLevels ?? [],
+                })),
+            })
+        })
+        .catch(() => {})
 }
 
 /**
@@ -1676,48 +2019,53 @@ function emitSupportedModels(session: ChatSession): void {
  * default (Bypass) because it differs, so Bypass takes effect ON OPEN, before the first turn.
  */
 function emitInitManifest(session: ChatSession): void {
-  if (session.manifestSent || !session.q) return;
-  const q = session.q;
-  void (async () => {
-    const init = await q.initializationResult().catch(() => null);
-    const mcp = await q.mcpServerStatus().catch(() => []);
-    if (session.manifestSent) return; // a real per-turn manifest already landed — don't clobber it
-    session.manifestSent = true;
-    emit(session, {
-      type: "manifest",
-      manifest: {
-        // The session's KNOWN model when there is one (a resume preloaded it from the per-session
-        // store — Bug #89), so a resumed chat's header shows the conversation's own model before
-        // any turn. "" for a fresh session (no model info exists pre-turn; the client's persisted
-        // last-model fills the header until the first real init reports the resolved id).
-        model: session.model ?? "",
-        permissionMode: "default",
-        slashCommands: withLocalSlashCommands((init?.commands ?? []).map((c) => c.name)),
-        tools: [],
-        mcpServers: (mcp ?? []).map((m) => ({ name: m.name, status: m.status })),
-      },
-    });
-  })();
+    if (session.manifestSent || !session.q) return
+    const q = session.q
+    void (async () => {
+        const init = await q.initializationResult().catch(() => null)
+        const mcp = await q.mcpServerStatus().catch(() => [])
+        if (session.manifestSent) return // a real per-turn manifest already landed — don't clobber it
+        session.manifestSent = true
+        emit(session, {
+            type: 'manifest',
+            manifest: {
+                // The session's KNOWN model when there is one (a resume preloaded it from the per-session
+                // store — Bug #89), so a resumed chat's header shows the conversation's own model before
+                // any turn. "" for a fresh session (no model info exists pre-turn; the client's persisted
+                // last-model fills the header until the first real init reports the resolved id).
+                model: session.model ?? '',
+                permissionMode: 'default',
+                slashCommands: withLocalSlashCommands(
+                    (init?.commands ?? []).map(c => c.name),
+                ),
+                tools: [],
+                mcpServers: (mcp ?? []).map(m => ({
+                    name: m.name,
+                    status: m.status,
+                })),
+            },
+        })
+    })()
 }
 
 /** Fetch the session's conversation summary once and emit it as a `title` frame. Latches ONLY on
  *  a non-empty summary (turn 1 usually has none yet), so callers retry at each turn-end until the
  *  store has one. Fire-and-forget; failures just retry later. */
 function maybeEmitTitle(session: ChatSession): void {
-  if (session.titleSent || !session.sessionId) return;
-  getSessionInfo(session.sessionId, { dir: session.cwd })
-    .then((info) => {
-      const title = info?.summary?.trim();
-      if (!title || session.titleSent) return;
-      session.titleSent = true;
-      session.title = title; // also the agents-graph node label
-      emit(session, { type: "title", title });
-    })
-    .catch(() => {});
+    if (session.titleSent || !session.sessionId) return
+    getSessionInfo(session.sessionId, { dir: session.cwd })
+        .then(info => {
+            const title = info?.summary?.trim()
+            if (!title || session.titleSent) return
+            session.titleSent = true
+            session.title = title // also the agents-graph node label
+            emit(session, { type: 'title', title })
+        })
+        .catch(() => {})
 }
 
 /** The Claude Code tool that spawns a subagent — its tool_use starts one, its tool_result ends it. */
-const TASK_TOOL = "Task";
+const TASK_TOOL = 'Task'
 
 /**
  * Track the SDK Task-tool subagent lifecycle off the drain loop's frames so a visual chat's
@@ -1726,20 +2074,28 @@ const TASK_TOOL = "Task";
  * `subagent_type`); the matching `tool-result` marks it done. Non-Task frames are ignored.
  */
 function trackChatSubagent(session: ChatSession, frame: ChatFrame): void {
-  if (frame.type === "tool-use" && frame.name === TASK_TOOL) {
-    const input = (frame.input ?? {}) as { subagent_type?: unknown; description?: unknown };
-    const agentType =
-      (typeof input.subagent_type === "string" && input.subagent_type) ||
-      (typeof input.description === "string" && input.description) ||
-      "subagent";
-    session.chatSubagents.set(frame.id, { agentId: frame.id, agentType, startedAt: Date.now(), done: false });
-  } else if (frame.type === "tool-result") {
-    const sub = session.chatSubagents.get(frame.id);
-    if (sub && !sub.done) {
-      sub.done = true;
-      sub.doneAt = Date.now();
+    if (frame.type === 'tool-use' && frame.name === TASK_TOOL) {
+        const input = (frame.input ?? {}) as {
+            subagent_type?: unknown
+            description?: unknown
+        }
+        const agentType =
+            (typeof input.subagent_type === 'string' && input.subagent_type) ||
+            (typeof input.description === 'string' && input.description) ||
+            'subagent'
+        session.chatSubagents.set(frame.id, {
+            agentId: frame.id,
+            agentType,
+            startedAt: Date.now(),
+            done: false,
+        })
+    } else if (frame.type === 'tool-result') {
+        const sub = session.chatSubagents.get(frame.id)
+        if (sub && !sub.done) {
+            sub.done = true
+            sub.doneAt = Date.now()
+        }
     }
-  }
 }
 
 /**
@@ -1750,11 +2106,15 @@ function trackChatSubagent(session: ChatSession, frame: ChatFrame): void {
  * the backstop age instead of pinning an "awake" node in the agents graph forever.
  */
 function sweepDoneChatSubagents(session: ChatSession, now: number): void {
-  for (const [id, sub] of session.chatSubagents) {
-    const finished = sub.done && sub.doneAt !== undefined && now - sub.doneAt > DONE_SUBAGENT_TTL_MS;
-    const abandoned = !sub.done && now - sub.startedAt > RUNNING_SUBAGENT_MAX_MS;
-    if (finished || abandoned) session.chatSubagents.delete(id);
-  }
+    for (const [id, sub] of session.chatSubagents) {
+        const finished =
+            sub.done &&
+            sub.doneAt !== undefined &&
+            now - sub.doneAt > DONE_SUBAGENT_TTL_MS
+        const abandoned =
+            !sub.done && now - sub.startedAt > RUNNING_SUBAGENT_MAX_MS
+        if (finished || abandoned) session.chatSubagents.delete(id)
+    }
 }
 
 /**
@@ -1763,23 +2123,25 @@ function sweepDoneChatSubagents(session: ChatSession, now: number): void {
  * / session ended → closeChat) simply isn't here, so the agents graph prunes it with no extra work.
  * Finished subagents past their TTL are swept as this runs. Pure read over the module registry.
  */
-export function chatAgentSnapshot(now: number = Date.now()): ChatAgentSession[] {
-  const out: ChatAgentSession[] = [];
-  for (const s of sessions.values()) {
-    sweepDoneChatSubagents(s, now);
-    out.push({
-      chatId: s.id,
-      label: s.title || basename(s.cwd) || "Chat",
-      active: s.turnActive,
-      lastActivityAt: s.lastActivityAt,
-      subagents: [...s.chatSubagents.values()].map((sub) => ({
-        agentId: sub.agentId,
-        agentType: sub.agentType,
-        done: sub.done,
-      })),
-    });
-  }
-  return out;
+export function chatAgentSnapshot(
+    now: number = Date.now(),
+): ChatAgentSession[] {
+    const out: ChatAgentSession[] = []
+    for (const s of sessions.values()) {
+        sweepDoneChatSubagents(s, now)
+        out.push({
+            chatId: s.id,
+            label: s.title || basename(s.cwd) || 'Chat',
+            active: s.turnActive,
+            lastActivityAt: s.lastActivityAt,
+            subagents: [...s.chatSubagents.values()].map(sub => ({
+                agentId: sub.agentId,
+                agentType: sub.agentType,
+                done: sub.done,
+            })),
+        })
+    }
+    return out
 }
 
 /**
@@ -1793,201 +2155,250 @@ export function chatAgentSnapshot(now: number = Date.now()): ChatAgentSession[] 
  * the tool_use blocks (which have no delta form).
  */
 async function drain(session: ChatSession): Promise<void> {
-  // The query THIS drain iterates. A respawn (respawnSession: a visibility change or the /chrome
-  // toggle) closes it and swaps session.q for a NEW query with its OWN drain — which ends THIS
-  // loop. Without pinning it, the finally below would see the session still registered and tear it
-  // down (capture + evict + an "exited" error frame) right after every respawn; the guard makes an
-  // out-from-under swap end this drain silently instead (the new drain owns the session now).
-  const q = session.q;
-  let drainError: string | null = null;
-  // Per-message streaming accounting for the assistant-block de-dupe (BUG #19). A NORMAL reply
-  // arrives as `stream_event` text/thinking deltas FOLLOWED BY a final assistant message whose
-  // text/thinking blocks we skip below (already shown live). But a LOCALLY-executed built-in slash
-  // command (/context, /help, /cost, …) delivers its output as a COMPLETE assistant text block with
-  // NO deltas at all — so if we streamed nothing for a message, its text/thinking must be emitted
-  // here or the command silently shows nothing. Reset after each assistant message so a multi-message
-  // tool-loop turn accounts per message.
-  let streamedTextLen = 0;
-  let streamedThinkingLen = 0;
-  // The last session_id we told the client about, so we emit a `session` frame only when it's first
-  // learned or actually changes (a resume can hand us a new id), not on every message.
-  let sentSessionId = session.sessionId;
-  try {
-    for await (const msg of q as AsyncIterable<SDKMessage>) {
-      // Capture the session id wherever it appears.
-      const anyMsg = msg as { session_id?: string };
-      if (typeof anyMsg.session_id === "string" && anyMsg.session_id) {
-        session.sessionId = anyMsg.session_id;
-        // Tell the client the durable session_id the moment it's known so it can persist it keyed by
-        // the chat TAB (chatSessionStore.ts) — reopening the tab then resumes THIS conversation.
-        if (anyMsg.session_id !== sentSessionId) {
-          sentSessionId = anyMsg.session_id;
-          // Tag it daemon-vs-user off the durable membership set (session.cwd IS the vault root, the
-          // same dir the daemon writes its set under) so the tab's icon matches the conversation it
-          // is actually bound to — e.g. after resuming a cron chat from History's daemon scope.
-          emit(session, {
-            type: "session",
-            sessionId: anyMsg.session_id,
-            origin: resolveChatOrigin(anyMsg.session_id, readDaemonSessionIds(session.cwd)),
-          });
-          // Carry the chosen model onto the (new) durable id (Bug #89): a set_model that landed
-          // before the first id was known persists HERE, and a resume that forks a fresh id keeps
-          // the conversation's model reachable under the id the client will resume by next time.
-          if (session.model) saveSessionModel(anyMsg.session_id, session.model);
+    // The query THIS drain iterates. A respawn (respawnSession: a visibility change or the /chrome
+    // toggle) closes it and swaps session.q for a NEW query with its OWN drain — which ends THIS
+    // loop. Without pinning it, the finally below would see the session still registered and tear it
+    // down (capture + evict + an "exited" error frame) right after every respawn; the guard makes an
+    // out-from-under swap end this drain silently instead (the new drain owns the session now).
+    const q = session.q
+    let drainError: string | null = null
+    // Per-message streaming accounting for the assistant-block de-dupe (BUG #19). A NORMAL reply
+    // arrives as `stream_event` text/thinking deltas FOLLOWED BY a final assistant message whose
+    // text/thinking blocks we skip below (already shown live). But a LOCALLY-executed built-in slash
+    // command (/context, /help, /cost, …) delivers its output as a COMPLETE assistant text block with
+    // NO deltas at all — so if we streamed nothing for a message, its text/thinking must be emitted
+    // here or the command silently shows nothing. Reset after each assistant message so a multi-message
+    // tool-loop turn accounts per message.
+    let streamedTextLen = 0
+    let streamedThinkingLen = 0
+    // The last session_id we told the client about, so we emit a `session` frame only when it's first
+    // learned or actually changes (a resume can hand us a new id), not on every message.
+    let sentSessionId = session.sessionId
+    try {
+        for await (const msg of q as AsyncIterable<SDKMessage>) {
+            // Capture the session id wherever it appears.
+            const anyMsg = msg as { session_id?: string }
+            if (typeof anyMsg.session_id === 'string' && anyMsg.session_id) {
+                session.sessionId = anyMsg.session_id
+                // Tell the client the durable session_id the moment it's known so it can persist it keyed by
+                // the chat TAB (chatSessionStore.ts) — reopening the tab then resumes THIS conversation.
+                if (anyMsg.session_id !== sentSessionId) {
+                    sentSessionId = anyMsg.session_id
+                    // Tag it daemon-vs-user off the durable membership set (session.cwd IS the vault root, the
+                    // same dir the daemon writes its set under) so the tab's icon matches the conversation it
+                    // is actually bound to — e.g. after resuming a cron chat from History's daemon scope.
+                    emit(session, {
+                        type: 'session',
+                        sessionId: anyMsg.session_id,
+                        origin: resolveChatOrigin(
+                            anyMsg.session_id,
+                            readDaemonSessionIds(session.cwd),
+                        ),
+                    })
+                    // Carry the chosen model onto the (new) durable id (Bug #89): a set_model that landed
+                    // before the first id was known persists HERE, and a resume that forks a fresh id keeps
+                    // the conversation's model reachable under the id the client will resume by next time.
+                    if (session.model)
+                        saveSessionModel(anyMsg.session_id, session.model)
+                }
+            }
+
+            if (msg.type === 'system' && msg.subtype === 'init') {
+                // "none" => the user is on a Claude subscription login (no API key), so the reported cost
+                // is notional and we hide it. Read from Claude Code's own init — the app doesn't decide this.
+                session.apiKeySource =
+                    (msg as { apiKeySource?: string }).apiKeySource ??
+                    session.apiKeySource
+                // The REAL per-turn manifest — the self-updating source of truth. Latch manifestSent so a
+                // still-pending eager emitInitManifest fetch (BUG #14) can't overwrite this fuller one.
+                session.manifestSent = true
+                emit(session, {
+                    type: 'manifest',
+                    manifest: {
+                        model: msg.model,
+                        permissionMode: msg.permissionMode,
+                        slashCommands: withLocalSlashCommands(
+                            msg.slash_commands ?? [],
+                        ),
+                        tools: msg.tools ?? [],
+                        mcpServers: (msg.mcp_servers ?? []).map(m => ({
+                            name: m.name,
+                            status: m.status,
+                        })),
+                    },
+                })
+                // The models this login can run, for the header model picker. Already fetched EAGERLY on
+                // session spawn (createSession → emitSupportedModels) so the picker works before the first
+                // turn; this is a FALLBACK for the case where that eager fetch couldn't resolve. No-op once
+                // session.modelsSent is latched, so it can't double-emit.
+                emitSupportedModels(session)
+                // A RESUMED session already has a summary — name the tab right away rather than only
+                // after the next turn completes. No-op (and retried at turn-end) for a fresh session.
+                maybeEmitTitle(session)
+                continue
+            }
+
+            if (
+                msg.type === 'system' &&
+                msg.subtype === 'local_command_output'
+            ) {
+                // A slash command whose output is produced LOCALLY (e.g. /compact, /context, or a custom
+                // command that only prints) arrives solely as this system message — it never becomes an
+                // assistant turn. Surface its text as assistant prose so the command's output is visible
+                // instead of the turn appearing to do nothing.
+                const out = msg.content
+                if (typeof out === 'string' && out.length)
+                    emit(session, { type: 'assistant-text', text: out })
+                continue
+            }
+
+            if (msg.type === 'stream_event') {
+                // Live deltas (only present with includePartialMessages). Prefer these for streaming.
+                const ev = msg.event as {
+                    type?: string
+                    delta?: { type?: string; text?: string; thinking?: string }
+                }
+                if (ev?.type === 'content_block_delta' && ev.delta) {
+                    if (
+                        ev.delta.type === 'text_delta' &&
+                        typeof ev.delta.text === 'string' &&
+                        ev.delta.text.length
+                    ) {
+                        streamedTextLen += ev.delta.text.length
+                        emit(session, {
+                            type: 'assistant-text',
+                            text: ev.delta.text,
+                        })
+                    } else if (
+                        ev.delta.type === 'thinking_delta' &&
+                        typeof ev.delta.thinking === 'string' &&
+                        ev.delta.thinking.length
+                    ) {
+                        streamedThinkingLen += ev.delta.thinking.length
+                        emit(session, {
+                            type: 'thinking',
+                            text: ev.delta.thinking,
+                        })
+                    }
+                }
+                continue
+            }
+
+            if (msg.type === 'assistant' || msg.type === 'user') {
+                // BUG #19: a locally-executed built-in slash command (/context, /help, …) delivers its
+                // output as a complete assistant text block with NO preceding deltas. The live=true de-dupe
+                // below assumes text/thinking already streamed and emits ONLY tool_use, so that output would
+                // be silently dropped. When nothing streamed for THIS assistant message, emit its text /
+                // thinking blocks here so the command's result is actually shown.
+                if (msg.type === 'assistant') {
+                    for (const frame of unstreamedAssistantFrames(
+                        msg,
+                        streamedTextLen,
+                        streamedThinkingLen,
+                    )) {
+                        emit(session, frame)
+                    }
+                    // Reset the per-message delta accounting for the next assistant message in this turn.
+                    streamedTextLen = 0
+                    streamedThinkingLen = 0
+                }
+                // assistant → tool_use frames (text/thinking handled above); user → tool_result frames (the
+                // user's own prompt came from the client). Shared with history replay via translateSdkMessage.
+                for (const frame of translateSdkMessage(msg, { live: true })) {
+                    trackChatSubagent(session, frame) // Task tool_use/result → agents-graph subagent lifecycle
+                    // TTL/backstop sweep (same lifetimes as relay's registry — see relay.ts sweepDoneSubagents).
+                    // chatAgentSnapshot used to be the only caller of this; nothing polls it any more since the
+                    // agents graph was removed, so without this call session.chatSubagents was append-only.
+                    sweepDoneChatSubagents(session, Date.now())
+                    emit(session, frame)
+                }
+                continue
+            }
+
+            if (msg.type === 'result') {
+                // A result following our OWN interrupt() is a deliberate Stop, not a failure — report it
+                // as such regardless of what the SDK's is_error says (see ChatSession.aborting).
+                const wasAborting = session.aborting === true
+                session.aborting = false
+                emit(session, {
+                    type: 'result',
+                    isError: wasAborting ? false : msg.is_error === true,
+                    numTurns:
+                        typeof msg.num_turns === 'number' ? msg.num_turns : 0,
+                    // Hide cost on a subscription login (notional, not billed); only show it for real
+                    // API-key billing. Driven by Claude Code's own apiKeySource, not an app decision.
+                    costUsd:
+                        session.apiKeySource === 'none' ||
+                        typeof msg.total_cost_usd !== 'number'
+                            ? null
+                            : msg.total_cost_usd,
+                })
+                emit(session, { type: 'done' })
+                session.turnCount++
+                session.lastActivityAt = Date.now() // keep the agents-graph node awake through this turn
+                // The turn is fully over — a reconnect from here until the next push finds no active
+                // turn and gets a synthetic `done` from rebindSink (see ChatSession.turnActive).
+                session.turnActive = false
+                // Turn-end refreshes: the tab title (retries until a summary exists) and the
+                // context-window usage pill. Both fire-and-forget; a failed fetch just waits a turn.
+                maybeEmitTitle(session)
+                session.q
+                    .getContextUsage()
+                    .then(u => {
+                        emit(session, {
+                            type: 'context',
+                            percentage: u.percentage,
+                            totalTokens: u.totalTokens,
+                            maxTokens: u.maxTokens,
+                        })
+                    })
+                    .catch(() => {})
+                continue
+            }
+            // Other message kinds (status/retry/hooks/etc.) carry no UI frame — ignore.
         }
-      }
-
-      if (msg.type === "system" && msg.subtype === "init") {
-        // "none" => the user is on a Claude subscription login (no API key), so the reported cost
-        // is notional and we hide it. Read from Claude Code's own init — the app doesn't decide this.
-        session.apiKeySource = (msg as { apiKeySource?: string }).apiKeySource ?? session.apiKeySource;
-        // The REAL per-turn manifest — the self-updating source of truth. Latch manifestSent so a
-        // still-pending eager emitInitManifest fetch (BUG #14) can't overwrite this fuller one.
-        session.manifestSent = true;
-        emit(session, {
-          type: "manifest",
-          manifest: {
-            model: msg.model,
-            permissionMode: msg.permissionMode,
-            slashCommands: withLocalSlashCommands(msg.slash_commands ?? []),
-            tools: msg.tools ?? [],
-            mcpServers: (msg.mcp_servers ?? []).map((m) => ({ name: m.name, status: m.status })),
-          },
-        });
-        // The models this login can run, for the header model picker. Already fetched EAGERLY on
-        // session spawn (createSession → emitSupportedModels) so the picker works before the first
-        // turn; this is a FALLBACK for the case where that eager fetch couldn't resolve. No-op once
-        // session.modelsSent is latched, so it can't double-emit.
-        emitSupportedModels(session);
-        // A RESUMED session already has a summary — name the tab right away rather than only
-        // after the next turn completes. No-op (and retried at turn-end) for a fresh session.
-        maybeEmitTitle(session);
-        continue;
-      }
-
-      if (msg.type === "system" && msg.subtype === "local_command_output") {
-        // A slash command whose output is produced LOCALLY (e.g. /compact, /context, or a custom
-        // command that only prints) arrives solely as this system message — it never becomes an
-        // assistant turn. Surface its text as assistant prose so the command's output is visible
-        // instead of the turn appearing to do nothing.
-        const out = msg.content;
-        if (typeof out === "string" && out.length) emit(session, { type: "assistant-text", text: out });
-        continue;
-      }
-
-      if (msg.type === "stream_event") {
-        // Live deltas (only present with includePartialMessages). Prefer these for streaming.
-        const ev = msg.event as { type?: string; delta?: { type?: string; text?: string; thinking?: string } };
-        if (ev?.type === "content_block_delta" && ev.delta) {
-          if (ev.delta.type === "text_delta" && typeof ev.delta.text === "string" && ev.delta.text.length) {
-            streamedTextLen += ev.delta.text.length;
-            emit(session, { type: "assistant-text", text: ev.delta.text });
-          } else if (ev.delta.type === "thinking_delta" && typeof ev.delta.thinking === "string" && ev.delta.thinking.length) {
-            streamedThinkingLen += ev.delta.thinking.length;
-            emit(session, { type: "thinking", text: ev.delta.thinking });
-          }
+    } catch (e) {
+        drainError = (e as Error).message
+    } finally {
+        // A respawn swapped in a NEW query (and started its own drain) — THIS drain's query was closed
+        // deliberately, so ending it here must not read as the session dying. See the pinned `q` above.
+        if (session.q !== q) return
+        // If closeChat() tore the session down it was already removed from the registry, so reaching
+        // here with the session STILL registered means the drain ended on its OWN — the `claude` child
+        // exited (or threw). Evict it (so the next sendMessage re-spawns a fresh session) and tell the
+        // client; otherwise a queued turn would push into a dead input queue and the UI would hang
+        // forever with no frame. A throw surfaces as `error`; a clean end as `exit`.
+        if (sessions.get(session.id) === session) {
+            captureToMemory(session) // the conversation ended (child exit/throw) — same capture as closeChat
+            sessions.delete(session.id)
+            if (session.closeTimer) clearTimeout(session.closeTimer)
+            for (const resolve of session.pending.values()) {
+                try {
+                    resolve({ behavior: 'deny' })
+                } catch {
+                    /* */
+                }
+            }
+            session.pending.clear()
+            cancelPendingDialogs(session) // settle any parked AskUserQuestion dialog so it can't dangle
+            try {
+                session.input.close()
+            } catch {
+                /* */
+            }
+            emit(
+                session,
+                drainError
+                    ? { type: 'error', code: 'error', message: drainError }
+                    : {
+                          type: 'error',
+                          code: 'exit',
+                          message:
+                              'The Claude Code session ended — send another message to start a new one.',
+                      },
+            )
         }
-        continue;
-      }
-
-      if (msg.type === "assistant" || msg.type === "user") {
-        // BUG #19: a locally-executed built-in slash command (/context, /help, …) delivers its
-        // output as a complete assistant text block with NO preceding deltas. The live=true de-dupe
-        // below assumes text/thinking already streamed and emits ONLY tool_use, so that output would
-        // be silently dropped. When nothing streamed for THIS assistant message, emit its text /
-        // thinking blocks here so the command's result is actually shown.
-        if (msg.type === "assistant") {
-          for (const frame of unstreamedAssistantFrames(msg, streamedTextLen, streamedThinkingLen)) {
-            emit(session, frame);
-          }
-          // Reset the per-message delta accounting for the next assistant message in this turn.
-          streamedTextLen = 0;
-          streamedThinkingLen = 0;
-        }
-        // assistant → tool_use frames (text/thinking handled above); user → tool_result frames (the
-        // user's own prompt came from the client). Shared with history replay via translateSdkMessage.
-        for (const frame of translateSdkMessage(msg, { live: true })) {
-          trackChatSubagent(session, frame); // Task tool_use/result → agents-graph subagent lifecycle
-          // TTL/backstop sweep (same lifetimes as relay's registry — see relay.ts sweepDoneSubagents).
-          // chatAgentSnapshot used to be the only caller of this; nothing polls it any more since the
-          // agents graph was removed, so without this call session.chatSubagents was append-only.
-          sweepDoneChatSubagents(session, Date.now());
-          emit(session, frame);
-        }
-        continue;
-      }
-
-      if (msg.type === "result") {
-        // A result following our OWN interrupt() is a deliberate Stop, not a failure — report it
-        // as such regardless of what the SDK's is_error says (see ChatSession.aborting).
-        const wasAborting = session.aborting === true;
-        session.aborting = false;
-        emit(session, {
-          type: "result",
-          isError: wasAborting ? false : msg.is_error === true,
-          numTurns: typeof msg.num_turns === "number" ? msg.num_turns : 0,
-          // Hide cost on a subscription login (notional, not billed); only show it for real
-          // API-key billing. Driven by Claude Code's own apiKeySource, not an app decision.
-          costUsd:
-            session.apiKeySource === "none" || typeof msg.total_cost_usd !== "number"
-              ? null
-              : msg.total_cost_usd,
-        });
-        emit(session, { type: "done" });
-        session.turnCount++;
-        session.lastActivityAt = Date.now(); // keep the agents-graph node awake through this turn
-        // The turn is fully over — a reconnect from here until the next push finds no active
-        // turn and gets a synthetic `done` from rebindSink (see ChatSession.turnActive).
-        session.turnActive = false;
-        // Turn-end refreshes: the tab title (retries until a summary exists) and the
-        // context-window usage pill. Both fire-and-forget; a failed fetch just waits a turn.
-        maybeEmitTitle(session);
-        session.q
-          .getContextUsage()
-          .then((u) => {
-            emit(session, { type: "context", percentage: u.percentage, totalTokens: u.totalTokens, maxTokens: u.maxTokens });
-          })
-          .catch(() => {});
-        continue;
-      }
-      // Other message kinds (status/retry/hooks/etc.) carry no UI frame — ignore.
     }
-  } catch (e) {
-    drainError = (e as Error).message;
-  } finally {
-    // A respawn swapped in a NEW query (and started its own drain) — THIS drain's query was closed
-    // deliberately, so ending it here must not read as the session dying. See the pinned `q` above.
-    if (session.q !== q) return;
-    // If closeChat() tore the session down it was already removed from the registry, so reaching
-    // here with the session STILL registered means the drain ended on its OWN — the `claude` child
-    // exited (or threw). Evict it (so the next sendMessage re-spawns a fresh session) and tell the
-    // client; otherwise a queued turn would push into a dead input queue and the UI would hang
-    // forever with no frame. A throw surfaces as `error`; a clean end as `exit`.
-    if (sessions.get(session.id) === session) {
-      captureToMemory(session); // the conversation ended (child exit/throw) — same capture as closeChat
-      sessions.delete(session.id);
-      if (session.closeTimer) clearTimeout(session.closeTimer);
-      for (const resolve of session.pending.values()) {
-        try {
-          resolve({ behavior: "deny" });
-        } catch {
-          /* */
-        }
-      }
-      session.pending.clear();
-      cancelPendingDialogs(session); // settle any parked AskUserQuestion dialog so it can't dangle
-      try {
-        session.input.close();
-      } catch {
-        /* */
-      }
-      emit(session, 
-        drainError
-          ? { type: "error", code: "error", message: drainError }
-          : { type: "error", code: "exit", message: "The Claude Code session ended — send another message to start a new one." },
-      );
-    }
-  }
 }
 
 /**
@@ -1997,13 +2408,17 @@ async function drain(session: ChatSession): Promise<void> {
  * cancelled and the CLI applies the tool's default. No-op if the id is unknown (already answered /
  * stale / turn torn down).
  */
-export function respondQuestion(chatId: string, id: string, answers: Record<string, string> | null): void {
-  const s = sessions.get(chatId);
-  if (!s) return;
-  const pending = s.pendingDialogs.get(id);
-  if (!pending) return;
-  s.pendingDialogs.delete(id);
-  pending.resolve(buildAskUserQuestionAnswer(pending.toolInput, answers));
+export function respondQuestion(
+    chatId: string,
+    id: string,
+    answers: Record<string, string> | null,
+): void {
+    const s = sessions.get(chatId)
+    if (!s) return
+    const pending = s.pendingDialogs.get(id)
+    if (!pending) return
+    s.pendingDialogs.delete(id)
+    pending.resolve(buildAskUserQuestionAnswer(pending.toolInput, answers))
 }
 
 /** Cancel every parked AskUserQuestion tool call (deny them so no canUseTool promise dangles) —
@@ -2011,57 +2426,64 @@ export function respondQuestion(chatId: string, id: string, answers: Record<stri
  *  permissions are auto-denied. The turn is ending here, so a deny is right (unlike a user SKIP, which
  *  allows the tool through to produce its own "no answer" result). */
 function cancelPendingDialogs(s: ChatSession): void {
-  for (const [id, pending] of Array.from(s.pendingDialogs.entries())) {
-    s.pendingDialogs.delete(id);
-    try {
-      pending.resolve({ behavior: "deny", message: "The question was dismissed." });
-    } catch {
-      /* */
+    for (const [id, pending] of Array.from(s.pendingDialogs.entries())) {
+        s.pendingDialogs.delete(id)
+        try {
+            pending.resolve({
+                behavior: 'deny',
+                message: 'The question was dismissed.',
+            })
+        } catch {
+            /* */
+        }
     }
-  }
 }
 
 /** Answer a pending "permission" frame. No-op if the id is unknown (already answered / stale). */
 export function respondPermission(
-  chatId: string,
-  id: string,
-  behavior: "allow" | "deny",
-  always?: boolean,
+    chatId: string,
+    id: string,
+    behavior: 'allow' | 'deny',
+    always?: boolean,
 ): void {
-  const s = sessions.get(chatId);
-  if (!s) return;
-  const resolve = s.pending.get(id);
-  if (!resolve) return;
-  s.pending.delete(id);
-  resolve({ behavior, always });
+    const s = sessions.get(chatId)
+    if (!s) return
+    const resolve = s.pending.get(id)
+    if (!resolve) return
+    s.pending.delete(id)
+    resolve({ behavior, always })
 }
 
 /** Switch the permission mode live (default | plan | acceptEdits | bypassPermissions). */
 export function setPermissionMode(chatId: string, mode: string): void {
-  const s = sessions.get(chatId);
-  if (!s) return;
-  try {
-    s.q.setPermissionMode(mode as Parameters<Query["setPermissionMode"]>[0])?.catch(() => {});
-  } catch {
-    /* session not ready / already closed */
-  }
+    const s = sessions.get(chatId)
+    if (!s) return
+    try {
+        s.q
+            .setPermissionMode(
+                mode as Parameters<Query['setPermissionMode']>[0],
+            )
+            ?.catch(() => {})
+    } catch {
+        /* session not ready / already closed */
+    }
 }
 
 /** Switch the model live. Wired end-to-end: the header's model picker (populated by the `models`
  *  frame from Query.supportedModels) sends `set_model` → this. */
 export function setModel(chatId: string, model: string): void {
-  const s = sessions.get(chatId);
-  if (!s) return;
-  s.model = model;
-  // Persist the choice under the conversation's durable id (Bug #89) so resuming it — in any tab,
-  // after any restart — comes back on this model. If the session_id isn't known yet (a pre-turn
-  // pick on a fresh session), the drain loop saves it the moment the id is learned.
-  if (s.sessionId) saveSessionModel(s.sessionId, model);
-  try {
-    s.q.setModel(model)?.catch(() => {});
-  } catch {
-    /* session not ready / already closed */
-  }
+    const s = sessions.get(chatId)
+    if (!s) return
+    s.model = model
+    // Persist the choice under the conversation's durable id (Bug #89) so resuming it — in any tab,
+    // after any restart — comes back on this model. If the session_id isn't known yet (a pre-turn
+    // pick on a fresh session), the drain loop saves it the moment the id is learned.
+    if (s.sessionId) saveSessionModel(s.sessionId, model)
+    try {
+        s.q.setModel(model)?.catch(() => {})
+    } catch {
+        /* session not ready / already closed */
+    }
 }
 
 /** Switch the reasoning-effort level live (FEATURE #63 — "can't select effort in chat"). Mirrors
@@ -2071,46 +2493,50 @@ export function setModel(chatId: string, model: string): void {
  *  user/project config, below managed policy). Also stored on the session so a mid-conversation
  *  visibility respawn re-applies it via spawnChatQuery's `effort` option. */
 export function setEffort(chatId: string, effort: string): void {
-  const s = sessions.get(chatId);
-  if (!s) return;
-  s.effort = effort;
-  try {
-    // Cast past Settings.effortLevel's narrower type ('low'|'medium'|'high'|'xhigh') — the model may
-    // advertise 'max'; the flag layer validates server-side and no-ops an unsupported level, and the
-    // stored session.effort still re-applies it through the spawn `effort` option on the next respawn.
-    s.q.applyFlagSettings({ effortLevel: effort } as Parameters<Query["applyFlagSettings"]>[0])?.catch(() => {});
-  } catch {
-    /* session not ready / already closed */
-  }
+    const s = sessions.get(chatId)
+    if (!s) return
+    s.effort = effort
+    try {
+        // Cast past Settings.effortLevel's narrower type ('low'|'medium'|'high'|'xhigh') — the model may
+        // advertise 'max'; the flag layer validates server-side and no-ops an unsupported level, and the
+        // stored session.effort still re-applies it through the spawn `effort` option on the next respawn.
+        s.q
+            .applyFlagSettings({ effortLevel: effort } as Parameters<
+                Query['applyFlagSettings']
+            >[0])
+            ?.catch(() => {})
+    } catch {
+        /* session not ready / already closed */
+    }
 }
 
 /** Interrupt the in-flight turn, leaving the session resumable for the next sendMessage. */
 export function abortTurn(chatId: string): void {
-  const s = sessions.get(chatId);
-  if (!s) return;
-  // Release any parked permission FIRST (mirrors closeChat): interrupt() alone leaves
-  // session.pending populated, so the parked canUseTool promise would keep the turn blocked,
-  // a stale still-clickable card could later resolve a moot promise, and "always allow" could
-  // even get poisoned by a tool the user never really approved on an aborted turn.
-  for (const resolve of s.pending.values()) {
-    try {
-      resolve({ behavior: "deny" });
-    } catch {
-      /* */
+    const s = sessions.get(chatId)
+    if (!s) return
+    // Release any parked permission FIRST (mirrors closeChat): interrupt() alone leaves
+    // session.pending populated, so the parked canUseTool promise would keep the turn blocked,
+    // a stale still-clickable card could later resolve a moot promise, and "always allow" could
+    // even get poisoned by a tool the user never really approved on an aborted turn.
+    for (const resolve of s.pending.values()) {
+        try {
+            resolve({ behavior: 'deny' })
+        } catch {
+            /* */
+        }
     }
-  }
-  s.pending.clear();
-  // Any parked AskUserQuestion tool call is moot once we interrupt — cancel it so its canUseTool
-  // promise resolves (same belt-and-suspenders as the pending-permission deny above).
-  cancelPendingDialogs(s);
-  // Mark this turn as a deliberate Stop BEFORE interrupting — the drain loop's `result` handler
-  // reads this to keep the SDK's error-shaped interrupt result from surfacing as a chat error.
-  s.aborting = true;
-  try {
-    s.q.interrupt()?.catch(() => {});
-  } catch {
-    /* nothing in flight / already closed */
-  }
+    s.pending.clear()
+    // Any parked AskUserQuestion tool call is moot once we interrupt — cancel it so its canUseTool
+    // promise resolves (same belt-and-suspenders as the pending-permission deny above).
+    cancelPendingDialogs(s)
+    // Mark this turn as a deliberate Stop BEFORE interrupting — the drain loop's `result` handler
+    // reads this to keep the SDK's error-shaped interrupt result from surfacing as a chat error.
+    s.aborting = true
+    try {
+        s.q.interrupt()?.catch(() => {})
+    } catch {
+        /* nothing in flight / already closed */
+    }
 }
 
 /** Pull file paths referenced in a message's `<editor-context>` preamble (Active file / Open
@@ -2118,18 +2544,32 @@ export function abortTurn(chatId: string): void {
  *  captureToMemory can check whether any of them the daemon isn't allowed to see was part of the
  *  conversation. Best-effort text scan of that one fixed format, not a general parser. */
 export function extractEditorContextPaths(text: string): string[] {
-  const block = text.match(/<editor-context>([\s\S]*?)<\/editor-context>/)?.[1];
-  if (!block) return [];
-  const out: string[] = [];
-  const active = block.match(/^Active file: (.+)$/m);
-  if (active) out.push(active[1]!.trim());
-  const tabs = block.match(/^Open tabs: (.+)$/m);
-  if (tabs) out.push(...tabs[1]!.split(",").map((s) => s.trim()).filter(Boolean));
-  const refs = block.match(/^Referenced files: (.+)$/m);
-  if (refs) out.push(...refs[1]!.split(",").map((s) => s.trim()).filter(Boolean));
-  const sel = block.match(/^Current selection \(from (.+)\):$/m);
-  if (sel) out.push(sel[1]!.trim());
-  return out;
+    const block = text.match(
+        /<editor-context>([\s\S]*?)<\/editor-context>/,
+    )?.[1]
+    if (!block) return []
+    const out: string[] = []
+    const active = block.match(/^Active file: (.+)$/m)
+    if (active) out.push(active[1]!.trim())
+    const tabs = block.match(/^Open tabs: (.+)$/m)
+    if (tabs)
+        out.push(
+            ...tabs[1]!
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean),
+        )
+    const refs = block.match(/^Referenced files: (.+)$/m)
+    if (refs)
+        out.push(
+            ...refs[1]!
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean),
+        )
+    const sel = block.match(/^Current selection \(from (.+)\):$/m)
+    if (sel) out.push(sel[1]!.trim())
+    return out
 }
 
 /**
@@ -2148,102 +2588,123 @@ export function extractEditorContextPaths(text: string): string[] {
  * per-turn) by design: simpler and fails toward NOT capturing rather than partially leaking.
  */
 function captureToMemory(s: ChatSession): void {
-  if (!s.memoryDir || !s.sessionId || s.turnCount < 1 || s.captured) return;
-  s.captured = true;
-  const sessionId = s.sessionId;
-  const { cwd, memoryDir } = s;
-  void (async () => {
-    try {
-      const messages = await getSessionMessages(sessionId, { dir: cwd });
-      const entries = messages as TranscriptEntry[];
-      // denyPathSet carries BOTH the vault-relative form (matches editor-context paths + a
-      // relative tool file_path) AND the canonical-absolute form (matches the SDK's own absolute
-      // path reporting), so a check against either form is safe.
-      const restrictedEntries = await buildDenyPaths(cwd, "daemon");
-      // isDeniedPath rather than an exact-match Set: case-folds and matches subpaths, so a
-      // differently-cased path can't smuggle a restricted file's content into daemon memory.
-      const restricted = { has: (p: string) => isDeniedPath(restrictedEntries, p) };
-      // Both path forms, for the Bash-command substring scan below.
-      const restrictedForms = restrictedEntries.flatMap((e) => [e.rel, e.abs]).filter(Boolean);
-      const touchedRestricted = entries.some((e) => {
-        // (1) Any daemon-restricted file NAMED in the fixed <editor-context> preamble.
-        const text = extractText(e.message);
-        if (text && extractEditorContextPaths(text).some((p) => restricted.has(p))) return true;
-        // (2) Any daemon-restricted file the model actually OPENED via a tool call — a chat-only
-        // file discussed by name (not in a tab) is legitimately readable by chat, but its content
-        // must never land in a daemon-recalled memory note. Scan assistant tool_use blocks for
-        // the file-path-shaped inputs, plus Bash command strings that mention a restricted path
-        // (a chat-only file has no chat-side sandbox deny, so a `cat` of it is possible). Cast
-        // past TranscriptEntry's narrow message type to reach the raw content blocks.
-        const content = (e.message as { content?: unknown } | undefined)?.content;
-        if (!Array.isArray(content)) return false;
-        return content.some((block) => {
-          if (!block || typeof block !== "object") return false;
-          const b = block as Record<string, unknown>;
-          if (b.type !== "tool_use") return false;
-          const input = (b.input ?? {}) as Record<string, unknown>;
-          for (const key of ["file_path", "notebook_path", "path"]) {
-            const v = input[key];
-            if (typeof v === "string" && restricted.has(v)) return true;
-          }
-          const cmd = input.command; // Bash: best-effort substring match on the restricted paths
-          if (typeof cmd === "string") {
-            const lower = cmd.toLowerCase();
-            for (const p of restrictedForms) if (lower.includes(p.toLowerCase())) return true;
-          }
-          return false;
-        });
-      });
-      if (touchedRestricted) return; // a chat-only/hidden file was discussed or opened — never capture
-      const body = buildAutoNoteBody(entries);
-      if (body === null) return; // trivial
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-      await writeMemoryNote(`auto-${ts}-${sessionId.slice(0, 8)}`, { type: "auto", tags: ["auto", "raw", "chat"], created: date, updated: date }, body, memoryDir);
-    } catch {
-      /* best-effort — memory capture must never surface as a chat error */
-    }
-  })();
+    if (!s.memoryDir || !s.sessionId || s.turnCount < 1 || s.captured) return
+    s.captured = true
+    const sessionId = s.sessionId
+    const { cwd, memoryDir } = s
+    void (async () => {
+        try {
+            const messages = await getSessionMessages(sessionId, { dir: cwd })
+            const entries = messages as TranscriptEntry[]
+            // denyPathSet carries BOTH the vault-relative form (matches editor-context paths + a
+            // relative tool file_path) AND the canonical-absolute form (matches the SDK's own absolute
+            // path reporting), so a check against either form is safe.
+            const restrictedEntries = await buildDenyPaths(cwd, 'daemon')
+            // isDeniedPath rather than an exact-match Set: case-folds and matches subpaths, so a
+            // differently-cased path can't smuggle a restricted file's content into daemon memory.
+            const restricted = {
+                has: (p: string) => isDeniedPath(restrictedEntries, p),
+            }
+            // Both path forms, for the Bash-command substring scan below.
+            const restrictedForms = restrictedEntries
+                .flatMap(e => [e.rel, e.abs])
+                .filter(Boolean)
+            const touchedRestricted = entries.some(e => {
+                // (1) Any daemon-restricted file NAMED in the fixed <editor-context> preamble.
+                const text = extractText(e.message)
+                if (
+                    text &&
+                    extractEditorContextPaths(text).some(p => restricted.has(p))
+                )
+                    return true
+                // (2) Any daemon-restricted file the model actually OPENED via a tool call — a chat-only
+                // file discussed by name (not in a tab) is legitimately readable by chat, but its content
+                // must never land in a daemon-recalled memory note. Scan assistant tool_use blocks for
+                // the file-path-shaped inputs, plus Bash command strings that mention a restricted path
+                // (a chat-only file has no chat-side sandbox deny, so a `cat` of it is possible). Cast
+                // past TranscriptEntry's narrow message type to reach the raw content blocks.
+                const content = (e.message as { content?: unknown } | undefined)
+                    ?.content
+                if (!Array.isArray(content)) return false
+                return content.some(block => {
+                    if (!block || typeof block !== 'object') return false
+                    const b = block as Record<string, unknown>
+                    if (b.type !== 'tool_use') return false
+                    const input = (b.input ?? {}) as Record<string, unknown>
+                    for (const key of ['file_path', 'notebook_path', 'path']) {
+                        const v = input[key]
+                        if (typeof v === 'string' && restricted.has(v))
+                            return true
+                    }
+                    const cmd = input.command // Bash: best-effort substring match on the restricted paths
+                    if (typeof cmd === 'string') {
+                        const lower = cmd.toLowerCase()
+                        for (const p of restrictedForms)
+                            if (lower.includes(p.toLowerCase())) return true
+                    }
+                    return false
+                })
+            })
+            if (touchedRestricted) return // a chat-only/hidden file was discussed or opened — never capture
+            const body = buildAutoNoteBody(entries)
+            if (body === null) return // trivial
+            const now = new Date()
+            const pad = (n: number) => String(n).padStart(2, '0')
+            const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+            const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+            await writeMemoryNote(
+                `auto-${ts}-${sessionId.slice(0, 8)}`,
+                {
+                    type: 'auto',
+                    tags: ['auto', 'raw', 'chat'],
+                    created: date,
+                    updated: date,
+                },
+                body,
+                memoryDir,
+            )
+        } catch {
+            /* best-effort — memory capture must never surface as a chat error */
+        }
+    })()
 }
 
 /** Tear a session down entirely: interrupt + close the generator, reject pending prompts, drop it. */
 export function closeChat(chatId: string): void {
-  const s = sessions.get(chatId);
-  if (!s) return;
-  captureToMemory(s);
-  if (s.closeTimer) clearTimeout(s.closeTimer);
-  sessions.delete(chatId);
-  // Reject every pending permission as a deny so canUseTool promises don't dangle.
-  for (const resolve of s.pending.values()) {
-    try {
-      resolve({ behavior: "deny" });
-    } catch {
-      /* */
+    const s = sessions.get(chatId)
+    if (!s) return
+    captureToMemory(s)
+    if (s.closeTimer) clearTimeout(s.closeTimer)
+    sessions.delete(chatId)
+    // Reject every pending permission as a deny so canUseTool promises don't dangle.
+    for (const resolve of s.pending.values()) {
+        try {
+            resolve({ behavior: 'deny' })
+        } catch {
+            /* */
+        }
     }
-  }
-  s.pending.clear();
-  cancelPendingDialogs(s); // and settle any parked AskUserQuestion dialog
-  // Close the input queue first so the multi-turn stream ends gracefully, then tear the query down.
-  // Swallow the control-request rejection close()/interrupt() can raise when a turn is mid-flight
-  // ("Query closed before response received") — this is teardown, the error is expected.
-  try {
-    s.input.close();
-  } catch {
-    /* */
-  }
-  try {
-    s.q.interrupt?.()?.catch(() => {});
-  } catch {
-    /* */
-  }
-  try {
-    // close() is synchronous (returns void), unlike interrupt().
-    s.q.close?.();
-  } catch {
-    /* */
-  }
+    s.pending.clear()
+    cancelPendingDialogs(s) // and settle any parked AskUserQuestion dialog
+    // Close the input queue first so the multi-turn stream ends gracefully, then tear the query down.
+    // Swallow the control-request rejection close()/interrupt() can raise when a turn is mid-flight
+    // ("Query closed before response received") — this is teardown, the error is expected.
+    try {
+        s.input.close()
+    } catch {
+        /* */
+    }
+    try {
+        s.q.interrupt?.()?.catch(() => {})
+    } catch {
+        /* */
+    }
+    try {
+        // close() is synchronous (returns void), unlike interrupt().
+        s.q.close?.()
+    } catch {
+        /* */
+    }
 }
 
 /**
@@ -2253,9 +2714,9 @@ export function closeChat(chatId: string): void {
  * a clean tab-close calls closeChat() directly for an immediate teardown.
  */
 export function scheduleClose(chatId: string, ms: number): void {
-  const s = sessions.get(chatId);
-  if (!s) return;
-  scheduleSessionClose(s, ms, () => closeChat(chatId));
+    const s = sessions.get(chatId)
+    if (!s) return
+    scheduleSessionClose(s, ms, () => closeChat(chatId))
 }
 
 /** Re-point a live session's frame sink at a freshly-reconnected socket (and cancel any pending
@@ -2264,10 +2725,10 @@ export function scheduleClose(chatId: string, ms: number): void {
  *  keeps writing to the dead socket and the turn's tail (incl. `done`) is lost, wedging the UI.
  *  Returns true if a session existed for `chatId` (the reconnect rebound it). */
 export function rebindSink(chatId: string, sink: ChatSink): boolean {
-  const s = sessions.get(chatId);
-  if (!s) return false;
-  rebindSessionSink(s, sink);
-  return true;
+    const s = sessions.get(chatId)
+    if (!s) return false
+    rebindSessionSink(s, sink)
+    return true
 }
 
 /** Mark a session's sink detached after an abnormal WS drop: frames buffer for the reconnect
@@ -2276,19 +2737,19 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
  *  (backends.ts) for the full contract every driver shares, including why the server's close
  *  handler MUST gate `scheduleClose` on this return value. */
 export function detachSink(chatId: string, sink: ChatSink): boolean {
-  const s = sessions.get(chatId);
-  if (!s) return false;
-  return detachSessionSink(s, sink);
+    const s = sessions.get(chatId)
+    if (!s) return false
+    return detachSessionSink(s, sink)
 }
 
 export function chatSessionCount(): number {
-  return sessions.size;
+    return sessions.size
 }
 
 /** Whether a live Claude session exists for this chatId — the chat-provider router
  *  (core/src/chatProviders/index.ts) uses it to route verbs to the backend that owns the chat. */
 export function hasSession(chatId: string): boolean {
-  return sessions.has(chatId);
+    return sessions.has(chatId)
 }
 
 // Tear down every chat session (kills the spawned `claude` children) so headless runs don't outlive
@@ -2296,16 +2757,16 @@ export function hasSession(chatId: string): boolean {
 // the SDK's async teardown, so we ALSO handle the graceful termination signals: there we run the
 // teardown and give the SDK a tick to kill its child `claude` processes before exiting, which a
 // bare "exit" handler can't do. (A hard SIGKILL is unavoidable — nothing can run then.)
-let chatShuttingDown = false;
+let chatShuttingDown = false
 function shutdownAllChats(): void {
-  if (chatShuttingDown) return;
-  chatShuttingDown = true;
-  for (const id of Array.from(sessions.keys())) closeChat(id);
+    if (chatShuttingDown) return
+    chatShuttingDown = true
+    for (const id of Array.from(sessions.keys())) closeChat(id)
 }
-process.on("exit", shutdownAllChats);
-for (const sig of ["SIGINT", "SIGTERM"] as const) {
-  process.once(sig, () => {
-    shutdownAllChats();
-    setTimeout(() => process.exit(0), 200);
-  });
+process.on('exit', shutdownAllChats)
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(sig, () => {
+        shutdownAllChats()
+        setTimeout(() => process.exit(0), 200)
+    })
 }

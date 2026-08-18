@@ -9,9 +9,9 @@
  * status handler ("don't also open the pane's context menu underneath"). No menu UI is opened.
  */
 export function suppressCardContextMenu(e: {
-  preventDefault: () => void;
-  stopPropagation: () => void;
+    preventDefault: () => void
+    stopPropagation: () => void
 }): void {
-  e.preventDefault();
-  e.stopPropagation();
+    e.preventDefault()
+    e.stopPropagation()
 }

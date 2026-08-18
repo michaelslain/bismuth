@@ -12,64 +12,64 @@
 
 /** A top-level agent-CLI session running in one terminal tab. */
 export interface RelaySession {
-  /** The CLI's own session_id (from its SessionStart-equivalent hook payload). */
-  sessionId: string;
-  /** CLAUDE_TERMINAL_ID — the pty id of the app terminal tab hosting this session. */
-  terminalId: string;
-  /** Working directory of the session (used for the node label). */
-  cwd: string;
-  /**
-   * Which agent CLI this session is running (a backend id from
-   * agentBackends/catalog.ts — "claude", "codex", …). Defaults to "claude" when a
-   * reporter omits it, so the original Claude-only relay hooks keep working verbatim
-   * and every existing session keeps its current identity.
-   *
-   * Carried so the agents graph can show WHAT is running in a tab, not just that
-   * something is: with several CLIs reporting into one registry, a bare node label of
-   * `basename(cwd)` is ambiguous across backends.
-   *
-   * Optional on the TYPE (a snapshot built by an older reporter genuinely may not carry
-   * one, and every reader defaults it to "claude"), but {@link registerSession} always
-   * populates it, so a session in this registry always has one at runtime.
-   */
-  backend?: string;
-  /** ms epoch; set on register and bumped on every heartbeat (UserPromptSubmit). */
-  lastSeen: number;
+    /** The CLI's own session_id (from its SessionStart-equivalent hook payload). */
+    sessionId: string
+    /** CLAUDE_TERMINAL_ID — the pty id of the app terminal tab hosting this session. */
+    terminalId: string
+    /** Working directory of the session (used for the node label). */
+    cwd: string
+    /**
+     * Which agent CLI this session is running (a backend id from
+     * agentBackends/catalog.ts — "claude", "codex", …). Defaults to "claude" when a
+     * reporter omits it, so the original Claude-only relay hooks keep working verbatim
+     * and every existing session keeps its current identity.
+     *
+     * Carried so the agents graph can show WHAT is running in a tab, not just that
+     * something is: with several CLIs reporting into one registry, a bare node label of
+     * `basename(cwd)` is ambiguous across backends.
+     *
+     * Optional on the TYPE (a snapshot built by an older reporter genuinely may not carry
+     * one, and every reader defaults it to "claude"), but {@link registerSession} always
+     * populates it, so a session in this registry always has one at runtime.
+     */
+    backend?: string
+    /** ms epoch; set on register and bumped on every heartbeat (UserPromptSubmit). */
+    lastSeen: number
 }
 
 /** A subagent spawned by a session via the Agent tool (guaranteed depth 1 — subagents
  *  cannot spawn their own subagents). */
 export interface RelaySubagent {
-  /** SubagentStart agent_id — stable for the subagent's lifetime. */
-  agentId: string;
-  /** session_id of the session that spawned it. */
-  parentSessionId: string;
-  /** e.g. "general-purpose", "Explore", "Plan", or a custom agent name. */
-  agentType: string;
-  /** Workflow-group key, when this subagent was spawned as part of a workflow
-   *  orchestration (reported by the relay's SubagentStart hook from the workflow's
-   *  env — CLAUDE_WORKFLOW_ID / CLAUDE_JOB_DIR). Subagents of the SAME workflow share
-   *  this key; a plain Agent-tool subagent leaves it undefined (ordinary rendering). */
-  workflowId?: string;
-  startedAt: number;
-  /** Flipped true on SubagentStop. Done subagents linger briefly then are pruned; one that never
-   *  reports a stop is swept on age instead (see RUNNING_SUBAGENT_MAX_MS). */
-  done: boolean;
-  doneAt?: number;
-  /** SubagentStop last_assistant_message (the subagent's final output), if any. */
-  lastMessage?: string;
+    /** SubagentStart agent_id — stable for the subagent's lifetime. */
+    agentId: string
+    /** session_id of the session that spawned it. */
+    parentSessionId: string
+    /** e.g. "general-purpose", "Explore", "Plan", or a custom agent name. */
+    agentType: string
+    /** Workflow-group key, when this subagent was spawned as part of a workflow
+     *  orchestration (reported by the relay's SubagentStart hook from the workflow's
+     *  env — CLAUDE_WORKFLOW_ID / CLAUDE_JOB_DIR). Subagents of the SAME workflow share
+     *  this key; a plain Agent-tool subagent leaves it undefined (ordinary rendering). */
+    workflowId?: string
+    startedAt: number
+    /** Flipped true on SubagentStop. Done subagents linger briefly then are pruned; one that never
+     *  reports a stop is swept on age instead (see RUNNING_SUBAGENT_MAX_MS). */
+    done: boolean
+    doneAt?: number
+    /** SubagentStop last_assistant_message (the subagent's final output), if any. */
+    lastMessage?: string
 }
 
 export interface RelaySnapshot {
-  sessions: RelaySession[];
-  subagents: RelaySubagent[];
+    sessions: RelaySession[]
+    subagents: RelaySubagent[]
 }
 
 /** How long a finished subagent stays in the snapshot before being pruned, so brief subagents
  *  are still visible for a beat after they complete rather than vanishing the instant they're
  *  done. This was 60s, which read as "finished subagents never leave": a whole minute of dead
  *  entries, and with subagents starting continuously the registry was mostly corpses. */
-export const DONE_SUBAGENT_TTL_MS = 8_000;
+export const DONE_SUBAGENT_TTL_MS = 8_000
 
 /**
  * Backstop age after which a subagent that never reported a stop is presumed finished.
@@ -93,10 +93,10 @@ export const DONE_SUBAGENT_TTL_MS = 8_000;
  * So this only guarantees "no node is immortal"; SubagentStop remains the path that makes a
  * finished subagent leave promptly.
  */
-export const RUNNING_SUBAGENT_MAX_MS = 2 * 60 * 60 * 1000;
+export const RUNNING_SUBAGENT_MAX_MS = 2 * 60 * 60 * 1000
 
-const sessions = new Map<string, RelaySession>();
-const subagents = new Map<string, RelaySubagent>();
+const sessions = new Map<string, RelaySession>()
+const subagents = new Map<string, RelaySubagent>()
 
 /** Register (or refresh) a terminal-tab session. Also the heartbeat path: the
  *  UserPromptSubmit hook re-posts this so re-registering the SAME sessionId just bumps
@@ -105,64 +105,78 @@ const subagents = new Map<string, RelaySubagent>();
  *  previous session and its subagents are dropped. An empty cwd preserves the existing
  *  one (the heartbeat payload may omit it). */
 export function registerSession(
-  s: { sessionId: string; terminalId: string; cwd: string; backend?: string },
-  now = Date.now(),
+    s: { sessionId: string; terminalId: string; cwd: string; backend?: string },
+    now = Date.now(),
 ): void {
-  for (const [id, existing] of sessions) {
-    if (existing.terminalId === s.terminalId && id !== s.sessionId) {
-      removeSessionSubtree(id);
+    for (const [id, existing] of sessions) {
+        if (existing.terminalId === s.terminalId && id !== s.sessionId) {
+            removeSessionSubtree(id)
+        }
     }
-  }
-  const prev = sessions.get(s.sessionId);
-  const cwd = s.cwd || prev?.cwd || "";
-  // An omitted backend means a pre-existing Claude-only reporter (the relay hooks shipped before
-  // multi-backend), and a heartbeat that omits it must not downgrade a session that already
-  // identified itself — same "empty value preserves the existing one" rule as cwd above.
-  const backend = s.backend || prev?.backend || "claude";
-  sessions.set(s.sessionId, { sessionId: s.sessionId, terminalId: s.terminalId, cwd, backend, lastSeen: now });
+    const prev = sessions.get(s.sessionId)
+    const cwd = s.cwd || prev?.cwd || ''
+    // An omitted backend means a pre-existing Claude-only reporter (the relay hooks shipped before
+    // multi-backend), and a heartbeat that omits it must not downgrade a session that already
+    // identified itself — same "empty value preserves the existing one" rule as cwd above.
+    const backend = s.backend || prev?.backend || 'claude'
+    sessions.set(s.sessionId, {
+        sessionId: s.sessionId,
+        terminalId: s.terminalId,
+        cwd,
+        backend,
+        lastSeen: now,
+    })
 }
 
 /** Drop a session and its subagents (Stop / session end). */
 export function endSession(sessionId: string): void {
-  removeSessionSubtree(sessionId);
+    removeSessionSubtree(sessionId)
 }
 
 function removeSessionSubtree(sessionId: string): void {
-  sessions.delete(sessionId);
-  for (const [agentId, sub] of subagents) {
-    if (sub.parentSessionId === sessionId) subagents.delete(agentId);
-  }
+    sessions.delete(sessionId)
+    for (const [agentId, sub] of subagents) {
+        if (sub.parentSessionId === sessionId) subagents.delete(agentId)
+    }
 }
 
 export function startSubagent(
-  s: { parentSessionId: string; agentId: string; agentType: string; workflowId?: string },
-  now = Date.now(),
+    s: {
+        parentSessionId: string
+        agentId: string
+        agentType: string
+        workflowId?: string
+    },
+    now = Date.now(),
 ): void {
-  subagents.set(s.agentId, {
-    agentId: s.agentId,
-    parentSessionId: s.parentSessionId,
-    agentType: s.agentType,
-    // Only carry a workflow key when the hook reported a non-empty one, so ordinary
-    // subagents stay `workflowId: undefined` and render exactly as before.
-    ...(s.workflowId ? { workflowId: s.workflowId } : {}),
-    startedAt: now,
-    done: false,
-  });
+    subagents.set(s.agentId, {
+        agentId: s.agentId,
+        parentSessionId: s.parentSessionId,
+        agentType: s.agentType,
+        // Only carry a workflow key when the hook reported a non-empty one, so ordinary
+        // subagents stay `workflowId: undefined` and render exactly as before.
+        ...(s.workflowId ? { workflowId: s.workflowId } : {}),
+        startedAt: now,
+        done: false,
+    })
 }
 
 /** Mark a subagent finished (SubagentStop). Unknown ids are ignored (we may have missed
  *  its start). */
-export function stopSubagent(s: { agentId: string; lastMessage?: string }, now = Date.now()): void {
-  const sub = subagents.get(s.agentId);
-  if (!sub) return;
-  sub.done = true;
-  sub.doneAt = now;
-  if (s.lastMessage !== undefined) sub.lastMessage = s.lastMessage;
-  // stopSubagent's only caller is the SubagentStop hook, which fires per-tab throughout a
-  // terminal's entire life — prune() only runs on tab close (terminal.ts). Without this, a
-  // long-lived tab accumulates one done RelaySubagent (carrying its full lastMessage) per
-  // Task call for as long as the tab stays open, since nothing else sweeps them in between.
-  sweepDoneSubagents(now);
+export function stopSubagent(
+    s: { agentId: string; lastMessage?: string },
+    now = Date.now(),
+): void {
+    const sub = subagents.get(s.agentId)
+    if (!sub) return
+    sub.done = true
+    sub.doneAt = now
+    if (s.lastMessage !== undefined) sub.lastMessage = s.lastMessage
+    // stopSubagent's only caller is the SubagentStop hook, which fires per-tab throughout a
+    // terminal's entire life — prune() only runs on tab close (terminal.ts). Without this, a
+    // long-lived tab accumulates one done RelaySubagent (carrying its full lastMessage) per
+    // Task call for as long as the tab stays open, since nothing else sweeps them in between.
+    sweepDoneSubagents(now)
 }
 
 /**
@@ -182,35 +196,42 @@ export function stopSubagent(s: { agentId: string; lastMessage?: string }, now =
  *   (see RUNNING_SUBAGENT_MAX_MS) — without this a dropped SubagentStop pinned the node forever.
  */
 function sweepDoneSubagents(now: number): void {
-  for (const [agentId, sub] of subagents) {
-    const finished = sub.done && sub.doneAt !== undefined && now - sub.doneAt > DONE_SUBAGENT_TTL_MS;
-    const abandoned = !sub.done && now - sub.startedAt > RUNNING_SUBAGENT_MAX_MS;
-    if (finished || abandoned) subagents.delete(agentId);
-  }
+    for (const [agentId, sub] of subagents) {
+        const finished =
+            sub.done &&
+            sub.doneAt !== undefined &&
+            now - sub.doneAt > DONE_SUBAGENT_TTL_MS
+        const abandoned =
+            !sub.done && now - sub.startedAt > RUNNING_SUBAGENT_MAX_MS
+        if (finished || abandoned) subagents.delete(agentId)
+    }
 }
 
 export function prune(liveTerminalIds: Set<string>, now = Date.now()): void {
-  for (const [id, s] of sessions) {
-    if (!liveTerminalIds.has(s.terminalId)) removeSessionSubtree(id);
-  }
-  for (const [agentId, sub] of subagents) {
-    if (!sessions.has(sub.parentSessionId)) subagents.delete(agentId); // orphan
-  }
-  sweepDoneSubagents(now);
+    for (const [id, s] of sessions) {
+        if (!liveTerminalIds.has(s.terminalId)) removeSessionSubtree(id)
+    }
+    for (const [agentId, sub] of subagents) {
+        if (!sessions.has(sub.parentSessionId)) subagents.delete(agentId) // orphan
+    }
+    sweepDoneSubagents(now)
 }
 
 /** Current registry contents, with finished subagents past their TTL pruned. (Full
  *  liveness pruning is done by {@link prune}; this keeps the done-TTL sweep so a snapshot
  *  taken without a preceding prune — e.g. in tests — still sheds stale subagents.) */
 export function snapshot(now = Date.now()): RelaySnapshot {
-  sweepDoneSubagents(now);
-  return { sessions: [...sessions.values()], subagents: [...subagents.values()] };
+    sweepDoneSubagents(now)
+    return {
+        sessions: [...sessions.values()],
+        subagents: [...subagents.values()],
+    }
 }
 
 /** Clear all registry state (tests). */
 export function resetRelay(): void {
-  sessions.clear();
-  subagents.clear();
+    sessions.clear()
+    subagents.clear()
 }
 
 /**
@@ -235,8 +256,10 @@ export function resetRelay(): void {
  * an empty response instead of an absent one.
  */
 export function redactSnapshot(snap: RelaySnapshot): RelaySnapshot {
-  return {
-    sessions: snap.sessions.map((s) => ({ ...s })),
-    subagents: snap.subagents.map(({ lastMessage: _lastMessage, ...rest }) => rest),
-  };
+    return {
+        sessions: snap.sessions.map(s => ({ ...s })),
+        subagents: snap.subagents.map(
+            ({ lastMessage: _lastMessage, ...rest }) => rest,
+        ),
+    }
 }

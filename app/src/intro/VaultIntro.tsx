@@ -22,82 +22,121 @@
    this lane's file boundary). A picker that only live-previewed the intro's own text
    without actually seeding the vault would be misleading, so it's omitted rather than
    half-built. */
-import { For, Show, createSignal, createEffect, onMount, onCleanup } from "solid-js";
-import { TextButton } from "../ui/TextButton";
-import { IconButton } from "../ui/IconButton";
-import { Chip } from "../ui/Chip";
-import { Icon } from "../icons/Icon";
-import { AsciiGraphRenderer } from "../graph/AsciiGraphRenderer";
-import type { GraphRenderer } from "../graph/graphRenderer";
-import { GraphAtmosphere, type BloomSink } from "../graph/GraphAtmosphere";
-import type { GraphData } from "../../../core/src/graph";
-import { THEME_NAMES, THEMES, THEME_LABELS, DEFAULT_THEME, resolveAppearance, type ThemeName } from "../themes";
-import { settingsToCssVars, setCssVars } from "../settingsCssVars";
-import { DEFAULTS } from "../settings";
-import { isTauri } from "../nativeMenu";
-import { WordmarkHero, DaemonStage, ClaudeStage, Lockup } from "./marks";
-import { SMALL_GRAPH, BIG_GRAPH, applyGraphConfig } from "./vaultIntroGraph";
-import "./VaultIntro.css";
+import {
+    For,
+    Show,
+    createSignal,
+    createEffect,
+    onMount,
+    onCleanup,
+} from 'solid-js'
+import { TextButton } from '../ui/TextButton'
+import { IconButton } from '../ui/IconButton'
+import { Chip } from '../ui/Chip'
+import { Icon } from '../icons/Icon'
+import { AsciiGraphRenderer } from '../graph/AsciiGraphRenderer'
+import type { GraphRenderer } from '../graph/graphRenderer'
+import { GraphAtmosphere, type BloomSink } from '../graph/GraphAtmosphere'
+import type { GraphData } from '../../../core/src/graph'
+import {
+    THEME_NAMES,
+    THEMES,
+    THEME_LABELS,
+    DEFAULT_THEME,
+    resolveAppearance,
+    type ThemeName,
+} from '../themes'
+import { settingsToCssVars, setCssVars } from '../settingsCssVars'
+import { DEFAULTS } from '../settings'
+import { isTauri } from '../nativeMenu'
+import { WordmarkHero, DaemonStage, ClaudeStage, Lockup } from './marks'
+import { SMALL_GRAPH, BIG_GRAPH, applyGraphConfig } from './vaultIntroGraph'
+import './VaultIntro.css'
 
-type SlideKey = "welcome" | "theme" | "graph" | "daemon" | "claude" | "powerups" | "begin";
-type Slide = { key: SlideKey; tag: string; title: string; body: string; cta?: string };
+type SlideKey =
+    'welcome' | 'theme' | 'graph' | 'daemon' | 'claude' | 'powerups' | 'begin'
+type Slide = {
+    key: SlideKey
+    tag: string
+    title: string
+    body: string
+    cta?: string
+}
 
 // Optional power-ups offered on the power-ups slide. `cmd` matches a command-palette id; the
 // chosen ones run via the SAME api the command palette uses, right after the vault opens (the
 // intro itself has no backend). `relay` auto-loads in terminal tabs, so it's on-by-default info.
-const POWER_UPS: { id: string; cmd?: string; icon: string; name: string; desc: string }[] = [
-  { id: "daemon", cmd: "daemon-setup", icon: "Bot", name: "DAEMON", desc: "A background agent that runs crons and weaves memory while you're away." },
-  { id: "cli", cmd: "bismuth-install", icon: "SquareTerminal", name: "CLI + MCP", desc: "Drive your vault from the shell, and let Claude read the docs + write bases." },
-];
+const POWER_UPS: {
+    id: string
+    cmd?: string
+    icon: string
+    name: string
+    desc: string
+}[] = [
+    {
+        id: 'daemon',
+        cmd: 'daemon-setup',
+        icon: 'Bot',
+        name: 'DAEMON',
+        desc: "A background agent that runs crons and weaves memory while you're away.",
+    },
+    {
+        id: 'cli',
+        cmd: 'bismuth-install',
+        icon: 'SquareTerminal',
+        name: 'CLI + MCP',
+        desc: 'Drive your vault from the shell, and let Claude read the docs + write bases.',
+    },
+]
 
 const SLIDES: Slide[] = [
-  {
-    key: "welcome",
-    tag: "WELCOME",
-    title: "Notes that think.",
-    body: "Write notes and connect them with [[wikilinks]]. Bismuth links them into a graph you can explore and search.",
-  },
-  {
-    key: "theme",
-    tag: "MAKE IT YOURS",
-    title: "Pick your palette.",
-    body: "Choose a theme for your vault. You can change it anytime from settings.",
-  },
-  {
-    key: "graph",
-    tag: "THE KNOWLEDGE GRAPH",
-    title: "Three brains, one mind.",
-    body: "Your notes and Bismuth's memory connect into one graph, so what you know and what it learns stay woven together.",
-  },
-  {
-    key: "daemon",
-    tag: "DAEMON",
-    title: "An agent that never sleeps.",
-    body: "A background daemon runs on a schedule: folding new memory into your graph, re-linking notes, and surfacing what you'd forgotten.",
-  },
-  {
-    key: "claude",
-    tag: "CLAUDE CODE",
-    title: "Let Claude tend it.",
-    body: "Bismuth speaks MCP. Claude can search the docs and write your bases, queries, and notes for you, right from the terminal.",
-  },
-  {
-    key: "powerups",
-    tag: "POWER-UPS",
-    title: "Optional power-ups.",
-    body: "Pick what to set up. Bismuth turns them on once you open your vault, or you can do it anytime from the command palette.",
-  },
-  {
-    key: "begin",
-    tag: "BEGIN",
-    title: "Open your vault.",
-    body: "Pick a folder and Bismuth makes it a vault. Start writing, and the graph fills itself in.",
-    cta: "Enter your vault",
-  },
-];
+    {
+        key: 'welcome',
+        tag: 'WELCOME',
+        title: 'Notes that think.',
+        body: 'Write notes and connect them with [[wikilinks]]. Bismuth links them into a graph you can explore and search.',
+    },
+    {
+        key: 'theme',
+        tag: 'MAKE IT YOURS',
+        title: 'Pick your palette.',
+        body: 'Choose a theme for your vault. You can change it anytime from settings.',
+    },
+    {
+        key: 'graph',
+        tag: 'THE KNOWLEDGE GRAPH',
+        title: 'Three brains, one mind.',
+        body: "Your notes and Bismuth's memory connect into one graph, so what you know and what it learns stay woven together.",
+    },
+    {
+        key: 'daemon',
+        tag: 'DAEMON',
+        title: 'An agent that never sleeps.',
+        body: "A background daemon runs on a schedule: folding new memory into your graph, re-linking notes, and surfacing what you'd forgotten.",
+    },
+    {
+        key: 'claude',
+        tag: 'CLAUDE CODE',
+        title: 'Let Claude tend it.',
+        body: 'Bismuth speaks MCP. Claude can search the docs and write your bases, queries, and notes for you, right from the terminal.',
+    },
+    {
+        key: 'powerups',
+        tag: 'POWER-UPS',
+        title: 'Optional power-ups.',
+        body: 'Pick what to set up. Bismuth turns them on once you open your vault, or you can do it anytime from the command palette.',
+    },
+    {
+        key: 'begin',
+        tag: 'BEGIN',
+        title: 'Open your vault.',
+        body: 'Pick a folder and Bismuth makes it a vault. Start writing, and the graph fills itself in.',
+        cta: 'Enter your vault',
+    },
+]
 
 // localStorage key the post-restart app reads to run the chosen power-ups against the real backend.
-const POWERUPS_KEY = "bismuth-first-run-powerups";
+const POWERUPS_KEY = 'bismuth-first-run-powerups'
 
 // SMALL_GRAPH, BIG_GRAPH, and applyGraphConfig live in ./vaultIntroGraph (a plain .ts module,
 // no JSX) — see that file's header comment for why. It's the same defect + same fix shape as
@@ -115,286 +154,394 @@ const POWERUPS_KEY = "bismuth-first-run-powerups";
 // change, and pauses when not `active`. The intro mounts two — a small full-bleed cloud for the
 // theme slide and a big condensed one for "three brains" — and cross-fades between them via the
 // `.active` opacity transition, so there's no shared instance and no re-render on slide change.
-function IntroGraph(props: { graph: GraphData; pose: "full" | "condensed"; active: boolean; theme: ThemeName; offsetY?: number; fitMargin?: number }) {
-  let host!: HTMLDivElement;
-  const renderer: GraphRenderer = new AsciiGraphRenderer();
-  // This renderer instance never gets swapped — one IntroGraph drives one renderer for its whole
-  // life — so wiring it straight to a sink here has none of the staleness risk a `renderer` prop
-  // has on GraphAtmosphere. Still
-  // going through the same BloomSink shape as GraphView.tsx rather than a one-off, so there is
-  // exactly one way <GraphAtmosphere> is ever fed a field. See GraphAtmosphere.tsx's file-level
-  // comment for why it takes a sink instead of the renderer itself.
-  const bloomSink: BloomSink = {};
-  let mounted = false;
-  onMount(() => {
-    renderer.mount(host, () => {});
-    renderer.setBloomCallback?.((field) => bloomSink.current?.(field));
-    renderer.render(props.graph);
-    mounted = true;
-    applyGraphConfig(renderer, props.theme);
-    if (props.fitMargin) renderer.setFitMargin(props.fitMargin); // zoom the cloud out a touch
-    // Shift the graph itself (not the canvas) so it can sit in the upper area while the canvas
-    // stays full-bleed (seamless with the page). 0 = centered.
-    renderer.setFrameOffsetY(props.offsetY ?? 0);
-    renderer.setVisible(props.active);
-  });
-  onCleanup(() => renderer.destroy());
-  createEffect(() => mounted && applyGraphConfig(renderer, props.theme));
-  createEffect(() => mounted && renderer.setVisible(props.active));
-  return (
-    <div class="vi-graph3d" data-pose={props.pose} classList={{ active: props.active }}>
-      <div class="vi-graph3d-canvas" ref={host} />
-      <GraphAtmosphere sink={bloomSink} />
-    </div>
-  );
+function IntroGraph(props: {
+    graph: GraphData
+    pose: 'full' | 'condensed'
+    active: boolean
+    theme: ThemeName
+    offsetY?: number
+    fitMargin?: number
+}) {
+    let host!: HTMLDivElement
+    const renderer: GraphRenderer = new AsciiGraphRenderer()
+    // This renderer instance never gets swapped — one IntroGraph drives one renderer for its whole
+    // life — so wiring it straight to a sink here has none of the staleness risk a `renderer` prop
+    // has on GraphAtmosphere. Still
+    // going through the same BloomSink shape as GraphView.tsx rather than a one-off, so there is
+    // exactly one way <GraphAtmosphere> is ever fed a field. See GraphAtmosphere.tsx's file-level
+    // comment for why it takes a sink instead of the renderer itself.
+    const bloomSink: BloomSink = {}
+    let mounted = false
+    onMount(() => {
+        renderer.mount(host, () => {})
+        renderer.setBloomCallback?.(field => bloomSink.current?.(field))
+        renderer.render(props.graph)
+        mounted = true
+        applyGraphConfig(renderer, props.theme)
+        if (props.fitMargin) renderer.setFitMargin(props.fitMargin) // zoom the cloud out a touch
+        // Shift the graph itself (not the canvas) so it can sit in the upper area while the canvas
+        // stays full-bleed (seamless with the page). 0 = centered.
+        renderer.setFrameOffsetY(props.offsetY ?? 0)
+        renderer.setVisible(props.active)
+    })
+    onCleanup(() => renderer.destroy())
+    createEffect(() => mounted && applyGraphConfig(renderer, props.theme))
+    createEffect(() => mounted && renderer.setVisible(props.active))
+    return (
+        <div
+            class="vi-graph3d"
+            data-pose={props.pose}
+            classList={{ active: props.active }}
+        >
+            <div class="vi-graph3d-canvas" ref={host} />
+            <GraphAtmosphere sink={bloomSink} />
+        </div>
+    )
 }
 
 export default function VaultIntro() {
-  const [i, setI] = createSignal(0);
-  const [themeName, setThemeName] = createSignal<ThemeName>(DEFAULT_THEME);
-  const [busy, setBusy] = createSignal(false);
-  // Selected power-up ids — both default on. Re-running their setup is idempotent, so it's
-  // safe to leave checked even when already installed (CLI+MCP re-syncs on boot, daemon
-  // auto-updates on launch).
-  const [powerups, setPowerups] = createSignal<string[]>(["daemon", "cli"]);
-  const togglePowerup = (id: string) =>
-    setPowerups((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+    const [i, setI] = createSignal(0)
+    const [themeName, setThemeName] = createSignal<ThemeName>(DEFAULT_THEME)
+    const [busy, setBusy] = createSignal(false)
+    // Selected power-up ids — both default on. Re-running their setup is idempotent, so it's
+    // safe to leave checked even when already installed (CLI+MCP re-syncs on boot, daemon
+    // auto-updates on launch).
+    const [powerups, setPowerups] = createSignal<string[]>(['daemon', 'cli'])
+    const togglePowerup = (id: string) =>
+        setPowerups(p =>
+            p.includes(id) ? p.filter(x => x !== id) : [...p, id],
+        )
 
-  const last = SLIDES.length - 1;
-  const slide = () => SLIDES[i()];
-  const theme = themeName; // a single theme name (dark + light are just entries in the list)
-  // The theme step and the knowledge-graph step both show the SAME persistent 3D graph.
-  const isGraphSlide = () => slide().key === "theme" || slide().key === "graph";
+    const last = SLIDES.length - 1
+    const slide = () => SLIDES[i()]
+    const theme = themeName // a single theme name (dark + light are just entries in the list)
+    // The theme step and the knowledge-graph step both show the SAME persistent 3D graph.
+    const isGraphSlide = () =>
+        slide().key === 'theme' || slide().key === 'graph'
 
-  const go = (k: number) => setI(Math.max(0, Math.min(last, k)));
-  const next = () => (i() === last ? enterVault() : go(i() + 1));
-  const prev = () => go(i() - 1);
-  const skip = () => go(last); // jump to the CTA rather than bailing — there's no vault yet
+    const go = (k: number) => setI(Math.max(0, Math.min(last, k)))
+    const next = () => (i() === last ? enterVault() : go(i() + 1))
+    const prev = () => go(i() - 1)
+    const skip = () => go(last) // jump to the CTA rather than bailing — there's no vault yet
 
-  const varsFor = (name: ThemeName) => settingsToCssVars({ ...DEFAULTS, appearance: { ...DEFAULTS.appearance, theme: name } });
+    const varsFor = (name: ThemeName) =>
+        settingsToCssVars({
+            ...DEFAULTS,
+            appearance: { ...DEFAULTS.appearance, theme: name },
+        })
 
-  // Live re-theme: paint the chosen theme onto the whole takeover. Each IntroGraph recolors its
-  // own renderer separately (see the component below). No persistence here — only on commit
-  // (enterVault) — so browsing the picker never pollutes the shared theme cache.
-  createEffect(() => {
-    const name = theme();
-    setCssVars(varsFor(name));
-    document.documentElement.style.colorScheme = resolveAppearance({ theme: name }).isLight ? "light" : "dark";
-  });
+    // Live re-theme: paint the chosen theme onto the whole takeover. Each IntroGraph recolors its
+    // own renderer separately (see the component below). No persistence here — only on commit
+    // (enterVault) — so browsing the picker never pollutes the shared theme cache.
+    createEffect(() => {
+        const name = theme()
+        setCssVars(varsFor(name))
+        document.documentElement.style.colorScheme = resolveAppearance({
+            theme: name,
+        }).isLight
+            ? 'light'
+            : 'dark'
+    })
 
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === "ArrowRight") {
-      e.preventDefault();
-      next();
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      prev();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      skip();
+    const onKey = (e: KeyboardEvent) => {
+        if (e.key === 'ArrowRight') {
+            e.preventDefault()
+            next()
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault()
+            prev()
+        } else if (e.key === 'Escape') {
+            e.preventDefault()
+            skip()
+        }
     }
-  };
-  onMount(() => window.addEventListener("keydown", onKey));
-  onCleanup(() => window.removeEventListener("keydown", onKey));
+    onMount(() => window.addEventListener('keydown', onKey))
+    onCleanup(() => window.removeEventListener('keydown', onKey))
 
-  // The CTA: open the native folder picker, write the vault (with the chosen theme),
-  // and relaunch into it. The Rust command does the work + app.restart().
-  // Replay (secret keybind) launches the intro with a vault ALREADY configured — the CTA then
-  // continues into it instead of forcing a re-pick.
-  const enterVault = async () => {
-    if (busy()) return;
-    // Dev: still open the native picker to test it, but choose_first_vault skips app.restart() in
-    // debug (it would kill the tauri-dev backend → white screen). After it returns, navigate into
-    // the app ourselves (the dev vault comes from BISMUTH_VAULT env regardless of what's picked).
-    if (import.meta.env.DEV && isTauri()) {
-      setBusy(true);
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const ok = await invoke<boolean>("choose_first_vault", { theme: theme(), icon: DEFAULTS.appearance.icon });
-        if (ok) location.href = "/";
-        else setBusy(false);
-      } catch (e) {
-        console.error("enter vault failed", e);
-        setBusy(false);
-      }
-      return;
+    // The CTA: open the native folder picker, write the vault (with the chosen theme),
+    // and relaunch into it. The Rust command does the work + app.restart().
+    // Replay (secret keybind) launches the intro with a vault ALREADY configured — the CTA then
+    // continues into it instead of forcing a re-pick.
+    const enterVault = async () => {
+        if (busy()) return
+        // Dev: still open the native picker to test it, but choose_first_vault skips app.restart() in
+        // debug (it would kill the tauri-dev backend → white screen). After it returns, navigate into
+        // the app ourselves (the dev vault comes from BISMUTH_VAULT env regardless of what's picked).
+        if (import.meta.env.DEV && isTauri()) {
+            setBusy(true)
+            try {
+                const { invoke } = await import('@tauri-apps/api/core')
+                const ok = await invoke<boolean>('choose_first_vault', {
+                    theme: theme(),
+                    icon: DEFAULTS.appearance.icon,
+                })
+                if (ok) location.href = '/'
+                else setBusy(false)
+            } catch (e) {
+                console.error('enter vault failed', e)
+                setBusy(false)
+            }
+            return
+        }
+        if (isTauri()) {
+            setBusy(true)
+            try {
+                // Persist the chosen power-ups (command-palette ids) for the post-restart app to run
+                // against the real backend — the intro itself has none. Idempotent, so safe on replay.
+                const cmds = powerups()
+                    .map(id => POWER_UPS.find(p => p.id === id)?.cmd)
+                    .filter((c): c is string => !!c)
+                localStorage.setItem(POWERUPS_KEY, JSON.stringify(cmds))
+                // Cache the chosen theme vars for the post-restart first paint.
+                localStorage.setItem(
+                    'bismuth-theme-vars-v1',
+                    JSON.stringify(varsFor(theme())),
+                )
+            } catch {
+                /* private mode — non-fatal */
+            }
+            try {
+                const { invoke } = await import('@tauri-apps/api/core')
+                // Always open the folder picker — lets the user open an existing vault or create a new one.
+                const ok = await invoke<boolean>('choose_first_vault', {
+                    theme: theme(),
+                    icon: DEFAULTS.appearance.icon,
+                })
+                if (!ok) setBusy(false) // picker cancelled — stay on the intro
+                // on success the app restarts; nothing more to do here
+            } catch (e) {
+                console.error('enter vault failed', e)
+                setBusy(false)
+            }
+        } else {
+            // Browser preview (?intro=1): no native picker / backend. The desktop app does the real thing.
+            console.info(
+                '[intro] Enter your vault — native folder picker is available in the desktop app.',
+            )
+        }
     }
-    if (isTauri()) {
-      setBusy(true);
-      try {
-        // Persist the chosen power-ups (command-palette ids) for the post-restart app to run
-        // against the real backend — the intro itself has none. Idempotent, so safe on replay.
-        const cmds = powerups()
-          .map((id) => POWER_UPS.find((p) => p.id === id)?.cmd)
-          .filter((c): c is string => !!c);
-        localStorage.setItem(POWERUPS_KEY, JSON.stringify(cmds));
-        // Cache the chosen theme vars for the post-restart first paint.
-        localStorage.setItem("bismuth-theme-vars-v1", JSON.stringify(varsFor(theme())));
-      } catch {
-        /* private mode — non-fatal */
-      }
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        // Always open the folder picker — lets the user open an existing vault or create a new one.
-        const ok = await invoke<boolean>("choose_first_vault", { theme: theme(), icon: DEFAULTS.appearance.icon });
-        if (!ok) setBusy(false); // picker cancelled — stay on the intro
-        // on success the app restarts; nothing more to do here
-      } catch (e) {
-        console.error("enter vault failed", e);
-        setBusy(false);
-      }
-    } else {
-      // Browser preview (?intro=1): no native picker / backend. The desktop app does the real thing.
-      console.info("[intro] Enter your vault — native folder picker is available in the desktop app.");
-    }
-  };
 
-  // Per-slide hero visual when it's NOT a graph slide (the graph stays mounted underneath).
-  const nonGraphVisual = () => {
-    switch (slide().key) {
-      case "welcome":
-      case "begin":
-        return <WordmarkHero icon={DEFAULTS.appearance.icon} size={96} />;
-      case "daemon":
-        return <DaemonStage />;
-      case "claude":
-        return <ClaudeStage />;
-      default:
-        return null;
+    // Per-slide hero visual when it's NOT a graph slide (the graph stays mounted underneath).
+    const nonGraphVisual = () => {
+        switch (slide().key) {
+            case 'welcome':
+            case 'begin':
+                return (
+                    <WordmarkHero icon={DEFAULTS.appearance.icon} size={96} />
+                )
+            case 'daemon':
+                return <DaemonStage />
+            case 'claude':
+                return <ClaudeStage />
+            default:
+                return null
+        }
     }
-  };
 
-  return (
-    <div class="vi-root v-A">
-      {/* Two independent 3D graphs that cross-fade (opacity) between the theme + graph slides:
+    return (
+        <div class="vi-root v-A">
+            {/* Two independent 3D graphs that cross-fade (opacity) between the theme + graph slides:
           a small full-bleed starter cloud, and a big condensed "three brains" cloud. Separate
           instances → no shared renderer, no re-render/auto-fit motion on slide change. */}
-      <IntroGraph graph={SMALL_GRAPH} pose="full" active={slide().key === "theme"} theme={theme()} />
-      <IntroGraph graph={BIG_GRAPH} pose="condensed" active={slide().key === "graph"} theme={theme()} offsetY={0.12} fitMargin={1.55} />
+            <IntroGraph
+                graph={SMALL_GRAPH}
+                pose="full"
+                active={slide().key === 'theme'}
+                theme={theme()}
+            />
+            <IntroGraph
+                graph={BIG_GRAPH}
+                pose="condensed"
+                active={slide().key === 'graph'}
+                theme={theme()}
+                offsetY={0.12}
+                fitMargin={1.55}
+            />
 
-      {/* floating header overlay — logo top-left, skip top-right, above the content */}
-      <header class="vi-top">
-        {/* hide the corner mark on slides that already show the big centered logo */}
-        <Show when={slide().key !== "welcome" && slide().key !== "begin"} fallback={<span />}>
-          <Lockup icon={DEFAULTS.appearance.icon} />
-        </Show>
-        <IconButton icon="X" label="Skip intro" onClick={skip} />
-      </header>
+            {/* floating header overlay — logo top-left, skip top-right, above the content */}
+            <header class="vi-top">
+                {/* hide the corner mark on slides that already show the big centered logo */}
+                <Show
+                    when={slide().key !== 'welcome' && slide().key !== 'begin'}
+                    fallback={<span />}
+                >
+                    <Lockup icon={DEFAULTS.appearance.icon} />
+                </Show>
+                <IconButton icon="X" label="Skip intro" onClick={skip} />
+            </header>
 
-      <div class="vi-center" data-slide={slide().key}>
-        {/* per-slide non-graph hero (crystal / terminal) — the persistent graph stays
+            <div class="vi-center" data-slide={slide().key}>
+                {/* per-slide non-graph hero (crystal / terminal) — the persistent graph stays
             mounted behind everything, so this only shows on non-graph slides. Keyed on
             the slide key so the block remounts (and its enter animation replays) on each
             slide change. */}
-        <Show when={!isGraphSlide() && slide().key !== "powerups" && slide().key} keyed>
-          {(_key) => (
-            <div class="vi-hero">
-              <div class="vi-hero-overlay">{nonGraphVisual()}</div>
-            </div>
-          )}
-        </Show>
+                <Show
+                    when={
+                        !isGraphSlide() &&
+                        slide().key !== 'powerups' &&
+                        slide().key
+                    }
+                    keyed
+                >
+                    {_key => (
+                        <div class="vi-hero">
+                            <div class="vi-hero-overlay">
+                                {nonGraphVisual()}
+                            </div>
+                        </div>
+                    )}
+                </Show>
 
-        {/* Theme picker: four swatch cards (not a dropdown) — each live-previews its OWN
+                {/* Theme picker: four swatch cards (not a dropdown) — each live-previews its OWN
             scope's bg/fg/accent simultaneously (design/ascii-extended's item 5: "theme
             picker = four swatch cards ... live-preview via the scope's own bg/fg/accent").
             Baked from the core token literals (THEMES[name]) rather than var(), the same
             technique the drawing toolbar's ink swatches use — the running app has no
             per-subtree scope-class mechanism (that only exists in the static design-system
             demo CSS), so all four previews can only render at once as literal colors. */}
-        <Show when={slide().key === "theme"}>
-          <div class="vi-themes">
-            <For each={THEME_NAMES}>
-              {(name) => {
-                const t = THEMES[name];
-                return (
-                  <button
-                    type="button"
-                    class="vi-theme-card"
-                    classList={{ selected: themeName() === name }}
-                    aria-pressed={themeName() === name}
-                    onClick={() => setThemeName(name)}
-                  >
-                    <span class="vi-theme-swatch" style={{ background: t.background }}>
-                      <span class="vi-theme-swatch-fg" style={{ background: t.foreground }} />
-                      <span class="vi-theme-swatch-accent" style={{ background: t.accent }} />
-                    </span>
-                    <span class="vi-theme-name">{THEME_LABELS[name]}</span>
-                  </button>
-                );
-              }}
-            </For>
-          </div>
-        </Show>
+                <Show when={slide().key === 'theme'}>
+                    <div class="vi-themes">
+                        <For each={THEME_NAMES}>
+                            {name => {
+                                const t = THEMES[name]
+                                return (
+                                    <button
+                                        type="button"
+                                        class="vi-theme-card"
+                                        classList={{
+                                            selected: themeName() === name,
+                                        }}
+                                        aria-pressed={themeName() === name}
+                                        onClick={() => setThemeName(name)}
+                                    >
+                                        <span
+                                            class="vi-theme-swatch"
+                                            style={{ background: t.background }}
+                                        >
+                                            <span
+                                                class="vi-theme-swatch-fg"
+                                                style={{
+                                                    background: t.foreground,
+                                                }}
+                                            />
+                                            <span
+                                                class="vi-theme-swatch-accent"
+                                                style={{ background: t.accent }}
+                                            />
+                                        </span>
+                                        <span class="vi-theme-name">
+                                            {THEME_LABELS[name]}
+                                        </span>
+                                    </button>
+                                )
+                            }}
+                        </For>
+                    </div>
+                </Show>
 
-        {/* Power-ups: asc-card rows with a chip toggle (not a bespoke selectable-card grid) —
+                {/* Power-ups: asc-card rows with a chip toggle (not a bespoke selectable-card grid) —
             the system's own vocabulary for "a labeled option you can flip" (ui/Chip.tsx,
             already the ExportView/search-toggle primitive). */}
-        <Show when={slide().key === "powerups"}>
-          <div class="vi-powerups">
-            <For each={POWER_UPS}>
-              {(p) => {
-                const selectable = !!p.cmd;
-                const on = () => !selectable || powerups().includes(p.id);
-                return (
-                  <div class="vi-powerup asc-card" classList={{ locked: !selectable }}>
-                    <div class="vi-powerup-top">
-                      <Icon value={p.icon} size={16} />
-                      <span class="vi-powerup-name">{p.name}</span>
-                      <Chip
-                        selected={on()}
-                        title={selectable ? undefined : "Always on"}
-                        onClick={() => selectable && togglePowerup(p.id)}
-                      >
-                        {on() ? "ON" : "OFF"}
-                      </Chip>
+                <Show when={slide().key === 'powerups'}>
+                    <div class="vi-powerups">
+                        <For each={POWER_UPS}>
+                            {p => {
+                                const selectable = !!p.cmd
+                                const on = () =>
+                                    !selectable || powerups().includes(p.id)
+                                return (
+                                    <div
+                                        class="vi-powerup asc-card"
+                                        classList={{ locked: !selectable }}
+                                    >
+                                        <div class="vi-powerup-top">
+                                            <Icon value={p.icon} size={16} />
+                                            <span class="vi-powerup-name">
+                                                {p.name}
+                                            </span>
+                                            <Chip
+                                                selected={on()}
+                                                title={
+                                                    selectable
+                                                        ? undefined
+                                                        : 'Always on'
+                                                }
+                                                onClick={() =>
+                                                    selectable &&
+                                                    togglePowerup(p.id)
+                                                }
+                                            >
+                                                {on() ? 'ON' : 'OFF'}
+                                            </Chip>
+                                        </div>
+                                        <span class="vi-powerup-desc">
+                                            {p.desc}
+                                        </span>
+                                    </div>
+                                )
+                            }}
+                        </For>
                     </div>
-                    <span class="vi-powerup-desc">{p.desc}</span>
-                  </div>
-                );
-              }}
-            </For>
-          </div>
-        </Show>
+                </Show>
 
-        {/* copy block — keyed on the slide key so it remounts each slide change and the
+                {/* copy block — keyed on the slide key so it remounts each slide change and the
             fade-up enter animation replays (the persistent graph behind it never remounts) */}
-        <Show when={slide()} keyed>
-          {(s) => (
-            <div class="vi-copy">
-              <div class="asc-eyebrow">{s.tag}</div>
-              <h1 class="vi-title">{s.title}</h1>
-              <p class="vi-body">{s.body}</p>
-            </div>
-          )}
-        </Show>
+                <Show when={slide()} keyed>
+                    {s => (
+                        <div class="vi-copy">
+                            <div class="asc-eyebrow">{s.tag}</div>
+                            <h1 class="vi-title">{s.title}</h1>
+                            <p class="vi-body">{s.body}</p>
+                        </div>
+                    )}
+                </Show>
 
-        <div class="vi-nav">
-          <IconButton icon="ArrowLeft" label="Back" size="md" onClick={prev} disabled={i() === 0} />
-          <div class="vi-dots">
-            <For each={SLIDES}>
-              {(_, k) => (
-                <button
-                  type="button"
-                  class="vi-dot"
-                  classList={{ on: k() === i() }}
-                  aria-label={`Go to slide ${k() + 1}`}
-                  onClick={() => go(k())}
-                />
-              )}
-            </For>
-          </div>
-          <Show
-            when={i() === last}
-            fallback={<IconButton icon="ArrowRight" label="Next" variant="selected" size="md" onClick={next} />}
-          >
-            {/* The one bracket btn--primary CTA in the takeover — invokes the EXISTING
+                <div class="vi-nav">
+                    <IconButton
+                        icon="ArrowLeft"
+                        label="Back"
+                        size="md"
+                        onClick={prev}
+                        disabled={i() === 0}
+                    />
+                    <div class="vi-dots">
+                        <For each={SLIDES}>
+                            {(_, k) => (
+                                <button
+                                    type="button"
+                                    class="vi-dot"
+                                    classList={{ on: k() === i() }}
+                                    aria-label={`Go to slide ${k() + 1}`}
+                                    onClick={() => go(k())}
+                                />
+                            )}
+                        </For>
+                    </div>
+                    <Show
+                        when={i() === last}
+                        fallback={
+                            <IconButton
+                                icon="ArrowRight"
+                                label="Next"
+                                variant="selected"
+                                size="md"
+                                onClick={next}
+                            />
+                        }
+                    >
+                        {/* The one bracket btn--primary CTA in the takeover — invokes the EXISTING
                 choose_first_vault flow unchanged (design/ascii-extended item 5). */}
-            <TextButton primary size="md" onClick={next} disabled={busy()}>
-              [ {busy() ? "OPENING…" : "ENTER YOUR VAULT"} ]
-            </TextButton>
-          </Show>
+                        <TextButton
+                            primary
+                            size="md"
+                            onClick={next}
+                            disabled={busy()}
+                        >
+                            [ {busy() ? 'OPENING…' : 'ENTER YOUR VAULT'} ]
+                        </TextButton>
+                    </Show>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    )
 }

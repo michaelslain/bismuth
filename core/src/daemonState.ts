@@ -4,51 +4,55 @@
 // Each helper is a pure file read that NEVER throws — missing/malformed input degrades
 // to a safe default. (daemon.ts keeps its own name-based, null-returning JSON reader,
 // whose error contract differs.)
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { parseFrontmatter } from "./frontmatter";
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { parseFrontmatter } from './frontmatter'
 
 /** True when an integer pid is alive (process.kill(pid, 0) doesn't throw). */
 export function pidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+    if (!Number.isInteger(pid) || pid <= 0) return false
+    try {
+        process.kill(pid, 0)
+        return true
+    } catch {
+        return false
+    }
 }
 
 /** True when `<home>/daemon.pid` exists and names a live pid. Shared by daemon.ts's
  *  machine-level `daemonStatus()` and daemonGraph.ts's per-graph liveness check. */
 export function isDaemonAlive(home: string): boolean {
-  try {
-    return pidAlive(Number(readFileSync(join(home, "daemon.pid"), "utf8").trim()));
-  } catch {
-    return false;
-  }
+    try {
+        return pidAlive(
+            Number(readFileSync(join(home, 'daemon.pid'), 'utf8').trim()),
+        )
+    } catch {
+        return false
+    }
 }
 
 /** Read + JSON-parse a file, returning {} on any failure (missing/malformed). */
 export function readJsonObj(path: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
+    try {
+        const parsed = JSON.parse(readFileSync(path, 'utf8'))
+        return parsed && typeof parsed === 'object'
+            ? (parsed as Record<string, unknown>)
+            : {}
+    } catch {
+        return {}
+    }
 }
 
 /** Parse a cron/process `*.md`'s frontmatter, returning {} on any failure. */
 export function readFrontmatter(path: string): Record<string, unknown> {
-  try {
-    return parseFrontmatter(readFileSync(path, "utf8")).data;
-  } catch {
-    return {};
-  }
+    try {
+        return parseFrontmatter(readFileSync(path, 'utf8')).data
+    } catch {
+        return {}
+    }
 }
 
 /** `enabled` defaults true; only an explicit `enabled: false` disables. */
 export function isEnabled(data: Record<string, unknown>): boolean {
-  return data.enabled !== false;
+    return data.enabled !== false
 }

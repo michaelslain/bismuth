@@ -31,47 +31,48 @@
 // the status bar tracking it is right to flip promptly); it's the user-visible
 // NOTICE that needs hysteresis, via `TOAST_COOLDOWN_MS` below.
 
-export type ConnectionState = "connected" | "disconnected" | "reconnecting";
+export type ConnectionState = 'connected' | 'disconnected' | 'reconnecting'
 
 /** What just happened, from the caller's four observation points. */
-export type ConnectionEvent = "sse-open" | "sse-error" | "poll-success" | "poll-failure";
+export type ConnectionEvent =
+    'sse-open' | 'sse-error' | 'poll-success' | 'poll-failure'
 
 export interface ConnectionStateInput {
-  /** The connection state immediately before this event. */
-  state: ConnectionState;
-  /** What just happened. */
-  event: ConnectionEvent;
-  /** Has the backend ever answered at least once this session? Suppresses the
-   *  toast during boot warmup — a cold launch's sidecar takes ~1-4s to start
-   *  listening, so the very first SSE connect attempt can fail for reasons
-   *  that have nothing to do with a real drop. */
-  everConnected: boolean;
-  /** Is a "connection lost" toast currently showing? Callers dedupe by
-   *  tracking the returned toast id and passing `id !== null` back in. */
-  toastShown: boolean;
-  /** Current time in ms (e.g. `Date.now()`). Purely a value the caller
-   *  supplies — this module never reads the clock itself, so it stays a
-   *  deterministic, unit-testable state machine. */
-  now: number;
-  /** When the notice was last dismissed (ms), or `null` if it never has been
-   *  this session. Drives the re-show cooldown — see `TOAST_COOLDOWN_MS`. */
-  dismissedAt: number | null;
+    /** The connection state immediately before this event. */
+    state: ConnectionState
+    /** What just happened. */
+    event: ConnectionEvent
+    /** Has the backend ever answered at least once this session? Suppresses the
+     *  toast during boot warmup — a cold launch's sidecar takes ~1-4s to start
+     *  listening, so the very first SSE connect attempt can fail for reasons
+     *  that have nothing to do with a real drop. */
+    everConnected: boolean
+    /** Is a "connection lost" toast currently showing? Callers dedupe by
+     *  tracking the returned toast id and passing `id !== null` back in. */
+    toastShown: boolean
+    /** Current time in ms (e.g. `Date.now()`). Purely a value the caller
+     *  supplies — this module never reads the clock itself, so it stays a
+     *  deterministic, unit-testable state machine. */
+    now: number
+    /** When the notice was last dismissed (ms), or `null` if it never has been
+     *  this session. Drives the re-show cooldown — see `TOAST_COOLDOWN_MS`. */
+    dismissedAt: number | null
 }
 
 export interface ConnectionStateDecision {
-  /** Connection state after this event. */
-  nextState: ConnectionState;
-  /** `everConnected` after this event (sticky — once true, stays true). */
-  everConnected: boolean;
-  /** Show a brand-new "connection lost" toast now. */
-  showToast: boolean;
-  /** Dismiss the toast that is currently showing. */
-  dismissToast: boolean;
-  /** Poll interval to run at going forward. */
-  pollInterval: "normal" | "fast";
-  /** `dismissedAt` to carry forward into the next call (unchanged unless this
-   *  event just dismissed the notice). */
-  dismissedAt: number | null;
+    /** Connection state after this event. */
+    nextState: ConnectionState
+    /** `everConnected` after this event (sticky — once true, stays true). */
+    everConnected: boolean
+    /** Show a brand-new "connection lost" toast now. */
+    showToast: boolean
+    /** Dismiss the toast that is currently showing. */
+    dismissToast: boolean
+    /** Poll interval to run at going forward. */
+    pollInterval: 'normal' | 'fast'
+    /** `dismissedAt` to carry forward into the next call (unchanged unless this
+     *  event just dismissed the notice). */
+    dismissedAt: number | null
 }
 
 /**
@@ -81,69 +82,74 @@ export interface ConnectionStateDecision {
  * from showing/dismissing the notice on every tick — see the round-2 comment
  * above. `connectionState` itself is NOT debounced by this; only the notice.
  */
-const TOAST_COOLDOWN_MS = 5000;
+const TOAST_COOLDOWN_MS = 5000
 
 function withinCooldown(dismissedAt: number | null, now: number): boolean {
-  return dismissedAt !== null && now - dismissedAt < TOAST_COOLDOWN_MS;
+    return dismissedAt !== null && now - dismissedAt < TOAST_COOLDOWN_MS
 }
 
-export function decideConnectionState(input: ConnectionStateInput): ConnectionStateDecision {
-  const { state, event, toastShown, everConnected, now, dismissedAt } = input;
+export function decideConnectionState(
+    input: ConnectionStateInput,
+): ConnectionStateDecision {
+    const { state, event, toastShown, everConnected, now, dismissedAt } = input
 
-  switch (event) {
-    case "sse-open": {
-      // The SSE handshake completed. Always land on "connected", reset the
-      // poll to its normal cadence, and clear any toast that was showing.
-      const dismissingNow = toastShown;
-      return {
-        nextState: "connected",
-        everConnected: true,
-        showToast: false,
-        dismissToast: dismissingNow,
-        pollInterval: "normal",
-        dismissedAt: dismissingNow ? now : dismissedAt,
-      };
+    switch (event) {
+        case 'sse-open': {
+            // The SSE handshake completed. Always land on "connected", reset the
+            // poll to its normal cadence, and clear any toast that was showing.
+            const dismissingNow = toastShown
+            return {
+                nextState: 'connected',
+                everConnected: true,
+                showToast: false,
+                dismissToast: dismissingNow,
+                pollInterval: 'normal',
+                dismissedAt: dismissingNow ? now : dismissedAt,
+            }
+        }
+
+        case 'poll-success': {
+            // The poll reaching the backend means we are NOT disconnected, whatever
+            // the SSE stream is doing (github issue #3: a stalled handshake that
+            // never fires onopen used to leave "connection lost — polling" showing
+            // forever, even though the app was working fine via this very poll).
+            // Clear both the state and the toast — the status bar reads
+            // connectionState directly, so clearing only the toast would still
+            // leave it wrong. Idempotent while already connected: no re-dismiss,
+            // no re-toast, no interval churn.
+            const dismissingNow = state !== 'connected' && toastShown
+            return {
+                nextState: 'connected',
+                everConnected: true,
+                showToast: false,
+                dismissToast: dismissingNow,
+                pollInterval: 'normal',
+                dismissedAt: dismissingNow ? now : dismissedAt,
+            }
+        }
+
+        case 'sse-error':
+        case 'poll-failure':
+            // Either signal means the connection is down. Show the toast once per
+            // disconnect session, only after we've made contact at least once (a
+            // cold launch's first failed attempt is boot warmup, not a drop), AND
+            // only outside the post-dismissal cooldown — otherwise a flapping SSE
+            // stream re-shows the notice as often as the poll ticks (round 2).
+            return {
+                nextState: 'disconnected',
+                everConnected,
+                showToast:
+                    everConnected &&
+                    !toastShown &&
+                    !withinCooldown(dismissedAt, now),
+                dismissToast: false,
+                pollInterval: 'fast',
+                dismissedAt,
+            }
+
+        default: {
+            const exhaustive: never = event
+            return exhaustive
+        }
     }
-
-    case "poll-success": {
-      // The poll reaching the backend means we are NOT disconnected, whatever
-      // the SSE stream is doing (github issue #3: a stalled handshake that
-      // never fires onopen used to leave "connection lost — polling" showing
-      // forever, even though the app was working fine via this very poll).
-      // Clear both the state and the toast — the status bar reads
-      // connectionState directly, so clearing only the toast would still
-      // leave it wrong. Idempotent while already connected: no re-dismiss,
-      // no re-toast, no interval churn.
-      const dismissingNow = state !== "connected" && toastShown;
-      return {
-        nextState: "connected",
-        everConnected: true,
-        showToast: false,
-        dismissToast: dismissingNow,
-        pollInterval: "normal",
-        dismissedAt: dismissingNow ? now : dismissedAt,
-      };
-    }
-
-    case "sse-error":
-    case "poll-failure":
-      // Either signal means the connection is down. Show the toast once per
-      // disconnect session, only after we've made contact at least once (a
-      // cold launch's first failed attempt is boot warmup, not a drop), AND
-      // only outside the post-dismissal cooldown — otherwise a flapping SSE
-      // stream re-shows the notice as often as the poll ticks (round 2).
-      return {
-        nextState: "disconnected",
-        everConnected,
-        showToast: everConnected && !toastShown && !withinCooldown(dismissedAt, now),
-        dismissToast: false,
-        pollInterval: "fast",
-        dismissedAt,
-      };
-
-    default: {
-      const exhaustive: never = event;
-      return exhaustive;
-    }
-  }
 }

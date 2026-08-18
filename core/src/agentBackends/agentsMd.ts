@@ -16,14 +16,15 @@
 // Writing into the user's vault is opt-in (see core/src/settings.ts readCodexOptIns /
 // settings.codex.writeAgentsMd) — the same precedent as mcp.registerWith: naming a CLI/turning on a
 // flag IS the consent, default off.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 /** The file Bismuth writes into, at the vault root. */
-export const AGENTS_MD_FILENAME = "AGENTS.md";
+export const AGENTS_MD_FILENAME = 'AGENTS.md'
 
-const START_MARKER = "<!-- bismuth:managed:start -- do not edit below, this block is regenerated automatically -->";
-const END_MARKER = "<!-- bismuth:managed:end -->";
+const START_MARKER =
+    '<!-- bismuth:managed:start -- do not edit below, this block is regenerated automatically -->'
+const END_MARKER = '<!-- bismuth:managed:end -->'
 
 /**
  * Insert or replace Bismuth's managed block within `existingText` (null = file doesn't exist yet).
@@ -38,25 +39,28 @@ const END_MARKER = "<!-- bismuth:managed:end -->";
  *  - Idempotent: calling this twice with the same `content` on its own prior output yields the same
  *    bytes the second time.
  */
-export function upsertAgentsMdBlock(existingText: string | null, content: string): string {
-  const body = content.trim();
-  const block = `${START_MARKER}\n${body}\n${END_MARKER}`;
-  const base = existingText ?? "";
-  const startIdx = base.indexOf(START_MARKER);
-  const endIdx = base.indexOf(END_MARKER);
+export function upsertAgentsMdBlock(
+    existingText: string | null,
+    content: string,
+): string {
+    const body = content.trim()
+    const block = `${START_MARKER}\n${body}\n${END_MARKER}`
+    const base = existingText ?? ''
+    const startIdx = base.indexOf(START_MARKER)
+    const endIdx = base.indexOf(END_MARKER)
 
-  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
-    // No valid existing block (absent, or the two markers are missing/out of order) — append fresh
-    // rather than guess at a splice that could corrupt the user's prose.
-    const trimmedBase = base.replace(/\s+$/, "");
-    return trimmedBase ? `${trimmedBase}\n\n${block}\n` : `${block}\n`;
-  }
+    if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+        // No valid existing block (absent, or the two markers are missing/out of order) — append fresh
+        // rather than guess at a splice that could corrupt the user's prose.
+        const trimmedBase = base.replace(/\s+$/, '')
+        return trimmedBase ? `${trimmedBase}\n\n${block}\n` : `${block}\n`
+    }
 
-  const before = base.slice(0, startIdx).replace(/\s+$/, "");
-  const after = base.slice(endIdx + END_MARKER.length).replace(/^\s+/, "");
-  const beforePart = before ? `${before}\n\n` : "";
-  const afterPart = after ? `\n\n${after}` : "";
-  return `${beforePart}${block}${afterPart}\n`;
+    const before = base.slice(0, startIdx).replace(/\s+$/, '')
+    const after = base.slice(endIdx + END_MARKER.length).replace(/^\s+/, '')
+    const beforePart = before ? `${before}\n\n` : ''
+    const afterPart = after ? `\n\n${after}` : ''
+    return `${beforePart}${block}${afterPart}\n`
 }
 
 /**
@@ -65,15 +69,18 @@ export function upsertAgentsMdBlock(existingText: string | null, content: string
  * turn or daemon send that triggered it; it just skips this refresh. Returns whether the write
  * actually happened.
  */
-export function writeAgentsMdBlock(vaultRoot: string, content: string): boolean {
-  try {
-    const path = join(vaultRoot, AGENTS_MD_FILENAME);
-    const existing = existsSync(path) ? readFileSync(path, "utf8") : null;
-    const next = upsertAgentsMdBlock(existing, content);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, next);
-    return true;
-  } catch {
-    return false;
-  }
+export function writeAgentsMdBlock(
+    vaultRoot: string,
+    content: string,
+): boolean {
+    try {
+        const path = join(vaultRoot, AGENTS_MD_FILENAME)
+        const existing = existsSync(path) ? readFileSync(path, 'utf8') : null
+        const next = upsertAgentsMdBlock(existing, content)
+        mkdirSync(dirname(path), { recursive: true })
+        writeFileSync(path, next)
+        return true
+    } catch {
+        return false
+    }
 }

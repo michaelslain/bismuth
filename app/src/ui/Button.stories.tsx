@@ -6,134 +6,210 @@
 //   • size  — "sm" | "md" | "lg"  (text buttons; md is the default, adds no class)
 //   • danger — orthogonal destructive tone, layerable on any state
 //   • primary — orthogonal: selected + a glow rim, the view's one emphasized action
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import type { JSX } from "solid-js";
-import { Button } from "./Button";
-import { Icon } from "../icons/Icon";
-import { Row } from "./_storyKit";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import type { JSX } from 'solid-js'
+import { Button } from './Button'
+import { Icon } from '../icons/Icon'
+import { Row } from './_storyKit'
 
 const meta = {
-  title: "UI/Button",
-  component: Button,
-  parameters: { layout: "centered" },
-  argTypes: {
-    kind: { control: "inline-radio", options: ["text", "icon"] },
-    state: { control: "inline-radio", options: ["normal", "selected", "unselected"] },
-    size: { control: "inline-radio", options: ["sm", "md", "lg"] },
-    danger: { control: "boolean" },
-    primary: { control: "boolean" },
-    disabled: { control: "boolean" },
-    children: { control: "text" },
-  },
-  args: {
-    kind: "text",
-    state: "normal",
-    size: "md",
-    danger: false,
-    primary: false,
-    disabled: false,
-    children: "Button",
-  },
-} satisfies Meta<typeof Button>;
+    title: 'UI/Button',
+    component: Button,
+    parameters: { layout: 'centered' },
+    argTypes: {
+        kind: { control: 'inline-radio', options: ['text', 'icon'] },
+        state: {
+            control: 'inline-radio',
+            options: ['normal', 'selected', 'unselected'],
+        },
+        size: { control: 'inline-radio', options: ['sm', 'md', 'lg'] },
+        danger: { control: 'boolean' },
+        primary: { control: 'boolean' },
+        disabled: { control: 'boolean' },
+        children: { control: 'text' },
+    },
+    args: {
+        kind: 'text',
+        state: 'normal',
+        size: 'md',
+        danger: false,
+        primary: false,
+        disabled: false,
+        children: 'Button',
+    },
+} satisfies Meta<typeof Button>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 // ── layout helpers (stories only) ──────────────────────────────────────────────
 function Stack(props: { children: JSX.Element }) {
-  return <div style={{ display: "flex", "flex-direction": "column", gap: "22px" }}>{props.children}</div>;
+    return (
+        <div
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '22px' }}
+        >
+            {props.children}
+        </div>
+    )
 }
 
 /** Fully controllable single button. */
-export const Playground: Story = {};
+export const Playground: Story = {}
 
 /** Text button — the three selection states plus the danger tone. */
 export const TextStates: Story = {
-  render: () => (
-    <Row label="text · states">
-      <Button kind="text" state="normal">Normal</Button>
-      <Button kind="text" state="unselected">Unselected</Button>
-      <Button kind="text" state="selected">Selected</Button>
-      <Button kind="text" danger>Danger</Button>
-      <Button kind="text" disabled>Disabled</Button>
-    </Row>
-  ),
-};
+    render: () => (
+        <Row label="text · states">
+            <Button kind="text" state="normal">
+                Normal
+            </Button>
+            <Button kind="text" state="unselected">
+                Unselected
+            </Button>
+            <Button kind="text" state="selected">
+                Selected
+            </Button>
+            <Button kind="text" danger>
+                Danger
+            </Button>
+            <Button kind="text" disabled>
+                Disabled
+            </Button>
+        </Row>
+    ),
+}
 
 /** Text button sizes. `md` is the default and emits no size class. */
 export const TextSizes: Story = {
-  render: () => (
-    <Row label="text · sizes">
-      <Button kind="text" size="sm">Small</Button>
-      <Button kind="text" size="md">Medium</Button>
-      <Button kind="text" size="lg">Large</Button>
-    </Row>
-  ),
-};
+    render: () => (
+        <Row label="text · sizes">
+            <Button kind="text" size="sm">
+                Small
+            </Button>
+            <Button kind="text" size="md">
+                Medium
+            </Button>
+            <Button kind="text" size="lg">
+                Large
+            </Button>
+        </Row>
+    ),
+}
 
 /** Primary — selected + a glow rim, the view's one emphasized action. Max one per view. */
 export const TextPrimary: Story = {
-  render: () => (
-    <Row label="text · primary">
-      <Button kind="text" state="unselected">Cancel</Button>
-      <Button kind="text" primary>Save</Button>
-    </Row>
-  ),
-};
+    render: () => (
+        <Row label="text · primary">
+            <Button kind="text" state="unselected">
+                Cancel
+            </Button>
+            <Button kind="text" primary>
+                Save
+            </Button>
+        </Row>
+    ),
+}
 
 /** A text button with a leading icon (the shared 6px gap handles spacing). */
 export const TextWithIcon: Story = {
-  render: () => (
-    <Row label="text · with icon">
-      <Button kind="text" state="normal"><Icon value="Plus" size={15} />New</Button>
-      <Button kind="text" state="selected"><Icon value="Check" size={15} />Saved</Button>
-      <Button kind="text" danger><Icon value="Trash2" size={15} />Delete</Button>
-    </Row>
-  ),
-};
+    render: () => (
+        <Row label="text · with icon">
+            <Button kind="text" state="normal">
+                <Icon value="Plus" size={15} />
+                New
+            </Button>
+            <Button kind="text" state="selected">
+                <Icon value="Check" size={15} />
+                Saved
+            </Button>
+            <Button kind="text" danger>
+                <Icon value="Trash2" size={15} />
+                Delete
+            </Button>
+        </Row>
+    ),
+}
 
 /** Icon button — borderless; state changes opacity/fill (normal = full opacity,
  *  unselected = dimmed, selected = neutral fill). */
 export const IconStates: Story = {
-  render: () => (
-    <Row label="icon · states">
-      <Button kind="icon" state="normal" title="normal"><Icon value="Star" size={16} /></Button>
-      <Button kind="icon" state="unselected" title="unselected"><Icon value="Star" size={16} /></Button>
-      <Button kind="icon" state="selected" title="selected"><Icon value="Star" size={16} /></Button>
-      <Button kind="icon" danger title="danger"><Icon value="Trash2" size={16} /></Button>
-      <Button kind="icon" disabled title="disabled"><Icon value="Star" size={16} /></Button>
-    </Row>
-  ),
-};
+    render: () => (
+        <Row label="icon · states">
+            <Button kind="icon" state="normal" title="normal">
+                <Icon value="Star" size={16} />
+            </Button>
+            <Button kind="icon" state="unselected" title="unselected">
+                <Icon value="Star" size={16} />
+            </Button>
+            <Button kind="icon" state="selected" title="selected">
+                <Icon value="Star" size={16} />
+            </Button>
+            <Button kind="icon" danger title="danger">
+                <Icon value="Trash2" size={16} />
+            </Button>
+            <Button kind="icon" disabled title="disabled">
+                <Icon value="Star" size={16} />
+            </Button>
+        </Row>
+    ),
+}
 
 /** The full matrix at a glance. */
 export const AllVariants: Story = {
-  render: () => (
-    <Stack>
-      <Row label="text · normal / unselected / selected">
-        <Button kind="text" state="normal">Normal</Button>
-        <Button kind="text" state="unselected">Unselected</Button>
-        <Button kind="text" state="selected">Selected</Button>
-      </Row>
-      <Row label="text · sizes sm / md / lg">
-        <Button kind="text" size="sm">Small</Button>
-        <Button kind="text" size="md">Medium</Button>
-        <Button kind="text" size="lg">Large</Button>
-      </Row>
-      <Row label="text · danger / disabled">
-        <Button kind="text" danger>Danger</Button>
-        <Button kind="text" danger disabled>Danger disabled</Button>
-        <Button kind="text" disabled>Disabled</Button>
-      </Row>
-      <Row label="text · primary">
-        <Button kind="text" primary>Primary</Button>
-      </Row>
-      <Row label="icon · normal / unselected / selected / danger">
-        <Button kind="icon" state="normal"><Icon value="Star" size={16} /></Button>
-        <Button kind="icon" state="unselected"><Icon value="Star" size={16} /></Button>
-        <Button kind="icon" state="selected"><Icon value="Star" size={16} /></Button>
-        <Button kind="icon" danger><Icon value="Trash2" size={16} /></Button>
-      </Row>
-    </Stack>
-  ),
-};
+    render: () => (
+        <Stack>
+            <Row label="text · normal / unselected / selected">
+                <Button kind="text" state="normal">
+                    Normal
+                </Button>
+                <Button kind="text" state="unselected">
+                    Unselected
+                </Button>
+                <Button kind="text" state="selected">
+                    Selected
+                </Button>
+            </Row>
+            <Row label="text · sizes sm / md / lg">
+                <Button kind="text" size="sm">
+                    Small
+                </Button>
+                <Button kind="text" size="md">
+                    Medium
+                </Button>
+                <Button kind="text" size="lg">
+                    Large
+                </Button>
+            </Row>
+            <Row label="text · danger / disabled">
+                <Button kind="text" danger>
+                    Danger
+                </Button>
+                <Button kind="text" danger disabled>
+                    Danger disabled
+                </Button>
+                <Button kind="text" disabled>
+                    Disabled
+                </Button>
+            </Row>
+            <Row label="text · primary">
+                <Button kind="text" primary>
+                    Primary
+                </Button>
+            </Row>
+            <Row label="icon · normal / unselected / selected / danger">
+                <Button kind="icon" state="normal">
+                    <Icon value="Star" size={16} />
+                </Button>
+                <Button kind="icon" state="unselected">
+                    <Icon value="Star" size={16} />
+                </Button>
+                <Button kind="icon" state="selected">
+                    <Icon value="Star" size={16} />
+                </Button>
+                <Button kind="icon" danger>
+                    <Icon value="Trash2" size={16} />
+                </Button>
+            </Row>
+        </Stack>
+    ),
+}

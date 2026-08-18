@@ -1,4 +1,4 @@
-import type { StorybookConfig } from "storybook-solidjs-vite";
+import type { StorybookConfig } from 'storybook-solidjs-vite'
 
 /**
  * Storybook for the Bismuth `app/src/ui/` Solid.js component library.
@@ -10,11 +10,11 @@ import type { StorybookConfig } from "storybook-solidjs-vite";
  * so no addons are needed for the catalog. See `.storybook/README.md`.
  */
 const config: StorybookConfig = {
-  framework: "storybook-solidjs-vite",
-  // Stories are colocated next to the components they document. Widened past src/ui so
-  // feature surfaces (bases/, calendar/, graph/, ...) can carry their own stories too.
-  stories: ["../src/**/*.stories.@(ts|tsx)"],
-  addons: [],
-};
+    framework: 'storybook-solidjs-vite',
+    // Stories are colocated next to the components they document. Widened past src/ui so
+    // feature surfaces (bases/, calendar/, graph/, ...) can carry their own stories too.
+    stories: ['../src/**/*.stories.@(ts|tsx)'],
+    addons: [],
+}
 
-export default config;
+export default config

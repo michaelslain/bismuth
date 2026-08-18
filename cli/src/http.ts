@@ -2,19 +2,19 @@
 // (api.ts, app.ts, gcal.ts, relay.ts, chat.ts). Everything else in the CLI works
 // headlessly; these hit live routes and therefore need one small fetch wrapper. Kept
 // dependency-light so any server-talking group can import a stable contract.
-import { fail } from "./args";
-import { readRunRecords } from "../../core/src/runRegistry";
+import { fail } from './args'
+import { readRunRecords } from '../../core/src/runRegistry'
 
 /** Builds the "could not reach" message for a failed connection to `base`. Lets each
  *  caller keep its own wording (e.g. "server" vs "Bismuth app") while sharing `call`. */
-export type UnreachableLabel = (base: string) => string;
+export type UnreachableLabel = (base: string) => string
 
 /** Loopback hostnames a run record's token may ever be attached to. `new URL(...).hostname`
  *  never carries brackets, even for a literal IPv6 host, so "::1" (not "[::1]") is the form
  *  that matches. A `--api`/`BISMUTH_API` pointed anywhere else — a LAN IP, a remote host —
  *  never gets a token attached, even if its port happens to collide with a locally running
  *  core's: this is a per-boot secret for THIS machine's own core and must never leave it. */
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 
 /**
  * The owner token (core/src/ownerToken.ts) for whichever LOCAL core is listening at `base`,
@@ -38,22 +38,22 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
  * bypass.
  */
 function ownerTokenFor(base: string): string | undefined {
-  let url: URL;
-  try {
-    url = new URL(base);
-  } catch {
-    return undefined;
-  }
-  if (!LOOPBACK_HOSTS.has(url.hostname)) return undefined;
-  const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
-  if (!Number.isFinite(port)) return undefined;
-  try {
-    return readRunRecords().find((r) => r.port === port)?.token;
-  } catch {
-    // readRunRecords() is already internally tolerant (missing dir / malformed file / no
-    // liveness), but this call site must never let a token lookup crash a CLI invocation.
-    return undefined;
-  }
+    let url: URL
+    try {
+        url = new URL(base)
+    } catch {
+        return undefined
+    }
+    if (!LOOPBACK_HOSTS.has(url.hostname)) return undefined
+    const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80))
+    if (!Number.isFinite(port)) return undefined
+    try {
+        return readRunRecords().find(r => r.port === port)?.token
+    } catch {
+        // readRunRecords() is already internally tolerant (missing dir / malformed file / no
+        // liveness), but this call site must never let a token lookup crash a CLI invocation.
+        return undefined
+    }
 }
 
 /** Fetch `method base+path` (optional JSON `body`), returning parsed JSON, else the raw
@@ -68,32 +68,37 @@ function ownerTokenFor(base: string): string | undefined {
  *  per-call, best-effort identity attach, not a widened server-side trust boundary: it never
  *  fabricates a token and never touches `core/src/server.ts`'s own `requestChannel` checks. */
 export async function call(
-  base: string,
-  method: string,
-  path: string,
-  body?: unknown,
-  errLabel?: UnreachableLabel,
+    base: string,
+    method: string,
+    path: string,
+    body?: unknown,
+    errLabel?: UnreachableLabel,
 ): Promise<unknown> {
-  const url = `${base}${path.startsWith("/") ? "" : "/"}${path}`;
-  const headers: Record<string, string> = {};
-  if (body !== undefined) headers["content-type"] = "application/json";
-  const token = ownerTokenFor(base);
-  if (token) headers["x-bismuth-token"] = token;
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method,
-      headers: Object.keys(headers).length > 0 ? headers : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    return fail(errLabel ? errLabel(base) : `could not reach a running server at ${base} (or pass --api <url>)`);
-  }
-  const text = await res.text();
-  if (!res.ok) fail(`${method} ${path} → ${res.status}: ${text.slice(0, 200)}`);
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
+    const url = `${base}${path.startsWith('/') ? '' : '/'}${path}`
+    const headers: Record<string, string> = {}
+    if (body !== undefined) headers['content-type'] = 'application/json'
+    const token = ownerTokenFor(base)
+    if (token) headers['x-bismuth-token'] = token
+    let res: Response
+    try {
+        res = await fetch(url, {
+            method,
+            headers: Object.keys(headers).length > 0 ? headers : undefined,
+            body: body !== undefined ? JSON.stringify(body) : undefined,
+        })
+    } catch {
+        return fail(
+            errLabel
+                ? errLabel(base)
+                : `could not reach a running server at ${base} (or pass --api <url>)`,
+        )
+    }
+    const text = await res.text()
+    if (!res.ok)
+        fail(`${method} ${path} → ${res.status}: ${text.slice(0, 200)}`)
+    try {
+        return JSON.parse(text)
+    } catch {
+        return text
+    }
 }

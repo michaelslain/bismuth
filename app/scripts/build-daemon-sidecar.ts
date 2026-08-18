@@ -14,31 +14,34 @@
 // binary itself rather than Tauri resolving it as a sidecar.
 //
 // Run: cd app && bun run scripts/build-daemon-sidecar.ts   (or `bun run build:daemon-sidecar`)
-import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { assertBuiltBinary } from "./buildUtils";
-import { findSigningIdentity } from "./signingIdentity";
+import { spawnSync } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { assertBuiltBinary } from './buildUtils'
+import { findSigningIdentity } from './signingIdentity'
 
-const here = dirname(fileURLToPath(import.meta.url));
-const appDir = join(here, "..");                 // app/
-const repoRoot = join(appDir, "..");             // repo root
-const daemonEntry = join(repoRoot, "daemon", "src", "daemon", "index.ts");
-const outDir = join(appDir, "src-tauri", "resources", "daemon", "bin");
-const outFile = join(outDir, "bismuth-daemon");  // plain name — core copies it to ~/.bismuth/bin
-mkdirSync(outDir, { recursive: true });
+const here = dirname(fileURLToPath(import.meta.url))
+const appDir = join(here, '..') // app/
+const repoRoot = join(appDir, '..') // repo root
+const daemonEntry = join(repoRoot, 'daemon', 'src', 'daemon', 'index.ts')
+const outDir = join(appDir, 'src-tauri', 'resources', 'daemon', 'bin')
+const outFile = join(outDir, 'bismuth-daemon') // plain name — core copies it to ~/.bismuth/bin
+mkdirSync(outDir, { recursive: true })
 
-console.log(`compiling daemon → ${outFile}`);
+console.log(`compiling daemon → ${outFile}`)
 const build = spawnSync(
-  "bun",
-  ["build", "--compile", daemonEntry, "--outfile", outFile],
-  { cwd: repoRoot, stdio: "inherit" },
-);
-if (build.status !== 0) { console.error("bun build --compile failed"); process.exit(1); }
+    'bun',
+    ['build', '--compile', daemonEntry, '--outfile', outFile],
+    { cwd: repoRoot, stdio: 'inherit' },
+)
+if (build.status !== 0) {
+    console.error('bun build --compile failed')
+    process.exit(1)
+}
 
 // Smoke: the file exists and is non-trivial.
-assertBuiltBinary(outFile, "daemon binary");
+assertBuiltBinary(outFile, 'daemon binary')
 
 // ── Stable code identity (macOS) ─────────────────────────────────────────────
 // The daemon binary is swapped over the SAME path (~/.bismuth/bin/bismuth-daemon) on every
@@ -49,13 +52,22 @@ assertBuiltBinary(outFile, "daemon binary");
 // login keychain; see docs/overview/install.md) sign with it so the identity (not the hash)
 // stays stable and grants survive updates. Purely opt-in: without a cert this is a no-op,
 // exactly as before.
-if (process.platform === "darwin") {
-  const identity = findSigningIdentity();
-  if (identity) {
-    console.log(`codesigning daemon with "${identity}"`);
-    const sign = spawnSync("codesign", ["--force", "--sign", identity, outFile], { stdio: "inherit" });
-    if (sign.status !== 0) console.warn("codesign failed — continuing with the ad-hoc signature");
-  } else {
-    console.log("no signing identity found — leaving ad-hoc signature (folder grants won't survive updates)");
-  }
+if (process.platform === 'darwin') {
+    const identity = findSigningIdentity()
+    if (identity) {
+        console.log(`codesigning daemon with "${identity}"`)
+        const sign = spawnSync(
+            'codesign',
+            ['--force', '--sign', identity, outFile],
+            { stdio: 'inherit' },
+        )
+        if (sign.status !== 0)
+            console.warn(
+                'codesign failed — continuing with the ad-hoc signature',
+            )
+    } else {
+        console.log(
+            "no signing identity found — leaving ad-hoc signature (folder grants won't survive updates)",
+        )
+    }
 }

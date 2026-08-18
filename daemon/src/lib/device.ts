@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto"
-import { hostname } from "node:os"
-import { join } from "node:path"
-import { readFile, writeFile, mkdir } from "node:fs/promises"
-import { MACHINE_DIR } from "./config.ts"
+import { randomUUID } from 'node:crypto'
+import { hostname } from 'node:os'
+import { join } from 'node:path'
+import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { MACHINE_DIR } from './config.ts'
 
 /**
  * Stable per-machine device identity. The device-id file holds a UUID that is
@@ -14,7 +14,7 @@ import { MACHINE_DIR } from "./config.ts"
  */
 
 function deviceIdPath(home: string): string {
-  return join(home, "device-id")
+    return join(home, 'device-id')
 }
 
 /**
@@ -23,24 +23,24 @@ function deviceIdPath(home: string): string {
  * leave a half-written id file.
  */
 export async function getDeviceId(home: string = MACHINE_DIR): Promise<string> {
-  const path = deviceIdPath(home)
-  try {
-    const existing = (await readFile(path, "utf-8")).trim()
-    if (existing) return existing
-  } catch {
-    // not yet generated — fall through to create
-  }
+    const path = deviceIdPath(home)
+    try {
+        const existing = (await readFile(path, 'utf-8')).trim()
+        if (existing) return existing
+    } catch {
+        // not yet generated — fall through to create
+    }
 
-  const id = randomUUID()
-  await mkdir(home, { recursive: true })
-  const tmp = `${path}.${process.pid}.tmp`
-  await writeFile(tmp, id, "utf-8")
-  const { rename } = await import("fs/promises")
-  await rename(tmp, path)
-  return id
+    const id = randomUUID()
+    await mkdir(home, { recursive: true })
+    const tmp = `${path}.${process.pid}.tmp`
+    await writeFile(tmp, id, 'utf-8')
+    const { rename } = await import('fs/promises')
+    await rename(tmp, path)
+    return id
 }
 
 /** Human-readable device label. Per CONTRACT v1 this is os.hostname(). */
 export function getDeviceLabel(): string {
-  return hostname()
+    return hostname()
 }

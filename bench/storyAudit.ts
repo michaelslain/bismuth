@@ -26,24 +26,28 @@
 //     readiness loops that wait for animation to settle, and this tool needs the settled frame.
 //   * It does not fail. There is no exit(1) and no ratchet — it is an instrument, not a gate. Its
 //     output is read by a human or an agent, and a flag is a question, never a verdict.
-import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { launchChrome } from "./chromeSession";
+import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { launchChrome } from './chromeSession'
 
-const arg = (n: string, d = "") => { const i = process.argv.indexOf(`--${n}`); return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d; };
-const BASE = arg("base", "http://localhost:6006");
-const ONLY = arg("story", "");
-const OUT_DIR = arg("out", join(import.meta.dir, "..", ".claude", "audit"));
-const SETTLE = Number(arg("settle", "700"));
-const MAX_TRIES = Number(arg("tries", "12"));
-const WAIT = Number(arg("wait", "300"));
-const W = 1280, H = 900;
+const arg = (n: string, d = '') => {
+    const i = process.argv.indexOf(`--${n}`)
+    return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d
+}
+const BASE = arg('base', 'http://localhost:6006')
+const ONLY = arg('story', '')
+const OUT_DIR = arg('out', join(import.meta.dir, '..', '.claude', 'audit'))
+const SETTLE = Number(arg('settle', '700'))
+const MAX_TRIES = Number(arg('tries', '12'))
+const WAIT = Number(arg('wait', '300'))
+const W = 1280,
+    H = 900
 // 2x so an agent can actually read a 10px label and tell "clipped" from "ends there". Clipped to the
 // content box first, so a 200px chip does not ship a 1280x900 sea of background.
-const SHOT_SCALE = 2;
-const MAX_SHOT_H = 1500;
+const SHOT_SCALE = 2
+const MAX_SHOT_H = 1500
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /**
  * Runs in the page. Returns defect leads + a content bounding box + coarse stats.
@@ -185,79 +189,137 @@ const PROBE = `(() => {
   box.width = Math.max(32, box.width); box.height = Math.max(32, box.height);
 
   return JSON.stringify({ flags, box, stats: { visible, textLen, canvases } });
-})()`;
+})()`
 
-const index = await (await fetch(`${BASE}/index.json`)).json();
-const matches = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY);
+const index = await (await fetch(`${BASE}/index.json`)).json()
+const matches = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY)
 const entries = Object.values(index.entries as Record<string, any>)
-  .filter((e: any) => matches(e.id))
-  .sort((a: any, b: any) => a.id.localeCompare(b.id));
-if (entries.length === 0) throw new Error(`no stories matched (--story ${ONLY})`);
+    .filter((e: any) => matches(e.id))
+    .sort((a: any, b: any) => a.id.localeCompare(b.id))
+if (entries.length === 0)
+    throw new Error(`no stories matched (--story ${ONLY})`)
 
-if (existsSync(OUT_DIR) && !ONLY) rmSync(OUT_DIR, { recursive: true, force: true });
-mkdirSync(join(OUT_DIR, "shots"), { recursive: true });
+if (existsSync(OUT_DIR) && !ONLY)
+    rmSync(OUT_DIR, { recursive: true, force: true })
+mkdirSync(join(OUT_DIR, 'shots'), { recursive: true })
 
 // deviceScaleFactor stays 1 and the SCALE is applied on the capture clip instead. Setting both
 // compounds them, which silently yields 4x images and a report nobody can open.
 const session = await launchChrome({
-  label: "audit", width: W, height: H,
-  flags: ["--force-prefers-reduced-motion"],
-  rpcError: (m, e) => new Error(`${m}: ${e.message ?? JSON.stringify(e)}`),
-});
-const { page } = session;
-await page("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+    label: 'audit',
+    width: W,
+    height: H,
+    flags: ['--force-prefers-reduced-motion'],
+    rpcError: (m, e) => new Error(`${m}: ${e.message ?? JSON.stringify(e)}`),
+})
+const { page } = session
+await page('Emulation.setDeviceMetricsOverride', {
+    width: W,
+    height: H,
+    deviceScaleFactor: 1,
+    mobile: false,
+})
 
-const report: any[] = [];
-let done = 0;
+const report: any[] = []
+let done = 0
 
 for (const e of entries as any[]) {
-  const id = e.id;
-  process.stderr.write(`\r[${++done}/${entries.length}] ${id.slice(0, 60).padEnd(60)}`);
-  const rec: any = { id, title: e.title, name: e.name, importPath: e.importPath, flags: [], stats: null, shot: null };
-  try {
-    await page("Page.navigate", { url: `${BASE}/iframe.html?id=${id}&viewMode=story` });
-    await sleep(SETTLE);
-
-    // Converge on a settled frame rather than guessing a delay. Two consecutive identical probes is
-    // enough here (the baseline needs three, because it is diffing exact numbers and must not record
-    // a transient; this tool only needs the picture to have stopped moving).
-    let prev = "", parsed: any = null;
-    for (let i = 0; i < MAX_TRIES; i++) {
-      const r = await page("Runtime.evaluate", { expression: PROBE, returnByValue: true, awaitPromise: false });
-      const v = r?.result?.value;
-      if (typeof v !== "string") { await sleep(WAIT); continue; }
-      if (v === prev) { parsed = JSON.parse(v); break; }
-      prev = v;
-      await sleep(WAIT);
+    const id = e.id
+    process.stderr.write(
+        `\r[${++done}/${entries.length}] ${id.slice(0, 60).padEnd(60)}`,
+    )
+    const rec: any = {
+        id,
+        title: e.title,
+        name: e.name,
+        importPath: e.importPath,
+        flags: [],
+        stats: null,
+        shot: null,
     }
-    if (!parsed) parsed = prev ? JSON.parse(prev) : { flags: [{ kind: "probe-failed", sel: ":root", text: "", detail: "never settled" }], box: { x: 0, y: 0, width: 600, height: 400 }, stats: null };
+    try {
+        await page('Page.navigate', {
+            url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
+        })
+        await sleep(SETTLE)
 
-    rec.flags = parsed.flags;
-    rec.stats = parsed.stats;
+        // Converge on a settled frame rather than guessing a delay. Two consecutive identical probes is
+        // enough here (the baseline needs three, because it is diffing exact numbers and must not record
+        // a transient; this tool only needs the picture to have stopped moving).
+        let prev = '',
+            parsed: any = null
+        for (let i = 0; i < MAX_TRIES; i++) {
+            const r = await page('Runtime.evaluate', {
+                expression: PROBE,
+                returnByValue: true,
+                awaitPromise: false,
+            })
+            const v = r?.result?.value
+            if (typeof v !== 'string') {
+                await sleep(WAIT)
+                continue
+            }
+            if (v === prev) {
+                parsed = JSON.parse(v)
+                break
+            }
+            prev = v
+            await sleep(WAIT)
+        }
+        if (!parsed)
+            parsed = prev
+                ? JSON.parse(prev)
+                : {
+                      flags: [
+                          {
+                              kind: 'probe-failed',
+                              sel: ':root',
+                              text: '',
+                              detail: 'never settled',
+                          },
+                      ],
+                      box: { x: 0, y: 0, width: 600, height: 400 },
+                      stats: null,
+                  }
 
-    const shot = await page("Page.captureScreenshot", {
-      format: "png",
-      clip: { ...parsed.box, scale: SHOT_SCALE },
-      captureBeyondViewport: false,
-    });
-    const file = `${id.replace(/[^a-z0-9-]/gi, "_")}.png`;
-    writeFileSync(join(OUT_DIR, "shots", file), Buffer.from(shot.data, "base64"));
-    rec.shot = join("shots", file);
-  } catch (err) {
-    rec.flags.push({ kind: "crashed", sel: ":root", text: "", detail: String((err as Error).message).slice(0, 200) });
-  }
-  report.push(rec);
+        rec.flags = parsed.flags
+        rec.stats = parsed.stats
+
+        const shot = await page('Page.captureScreenshot', {
+            format: 'png',
+            clip: { ...parsed.box, scale: SHOT_SCALE },
+            captureBeyondViewport: false,
+        })
+        const file = `${id.replace(/[^a-z0-9-]/gi, '_')}.png`
+        writeFileSync(
+            join(OUT_DIR, 'shots', file),
+            Buffer.from(shot.data, 'base64'),
+        )
+        rec.shot = join('shots', file)
+    } catch (err) {
+        rec.flags.push({
+            kind: 'crashed',
+            sel: ':root',
+            text: '',
+            detail: String((err as Error).message).slice(0, 200),
+        })
+    }
+    report.push(rec)
 }
-process.stderr.write("\r" + " ".repeat(80) + "\r");
+process.stderr.write('\r' + ' '.repeat(80) + '\r')
 
-writeFileSync(join(OUT_DIR, "report.json"), JSON.stringify(report, null, 2));
+writeFileSync(join(OUT_DIR, 'report.json'), JSON.stringify(report, null, 2))
 
-const counts = new Map<string, number>();
-for (const r of report) for (const f of r.flags) counts.set(f.kind, (counts.get(f.kind) ?? 0) + 1);
-const flagged = report.filter((r) => r.flags.length);
+const counts = new Map<string, number>()
+for (const r of report)
+    for (const f of r.flags) counts.set(f.kind, (counts.get(f.kind) ?? 0) + 1)
+const flagged = report.filter(r => r.flags.length)
 
-console.log(`${report.length} stories -> ${OUT_DIR}`);
-console.log(`${flagged.length} carry at least one lead; ${report.length - flagged.length} are un-flagged (NOT the same as verified — every story still has to be looked at)`);
-for (const [k, v] of [...counts].sort((a, b) => b[1] - a[1])) console.log(`  ${String(v).padStart(4)}  ${k}`);
+console.log(`${report.length} stories -> ${OUT_DIR}`)
+console.log(
+    `${flagged.length} carry at least one lead; ${report.length - flagged.length} are un-flagged (NOT the same as verified — every story still has to be looked at)`,
+)
+for (const [k, v] of [...counts].sort((a, b) => b[1] - a[1]))
+    console.log(`  ${String(v).padStart(4)}  ${k}`)
 
-session.close();
+session.close()

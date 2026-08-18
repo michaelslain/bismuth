@@ -19,21 +19,21 @@
 //   disabled (enabled=false)        → dim base node, NO border
 //   enabled, not running            → bg-filled node + a crisp palette border ring (hollow dot)
 //   running  (running=true)         → the whole node is its palette color (solid), no border
-import type { DaemonVizState } from "./graph";
+import type { DaemonVizState } from './graph'
 
 // "base" = muted disabled fill · "bg" = enabled-idle hollow fill (the canvas background, so only the
 // palette border ring reads) · "palette" = running solid fill (a stable per-node color, by id hash).
-export type DaemonFill = "base" | "bg" | "palette";
+export type DaemonFill = 'base' | 'bg' | 'palette'
 // "palette" = a crisp ring in the node's stable per-node palette color · "none" = no border ring.
-export type DaemonBorder = "palette" | "none";
+export type DaemonBorder = 'palette' | 'none'
 
 export interface DaemonVisual {
-  /** The node's own point fill token. */
-  fill: DaemonFill;
-  /** The border-ring token: "palette" draws a crisp per-node-colored ring, "none" draws nothing. */
-  border: DaemonBorder;
-  /** Render opacity 0..1 for the node's own point (baked toward the background by the renderer). */
-  opacity: number;
+    /** The node's own point fill token. */
+    fill: DaemonFill
+    /** The border-ring token: "palette" draws a crisp per-node-colored ring, "none" draws nothing. */
+    border: DaemonBorder
+    /** Render opacity 0..1 for the node's own point (baked toward the background by the renderer). */
+    opacity: number
 }
 
 /**
@@ -44,16 +44,19 @@ export interface DaemonVisual {
  *   running  → solid palette fill, no border (overrides plain-enabled)
  *   enabled  → bg fill + a crisp palette border ring (a hollow, palette-outlined dot)
  */
-export function nodeVisualState(state: DaemonVizState, _now?: number): DaemonVisual {
-  // Disabled wins over everything — a disabled cron can't be meaningfully "running".
-  if (!state.enabled) {
-    return { fill: "base", border: "none", opacity: 0.15 };
-  }
-  if (state.running) {
-    // Running: the entire node is its stable per-node palette color (solid). No separate border.
-    return { fill: "palette", border: "none", opacity: 1 };
-  }
-  // Enabled, not running: a hollow dot filled with the canvas background (--bg) so only the
-  // crisp palette border ring reads — the circle itself takes on the background.
-  return { fill: "bg", border: "palette", opacity: 1 };
+export function nodeVisualState(
+    state: DaemonVizState,
+    _now?: number,
+): DaemonVisual {
+    // Disabled wins over everything — a disabled cron can't be meaningfully "running".
+    if (!state.enabled) {
+        return { fill: 'base', border: 'none', opacity: 0.15 }
+    }
+    if (state.running) {
+        // Running: the entire node is its stable per-node palette color (solid). No separate border.
+        return { fill: 'palette', border: 'none', opacity: 1 }
+    }
+    // Enabled, not running: a hollow dot filled with the canvas background (--bg) so only the
+    // crisp palette border ring reads — the circle itself takes on the background.
+    return { fill: 'bg', border: 'palette', opacity: 1 }
 }

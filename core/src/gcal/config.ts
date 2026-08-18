@@ -9,19 +9,19 @@
 // config is still honored as a fallback for the ONE base it named (`legacy.basePath`), so
 // an existing vault keeps syncing with zero changes and migrates onto per-base keys the
 // first time the user re-toggles sync in the calendar's settings.
-import type { ViewConfig } from "../bases/types";
+import type { ViewConfig } from '../bases/types'
 
 /** The legacy GLOBAL googleCalendar setting, read from appConfig — the migration source. */
 export interface LegacyGcalConfig {
-  enabled?: boolean;
-  calendarId?: string;
-  basePath?: string;
+    enabled?: boolean
+    calendarId?: string
+    basePath?: string
 }
 
 /** The resolved per-base linkage the sync engine + ticker act on. */
 export interface ResolvedGcalConfig {
-  enabled: boolean;    // is two-way sync on for THIS base?
-  calendarId: string;  // which Google calendar to reconcile against ("primary" = main)
+    enabled: boolean // is two-way sync on for THIS base?
+    calendarId: string // which Google calendar to reconcile against ("primary" = main)
 }
 
 /**
@@ -33,15 +33,18 @@ export interface ResolvedGcalConfig {
  * the legacy fallback) — un-toggling sync on the migrated base sticks.
  */
 export function resolveGcalConfig(
-  view: ViewConfig | undefined,
-  basePath: string,
-  legacy?: LegacyGcalConfig,
+    view: ViewConfig | undefined,
+    basePath: string,
+    legacy?: LegacyGcalConfig,
 ): ResolvedGcalConfig {
-  const isLegacyBase = !!legacy?.basePath && legacy.basePath === basePath;
-  const perBaseSync = view?.googleCalendarSync;
-  const perBaseId = view?.googleCalendarId?.trim();
-  return {
-    enabled: perBaseSync ?? (isLegacyBase ? !!legacy!.enabled : false),
-    calendarId: perBaseId || (isLegacyBase ? legacy!.calendarId?.trim() : "") || "primary",
-  };
+    const isLegacyBase = !!legacy?.basePath && legacy.basePath === basePath
+    const perBaseSync = view?.googleCalendarSync
+    const perBaseId = view?.googleCalendarId?.trim()
+    return {
+        enabled: perBaseSync ?? (isLegacyBase ? !!legacy!.enabled : false),
+        calendarId:
+            perBaseId ||
+            (isLegacyBase ? legacy!.calendarId?.trim() : '') ||
+            'primary',
+    }
 }

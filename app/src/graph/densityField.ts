@@ -30,42 +30,52 @@
 // information to do that. A paint-time hue picked per cell from "whichever cluster is nearest" has
 // hard seams the `screen` blend then makes worse.
 
-export const FIELD_W = 64;
-export const FIELD_H = 40;
+export const FIELD_W = 64
+export const FIELD_H = 40
 
 /** Per-cell MEAN emitter colour, 0..255 per channel, parallel to the intensity field. Present only
  *  when at least one emitter carried a colour — a graph with no communities at all (an embedded
  *  graph block strips them; see EmbeddedGraph.tsx) emits a plain scalar field and is painted in the
  *  base phosphor hue, exactly as it always was. */
-export interface RgbChannels { r: Float32Array; g: Float32Array; b: Float32Array }
+export interface RgbChannels {
+    r: Float32Array
+    g: Float32Array
+    b: Float32Array
+}
 
 /** The intensity field, optionally carrying colour. Attaching `rgb` to the Float32Array rather than
  *  wrapping it keeps every consumer (the whole `setBloomCallback` seam, the QA counters, the tests)
  *  reading a plain Float32Array unchanged. */
 export type DensityField = Float32Array & {
-  rgb?: RgbChannels;
-  /** The RAW blurred peak this frame, BEFORE normalisation. The caller needs it to carry a
-   *  reference peak across frames — see `scaleField`. */
-  peak?: number;
-};
+    rgb?: RgbChannels
+    /** The RAW blurred peak this frame, BEFORE normalisation. The caller needs it to carry a
+     *  reference peak across frames — see `scaleField`. */
+    peak?: number
+}
 
 export interface BloomPoint {
-  x: number; y: number; weight?: number;
-  /** Emitter colour, 0..255 per channel — the community territory this light belongs to. Omitted
-   *  for an emitter with no community, which contributes light but no hue. */
-  rgb?: readonly [number, number, number];
+    x: number
+    y: number
+    weight?: number
+    /** Emitter colour, 0..255 per channel — the community territory this light belongs to. Omitted
+     *  for an emitter with no community, which contributes light but no hue. */
+    rgb?: readonly [number, number, number]
 }
 
 /** Bin points (screen fractions 0..1) into a w×h grid. Out-of-range points are dropped. */
-export function accumulate(points: BloomPoint[], w: number, h: number): Float32Array {
-  const f = new Float32Array(w * h);
-  for (const p of points) {
-    if (!(p.x >= 0 && p.x < 1 && p.y >= 0 && p.y < 1)) continue;
-    const cx = Math.min(w - 1, Math.floor(p.x * w));
-    const cy = Math.min(h - 1, Math.floor(p.y * h));
-    f[cy * w + cx] += p.weight ?? 1;
-  }
-  return f;
+export function accumulate(
+    points: BloomPoint[],
+    w: number,
+    h: number,
+): Float32Array {
+    const f = new Float32Array(w * h)
+    for (const p of points) {
+        if (!(p.x >= 0 && p.x < 1 && p.y >= 0 && p.y < 1)) continue
+        const cx = Math.min(w - 1, Math.floor(p.x * w))
+        const cy = Math.min(h - 1, Math.floor(p.y * h))
+        f[cy * w + cx] += p.weight ?? 1
+    }
+    return f
 }
 
 /**
@@ -77,20 +87,28 @@ export function accumulate(points: BloomPoint[], w: number, h: number): Float32A
  * the colour, so it reads as the base hue.
  */
 export function accumulateColor(
-  points: BloomPoint[], w: number, h: number,
+    points: BloomPoint[],
+    w: number,
+    h: number,
 ): { v: Float32Array; r: Float32Array; g: Float32Array; b: Float32Array } {
-  const v = new Float32Array(w * h);
-  const r = new Float32Array(w * h), g = new Float32Array(w * h), b = new Float32Array(w * h);
-  for (const p of points) {
-    if (!(p.x >= 0 && p.x < 1 && p.y >= 0 && p.y < 1)) continue;
-    const cx = Math.min(w - 1, Math.floor(p.x * w));
-    const cy = Math.min(h - 1, Math.floor(p.y * h));
-    const i = cy * w + cx;
-    const wt = p.weight ?? 1;
-    v[i] += wt;
-    if (p.rgb) { r[i] += wt * p.rgb[0]; g[i] += wt * p.rgb[1]; b[i] += wt * p.rgb[2]; }
-  }
-  return { v, r, g, b };
+    const v = new Float32Array(w * h)
+    const r = new Float32Array(w * h),
+        g = new Float32Array(w * h),
+        b = new Float32Array(w * h)
+    for (const p of points) {
+        if (!(p.x >= 0 && p.x < 1 && p.y >= 0 && p.y < 1)) continue
+        const cx = Math.min(w - 1, Math.floor(p.x * w))
+        const cy = Math.min(h - 1, Math.floor(p.y * h))
+        const i = cy * w + cx
+        const wt = p.weight ?? 1
+        v[i] += wt
+        if (p.rgb) {
+            r[i] += wt * p.rgb[0]
+            g[i] += wt * p.rgb[1]
+            b[i] += wt * p.rgb[2]
+        }
+    }
+    return { v, r, g, b }
 }
 
 /** Successive box blurs converge to a Gaussian (CLT) — a single box pass is a flat-topped square
@@ -102,55 +120,63 @@ export function accumulateColor(
  *  true Gaussian. See densityField.test.ts's "corner energy is less than edge energy" test for the
  *  property this actually buys — a box kernel gets that ratio wrong by construction, at ANY pass
  *  count below this, so it is not tunable away by nudging the radius instead. */
-const BOX_PASSES = 3;
+const BOX_PASSES = 3
 
 /** Separable box blur, `radius` cells each way, applied `BOX_PASSES` times. Mass-conserving apart
  *  from edge clamping. `w`/`h` are REQUIRED — a Float32Array's length cannot tell you its grid
  *  shape. */
-export function blur(field: Float32Array, w: number, h: number, radius: number): Float32Array {
-  if (field.length !== w * h) {
-    throw new Error(`blur: field.length (${field.length}) does not match w*h (${w * h})`);
-  }
-  radius = Math.round(radius);
-  const n = field.length;
-  const width = w, height = h;
-  if (radius <= 0) return Float32Array.from(field);
-
-  // PREFIX SUMS, not a per-cell tap loop: cost is O(cells) regardless of `radius`, which is what
-  // makes a ZOOM-SCALED radius affordable (see `radiusForSpread` / AsciiGraphRenderer's emitBloom —
-  // the kernel has to grow with magnification or a magnified cluster resolves into one halo per
-  // node). Arithmetically identical to the old loop: the same mean over the same in-bounds taps,
-  // with the same edge clamping via the clipped window `count`.
-  const pass = (src: Float32Array, horizontal: boolean) => {
-    const out = new Float32Array(n);
-    const major = horizontal ? height : width;   // lines to sweep
-    const minor = horizontal ? width : height;   // cells per line
-    const pre = new Float32Array(minor + 1);
-    for (let m = 0; m < major; m++) {
-      for (let i = 0; i < minor; i++) {
-        const idx = horizontal ? m * width + i : i * width + m;
-        pre[i + 1] = pre[i] + src[idx];
-      }
-      for (let i = 0; i < minor; i++) {
-        const lo = i - radius < 0 ? 0 : i - radius;
-        const hi = i + radius + 1 > minor ? minor : i + radius + 1;
-        const count = hi - lo;
-        const idx = horizontal ? m * width + i : i * width + m;
-        out[idx] = count ? (pre[hi] - pre[lo]) / count : 0;
-      }
+export function blur(
+    field: Float32Array,
+    w: number,
+    h: number,
+    radius: number,
+): Float32Array {
+    if (field.length !== w * h) {
+        throw new Error(
+            `blur: field.length (${field.length}) does not match w*h (${w * h})`,
+        )
     }
-    return out;
-  };
-  let out = field;
-  for (let i = 0; i < BOX_PASSES; i++) out = pass(pass(out, true), false);
-  return out;
+    radius = Math.round(radius)
+    const n = field.length
+    const width = w,
+        height = h
+    if (radius <= 0) return Float32Array.from(field)
+
+    // PREFIX SUMS, not a per-cell tap loop: cost is O(cells) regardless of `radius`, which is what
+    // makes a ZOOM-SCALED radius affordable (see `radiusForSpread` / AsciiGraphRenderer's emitBloom —
+    // the kernel has to grow with magnification or a magnified cluster resolves into one halo per
+    // node). Arithmetically identical to the old loop: the same mean over the same in-bounds taps,
+    // with the same edge clamping via the clipped window `count`.
+    const pass = (src: Float32Array, horizontal: boolean) => {
+        const out = new Float32Array(n)
+        const major = horizontal ? height : width // lines to sweep
+        const minor = horizontal ? width : height // cells per line
+        const pre = new Float32Array(minor + 1)
+        for (let m = 0; m < major; m++) {
+            for (let i = 0; i < minor; i++) {
+                const idx = horizontal ? m * width + i : i * width + m
+                pre[i + 1] = pre[i] + src[idx]
+            }
+            for (let i = 0; i < minor; i++) {
+                const lo = i - radius < 0 ? 0 : i - radius
+                const hi = i + radius + 1 > minor ? minor : i + radius + 1
+                const count = hi - lo
+                const idx = horizontal ? m * width + i : i * width + m
+                out[idx] = count ? (pre[hi] - pre[lo]) / count : 0
+            }
+        }
+        return out
+    }
+    let out = field
+    for (let i = 0; i < BOX_PASSES; i++) out = pass(pass(out, true), false)
+    return out
 }
 
 /** The kernel radius at fit, in field cells. */
-export const BASE_BLUR_RADIUS = 6;
+export const BASE_BLUR_RADIUS = 6
 /** Ceiling, in field cells. The field is only FIELD_W×FIELD_H, so past roughly this the kernel
  *  already reaches most of it and growing further only costs contrast. */
-export const MAX_BLUR_RADIUS = 20;
+export const MAX_BLUR_RADIUS = 20
 
 /**
  * Kernel radius for a camera magnification of `zoom` (1 = fit).
@@ -164,24 +190,24 @@ export const MAX_BLUR_RADIUS = 20;
  * decayed reference peak (see `buildBloom`) hold a stable brightness across the zoom ladder.
  */
 export function blurRadiusForZoom(zoom: number): number {
-  if (!Number.isFinite(zoom) || zoom <= 1) return BASE_BLUR_RADIUS;
-  return Math.min(MAX_BLUR_RADIUS, Math.round(BASE_BLUR_RADIUS * zoom));
+    if (!Number.isFinite(zoom) || zoom <= 1) return BASE_BLUR_RADIUS
+    return Math.min(MAX_BLUR_RADIUS, Math.round(BASE_BLUR_RADIUS * zoom))
 }
 
 /** The largest cell in a field, or 0 for an empty one. */
 export function fieldPeak(field: Float32Array): number {
-  let max = 0;
-  for (let i = 0; i < field.length; i++) if (field[i] > max) max = field[i];
-  return max;
+    let max = 0
+    for (let i = 0; i < field.length; i++) if (field[i] > max) max = field[i]
+    return max
 }
 
 /** Scale so the peak cell is exactly 1. An empty field stays empty — never NaN. */
 export function normalise(field: Float32Array): Float32Array {
-  const max = fieldPeak(field);
-  if (max <= 0) return Float32Array.from(field);
-  const out = new Float32Array(field.length);
-  for (let i = 0; i < field.length; i++) out[i] = field[i] / max;
-  return out;
+    const max = fieldPeak(field)
+    if (max <= 0) return Float32Array.from(field)
+    const out = new Float32Array(field.length)
+    for (let i = 0; i < field.length; i++) out[i] = field[i] / max
+    return out
 }
 
 /**
@@ -197,16 +223,16 @@ export function normalise(field: Float32Array): Float32Array {
  * substitute divisor, so the caller can pick `k` knowing the peak this frame actually produced.
  */
 export function scaleField(field: DensityField, k: number): DensityField {
-  const f = Number.isFinite(k) ? Math.max(0, Math.min(1, k)) : 1;
-  if (f === 1) return field;
-  for (let i = 0; i < field.length; i++) field[i] *= f;
-  return field;
+    const f = Number.isFinite(k) ? Math.max(0, Math.min(1, k)) : 1
+    if (f === 1) return field
+    for (let i = 0; i < field.length; i++) field[i] *= f
+    return field
 }
 
 /** Below this blurred weight a cell has no meaningful mean colour — dividing there amplifies
  *  rounding noise into a hue, which reads as coloured speckle in the dark corners. Such cells get
  *  colour 0, and the painter falls back to the base hue for them (they are also invisible at v⁴). */
-const COLOR_EPS = 1e-6;
+const COLOR_EPS = 1e-6
 
 /**
  * accumulate → blur → normalise, at the fixed field resolution.
@@ -229,31 +255,50 @@ const COLOR_EPS = 1e-6;
  * back on `field.peak`, which is what lets a caller carry a reference peak across frames and damp
  * this per-frame normalisation afterwards (see `scaleField`).
  */
-export function buildBloom(points: BloomPoint[], radius = BASE_BLUR_RADIUS): DensityField {
-  let colored = false;
-  for (const p of points) if (p.rgb) { colored = true; break; }
-  if (!colored) {
-    const b = blur(accumulate(points, FIELD_W, FIELD_H), FIELD_W, FIELD_H, radius);
-    const mono: DensityField = normalise(b);
-    mono.peak = fieldPeak(b);
-    return mono;
-  }
-  const acc = accumulateColor(points, FIELD_W, FIELD_H);
-  const vB = blur(acc.v, FIELD_W, FIELD_H, radius);
-  const rB = blur(acc.r, FIELD_W, FIELD_H, radius);
-  const gB = blur(acc.g, FIELD_W, FIELD_H, radius);
-  const bB = blur(acc.b, FIELD_W, FIELD_H, radius);
-  for (let i = 0; i < vB.length; i++) {
-    const w = vB[i];
-    // The UNNORMALISED blurred weight — `normalise` returns a new array below, so the divisor here
-    // is the same quantity the numerators were accumulated against.
-    if (w > COLOR_EPS) { rB[i] /= w; gB[i] /= w; bB[i] /= w; }
-    else { rB[i] = 0; gB[i] = 0; bB[i] = 0; }
-  }
-  const out: DensityField = normalise(vB);
-  out.rgb = { r: rB, g: gB, b: bB };
-  out.peak = fieldPeak(vB);
-  return out;
+export function buildBloom(
+    points: BloomPoint[],
+    radius = BASE_BLUR_RADIUS,
+): DensityField {
+    let colored = false
+    for (const p of points)
+        if (p.rgb) {
+            colored = true
+            break
+        }
+    if (!colored) {
+        const b = blur(
+            accumulate(points, FIELD_W, FIELD_H),
+            FIELD_W,
+            FIELD_H,
+            radius,
+        )
+        const mono: DensityField = normalise(b)
+        mono.peak = fieldPeak(b)
+        return mono
+    }
+    const acc = accumulateColor(points, FIELD_W, FIELD_H)
+    const vB = blur(acc.v, FIELD_W, FIELD_H, radius)
+    const rB = blur(acc.r, FIELD_W, FIELD_H, radius)
+    const gB = blur(acc.g, FIELD_W, FIELD_H, radius)
+    const bB = blur(acc.b, FIELD_W, FIELD_H, radius)
+    for (let i = 0; i < vB.length; i++) {
+        const w = vB[i]
+        // The UNNORMALISED blurred weight — `normalise` returns a new array below, so the divisor here
+        // is the same quantity the numerators were accumulated against.
+        if (w > COLOR_EPS) {
+            rB[i] /= w
+            gB[i] /= w
+            bB[i] /= w
+        } else {
+            rB[i] = 0
+            gB[i] = 0
+            bB[i] = 0
+        }
+    }
+    const out: DensityField = normalise(vB)
+    out.rgb = { r: rB, g: gB, b: bB }
+    out.peak = fieldPeak(vB)
+    return out
 }
 
 // --- Emitting one SUMMARY as the cloud it stands for ---------------------------------------------
@@ -277,15 +322,18 @@ export function buildBloom(points: BloomPoint[], radius = BASE_BLUR_RADIUS): Den
  * 32-sample cloud (spacing up to ~20 cells once magnified) fell to 0.32× the light of the leaves it
  * summarized at the worst stop; sampling to this spacing holds ≥ 0.69× everywhere.
  */
-const CLOUD_SPACING_CELLS = 5;
+const CLOUD_SPACING_CELLS = 5
 /** Sample-count bounds. The floor keeps a tiny aggregate from degenerating into a cross (and `K ≥ 3`
  *  is what the exact-moment identity below needs); the ceiling keeps a hugely magnified one from
  *  costing more than the leaves it replaced — past that point most of the cloud is off-field anyway
  *  and `accumulate` discards it. */
-const CLOUD_MIN_RINGS = 2, CLOUD_MAX_RINGS = 8;
-const CLOUD_MIN_PER_RING = 6, CLOUD_MAX_PER_RING = 16;
+const CLOUD_MIN_RINGS = 2,
+    CLOUD_MAX_RINGS = 8
+const CLOUD_MIN_PER_RING = 6,
+    CLOUD_MAX_PER_RING = 16
 
-const clampInt = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)));
+const clampInt = (v: number, lo: number, hi: number) =>
+    Math.max(lo, Math.min(hi, Math.round(v)))
 
 /**
  * A spread that can actually be sampled: non-finite or negative becomes 0, i.e. the documented
@@ -305,26 +353,40 @@ const clampInt = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi
  * overflow while the plain sum stays finite. Guarded anyway, for the same reason `safeDepthBand`
  * is: a non-finite that reaches the rAF path is a silent, permanent visual failure, not a throw.
  */
-const sanitizeSpread = (v: number) => (Number.isFinite(v) && v > 0 ? v : 0);
+const sanitizeSpread = (v: number) => (Number.isFinite(v) && v > 0 ? v : 0)
 
 /** Rings × samples-per-ring `pushCloud` will spend on a cloud of this spread (0..1 fractions) —
  *  exported so tests and QA can predict the cost without re-deriving it. Never returns a non-finite
  *  count: see `sanitizeSpread`. */
-export function cloudGrid(sdx: number, sdy: number): { rings: number; perRing: number } {
-  // Outer radius in cells, worst axis. The field is not square, so a fraction means a different
-  // number of cells in x than in y.
-  const rCells = Math.max(2 * sanitizeSpread(sdx) * FIELD_W, 2 * sanitizeSpread(sdy) * FIELD_H);
-  return {
-    rings: clampInt(rCells / CLOUD_SPACING_CELLS, CLOUD_MIN_RINGS, CLOUD_MAX_RINGS),
-    perRing: clampInt((2 * Math.PI * rCells) / CLOUD_SPACING_CELLS, CLOUD_MIN_PER_RING, CLOUD_MAX_PER_RING),
-  };
+export function cloudGrid(
+    sdx: number,
+    sdy: number,
+): { rings: number; perRing: number } {
+    // Outer radius in cells, worst axis. The field is not square, so a fraction means a different
+    // number of cells in x than in y.
+    const rCells = Math.max(
+        2 * sanitizeSpread(sdx) * FIELD_W,
+        2 * sanitizeSpread(sdy) * FIELD_H,
+    )
+    return {
+        rings: clampInt(
+            rCells / CLOUD_SPACING_CELLS,
+            CLOUD_MIN_RINGS,
+            CLOUD_MAX_RINGS,
+        ),
+        perRing: clampInt(
+            (2 * Math.PI * rCells) / CLOUD_SPACING_CELLS,
+            CLOUD_MIN_PER_RING,
+            CLOUD_MAX_PER_RING,
+        ),
+    }
 }
 
 /** Total samples `pushCloud` spends on a cloud of this spread. */
 export const cloudSampleCount = (sdx: number, sdy: number): number => {
-  const g = cloudGrid(sdx, sdy);
-  return g.rings * g.perRing;
-};
+    const g = cloudGrid(sdx, sdy)
+    return g.rings * g.perRing
+}
 
 /**
  * Append `weight` of light spread over an axis-aligned elliptical cloud centred at (`x`, `y`) whose
@@ -353,21 +415,32 @@ export const cloudSampleCount = (sdx: number, sdy: number): number => {
  * emits an uncoloured cloud, which paints as the base phosphor hue.
  */
 export function pushCloud(
-  out: BloomPoint[], x: number, y: number, sdx: number, sdy: number, weight: number,
-  rgb?: readonly [number, number, number],
+    out: BloomPoint[],
+    x: number,
+    y: number,
+    sdx: number,
+    sdy: number,
+    weight: number,
+    rgb?: readonly [number, number, number],
 ): void {
-  const { rings, perRing } = cloudGrid(sdx, sdy);
-  const rx = 2 * sanitizeSpread(sdx), ry = 2 * sanitizeSpread(sdy);
-  const w = weight / (rings * perRing);
-  const step = (Math.PI * 2) / perRing;
-  for (let j = 0; j < rings; j++) {
-    const r = Math.sqrt((j + 0.5) / rings);
-    // Rotate each ring by a fraction of its own angular step so no two rings line up — cosmetic
-    // only: the moment identities above hold at any rotation.
-    const phase = (j * step) / rings;
-    for (let k = 0; k < perRing; k++) {
-      const th = phase + k * step;
-      out.push({ x: x + Math.cos(th) * r * rx, y: y + Math.sin(th) * r * ry, weight: w, rgb });
+    const { rings, perRing } = cloudGrid(sdx, sdy)
+    const rx = 2 * sanitizeSpread(sdx),
+        ry = 2 * sanitizeSpread(sdy)
+    const w = weight / (rings * perRing)
+    const step = (Math.PI * 2) / perRing
+    for (let j = 0; j < rings; j++) {
+        const r = Math.sqrt((j + 0.5) / rings)
+        // Rotate each ring by a fraction of its own angular step so no two rings line up — cosmetic
+        // only: the moment identities above hold at any rotation.
+        const phase = (j * step) / rings
+        for (let k = 0; k < perRing; k++) {
+            const th = phase + k * step
+            out.push({
+                x: x + Math.cos(th) * r * rx,
+                y: y + Math.sin(th) * r * ry,
+                weight: w,
+                rgb,
+            })
+        }
     }
-  }
 }

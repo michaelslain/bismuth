@@ -23,9 +23,9 @@
 /** The minimum a locatable block range must expose. Both QueryRange and GraphRange satisfy
  *  it structurally; each keeps its own extra fields (bodyFrom/body). */
 export interface BlockRange {
-  from: number;
-  /** Exclusive end — the position just past the closing fence. */
-  to: number;
+    from: number
+    /** Exclusive end — the position just past the closing fence. */
+    to: number
 }
 
 /**
@@ -42,8 +42,11 @@ export interface BlockRange {
  * guessing a neighbour: a no-op is visible and recoverable, a write to the wrong fence is
  * neither.
  */
-export function locateBlockIndex(ranges: readonly BlockRange[], pos: number): number {
-  const exact = ranges.findIndex((r) => r.from === pos);
-  if (exact >= 0) return exact;
-  return ranges.findIndex((r) => pos >= r.from && pos <= r.to);
+export function locateBlockIndex(
+    ranges: readonly BlockRange[],
+    pos: number,
+): number {
+    const exact = ranges.findIndex(r => r.from === pos)
+    if (exact >= 0) return exact
+    return ranges.findIndex(r => pos >= r.from && pos <= r.to)
 }

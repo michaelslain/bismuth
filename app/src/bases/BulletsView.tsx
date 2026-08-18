@@ -1,7 +1,7 @@
-import { For, Index, Show } from "solid-js";
-import type { ViewResult, BaseConfig } from "../../../core/src/bases/types";
-import { renderValue } from "./renderValue";
-import styles from "./BaseView.module.css";
+import { For, Index, Show } from 'solid-js'
+import type { ViewResult, BaseConfig } from '../../../core/src/bases/types'
+import { renderValue } from './renderValue'
+import styles from './BaseView.module.css'
 
 /**
  * Plain markdown-style bullet list: one <li> per row (the first column, rendered as a
@@ -10,23 +10,31 @@ import styles from "./BaseView.module.css";
  * reading-quote lists where the table UI is overkill.
  */
 export function BulletsView(props: { result: ViewResult; config: BaseConfig }) {
-  const col = (): string => props.result.columns[0] ?? "file.name";
-  return (
-    <div class={styles.bullets}>
-      {/* Index-keyed groups (see ListView): the inner reference-keyed row <For> is the only
+    const col = (): string => props.result.columns[0] ?? 'file.name'
+    return (
+        <div class={styles.bullets}>
+            {/* Index-keyed groups (see ListView): the inner reference-keyed row <For> is the only
           thing that diffs on a re-resolve, so no full-list remount flash on a task toggle. */}
-      <Index each={props.result.groups}>
-        {(group) => (
-          <div class={styles.bulletGroup}>
-            <Show when={group().key !== ""}>
-              <div class={styles.bulletGroupHead}>{group().key}</div>
-            </Show>
-            <ul class={styles.bulletList}>
-              <For each={group().rows}>{(row) => <li class={styles.bulletItem}>{renderValue(col(), row)}</li>}</For>
-            </ul>
-          </div>
-        )}
-      </Index>
-    </div>
-  );
+            <Index each={props.result.groups}>
+                {group => (
+                    <div class={styles.bulletGroup}>
+                        <Show when={group().key !== ''}>
+                            <div class={styles.bulletGroupHead}>
+                                {group().key}
+                            </div>
+                        </Show>
+                        <ul class={styles.bulletList}>
+                            <For each={group().rows}>
+                                {row => (
+                                    <li class={styles.bulletItem}>
+                                        {renderValue(col(), row)}
+                                    </li>
+                                )}
+                            </For>
+                        </ul>
+                    </div>
+                )}
+            </Index>
+        </div>
+    )
 }

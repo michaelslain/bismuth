@@ -7,26 +7,29 @@
 // The origin itself is decided SERVER-SIDE and only carried here: core/src/chat.ts resolveChatOrigin
 // tests the session id for membership in the vault's durable daemon set. This module never re-judges
 // it — one signal, one place.
-import { createSignal } from "solid-js";
-import type { ChatOrigin } from "./api";
-export type { ChatOrigin };
+import { createSignal } from 'solid-js'
+import type { ChatOrigin } from './api'
+export type { ChatOrigin }
 
-const [origins, setOrigins] = createSignal<Map<string, ChatOrigin>>(new Map());
+const [origins, setOrigins] = createSignal<Map<string, ChatOrigin>>(new Map())
 
 /** The known origin for a chat tab id, or undefined before any session has bound to it (a brand-new,
  *  never-sent chat — reads as user-started, see {@link chatOriginIcon}). Reactive. */
 export function chatOrigin(chatId: string): ChatOrigin | undefined {
-  return origins().get(chatId);
+    return origins().get(chatId)
 }
 
 /** Publish (or clear, with a null origin) a chat tab's resolved origin. */
-export function publishChatOrigin(chatId: string, origin: ChatOrigin | null): void {
-  setOrigins((m) => {
-    const next = new Map(m);
-    if (origin) next.set(chatId, origin);
-    else next.delete(chatId);
-    return next;
-  });
+export function publishChatOrigin(
+    chatId: string,
+    origin: ChatOrigin | null,
+): void {
+    setOrigins(m => {
+        const next = new Map(m)
+        if (origin) next.set(chatId, origin)
+        else next.delete(chatId)
+        return next
+    })
 }
 
 /**
@@ -40,5 +43,5 @@ export function publishChatOrigin(chatId: string, origin: ChatOrigin | null): vo
  * backend's tolerant reads take — an unknown provenance is never asserted to be the daemon's.
  */
 export function chatOriginIcon(origin: ChatOrigin | undefined): string {
-  return origin === "daemon" ? "Bot" : "MessageSquare";
+    return origin === 'daemon' ? 'Bot' : 'MessageSquare'
 }
