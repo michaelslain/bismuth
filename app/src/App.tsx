@@ -74,6 +74,10 @@ import {
 import { IconButton, ICON_PX } from "./ui/IconButton";
 import { PaneTree } from "./PaneTree";
 import { WindowControls } from "./shell/WindowControls";
+import { TopStrip } from "./shell/TopStrip";
+import { StatusBar } from "./shell/StatusBar";
+import { CommandButton } from "./shell/CommandButton";
+import { Sidebar } from "./shell/Sidebar";
 import { createViewDrag, type DragDescriptor, type DropTarget, type DropPoint } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
 import { descriptorMovePath, descriptorNotePath, descriptorChatRefPath, isMarkdown, wikilinkFor } from "./dnd/noteRef";
@@ -2020,8 +2024,12 @@ export default function App() {
    *  Resolves to its command(s): a `commands: [...]` list wins, else the single `command`;
    *  runs the FIRST resolvable one, disabled when none resolve (see resolveButtonCommands).
    *  The inbox button is special-cased as a DAEMON surface: hidden entirely while the daemon
-   *  is off, and it carries the live due-count badge the palette command can't. */
-  function CommandButton(props2: { btn: { command?: string; commands?: string[]; icon: string; tooltip?: string }; iconSize?: number }) {
+   *  is off, and it carries the live due-count badge the palette command can't.
+   *
+   *  The RENDERING half of this lives in shell/CommandButton.tsx, which knows nothing about
+   *  commands, the daemon, or the inbox — this wrapper does all the resolution and hands it
+   *  plain props. */
+  function ToolbarButton(props2: { btn: { command?: string; commands?: string[]; icon: string; tooltip?: string }; iconSize?: number }) {
     const cmd = () => resolveButtonCommands(props2.btn, commands())[0];
     const hidden = () => cmd()?.id === "open-inbox" && !settings.daemon.enabled;
     // 18 -> ICON_PX (12): the two TAB toolbars (.tabbar-actions, .tab-rail-actions) render
@@ -2034,16 +2042,17 @@ export default function App() {
         <Show
           when={cmd()}
           fallback={
-            <IconButton icon={props2.btn.icon || "CircleHelp"} iconSize={iconSize()} disabled label={`Unknown command: ${props2.btn.command}`} />
+            <CommandButton icon={props2.btn.icon || "CircleHelp"} iconSize={iconSize()} disabled label={`Unknown command: ${props2.btn.command}`} />
           }
         >
           {(c) => (
-            <span class="toolbar-btn-wrap">
-              <IconButton icon={props2.btn.icon} iconSize={iconSize()} label={props2.btn.tooltip ?? c().label} onClick={(e) => c().action(e)} />
-              <Show when={c().id === "open-inbox" && dueCount() > 0}>
-                <span class="toolbar-badge">{dueCount()}</span>
-              </Show>
-            </span>
+            <CommandButton
+              icon={props2.btn.icon}
+              iconSize={iconSize()}
+              label={props2.btn.tooltip ?? c().label}
+              onClick={(e) => c().action(e)}
+              badge={c().id === "open-inbox" ? dueCount() : undefined}
+            />
           )}
         </Show>
       </Show>
@@ -2103,29 +2112,7 @@ export default function App() {
 
   return (
     <div class="app-shell">
-    {/* Top strip (design/ascii/README.md "App shell", §1): the wordmark + platform titlebar.
-        macOS runs a transparent Overlay titlebar (native traffic lights float over the strip,
-        left padding reserves room for them) with no typed controls; Windows/Linux run fully
-        undecorated with typed `[-] [+] [x]` controls; the browser/dev build gets neither.
-        `data-tauri-drag-region="deep"` (not a bare/"true" value): Tauri's injected drag script
-        only treats a bare attribute as "this exact element", checked via `el === composedPath[0]`
-        — since the wordmark span and the flex:1 `.top-strip-spacer` (the strip's largest visual
-        area) are child elements that receive the actual click target, a bare attribute here left
-        almost the entire strip undraggable. "deep" lets any non-interactive descendant trigger the
-        drag; the `.win-btn` window-control buttons stay excluded automatically (Tauri's script
-        never treats a clickable tag like <button> as a drag target unless IT carries the
-        attribute itself), so no pointer-events juggling is needed. Also requires
-        `core:window:allow-start-dragging` in capabilities/default.json (silently no-ops without
-        it). Double-click-to-maximize on macOS is Tauri's own built-in behavior for any drag
-        region (fires `internal_toggle_maximize`, already covered by `core:window:default`) — do
-        NOT add a manual dblclick handler here, it would race the native one. */}
-    <div
-      class="top-strip"
-      classList={{ "top-strip--mac": isTauri() && IS_MAC_PLATFORM }}
-      data-tauri-drag-region={isTauri() ? "deep" : undefined}
-    >
-      <span class="asc-wordmark" aria-label="Bismuth">,;']--]';,</span>
-      <div class="top-strip-spacer" />
+    <TopStrip mac={isTauri() && IS_MAC_PLATFORM} dragRegion={isTauri()}>
       <Show when={isTauri() && !IS_MAC_PLATFORM}>
         <WindowControls
           onMinimize={() => void winMinimize()}
@@ -2133,19 +2120,15 @@ export default function App() {
           onClose={() => void winClose()}
         />
       </Show>
-    </div>
+    </TopStrip>
     <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": true }}>
-      <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
-        <div class="sidebar-icons">
-          <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} iconSize={settings.appearance.sidebarIconFontSize} />}</For>
-        </div>
-        <div class="sidebar-eyebrow-row"><span class="asc-eyebrow">VAULT</span></div>
-        <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} startItemDrag={startItemDrag} dropHighlight={sidebarDropHighlight} /></div>
-        <div class="sidebar-graph-section" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }}>
-          <div class="sidebar-eyebrow-row"><span class="asc-eyebrow">GRAPH</span></div>
-          <div class="sidebar-graph" ref={sidebarSlot} />
-        </div>
-      </aside>
+      <Sidebar
+        visible={sidebarVisible()}
+        graphCollapsed={!anyTabOpen() || activeTabShowsGraph()}
+        graphSlotRef={(el) => { sidebarSlot = el; }}
+        toolbar={<For each={settings.toolbar}>{(btn) => <ToolbarButton btn={btn} iconSize={settings.appearance.sidebarIconFontSize} />}</For>}
+        tree={<FileTree onOpen={openFile} activeFile={focusedContent()} startItemDrag={startItemDrag} dropHighlight={sidebarDropHighlight} />}
+      />
       <main class="editor-pane">
         <UpdateBanner />
         {/* Cmd+O switcher: a big search bar absolutely positioned over the tab strip while
@@ -2276,7 +2259,7 @@ export default function App() {
           <div class="tab-rail-inner">
             <div class="tab-rail-actions">
               {/* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */}
-              <For each={settings.tabBar}>{(btn) => <CommandButton btn={btn} />}</For>
+              <For each={settings.tabBar}>{(btn) => <ToolbarButton btn={btn} />}</For>
             </div>
             <div class="tab-rail-list" data-tabstrip="vertical">
               <Index each={tabs()}>
@@ -2412,28 +2395,15 @@ export default function App() {
       <ToastHost />
       <GalleryHost />
     </div>
-    {/* Status bar (design/ascii/README.md "App shell", §2): a field-log line, pure
-        presentation of existing signals — vault name, the focused pane's content, connection
-        health (serverVersion's ConnectionState), and right-aligned mode indicators, closed by
-        a blinking `_` caret. No new state. */}
-    <div class="status-bar">
-      <span
-        class="status-vault"
-        title={vaultPath() || undefined}
-        onClick={copyVaultPath}
-      >{vaultName() || "vault"}</span>
-      <span class="status-sep">//</span>
-      <span class="status-path">{statusPath()}</span>
-      <Show when={currentConnectionState() !== "connected"}>
-        <span class="status-conn">connection lost — polling</span>
-      </Show>
-      <div class="status-spacer" />
-      <span class="status-mode">{mode()}</span>
-      <span class="status-daemon">
-        daemon: {settings.daemon.enabled ? (anyWorking() ? "working" : "idle") : "off"}
-      </span>
-      <span class="asc-caret">_</span>
-    </div>
+    <StatusBar
+      vaultName={vaultName()}
+      vaultPath={vaultPath()}
+      path={statusPath()}
+      connected={currentConnectionState() === "connected"}
+      mode={mode()}
+      daemon={settings.daemon.enabled ? (anyWorking() ? "working" : "idle") : "off"}
+      onCopyVault={copyVaultPath}
+    />
     </div>
   );
 }
