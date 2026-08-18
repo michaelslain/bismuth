@@ -2,7 +2,7 @@
 // (design/ascii/README.md "App shell", §2): vault name, the focused pane's content path,
 // connection health, and right-aligned mode + daemon indicators, closed by a blinking `_` caret.
 //
-// WHY THIS FILE EXISTS: nine `.status-*` rules are about to move from the global App.css into
+// WHY THIS FILE EXISTS: nine `.status-*` rules moved from the global App.css into
 // StatusBar.module.css, which HASHES every class name. A name left behind as a string literal
 // still compiles and still renders, it just matches nothing. Nothing else in the repo can see
 // that: typecheck reads no CSS, and Bun resolves `solid-js/web` to its server build so no unit

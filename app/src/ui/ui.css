@@ -304,9 +304,11 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
        rather than being split across two files. CAVEAT: the `.chip` base and its six tone
        variants have ZERO consumers today — deletion candidates for the same reason as .vseg.
 
-     STAYED in App.css — the status bar (.status-bar, .status-vault, .status-sep, .status-path,
-       .status-conn, .status-spacer, .status-mode, .status-daemon). Written by App.tsx and by
-       nothing else. One consumer means it belongs in that component, not in the design system.
+     STAYED in App.css, THEN MOVED (2026-08, app-shell componentization) — the status bar
+       (.status-bar, .status-vault, .status-sep, .status-path, .status-conn, .status-spacer,
+       .status-mode, .status-daemon) now lives in shell/StatusBar.module.css. Written by
+       shell/StatusBar.tsx and by nothing else. One consumer means it belongs in that component,
+       not in the design system, and not in App.css either once App.css had a shell/ to move it to.
      STAYED — the icon picker (six rules). Every one is written only by ui/gallery/SymbolGallery.tsx;
        icons/IconPicker.tsx writes none of them. One consumer.
      STAYED — .progress, its .count child and .card-dir. Written only by bases/FlashcardsView.tsx.

@@ -1,8 +1,8 @@
 // Visual spec for <CommandButton> — the presentational half of App.tsx's configurable toolbar
 // button, shared by the sidebar header bar, the horizontal tab strip, and the vertical tab rail.
 //
-// WHY THIS FILE EXISTS: `.toolbar-btn-wrap` and `.toolbar-badge` are about to move from the global
-// App.css into CommandButton.module.css, which HASHES every class name. A name left behind as a
+// WHY THIS FILE EXISTS: `.toolbar-btn-wrap` and `.toolbar-badge` moved from the global App.css
+// into CommandButton.module.css, which HASHES every class name. A name left behind as a
 // string literal still compiles and still renders, it just matches nothing — the badge loses its
 // absolute positioning and lands inline instead of pinned to the icon's corner. Nothing else in
 // the repo can see that: typecheck reads no CSS, and Bun resolves `solid-js/web` to its server

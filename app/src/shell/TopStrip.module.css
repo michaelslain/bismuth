@@ -1,0 +1,28 @@
+/* TopStrip.module.css — scoped chrome for shell/TopStrip.tsx (moved out of the global App.css,
+   2026-08). Class names here are HASHED at build time: they are reachable only through the
+   imported `styles` object, never as a string literal. Nothing outside TopStrip.tsx may target
+   them.
+
+   `top-strip--mac` HASHES TOO, even though it is a modifier riding as a second class on the same
+   <div> as `top-strip`. Both are locals of this module, so TopStrip.tsx reaches the modifier via
+   `classList={{ [styles["top-strip--mac"]]: props.mac }}` — a bare "top-strip--mac" literal in
+   classList would still compile and match nothing.
+
+   `.asc-wordmark` does NOT live here and never will. It is an `asc-*` design-system class in
+   App.css's ASCII register, alongside its own `@keyframes asc-sheen` and reduced-motion `@media`
+   — TopStrip.tsx keeps rendering it as a bare global string literal on purpose.
+
+   ONE RULE IN THIS FILE IS OUTSIDE THE COMPUTED-STYLE BASELINE'S REACH FOR A DIFFERENT REASON THAN
+   USUAL: none of `.top-strip`, `.top-strip--mac`, `.top-strip-spacer` has a `:hover` state, so all
+   three are fully covered by `bench/cssBaseline.ts`'s three Storybook stories (Default, Mac,
+   WindowsLinux) — there is no uncovered rule to flag here. */
+
+.top-strip {
+  flex: 0 0 auto; height: 36px; display: flex; align-items: center; gap: 14px; padding: 0 14px;
+  border-bottom: 1px solid var(--border-soft); color: var(--text-muted); background: var(--bg);
+  font-size: var(--fs-ui); -webkit-user-select: none; user-select: none;
+}
+/* macOS Overlay titlebar: native traffic lights float over the strip's left edge (see
+   src-tauri/src/lib.rs build_main_window) — reserve room for them instead of the wordmark. */
+.top-strip--mac { padding-left: 78px; }
+.top-strip-spacer { flex: 1; }

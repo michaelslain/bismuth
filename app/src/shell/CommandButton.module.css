@@ -1,0 +1,24 @@
+/* CommandButton.module.css — scoped chrome for shell/CommandButton.tsx (moved out of the global
+   App.css, 2026-08). Class names here are HASHED at build time: they are reachable only through
+   the imported `styles` object, never as a string literal. Nothing outside CommandButton.tsx may
+   target them.
+
+   ONLY TWO OF THE FOUR RULES App.css USED TO GROUP AS "toolzone icons" LIVE HERE. The other two —
+   the multi-parent `.sidebar-icons .btn--icon` / `.tab-rail-actions .btn--icon` (+ their `:hover`
+   twin) selector lists — stay in App.css for now, because `.btn--icon` itself belongs to
+   ui/ui.css via buttonClass.ts and would hash to nothing inside a module. Each PARENT gets its own
+   `:global(.btn--icon)` copy inside its OWN module as it migrates (Sidebar in Task 6, TabRail in
+   Task 7); their declaration text is recorded verbatim in this plan's Task 5 Step 2 sabotage-log
+   entry so each copy can be diffed against the original. This component never renders `.btn--icon`
+   itself — that class lands on the `<IconButton>` this component wraps, via `buttonClass()`
+   (ui/Button.tsx merges an incoming `class` rather than overwriting it, so a caller-supplied
+   `styles[...]` class survives alongside it — verified, per Known Trap 11 of the parent plan).
+
+   NEITHER RULE HAS A `:hover` STATE OF ITS OWN, so both are fully reachable by the computed-style
+   baseline: `Default`/`Disabled`/`SidebarSize` exercise `.toolbar-btn-wrap`, and `WithBadge` is the
+   only story that renders `.toolbar-badge` at all. */
+
+/* A toolbar button that carries a live count (the daemon inbox): the wrap anchors the badge
+   to the button's top-right corner without disturbing the icon row's layout. */
+.toolbar-btn-wrap { position: relative; display: inline-flex; }
+.toolbar-badge { position: absolute; top: -1px; right: -3px; pointer-events: none; font-size: 10.5px; font-weight: 600; line-height: 1; color: var(--bg); background: var(--accent); border-radius: 8px; padding: 2px 4px; }
