@@ -49,12 +49,27 @@ const ONLY = arg("story", "");
 // 1500ms still let one story flake under full-suite CPU load, and 2000ms still caught Milkdown
 // mid-mount. The duration that is enough is a property of the machine's load that day, which is
 // exactly what a fixed number cannot encode. STABLE identical consecutive captures can.
-const SETTLE = Number(arg("settle", "800"));
+// 1500, raised from 800 after measuring: app-sheetview reaches its final 538 elements by ~1500ms on
+// an idle machine, and a shorter head start lets the probe begin while the story is still the 3-element
+// pre-import shell. Network-idle gating catches most of that, but not the window where the chunk has
+// DOWNLOADED and is still parsing — no requests in flight, no DOM movement, and nothing mounted yet.
+// Three guards now overlap: this head start, network idle, and the growth escalation in captureOne.
+// Costs ~0.7s x 264 stories on the sweep, which is worth paying for a gate that can be believed.
+const SETTLE = Number(arg("settle", "1500"));
 /** How many byte-identical consecutive captures mean "this story has stopped moving". Two is not
- *  enough: a dynamic import can hold a stable loading state across one interval and then swap. */
-const STABLE = Number(arg("stable", "3"));
-const CONVERGE_WAIT = Number(arg("wait", "350"));
-const MAX_TRIES = Number(arg("tries", "16"));
+ *  enough: a dynamic import can hold a stable loading state across one interval and then swap.
+ *
+ *  FOUR, not three, and the wait is 400ms rather than 350 — so a story must hold still for 1200ms
+ *  instead of 700ms before it is believed. Measured cause: app-sheetview mounts Univer in stages and
+ *  goes 3 elements -> 469 -> 538 between 500ms and 1500ms on an IDLE machine. Each of those steps is
+ *  a plateau, and under the CPU load of a 264-story run the plateaus stretch until one of them
+ *  outlasts the stability window — at which point the harness records a half-built spreadsheet, with
+ *  every capture in the window genuinely identical and therefore no warning. That is how a 578-element
+ *  diff appears on a story nobody edited. Widening the window does not eliminate the failure (a long
+ *  enough stall always can), which is why the drift-retry pass below still exists as the backstop. */
+const STABLE = Number(arg("stable", "4"));
+const CONVERGE_WAIT = Number(arg("wait", "400"));
+const MAX_TRIES = Number(arg("tries", "20"));
 /** Frozen wall clock. Any fixed instant works; this one is a Thursday mid-month, so a month grid has
  *  both leading and trailing out-of-month cells and the calendar stories exercise both. */
 const FROZEN_NOW = Date.parse("2026-01-15T12:00:00Z");
@@ -113,13 +128,47 @@ const PROBE = `(async () => {
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   const PROPS = ${JSON.stringify(PROPS)};
-  const path = (el) => {
+  // ANCHOR AT THE STORY ROOT, NOT AT body. Storybook creates four sibling wrappers —
+  // .sb-preparing-story, .sb-preparing-docs, .sb-nopreview, .sb-errordisplay — LAZILY and BEFORE
+  // #storybook-root in the body. Whether they exist yet depends on what the preview runtime has had
+  // to display, so a path keyed from body shifts by one for every wrapper that happens to be present,
+  // and EVERY element in the story reports as changed at once: mass "NEW element" plus display/size
+  // values swapping between siblings that never moved. That produced 143 phantom diffs across four
+  // stories with an empty App.css diff, and it is what the retry pass was quietly papering over.
+  // Anchoring here makes the measurement independent of Storybook's own chrome entirely.
+  // ROOTS, PLURAL — the story root AND every portal. Anchoring at #storybook-root alone was a
+  // regression that hid TWELVE stories completely: every modal (ui-modal, the five app modals,
+  // FolderPrompt) and the symbol gallery renders through a Solid <Portal>, which mounts to
+  // document.body and therefore OUTSIDE the story root. They measured as 0 elements — silently
+  // unprotected, which is strictly worse than the body-keyed aliasing this replaced, because an
+  // aliased story at least reports drift while an empty one passes forever.
+  //
+  // So: enumerate body children, skip the ones Storybook owns, and treat each survivor as a root.
+  // That keeps the immunity to Storybook's lazily-created wrappers (the whole point of anchoring)
+  // while covering anything the app portals out.
+  const SB_IDS = ["storybook-root", "storybook-docs", "storybook-highlights-root"];
+  const isChrome = (el) =>
+    el.tagName === "SCRIPT" || el.tagName === "STYLE" ||
+    (el.id && SB_IDS.indexOf(el.id) >= 0) ||
+    /\\bsb-(preparing-story|preparing-docs|nopreview|errordisplay|wrapper)\\b/.test(el.getAttribute("class") || "");
+
+  const storyRoot = document.querySelector("#storybook-root");
+  const roots = [];
+  if (storyRoot) roots.push(["root", storyRoot]);
+  let portalN = 0;
+  for (const el of Array.prototype.slice.call(document.body.children)) {
+    if (el === storyRoot || isChrome(el)) continue;
+    roots.push(["portal[" + portalN++ + "]", el]);
+  }
+  if (roots.length === 0) roots.push(["root", document.body]);
+
+  const path = (el, rootEl, prefix) => {
     const parts = [];
-    for (let n = el; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) {
+    for (let n = el; n && n.nodeType === 1 && n !== rootEl && n !== document.documentElement; n = n.parentElement) {
       const i = n.parentElement ? Array.prototype.indexOf.call(n.parentElement.children, n) : 0;
       parts.unshift(n.tagName.toLowerCase() + "[" + i + "]");
     }
-    return parts.join(">");
+    return parts.length ? prefix + ">" + parts.join(">") : prefix;
   };
 
   const ref = document.createElement("div");
@@ -130,18 +179,31 @@ const PROBE = `(async () => {
   ref.remove();
 
   const out = {};
-  const all = document.querySelectorAll("body *");
-  for (const el of all) {
-    if (el.tagName === "STYLE" || el.tagName === "SCRIPT") continue;
-    const cs = getComputedStyle(el);
-    const rec = {};
-    for (const p of PROPS) {
-      const v = cs.getPropertyValue(p);
-      if (v !== defaults[p]) rec[p] = v;
+  // The story's own subtree only. The reference div stays appended to body above, deliberately: it
+  // exists to capture what the GLOBAL cascade resolves to, and measuring it inside the story root
+  // would let a story's own styles contaminate the baseline the per-element records are diffed
+  // against. (No backticks in this comment: it lives INSIDE a template literal, so one would close
+  // the string and take the rest of the probe with it.)
+  let count = 0;
+  for (const entry of roots) {
+    const prefix = entry[0], rootEl = entry[1];
+    // The root element itself is recorded too, keyed by the bare prefix. For a portal that element
+    // IS the modal's outermost box — the thing carrying the backdrop, the z-index and the sizing —
+    // so dropping it would measure a modal's contents while ignoring the modal.
+    const list = [rootEl].concat(Array.prototype.slice.call(rootEl.querySelectorAll("*")));
+    for (const el of list) {
+      if (el.tagName === "STYLE" || el.tagName === "SCRIPT") continue;
+      count++;
+      const cs = getComputedStyle(el);
+      const rec = {};
+      for (const p of PROPS) {
+        const v = cs.getPropertyValue(p);
+        if (v !== defaults[p]) rec[p] = v;
+      }
+      out[path(el, rootEl, prefix)] = rec;
     }
-    out[path(el)] = rec;
   }
-  return JSON.stringify({ count: all.length, ref: defaults, els: out });
+  return JSON.stringify({ count: count, ref: defaults, els: out });
 })()`;
 
 /** Installed via Page.addScriptToEvaluateOnNewDocument, so it runs before ANY story code — including
@@ -171,9 +233,35 @@ const index = await (await fetch(`${BASE}/index.json`)).json();
 // "record every case of the thing I just changed". Prefix matching makes that one command. The
 // matched set is always printed, because a filter that silently covers more than you meant is worse
 // than one that covers less.
+/**
+ * Stories whose OWN rendering is nondeterministic, so no amount of waiting makes them comparable.
+ *
+ * EMPTY, and that is the correct state — the mechanism is kept because the NEXT genuinely-unstable
+ * story should be dropped loudly rather than left to erode trust in every red run, but nothing
+ * currently qualifies.
+ *
+ * It is worth recording what nearly went in here. app-sheetview--* looked bistable: recorded in
+ * isolation then checked three times in isolation it gave 0, 0, then 1156 changed, and the obvious
+ * reading was that Univer renders two different DOMs. It does not. Probed six times at a flat 4s
+ * wait it produced 538 elements and 36 toolbar buttons EVERY time. The variance was the harness
+ * breaking out of convergence on Univer's 469-element plateau — fixed by the growth escalation in
+ * captureOne. An exclusion here would have permanently blinded the gate to a real component in order
+ * to hide a bug in the gate itself, which is the most expensive kind of mistake this file can make:
+ * silent, self-justifying, and indistinguishable from diligence.
+ */
+const UNSTABLE: string[] = [];
+
 const matchesOnly = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY);
-const storyIds = Object.keys(index.entries).filter(matchesOnly).sort();
+// Excluded only during a SWEEP. An explicit --story naming one is an intentional manual check.
+const excluded = (id: string) => !ONLY && UNSTABLE.indexOf(id) >= 0;
+const storyIds = Object.keys(index.entries).filter((id) => matchesOnly(id) && !excluded(id)).sort();
 if (storyIds.length === 0) throw new Error(`no stories matched (--story ${ONLY})`);
+if (!ONLY && UNSTABLE.length) {
+  console.error(
+    `NOT PROTECTED: ${UNSTABLE.length} story(s) excluded as nondeterministic — a regression in these ` +
+    `will NOT be caught here:\n  ${UNSTABLE.join("\n  ")}`,
+  );
+}
 if (ONLY) console.error(`--story ${ONLY} matched ${storyIds.length}: ${storyIds.join(", ")}`);
 
 // Launch, port poll, CDP attach and teardown are chromeSession.ts's — including the SIGKILL-then-retry
@@ -186,6 +274,37 @@ const session = await launchChrome({
   label: "cssbase", width: W, height: H, flags: ["--force-prefers-reduced-motion"],
 });
 const { page } = session;
+
+// NETWORK-IDLE GATING. The failure this closes: app-sheetview settles on THREE elements — the shell
+// that renders before `sheet/univerSheet.ts`'s dynamic import resolves. Three elements holding
+// perfectly still is indistinguishable from an ordinary static story, so neither the identical-capture
+// test nor the growth escalation fires; the harness records a spreadsheet that never loaded. Observed
+// as 0, 0, 1156, 1156 changed across four isolated checks of unmodified code, where 1156 is exactly
+// the 578 elements Univer would have added, twice.
+//
+// Element counts cannot see this. A pending module request can, so the settle condition becomes
+// "stopped changing AND has nothing left to fetch". This generalises past Univer to every code-split
+// surface in the app (Milkdown, the drawing canvas, the graph renderer), which is the point — the
+// alternative was a hand-maintained list of slow stories that the next code-split component silently
+// falls off.
+await page("Network.enable");
+// QUIESCENCE, NOT A COUNTER. An in-flight counter was tried first and is the wrong shape: any request
+// that never emits a terminal event (a cancelled fetch, a redirect chain, an EventSource) pins it
+// permanently above zero, and the story can then NEVER satisfy the settle condition. That is not a
+// theoretical objection — the counter version pushed app-inboxpageview--* and editor-editor--* from
+// converging normally to "never converged in 20 probes", i.e. it manufactured arbitrary recordings for
+// four stories that had been fine. Timestamping the last network event instead cannot leak: the worst
+// a lost event can do is let the page look idle slightly early, which is the pre-existing behaviour
+// rather than a new failure mode.
+let lastNetAt = Date.now();
+const NET_QUIET = 500;
+session.ws.addEventListener("message", (e) => {
+  let m: any;
+  try { m = JSON.parse(String((e as MessageEvent).data)); } catch { return; }
+  if (typeof m.method === "string" && m.method.indexOf("Network.") === 0) lastNetAt = Date.now();
+});
+const netQuiet = () => Date.now() - lastNetAt > NET_QUIET;
+
 // PER-TOOL, deliberately not in the helper: this harness needs a fixed viewport at scale 1, a pinned
 // timezone and a frozen clock (see DETERMINISM above). visual.ts renders at scale 2 and needs real
 // time, so none of the three can be a shared default.
@@ -212,18 +331,49 @@ const unstable: string[] = [];
  *  regression survives that. */
 const captureOne = async (id: string, settle: number, wait: number) => {
   await sleep(settle);
-  let last = "", value = "", same = 0;
+  // `grew` escalates the stability requirement for staged mounters ONLY, so the ~250 stories that
+  // render in one shot pay nothing for Univer's benefit. See the growth note at the break below.
+  let last = "", value = "", same = 0, maxCount = 0, grew = false, need = STABLE;
   for (let i = 0; i < MAX_TRIES; i++) {
     const r = await page("Runtime.evaluate", { expression: PROBE, returnByValue: true, awaitPromise: true });
     if (r.exceptionDetails) { console.error(`\nSKIP ${id}: ${r.exceptionDetails.text}`); return null; }
     value = r.result.value;
-    same = value === last ? same + 1 : 0;
+    // AN EMPTY STORY ROOT IS NEVER "SETTLED". This is the completeness hole, and it is not subtle
+    // once measured: ui-markdownfield--placeholder renders ZERO elements until ~2000ms, because
+    // Milkdown mounts asynchronously. The default 800ms settle plus three 350ms convergence waits
+    // reaches a verdict at ~1850ms, and three consecutive captures of an empty root are perfectly
+    // identical — so the harness recorded "this story has no elements" and moved on, having proved
+    // only that nothing had started yet. The check pass then saw the real component and reported
+    // every element as NEW. Refusing to count an empty capture toward stability costs nothing on the
+    // 258 stories that mount promptly (their first capture is already non-empty) and gives the slow
+    // ones the full MAX_TRIES budget. A story that genuinely renders nothing still exits the loop
+    // unsettled and is reported by the "rendered 0 elements" warning below, which is where a truly
+    // blank story SHOULD surface — loudly, not as a silently blessed recording.
+    const count = Number(/"count":(\d+)/.exec(value)?.[1] ?? 0);
+    // A STORY THAT GREW WHILE WE WATCHED IS A STAGED MOUNTER, AND STAGED MOUNTERS LIE AT REST.
+    // app-sheetview goes 3 elements -> 469 -> 538 as Univer registers its plugins. Each step holds
+    // still, so a plain "N identical captures" test can accept 469 and record a spreadsheet with no
+    // toolbar. Chasing this with a bigger fixed window costs every fast story the same delay; keying
+    // it to observed GROWTH costs only the stories that actually stage. Once a story has grown even
+    // once, it must then hold still for three extra probes before it is believed.
+    //
+    // This is what I initially misdiagnosed as Univer being nondeterministic and nearly dropped from
+    // the gate. It is not: probed six times at a flat 4s wait it produced 538 elements and 36 toolbar
+    // buttons every single time. The variance was entirely this early break.
+    if (count > maxCount) {
+      if (maxCount > 0) grew = true;
+      maxCount = count;
+    }
+    need = grew ? STABLE + 3 : STABLE;
+    // `inflight <= 0` is part of the settle condition, not a separate wait: a story can be visually
+    // still purely because the thing that will change it has not been delivered yet.
+    same = value === last && count > 0 && netQuiet() ? same + 1 : 0;
     last = value;
-    if (same >= STABLE - 1) break;
+    if (same >= need - 1) break;
     await sleep(wait);
   }
   const parsed = JSON.parse(value);
-  return { ref: parsed.ref, els: parsed.els, count: parsed.count as number, settled: same >= STABLE - 1 };
+  return { ref: parsed.ref, els: parsed.els, count: parsed.count as number, settled: same >= need - 1 };
 };
 
 let done = 0;
@@ -344,7 +494,9 @@ session.close();
 // captured side would let it drop out of the comparison entirely with the exit code still 0 — the
 // story-level version of the same union rule applied to properties above.
 for (const id of Object.keys(base)) {
-  if (!matchesOnly(id)) continue;
+  // `excluded` as well as `matchesOnly`: this loop walks the RECORDED side, so an excluded story is
+  // still sitting in the baseline file and would otherwise be reported here as vanished-from-the-run.
+  if (!matchesOnly(id) || excluded(id)) continue;
   if (!(id in captured)) diffs.push(`${id}: MISSING from capture (story errored or was removed)`);
 }
 console.log(diffs.slice(0, 200).join("\n"));
