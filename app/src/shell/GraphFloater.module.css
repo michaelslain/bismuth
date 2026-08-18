@@ -1,0 +1,45 @@
+/* GraphFloater.module.css — scoped chrome for shell/GraphFloater.tsx (moved out of the global
+   App.css, 2026-08). Class names here are HASHED at build time: they are reachable only through the
+   imported `styles` object, never as a string literal. Nothing outside GraphFloater.tsx may target
+   them.
+
+   `docked` HASHES TOO, as a co-riding state class on `.graph-floater` (the sidebar clip-path inset).
+   GraphFloater.tsx reaches it via `classList={{ [styles['docked']]: props.docked }}` — a bare
+   "docked" literal in classList would still compile and match nothing.
+
+   Geometry (`top`/`left`/`width`/`height`) is still written directly onto this element from
+   App.tsx's `placeFloater` — cross-boundary measurement of a host placeholder inside a pane leaf —
+   and deliberately stays there; this module only owns the two rules below plus the split-off
+   view-dragging rule.
+
+   `palette/switcher.css` reaches this element from OUTSIDE this module too (an opaque `--bg` fill
+   while the Cmd+O switcher is open), via `[data-graph-floater]` rather than a class — GraphFloater.tsx
+   carries that attribute for exactly this reach, the same pattern Sidebar.tsx's `data-sidebar-toolbar`
+   already established. `bench/moduleClassCheck.ts --verbose`'s "declared by a global stylesheet too"
+   warning is what caught the bare `.graph-floater` selector switcher.css used to write; no story sets
+   `.switcher-active`, so nothing in this plan's own gate would have.
+
+   THE `:global(html.view-dragging)` RULE BELOW IS A SPLIT, NOT A MOVE. App.css used to style
+   `.terminal-overlay`, `.chat-overlay` and `.graph-floater` off one 3-selector rule keyed on
+   `html.view-dragging` (so drops fall through every always-mounted overlay to the pane-leaf beneath
+   while a view drag is in progress). Those three classes now live in two different modules
+   (`.graph-floater` here, `.terminal-overlay`/`.chat-overlay` in PaneOverlay.module.css), so the rule
+   is split in two, one per module, each still targeting `pointer-events: none`. `html` is reached
+   through `:global(...)` — the parenthesized form only, since cssLayering.test.ts bans the bare
+   `:global .foo` switch form. NO STORY sets `html.view-dragging` (nothing in Storybook drives a real
+   view drag), so this rule rests on `bench/moduleClassCheck.ts` alone — it proves `.graph-floater`
+   still reaches the DOM, not that the pointer-events behaviour still fires during a real drag.
+
+   Nothing here is `:hover`-only, so `bench/cssBaseline.ts`'s resting-state recording covers the two
+   `.graph-floater` rules in full (the `Docked` story is the only one reaching the clip-path). */
+
+/* Single graph element, snapped over whichever slot is active (see App.tsx).
+   Box geometry is set inline in JS. */
+.graph-floater { position: fixed; z-index: 2; overflow: hidden; }
+/* When docked in the sidebar, the floater keeps its full size (no canvas resize, so
+   no node flicker) and instead clips its right edge in lockstep with the sidebar's
+   animating width — var(--sidebar-w) is inherited from .layout and interpolates, so
+   the graph collapses/reveals smoothly along with the rest of the sidebar. */
+.graph-floater.docked { clip-path: inset(0 calc(var(--sidebar-width, 266px) - var(--sidebar-w)) 0 0); }
+
+:global(html.view-dragging) .graph-floater { pointer-events: none; }

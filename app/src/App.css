@@ -88,14 +88,8 @@
 /* Generic full-box filler — pane placeholders / Suspense fallbacks that should hold the
    pane's full geometry while their real content (graph host, lazy chunk) mounts. */
 .full { width: 100%; height: 100%; }
-/* Single graph element, snapped over whichever slot is active (see App.tsx).
-   Box geometry is set inline in JS. */
-.graph-floater { position: fixed; z-index: 2; overflow: hidden; }
-/* When docked in the sidebar, the floater keeps its full size (no canvas resize, so
-   no node flicker) and instead clips its right edge in lockstep with the sidebar's
-   animating width — var(--sidebar-w) is inherited from .layout and interpolates, so
-   the graph collapses/reveals smoothly along with the rest of the sidebar. */
-.graph-floater.docked { clip-path: inset(0 calc(var(--sidebar-width, 266px) - var(--sidebar-w)) 0 0); }
+/* `.graph-floater` / `.graph-floater.docked` (the always-mounted Knowledge Graph wrapper) moved
+   into shell/GraphFloater.module.css. */
 /* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
    resting color rising to --fg on hover — not full-strength white at rest. Shared by
    the tab-strip actions, the empty-pane new-terminal icon, and the graph-mode icons.
@@ -109,8 +103,10 @@
    centres. 20px box + 3px gap puts ~11px of air between glyphs, roughly one glyph width, which is what
    makes a row of icons read as a group. Radius drops 7 -> --r-control (3px): 7px on a 20px box is nearly
    a pill, and nothing in this design system is pill-round (ui.css :root). */
-.tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty-pane .btn--icon, .graph-mode-icons .btn--icon { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
-.tabbar-actions .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .empty-pane .btn--icon:hover:not(:disabled), .graph-mode-icons .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+.tabbar-actions .btn--icon, .empty-pane .btn--icon, .graph-mode-icons .btn--icon { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
+.tabbar-actions .btn--icon:hover:not(:disabled), .empty-pane .btn--icon:hover:not(:disabled), .graph-mode-icons .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+/* `.tab-rail-actions .btn--icon` was dropped from the two selector lists above — shell/TabRail.module.css
+   now carries its own `:global(.btn--icon)` copies at identical specificity (0,2,0). */
 /* The file tree's own chrome (.ft-… , plus the `active` / `system` / `drop-target` / `open` /
    `hidden` state classes that only ever ride on it) moved DOWN into FileTree.module.css: one
    owner, one consumer, no runtime-generated names, so scoping costs nothing and stops the
@@ -153,20 +149,8 @@
 .tab .tab-pin:hover { opacity: 1; }
 .tab.pinned.active .tab-pin { opacity: 1; }
 
-/* Inline rename input — sits in place of the label span, sized to match the tab text so
-   the chip doesn't jump. Borderless/transparent so it reads as editing the tab itself. */
-.tab-rename {
-  font: inherit;
-  color: var(--fg);
-  background: var(--surface-1, var(--bg));
-  border: 1px solid var(--accent, var(--border-soft));
-  border-radius: 4px;
-  padding: 1px 4px;
-  margin: -2px 0;
-  width: 11ch;
-  min-width: 4ch;
-  outline: none;
-}
+/* `.tab-rename` (the inline rename input, used by the vertical rail's TabRailRow) moved into
+   shell/TabRail.module.css. */
 
 /* Trailing new-tab / terminal actions, sitting just after the last tab in the strip.
    Styled to match the sidebar toolbar icon buttons (same size, muted color, hover). */
@@ -176,117 +160,20 @@
    a new tab). Tab-on-tab reorder uses the neighbor-slide gap instead. */
 .tab-caret { width: 2px; align-self: stretch; margin: 3px 0; background: var(--accent); border-radius: 2px; box-shadow: 0 0 6px var(--accent); flex: 0 0 auto; }
 
-/* ── Vertical tab rail (ui.verticalTabs) ─────────────────────────────────────────────
-   `ui.verticalTabs` hides the horizontal .tabbar and renders a .tab-rail on the RIGHT
-   edge of the app instead (App.tsx, as the .layout grid's third column). Collapsed it's a
-   narrow icon column; on HOVER (or focus-within, so an in-rail rename stays open) it
-   widens leftward to reveal each tab's full name, then collapses on mouseleave.
+/* The vertical tab rail (`.tab-rail`, `.tab-rail-inner`, `.tab-rail-actions`, `.tab-rail-list`,
+   `.tab-rail-row`, `.tab-rail-icon`, `.tab-rail-label`, `.tab-x`, `.tab-pin`) moved into
+   shell/TabRail.module.css, shared by shell/TabRail.tsx and shell/TabRailRow.tsx. */
 
-   The .tab-rail cell only ever reserves the COLLAPSED width in the grid (--rail-w, 46px —
-   tokens/spacing.css's "right tab rail 46px collapsed / 232px open"); the actual surface
-   (.tab-rail-inner) is absolutely anchored to the right and animates its own width,
-   OVERFLOWING leftward over the editor — so the expand/collapse is a pure overlay and the
-   editor body never reflows on hover. Layout top-to-bottom: the +/terminal/chat action
-   TOOLBAR, then the back/forward nav, then the scrollable tab-row list. The toolbar + nav are
-   flex-wrap rows: collapsed (46px) each 28px button drops to its own line → a centered
-   single-icon column aligned with the tab icons; expanded (232px) they fit on one line as
-   horizontal rows (nav = ‹ › side-by-side). Rows sit in a straight, centered icon column (no
-   arc). */
-.tab-rail { position: relative; z-index: 6; }
-.tab-rail-inner {
-  position: absolute; top: 0; right: 0; bottom: 0;
-  width: 46px;                       /* collapsed: icon column only (matches --rail-w) */
-  display: flex; flex-direction: column;
-  background: var(--rail);
-  border-left: 1px solid var(--border-soft);
-  overflow: hidden;                  /* clips labels/close-X while collapsed */
-  transition: width 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
-}
-.tab-rail:hover .tab-rail-inner,
-.tab-rail:focus-within .tab-rail-inner {
-  width: 232px;                      /* expanded: icon + full name + close/pin */
-  box-shadow: var(--shadow-menu);
-}
-@media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
-
-/* Top action toolbar. A LEFT-packed flex-wrap row whose ASYMMETRIC side padding is what puts
-   the icons on the rail's centre line. The arithmetic, measured not guessed:
-     .tab-rail-inner is 46px border-box with a 1px border-left, so its content starts at x=1
-     and is 45px wide. A tab row below sits at margin 5 + padding 10, so its 16px icon centres
-     at 1+5+10+8 = 24px — THAT is the column these buttons must land on.
-     Buttons are 20px (.btn--icon above) and never shrink (flex:0 0 auto below), so
-     padding-left 13 puts a button centre at 1+13+10 = 24px. ✓
-     padding-right 12 makes the content box exactly 45−13−12 = 20px, i.e. one button wide, so
-     collapsed each button wraps onto its own line → a single centred icon column.
-   Expanded (232px) they fit on one line, still starting on that same 24px centre, so the
-   column stays straight through the hover transition. Do NOT switch this to
-   justify-content:center — that centres the whole row in the 232px expanded rail and the
-   icons slide ~70px sideways on hover. Do NOT make the padding symmetric either: a 19px
-   content box squeezes the buttons and drops them back to 23.5px, half a pixel off the tabs. */
-.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 12px 8px 13px; flex: 0 0 auto; }
-.tab-rail-actions .btn--icon { flex: 0 0 auto; }
-.tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
-
-/* The scrollable row list fills the middle. */
-.tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0; display: flex; flex-direction: column; gap: 2px; }
-
-/* A tab row: icon + (revealed) label + close/pin. margin 5px + padding 10px puts the 16px
-   icon's centre at 23px = the middle of the 46px collapsed rail. The label + trailing
-   button overflow past 46px and are clipped by .tab-rail-inner until it expands. Radius is
-   the design's --r-card (4px) — nothing in the ASCII register is pill-round. Row height is
-   the app's row unit (--row-h, 18px) — same rhythm as a sidebar tree row. */
-.tab-rail-row {
-  display: flex; align-items: center; gap: 10px;
-  height: var(--row-h, 18px); min-height: var(--row-h, 18px); box-sizing: border-box;
-  margin: 0 5px; padding: 0 10px; border-radius: var(--r-card, 4px);
-  color: var(--text-muted); cursor: pointer; user-select: none;
-  white-space: nowrap; position: relative;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
-/* Active tab: accent-soft fill + accent text, PLUS the --grad rule (design vocabulary's one
-   other use of the wordmark's gradient) as a 2px left bar marking the active row. */
-.tab-rail-row.active { background: var(--accent-soft); color: var(--accent); }
-.tab-rail-row.active::before { content: ""; position: absolute; left: -5px; top: 2px; bottom: 2px; width: 2px; background: var(--grad); }
-.tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
-.tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
-.tab-rail-row.active .tab-rail-icon { color: var(--accent); }
-/* Label is revealed with the rail: it takes flex space always (so the collapsed row still
-   sizes the same) but fades in only once expanded. */
-.tab-rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.16s ease; }
-.tab-rail:hover .tab-rail-label, .tab-rail:focus-within .tab-rail-label { opacity: 1; }
-
-/* Close / pin trailing button. Hidden until the rail is expanded; the close X then shows
-   on row-hover, while a pinned row keeps its pin visible (like the horizontal strip). */
-.tab-rail-row .tab-x, .tab-rail-row .tab-pin { flex: 0 0 auto; padding: 2px; opacity: 0; color: var(--text-muted); transition: opacity 0.12s ease; }
-.tab-rail-row .tab-pin { color: var(--accent, var(--fg)); }
-.tab-rail:hover .tab-rail-row.pinned .tab-pin { opacity: 0.85; }
-.tab-rail:hover .tab-rail-row:hover .tab-x,
-.tab-rail:hover .tab-rail-row:hover .tab-pin,
-.tab-rail:focus-within .tab-rail-row.pinned .tab-pin { opacity: 1; }
-/* The inline rename input sits in place of the label; give it room within the expanded row. */
-.tab-rail-row .tab-rename { flex: 1; min-width: 0; width: auto; margin: 0; }
-
-/* Floating ghost that follows the cursor during a tab/pane drag. */
-.drag-ghost {
-  position: fixed; z-index: 1000; pointer-events: none;
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 10px; font-size: 12px; white-space: nowrap;
-  max-width: 280px; overflow: hidden; text-overflow: ellipsis;
-  background: var(--panel); color: var(--fg);
-  border: 1px solid var(--accent); border-radius: 6px;
-  box-shadow: var(--shadow-popup);
-  opacity: 0.96; transform: scale(1.02); transform-origin: top left;
-}
-.drag-ghost.pane { border-style: dashed; }
+/* `.drag-ghost` / `.drag-ghost.pane` (the floating chip that follows the cursor during a tab/pane
+   drag) moved into shell/DragGhost.module.css. */
 
 /* While any view drag is in progress: grabbing cursor + no accidental text selection. */
 html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-select: none !important; }
 /* …and let drops pass through the always-mounted terminal overlay + graph floater to the
-   pane-leaf beneath them (each overlay's host placeholder lives inside the leaf). */
-html.view-dragging .terminal-overlay,
-html.view-dragging .chat-overlay,
-html.view-dragging .graph-floater { pointer-events: none; }
+   pane-leaf beneath them (each overlay's host placeholder lives inside the leaf). This rule used to
+   be one 3-selector block here; it is now split, one `:global(html.view-dragging)` copy per module —
+   shell/PaneOverlay.module.css (`.terminal-overlay`, `.chat-overlay`) and
+   shell/GraphFloater.module.css (`.graph-floater`). */
 
 /* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. */
 .palette-overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: var(--palette-top-offset, 12vh); background: var(--scrim-bg); backdrop-filter: blur(3px); font-family: "Monaspace Xenon", ui-monospace, monospace; }

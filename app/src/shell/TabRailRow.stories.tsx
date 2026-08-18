@@ -2,9 +2,10 @@
 // rename input), and a trailing close-X / pin.
 //
 // WHY THIS FILE EXISTS: recorded BEFORE `.tab-rail-row`/`.tab-rail-icon`/`.tab-rail-label`/
-// `.tab-x`/`.tab-pin`/`.tab-rename` move from the global App.css into the module TabRail.tsx and
+// `.tab-x`/`.tab-pin`/`.tab-rename` moved from the global App.css into the module TabRail.tsx and
 // this file share. See TabRail.stories.tsx and TabRail.tsx's headers for why they share one module
-// (Trap 4: descendant selectors span both components).
+// (Trap 4: descendant selectors span both components). The `Wrap` below reaches its ancestry classes
+// (`.tab-rail`/`.tab-rail-inner`/`.tab-rail-list`) through `styles` for the same reason.
 //
 // SEVEN STORIES: `Default` (rest). `Active` — `.active` + its `::before` gradient bar. `Pinned` —
 // the pin glyph replaces the close X. `Dragging` — `.dragging`. `Renaming` — the `.tab-rename`
@@ -14,6 +15,7 @@
 // reveal) are written as descendants of `.tab-rail`.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { TabRailRow } from './TabRailRow'
+import styles from './TabRail.module.css'
 
 const noop = () => {}
 
@@ -34,12 +36,14 @@ const Wrap = (props: { children: unknown }) => (
             background: 'var(--rail)',
         }}
     >
-        <div class="tab-rail" style={{ position: 'static' }}>
+        <div class={styles['tab-rail']} style={{ position: 'static' }}>
             <div
-                class="tab-rail-inner"
+                class={styles['tab-rail-inner']}
                 style={{ position: 'static', width: '100%' }}
             >
-                <div class="tab-rail-list">{props.children as never}</div>
+                <div class={styles['tab-rail-list']}>
+                    {props.children as never}
+                </div>
             </div>
         </div>
     </div>

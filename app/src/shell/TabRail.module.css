@@ -1,0 +1,182 @@
+/* TabRail.module.css — scoped chrome for shell/TabRail.tsx AND shell/TabRailRow.tsx (moved out of
+   the global App.css, 2026-08). Class names here are HASHED at build time: they are reachable only
+   through the imported `styles` object, never as a string literal. Nothing outside these two files
+   may target them.
+
+   SHARED BY TWO COMPONENTS, DELIBERATELY. Hashes are per-file, and eight hover/focus selectors span
+   both (`.tab-rail:hover .tab-rail-label`, `.tab-rail:focus-within .tab-rail-row.pinned .tab-pin`,
+   …) — splitting this into a module per file would leave every one of those matching nothing behind
+   a green build. `TabRail.tsx` owns `.tab-rail`/`.tab-rail-inner`/`.tab-rail-actions`/
+   `.tab-rail-list`; `TabRailRow.tsx` owns `.tab-rail-row`/`.tab-rail-icon`/`.tab-rail-label`/
+   `.tab-x`/`.tab-pin`/`.tab-rename` and imports this same file, getting no module of its own. Two
+   files importing one module is correct and already precedented by `palette/Palette.module.css`.
+
+   `active` AND `pinned` HASH TOO, as co-riding state classes on `.tab-rail-row`. TabRailRow.tsx
+   reaches them via `classList={{ [styles.active]: …, [styles.pinned]: … }}` — bare literals would
+   compile and match nothing.
+
+   `dragging` is a DELIBERATE bare string literal, not an oversight. TabRailRow.tsx has always
+   carried a `dragging` class candidate in its `classList`, but no `.tab-rail-row.dragging` rule
+   exists anywhere in this stylesheet (only the unrelated, dead `.tab.dragging` on the removed
+   horizontal strip — Task 8's problem, not this one's). Giving it a module lookup here would resolve
+   to `undefined` and land a literal `class="undefined"` on the row, so it stays bare. The
+   `TabRailRow` `Dragging` story exists to document this: it renders `dragging: true` and looks
+   identical to `Default`, on purpose, so a future `.tab-rail-row.dragging` rule cannot land
+   unmeasured against a story that never noticed the change.
+
+   THREE IMPERATIVE `.closest()` REFERENCES used to reach `.tab-x`/`.tab-pin`/`.tab-rename` as bare
+   strings (TabRailRow.tsx, moved from App.tsx). They are rewritten against this module's `styles`
+   object in the same commit that hashes these names — see TabRailRow.tsx. Note the third guard
+   (dblclick -> rename) deliberately tests only `.tab-x`/`.tab-pin`, NOT `.tab-rename` — that
+   asymmetry is preserved verbatim from the pre-migration source, not "fixed" into consistency.
+
+   `.tab-rail-actions :global(.btn--icon) { flex: 0 0 auto; }` — MOVED, not copied, from the
+   verbatim "Top action toolbar" block above, but with `:global(...)` ADDED around `.btn--icon`.
+   `bench/moduleClassCheck.ts` caught the reason: the source rule (`.tab-rail-actions .btn--icon {
+   flex: 0 0 auto; }`) targeted a class this stylesheet does not own, and once it lived inside a CSS
+   Module its bare `.btn--icon` hashed too, matching nothing in ui.css's real buttons. Wrapping it is
+   the same fix Sidebar.module.css's own `.sidebar-icons .btn--icon { font-size: … }` needed for the
+   identical reason (Trap 5) — a verbatim MOVE still needs this when the moved selector reaches
+   outside its new module, whereas the two rules right below are full COPIES of a still-live App.css
+   selector list, not moves.
+
+   THE TWO `.tab-rail-actions :global(.btn--icon)` RULES BELOW ARE COPIES, NOT MOVES, same pattern as
+   Sidebar.module.css's `.sidebar-icons` copies. `.btn--icon` itself belongs to ui/ui.css via
+   buttonClass.ts and would hash to nothing inside this module, so it is reached through
+   `:global(...)` — the parenthesized form only, since cssLayering.test.ts bans the bare
+   `:global .foo` switch form. Their declarations are copied VERBATIM from the multi-parent selector
+   list that used to read `.tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty-pane
+   .btn--icon, .graph-mode-icons .btn--icon { … }` in App.css (recorded in full in the parent plan's
+   Task 5 Step 2 entry) — `.tab-rail-actions` was dropped from that selector list in this same commit,
+   so App.css keeps styling the other three parents and this module now independently styles this
+   one. Both copies are `.tab-rail-actions :global(.btn--icon)`, specificity (0,2,0) — IDENTICAL to
+   the rule they were copied from — deliberately: there is no collision to dodge once
+   `.tab-rail-actions` is gone from the App.css selector list, so raising specificity here would just
+   be an unrequested behaviour change riding along on a CSS move.
+
+   WHAT THE BASELINE CANNOT REACH: `bench/cssBaseline.ts` records the resting state of every
+   Storybook story; CSS `:hover` follows the real pointer and `userEvent.hover` only dispatches
+   events without moving it, so no story can pose it. `:focus-within` DOES follow real focus, and the
+   `shell-tabrail--expanded` story's `play` calls `.focus()` on a close button to reach it — covering
+   five of the eight hover/focus rules below. The remaining three rest on `bench/moduleClassCheck.ts`
+   alone (proves the class name still reaches the DOM, not the hovered appearance):
+   `.tab-rail-row:hover`, `.tab-rail:hover .tab-rail-row:hover .tab-x`,
+   `.tab-rail:hover .tab-rail-row:hover .tab-pin`.
+
+   The `@media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }` block
+   moved here with `.tab-rail-inner` — its animation-affecting sibling, per the parent plan's Trap 6
+   (keyframe/media rules are invisible to the `^\.`-anchored ratchet grep but still belong with their
+   family). */
+
+/* ── Vertical tab rail (ui.verticalTabs) ─────────────────────────────────────────────
+   `ui.verticalTabs` hides the horizontal .tabbar and renders a .tab-rail on the RIGHT
+   edge of the app instead (App.tsx, as the .layout grid's third column). Collapsed it's a
+   narrow icon column; on HOVER (or focus-within, so an in-rail rename stays open) it
+   widens leftward to reveal each tab's full name, then collapses on mouseleave.
+
+   The .tab-rail cell only ever reserves the COLLAPSED width in the grid (--rail-w, 46px —
+   tokens/spacing.css's "right tab rail 46px collapsed / 232px open"); the actual surface
+   (.tab-rail-inner) is absolutely anchored to the right and animates its own width,
+   OVERFLOWING leftward over the editor — so the expand/collapse is a pure overlay and the
+   editor body never reflows on hover. Layout top-to-bottom: the +/terminal/chat action
+   TOOLBAR, then the back/forward nav, then the scrollable tab-row list. The toolbar + nav are
+   flex-wrap rows: collapsed (46px) each 28px button drops to its own line → a centered
+   single-icon column aligned with the tab icons; expanded (232px) they fit on one line as
+   horizontal rows (nav = ‹ › side-by-side). Rows sit in a straight, centered icon column (no
+   arc). */
+.tab-rail { position: relative; z-index: 6; }
+.tab-rail-inner {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 46px;                       /* collapsed: icon column only (matches --rail-w) */
+  display: flex; flex-direction: column;
+  background: var(--rail);
+  border-left: 1px solid var(--border-soft);
+  overflow: hidden;                  /* clips labels/close-X while collapsed */
+  transition: width 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
+}
+.tab-rail:hover .tab-rail-inner,
+.tab-rail:focus-within .tab-rail-inner {
+  width: 232px;                      /* expanded: icon + full name + close/pin */
+  box-shadow: var(--shadow-menu);
+}
+@media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
+
+/* Top action toolbar. A LEFT-packed flex-wrap row whose ASYMMETRIC side padding is what puts
+   the icons on the rail's centre line. The arithmetic, measured not guessed:
+     .tab-rail-inner is 46px border-box with a 1px border-left, so its content starts at x=1
+     and is 45px wide. A tab row below sits at margin 5 + padding 10, so its 16px icon centres
+     at 1+5+10+8 = 24px — THAT is the column these buttons must land on.
+     Buttons are 20px (.btn--icon above) and never shrink (flex:0 0 auto below), so
+     padding-left 13 puts a button centre at 1+13+10 = 24px. ✓
+     padding-right 12 makes the content box exactly 45−13−12 = 20px, i.e. one button wide, so
+     collapsed each button wraps onto its own line → a single centred icon column.
+   Expanded (232px) they fit on one line, still starting on that same 24px centre, so the
+   column stays straight through the hover transition. Do NOT switch this to
+   justify-content:center — that centres the whole row in the 232px expanded rail and the
+   icons slide ~70px sideways on hover. Do NOT make the padding symmetric either: a 19px
+   content box squeezes the buttons and drops them back to 23.5px, half a pixel off the tabs. */
+.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 12px 8px 13px; flex: 0 0 auto; }
+.tab-rail-actions :global(.btn--icon) { flex: 0 0 auto; }
+.tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
+
+/* The scrollable row list fills the middle. */
+.tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0; display: flex; flex-direction: column; gap: 2px; }
+
+/* A tab row: icon + (revealed) label + close/pin. margin 5px + padding 10px puts the 16px
+   icon's centre at 23px = the middle of the 46px collapsed rail. The label + trailing
+   button overflow past 46px and are clipped by .tab-rail-inner until it expands. Radius is
+   the design's --r-card (4px) — nothing in the ASCII register is pill-round. Row height is
+   the app's row unit (--row-h, 18px) — same rhythm as a sidebar tree row. */
+.tab-rail-row {
+  display: flex; align-items: center; gap: 10px;
+  height: var(--row-h, 18px); min-height: var(--row-h, 18px); box-sizing: border-box;
+  margin: 0 5px; padding: 0 10px; border-radius: var(--r-card, 4px);
+  color: var(--text-muted); cursor: pointer; user-select: none;
+  white-space: nowrap; position: relative;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
+/* Active tab: accent-soft fill + accent text, PLUS the --grad rule (design vocabulary's one
+   other use of the wordmark's gradient) as a 2px left bar marking the active row. */
+.tab-rail-row.active { background: var(--accent-soft); color: var(--accent); }
+.tab-rail-row.active::before { content: ""; position: absolute; left: -5px; top: 2px; bottom: 2px; width: 2px; background: var(--grad); }
+.tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
+.tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
+.tab-rail-row.active .tab-rail-icon { color: var(--accent); }
+/* Label is revealed with the rail: it takes flex space always (so the collapsed row still
+   sizes the same) but fades in only once expanded. */
+.tab-rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.16s ease; }
+.tab-rail:hover .tab-rail-label, .tab-rail:focus-within .tab-rail-label { opacity: 1; }
+
+/* Close / pin trailing button. Hidden until the rail is expanded; the close X then shows
+   on row-hover, while a pinned row keeps its pin visible (like the horizontal strip). */
+.tab-rail-row .tab-x, .tab-rail-row .tab-pin { flex: 0 0 auto; padding: 2px; opacity: 0; color: var(--text-muted); transition: opacity 0.12s ease; }
+.tab-rail-row .tab-pin { color: var(--accent, var(--fg)); }
+.tab-rail:hover .tab-rail-row.pinned .tab-pin { opacity: 0.85; }
+.tab-rail:hover .tab-rail-row:hover .tab-x,
+.tab-rail:hover .tab-rail-row:hover .tab-pin,
+.tab-rail:focus-within .tab-rail-row.pinned .tab-pin { opacity: 1; }
+/* The inline rename input sits in place of the label; give it room within the expanded row. */
+.tab-rail-row .tab-rename { flex: 1; min-width: 0; width: auto; margin: 0; }
+
+/* `.tab-rename` — the inline rename input, styled once here and then narrowed by
+   `.tab-rail-row .tab-rename` above for placement inside the expanded row. Collocated at the end of
+   this file (rather than retyped inline above) so the moved text stays byte-identical to its
+   App.css source; nothing about its declared rules changed. */
+.tab-rename {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface-1, var(--bg));
+  border: 1px solid var(--accent, var(--border-soft));
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: -2px 0;
+  width: 11ch;
+  min-width: 4ch;
+  outline: none;
+}
+
+/* `.tab-rail-actions :global(.btn--icon)` — copied verbatim (specificity (0,2,0), matching the
+   source) from the multi-parent selector list in App.css; see this file's header. */
+.tab-rail-actions :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
+.tab-rail-actions :global(.btn--icon):hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }

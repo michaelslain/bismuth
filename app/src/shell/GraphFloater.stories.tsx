@@ -1,7 +1,7 @@
 // Visual spec for <GraphFloater> — the always-mounted Knowledge Graph wrapper, floated over
 // whichever slot is currently active (sidebar mini-square, full main pane, or a tab's graph pane).
 //
-// WHY THIS FILE EXISTS: recorded BEFORE `.graph-floater`/`.docked` move from the global App.css
+// WHY THIS FILE EXISTS: recorded BEFORE `.graph-floater`/`.docked` moved from the global App.css
 // into GraphFloater.module.css, which HASHES every class name — see the plan's THE RECIPE for why
 // the recording order is load-bearing.
 //

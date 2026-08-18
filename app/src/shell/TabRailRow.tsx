@@ -4,19 +4,20 @@
 // `<Index>` itself and the per-row `createMemo` for the chat tint (`railColor`) — those read App
 // state; this component only draws one already-resolved row.
 //
-// CLASS NAMES ARE STILL BARE GLOBAL STRING LITERALS — this is the extraction half of the migration
-// only (see the plan's THE RECIPE).
+// IMPORTS `./TabRail.module.css` — GETS NO MODULE OF ITS OWN. Eight hover/focus selectors span
+// TabRail.tsx and this file (`.tab-rail:hover .tab-rail-label`, `.tab-rail:focus-within
+// .tab-rail-row.pinned .tab-pin`, …); per-file hashing would break every one of them silently behind
+// a green build (Trap 4). See TabRail.module.css's header for the full account.
 //
-// IMPORTS `./TabRail.module.css` — IT GETS NO MODULE OF ITS OWN, once the CSS half lands. Eight
-// hover/focus selectors span TabRail.tsx and this file (`.tab-rail:hover .tab-rail-label`,
-// `.tab-rail:focus-within .tab-rail-row.pinned .tab-pin`, …); per-file hashing would break every
-// one of them silently behind a green build (Trap 4). See TabRail.tsx's header.
+// `active` AND `pinned` are hashed module locals, reached via `classList={{ [styles['active']]: …,
+// [styles['pinned']]: … }}`. `dragging` stays a bare string literal DELIBERATELY — no
+// `.tab-rail-row.dragging` rule exists anywhere in the stylesheet, so a module lookup would resolve
+// to `undefined` and land a literal `class="undefined"` on the row (Trap 2). See the module header.
 //
-// THE THREE IMPERATIVE `.closest()` REFERENCES (App.tsx:3047,3058,3084 before this extraction) move
-// here UNCHANGED as bare literals — converting them to `styles["tab-x"]`-style lookups is CSS-half
-// work, not this commit's. Note the third guard (dblclick → rename) tests only `.tab-x, .tab-pin`,
-// NOT `.tab-rename` — that asymmetry is preserved verbatim, not "fixed" into consistency, per the
-// plan's explicit instruction.
+// THE THREE IMPERATIVE `.closest()` REFERENCES (App.tsx:3047,3058,3084 before extraction) are now
+// rewritten against `styles` below. Note the third guard (dblclick → rename) tests only
+// `.tab-x`/`.tab-pin`, NOT `.tab-rename` — that asymmetry is preserved verbatim, not "fixed" into
+// consistency, per the plan's explicit instruction.
 //
 // `style={{}}` on the row is a preserved no-op: the original read `style={railStyle()}` where
 // `railStyle = createMemo(() => ({}))` — a memo with no dependencies that always evaluated to an
@@ -26,6 +27,7 @@
 import { Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import { IconButton } from '../ui/IconButton'
+import styles from './TabRail.module.css'
 
 export function TabRailRow(props: {
     label: string
@@ -45,12 +47,23 @@ export function TabRailRow(props: {
     onCommitRename: (value: string) => void
     onCancelRename: () => void
 }) {
+    // The row's trailing controls; a click/pointerdown/dblclick landing on any of them must not
+    // also activate or drag the tab. The dblclick guard deliberately omits `.tab-rename` — see the
+    // header comment; that asymmetry is preserved, not "fixed".
+    const inTrailingControl = (t: EventTarget | null) =>
+        !!(t as HTMLElement | null)?.closest(
+            `.${styles['tab-x']}, .${styles['tab-pin']}, .${styles['tab-rename']}`,
+        )
+    const inCloseOrPin = (t: EventTarget | null) =>
+        !!(t as HTMLElement | null)?.closest(
+            `.${styles['tab-x']}, .${styles['tab-pin']}`,
+        )
     return (
         <div
-            class="tab-rail-row"
+            class={styles['tab-rail-row']}
             classList={{
-                active: props.active,
-                pinned: props.pinned,
+                [styles['active']]: props.active,
+                [styles['pinned']]: props.pinned,
                 dragging: props.dragging,
             }}
             data-tab-chip="true"
@@ -58,28 +71,17 @@ export function TabRailRow(props: {
             title={props.renaming ? undefined : props.label}
             style={{}}
             onClick={e => {
-                if (
-                    (e.target as HTMLElement).closest(
-                        '.tab-x, .tab-pin, .tab-rename',
-                    )
-                )
-                    return
+                if (inTrailingControl(e.target)) return
                 props.onActivate()
             }}
             onPointerDown={e => {
-                if (
-                    (e.target as HTMLElement).closest(
-                        '.tab-x, .tab-pin, .tab-rename',
-                    )
-                )
-                    return
+                if (inTrailingControl(e.target)) return
                 props.onPointerDown(e)
             }}
             // Middle-click closes any tab (incl. a pinned one) — the escape hatch.
             onAuxClick={props.onAuxClick}
             onDblClick={e => {
-                if ((e.target as HTMLElement).closest('.tab-x, .tab-pin'))
-                    return
+                if (inCloseOrPin(e.target)) return
                 props.onDblClick()
             }}
             onContextMenu={props.onContextMenu}
@@ -87,17 +89,19 @@ export function TabRailRow(props: {
             {/* Every rail row shows an icon (fall back to a generic doc) so the
         collapsed icon-column is never empty for an unnamed note. */}
             <Icon
-                class="tab-rail-icon"
+                class={styles['tab-rail-icon']}
                 value={props.icon}
                 size={16}
                 style={props.color ? { color: props.color } : undefined}
             />
             <Show
                 when={props.renaming}
-                fallback={<span class="tab-rail-label">{props.label}</span>}
+                fallback={
+                    <span class={styles['tab-rail-label']}>{props.label}</span>
+                }
             >
                 <input
-                    class="tab-rename"
+                    class={styles['tab-rename']}
                     value={props.label}
                     ref={el =>
                         queueMicrotask(() => {
@@ -125,7 +129,7 @@ export function TabRailRow(props: {
                 when={props.pinned}
                 fallback={
                     <IconButton
-                        class="tab-x"
+                        class={styles['tab-x']}
                         icon="X"
                         label="Close tab"
                         iconSize={13}
@@ -134,7 +138,7 @@ export function TabRailRow(props: {
                 }
             >
                 <IconButton
-                    class="tab-pin"
+                    class={styles['tab-pin']}
                     icon="Pin"
                     label="Unpin tab"
                     iconSize={13}

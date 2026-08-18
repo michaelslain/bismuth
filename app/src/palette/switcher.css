@@ -14,8 +14,11 @@
    backdrop, but its canvas is transparent where there's no glow — so the note pane BEHIND it
    showed through (note title/text bleeding into the graph). Give the floater an opaque app-bg
    fill ONLY while switcher mode is on, so the graph reads as a clean full-window backdrop. In
-   every other graph mode (sidebar mini, ::graph home tab) the floater stays transparent. */
-.layout.switcher-active .graph-floater { background: var(--bg); }
+   every other graph mode (sidebar mini, ::graph home tab) the floater stays transparent.
+   Selects `[data-graph-floater]`, NOT `.graph-floater`: that class is now a CSS-Modules local of
+   shell/GraphFloater.module.css and hashes at build time, so a bare `.graph-floater` here would
+   compile and match nothing. shell/GraphFloater.tsx carries the attribute for exactly this reach. */
+.layout.switcher-active [data-graph-floater] { background: var(--bg); }
 
 /* The search column: a full-height panel pinned to the LEFT of the editor pane, with the
    knowledge graph filling the region to its right (the floater is inset by this column's width
