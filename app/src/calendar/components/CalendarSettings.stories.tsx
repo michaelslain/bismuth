@@ -17,6 +17,7 @@ import { showCalendarSettings } from '../state'
 import { setTransport, type Transport } from '../../api'
 import { fakeTransport } from '../../ui/_fakeTransport'
 import type { ParsedBase, Row } from '../../../../core/src/bases/types'
+import '../Calendar.css'
 
 const meta = {
     title: 'Calendar/CalendarSettings',

@@ -11,7 +11,15 @@
 //
 // EXPLICIT-HEIGHT WRAPPER: `.editor-pane` participates in the `.layout` CSS grid's row sizing in
 // the real app; Storybook's canvas has no such context, so every story wraps in a fixed-height box.
+//
+// `.editor-pane { position: relative }` — its positioning context for the absolutely-positioned
+// switcher bar — lives in palette/switcher.css, not here (see that file's header: it's loaded at
+// boot because SwitcherBar is eagerly imported by App, so the context is always in place before a
+// real switcher bar renders). WithSwitcher's stub stands in for SwitcherBar without importing what
+// SwitcherBar imports, so without this the stub's `position: absolute` finds no positioned ancestor
+// and escapes to the viewport — landing directly on top of the body stub below it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import '../palette/switcher.css'
 import { EditorPane } from './EditorPane'
 
 const noop = () => {}
@@ -80,7 +88,16 @@ export const WithBanner: Story = {
 }
 
 /** The Cmd+O switcher slot filled — absolutely positioned over the body by the switcher's own
- *  styling; this component only provides the slot. */
+ *  styling; this component only provides the slot. The stub's geometry AND stacking mirror the
+ *  real `.switcher-bar` (palette/switcher.css): a left-docked, FULL-HEIGHT panel at `z-index: 20`
+ *  — not a short top banner with no z-index. Two things compound without both corrections: (1) a
+ *  top-banner-shaped stub happens to land at the same height as the short "[pane tree]" body
+ *  text, and (2) `position: absolute` with no z-index is still stack-level 0 ("auto"), so CSS
+ *  paints same-level positioned siblings in DOM order — `.editor-body` comes AFTER the switcher
+ *  in EditorPane's own markup, so it paints ON TOP regardless of the switcher's own opacity. The
+ *  real bar's explicit `z-index: 20` is what actually lifts it above the body; omitting it here
+ *  let the two labels' glyphs interleave into an illegible smear no matter how opaque either
+ *  background was. */
 export const WithSwitcher: Story = {
     render: () => (
         <Wrap>
@@ -90,10 +107,14 @@ export const WithSwitcher: Story = {
                     <div
                         style={{
                             position: 'absolute',
-                            inset: '0 0 auto 0',
+                            top: '0',
+                            left: '0',
+                            bottom: '0',
+                            width: 'min(560px, 45%)',
+                            'z-index': 20,
                             padding: '16px',
                             background: 'var(--bg-elevated, var(--bg))',
-                            'border-bottom': '1px solid var(--border-soft)',
+                            'border-right': '1px solid var(--border-soft)',
                         }}
                     >
                         [switcher bar]

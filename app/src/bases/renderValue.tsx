@@ -78,6 +78,17 @@ function linkLabel(link: Link): string {
     )
 }
 
+/** Plain-text label for a value — a Link's display text, else the stringified value,
+ *  else the row's file name. No JSX: safe anywhere a caption needs the same label
+ *  `renderTitle`/`renderValue` show without mounting a live anchor element (e.g. map
+ *  marker chips), since `String()` on an `<a>` DOM node resolves its href, not its text. */
+export function plainLabel(id: string, row: Row): string {
+    const v = resolveProperty(id, row)
+    if (v == null) return row.file.name
+    if (isLink(v)) return linkLabel(v as Link)
+    return String(v)
+}
+
 /** First-column title cell: a typed accent title glyph (✎ — no SVG icon) + label. */
 export function renderTitle(id: string, row: Row): JSX.Element {
     const v = resolveProperty(id, row)

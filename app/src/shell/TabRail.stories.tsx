@@ -41,9 +41,23 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+// In the real app `.tab-rail` is a CSS-grid item of `.layout` (App.css `.layout { display: grid;
+// height: 100%; }`), and grid items stretch to fill BOTH the row height and column width by default
+// (`align-items`/`justify-items: stretch`) — so `.tab-rail` always has real height and width, and its
+// absolutely-positioned `.tab-rail-inner` (top:0;right:0;bottom:0) resolves against that box. A plain
+// block `Wrap` does NOT stretch a block child to fill it, so `.tab-rail` collapsed to 0 height here
+// (no in-flow content — its only child is `position: absolute`), which made `.tab-rail-inner`'s
+// `top:0;bottom:0` resolve to a 0px-tall box: everything inside rendered with real text and 21 DOM
+// elements while painting nothing. (`display: flex` was tried first and made it worse: a flex item's
+// `width: auto` shrinks to its intrinsic content width — 0, same reason — rather than stretching, so
+// `.tab-rail` gained height but landed at width 0 and its `right: 0`-anchored inner rendered almost
+// entirely off-canvas to the left.) `display: grid` on Wrap stretches its single child in both axes,
+// the same way `.layout`'s grid does in the app — a STORY fix, not a component/CSS one; `.tab-rail`'s
+// own rules never assume a particular parent display mode.
 const Wrap = (props: { children: unknown }) => (
     <div
         style={{
+            display: 'grid',
             height: '500px',
             position: 'relative',
             border: '1px solid var(--border-soft)',

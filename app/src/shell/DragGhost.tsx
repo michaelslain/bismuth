@@ -26,7 +26,7 @@ export function DragGhost(props: {
                 width: `${props.width}px`,
             }}
         >
-            {props.label}
+            <span class={styles['drag-ghost-label']}>{props.label}</span>
         </div>
     )
 }

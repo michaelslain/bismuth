@@ -48,7 +48,7 @@ export const Default: Story = {
  *  reads correctly. */
 export const WithBadge: Story = {
     render: () => (
-        <div style={{ padding: '12px', background: 'var(--fg)' }}>
+        <div style={{ padding: '12px', background: 'var(--bg)' }}>
             <CommandButton
                 icon="Inbox"
                 label="Inbox"

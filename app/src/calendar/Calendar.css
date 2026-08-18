@@ -264,6 +264,12 @@
 .evm-modal .set-col.off .set-col-name { color: var(--faint); }
 .evm-modal .set-col.locked { cursor: default; }
 .evm-modal .set-col.locked:hover { background: none; }
+/* `.wrap`: a single standalone toggle row whose label is a full sentence
+   (e.g. flashcards' "Bidirectional" row), not a short column name — let it
+   wrap instead of the single-line ellipsis truncation above. */
+.evm-modal .set-col.wrap { align-items: flex-start; }
+.evm-modal .set-col.wrap .set-col-name { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
+.evm-modal .set-col.wrap .evm-toggle { margin-top: 2px; }
 
 /* ----- Base properties (#104) -----
    Progressive disclosure: a calm, scannable LIST (one bordered surface, like

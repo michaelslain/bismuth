@@ -14,6 +14,8 @@
 // papering over it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Editor } from './Editor'
+import { setTransport } from './api'
+import { fakeTransport } from './ui/_fakeTransport'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 
@@ -88,24 +90,42 @@ const DEFAULT_TEXT = [
  *  `vite.config.ts` `optimizeDeps.exclude: ["harper.js"]` (Storybook's Vite builder auto-loads
  *  and merges the project's own `vite.config.ts` — confirmed by reading
  *  `@storybook/builder-vite`'s `commonConfig`, which calls Vite's `loadConfigFromFile` rooted at
- *  `app/`), so this is the story to check first if spelling squiggles don't appear. */
+ *  `app/`), so this is the story to check first if spelling squiggles don't appear.
+ *
+ *  MUST seed the fake transport's file at `path` with the SAME text as `initialText`: Editor.tsx
+ *  mounts with `lastChange()`'s initial `{version: 0, paths: []}` already "dirty", so its SSE-
+ *  reconcile effect (only real callers ever hit this — they always pass already-fetched disk
+ *  content, so it's normally a no-op) fires on mount and re-reads `GET /file?path=...`. An
+ *  unseeded fakeTransport answers a missing path with `""` (see `_fakeTransport.ts`'s
+ *  `getText`), which the effect reads as a genuine external edit and reconciles the buffer DOWN
+ *  TO EMPTY milliseconds after mount — the story renders only the note-title widget over a
+ *  blank body. Seeding the same text at the same path makes `current === onDisk`, so the
+ *  reconcile is the no-op every real caller already gets for free. */
 export const Default: Story = {
-    render: () => (
-        <div style={{ height: STORY_H, width: '100%' }}>
-            <Editor
-                path="Editor Demo.md"
-                initialText={DEFAULT_TEXT}
-                onSaved={noop}
-                noteNames={() => NOTE_NAMES}
-                memoryNames={() => MEMORY_NAMES}
-                tagNames={() => TAG_NAMES}
-            />
-        </div>
-    ),
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Editor Demo.md': DEFAULT_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Editor Demo.md"
+                    initialText={DEFAULT_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
 }
 
 /** A brand-new, never-saved note: `initialText: ""` (still defined, so Editor skips its
- *  `api.read` fallback path) — just the note-title widget over an empty body. */
+ *  `api.read` fallback path) — just the note-title widget over an empty body. No fakeTransport
+ *  seeding needed here (see the Default story's comment on WHY that matters elsewhere): an
+ *  unseeded path already reads back as `""`, matching `initialText`, so the mount-time SSE-
+ *  reconcile effect finds `current === onDisk` and no-ops — same as a real new note. */
 export const NewNote: Story = {
     render: () => (
         <div style={{ height: STORY_H, width: '100%' }}>
@@ -140,18 +160,24 @@ const SETTINGS_TEXT = [
  *  `isYaml` — YAML language + syntax highlighting (not markdown), a 2-space indent, a line-number
  *  gutter (config files always show one), `yamlSchema` in "settings" mode, and
  *  `settingsCompletion` — instead of live preview / wikilinks / Harper / KaTeX. No note-editing
- *  extension from the Default story above applies here. */
+ *  extension from the Default story above applies here.
+ *
+ *  Same fakeTransport seeding as Default, and for the same reason: without it the mount-time
+ *  SSE-reconcile effect reads back `""` for `.settings` and reconciles the buffer empty. */
 export const SettingsYaml: Story = {
-    render: () => (
-        <div style={{ height: STORY_H, width: '100%' }}>
-            <Editor
-                path=".settings"
-                initialText={SETTINGS_TEXT}
-                onSaved={noop}
-                noteNames={() => NOTE_NAMES}
-                memoryNames={() => MEMORY_NAMES}
-                tagNames={() => TAG_NAMES}
-            />
-        </div>
-    ),
+    render: () => {
+        setTransport(fakeTransport({ files: { '.settings': SETTINGS_TEXT } }))
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path=".settings"
+                    initialText={SETTINGS_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
 }

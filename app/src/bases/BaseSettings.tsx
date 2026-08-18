@@ -457,7 +457,7 @@ export function BaseSettings(props: {
                     </div>
                     <Show when={props.type === 'flashcards'}>
                         <div
-                            class="set-col"
+                            class="set-col wrap"
                             onClick={() => setBidi(!bidi())}
                             style={{ 'margin-top': '8px' }}
                         >
